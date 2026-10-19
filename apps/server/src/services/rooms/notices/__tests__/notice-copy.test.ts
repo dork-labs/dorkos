@@ -34,7 +34,7 @@ describe('buildWaitingNotice', () => {
     const { text } = buildWaitingNotice('Ana', 'author-ana', 'approval');
 
     expect(text).toBe(
-      "Ana is waiting for you to approve something before it can carry on. Open Ana's chat to answer. It will wait, but not forever."
+      "Ana is waiting for your approval before it can answer. Open Ana's chat or Needs you to answer. New messages for Ana wait with it. It will wait, but not forever."
     );
   });
 
@@ -43,6 +43,48 @@ describe('buildWaitingNotice', () => {
       const { text } = buildWaitingNotice('Ana', 'author-ana', kind);
       expect(text).not.toMatch(/\d+\s*(minutes?|hours?)/);
     }
+  });
+});
+
+describe('a turn waiting for a free agent slot (DOR-3012)', () => {
+  // Purpose: nobody has to do anything, so the line asks nothing of the reader
+  // and says what happens next.
+  it('says the agent will answer when another finishes, and asks nobody for anything', () => {
+    const body = copy.buildSlotWaitNotice('Ana', 'author-ana');
+    expect(body).toEqual({
+      text: 'Ana will answer once another agent here finishes. All of them are busy.',
+      // Busy, not awaiting approval: nobody has to act, and the room keeps
+      // showing the agent as working.
+      notice: 'agent_busy',
+      subjectAuthorId: 'author-ana',
+    });
+  });
+});
+
+describe('buildTurnFailedNotice with a refusal (DOR-3012)', () => {
+  // Purpose: a turn refused before it started names why, in words a person can
+  // act on, instead of "ran into a problem".
+  it('names a full warm ceiling in plain words', () => {
+    const { text, notice } = copy.buildTurnFailedNotice(
+      'Ana',
+      'author-ana',
+      undefined,
+      'warm-ceiling'
+    );
+    expect(notice).toBe('turn_failed');
+    expect(text).toBe("Ana couldn't start: every agent here stayed busy too long. Send it again.");
+  });
+
+  // Purpose: a refusal with no plain line of its own keeps the general one.
+  it('keeps the general line for a refusal it has no words for', () => {
+    const { text } = copy.buildTurnFailedNotice('Ana', 'author-ana', undefined, 'account-pin');
+    expect(text).toContain('ran into a problem');
+  });
+
+  // Purpose: running out of usage still wins; it says when it ends.
+  it('lets an out-of-usage limit speak first', () => {
+    const { text } = copy.buildTurnFailedNotice('Ana', 'author-ana', null, 'warm-ceiling');
+    expect(text).toBe("Ana is out of usage, so it couldn't answer here.");
   });
 });
 
@@ -63,6 +105,7 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     copy.buildBusyNotice('Ana', 'author-ana', 'unknown'),
   ],
   buildWaitingNotice: () => KINDS.map((kind) => copy.buildWaitingNotice('Ana', 'author-ana', kind)),
+  buildSlotWaitNotice: () => [copy.buildSlotWaitNotice('Ana', 'author-ana')],
   buildHaltedNotice: () => [copy.buildHaltedNotice(2)],
   buildAgentHaltedNotice: () =>
     (['interrupted', 'unstarted', 'idle'] as const).map((outcome) =>
@@ -72,6 +115,9 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     copy.buildTurnFailedNotice('Ana', 'author-ana'),
     copy.buildTurnFailedNotice('Ana', 'author-ana', '2026-10-09T16:10:00.000Z'),
     copy.buildTurnFailedNotice('Ana', 'author-ana', null),
+    ...['warm-ceiling', 'pending-interaction', 'crash-loop', 'account-pin'].map((refusal) =>
+      copy.buildTurnFailedNotice('Ana', 'author-ana', undefined, refusal)
+    ),
   ],
   buildAgentGoneNotice: () => [copy.buildAgentGoneNotice('Ana', 'author-ana')],
   buildRuntimeGoneNotice: () => [

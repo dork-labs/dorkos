@@ -163,7 +163,7 @@ Accept a document batch while its owning first turn is busy, rekey to the runtim
 
 ### Task 2.6: [doc-channel] [P2] Admit room app events without operator authority
 
-- Status: pending
+- Status: in_progress
 - Size: xl
 - Priority: high
 - Dependencies: 2.1, 2.2, 2.5
@@ -183,7 +183,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.7: [doc-channel] [P2] Carry trusted document context through actual Relay
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.5, 2.6
@@ -247,7 +247,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.2: [doc-channel] [P3] Connect instrumented frames with a mount-bound SDK
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 3.1
@@ -289,7 +289,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.4: [doc-channel] [P3] Prove the writer-to-channel consumer handoff
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.5, 2.6, 2.8, 3.2, 3.3
@@ -350,7 +350,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.3: [doc-channel] [P4] Coordinate granted checkbox writes and crash recovery
 
-- Status: pending
+- Status: in_progress
 - Size: xl
 - Priority: medium
 - Dependencies: 2.1, 4.2
@@ -410,7 +410,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 5.1: [doc-channel] [P5] Restrict standalone bearer ingestion and SSE
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: medium
 - Dependencies: 2.1, 2.3, 3.1
@@ -430,7 +430,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 5.2: [doc-channel] [P5] Expose route controls and safe state-bound widgets
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: medium
 - Dependencies: 3.3, 5.1
@@ -452,7 +452,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 6.1: [doc-channel] [P6] Verify all phases and document author migration
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: medium
 - Dependencies: 3.4, 4.5, 5.2

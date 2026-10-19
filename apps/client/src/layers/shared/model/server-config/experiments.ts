@@ -16,6 +16,13 @@ import { configKeys } from './query-keys';
 export const SPACES_EXPERIMENT = 'spaces.enabled';
 
 /**
+ * The experiment every Docs feature reads (DOR-2993): wiki links, embeds,
+ * comments and live editing in markdown docs. Off by default; while it is off
+ * the canvas editor gets none of the Docs additions.
+ */
+export const DOCS_EXPERIMENT = 'docs.enabled';
+
+/**
  * Whether one Settings → Experiments switch is on, read from a config answer.
  *
  * The server resolves every registered experiment into `config.experiments`

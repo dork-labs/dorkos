@@ -345,6 +345,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'computers.enabled': false,
   // Chatting from the web stays off until a person opts in (DOR-2946).
   'sessionRelay.enabled': false,
+  // Docs stay off until a person tries them (DOR-2993).
+  'docs.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
   // No official space until a release or a person names one (spec
@@ -599,7 +601,7 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'runtimes.claudeCode.persistentSession': {
     value: true,
     reason:
-      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (`runtimes.claudeCode.maxWarmProcesses` caps how many stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
   },
   // The two once-per-install Trusted steps (DOR-2739). `null` means "not run
   // yet", and running a step loosens a default, so the unset stamp is the
@@ -624,6 +626,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: 'autonomy',
     reason:
       'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). A new session of our own agents edits files and runs commands without asking; a stop a person set to Ask or Act carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'runtimes.claudeCode.maxWarmProcesses': {
+    value: null,
+    reason:
+      'Unset sizes the number of agents that may run at once to the machine: one per 2 GB of memory, at least 12 (the old fixed number) and at most 32 (DOR-3012). It is a resource bound, not a capability grant: nothing about what an agent may do changes, and every turn passes the same gates. What it relaxes is memory, on a machine that has it; a person who wants fewer sets a number.',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,

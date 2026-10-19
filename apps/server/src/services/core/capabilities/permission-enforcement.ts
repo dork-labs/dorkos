@@ -80,7 +80,7 @@ import {
   type ResolvedPermission,
 } from '@dorkos/shared/permissions';
 
-import { outsiderBoundOf } from '../turn-power/turn-levels.js';
+import { marksOf } from '../turn-power/turn-levels.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
 import { logger } from '../../../lib/logger.js';
@@ -207,6 +207,8 @@ export type PermissionGatedAction = Pick<
   GatedAction,
   'id' | 'tier' | 'areasForInput' | 'consent'
 > & {
+  /** Whether one call always asks a person, from its input (DOR-3107). */
+  alwaysAsksForInput?: (input: unknown) => boolean;
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
   /**
@@ -307,7 +309,7 @@ export async function resolveCallPermission(request: {
   const { action, identity } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn = outsiderBoundOf(request.sessionId, identity?.agentPath) !== undefined;
+  const strangerTurn = marksOf(request.sessionId, identity?.agentPath).outsider === true;
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
@@ -362,7 +364,10 @@ export async function resolveCallPermission(request: {
       // person may change (`areasForInput`, used by `config_patch`), so it always
       // asks, whatever the preset: Trusted allows Permissions for our agents'
       // own changes, never for a person's settings.
-      ...((index === 0 && (action.describeApprovalChange || isAlwaysAskingExtensionTool(action))) ||
+      ...((index === 0 &&
+        (action.describeApprovalChange ||
+          isAlwaysAskingExtensionTool(action) ||
+          action.alwaysAsksForInput?.(request.input) === true)) ||
       index > 0
         ? { alwaysAsks: true }
         : {}),

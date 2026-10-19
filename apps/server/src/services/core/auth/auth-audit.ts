@@ -23,6 +23,7 @@ import { recordAudit, auditTrail } from '../../audit/audit-trail.js';
 
 /** The fields of a stored session row these hooks read. */
 interface SessionRow {
+  id?: string;
   userId: string;
   ipAddress?: string | null;
   userAgent?: string | null;
@@ -42,6 +43,9 @@ export function sessionEndReason(
   session: SessionRow,
   path: string | undefined
 ): { action: string; summary: string } {
+  if (session.id && signedOutFromDevices.delete(session.id)) {
+    return { action: 'auth.device_signed_out', summary: 'A device was signed out' };
+  }
   const expiresAt = session.expiresAt ? new Date(session.expiresAt) : undefined;
   if (expiresAt && expiresAt.getTime() <= Date.now()) {
     return { action: 'auth.session_expired', summary: 'A sign-in expired' };
@@ -51,6 +55,31 @@ export function sessionEndReason(
     return { action: 'auth.session_revoked', summary: 'A sign-in was revoked' };
   }
   return { action: 'auth.session_ended', summary: 'A sign-in ended' };
+}
+
+/**
+ * Sessions the devices list is about to sign out (`routes/devices.ts`), so the
+ * one row their deletion writes says so. Better Auth gives a delete outside its
+ * own endpoints no path to tell it by.
+ */
+const signedOutFromDevices = new Set<string>();
+
+/**
+ * Mark a session as signed out from the devices list, just before deleting it.
+ *
+ * @param sessionId - The session about to be deleted.
+ */
+export function markSignedOutFromDevices(sessionId: string): void {
+  signedOutFromDevices.add(sessionId);
+}
+
+/**
+ * Take back {@link markSignedOutFromDevices} for a session that was not deleted.
+ *
+ * @param sessionId - The session still there.
+ */
+export function unmarkSignedOutFromDevices(sessionId: string): void {
+  signedOutFromDevices.delete(sessionId);
 }
 
 /** Where a session came from, for an `admins` row. */

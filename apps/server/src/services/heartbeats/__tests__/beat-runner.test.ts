@@ -46,7 +46,7 @@ let store: HeartbeatStore;
 let changes: Change[];
 let heartbeatFile: HeartbeatFileRead;
 let runtime: FakeAgentRuntime;
-let launchResults: Array<BeatLaunchResult['status']>;
+let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start'>;
 let launches: string[];
 let launchRuntimes: string[];
 let accepted: Array<{ raises: number }>;
@@ -81,6 +81,11 @@ function launcher(): BeatTurnLauncher {
       const status = launchResults.shift() ?? 'started';
       if (status === 'cap-full') return { status: 'cap-full' };
       if (status === 'refused') return { status: 'refused', message: 'no' };
+      // Started, then refused before the agent saw it (DOR-2994).
+      if (status === 'refused-at-start') {
+        queueMicrotask(() => request.onSettled('failed', 'warm-ceiling'));
+        return { status: 'started', sessionId: request.sessionId };
+      }
       void (async () => {
         let failed = false;
         try {
@@ -463,6 +468,22 @@ describe('failures and refusals', () => {
     expect(launches).toHaveLength(4);
     expect(beats().every((b) => b.outcome === 'refused')).toBe(true);
     expect(rows('heartbeat.beat').every((row) => row.outcome === 'refused')).toBe(true);
+    r.stop();
+  });
+
+  it('records a turn the runtime refused before the agent saw it as refused, never as the agent failing (DOR-2994)', async () => {
+    changes = [LOCAL_MESSAGE];
+    launchResults = ['refused-at-start', 'refused-at-start', 'refused-at-start'];
+    const r = runner();
+    await r.start();
+    for (let i = 0; i < 3; i += 1) {
+      await r.wake(juno.id, { wake: 'event:test' });
+      await settle();
+    }
+    expect(beats().length).toBeGreaterThan(0);
+    expect(beats().every((b) => b.outcome === 'refused')).toBe(true);
+    expect(store.getState(juno.id)?.consecutiveFailures ?? 0).toBe(0);
+    expect(failingRaises).toBe(0);
     r.stop();
   });
 });

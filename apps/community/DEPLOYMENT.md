@@ -236,7 +236,7 @@ Neither check is proof of where someone lives. A person can tick the box anyway,
 
 Render is an optional managed deployment. It does not change Community identity or access rules. The Community still owns its own database, secrets, and files.
 
-1. Create a Docker web service from this repository. Set its Dockerfile path to `apps/community/Dockerfile`.
+1. Create a web service from an existing image: `ghcr.io/dork-labs/dorkos-community`, pinned to a release's version tag or digest. To build it yourself instead, use this repository's root `Dockerfile` with the build target `space`.
 2. Create Render Postgres in the same region. Put its private connection URL in `COMMUNITY_DATABASE_URL`.
 3. Set the required secrets and `COMMUNITY_PORT=10000`. Render sends public requests to the port configured for the web service.
 4. For files, either attach a persistent disk at `/data/blobs` and keep `COMMUNITY_STORAGE_DRIVER=filesystem`, or use an S3-compatible bucket and set the S3 settings above. Render's regular service filesystem does not keep files across restarts.

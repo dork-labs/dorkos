@@ -61,6 +61,9 @@ const FIXTURE_ENV = {
   ...process.env,
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: '/dev/null',
+  // A host can inject config through the environment too (Claude Code sets
+  // safe.bareRepository=explicit, which refuses the bare remote below).
+  GIT_CONFIG_COUNT: '0',
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't',

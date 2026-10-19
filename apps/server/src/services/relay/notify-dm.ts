@@ -73,7 +73,10 @@ import { createTaggedLogger } from '../../lib/logger.js';
  */
 export interface NotifyDmRooms {
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): { id: string };
-  post(roomId: string, input: { authorId: string; text: string }): { id: string };
+  post(
+    roomId: string,
+    input: { authorId: string; text: string; sessionId?: string }
+  ): { id: string };
 }
 
 /** The author-registry surface — resolving the sending agent's own identity. */
@@ -88,6 +91,15 @@ export interface NotifyDmAuthors {
 export interface NotifyDmMesh {
   getProjectPath(agentId: string): string | undefined;
   get(agentId: string): { name: string; displayName?: string } | undefined;
+}
+
+/**
+ * The Direct chat surface (rule S12, DOR-2997): the session the app opens for
+ * this DM, minted on first need. Narrow for the same reason as
+ * {@link NotifyDmRooms}.
+ */
+export interface NotifyDmDirectChats {
+  ensureForRoom(roomId: string): { sessionId: string } | null;
 }
 
 /** Structured logger surface (a consola instance satisfies this). */
@@ -108,6 +120,8 @@ export interface NotifyDmDeps {
    * bootstrap, which is what gets passed here.
    */
   operatorAuthorId: () => string;
+  /** The Direct chat the DM opens as. Absent in tests that never wire it. */
+  directChats?: NotifyDmDirectChats;
   logger?: NotifyDmLogger;
 }
 
@@ -120,7 +134,7 @@ export interface NotifyDmDeps {
  * the write is a rooms problem.
  */
 export type NotifyDmOutcome =
-  | { ok: true; roomId: string; entryId: string }
+  | { ok: true; roomId: string; entryId: string; directChatId?: string }
   | { ok: false; reason: 'AGENT_NOT_RESOLVABLE' }
   | { ok: false; reason: 'DM_UNAVAILABLE'; error: string };
 
@@ -131,11 +145,12 @@ export type NotifyDmOutcome =
  * @param input.agentId - The mesh id of the agent doing the notifying, as the
  *   server resolved it — never a value the model supplied.
  * @param input.message - What the agent wants the person to read.
+ * @param input.sessionId - The session that wrote it, when a turn did.
  * @param deps - Rooms, authors, mesh and the owner's author id.
  * @returns Where it landed, or a structured reason it did not. Never throws.
  */
 export function deliverNotifyDm(
-  input: { agentId: string; message: string },
+  input: { agentId: string; message: string; sessionId?: string },
   deps: NotifyDmDeps
 ): NotifyDmOutcome {
   const log = deps.logger ?? createTaggedLogger('NotifyDM');
@@ -182,8 +197,15 @@ export function deliverNotifyDm(
       { kind: 'dm', title: displayName, members: [deps.operatorAuthorId()], agentPaths: [] },
       author.id
     );
-    const entry = deps.rooms.post(room.id, { authorId: author.id, text: input.message });
-    return { ok: true, roomId: room.id, entryId: entry.id };
+    // The session it was written from rides on the entry, so the agent's Direct
+    // chat can tell its own words from a ping sent from elsewhere (rule S12).
+    const entry = deps.rooms.post(room.id, {
+      authorId: author.id,
+      text: input.message,
+      ...(input.sessionId && { sessionId: input.sessionId }),
+    });
+    const directChatId = directChatFor(deps, room.id, log);
+    return { ok: true, roomId: room.id, entryId: entry.id, ...(directChatId && { directChatId }) };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     log.warn('[Relay] a proactive message could not be delivered to a direct message', {
@@ -194,5 +216,26 @@ export function deliverNotifyDm(
       error,
     });
     return { ok: false, reason: 'DM_UNAVAILABLE', error };
+  }
+}
+
+/**
+ * The Direct chat this DM opens as (rule S12), or `undefined`. The message has
+ * already landed by the time this runs, so a failure here is logged and the
+ * delivery still stands.
+ */
+function directChatFor(
+  deps: NotifyDmDeps,
+  roomId: string,
+  log: NotifyDmLogger
+): string | undefined {
+  try {
+    return deps.directChats?.ensureForRoom(roomId)?.sessionId;
+  } catch (err) {
+    log.warn('[Relay] a proactive message landed, but its Direct chat could not be opened', {
+      roomId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
   }
 }

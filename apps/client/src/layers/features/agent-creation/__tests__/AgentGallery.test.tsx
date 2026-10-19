@@ -175,6 +175,11 @@ describe('AgentGallery', () => {
     expect(onImport).toHaveBeenCalledOnce();
   });
 
+  it('leaves the import link out when there is nowhere to import from (a hub)', () => {
+    render(<AgentGallery onDesignYourOwn={vi.fn()} onSelectTemplate={vi.fn()} />);
+    expect(screen.queryByTestId('gallery-import-link')).not.toBeInTheDocument();
+  });
+
   it('accepts a custom template URL via the advanced disclosure', async () => {
     const user = userEvent.setup();
     const { onSelectTemplate } = renderGallery();

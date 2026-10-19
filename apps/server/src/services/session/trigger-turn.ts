@@ -119,11 +119,12 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
-import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
+import { watchNotStarted } from './launch/turn-not-started.js';
 import type {
   PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
 } from './private-messages/acceptance.js';
+import { pausedErrorEvent } from './launch/paused-error-event.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -407,6 +408,12 @@ export interface TriggerTurnDeps {
    */
   isHelperWorking?(sessionId: string): boolean;
   /**
+   * The background tasks the session's process still names as live
+   * (`AgentRuntime.liveHelperIds`), spared by the turn's stream-end sweep
+   * (FB-18). Absent for a runtime whose process ends with its turn.
+   */
+  liveHelperIds?(sessionId: string): string[];
+  /**
    * The runtime answers {@link MessageOpts.dispatchHold} on every send
    * (`AgentRuntime.switchWhenReady` is its marker). Absent reads as "no": the
    * turn starts without asking.
@@ -627,9 +634,11 @@ export interface TriggerTurnOpts {
    * down work that has already succeeded. An observability hook must be
    * structurally unable to kill a turn.
    *
-   * @param outcome - `'failed'` when the turn reported an error, else `'ok'`.
+   * @param outcome - `'failed'` when the turn threw, or when the runtime refused
+   *   it before the agent saw the message (code `turn_not_started`); else `'ok'`.
+   * @param reason - The runtime's words for a refused turn (DOR-2994).
    */
-  onSettled?(outcome: 'ok' | 'failed'): void;
+  onSettled?(outcome: 'ok' | 'failed', reason?: string): void;
   /**
    * Receives the `seq` of THIS turn's `turn_start` — its identity on the durable
    * stream.
@@ -723,7 +732,6 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     context,
     roomTurn,
     seedContext,
-    approvalVerdict,
     systemPromptAppend,
     additionalDirectories,
     accountHint,
@@ -849,7 +857,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       clientContext: context,
       ...(roomContext ? { roomContext } : {}),
       ...(seedContext ? { seedContext } : {}),
-      ...(approvalVerdict ? { approvalVerdict } : {}),
+      ...(opts.approvalVerdict ? { approvalVerdict: opts.approvalVerdict } : {}),
+      // A turn on an agent's Direct chat takes what reached it elsewhere (rule S12).
+      directNotesFor: [turnKey, sessionId],
       nativeContext: deps.getCapabilities().nativeContext,
     });
     // Nothing below may open a turn while this session still has one open
@@ -994,7 +1004,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       }
       source = decision.stream;
     }
-    const tapped = tapEachEvent(source, () => {
+    // A runtime that refuses a turn before the agent sees it settles without a
+    // throw, so the refusal is read off the stream (DOR-2994).
+    const watched = watchNotStarted(source);
+    const tapped = tapEachEvent(watched.stream, () => {
       signalFirstEvent();
       tryRekey();
       // Proof of life for the write-lock: a turn that is visibly producing
@@ -1027,14 +1040,16 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       onStall: () => deps.interruptQuery(sessionId),
       onError: (err) => opts.onError?.(err),
     });
-    let failed = false;
     const guarded = guardTurnErrors(projector, stallGuarded, (err) => {
-      failed = true;
+      watched.threw = true;
       opts.onError?.(err);
     });
     // The trigger content rides the turn_start (userMessage) so the EventLog is a
     // self-sufficient history source for log-backed runtimes (ADR-0263).
     const turn = feedProjector(projector, guarded, {
+      ...(deps.liveHelperIds !== undefined
+        ? { stillLive: () => deps.liveHelperIds!(sessionId) }
+        : {}),
       ...(opts.privateReceiptId === undefined ? { userMessage: content } : {}),
       // Which room post opened this turn (DOR-2113), so a history rebuilt from
       // this record shows the post as its author's, never the person's own.
@@ -1048,7 +1063,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       // of defense against a feedProjector-internal rejection so the detached
       // promise never becomes an unhandled rejection. The lock still releases below.
       .catch((err) => {
-        failed = true;
+        watched.threw = true;
         turnSpan.markError();
         return opts.onError?.(err);
       })
@@ -1067,7 +1082,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // unable to kill a turn, so the guarantee is enforced here rather than
         // asked for in the hook's doc.
         try {
-          opts.onSettled?.(failed ? 'failed' : 'ok');
+          opts.onSettled?.(...watched.settledAs());
         } catch (err) {
           logger.warn('[trigger-turn] a turn-settled observer threw', {
             sessionId,
@@ -1149,28 +1164,6 @@ export async function* tapEachEvent(
     // Empty stream or a throw before the first yield still releases the waiter.
     if (!fired) onEvent();
   }
-}
-
-/**
- * The error a turn refused because its agent is paused rides the stream as:
- * its own code, the agent's id in `reason` (the app offers Resume for it), and
- * no category or stack, because nothing broke (spec `audit-trail` PR5). Read
- * by its code, so this module need not load the pause service. `undefined`
- * for every other failure.
- */
-function pausedErrorEvent(err: unknown): StreamEvent | undefined {
-  if (!(err instanceof Error) || (err as Error & { code?: unknown }).code !== AGENT_PAUSED_CODE) {
-    return undefined;
-  }
-  const agentId = (err as Error & { agent?: { id?: unknown } }).agent?.id;
-  return {
-    type: 'error',
-    data: {
-      message: err.message,
-      code: AGENT_PAUSED_CODE,
-      ...(typeof agentId === 'string' ? { reason: agentId } : {}),
-    },
-  };
 }
 
 /**

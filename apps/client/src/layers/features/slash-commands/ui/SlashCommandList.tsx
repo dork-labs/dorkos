@@ -101,7 +101,7 @@ export function SlashCommandList({
                     }
                   >
                     <div className="flex min-w-0 items-baseline gap-2">
-                      <span className="text-foreground shrink-0 font-mono text-[13px] font-medium">
+                      <span className="text-foreground text-control shrink-0 font-mono font-medium">
                         {cmd.fullCommand}
                       </span>
                       {cmd.argumentHint && (

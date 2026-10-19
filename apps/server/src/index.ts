@@ -257,6 +257,7 @@ async function start() {
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
   await mountLateRoutes(refs, upToCoreRoutes);
   await composeCapabilities(refs, upToCoreRoutes);
+  await upToCoreRoutes.seedPersonSet();
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
     upToCoreRoutes;
 

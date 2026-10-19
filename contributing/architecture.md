@@ -650,7 +650,7 @@ Before the permission-areas system existed, this section described a stronger-lo
 
 ## Module Layout
 
-Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/community/src/app.ts` for the independent Community API.
+Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/server/src/services/spaces/app.ts` for the independent Community API.
 
 | Area                  | Location                                                            | Responsibility                                                                  |
 | --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -662,7 +662,7 @@ Use [project structure](project-structure.md) for the repository map and [system
 | Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server     | Rooms, scheduling, message routing and discovery                                |
 | Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server  | Account actions, remote community seam and agent memory                         |
 | Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server | Transactions, activation and harness projection                                 |
-| Independent Community | `apps/community/src/`                                               | Hono API, browser, PostgreSQL and blob storage                                  |
+| Independent Community | `services/spaces/` under the server; `apps/community/` (build, web) | Hono API, browser, PostgreSQL and blob storage                                  |
 | Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
 
 ## Claude Code Binary Resolution
@@ -800,13 +800,14 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 **Native dependencies:** `better-sqlite3` (via `@dorkos/db`) and `node-pty` (via the CLI) are required at runtime but cannot be inlined by esbuild. They are direct dependencies in `packages/cli/package.json` so `npm install -g` builds them. `node-pty` ships no Linux prebuilds and compiles via node-gyp; `better-sqlite3` has official Linux prebuilds for Node 24 and vendors its own SQLite. Install environments need build tools (`python3`, `build-essential` on Linux — no `libsqlite3-dev`; Xcode CLI tools on macOS).
 
-**Docker image:** One multi-stage `Dockerfile` at the repo root produces four build targets:
+**Docker image:** One multi-stage `Dockerfile` at the repo root produces these build targets, plus `hub` and `hub-smoke`:
 
 | Target                | Purpose                                                                 | Command                                |
 | --------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
 | `smoke`               | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
 | `integration`         | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
 | `runtime`             | Published product image — starts a DorkOS server on `DORKOS_PORT`       | `pnpm docker:build && pnpm docker:run` |
+| `space`               | The space server's image (`ghcr.io/dork-labs/dorkos-community`)         | `docker build --target space .`        |
 | `builder` / `install` | Internal stages — toolchain + global npm install, not run directly      | —                                      |
 
 `runtime` is the last stage, so a bare `docker build .` produces it. Install mode is selected by the `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to run the integration target against the published npm package. The `integration` and `runtime` targets set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.

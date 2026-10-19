@@ -302,7 +302,10 @@ function anchorRow(
  * @param state - The snapshot.
  */
 function splitTodaySessions(state: SidebarState): { yours: Session[]; others: Session[] } {
-  const { yours, spinOffs, automated } = partitionSessionsByOwnership(state.sessions);
+  // The session under an agent's Direct chat is drawn as its DM's row (S12).
+  const direct = directChatSessions(state, indexSuppressedDms(state, muteIndex(state.prefs)));
+  const listed = state.sessions.filter((session) => !direct.has(session.originRoomId ?? ''));
+  const { yours, spinOffs, automated } = partitionSessionsByOwnership(listed);
   const mine = [...yours];
   const others: Session[] = [];
   for (const session of [...spinOffs, ...automated]) {
@@ -310,6 +313,34 @@ function splitTodaySessions(state: SidebarState): { yours: Session[]; others: Se
     else others.push(session);
   }
   return { yours: mine, others };
+}
+
+/**
+ * The session under each agent's Direct chat that the sessions list holds, by
+ * the DM room it answers in.
+ *
+ * @param state - The snapshot.
+ * @param suppressedDms - Which DMs are a one-to-one with an agent.
+ */
+function directChatSessions(
+  state: SidebarState,
+  suppressedDms: ReturnType<typeof indexSuppressedDms>
+): Map<string, Session> {
+  const directRooms = new Set(
+    state.rooms.filter((room) => suppressedDms.isSuppressed(room)).map((room) => room.id)
+  );
+  const byRoom = new Map<string, Session>();
+  for (const session of state.sessions) {
+    if (session.originRoomId && directRooms.has(session.originRoomId)) {
+      byRoom.set(session.originRoomId, session);
+    }
+  }
+  return byRoom;
+}
+
+/** The later of two ISO times. */
+function laterIso(a: string, b: string | undefined): string {
+  return b !== undefined && Date.parse(b) > Date.parse(a) ? b : a;
 }
 
 /**
@@ -367,6 +398,10 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
 
   const { yours, others } = splitTodaySessions(state);
   const rows: SidebarRowModel[] = [];
+  // **An agent's Direct chat has one row here: its DM's** (rule S12). The
+  // session under it never draws a second one; touching it counts as touching
+  // the DM, and its turns move the DM's row up as its pings do.
+  const direct = directChatSessions(state, suppressedDms);
 
   for (const session of yours) {
     const key = `session:${session.id}`;
@@ -376,8 +411,14 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   for (const room of state.rooms) {
     if (room.archived) continue;
     const key = `room:${room.id}`;
-    const row = roomRow(room, state, mutes, previews.get(key));
-    if (touched(key)) {
+    const directSession = direct.get(room.id);
+    const row = {
+      ...roomRow(room, state, mutes, previews.get(key)),
+      ...(suppressedDms.isSuppressed(room) && {
+        activityAt: laterIso(room.lastActivityAt, directSession?.updatedAt),
+      }),
+    };
+    if (touched(key) || (directSession && touched(`session:${directSession.id}`))) {
       rows.push(row);
       continue;
     }

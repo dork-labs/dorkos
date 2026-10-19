@@ -44,6 +44,9 @@ beforeEach(() => {
   dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-api-client-'));
   vi.stubEnv('DORK_HOME', dorkHome);
   vi.stubEnv('DORKOS_API_KEY', '');
+  // Run inside an agent session, the CLI inherits that agent's token; every
+  // test here starts with none and sets its own.
+  vi.stubEnv('DORKOS_AGENT_TOKEN', '');
 });
 
 afterEach(() => {

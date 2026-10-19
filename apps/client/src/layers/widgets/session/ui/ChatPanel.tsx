@@ -69,6 +69,8 @@ import {
   useToolShortcuts,
 } from '@/layers/features/chat';
 import { SESSION_CAPABILITIES } from '../model/session-capabilities';
+import { clickModelTrigger } from '../model/model-trigger';
+import { useDirectChatLog } from '../model/use-direct-chat-notes';
 import { useSessionLaneState } from '../model/use-session-lane-state';
 import { useSessionTarget } from '../model/session-target';
 import { SessionErrorNotice } from './SessionErrorNotice';
@@ -128,11 +130,9 @@ export function ChatPanel({
   const queryClient = useQueryClient();
   const chatInputRef = useRef<ComposerInputHandle>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
-  const handleChooseModel = useCallback(() => {
-    chatPanelRef.current
-      ?.querySelector<HTMLButtonElement>('[data-testid="model-config-trigger"]')
-      ?.click();
-  }, []);
+  const handleChooseModel = useCallback(() => clickModelTrigger(chatPanelRef.current), []);
+  // An agent's Direct chat draws the pings in the log under it (rule S12).
+  const directLog = useDirectChatLog(sessionId);
   const taskState = useTaskState(sessionId);
   // What this session is doing right now, from the same fleet-wide status
   // stream the sidebar reads — one derivation, so the strip and the roster can
@@ -746,6 +746,7 @@ export function ChatPanel({
           allowsDenyReason={allowsDenyReason}
           {...(landOnRow === undefined ? {} : { landOnRow })}
           foldFirstPrompt={startedBy !== null}
+          directLog={directLog}
         />
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />

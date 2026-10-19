@@ -305,7 +305,13 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/session-relay');
     // 76 -> 77: the sign-in landing page's record and Try again (DOR-2985).
     expect(mounts).toContain('/api/sign-in-landings');
-    expect(mounts).toHaveLength(77);
+    // 77 -> 78: the docs in a space, for wiki links (DOR-2982).
+    expect(mounts).toContain('/api/documents');
+    // 78 -> 79: each agent's Direct chat (rule S12, DOR-2997).
+    expect(mounts).toContain('/api/direct-chats');
+    // 79 -> 80: a person's own signed-in devices (DOR-2969).
+    expect(mounts).toContain('/api/devices');
+    expect(mounts).toHaveLength(80);
     const byHand = [
       '/',
       '/x/fixture',

@@ -272,7 +272,7 @@ export function DirectoryPicker({
                         }}
                         placeholder="folder-name"
                         aria-label="New folder name"
-                        className={`min-w-0 flex-1 rounded border bg-transparent px-2 py-0.5 text-sm outline-none ${
+                        className={`focus-ring min-w-0 flex-1 rounded border bg-transparent px-2 py-0.5 text-sm outline-none ${
                           newFolderError ? 'border-destructive' : 'border-border'
                         }`}
                       />

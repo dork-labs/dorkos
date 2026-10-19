@@ -165,6 +165,7 @@ export class RoomLifecycle {
     // ADR 260814-025326). `addMember` and `removeMember` hold the same shape
     // afterwards, so this is a gate and not a formality.
     this.authority.requireSeedingAllowed(creator, [...resolved.values()]);
+    for (const author of resolved.values()) this.authority.requirePrivateSpaceMember(author);
 
     // Also AFTER the gate, and for the same reason as the dedupe below it
     // (DOR-1611 review). A channel's `#slug` is a name the caller may not be

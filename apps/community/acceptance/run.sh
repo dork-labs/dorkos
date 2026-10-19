@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 # Build and exercise the packaged apps on a fresh, isolated Docker network.
 set -euo pipefail
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+# The repository root is the nearest folder above this script that holds
+# ci/space-server.env, which also says where the space server lives (DOR-3007).
+# Found by walking up rather than by a fixed number of `..`, so this runner
+# keeps working when the space server's folder moves deeper into apps/server.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+until [[ -f "$repo_root/ci/space-server.env" ]]; do
+  [[ "$repo_root" != / ]] || { echo 'No ci/space-server.env above this runner.' >&2; exit 2; }
+  repo_root="$(dirname "$repo_root")"
+done
+# shellcheck source=../../../ci/space-server.env
+source "$repo_root/ci/space-server.env"
+[[ -n "${SPACE_DIR:-}" ]] || { echo 'ci/space-server.env does not set SPACE_DIR.' >&2; exit 2; }
 image=""
 if [[ $# -eq 2 && "$1" == --image ]]; then
   image="$2"
 elif [[ $# -ne 0 ]]; then
-  echo 'Usage: bash apps/community/acceptance/run.sh [--image already-built-image]' >&2
+  echo "Usage: bash $SPACE_DIR/acceptance/run.sh [--image already-built-image]" >&2
   exit 2
 fi
 cd "$repo_root"
 if [[ -z "$image" ]]; then
   image="dorkos-community-acceptance:local"
-  docker build -f apps/community/acceptance/Dockerfile -t "$image" .
+  docker build -f "$SPACE_DIR/acceptance/Dockerfile" --build-arg "SPACE_DIR=$SPACE_DIR" -t "$image" .
 fi
 mkdir -p .temp/community-acceptance
 output="$(mktemp -d "$repo_root/.temp/community-acceptance/run.XXXXXX")"

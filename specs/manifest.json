@@ -3737,6 +3737,21 @@
       "created": "2026-10-10",
       "status": "specified",
       "linearIssue": "DOR-2783"
+    },
+    {
+      "id": "261017-211900",
+      "slug": "conversation-model",
+      "title": "One conversation model: the log is shared, the session is private",
+      "created": "2026-10-17",
+      "status": "draft"
+    },
+    {
+      "id": "261018-171617",
+      "slug": "turn-marks",
+      "title": "Turn marks: one mechanism for outsider, tool-read and teammate marks",
+      "created": "2026-10-18",
+      "status": "draft",
+      "linearIssue": "DOR-3036"
     }
   ]
 }

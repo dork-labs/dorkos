@@ -5,16 +5,16 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { request as playwrightRequest, type BrowserContext, type Page } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { interceptNext } from '@dorkos/test-utils/playwright-routes';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { bootstrapFirstHost } from '../src/__tests__/bootstrap-test-helper.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { bootstrapFirstHost } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 // Membership entry (task 2.1) and invitation continuation (task 2.2) of
 // specs/community-membership-journeys. COMMUNITY_MEMBERSHIP_SCREENSHOTS optionally names a

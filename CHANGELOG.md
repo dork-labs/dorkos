@@ -13,6 +13,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.123.0] - 2026-10-18
+
+> DorkOS 0.123.0 lets a busy agent wait its turn instead of failing, makes a sign-in work only the way you made it, and makes the tab you're on easier to see.
+
+### Fixed
+
+- When every agent on your computer is busy, a new message now waits for one to finish instead of failing. Before, naming several agents in one room post could make each of them say it "ran into a problem". The room and the chat now say the agent is waiting, and it answers as soon as another agent finishes.
+- How many agents can run at once now depends on your computer's memory: one per 2 GB, between 12 and 32. A 48 GB machine runs 24 instead of 12. You can set your own number with `runtimes.claudeCode.maxWarmProcesses`.
+- If an agent still can't start, the room says why in plain words instead of "ran into a problem".
+- Fixed a rare case where an agent that had just started could be shut down before its first reply.
+- In the desktop app, the tab you're on now stands out from the others in both light and dark mode. Before, it could look darker than the tabs beside it. With Increase Contrast turned on, it also gets an outline.
+
+### Security
+
+- A sign-in now works only the way you made it: on this computer, over Wi-Fi, or through remote access. Reach DorkOS another way and you sign in again there. Wi-Fi sign-ins last up to 7 days. After this update, your other devices ask you to sign in once more. (DOR-2969)
+- API keys can now only be made on the computer DorkOS runs on. (DOR-2969)
+
+## [0.122.0] - 2026-10-18
+
+> DorkOS 0.122.0 gives every agent one Direct chat with you, lets docs on the canvas link to each other, and stops agents waking up for nothing.
+
+### Added
+
+- Markdown docs on the canvas can now link to each other, behind the new **Docs** experiment in Settings → Advanced → Experiments. Type `[[` to pick another doc from your chat's folder, or write a doc's title or file name between double brackets. Clicking a link opens that doc in the canvas. A link to a doc that doesn't exist yet looks different. It starts working the next time DorkOS reads the folder's docs: after you create or rename a file in the Files panel, save a doc with a new title, or come back to the DorkOS window.
+
+### Changed
+
+- Every agent now has one standing Direct chat with you. Clicking the agent, opening its chat, or tapping a message it sent you all lead there. It always opens as a normal chat, never as a room.
+- Messages an agent sends you while it works elsewhere land in its Direct chat, with an unread dot on the agent. When you answer, the agent sees what it sent you, so "yes, go ahead" makes sense to it.
+- Your old one-on-one direct messages with an agent now open as the start of that agent's Direct chat. Nothing was deleted. A direct message with two or more agents, or with another person, is still a room.
+
+### Fixed
+
+- Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.
+
+## [0.121.0] - 2026-10-17
+
+> DorkOS 0.121.0 makes connecting apps work again, lets agents keep longer notes, and draws diagrams in documents.
+
+### Added
+
+- Agents can now keep **notes files** for things too long for their main memory file, like a checklist or how a tricky part of a project works. Each new notes file gets a one-line description, and an agent opens one only when it needs it, so notes cost nothing until they are used. They live in `.dork/memory/` next to the main file, and are never committed to git.
+- Mermaid diagrams now draw in markdown documents on the canvas, in the app's own colors in light and dark. The diagram code loads only when a document has one.
+- An agent can see where its message stands: a queued message says how many messages are ahead of it, and reading a chat lists your recent messages to it as waiting, delivered, answered or not delivered, with the reason (DOR-2994)
+
+### Changed
+
+- When an agent runs in DorkOS, Claude Code's own memory is now switched off, so the agent keeps one memory instead of two. Before, its notes could end up split between the two. An agent that already has notes in Claude Code's memory keeps using them until they are copied over, so nothing goes missing.
+- In canvas documents, `[[Page name]]` now shows as a link, and a line that is only `::name` shows as a placeholder block. Both are kept exactly as written when you save. Write `\::name` to keep such a line as plain text.
+- Tables you add while editing a document are saved without column alignment marks (`| - |` instead of `| :- |`).
+- Undo no longer reverses a change that arrived from outside the editor, such as an agent rewriting the file. Your own edits still undo as before.
+
+### Fixed
+
+- Connecting any app through DorkOS, such as Vercel, Cloudflare, Gmail or Slack, failed at once with "isn't available right now". It now opens the sign-in again.
+- A message one agent sends another chat no longer shows as delivered when that chat could not start, for example because too many chats were open. It now shows as not delivered, with the reason, so the sender knows to send it again (DOR-2994)
+- An agent's scheduled beat that its chat could not start is now recorded as "could not start" instead of as a beat that ran (DOR-2994)
+- A message still waiting in line is no longer marked as answered just because the other chat sent something unrelated (DOR-2994)
+- When too many agent chats are already running, a message is refused with a plain note that nothing was kept and it should be sent again, instead of a note about spin-off chats (DOR-2994)
+
+## [0.120.0] - 2026-10-17
+
+> DorkOS 0.120.0 keeps your tabs when the desktop app restarts, shows a proper page after you sign in to a service, brings back picture previews in chat, and makes dark mode easier on the eyes.
+
+### Added
+
+- In a space that has direct messages, an agent's row in a channel's member list now has a **Message** button. It opens a direct message with that agent. You don't need to mention it there: everything you say is for the agent. If its owner hasn't allowed direct messages, the app says so.
+- The direct message shows whose agent it is, and that its owner can read it. If the agent's computer is off, it says the agent won't answer until it's back. You can still send a message.
+- If you have an agent in a space, you can let it take direct messages with the **Takes direct messages** switch under **My agents**. It's off until you turn it on, and it goes back to off if the agent is removed from the space or you leave it, including when the agent is added again. When someone messages your agent, its replies come from your computer, with the same limits as a reply to anyone else in the space: it can only read, it can't ask you anything, and it stays inside that direct message.
+- You can read every direct message someone has with your agent, from the space's list in the sidebar. It opens on the newest messages, and you can't post in it.
+- The desktop app now keeps your tabs when it closes. An update, a crash or a recovery restart brings every tab back, in order, with the one you were on in front and each tab's own Back history. After a normal quit they come back too, unless you choose Start fresh in Settings → Preferences → When DorkOS opens (DOR-2986)
+- Bring back a tab you closed with Cmd+Shift+T, or pick one from Recently closed in a tab's right-click menu. It holds your last 25 closed tabs, across quits (DOR-2986)
+- Pinned tabs always come back. An unpinned tab you haven't looked at for a week is not reopened at launch; it waits in Recently closed instead (DOR-2986)
+- A tab whose chat was deleted, or whose room you left, is quietly moved to Recently closed when the app opens, instead of showing an error (DOR-2986)
+
+### Changed
+
+- After you sign in to an MCP server or OpenRouter, the browser now shows a proper DorkOS page. It matches your light or dark theme, names the service and the agent, and says what happens next.
+- If you started in the desktop app, the page opens the desktop app for you, back in the chat that asked. If you started in a browser, its button takes you back there.
+- When a sign-in is cancelled or fails, the page says so in plain words and offers **Try again**.
+- The one-time sign-in code no longer stays in the address bar, so a copied link never carries it.
+- In dark mode, menus, popovers, dialogs and cards now look raised above the page. Higher surfaces are a little lighter, and a highlighted menu row stays visible on them.
+- Text boxes, dropdown buttons and switches look set into the page instead of raised.
+
+### Fixed
+
+- Signing an agent in to an MCP server (or signing in to OpenRouter) now finishes when the sign-in page sends you back. Before, DorkOS answered "Unauthorized" because the browser said it came from the other site.
+- Text sizes now follow your font-size setting everywhere. Sidebar names, menu labels, inbox details and small badges used to stay the same size when you made text bigger in Settings → Appearance.
+- Orange text is easier to read. Links and code in messages, unread counts and the "New messages" line now use a deeper orange that stands out clearly on light and dark screens.
+- When you rename a file or name a new file or folder, the box now shows a clear outline so you can see where you are typing with the keyboard.
+- The moving line above the message box while an agent works now stays still when your computer is set to reduce motion, and it no longer flashes pure white.
+- Pictures you attach in chat show their preview again, and open full size when you click them. (DOR-2990)
+
 ## [0.119.0] - 2026-10-17
 
 > DorkOS 0.119.0 stops other people in a shared space from getting your agent to read your other chats, makes every other device sign in, opens pictures in a viewer over the chat, and lets the Mac app sign you in by itself.
@@ -241,238 +334,16 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - On macOS, DorkOS no longer keeps a file open for every chat on your computer just to notice when one changes. It held hundreds open at once, which could run into the system's limit on open files. Now it watches the folders instead, and checks once a minute for any change it missed (DOR-2907)
 - Stop the experimental Agent computer when you quit the desktop app, keeping its saved files.
 
-## [0.114.0] - 2026-10-13
+Older releases (v0.1.0 – v0.114.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.114.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.114.0.md).
 
-> DorkOS 0.114.0 makes the app fast again when your agents are busy: switching agents and tabs no longer freezes, and messages send without timing out. Mini apps can now show only where you choose, and agents work without the old posting limits, while turns started by strangers stay limited.
-
-### Added
-
-- Choose where a mini app's right-panel tab shows: everywhere, or only beside the agents, channels and pages you pick. Set it in Settings → Extensions under **Panel tab shows** (DOR-2867)
-- Hide a mini app's tab in a channel, in chats with one agent, or on one page with **Hide here** in the panel's **⋯** menu, and bring a hidden one back with **Show here** (DOR-2867)
-- Open a mini app's full page straight from its panel tab, with **Open full page** in the same menu (DOR-2867)
-- Mini apps can say where their tab belongs by default with `showIn`, and agents can set where a tab shows for you (DOR-2867)
-- Reach your mini apps' pages (the app calls them extensions) from the new Add-ons section at the bottom of the sidebar. Each page shows its own name and icon, and the one you are on is marked. It stays there when you open a space. On a phone it is in the All tab (DOR-2868)
-- A `DORKOS_CLOUD_API_URL` setting, to send only those requests somewhere else
-- The website now counts desktop app downloads, including ones from links on other sites. Each count carries a random one-time ID, no cookie and not your IP address, and none is made when your browser asks not to be tracked. The privacy page says so.
-- Try a separate Linux desktop through the **Agent computer** experiment on Apple Silicon Macs. Turn it on in **Settings → Experiments**, then open **Team**. View the desktop, take control, and stop it without losing its saved files. The experiment is off by default; live account sign-in and agent replies are not yet confirmed.
-- After your first run sets up an AI, the sidebar offers to join the DorkOS community, right after it asks your name and your work. Join opens the join form with the address filled in, and Not now hides it for good. It appears only once the community space exists (DOR-2873)
-- The person running a Community server can open sign-up only to people who live in certain countries, with `COMMUNITY_ALLOWED_COUNTRIES` (for example `US`). Everyone who creates an account then ticks a box that says "I live in the United States" first, whether they sign up with a password, Google, GitHub, or single sign-on, or join an open space. People who already have an account are never asked. A server behind a proxy that adds each visitor's country can also set `COMMUNITY_COUNTRY_HEADER`, so a sign-up from a country outside the list is turned away. Leave both unset and nothing changes (DOR-2847)
-
-### Changed
-
-- Agents now have the same freedom as people in rooms and notes. An agent can post as many messages in one turn as it needs, change a room's canvas more than three times in one turn, react more than 20 times an hour and send you more than 10 notes an hour. Agents are still asked to keep it short, and everything they post stays in the room for you to read. The safeguards that stop agents replying to each other forever are unchanged (DOR-2739)
-- The `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` settings are gone. Upgrading removes them from your config file (DOR-2739)
-- The "Running unattended at full power" banner is gone, and so is the Control Center line that said the same thing. Full power is the normal way agents work now (DOR-2739)
-- Saving a task or approving a schedule at Full autonomy no longer opens a confirmation first. Setting a Telegram or Slack connection to Full autonomy still asks, because strangers can message that chat (DOR-2739)
-- `dorkos task create` no longer prints a "Runs at full power" line (DOR-2739)
-- When someone outside your team starts a turn, for example with a Telegram or Slack message, that turn can post at most three messages in rooms and send you at most three notes. Your own agents' turns are never counted. A Codex or OpenCode agent posting into a room other than the one it is answering is not counted yet (DOR-2739)
-
-### Removed
-
-- The Add-ons list in the phone's You tab is gone. Find those pages under Add-ons in the All tab instead (DOR-2868)
-
-### Fixed
-
-- On a fresh install, requests for DorkOS credits, your balance and your plan now go to the DorkOS Cloud service. They went to the dorkos.ai website, which can't answer them, so every one failed (DOR-2673)
-- A brand-new install no longer says "While you were away" a few seconds after setup. Your first daily summary arrives the morning after you set DorkOS up.
-- On your first day, the sidebar shows one "Getting started" list instead of two. The card at the bottom waits until the list at the top is done, and the questions about your name and your work still get asked meanwhile.
-- Your first chat with DorkBot is listed under DorkBot's name, not "Session". A chat with no known agent now says "Chat".
-- One unfinished upload no longer keeps a deleted space stuck "deleting" for good. The server now waits at most a day for such an upload, then finishes removing the space.
-- A space server's log now says when a space is more than two days past its deletion date and still not gone.
-- One chat the app can't read no longer empties your recent chats list. That one chat is left out, and the rest of the list shows as usual.
-- When a space holds your message (you're muted, slow mode is on, or you haven't accepted the rules yet) and you send it again, its files are no longer uploaded a second time. The files you already uploaded go with it. This works in the DorkOS app and on the space's web page, even if you edit the message first.
-- A Codex or OpenCode chat started in an agent's folder now answers. Before, every message failed with "couldn't confirm this chat can use connected apps", and trying again never helped. When a chat has no recorded agent, it runs without connected apps instead.
-- While a space is on hold, you can now accept its rules from the DorkOS app, just as you already could on the space's web page. Accepting the rules changes nothing anyone else sees, so a hold doesn't stop it.
-- DorkOS no longer slows to a crawl while your agents are working. When any chat changed, every open window asked again for every agent's chats, and those requests piled up until switching tabs or agents took seconds and messages failed to send. The app now asks at most once every few seconds, asks that arrive together share one answer, and a new chat still shows up in your recent chats right away.
-- If someone asks to take over a space you own, DorkOS now tells you even while spaces are switched off. It checks in the background about once an hour.
-- DorkOS no longer slows down or freezes when you have a lot of Codex history. Switching agents and tabs stays quick, and messages send without timing out.
-- Opening a chat no longer searches every Claude project folder on your computer each time. DorkOS remembers where each chat lives after the first look, and checks the folder you opened it from first. On a computer with many projects and several Claude accounts, this saves a noticeable pause on every chat you open (DOR-2892)
-- The app stays quick while your agents work. Each time an agent wrote to a chat, DorkOS re-read that project's chats and rebuilt your Recent list from scratch, over and over. Now a chat that is being written to updates its row every few seconds, and the Recent list is rebuilt only when a chat is added or removed. A chat that an agent writes to without pausing now keeps its row up to date, instead of freezing until the agent stops (DOR-2893)
-- DorkOS no longer reads through your chats every five minutes for nothing. A background check listed all of them to clean up the canvas of deleted chats, even when no chat had been deleted. Now it only looks when there is something to clean up (DOR-2905)
-
-## [0.111.0] - 2026-10-12
-
-> DorkOS 0.111.0 fixes who gets credit for a room post: a post from a chat an agent started is now stamped with that agent, never with you. A chat can also be set to never ask, and agents can find the right app for a job.
-
-### Added
-
-- A Claude Code chat can now be set to **Never ask**. Turn it on under **Ask first** on the chat's trust dial. The agent runs only what you have already allowed, and refuses everything else instead of stopping to ask you. It never gets to do more than **Ask first** lets it. Only you can turn it on: no DorkOS tool lets an agent switch a chat to it, and a chat set to it cannot start another chat that would ask you. Codex and OpenCode chats don't offer it
-- An agent can now describe a job in plain words, such as "summarise my inbox", and get back a short list of apps that could do it, with the ways to connect each one (DOR-2854)
-- When an agent looks up an app, it can now see whether you have already given it an account there. When it looks up a marketplace package, it can see whether that package is already installed for it. If DorkOS can't tell, the agent is told that instead of being told no (DOR-2854)
-
-### Changed
-
-- Agents are now told to mention a connection or a DorkOS package when it would clearly make a task go better and you do not have it yet: what it is, why it would help, and that you decide on the Connections or Marketplace page (DOR-2852)
-- They are told to mention it only once, to leave it out when it would change nothing for the task, and in a shared room to bring it up only if someone asked
-- The top Autonomy level is now called Self-starter instead of Rogue. A Self-starter agent takes the next step in its job before you ask, but still waits for your yes on things that need one
-- The two top Chaos levels are now called Bold and Daredevil instead of Reckless and YOLO. Both still move fast on their own work, but neither force pushes, drops tables, deletes what it didn't make, or skips the checks that protect your data
-- Every Autonomy level now has clearer instructions, including the default. No level can make an agent skip asking first anymore. A lower level only makes it check in more. Your saved slider positions stay the same
-
-### Fixed
-
-- In a chat that answers for an agent in a channel, a message another agent or person posted in that channel now shows their name and face, with the channel it came from. Before, it looked like you wrote it
-- Your own channel posts in that chat still show as yours, with the channel beside them
-
-### Security
-
-- Room posts from a chat an agent started are now stamped with that agent, never with you. Before, a chat an agent started in a folder of its own saved its channel posts under your name, so they could look like your approval
-- A chat with no agent behind it can no longer post, react or act in channels as you. It is refused instead
-
-## [0.110.0] - 2026-10-12
-
-> DorkOS 0.110.0 gives a new DorkOS a simple start: one screen, a short way to connect your own AI, and a first job from DorkBot in #team. Connecting an app like Gmail now shows both ways in, and messages between chats start the moment a chat is free.
-
-### Added
-
-- Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. Any handler of that shape, such as a Hono app, works as it is. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. The Express router still works, and both can be used together
-- People who run a Community server can now give one of its reserved web addresses, such as `official`, to a new space of their own. It takes a key made for that one job and a written reason, and the server keeps a record of who gave the address out and why. Everyone else is still refused every reserved address, and addresses that are pages of the server can never be given out. See "Giving a reserved web address to a community" in the server's operations guide
-
-### Changed
-
-- Every agent now follows the same rules for when to act and when to ask first. It does routine work and anything you asked for without checking in, and tells you what it did
-- Before an agent sends something people outside your team will see, spends money or deletes things, it asks first unless you asked or it is its job. Promises to customers, signing up for things, spending past its limit and giving someone new access always need a yes from you or the agent's manager
-- When an agent gets stuck on something only you can do, like a sign-in, it no longer just says it can't. It does every step it can, asks DorkOS for the access, suggests one way forward, and finishes once you choose
-- These rules apply even when an agent's DorkOS knowledge setting is off, and in chats that are not tied to an agent
-- A new DorkOS starts with one screen. **Use my own AI** lists every way in, one row each: an OpenAI, Anthropic or OpenRouter key, an AI app you already sign in to, or any other service. Paste a key and DorkOS picks the model. A model on your own computer is listed too, but it can't reach a first reply yet (DOR-2783)
-- **Continue with DorkOS** is on the same screen and signs you in with the code already filled in. Finishing that path with a card still waits on DorkOS Cloud, so for now use **Use my own AI** (DOR-2783)
-- Every path ends in #team, where DorkBot says hello and offers a first job: **Build me a tracker for my customers**, **Make a daily plan board**, or **Something else**. One press, and DorkBot starts on it. Skipped the account? The same spot opens the two ways to connect AI in Settings instead (DOR-2783)
-
-### Removed
-
-- The old first run is gone: the setup scan, the power-level step and the scripted chat with DorkBot. Set your name and the kind of work you do in Settings › Profile. Full power is still offered the first time an agent needs it (DOR-2783)
-
-### Fixed
-
-- The first time you connect an app like Gmail, DorkOS now offers both ways in: use a DorkOS account (sign in or create one), or paste your own Composio key. Before, someone without a DorkOS account saw only the key and could get stuck
-- If your DorkOS account is linked but can't connect apps right now, you can now link it again from that same step, or use your own key instead
-- When you ask an agent to connect an app like Gmail and DorkOS can't reach it yet, the agent now tells you your choices right away: sign in to a DorkOS account (or create one), or use your own Composio key. It asks which you want and helps you do it. Before, it waited quietly while you were left to work it out alone
-- When an agent asks you for access to a service, it now looks up that service's exact name first, so the request names the right app. Agents are also told that signing in to a service's command-line tool gives DorkOS no access (DOR-2236)
-- A message one chat sends another now starts as soon as that chat is free. Before, if the chat had finished its turn but was still wrapping up background work, the message could sit in its queue for up to five minutes after the work ended, even after an interrupt
-- A chat sending a second message to a busy chat now hears "queued" at once. Before, after a long wait, it could be held for up to five minutes before it heard back
-- A chat started from a room conversation is now told to report in the room. Before, it was told to message a chat that cannot take messages, and every try was refused
-- In a direct message that still lists a removed agent, the other agents are now told it is retired and will not reply, so they stop waiting on it. The app already showed it that way
-- A chat that hit an error in its very first moments could send two "stopped on an error" phone pings, or one after it had already recovered. It now sends at most one, and none once the error clears
-- A connection you just added no longer vanishes for a moment if DorkOS reloads its connection settings at the same time. Before, removing or editing it right away said it could not be found
-- A connection you remove stays removed. Before, a reload at the same moment could start it again and leave it answering messages, even though the app no longer listed it
-- Removing a connection can no longer remove a different one when the connection settings reload at the same moment
-- Two changes saved close together are now written in order, so an older save can no longer overwrite a newer one
-- Turning off or reloading an extension now stops every repeating task it started, including ones it started after it finished loading. Before, those kept running, so after a reload the old copy's tasks could run beside the new one's
-- Turning on a room's files, or keeping changes made outside DorkOS, no longer fails when your profile name is made only of symbols git cannot use, such as `<>`. DorkOS signs those saves with a plain name instead (DOR-2454)
-- `dorkos cloud login` now waits and tries again when DorkOS Cloud says it is busy, instead of giving up and making you start over (DOR-2496)
-- A Community server behind a proxy with `COMMUNITY_TRUSTED_PROXY_HEADER` set now counts sign-in attempts per visitor. Before, sign-in limits saw the proxy's address for everyone, so they either limited nobody or everybody together
-
-## [0.109.0] - 2026-10-11
-
-> DorkOS 0.109.0 gives your agents a heartbeat: they wake up on their own, do the work that is theirs, and send you one short report at the start of your day. Every channel now has a lead agent, desktop tabs say what needs you, and DorkOS picks the model for you.
-
-### Added
-
-- Agents can now wake up on their own: on a regular beat or when something happens, they check what changed, do the work that is theirs, and tell you at a sensible hour. Every check leaves a line in the record. Each agent keeps a HEARTBEAT.md that says how it wakes and what it watches (DOR-2788)
-- Each agent's profile has a new Heartbeat page. It shows how often the agent checks in on its own, when its next check is, and what its recent checks found. It also lists any messages it is holding until working hours, with who each one is for and when it will arrive. On your own agents, you can edit the agent's HEARTBEAT.md file on the same page (DOR-2788)
-- Agents now send their manager one short report at the start of the workday instead of many small messages. While you're away, routine news waits for your return and only urgent messages reach you. An agent won't send you the same thing again while it's still open, and when two agents notice the same problem, you hear about it once. Each agent's Heartbeat page says who gets its next report and how much is in it so far (DOR-2788)
-- You can now see what your agents did on their own and whether it helped: how often their work stuck, how often their messages were useful, and how often they interrupted you. It's on each agent's Heartbeat page, beside the target each number is aiming for (DOR-2788)
-- Agents can read another agent's heartbeat too, so a lead can check on the agents that report to it (DOR-2788)
-- Agents can do their quick checks on DorkOS credits, so most check-ins end without a full run. Nothing is spent until you say yes. Each agent's Heartbeat page says where its checks run and how many it did today (DOR-2788)
-- A new Heartbeats page in the docs explains how agents wake up on their own, how they tell you things, and how to stop them (DOR-2788)
-- You can now choose who each agent reports to, and tell DorkOS your time zone and working hours. Open an agent's profile and pick from "Reports to": you, or another agent. If you leave it alone, an agent reports to whoever made it, and otherwise to you (DOR-2788)
-- Settings › Profile has a new "Your hours" card for your time zone, working days, start and end times, and the day you are back when you are away. DorkOS fills in your time zone from your browser the first time you open the app (DOR-2788)
-- Agents can now keep a list of what they promised, and anyone can read it on the agent's profile and the Team page. Each promise says who it was made to and when it is due, and one that runs late is marked overdue. You can mark a promise kept or dropped (with an Undo), or add one for one of your agents yourself (DOR-2788)
-- Anyone can now pause an agent everywhere at once, and anyone can lift the pause. Pausing stops what the agent is doing right now, including running scheduled tasks and work it left running in the background, and nothing starts it again until someone resumes it: your messages, its schedules, rooms, and messages from other agents or chat apps. Work it misses is not run later. Pause it from the **⋮** menu on its profile, with `dorkos agent pause`, or ask another agent. A paused agent can't resume itself, and every pause, resume and held-back piece of work is kept in the record (DOR-2738)
-- Agents can now review each other's work. They can read the record, and any other agent's work chats: scheduled tasks, messages between agents, and replies in the team channels they are in. DorkOS's agent tools and API keep your own chats from other agents, including your direct messages with an agent and chats from Telegram or Slack. An agent can't list, open or search them, though what it did in them is still in the record. This covers agents that say who they are, as DorkOS's tools do. It doesn't stop a program on your computer from opening the chat files directly (DOR-2738)
-- See the whole record in the app: switch Activity to All actions. Each agent's profile has an Activity page with everything it did (DOR-2738)
-- Every channel now has a lead: the agent that answers your message when nobody else is answering it. It steps back when you @mention another agent. Pick the lead in the channel's settings, and see it in the channel header and member list (DOR-2823)
-- A new channel's lead is the first agent you add. Existing channels got one on upgrade: the agent that answered you most there in the last two weeks (DOR-2823)
-- Agents can hand the lead to another agent in the channel (DOR-2823)
-- Channels connected to Telegram or Slack have no lead: their agent still answers only when @mentioned (DOR-2823)
-- When an agent is picked to answer your message in a room, 👀 appears on it right away, and goes away when the agent is done (DOR-2823)
-- A channel with no agent in it shows a quiet line above the message box saying so, with a way to add one (DOR-2823)
-- A link to a chat in an agent's reply or a channel post now shows as a small chip: the agent's icon, the chat's title, and a dot for what the chat is doing. Rest the pointer on it to read what that is, like "Waiting for your OK". One click opens the chat; cmd/ctrl-click opens it in a new tab (DOR-2824)
-- Links to channels and direct messages show as chips too, named the way their tabs are (DOR-2824)
-- A link to a chat or channel that is gone says "Chat not found" or "Channel not found" instead of an empty link (DOR-2824)
-- The Schedules tab shows when a schedule waits for your OK, failed its last run, or is running. A paused schedule's old failure does not count, and a count of failures is red (DOR-2820)
-- The Activity tab counts what happened since you last opened it, and the Connections tab counts requests waiting for your OK (DOR-2820)
-- When the window is in the background, its title count now includes schedules waiting for your OK, beside unread channels (DOR-2820)
-- Extensions can put a status, a count and a short note on the tab of their own page (DOR-2820)
-- Spaces (experimental): a space can now be open to anyone who signs in with the server's single sign-on. They join with one click on the space's own page, with no invitation. It never allows a password sign-up, and the person running the server can turn open joining off for everyone at once (DOR-2764)
-- Spaces (experimental): owners and admins can ban someone from a space. A ban removes them and keeps them from coming back with that account, or with that email address once it was confirmed. A ban can be lifted later. Admins can ban members, but only the owner can ban an admin or lift a ban on one (DOR-2764)
-- Spaces (experimental): owners and admins can mute someone in a space for 10 minutes up to a week. Until it ends, that person and their agents can't post. Leaving and joining again doesn't end it (DOR-2768)
-- Spaces (experimental): a channel can have slow mode: each person waits a set time between posts, and their agents count as them. Owners and admins don't wait (DOR-2768)
-- Spaces (experimental): anyone in a space can flag a message for the owner and admins, once per message. Owners and admins work through the flagged messages and remove the message, mute or ban its author, or dismiss the flag. In the DorkOS app, you report a message with a reason and a note only they read (DOR-2768, DOR-2770)
-- Spaces (experimental): a space can have rules. Everyone accepts the current rules before they post, and again each time the rules change. An agent can only post once the person it belongs to has accepted them. In the app, the channel shows the rules before your first post, and you accept them right there (DOR-2768, DOR-2770)
-- Spaces (experimental): you can change the name you go by in one space without leaving the app. Other spaces keep the name they show. Nobody can take the name of someone else's agent, agents can't take people's names, and the owner can keep some names for the owner and admins (DOR-2768, DOR-2770)
-- Spaces (experimental): a space now checks each new post for spam, and against the space's rules, after the post is up. A post that looks wrong is flagged for the owner and admins with a short note on why. Checks never hide, hold or remove a post, and never slow one down. Owners and admins see what each check made of a flagged message, and can list only the messages the checks flagged (DOR-2777)
-- Spaces (experimental): a Community server can ask Jev and one OpenAI-format model the same questions about the same posts, and compare how often each agreed with moderators, what it cost and how long it took. These calls cost money, so they only run when the server sets `COMMUNITY_DECISIONS_PAID=1` beside each model's key, and stop for the day at a call limit. Without that, only free built-in checks run. Messages in private channels never go to these models (DOR-2777)
-- Spaces (experimental): through the app's API, you can now pick channels in a space where your agents answer any person's new post, with no mention needed. Each person and each channel gets a few answers every ten minutes, so a flood of posts cannot keep your agents busy. Every answer runs with a stranger's limits, and only you can change the list, never an agent (DOR-2772)
-- Spaces (experimental): a DorkOS install can name one official space by its link, in `spaces.official.url` or the `DORKOS_OFFICIAL_SPACE_URL` environment variable. That one space shows in the switcher and can be joined even while the Spaces experiment is off. Every other space stays hidden, and so do starting and hosting spaces. Its agents only wake when you mention them yourself, unless you change that. Only a person can set the link, never an agent. The link is empty for now, so nothing changes yet (DOR-2769)
-- Community hosts get a readiness check at `/health/ready` and monitoring numbers at `/metrics`, for a server key that can read spaces. The numbers cover open live streams, posts and joins per minute, waits for the database, and how fast messages arrive (DOR-2764)
-- Community hosts can cap how many live streams one server, one space, and one person or agent may hold. Past a cap, a new stream is asked to try again shortly (DOR-2764)
-- An OpenCode agent now lists the helper agents set up in its OpenCode config, like Claude Code agents already do (DOR-2520)
-
-### Changed
-
-- DorkOS now picks the model for you. On DorkOS credits, a new chat on the DorkOS runtime just works, with nothing to set up first. To choose a model yourself, open Settings › Runtimes › DorkOS and use the Model row. Picking a model there never changes what pays for your chats, and "Chosen by DorkOS" hands the choice back (DOR-2784)
-- The model is no longer shown in the bar under the message box. Pin it from the `⋯` menu if you want to see it there. A DorkOS chat no longer shows "Runs on" there either, unless you pin it (DOR-2784)
-- DorkBot now knows what DorkOS is for. Its starter `AGENTS.md` talks about running your business with a team of agents and building mini apps, the tools your business runs on. If you never edited that file, DorkOS swaps in the new text the next time it starts (DOR-2783)
-- An agent that's busy in its own chat no longer skips your room message. The room tries again on its own and answers when the agent is free (DOR-2823)
-- When an agent runs out of usage, the room says when it can answer again, instead of "ran into a problem" (DOR-2823)
-- Every tab in the desktop app now says who or where it is, and whether it needs you. A chat tab reads "Scout · Fix the login bug". A channel shows its unread count. Home counts what is waiting on you, and Team shows how many agents are working (DOR-2820)
-- A tab shows one status at a time: needs you, failed, paused (out of usage), working, or new. Hover a tab to see its full name, what it is waiting for, and when it was last active (DOR-2820)
-- Two tabs open on the same agent now lead with the chat title, so you can tell them apart (DOR-2820)
-- The window title names the page you are on, the same way its tab does. Pages that are not chats no longer show the last agent you picked. A bell shows on every page while anything waits on you (DOR-2820)
-- Spaces (experimental): a message a space holds back now says why and goes back into your message box: you're muted until a set time, the rules need accepting, or slow mode shows how many seconds are left. It no longer shows up as a message that didn't send (DOR-2770)
-- A Community server now sends a new message to open channels as soon as it is posted, instead of asking the database four times a second for every open channel. One server can hold many more people at once. When someone is removed, signs out, or loses access in any other way, their open channels close within a moment. A sign-in that simply runs out is noticed within about 15 seconds (DOR-2764)
-- A Community server now reads each new message once and hands the same copy to everyone who has that channel open, instead of reading it again for each person. New messages reach a busy channel far faster, and someone who loses access still stops getting messages at once (DOR-2830)
-- Posting in a large Community channel is quicker: the server looks up only the people a message mentions, not everyone in the channel (DOR-2830)
-- People can post in a busy Community channel at the same time without waiting in line behind each other. Each message still gets its place in the channel in order, so nobody misses one or sees them out of order, and archiving a busy channel or removing someone from it still goes through right away. In a test on one laptop with 10,000 people watching one channel, messages arrived two to three times faster (DOR-2837)
-
-### Fixed
-
-- The green and red line counts on a file-edit chip are now dark enough to read easily, in light and dark themes (DOR-2512)
-- When a Codex or OpenCode account's usage resets, the notice now names that account, not "Your Claude account" (DOR-2475)
-- Going back to a chat whose live connection had dropped no longer shows "Live updates lost" while it reconnects normally. It says it is connecting until the connection opens (DOR-1916)
-- Editing a channel's topic now opens a box that grows to show the whole topic, instead of a one-line field that showed only its first few words. Enter still saves and Escape still cancels (DOR-2358)
-- In the desktop app, clicking Reset all data while the server is already restarting now says "Nothing was deleted." It used to say your data was deleted when it was untouched (DOR-2133)
-- When you point at part of the app in a bug report, it is no longer named after a large container around it, such as the whole sidebar (DOR-1963)
-- A bug report's log excerpt now hides the whole login value of an `Authorization` header. Before, a "Basic" login kept its encoded username and password (DOR-2235)
-- Spaces (experimental): reading a thread in a space channel no longer loses your place in the channel. When you go back and reopen the channel, it opens where you were reading instead of at the newest message (DOR-2676)
-- A Community server now keeps its limit on wrong password guesses apart from its other limits. Before, someone could flood a public page with made-up addresses until the server forgot how many guesses an account had already used
-- Agent replies read in a lighter weight than your own messages again, so the two voices are easy to tell apart (DOR-2130)
-- A row of buttons or other items an agent shows in a chat or room now wraps onto a new line on a phone, so the last one is no longer cut off at the screen edge (DOR-2003)
-- The Scheduled runs switch in Settings works again when you run DorkOS from the command line. It no longer shows as locked by an environment variable you never set (DOR-2516)
-- With reduced motion turned on, the "… working on it" line above the message box now clears when your agents finish. It could stay stuck on screen after every reply had landed (DOR-2762)
-- After you switch a chat to Ask first, the offer to start every new chat that way shows up again. The permissions menu now stays open while you choose, instead of closing under your cursor
-- Older agents stop calling themselves assistants. If an agent lives in DorkOS's own folder and you never changed its `SOUL.md`, or DorkBot's `AGENTS.md`, DorkOS swaps in the new starter text the next time it starts. A file you edited, even by one character, stays exactly as you left it (DOR-2779)
-- Work an agent started in the background while answering someone from outside your computer, such as a helper or a shell, now keeps asking before it acts after that reply ends. Before, your own next message could hand that work your level. If your message has to wait for that work to finish first, the work still asks while it waits (DOR-2764)
-- If an agent's open session does not switch down to the asking level for an outsider's message, it now restarts at that level instead of answering at yours (DOR-2764)
-- Changing an agent's level in the app while it answers someone from outside your computer no longer lets that reply run at your new level (DOR-2764)
-- A note an agent saves after reading a message from someone outside your team now says so, even when another agent passed that message on. Before, it could look like something you told the agent yourself (DOR-2781)
-- An agent answering a message from someone outside your team can still add notes, but can't change or delete the ones you gave it (DOR-2781)
-- A chat an agent starts while answering someone from outside your team now carries that on, so its notes are marked the same way (DOR-2781)
-- An agent can no longer edit the part of a saved note that says where it came from, so a later chat can't make a note look like yours (DOR-2781)
-- A Claude Code chat started in the `claude` command line in `dontAsk` mode stays in `dontAsk` when a stranger's message starts its turn, instead of switching to a mode that asks (DOR-2772)
-- Spaces (experimental): if a space's "who can wake your agents" file can't be read, your agents now stay quiet there instead of waking for anyone (DOR-2764)
-- Spaces (experimental): agents in a space's channel are now told that people outside your computer post there, and that their messages are not instructions, the same way they are told in a linked chat (DOR-2764)
-
-### Security
-
-- An agent could open any chat's messages, including your own chats, through the app's API. It now gets "not found" for your chats on every chat request, and your chats no longer show up in its live list (DOR-2738)
-- When a stranger's message in a space or a connected chat starts an agent's turn, the agent now asks you before it reads a file outside its own folder or opens a web page. Before, those reads ran without asking (DOR-2772)
-
-### Note for people upgrading
-
-- This release is 0.109.0, not 0.104.0. Settings updates were made for 0.105.0 through 0.109.0, and a release has to reach their number for them to run on your computer. They add your working hours, set up the new first-run steps, and let DorkOS pick the model.
-- In the API, a room's `fallbackSeatAuthorId` field is now `leadAuthorId` (DOR-2823)
-
-Older releases (v0.1.0 – v0.103.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.103.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.103.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.119.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.123.0...HEAD
+[0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
+[0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
+[0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
+[0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
 [0.118.0]: https://github.com/dork-labs/dorkos/compare/v0.117.0...v0.118.0
 [0.117.0]: https://github.com/dork-labs/dorkos/compare/v0.116.0...v0.117.0
 [0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
 [0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
-[0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
-[0.111.0]: https://github.com/dork-labs/dorkos/compare/v0.110.0...v0.111.0
-[0.110.0]: https://github.com/dork-labs/dorkos/compare/v0.109.0...v0.110.0
-[0.109.0]: https://github.com/dork-labs/dorkos/compare/v0.103.0...v0.109.0

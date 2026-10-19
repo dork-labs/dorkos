@@ -78,22 +78,29 @@ export default defineConfig([
     languageOptions: { globals: globals.node },
   },
 
-  // ...except the two files that run in a page, not in Node. They are the
-  // client half of the visual-companion skill's preview server (`boot.js`
-  // sets the theme before first paint, `helper.js` is the rest): they talk to
-  // `window`, `document` and `WebSocket` and never see a `process`. Scoped to
-  // the files rather than to the skill directory, so the Node-side siblings
-  // (`server.cjs`, `vc.cjs`) keep the Node environment above.
+  // ...except the files that run in a page, not in Node. They are the client
+  // half of the visual-companion skill's preview server (`boot.js` sets the
+  // theme before first paint, `helper.js` is the frame, `review.js` the review
+  // layer, `director.js` the prototype kit) and the example prototype's
+  // scripts: they talk to `window`, `document` and `WebSocket` and never see a
+  // `process`. Scoped to the files rather than to the skill directory, so the
+  // Node-side siblings (`server.cjs`, `vc.cjs`) keep the Node environment above.
   {
-    files: ['.agents/skills/visual-companion/scripts/{boot,helper}.js'],
+    files: [
+      '.agents/skills/visual-companion/scripts/{boot,helper,review,director}.js',
+      '.agents/skills/visual-companion/examples/prototype/src/*.js',
+    ],
     languageOptions: { globals: globals.browser },
   },
 
-  // The skill's tests are Node programs that hand callbacks to Playwright's
-  // `page.evaluate`, which run in the page. One file holds both, so it gets
-  // both environments.
+  // The skill's tests (and its note cropper) are Node programs that hand
+  // callbacks to Playwright's `page.evaluate`, which run in the page. One file
+  // holds both, so it gets both environments.
   {
-    files: ['.agents/skills/visual-companion/tests/*.cjs'],
+    files: [
+      '.agents/skills/visual-companion/tests/*.cjs',
+      '.agents/skills/visual-companion/scripts/crop.cjs',
+    ],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 

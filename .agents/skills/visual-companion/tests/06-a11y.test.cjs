@@ -41,6 +41,12 @@ test.after(async () => {
 // Resolve axe's checked nodes back to elements, and report which of the
 // wanted classes had at least one element (or descendant) contrast-checked.
 async function axe(page, wanted) {
+  // The bar fades in when it expands (and peeks on a first visit); a contrast
+  // check mid-fade reads blended colours, so wait for it to settle.
+  await page.waitForFunction(() => {
+    const bar = document.querySelector('.vc-bar');
+    return !bar || bar.getAnimations({ subtree: true }).every((a) => a.playState !== 'running');
+  });
   await page.addScriptTag({ path: AXE });
   return page.evaluate(async (wanted) => {
     const r = await window.axe.run(document, {
@@ -185,12 +191,15 @@ test('every chrome control is at least 24×24 and shows a 2px brand focus ring',
   await page.goto(r.url);
   await page.locator('[data-choice="a"]').click();
   await page.evaluate(() => document.querySelector('.vc-bar').classList.add('vc-show'));
+  // The collapsed handle is hidden while the bar is expanded; it's checked at rest below.
   const sizes = await page.$$eval('.vc-bar button, .vc-send-btn, .vc-compare-handle', (els) =>
-    els.map((e) => [
-      e.getAttribute('aria-label') || e.textContent.trim(),
-      e.offsetWidth,
-      e.offsetHeight,
-    ])
+    els
+      .filter((e) => e.offsetParent !== null)
+      .map((e) => [
+        e.getAttribute('aria-label') || e.textContent.trim(),
+        e.offsetWidth,
+        e.offsetHeight,
+      ])
   );
   for (const [name, w, h] of sizes) assert.ok(w >= 24 && h >= 24, `${name} is ${w}×${h}`);
   // Keyboard: Tab from the top lands in the bar first, and the bar reveals itself.
@@ -236,7 +245,7 @@ test('every chrome control is at least 24×24 and shows a 2px brand focus ring',
   await page.close();
 });
 
-test('the bar is hidden at rest and appears when the pointer nears the top', async () => {
+test('at rest the bar is a visible handle; near the top it expands to the full controls', async () => {
   const dir = project();
   dirs.push(dir);
   const r = vc(dir, [
@@ -252,14 +261,19 @@ test('the bar is hidden at rest and appears when the pointer nears the top', asy
   await page.reload();
   await page.mouse.move(600, 500);
   await page.waitForTimeout(300);
-  const op = () => page.evaluate(() => getComputedStyle(document.querySelector('.vc-bar')).opacity);
-  assert.equal(await op(), '0');
+  const vis = (sel) =>
+    page.evaluate((s) => getComputedStyle(document.querySelector(s)).display !== 'none', sel);
+  assert.equal(await vis('.vc-handle'), true, 'handle visible at rest');
+  assert.equal(await vis('.vc-bar-full'), false, 'full controls collapsed at rest');
+  const [w, h] = await page.$eval('.vc-handle', (e) => [e.offsetWidth, e.offsetHeight]);
+  assert.ok(w >= 24 && h >= 24, `handle is ${w}×${h}`);
   await page.mouse.move(600, 20);
   await page.waitForTimeout(250);
-  assert.equal(await op(), '1');
+  assert.equal(await vis('.vc-bar-full'), true, 'expanded near the top');
+  assert.equal(await vis('.vc-handle'), false);
   await page.mouse.move(600, 500);
   await page.waitForTimeout(700);
-  assert.equal(await op(), '0');
+  assert.equal(await vis('.vc-bar-full'), false, 'collapses again');
   await page.close();
 });
 

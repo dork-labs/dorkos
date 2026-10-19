@@ -370,8 +370,29 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # Where the space server lives (ci/space-server.env, DOR-3007): its
+      # KEY=value lines become this job's environment, read below as
+      # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
+      # filter cannot, and this job has none.
+      - name: Read where the space server lives
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build
+      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/decisions build
+      # The space server's code lives in apps/server and its package, web page
+      # and image in apps/community (server-merge step 7d). Each half's tests
+      # read the other's files, but an affected-only run picks packages by the
+      # files a change touched, so a change to one half alone would skip the
+      # other half's checks until the merge queue. This job runs on every pull
+      # request, so it checks both halves here, whatever changed.
+      - name: Check both halves of the space server
+        run: |
+          pnpm --filter @dorkos/community typecheck
+          pnpm --filter @dorkos/community test
+          cd apps/server
+          pnpm exec tsc -p tsconfig.spaces.json
+          # The archive cross-checks need unzip, bsdtar and python3, which only the
+          # test shards install; they test space code alone, which the shards run.
+          pnpm exec vitest run src/services/spaces --exclude '**/zip-cross-tools.test.ts'
       - name: Assert community HTTP paths against real Postgres
         env:
           COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community
@@ -388,8 +409,8 @@ jobs:
         with:
           name: community-browser-evidence
           path: |
-            apps/community/browser-report.json
-            apps/community/test-results/
+            ${{ env.SPACE_DIR }}/browser-report.json
+            ${{ env.SPACE_DIR }}/test-results/
           if-no-files-found: ignore
 
   # The real packaged local-agent journey runs on the queue's combined tree,
@@ -455,6 +476,13 @@ jobs:
         with:
           fetch-depth: 2
 
+      # Where the space server lives (ci/space-server.env, DOR-3007): its
+      # KEY=value lines become this job's environment, read below as
+      # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
+      # filter cannot, and this job has none.
+      - name: Read where the space server lives
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
+
       # Decides whether the proof runs, from the one list in
       # scripts/community-packaged-scope.sh. No `if:` of its own, so this
       # required job never skips it; it writes `run=true|false` and the two
@@ -508,7 +536,18 @@ jobs:
           echo "run=$verdict" >> "$GITHUB_OUTPUT"
       - name: Build and test without public network access
         if: steps.scope.outputs.run == 'true'
-        run: bash apps/community/acceptance/run.sh
+        run: bash "$SPACE_DIR/acceptance/run.sh"
+      # The release image is the root Dockerfile's `space` target (server-merge step 7f),
+      # which the acceptance image above does not build. Build it here, amd64 only and
+      # never pushed, so its ignore list, its package check and its layout are proven
+      # before a release tag first builds it. The build itself fails if the image would
+      # install a forbidden package (scripts/space-image/runtime-packages.mjs).
+      - name: Build the release space image
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          docker build --target space -t dorkos-space-check .
+          docker run --rm --entrypoint sh dorkos-space-check -c \
+            'test -f dist-server/main.js && test -f dist/index.html && ls migrations/*.sql >/dev/null && test "$(id -un)" = node'
       - name: Preserve packaged community reports
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -614,7 +653,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The community archive cross-checks (apps/community/src/archive/__tests__/
+      # The community archive cross-checks (apps/server/src/services/spaces/archive/__tests__/
       # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
       # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
       # quietly drop them. The runner image ships unzip and python3; bsdtar comes from

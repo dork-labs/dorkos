@@ -4,7 +4,7 @@
  *
  * @module memory/store
  */
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { MEMORY_OVERSIZE_WARNING } from '@dorkos/shared/convention-files';
@@ -12,6 +12,7 @@ import {
   AgentMemoryRefSchema,
   MemoryCapExceededError,
   MemoryIOError,
+  MemoryNoteError,
   MemorySelectorSchema,
   MemorySnapshotSchema,
   MemoryWriteOpSchema,
@@ -22,9 +23,10 @@ import {
   type MemoryWriteResult,
 } from '@dorkos/shared/memory-provider';
 
-import { MEMORY_MAX_CHARS } from './constants.js';
+import { MEMORY_MAX_CHARS, MEMORY_NOTE_MAX_CHARS } from './constants.js';
+import { ensureNotesDir, noteTemplate, parseFrontmatter } from './notes.js';
 import { applyMemoryOp } from './ops.js';
-import { resolveMemoryFile } from './paths.js';
+import { resolveMemoryFile, resolveNoteFile } from './paths.js';
 import { defaultMemoryTemplate } from './scaffold.js';
 
 /**
@@ -151,6 +153,12 @@ function trimDanglingSurrogate(text: string): string {
  * scaffold — this is how every agent created before this feature acquires the
  * file.
  *
+ * **An op that names a `note` writes that notes file instead**, under the same
+ * lock-rename-refuse discipline and the same stamps, against the larger
+ * {@link MEMORY_NOTE_MAX_CHARS}. Only an `add` with a `description` creates
+ * one; editing a note that does not exist is refused; removing its last line
+ * deletes the file.
+ *
  * @param ref - Whose memory to change.
  * @param op - The change.
  * @throws {MemoryCapExceededError} When the result would exceed the cap.
@@ -166,7 +174,11 @@ export async function writeMemory(
 ): Promise<MemoryWriteResult> {
   const parsedRef = AgentMemoryRefSchema.parse(ref);
   const parsedOp = MemoryWriteOpSchema.parse(op);
-  const file = resolveMemoryFile(parsedRef.agentPath);
+  const note = parsedOp.note;
+  const file = note
+    ? resolveNoteFile(parsedRef.agentPath, note)
+    : resolveMemoryFile(parsedRef.agentPath);
+  const cap = note ? MEMORY_NOTE_MAX_CHARS : MEMORY_MAX_CHARS;
 
   return withFileLock(file, async (write) => {
     let existing: string | null;
@@ -176,7 +188,18 @@ export async function writeMemory(
       throw new MemoryIOError('read', err);
     }
     const created = existing === null;
-    const before = existing ?? defaultMemoryTemplate();
+    let before: string;
+    if (!note) {
+      before = existing ?? defaultMemoryTemplate();
+    } else if (existing !== null) {
+      before = existing;
+    } else if (parsedOp.action !== 'add') {
+      throw new MemoryNoteError('no-such-note', note);
+    } else if (!parsedOp.description) {
+      throw new MemoryNoteError('needs-description', note);
+    } else {
+      before = noteTemplate(note, parsedOp.description);
+    }
     const after = applyMemoryOp(before, parsedOp);
 
     // Strictly greater: a write that lands exactly ON the cap is allowed, so the
@@ -186,11 +209,21 @@ export async function writeMemory(
     // available from inside. (Equal length passes too: a correction that swaps
     // one note for another of the same size is not what the cap is defending
     // against.)
-    if (after.length > MEMORY_MAX_CHARS && after.length > before.length) {
-      throw new MemoryCapExceededError(before.length, after.length, MEMORY_MAX_CHARS);
+    if (after.length > cap && after.length > before.length) {
+      throw new MemoryCapExceededError(before.length, after.length, cap);
     }
 
     try {
+      // Removing a note's last line removes the note: a file of nothing but its
+      // header is not a note, and leaving it would keep it in every list (and
+      // in the tidy count) with no way left to get rid of it.
+      if (note && parseFrontmatter(after).body.trim() === '') {
+        await rm(file, { force: true });
+        return { created: false, chars: 0, bytes: 0 };
+      }
+      // The folder (and its `.gitignore`) exists before the first note in it
+      // does; the atomic write puts its temp file beside the target.
+      if (note && created) await ensureNotesDir(parsedRef.agentPath);
       await write(after);
     } catch (err) {
       // Everything above this line is a refusal the caller could act on. This is
@@ -216,8 +249,8 @@ export async function writeMemory(
  * @throws {MemoryMatchError} When it appears twice or not at all.
  */
 export async function forgetMemory(ref: AgentMemoryRef, selector: MemorySelector): Promise<void> {
-  const { text } = MemorySelectorSchema.parse(selector);
-  await writeMemory(ref, { action: 'remove', oldText: text });
+  const { text, note } = MemorySelectorSchema.parse(selector);
+  await writeMemory(ref, { action: 'remove', oldText: text, ...(note ? { note } : {}) });
 }
 
 /**

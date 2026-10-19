@@ -146,7 +146,14 @@ export interface PendingAgentCompaction {
  */
 export type DispatchLifecycleEvent =
   | { phase: 'started'; messageId: string; sessionId: string }
-  | { phase: 'settled'; messageId: string; sessionId: string; outcome: 'ok' | 'failed' }
+  | {
+      phase: 'settled';
+      messageId: string;
+      sessionId: string;
+      outcome: 'ok' | 'failed';
+      /** The runtime's words when it refused the turn before the agent saw it. */
+      reason?: string;
+    }
   | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
 
 /** Inputs for {@link dispatchMessage}. */
@@ -255,8 +262,11 @@ export interface DispatchMessageOpts {
   queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
-  /** Fired once when the detached turn settles, however it settles. */
-  onSettled?(outcome: 'ok' | 'failed'): void;
+  /**
+   * Fired once when the detached turn settles, however it settles; `refusal`
+   * says why when the runtime refused it before the agent saw it (DOR-2994).
+   */
+  onSettled?(outcome: 'ok' | 'failed', refusal?: string): void;
   /** Receives the `seq` of this turn's `turn_start` — its identity on the stream. */
   onTurnStart?(seq: number): void;
   /** Server-owned receipt for a protected automatic follow-up. */
@@ -376,6 +386,12 @@ export interface DispatchPlan {
   budgetMs: number;
   /** When it started spending that budget. */
   startedWaitingAt: number;
+  /**
+   * When it first waited on a person's answer the session's turn was parked on
+   * (DOR-3113). Set from then on, it keeps waiting while that turn runs, the
+   * minutes after the answer included, up to the park ceiling.
+   */
+  personWaitSince?: number;
   /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be

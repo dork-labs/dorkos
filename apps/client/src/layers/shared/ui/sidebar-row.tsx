@@ -142,7 +142,7 @@ export const sidebarRowVariants = cva(
     // line and `py-1` is what keeps a one-line row on it exactly. A row that
     // earned a second line grows past it, which is the point — height carries
     // meaning here.
-    'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden focus-visible:ring-2',
+    'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-control outline-hidden focus-visible:ring-2',
     PRESS_ROW,
     SIDEBAR_ROW_INSET
   ),

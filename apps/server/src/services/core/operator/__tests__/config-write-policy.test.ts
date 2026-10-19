@@ -95,6 +95,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
       'connectors.rawMcpServers[].url',
+      // Whether the Docs experiment is on (DOR-2993).
+      'docs.enabled',
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.approvedToRun',
@@ -199,6 +201,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // Which found account folders Settings stops offering: it curates the
       // roster, and its only writer is the dismiss route (claude-account-ui §7.4).
       'runtimes.claudeCode.dismissedFolders',
+      // How many agents may run at once: memory on this machine (DOR-3012).
+      'runtimes.claudeCode.maxWarmProcesses',
       // Not for the reason its neighbours are here: warm sessions are
       // safety-neutral and cost memory. It is the wipe floor — a person who
       // turned it off wanted the gigabyte back, and the Control Center's 'Warm

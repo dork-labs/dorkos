@@ -124,6 +124,12 @@ function mountProfile(
     listRoomSessions,
     listRooms: vi.fn().mockResolvedValue([]),
     reportError: vi.fn().mockResolvedValue(undefined),
+    openDirectChat: vi.fn().mockResolvedValue({
+      sessionId: 'direct-chat',
+      sessionIds: ['direct-chat'],
+      roomId: 'dm-room',
+      agentPath: member.agent?.projectPath ?? '/agents/unknown',
+    }),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
 
@@ -258,10 +264,10 @@ describe('Open session, from inside a room', () => {
     expect(view.where().search.dir).toBeUndefined();
   });
 
-  it('falls back to the directory when the room has no binding for that agent yet', async () => {
+  it('falls back to the agent’s Direct chat when the room has no binding for it yet', async () => {
     // A room binds a session on the first TURN, not at join. An agent that has
     // not spoken here has no session to open, and the honest destination is the
-    // one every other surface uses.
+    // one every other surface uses: the agent's Direct chat.
     const view = mountProfile(WARDEN, {
       at: `/channels?id=${ROOM_ID}`,
       bindings: [{ authorId: 'author-scout', sessionId: 'scout-in-general' }],
@@ -272,12 +278,12 @@ describe('Open session, from inside a room', () => {
     await waitFor(() => {
       expect(view.where()).toEqual({
         pathname: '/session',
-        search: { launchRef: 'test-location' },
+        search: { session: 'direct-chat', launchRef: 'test-location', draft: '1' },
       });
     });
   });
 
-  it('falls back to the directory when the bindings read fails', async () => {
+  it('falls back to the agent’s Direct chat when the bindings read fails', async () => {
     const view = mountProfile(WARDEN, {
       at: `/channels?id=${ROOM_ID}`,
       listRoomSessions: vi.fn().mockRejectedValue(new Error('nope')),
@@ -288,15 +294,16 @@ describe('Open session, from inside a room', () => {
     await waitFor(() => {
       expect(view.where()).toEqual({
         pathname: '/session',
-        search: { launchRef: 'test-location' },
+        search: { session: 'direct-chat', launchRef: 'test-location', draft: '1' },
       });
     });
   });
 });
 
 describe('Open session, from anywhere else', () => {
-  it('still opens the directory, and asks no room anything', async () => {
-    // The docked profile and every non-room route resolve exactly as they did.
+  it('opens the agent’s Direct chat, and asks no room anything (S12)', async () => {
+    // Talk, from the docked profile and every non-room route: the agent's one
+    // standing chat with you, never whichever chat is newest.
     const view = mountProfile(WARDEN, { at: '/session?dir=/somewhere/else' });
 
     await pressOpenSession();
@@ -304,7 +311,7 @@ describe('Open session, from anywhere else', () => {
     await waitFor(() => {
       expect(view.where()).toEqual({
         pathname: '/session',
-        search: { launchRef: 'test-location' },
+        search: { session: 'direct-chat', launchRef: 'test-location', draft: '1' },
       });
     });
     expect(view.listRoomSessions).not.toHaveBeenCalled();

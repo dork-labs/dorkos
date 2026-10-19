@@ -33,5 +33,8 @@ export function createMockSessionRelayTransport(): SessionRelayTransport {
     pauseSessionRelay: vi.fn().mockRejectedValue(notFound()),
     resumeSessionRelay: vi.fn().mockRejectedValue(notFound()),
     unlinkSessionRelay: vi.fn().mockRejectedValue(notFound()),
+    getSessionRelayPresence: vi.fn().mockRejectedValue(notFound()),
+    endSessionRelayPresence: vi.fn().mockRejectedValue(notFound()),
+    listSessionRelayDevices: vi.fn().mockRejectedValue(notFound()),
   };
 }

@@ -11,16 +11,19 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { bootstrapFirstHost, responseCookies } from '../src/__tests__/bootstrap-test-helper.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import {
+  bootstrapFirstHost,
+  responseCookies,
+} from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 // Host takedowns in the browser (task 1.2 of specs/community-host-takedown): the host page's Take
 // down section with its no-store warning and every evidence state, Try again and Release (with a

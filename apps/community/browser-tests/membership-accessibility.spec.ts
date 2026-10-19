@@ -10,16 +10,16 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults, Result } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { bootstrapFirstHost } from '../src/__tests__/bootstrap-test-helper.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { bootstrapFirstHost } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 // Accessibility proof (task 3.2) of specs/community-membership-journeys: every membership
 // surface of the Community site passes axe at desktop and 390px phone width, in light and dark,

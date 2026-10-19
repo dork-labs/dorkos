@@ -52,7 +52,7 @@ export function AttachmentThumbnail({
         </span>
       )}
       {caption && (
-        <span className="bg-background/85 absolute inset-x-0 bottom-0 flex items-center gap-1 truncate px-1.5 py-0.5 text-left text-[11px] leading-tight">
+        <span className="bg-background/85 text-2xs absolute inset-x-0 bottom-0 flex items-center gap-1 truncate px-1.5 py-0.5 text-left leading-tight">
           {pointed && <Crosshair className="size-3 shrink-0" aria-hidden />}
           <span className="truncate">{caption}</span>
         </span>
@@ -86,7 +86,7 @@ export function AttachmentThumbnail({
       {detail && onOpen ? (
         <Tooltip>
           <TooltipTrigger asChild>{body}</TooltipTrigger>
-          <TooltipContent className="max-w-72 font-mono text-[11px] break-all">
+          <TooltipContent className="text-2xs max-w-72 font-mono break-all">
             {detail}
           </TooltipContent>
         </Tooltip>

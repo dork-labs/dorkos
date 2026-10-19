@@ -23,10 +23,20 @@
 # slice. Every change to the driver on record came with one of these (#1916,
 # #1958, #1974, #1981, #1987, #1992, #2021):
 #
-#   apps/community/                      the service, its browser pages, its
-#                                        migrations, and the proof itself:
+#   $SPACE_DIR/, $SPACE_SRC_DIR/,        the service, its browser pages, its
+#   $SPACE_WEB_DIR/                      migrations, and the proof itself:
 #                                        acceptance/{Dockerfile,run.sh,run.mjs,
-#                                        driver.spec.ts}
+#                                        driver.spec.ts}. The three folders come
+#                                        from ci/space-server.env (DOR-3007):
+#                                        all apps/community today, and after the
+#                                        program merge the space's own folders
+#                                        inside apps/server and apps/client, so
+#                                        the rest of apps/server stays out
+#   ci/space-server.env                  where those folders are
+#   apps/client/vite.space.config.ts     the build of the space's web pages
+#   Dockerfile, .dockerignore            the space image is the Dockerfile's
+#                                        `space` target (step 7f)
+#   scripts/space-image/                 what the space image may install
 #   apps/{client,server}/src/…communit…  the local app's half of the journey:
 #                                        any file or directory named for
 #                                        communities, in ANY case, so the
@@ -42,6 +52,8 @@
 #   packages/shared/src/…communit…       the contracts both halves speak
 #                                        (community-adapter, community schemas),
 #                                        same case rule
+#   packages/shared/src/space-page/      what the space page and the space
+#                                        server share (server-merge step 7)
 #   packages/db/src/schema/communities/  the local mirror tables
 #                                        (community-mirrors.ts backs the
 #                                        proof's offline step)
@@ -83,18 +95,48 @@
 # The matching path (or the absence of one) goes to stderr. An EMPTY stdin
 # prints `false`. Exit status is 0 for a verdict.
 #
+# The space server's folders come from ci/space-server.env beside this
+# script's repository, or from the file SPACE_SERVER_ENV names (the fixture
+# suite uses that to score the layout after the program merge). A file that is
+# missing, or that leaves a folder empty, exits non-zero with no verdict, and
+# the job's step treats that as "run the proof".
+#
 # Hermetic, and pinned by scripts/test-community-packaged-scope.sh.
 
 set -euo pipefail
+
+space_env=${SPACE_SERVER_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ci/space-server.env}
+# shellcheck source=../ci/space-server.env
+source "$space_env"
+for key in SPACE_DIR SPACE_SRC_DIR SPACE_WEB_DIR; do
+  if [ -z "${!key:-}" ]; then
+    echo "$space_env does not set $key" >&2
+    exit 2
+  fi
+done
+
+# A folder as an anchored prefix: every regex metacharacter in it escaped, so a
+# dot in a folder name matches only a dot.
+folder() {
+  printf '^%s/' "$(printf '%s' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g')"
+}
 
 # "communit" in any case: `grep -i` would also loosen every other entry, so the
 # case rule lives in this one fragment instead.
 communit='[Cc][Oo][Mm][Mm][Uu][Nn][Ii][Tt]'
 
 SCOPE_PATTERNS=(
-  '^apps/community/'
+  "$(folder "$SPACE_DIR")"
+  "$(folder "$SPACE_SRC_DIR")"
+  "$(folder "$SPACE_WEB_DIR")"
+  '^ci/space-server\.env$'
+  '^apps/client/vite\.space\.config\.ts$'
+  '^Dockerfile$'
+  '^\.dockerignore$'
+  '^scripts/space-image/'
   "^apps/(client|server)/src/.*${communit}"
   "^packages/shared/src/.*${communit}"
+  '^packages/shared/src/space-page/'
   '^packages/db/src/schema/communities/'
   '^packages/cloud-api/'
   '^packages/connector-providers/'

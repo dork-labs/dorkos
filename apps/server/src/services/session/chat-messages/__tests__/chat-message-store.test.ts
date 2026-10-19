@@ -102,15 +102,23 @@ describe('ChatMessageStore — queue rows and threads', () => {
   });
 
   it('latestUnanswered is the newest open message from one chat to another', () => {
-    store.insert(message({ id: 'old', nonce: '00000001' }));
+    store.insert(message({ id: 'old', nonce: '00000001', status: 'delivered' }));
     store.insert(message({ id: 'newest', nonce: '00000002', status: 'working' }));
-    // Not candidates: answered, failed, a stop, a report, and the other direction.
+    // Not candidates: answered, failed, still waiting unread (DOR-2994), a stop,
+    // a report, and the other direction.
     store.insert(message({ id: 'answered', nonce: '00000003', status: 'replied' }));
     store.insert(message({ id: 'failed', nonce: '00000004', status: 'failed' }));
+    store.insert(message({ id: 'waiting', nonce: '00000007', status: 'queued' }));
     store.insert(message({ id: 'stop', nonce: null, kind: 'stop', status: 'delivered' }));
     store.insert(message({ id: 'report', nonce: '00000005', kind: 'report' }));
     store.insert(
-      message({ id: 'reverse', nonce: '00000006', fromSessionId: 'chat-b', toSessionId: 'chat-a' })
+      message({
+        id: 'reverse',
+        nonce: '00000006',
+        fromSessionId: 'chat-b',
+        toSessionId: 'chat-a',
+        status: 'delivered',
+      })
     );
 
     expect(store.latestUnanswered('chat-a', 'chat-b')?.id).toBe('newest');

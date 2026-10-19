@@ -141,7 +141,7 @@ export const PIN_DISPOSITIONS = {
    * accepted cost is stated rather than hidden: a warm process keeps the
    * memory snapshot it launched with, so an agent may not see its own new note
    * in that session until it relaunches for another reason or its slot is
-   * reclaimed — bounded in practice by LRU reclaim under `MAX_WARM_SESSIONS`
+   * reclaimed — bounded in practice by LRU reclaim under the warm ceiling
    * and the 4 h interaction park, NOT by the 5-minute idle reap, which only
    * bounds idle sessions. The block says so in its own text, and the resume
    * path re-reads per message.

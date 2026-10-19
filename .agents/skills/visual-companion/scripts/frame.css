@@ -806,6 +806,8 @@
 
 /* ======================= Frame chrome ======================= */
 @layer vc-chrome {
+  /* The bar is always there: collapsed to a handle ("3 / 15 ⋯") so people know
+     controls exist, expanded to the full set on hover or focus. */
   .vc-bar {
     position: fixed;
     top: 10px;
@@ -821,27 +823,63 @@
     color: hsl(var(--foreground));
     box-shadow: var(--vc-shadow-float);
     font: 500 12px/1 var(--font-sans);
-    opacity: 0;
-    transform: translateY(-4px);
-    pointer-events: none;
-    transition:
-      opacity 120ms var(--vc-ease-in),
-      transform 120ms var(--vc-ease-in);
   }
-  .vc-bar.vc-show,
-  .vc-bar:focus-within {
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-    transition:
-      opacity 150ms var(--vc-ease-out),
-      transform 150ms var(--vc-ease-out);
+  .vc-handle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .vc-handle .vc-icon,
+  .vc-handle svg {
+    width: 14px;
+    height: 14px;
+  }
+  .vc-handle:hover {
+    color: hsl(var(--foreground));
+  }
+  .vc-bar-full {
+    display: none;
+    align-items: center;
+    gap: 2px;
+  }
+  /* A focused handle stays (hiding it would drop focus to the page); it goes
+     once focus moves into the full set. */
+  .vc-bar.vc-show .vc-handle,
+  .vc-bar:has(.vc-bar-full :focus) .vc-handle,
+  .vc-bar:hover .vc-handle {
+    display: none;
+  }
+  .vc-bar.vc-show .vc-bar-full,
+  .vc-bar:focus-within .vc-bar-full,
+  .vc-bar:hover .vc-bar-full {
+    display: flex;
+    animation: vc-bar-in 150ms var(--vc-ease-out);
+  }
+  /* Arriving from another screen with the bar open: no entrance, no flash. */
+  .vc-bar.vc-noanim .vc-bar-full {
+    animation: none;
+  }
+  @keyframes vc-bar-in {
+    from {
+      opacity: 0;
+      transform: translateX(4px);
+    }
   }
   @media (hover: none) {
-    .vc-bar {
-      opacity: 1;
-      transform: none;
-      pointer-events: auto;
+    .vc-bar .vc-handle {
+      display: none;
+    }
+    .vc-bar .vc-bar-full {
+      display: flex;
     }
   }
   .vc-bar-group {
@@ -887,10 +925,7 @@
     height: 16px;
   }
   .vc-iconbtn:focus-visible,
-  .vc-chip:focus-visible,
-  .vc-note button:focus-visible,
-  .vc-note textarea:focus-visible,
-  .vc-pin:focus-visible {
+  .vc-chip:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 1px;
   }
@@ -903,8 +938,18 @@
     color: hsl(var(--foreground));
   }
   .vc-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    min-width: 24px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
     padding: 0 6px 0 0;
-    color: hsl(var(--muted-foreground));
+    color: hsl(var(--foreground));
     font-variant-numeric: tabular-nums;
   }
   .vc-dot {
@@ -926,8 +971,7 @@
   }
 
   /* Toast and chips */
-  .vc-toast,
-  .vc-hint {
+  .vc-toast {
     position: fixed;
     left: 50%;
     bottom: 16px;
@@ -946,8 +990,7 @@
       opacity 150ms var(--vc-ease-in),
       transform 150ms var(--vc-ease-in);
   }
-  .vc-toast.vc-show,
-  .vc-hint.vc-show {
+  .vc-toast.vc-show {
     opacity: 1;
     transform: translate(-50%, 0);
     transition:
@@ -957,8 +1000,7 @@
   .vc-toast b {
     font-weight: 600;
   }
-  .vc-toast span,
-  .vc-hint span {
+  .vc-toast span {
     color: hsl(var(--muted-foreground));
   }
   .vc-chip {
@@ -991,55 +1033,90 @@
     height: 14px;
   }
 
-  /* Send bar (screens with vc-wake): one primary action, only when there is something to send */
+  /* Reply dock: on wake screens it's always there. A status line (what you
+     picked, or what was sent and when), a reply box, and Send. */
   .vc-send {
     position: fixed;
     left: 50%;
     bottom: 16px;
     z-index: 2147483001;
     display: flex;
-    align-items: center;
-    gap: 12px;
-    max-width: min(560px, calc(100vw - 32px));
-    min-height: 44px;
-    padding: 6px 6px 6px 16px;
-    border-radius: 12px;
+    flex-direction: column;
+    gap: 6px;
+    width: min(600px, calc(100vw - 32px));
+    padding: 10px 10px 10px 14px;
+    border-radius: 14px;
     background: var(--vc-pop);
     color: hsl(var(--foreground));
     box-shadow: var(--vc-shadow-float);
     font: 400 13px/20px var(--font-sans);
     opacity: 0;
     transform: translate(-50%, 8px);
-    pointer-events: none;
-    transition:
-      opacity 150ms var(--vc-ease-in),
-      transform 150ms var(--vc-ease-in);
-  }
-  .vc-send.vc-show {
-    opacity: 1;
-    transform: translate(-50%, 0);
-    pointer-events: auto;
     transition:
       opacity 200ms var(--vc-ease-out),
       transform 200ms var(--vc-ease-out);
   }
-  .vc-send.vc-sent {
-    padding-right: 16px;
+  .vc-send.vc-show {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
   .vc-send-text {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: hsl(var(--muted-foreground));
+  }
+  .vc-send-text span {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
   .vc-send-text b {
     font-weight: 600;
+    color: hsl(var(--foreground));
+  }
+  .vc-send-text svg {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: hsl(var(--status-success));
+  }
+  .vc-send.vc-sent .vc-send-text {
+    color: hsl(var(--foreground));
+  }
+  .vc-send-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .vc-send-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 34px;
+    max-height: 120px;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--vc-tint);
+    color: inherit;
+    font: inherit;
+    line-height: 20px;
+    resize: none;
+    outline: none;
+  }
+  .vc-send-input::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+  .vc-send-input:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--ring));
   }
   .vc-send-btn {
     flex: none;
-    height: 32px;
+    height: 34px;
     padding: 0 14px;
     border: none;
-    border-radius: 8px;
+    border-radius: 9px;
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
     font: 500 13px/1 var(--font-sans);
@@ -1058,13 +1135,52 @@
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
-  .vc-send-btn[hidden] {
-    display: none;
+  .vc-send-btn:disabled {
+    background: var(--vc-tint);
+    color: hsl(var(--muted-foreground));
+    cursor: default;
+    transform: none;
   }
-  /* Toasts and hints stack above the send bar rather than on it. */
-  html.vc-has-send .vc-toast,
-  html.vc-has-send .vc-hint {
-    bottom: 72px;
+  /* Room for the dock at the end of the page, so it never covers the last choice. */
+  html.vc-has-send #claude-content {
+    padding-bottom: 150px;
+  }
+  html.vc-has-send body:not(:has(#claude-content)) {
+    padding-bottom: 140px !important;
+  }
+  /* The option that was sent says so, beside its check. */
+  .vc-choice.vc-was-sent::after {
+    content: 'Sent';
+    position: absolute;
+    top: 17px;
+    right: 44px;
+    color: hsl(var(--muted-foreground));
+    font: 500 11.5px/18px var(--font-sans);
+  }
+  .vc-own {
+    display: inline-block;
+    margin: 10px 0 0 !important;
+    padding: 4px 2px;
+    border: 0;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    font: 500 12.5px/1.4 var(--font-sans);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .vc-own:hover {
+    color: hsl(var(--foreground));
+  }
+  .vc-own:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Toasts stack above the reply dock rather than on it. */
+  html.vc-has-send .vc-toast {
+    bottom: 120px;
   }
   html.vc-shot .vc-send {
     display: none !important;
@@ -1079,115 +1195,8 @@
   .vc-pinning #claude-content * {
     cursor: crosshair !important;
   }
-  .vc-pins {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 2147482000;
-  }
-  .vc-pin {
-    position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    margin: -12px 0 0 -12px;
-    border: none;
-    border-radius: 999px 999px 999px 4px;
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-    box-shadow:
-      0 0 0 2px hsl(var(--background)),
-      var(--elevation-elevated);
-    font: 600 11px/1 var(--font-sans);
-    font-variant-numeric: tabular-nums;
-    pointer-events: auto;
-    cursor: pointer;
-    transform-origin: 0 100%;
-    animation: vc-pin-in 200ms var(--vc-ease-out);
-  }
-  .vc-pin[data-draft] {
-    background: hsl(var(--brand));
-    color: hsl(var(--brand-foreground));
-  }
-  @keyframes vc-pin-in {
-    from {
-      opacity: 0;
-      transform: scale(0.6);
-    }
-  }
-  .vc-note {
-    position: absolute;
-    z-index: 2147482001;
-    width: 264px;
-    padding: 10px;
-    border-radius: 12px;
-    background: var(--vc-pop);
-    color: hsl(var(--foreground));
-    box-shadow: var(--vc-shadow-float);
-    font: 400 13px/1.45 var(--font-sans);
-    pointer-events: auto;
-    cursor: auto;
-    animation: vc-note-in 150ms var(--vc-ease-out);
-  }
-  .vc-note * {
-    cursor: auto !important;
-  }
-  @keyframes vc-note-in {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-  }
-  .vc-note textarea {
-    display: block;
-    width: 100%;
-    min-height: 64px;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 8px;
-    background: var(--vc-tint);
-    resize: vertical;
-    font: inherit;
-  }
-  .vc-note textarea::placeholder {
-    color: hsl(var(--muted-foreground));
-  }
-  .vc-note-text {
-    padding: 2px 2px 8px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .vc-note-meta {
-    padding: 0 2px 6px;
-    color: hsl(var(--muted-foreground));
-    font-size: 11px;
-  }
-  .vc-note-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 8px;
-  }
-  .vc-note button {
-    height: 28px;
-    padding: 0 10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: hsl(var(--muted-foreground));
-    font: 500 12px/1 var(--font-sans);
-    cursor: pointer !important;
-  }
-  .vc-note button:hover {
-    background: var(--vc-tint);
-    color: hsl(var(--foreground));
-  }
-  .vc-note button.vc-primary {
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-  }
+  /* Pins, the note and the pick hint are drawn by review.js (one implementation
+     for fragments and prototypes); its styles join this layer at runtime. */
 
   .vc-sr {
     position: absolute;
@@ -1198,8 +1207,190 @@
     white-space: nowrap;
   }
 
+  /* Jump list: every screen, with a thumbnail and a sent mark. */
+  .vc-jump {
+    position: fixed;
+    top: 52px;
+    right: 12px;
+    z-index: 2147483001;
+    width: min(380px, calc(100vw - 24px));
+    max-height: min(70vh, 560px);
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    border-radius: 14px;
+    background: var(--vc-pop);
+    color: hsl(var(--foreground));
+    box-shadow: var(--vc-shadow-float);
+    font: 400 13px/1.35 var(--font-sans);
+    animation: vc-jump-in 150ms var(--vc-ease-out);
+  }
+  @keyframes vc-jump-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+  .vc-jump-filter {
+    margin: 2px 2px 6px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--vc-tint);
+    color: inherit;
+    font: inherit;
+    outline: none;
+  }
+  .vc-jump-filter:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+  }
+  .vc-jump-list {
+    overflow-y: auto;
+    outline: none;
+  }
+  .vc-jump-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .vc-jump-item[aria-selected='true'] {
+    background: var(--vc-hover);
+  }
+  .vc-jump-list:focus-visible .vc-jump-item[aria-selected='true'] {
+    box-shadow: inset 0 0 0 2px hsl(var(--ring));
+  }
+  .vc-jump-item.vc-current .vc-jump-title {
+    font-weight: 600;
+  }
+  .vc-jump-thumb {
+    flex: none;
+    width: 56px;
+    height: 36px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--vc-tint);
+  }
+  .vc-jump-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+  }
+  .vc-jump-text {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .vc-jump-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .vc-jump-sub {
+    color: hsl(var(--muted-foreground));
+    font-size: 11.5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .vc-jump-sent {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: hsl(var(--muted-foreground));
+    font-size: 11.5px;
+  }
+  .vc-jump-sent svg {
+    width: 13px;
+    height: 13px;
+  }
+  .vc-jump-empty {
+    padding: 14px;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Choices read as choices: a ring that fills when picked, a clear selected
+     state, a "Choose one" label. !important because a full document's own
+     (unlayered) styles would otherwise win over this layer. */
+  .vc-choose {
+    margin: 28px 0 10px !important;
+    color: hsl(var(--muted-foreground));
+    font: 600 12.5px/1.3 var(--font-sans);
+  }
+  .vc-choices {
+    margin-top: 0 !important;
+  }
+  .vc-choice {
+    position: relative !important;
+    padding-right: 52px !important;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, hsl(var(--foreground)) 16%, transparent) !important;
+    transition:
+      box-shadow 150ms var(--vc-ease-out),
+      background-color 150ms var(--vc-ease-out) !important;
+  }
+  .vc-choice:hover {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, hsl(var(--foreground)) 38%, transparent) !important;
+  }
+  .vc-choice.selected {
+    box-shadow: inset 0 0 0 2px hsl(var(--foreground)) !important;
+    background-image: linear-gradient(
+      color-mix(in srgb, hsl(var(--foreground)) 6%, transparent),
+      color-mix(in srgb, hsl(var(--foreground)) 6%, transparent)
+    ) !important;
+  }
+  .vc-choice:focus-visible {
+    outline: 2px solid hsl(var(--ring)) !important;
+    outline-offset: 2px !important;
+  }
+  .vc-radio {
+    position: absolute !important;
+    top: 16px;
+    right: 16px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, hsl(var(--foreground)) 45%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition:
+      background-color 150ms var(--vc-ease-out),
+      box-shadow 150ms var(--vc-ease-out);
+  }
+  .vc-radio svg {
+    width: 13px;
+    height: 13px;
+    color: hsl(var(--background));
+    opacity: 0;
+    transform: scale(0.6);
+    transition:
+      opacity 150ms var(--vc-ease-out),
+      transform 150ms var(--vc-ease-out);
+  }
+  .vc-multi .vc-radio {
+    border-radius: 6px;
+  }
+  .vc-choice.selected .vc-radio {
+    background: hsl(var(--foreground));
+    box-shadow: none;
+  }
+  .vc-choice.selected .vc-radio svg {
+    opacity: 1;
+    transform: none;
+  }
+
   /* Screenshot mode: no chrome, nothing mid-flight. */
   html.vc-shot .vc-bar,
+  html.vc-shot .vc-jump,
   html.vc-shot .vc-toast,
   html.vc-shot .vc-hint,
   html.vc-shot .vc-chip {
@@ -1207,18 +1398,19 @@
   }
 
   /* Reduced motion, real or toggled: movement becomes an instant change. */
+  html.vc-reduce .vc-bar-full,
+  html.vc-reduce .vc-jump,
+  html.vc-reduce .vc-choice,
+  html.vc-reduce .vc-radio,
+  html.vc-reduce .vc-radio svg,
   html.vc-reduce .vc-bar,
   html.vc-reduce .vc-toast,
-  html.vc-reduce .vc-hint,
-  html.vc-reduce .vc-chip,
-  html.vc-reduce .vc-pin,
-  html.vc-reduce .vc-note {
+  html.vc-reduce .vc-chip {
     transition: opacity 100ms linear !important;
     transform: none !important;
     animation: none !important;
   }
   html.vc-reduce .vc-toast,
-  html.vc-reduce .vc-hint,
   html.vc-reduce .vc-chip {
     transform: translate(-50%, 0) !important;
   }

@@ -41,7 +41,7 @@ export function SidebarHeaderBlock() {
     <SidebarHeader className="gap-2 px-2 py-3">
       <div className="flex items-center gap-1">
         {!isMobile && (
-          <CommunityContextSwitcher triggerClassName="text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2" />
+          <CommunityContextSwitcher triggerClassName="text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-control font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2" />
         )}
         <NewMenu />
       </div>

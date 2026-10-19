@@ -33,6 +33,10 @@
     "node_modules",
     "dist",
     "src/core-extensions/**",
+    // The space server's code (server-merge step 7) is checked by tsconfig.spaces.json, with
+    // the compiler options its own build uses, and emitted only by that build (into
+    // apps/community/dist-server/). It never runs from this program's dist/.
+    "src/services/spaces/**",
     // --- quarantined test files (DOR-508), with their error count ---
     "src/middleware/__tests__/mcp-auth.test.ts", // 1
     "src/middleware/__tests__/mcp-enabled.test.ts", // 2

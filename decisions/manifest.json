@@ -7702,6 +7702,36 @@
       "extractedFrom": null,
       "specSlug": "one-minute-onboarding",
       "amends": ["261008-052830"]
+    },
+    {
+      "id": "261017-153539",
+      "slug": "one-memory-per-agent",
+      "title": "One memory per agent — Claude Code auto-memory off on agent turns; DorkOS memory gains notes files",
+      "status": "accepted",
+      "created": "2026-10-17",
+      "extractedFrom": null,
+      "specSlug": "agent-memory",
+      "amends": ["0273"]
+    },
+    {
+      "id": "261017-211859",
+      "slug": "a-conversation-is-the-shared-log-a-session-is-private",
+      "title": "A conversation is the shared log; a session is one agent's private context seated behind it",
+      "status": "proposed",
+      "created": "2026-10-17",
+      "extractedFrom": null,
+      "specSlug": "conversation-model",
+      "amends": ["261006-235240", "261009-171114"]
+    },
+    {
+      "id": "261018-124422",
+      "slug": "one-program-before-launch",
+      "title": "The space server becomes part of the DorkOS server package before launch (server-merge step 7 moves before launch)",
+      "status": "accepted",
+      "created": "2026-10-18",
+      "extractedFrom": null,
+      "specSlug": "server-merge",
+      "amends": ["261006-235238", "261015-042933"]
     }
   ]
 }

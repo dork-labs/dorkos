@@ -121,7 +121,7 @@ export function AddMembersRow({
           >
             <Plus className="size-4" />
           </span>
-          <span className="text-brand text-sm font-medium">Add agents</span>
+          <span className="text-brand-text text-sm font-medium">Add agents</span>
         </button>
       )}
     </section>

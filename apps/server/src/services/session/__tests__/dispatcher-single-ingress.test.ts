@@ -70,6 +70,18 @@ const ALLOWED = new Map<string, string>([
       'the caller asked for, starting nothing of its own.',
   ],
   [
+    'apps/server/src/services/core/turn-power/turn-marks.ts',
+    'A decorator at the registration seam, on the terms `turn-levels.ts` is ' +
+      'one: it applies the marks a turn carries and hands back the generator ' +
+      'the caller asked for, starting nothing of its own (DOR-3036).',
+  ],
+  [
+    'apps/server/src/services/core/turn-power/teammate-turn-cost.ts',
+    'A decorator at the registration seam, on the terms `trace-runtime.ts` is one: ' +
+      'it reads what a teammate’s turn cost as the events pass and hands back the ' +
+      'generator the caller asked for, starting nothing of its own (DOR-2956).',
+  ],
+  [
     'apps/server/src/services/observability/trace-runtime.ts',
     'A decorator around an already-resolved runtime. It starts nothing; it wraps ' +
       'the generator the dispatcher asked for so the span covers the real turn.',

@@ -48,10 +48,10 @@ const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 /** Classify a cited file by the runner that executes it; files no runner executes are refused. */
 export function runnerFor(file: string): ProofRunner {
-  if (/^apps\/community\/src\/.+\.integration\.test\.ts$/.test(file)) return 'pg';
+  if (/^apps\/server\/src\/services\/spaces\/.+\.integration\.test\.ts$/.test(file)) return 'pg';
   if (/^apps\/community\/browser-tests\/.+\.spec\.ts$/.test(file)) return 'browser';
   if (
-    /^apps\/(community|server)\/src\/.+\.test\.tsx?$/.test(file) &&
+    /^apps\/(community|server|client)\/src\/.+\.test\.tsx?$/.test(file) &&
     !/\.(integration|s3)\.test\.tsx?$/.test(file)
   )
     return 'unit';

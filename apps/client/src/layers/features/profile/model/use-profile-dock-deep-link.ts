@@ -28,7 +28,7 @@ import {
 } from '@/layers/shared/model';
 import { asProfilePageId, type ProfilePageId } from './profile-stack';
 import { PROFILE_PANEL_ID, useProfileStore } from './profile-store';
-import { useDockedAgentPath } from './use-docked-agent';
+import { useDockedAgentPath, useScopeProfilePickToChat } from './use-docked-agent';
 
 /** What `?panel=` said before the profile had a docked home. */
 const LEGACY_PANEL_ID = 'agent-hub';
@@ -248,4 +248,15 @@ export function useLegacyProfileLinkRedirect(): void {
     inPlaceNav,
     transport,
   ]);
+}
+
+/**
+ * Every profile hook the app root mounts, in one call: the current deep link, the
+ * older links rewritten into it, and a profile picked elsewhere never following you
+ * into a chat (FB-60).
+ */
+export function useProfileRootLinks(): void {
+  useLegacyProfileLinkRedirect();
+  useProfileDockDeepLink();
+  useScopeProfilePickToChat();
 }

@@ -219,22 +219,25 @@ const SHARED_AGENT: { key: string; identity: TabIdentity; collapse: boolean }[] 
 function Strip({
   tabs,
   label,
+  activeKey: initialActiveKey,
 }: {
-  tabs: { key: string; identity: TabIdentity; collapse?: boolean }[];
+  tabs: { key: string; identity: TabIdentity; collapse?: boolean; pinned?: boolean }[];
   label: string;
+  activeKey?: string;
 }) {
-  const [activeKey, setActiveKey] = useState(tabs[0]?.key);
+  const [activeKey, setActiveKey] = useState(initialActiveKey ?? tabs[0]?.key);
   return (
     <div className="bg-muted/40 overflow-hidden rounded-lg border">
       <div className="flex min-w-0 overflow-x-auto px-2 py-1">
         <div role="tablist" aria-label={label} className="flex items-stretch gap-1">
-          {tabs.map(({ key, identity, collapse }) => (
+          {tabs.map(({ key, identity, collapse, pinned }) => (
             <AppTabItemView
               key={key}
               identity={identity}
               isActive={key === activeKey}
               canClose
               collapseAgent={collapse}
+              pinned={pinned}
               tabProps={{
                 ref: () => {},
                 tabIndex: key === activeKey ? 0 : -1,
@@ -249,6 +252,28 @@ function Strip({
     </div>
   );
 }
+
+/**
+ * The active tab among the kinds it sits next to: a pinned tab, a name long
+ * enough to cut, and a status dot on the active tab itself.
+ */
+const ACTIVE_AMONG: { key: string; identity: TabIdentity; pinned?: boolean }[] = [
+  { key: 'home', identity: routeTabIdentity('/'), pinned: true },
+  { key: 'working', identity: EVERY_STATUS.find((tab) => tab.key === 'working')!.identity },
+  {
+    key: 'long',
+    identity: chatTabIdentity({
+      agentName: 'Pixel',
+      visual: PIXEL,
+      chatTitle: 'Redesign the onboarding flow for teams joining from an invite link',
+      signals: {},
+      lastActiveAt: RECENTLY,
+    }),
+  },
+  { key: 'tasks', identity: routeTabIdentity('/tasks') },
+  { key: 'activity', identity: routeTabIdentity('/activity') },
+  { key: 'settings', identity: settingsTabIdentity('Appearance') },
+];
 
 /** Tab identity showcases: every route, every status, smart names, the hover card and the title. */
 export function TabIdentityShowcases() {
@@ -291,6 +316,18 @@ export function TabIdentityShowcases() {
             <div key={theme} className={cn(theme, 'bg-background text-foreground rounded-lg p-2')}>
               <p className="text-muted-foreground text-2xs mb-1">{theme}</p>
               <Strip tabs={EVERY_STATUS.slice(0, 7)} label={`Statuses, ${theme}`} />
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The active tab, both themes</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-col gap-3" data-testid="active-tab-themes">
+          {(['light', 'dark'] as const).map((theme) => (
+            <div key={theme} className={cn(theme, 'bg-background text-foreground rounded-lg p-2')}>
+              <p className="text-muted-foreground text-2xs mb-1">{theme}</p>
+              <Strip tabs={ACTIVE_AMONG} activeKey="working" label={`The active tab, ${theme}`} />
             </div>
           ))}
         </div>

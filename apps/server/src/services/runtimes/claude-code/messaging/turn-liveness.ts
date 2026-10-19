@@ -134,6 +134,13 @@ export interface TurnLiveness {
    * path's stdin hold, which asks only about subagents.
    */
   liveTaskCounts: () => LiveTaskCounts;
+  /**
+   * The id of every background task the latest level frame names as live, in
+   * the order it named them. What a turn's stream-end sweep asks before it
+   * calls a child lost: on a warm process a turn ending is not the process
+   * ending, so its children are still in sight (FB-18).
+   */
+  liveTaskIds: () => string[];
   /** How many settled notifications have not yet been delivered. */
   owedCount: () => number;
   /**
@@ -289,6 +296,7 @@ export function createTurnLiveness(): TurnLiveness {
       }
       return counts;
     },
+    liveTaskIds: () => [...liveTasks.keys()],
     owedCount: () => owed.size,
     expireOwed: () => {
       const abandoned = [...owed];

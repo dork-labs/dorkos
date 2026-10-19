@@ -16,10 +16,52 @@ import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
 } from '../private-messages/acceptance.js';
-import { emitLifecycle, pending, sweptWhileLaunching } from './state.js';
+import { emitLifecycle, inFlight, pending, sweptWhileLaunching } from './state.js';
 import { launchDispatch } from './launch.js';
 import { schedulePump } from './pump.js';
+import { projectorFor } from '../resolution/session-key-registry.js';
+import { SESSIONS } from '../../../config/constants.js';
 import type { DispatchPlan, PendingDispatch } from './types.js';
+
+/**
+ * Whether the session is parked on a person's answer (an approval, a question,
+ * a sign-in the runtime reports as an interaction).
+ *
+ * @param sessionKey - The session.
+ */
+function stillWaitingOnPerson(sessionKey: string): boolean {
+  return projectorFor(sessionKey)?.hasPendingInteractions() === true;
+}
+
+/**
+ * Whether a waiting trigger should keep waiting rather than give up (DOR-3113).
+ *
+ * Only while a live turn holds the session: an answer stranded by an
+ * interrupted stream has nobody to resume it, and a trigger must not wait
+ * hours behind it. Then while that turn is parked on a person, and once it
+ * has been, for as long as the same turn runs on after the answer. Never
+ * longer than an answer itself may take, and never for a transient trigger,
+ * which has no later moment worth running at (DOR-1239).
+ *
+ * @param plan - The waiting message.
+ */
+function waitsOnPerson(plan: DispatchPlan): boolean {
+  if (plan.transient || !inFlight.has(plan.sessionKey)) return false;
+  if (plan.personWaitSince === undefined && !stillWaitingOnPerson(plan.sessionKey)) return false;
+  const since = plan.personWaitSince ?? plan.startedWaitingAt;
+  return Date.now() - since < SESSIONS.INTERACTION_PARK_CEILING_MS;
+}
+
+/**
+ * Start a fresh wait budget for a trigger held behind a person's answer, so the
+ * answer arriving late in a wait does not leave it nothing to wait with.
+ *
+ * @param plan - The waiting message.
+ */
+function keepWaitingOnPerson(plan: DispatchPlan): void {
+  plan.personWaitSince ??= plan.startedWaitingAt;
+  plan.startedWaitingAt = Date.now();
+}
 
 /**
  * Give up on a message whose launch started no turn, or put it back in line.
@@ -72,6 +114,14 @@ export function returnToQueue(plan: DispatchPlan): void {
     // giving up on one is simply declining to re-park it.
     if (!plan.answered) return;
     const remainingMs = plan.budgetMs - (Date.now() - plan.startedWaitingAt);
+    // Waiting on a person is not a turn gone dark (DOR-3113): the trigger
+    // waits behind the approval, as long as the approval itself may wait,
+    // instead of being dropped as a failure after five minutes.
+    if (remainingMs <= 0 && waitsOnPerson(plan)) {
+      keepWaitingOnPerson(plan);
+      parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
+      return;
+    }
     if (remainingMs <= 0) {
       logger.warn('[MessageDispatcher] a refusing trigger spent its whole wait and was dropped', {
         sessionId: plan.sessionKey,
@@ -81,8 +131,12 @@ export function returnToQueue(plan: DispatchPlan): void {
       });
       // Reported here or nowhere: this plan's caller was answered
       // `accepted: true` at acceptance and has been waiting on the turn ever
-      // since, and no turn will now start for it.
-      plan.turn.onSettled?.('failed');
+      // since, and no turn will now start for it. The refusal names a wait on
+      // a person for a caller that reads it.
+      plan.turn.onSettled?.(
+        'failed',
+        stillWaitingOnPerson(plan.sessionKey) ? 'pending-interaction' : undefined
+      );
       return;
     }
     parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true, budgetMs: remainingMs });
@@ -323,24 +377,35 @@ export function parkDispatch(
     // the agent under the work it is waiting on. Its bound is the runtime's own
     // ceiling, `releaseAt`, where it is tried again like at any boundary.
     timer: setTimeout(
-      () => {
-        if (opts?.held !== undefined) {
-          if (pending.get(plan.messageId) !== entry) return;
-          entry.held = undefined;
-          schedulePump(entry.sessionKey);
-          return;
-        }
-        if (plan.transient) {
-          dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
-          return;
-        }
-        entry.launch({ budgetExhausted: true });
-      },
+      () => onBudgetSpent(),
       opts?.held !== undefined
         ? Math.min(2_147_483_647, Math.max(1, opts.held.releaseAt - Date.now() + 1))
         : (opts?.budgetMs ?? plan.budgetMs)
     ),
   };
+  /** What the wait bound does when it is reached; see the comment on `timer`. */
+  function onBudgetSpent(): void {
+    if (opts?.held !== undefined) {
+      if (pending.get(plan.messageId) !== entry) return;
+      entry.held = undefined;
+      schedulePump(entry.sessionKey);
+      return;
+    }
+    // Still behind a person's answer: wait a fresh budget on this same entry,
+    // rather than force a launch the parked turn's lock would refuse (DOR-3113).
+    if (waitsOnPerson(plan)) {
+      if (pending.get(plan.messageId) !== entry) return;
+      keepWaitingOnPerson(plan);
+      entry.timer = setTimeout(onBudgetSpent, plan.budgetMs);
+      entry.timer.unref?.();
+      return;
+    }
+    if (plan.transient) {
+      dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
+      return;
+    }
+    entry.launch({ budgetExhausted: true });
+  }
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
   if (notBefore !== undefined && notBefore > Date.now()) rearmDeadline();

@@ -134,7 +134,6 @@ export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { PaneResizeHandle } from './pane-resize-handle';
 export type { PaneResizeHandleProps } from './pane-resize-handle';
-export { HoverBorderGradient, type HoverBorderGradientProps } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export {
   IdentityAvatar,

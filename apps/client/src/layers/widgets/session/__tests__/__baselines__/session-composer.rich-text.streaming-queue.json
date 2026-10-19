@@ -36,7 +36,15 @@
         {
           "kind": "element",
           "tag": "div",
-          "classes": ["absolute", "left-0", "pointer-events-none", "right-0", "top-0"],
+          "classes": [
+            "[--scan-highlight:hsl(var(--background))]",
+            "absolute",
+            "dark:[--scan-highlight:hsl(var(--foreground))]",
+            "left-0",
+            "pointer-events-none",
+            "right-0",
+            "top-0"
+          ],
           "attrs": {
             "aria-hidden": "true",
             "style": "height: 10px; overflow: hidden; mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent)"
@@ -56,7 +64,7 @@
               "tag": "div",
               "classes": ["absolute"],
               "attrs": {
-                "style": "top: 0px; width: 30%; height: 2px; background: linear-gradient(to right, transparent, rgb(59, 130, 246), white, transparent); will-change: <motion>"
+                "style": "top: 0px; width: 30%; height: 2px; background: linear-gradient(to right, transparent, #3b82f6, var(--scan-highlight), transparent); will-change: <motion>"
               },
               "children": []
             }

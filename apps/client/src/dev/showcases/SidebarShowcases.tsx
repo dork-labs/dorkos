@@ -49,7 +49,7 @@ const ROW_MENU = [{ kind: 'action' as const, id: 'pin', label: 'Pin', icon: Pin,
 /** The chip a trailing action draws — presentational, because the row draws it twice. */
 function LiveChip() {
   return (
-    <span className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums">
+    <span className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums">
       3 live
     </span>
   );

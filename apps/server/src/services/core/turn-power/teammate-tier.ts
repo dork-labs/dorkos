@@ -106,6 +106,7 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   get_agent: refuse('reads an agent’s setup'),
   // Durable state that outlives the turn.
   memory_write: refuse('writes notes every later conversation reads, the owner’s included'),
+  memory_read: refuse('reads the agent’s notes files, which a teammate’s turn is never shown'),
   compact_my_session: refuse('rewrites what this conversation remembers'),
   // The owner's screen.
   control_ui: refuse('drives the owner’s app'),

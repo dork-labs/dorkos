@@ -18,9 +18,13 @@ vi.mock('../../config-manager.js', () => ({
   },
 }));
 
+const fanOut = vi.hoisted(() => ({ broadcast: vi.fn() }));
+vi.mock('../../event-fan-out.js', () => ({ eventFanOut: fanOut }));
+
 import {
   dialablePin,
   sessionRelayDialer,
+  sessionRelayPresence,
   sessionRelayEnabled,
   watchSessionRelaySwitch,
 } from '../index.js';
@@ -132,5 +136,20 @@ describe('switching the experiment off pauses the link', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the live presence', () => {
+  it('goes out on the global stream to the owner’s windows, once per change', () => {
+    const presence = sessionRelayPresence();
+    presence.update({ connected: true, viewers: 1 });
+    presence.update({ connected: true, viewers: 2 });
+    presence.update({ connected: false, viewers: 0 });
+    expect(fanOut.broadcast).toHaveBeenCalledTimes(2);
+    const [event, data, audience] = fanOut.broadcast.mock.calls[0]!;
+    expect(event).toBe('session_relay_presence');
+    expect(data).toMatchObject({ active: true });
+    expect(typeof audience).toBe('function');
+    expect(fanOut.broadcast.mock.calls[1]![1]).toEqual({ active: false, devices: [] });
   });
 });

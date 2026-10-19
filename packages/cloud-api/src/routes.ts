@@ -92,6 +92,22 @@ export const V1_ROUTES = {
   /** The hub applied an assignment. Answered with `HubAssignmentConfirmResponseSchema`. */
   hubAssignmentConfirm: '/v1/hubs/self/assignment/confirm',
   /**
+   * `PUT` when the hub next has a schedule due (`HubNextWakeRequestSchema`).
+   * Hub instance key only; answered 204.
+   */
+  hubNextWake: '/v1/hubs/self/next-wake',
+  /**
+   * Which hub this agent computer works for, and the code it links with. That
+   * computer's own instance key only; answered with `AgentComputerAssignmentSchema`.
+   */
+  agentComputerAssignment: '/v1/agent-computers/self/assignment',
+  /**
+   * `PUT` whether this agent computer is in the middle of work
+   * (`AgentComputerActivityRequestSchema`). That computer's own instance key
+   * only; answered 204.
+   */
+  agentComputerActivity: '/v1/agent-computers/self/activity',
+  /**
    * The account's cloud agent computers. `GET` lists them
    * (`CloudComputerListResponseSchema`); `POST` makes one
    * (`CloudComputerCreateResponseSchema`).
@@ -413,7 +429,8 @@ export const v1Path = {
   computer: (computerId: string) => `/v1/computers/${enc(computerId)}`,
   /**
    * Start one cloud agent computer, answered with
-   * `CloudComputerTransitionResponseSchema`.
+   * `CloudComputerTransitionResponseSchema`. Takes an optional
+   * `CloudComputerStartRequestSchema` body saying why.
    *
    * @param computerId - The computer's opaque identifier.
    */
@@ -425,6 +442,14 @@ export const v1Path = {
    * @param computerId - The computer's opaque identifier.
    */
   computerStop: (computerId: string) => `/v1/computers/${enc(computerId)}/stop`,
+  /**
+   * Hand the service the link code the hub minted for one of its account's
+   * agent computers (`AgentComputerLinkCodeRequestSchema`). Hub instance key
+   * only; answered 204.
+   *
+   * @param computerId - The computer's opaque identifier.
+   */
+  computerLinkCode: (computerId: string) => `/v1/computers/${enc(computerId)}/link-code`,
   /**
    * Ask one of the account's computers to dial its hub, answered with
    * `ViewerOpenResponseSchema`.

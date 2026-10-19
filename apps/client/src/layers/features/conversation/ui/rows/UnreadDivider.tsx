@@ -16,7 +16,8 @@ const UNREAD_LABEL = 'New messages';
  * (`use-unread-cursor`), a room's from the same table's room cursor, so the same
  * read state draws the same rule wherever it is read. Accent-colored and
  * labelled on the right so it reads as a live marker rather than another day
- * boundary.
+ * boundary. Inset by the messages' own padding, so the label ends where their
+ * text does rather than at the pane's edge.
  */
 export function UnreadDivider() {
   return (
@@ -25,10 +26,10 @@ export function UnreadDivider() {
       data-testid="unread-divider"
       role="separator"
       aria-label={UNREAD_LABEL}
-      className="flex items-center gap-2 py-2"
+      className="flex items-center gap-2 px-[var(--msg-padding-x)] py-2"
     >
       <span aria-hidden="true" className="bg-brand/60 h-px flex-1" />
-      <span className="text-brand text-2xs font-medium tracking-wide">{UNREAD_LABEL}</span>
+      <span className="text-brand-text text-2xs font-medium tracking-wide">{UNREAD_LABEL}</span>
     </div>
   );
 }

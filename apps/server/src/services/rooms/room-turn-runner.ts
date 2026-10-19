@@ -34,6 +34,7 @@
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { refuseTeammateTurnOn, roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
@@ -41,7 +42,7 @@ import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import { isBlockingInteractionEvent, type SessionActivity } from '@dorkos/shared/session-stream';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
@@ -53,7 +54,15 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { assertOwnDesk } from '../core/agent-identity/index.js';
 import { refusePausedRoomTurn } from './turn-guards/paused-turn.js';
 import { warnIfTurnCannotPost } from './turn-guards/turn-posting.js';
-import { WAITING_KINDS } from './turn-guards/waiting-kinds.js';
+import {
+  failedReply,
+  isSlotWaitEvent,
+  noteTurnFailure,
+  noteTurnWait,
+  settleTurnFailure,
+  type TurnFailure,
+  type TurnWaits,
+} from './turn-guards/turn-waits.js';
 import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
@@ -1112,7 +1121,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       return {
         sessionId: canonicalId,
         text: reply.text,
-        ...(reply.failed ? { unanswered: 'failed' as const } : {}),
+        ...(reply.failed ? failedReply(reply) : {}),
       };
     },
 
@@ -1228,6 +1237,8 @@ interface CollectedTurn {
   text: string | null;
   /** The turn ended in an error, or was given up on at the ceiling. */
   failed: boolean;
+  /** Why the turn failed, when it did. */
+  failure?: TurnFailure;
   /** How long the turn took, measured from the moment the room subscribed. */
   waitedMs: number;
 }
@@ -1410,27 +1421,18 @@ function collectReply(
 ): ReplyCollector {
   const abort = new AbortController();
   const startedAt = Date.now();
-  const ceiling = setTimeout(() => abort.abort(), bounds.ceilingMs);
-  // `unref` so a pending room turn never holds the process open on shutdown.
-  ceiling.unref?.();
+  // Waits again while the turn is parked on a person's answer (DOR-3113).
+  const ceiling = armLateReplyCeiling(abort, bounds.ceilingMs, projector);
 
   // Never rejects: both phases read this one promise, and the busy path reads
   // neither, so a rejection would surface as an unhandled one.
   /**
-   * The grace timer for each prompt this turn is currently stopped on.
-   *
-   * Keyed by the interaction's own id so a turn stopped on two prompts at once
-   * cancels exactly the one that was answered.
+   * The grace timer for each wait this turn is in: a prompt, keyed by the
+   * interaction's own id so a turn stopped on two prompts at once cancels
+   * exactly the one that was answered, or a free slot (`turn-waits.ts`).
    */
-  const waitingOn = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Forget one prompt's grace timer — it was answered, or the turn is over. */
-  const stopWaitingOn = (id: string): void => {
-    const grace = waitingOn.get(id);
-    if (grace === undefined) return;
-    clearTimeout(grace);
-    waitingOn.delete(id);
-  };
-  /** Drop every outstanding grace timer. The turn is over; the wait is too. */
+  const waitingOn: TurnWaits = new Map();
+  /** Drop every outstanding grace timer. The turn is over; the waits are too. */
   const stopWaitingOnEverything = (): void => {
     for (const grace of waitingOn.values()) clearTimeout(grace);
     waitingOn.clear();
@@ -1467,6 +1469,8 @@ function collectReply(
     let producing = false;
     let ended = false;
     let failed = false;
+    /** What the turn's events said about why it failed, if it did. */
+    let failure: Partial<TurnFailure> = {};
     try {
       for await (const event of projector.subscribe(sinceCursor, abort.signal)) {
         if (!started) {
@@ -1483,30 +1487,15 @@ function collectReply(
         // A `turn_end` is deliberately not "running": it is the turn being over,
         // and re-aiming a stop at a session whose turn has just closed is how a
         // stop meant for one turn lands on the one after it.
-        if (!producing && event.type !== 'turn_end') {
+        if (!producing && event.type !== 'turn_end' && !isSlotWaitEvent(event)) {
           producing = true;
           bounds.onProducing();
         }
-        // A prompt the turn has stopped on. It is reported after
-        // {@link WAITING_NOTICE_GRACE_MS} and only if it is STILL unanswered
-        // then — see that constant. Reported per prompt; the room damps
-        // repeats, so a turn that stops three times still says so once.
-        if (isBlockingInteractionEvent(event)) {
-          const waiting: RoomTurnWaiting = {
-            kind: WAITING_KINDS[event.type],
-            ...(event.type === 'approval_required' ? { toolName: event.toolName } : {}),
-          };
-          const grace = setTimeout(() => {
-            waitingOn.delete(event.id);
-            bounds.onWaiting(waiting);
-          }, bounds.graceMs);
-          grace.unref?.();
-          waitingOn.set(event.id, grace);
-        }
-        // Answered, denied, cancelled or timed out — every ending arrives here
-        // (`interaction_cancelled` is normalized into this event), so the room
-        // says nothing about a wait that is already over.
-        if (event.type === 'interaction_resolved') stopWaitingOn(event.id);
+        // A prompt the turn has stopped on, or a free slot it is waiting for
+        // (DOR-3012). Reported after {@link WAITING_NOTICE_GRACE_MS} and only
+        // if it is STILL true then — see that constant.
+        noteTurnWait(event, waitingOn, bounds);
+        failure = noteTurnFailure(failure, event);
         if (event.type === 'text_delta') collecting += event.text;
         else if (MESSAGE_BOUNDARY.has(event.type)) endParagraph();
         // What the turn is doing, for the room's own live lane (DOR-1351).
@@ -1555,7 +1544,7 @@ function collectReply(
       failed = true;
       clearActivity();
     } finally {
-      clearTimeout(ceiling);
+      ceiling.clear();
       // The turn has ended, one way or another. A prompt it was stopped on can
       // no longer be answered, so a notice about it now would be advice nobody
       // can act on — and a timer outliving its turn is a room that speaks about
@@ -1613,6 +1602,7 @@ function collectReply(
       // A stream that ends without a `turn_end` was aborted — the ceiling, or a
       // cancel. Either way nobody got an answer, which is a failure to report.
       failed: failed || !ended,
+      ...(failed || !ended ? { failure: settleTurnFailure(failure, ended) } : {}),
       waitedMs: Date.now() - startedAt,
     };
   })();
@@ -1634,11 +1624,11 @@ function collectReply(
     afterDeadline: closed.then((turn) => ({
       text: turn.text,
       waitedMs: turn.waitedMs,
-      ...(turn.failed ? { unanswered: 'failed' as const } : {}),
+      ...(turn.failed ? failedReply(turn) : {}),
     })),
     cancel: () => {
       abort.abort();
-      clearTimeout(ceiling);
+      ceiling.clear();
       clearTimeout(deadline);
       stopWaitingOnEverything();
     },

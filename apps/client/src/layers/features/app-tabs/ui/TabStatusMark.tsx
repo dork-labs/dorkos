@@ -43,7 +43,7 @@ export function TabStatusMark({ identity, className }: TabStatusMarkProps) {
         aria-hidden="true"
         data-slot="tab-count"
         className={cn(
-          'shrink-0 rounded-full px-1.5 text-[10px] leading-4 font-medium tabular-nums',
+          'text-3xs shrink-0 rounded-full px-1.5 leading-4 font-medium tabular-nums',
           // Aimed at you: a solid fill, so it reads as urgent at a glance in
           // both themes, red for a failure as its dot would be. The quiet tint
           // is for counts that are only activity.

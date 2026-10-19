@@ -101,8 +101,11 @@ import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
+import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createDevicesRoutes } from '../routes/devices.js';
+import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
@@ -346,6 +349,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
   app.route('/api/rooms', roomRoutes);
+  app.route(
+    '/api/direct-chats',
+    createDirectChatRoutes(() => deps.mesh?.meshCore)
+  );
   // Spaces (rooms on another server) are an experiment, off by default
   // (DOR-2740): both groups refuse until a person turns `spaces.enabled` on,
   // except for the official space (spec `official-community-space` D5), which
@@ -481,6 +488,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/link', createHubLinkRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
+  // A person's own signed-in devices, and signing them out (DOR-2969).
+  app.route('/api/devices', createDevicesRoutes());
+  // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
+  app.route('/api/documents', createDocLinkRoutes());
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }

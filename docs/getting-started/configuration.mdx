@@ -662,7 +662,9 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
 
 **Claude Code chats keep their agent running between messages.** Your next message reaches an agent that is already awake instead of one that has to start from scratch, so replies from the second message on come back about four times faster. That is `runtimes.claudeCode.persistentSession`. New setups start with it on; if you have been running DorkOS for a while, an upcoming update turns it on for you.
 
-Changing it applies to the next message you send in each chat — nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps at most twelve of these running at once and gives back the one you have used least when it needs room.
+Changing it applies to the next message you send in each chat — nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps a limited number of these running at once and gives back the one you have used least when it needs room.
+
+**How many agents can run at once is sized to your computer.** That is `runtimes.claudeCode.maxWarmProcesses`. Left empty, which is how it ships, DorkOS allows one per 2 GB of memory: never fewer than 12, never more than 32. A 48 GB machine gets 24. Set a number to pin it. When every one of them is busy, a new message does not fail: it waits for one to finish, and the chat or room says it is waiting. If nothing finishes for 45 minutes, it stops waiting and says why.
 
 **What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
 
@@ -776,9 +778,15 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
     },
     'runtimes.claudeCode.persistentSession': {
       description:
-        'Keep a Claude Code chat’s agent running between messages instead of starting it again for each one. Applies to the next message in each chat; a chat whose agent is already running keeps it until that agent is shut down for being idle, the chat is closed, or DorkOS restarts. Costs up to about a gigabyte of memory per waiting agent, and at most twelve wait at once.',
+        'Keep a Claude Code chat’s agent running between messages instead of starting it again for each one. Applies to the next message in each chat; a chat whose agent is already running keeps it until that agent is shut down for being idle, the chat is closed, or DorkOS restarts. Costs up to about a gigabyte of memory per waiting agent, and `maxWarmProcesses` caps how many wait at once.',
       type: 'boolean',
       default: 'true',
+    },
+    'runtimes.claudeCode.maxWarmProcesses': {
+      description:
+        'How many Claude Code agents may run at once. Null sizes it to your computer: one per 2 GB of memory, at least 12 and at most 32. When all are busy, a new message waits for one to finish instead of failing.',
+      type: 'number | null',
+      default: 'null',
     },
     'runtimes.claudeCode.defaultTrustStop': {
       description:
@@ -1381,3 +1389,21 @@ Settings → Advanced → Experiments lists **Spaces**, off by default. While it
 />
 
 Settings → Advanced → Experiments lists **Chat from the web**, off by default. It is early: it needs your own DorkOS in the cloud, which is not available yet. While it is off, the **Chat from the web** section in Settings → DorkOS account is hidden, and this computer never connects to the cloud for it, even if you linked it before. Linking, pausing and unlinking happen only in the app on this computer, never from another device. Linking, resuming and allowing more ask for your password for this computer again. Agents can read this setting but cannot change it.
+
+### Docs experiment
+
+<TypeTable
+  type={{
+    'docs.enabled': {
+      description: 'Link markdown docs to each other with wiki links. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Docs**, off by default. Turn it on, and a markdown file open in the canvas can link to another one. Type `[[` and pick a doc from the list, or write a doc's title or file name between double brackets, like `[[Launch plan]]`. To change the words the link shows, add `|` and your own words: `[[Launch plan|the plan]]`. A link with a heading, like `[[Launch plan#Goals]]`, opens Launch plan too.
+
+Click a link while reading to open that doc in the canvas. While editing, Cmd-click it (Ctrl-click on Windows and Linux). A link to a doc that does not exist yet looks different from the others. It starts working the next time DorkOS reads the folder's docs: when you create or rename a file in the Files panel, when you save a doc whose title changed, or when you come back to the DorkOS window or open a doc again after half a minute. A link to a heading in the same doc, like `[[#Goals]]`, does not open.
+
+Links find the `.md` files in the folder your chat works in and every folder inside it, skipping hidden folders and folders such as `node_modules`. In a very large folder, the `[[` list holds only the docs nearest the top: it stops after 2,000 docs, 2,000 folders, or 8 folders deep. A link to a doc past that is still looked for across the whole folder. If even that takes too long, the link says the folder is too big to check, rather than calling the doc missing. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.

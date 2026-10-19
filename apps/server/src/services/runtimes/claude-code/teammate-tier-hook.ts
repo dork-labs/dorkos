@@ -21,7 +21,7 @@ import type { AgentSession } from './agent-types.js';
 import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from './mcp-tools/tool-exposure.js';
 
 /**
- * Where a call comes from, as the fence sees it. A tool named like a DorkOS tool but served by a
+ * Where a call comes from, as the tier sees it. A tool named like a DorkOS tool but served by a
  * configured server (a project's `.mcp.json` may call itself `dorkos`) is another MCP server's.
  *
  * @param toolName - The name Claude Code reports.
@@ -40,20 +40,20 @@ function sourceOf(
 
 /**
  * The hook. Answers nothing (the call goes on to the ordinary gate) unless the running turn is a
- * teammate's and the fence refuses the call.
+ * teammate's and the tier refuses the call.
  *
- * @param session - The session whose running turn may be fenced.
+ * @param session - The session whose running turn may be held to the tier.
  */
 export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier'>): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
-    const fence = session.teammateTier;
-    if (!fence) return {};
+    const scope = session.teammateTier;
+    if (!scope) return {};
     const input =
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    const refusal = teammateTierRefusal(fence, {
+    const refusal = teammateTierRefusal(scope, {
       ...sourceOf(hookInput.tool_name, hookInput.mcp_server),
       input,
     });
@@ -63,7 +63,7 @@ export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier
     logRefusal('[claude-code] a teammate’s turn was refused a tool', {
       reason: 'teammate_fence',
       visibility: 'shown',
-      roomId: fence.roomId,
+      roomId: scope.roomId,
       detail: { toolName: hookInput.tool_name },
     });
     return {

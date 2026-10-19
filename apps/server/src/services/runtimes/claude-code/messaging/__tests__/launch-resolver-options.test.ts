@@ -8,14 +8,22 @@
  * against the reason it exists.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
+import { projectSlug } from '../../sessions/project-slug.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
+import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { assignTurnBounds } from '../../turn-bounds.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -302,6 +310,65 @@ describe('the launch options every Claude Code turn is given', () => {
     });
   });
 
+  describe('Claude Code’s own auto-memory on an agent’s turn (ADR 261017-153539)', () => {
+    let root: string;
+    let home: string;
+    let account: string;
+
+    beforeEach(() => {
+      root = mkdtempSync(path.join(os.tmpdir(), 'dorkos-automem-'));
+      home = path.join(root, 'agent');
+      account = path.join(root, '.claude');
+      mkdirSync(home, { recursive: true });
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === home,
+        listRegisteredHomes: () => [home],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+    });
+
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    const launch = (cwd: string) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session: { ...makeSession(), accountRoot: account },
+        opts: makeOpts({ cwd }),
+        effectiveCwd: cwd,
+      });
+    const memoryDir = () => path.join(account, 'projects', projectSlug(home), 'memory');
+
+    it('is off for a turn that runs as an agent, so its DorkOS memory is its only one', async () => {
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    });
+
+    it('stays on while the agent still has Claude Code notes nobody has moved', async () => {
+      mkdirSync(memoryDir(), { recursive: true });
+      writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    });
+
+    it('goes off once the migration has left its marker in that folder', async () => {
+      mkdirSync(memoryDir(), { recursive: true });
+      writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
+      writeFileSync(path.join(memoryDir(), 'MOVED-TO-DORKOS.md'), 'moved\n');
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    });
+
+    it('stays on for a plain folder, which has no DorkOS memory to use instead', async () => {
+      const resolved = await launch(path.join(root, 'plain'));
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    });
+  });
+
   it('launches a teammate’s turn with no setting layers and no auto-memory, in its own process', async () => {
     // DOR-2955, review B3: every setting layer adds the owner's CLAUDE.md files, and
     // Claude Code adds its own auto-memory for the folder whatever the layers say.
@@ -411,6 +478,53 @@ describe('the launch options every Claude Code turn is given', () => {
         'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
         'length limit the CLI simply stops starting'
     ).toBe('initialize');
+  });
+});
+
+// DOR-3107 (Security): an agent at Full autonomy never calls the tool gate, so
+// a marked turn must LAUNCH at the capped mode. Each cap is taken from where
+// that mark is set, so a source that loosens its cap fails here.
+describe('a marked turn on an agent at Full autonomy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One turn as the runtime starts it: its bounds first, then the launch. */
+  async function launchAs(opts: MessageOpts | undefined, session: AgentSession): Promise<Options> {
+    assignTurnBounds(session, opts);
+    return captureSdkOptions(opts, session);
+  }
+
+  /** A session whose own saved mode is Full autonomy. */
+  function bypassSession(): AgentSession {
+    return { ...makeSession(), permissionMode: 'bypassPermissions' };
+  }
+
+  it.each([
+    ['a Telegram or Slack message (the relay adapter)', 'runtime-default' as const],
+    ['a turn relayed from the web', RELAY_TURN_CEILING],
+    ['a room post from an outsider', 'runtime-default' as const],
+    ['a space teammate’s post', ['runtime-default', READ_ONLY_LEVEL] as const],
+  ])('launches at the runtime’s Default for %s', async (_name, ceiling) => {
+    const options = await launchAs(
+      { permissionCeiling: ceiling as TurnPermissionCeiling },
+      bypassSession()
+    );
+    expect(options.permissionMode).not.toBe('bypassPermissions');
+    expect(['default', 'plan']).toContain(options.permissionMode);
+  });
+
+  it('launches at Full autonomy for the owner’s own turn', async () => {
+    const options = await launchAs(undefined, bypassSession());
+    expect(options.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('launches at Full autonomy for another of the owner’s agents at Full autonomy', async () => {
+    const options = await launchAs(
+      { permissionCeiling: { asks: 'never', reach: 'everything' } },
+      bypassSession()
+    );
+    expect(options.permissionMode).toBe('bypassPermissions');
   });
 });
 

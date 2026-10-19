@@ -111,7 +111,13 @@ export function deliver(
       target,
       reply.unanswered,
       target.dispatchId,
-      gaveUp ? { busyWith: 'gave-up' } : limit ? { outOfUsageUntil: limit.resetsAt } : {}
+      gaveUp
+        ? { busyWith: 'gave-up' }
+        : limit
+          ? { outOfUsageUntil: limit.resetsAt }
+          : reply.failure !== undefined
+            ? { failure: reply.failure }
+            : {}
     );
   }
   self.receipts.forgetRetry(room.id, target.authorId, entry.id);

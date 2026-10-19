@@ -14,6 +14,7 @@
   var root = document.documentElement;
   var q = new URLSearchParams(location.search);
   var SHOT = q.has('shot');
+  if (SHOT) window.__studioShot = true; // no review layer or director chrome in screenshots
   var PINNED = q.has('screen'); // viewing a specific screen rather than following the newest
   // Relative to the page, so it works under a proxy prefix too.
   var BASE = location.pathname.endsWith('/')
@@ -41,6 +42,9 @@
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     play: '<path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>',
     grip: '<path d="m9 18-6-6 6-6"/><path d="m15 6 6 6-6 6"/>',
+    list: '<path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/>',
+    more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
   };
   function icon(name) {
     return (
@@ -197,7 +201,7 @@
   }
 
   // ---------- toast, hint, chip ----------
-  var toastEl, hintEl, chipEl, toastTimer;
+  var toastEl, chipEl, toastTimer;
   function toast(html, ms) {
     if (SHOT) return;
     if (!toastEl) {
@@ -211,17 +215,6 @@
     toastTimer = setTimeout(function () {
       toastEl.classList.remove('vc-show');
     }, ms || 3200);
-  }
-  function hint(text) {
-    if (!hintEl) {
-      hintEl = h('div', { class: 'vc-hint', role: 'status', 'aria-live': 'polite' });
-      document.body.appendChild(hintEl);
-    }
-    if (text) {
-      hintEl.innerHTML = text;
-      void hintEl.offsetWidth;
-      hintEl.classList.add('vc-show');
-    } else hintEl.classList.remove('vc-show');
   }
   function newScreenChip(name) {
     if (SHOT) return;
@@ -239,17 +232,22 @@
   // a chat to wake (the one that ran `vc show`). Elsewhere, events are noted.
   var R = D.route || {};
   var WAKE = !!R.wake && (R.mode === 'ui-action' || R.mode === 'message');
-  var WHO = R.label || 'the agent';
+  var WHO = R.label ? '@' + R.label : 'the agent'; // shown as a mention: "Send to @Tester"
   function feedbackLine() {
     return '<span> · noted, reply in chat</span>';
   }
 
-  // ---------- send bar (wake screens) ----------
+  // ---------- reply dock (wake screens) ----------
+  // Always there on a wake screen: what you've picked, a box for a written
+  // reply, and Send. Once a screen has been sent it says so, with what was
+  // sent and when, until you change something.
   var sendEl,
     sendText,
     sendBtn,
+    sendInput,
     sentSig = null,
-    sendTimer;
+    sentInfo = null;
+  var DRAFT_KEY = 'vc-draft:' + D.session + ':' + D.screen;
   function currentSelection() {
     var seen = {};
     var list = [];
@@ -261,55 +259,184 @@
     });
     return list;
   }
+  function replyDraft() {
+    return sendInput ? sendInput.value.trim() : '';
+  }
+  function autosize() {
+    sendInput.style.height = 'auto';
+    sendInput.style.height = Math.min(sendInput.scrollHeight, 120) + 'px';
+  }
   function buildSendBar() {
-    sendEl = h('div', { class: 'vc-send', role: 'region', 'aria-label': 'Send to ' + WHO });
-    sendText = h('span', { class: 'vc-send-text', 'aria-live': 'polite' });
+    sendEl = h('div', { class: 'vc-send', role: 'region', 'aria-label': 'Reply to ' + WHO });
+    sendText = h('div', { class: 'vc-send-text', 'aria-live': 'polite' });
+    var row = h('div', { class: 'vc-send-row' });
+    sendInput = h('textarea', {
+      class: 'vc-send-input',
+      rows: '1',
+      placeholder: 'Write a reply (optional)',
+      'aria-label': 'Write a reply to ' + WHO,
+    });
     sendBtn = h(
       'button',
       { type: 'button', class: 'vc-send-btn', 'aria-keyshortcuts': 'Meta+Enter Control+Enter' },
       'Send to ' + esc(WHO)
     );
     sendBtn.addEventListener('click', sendNow);
+    try {
+      sendInput.value = sessionStorage.getItem(DRAFT_KEY) || '';
+    } catch {
+      // Best effort: nothing to do if this fails.
+    }
+    sendInput.addEventListener('input', function () {
+      autosize();
+      try {
+        sessionStorage.setItem(DRAFT_KEY, sendInput.value);
+      } catch {
+        // Best effort: nothing to do if this fails.
+      }
+      syncSendBar();
+    });
+    sendInput.addEventListener('keydown', function (e) {
+      // Enter sends; Shift+Enter is a new line.
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        if (!sendBtn.disabled) sendNow();
+      }
+    });
+    row.appendChild(sendInput);
+    row.appendChild(sendBtn);
     sendEl.appendChild(sendText);
-    sendEl.appendChild(sendBtn);
+    sendEl.appendChild(row);
     document.body.appendChild(sendEl);
+    root.classList.add('vc-has-send');
+    autosize();
+    requestAnimationFrame(function () {
+      sendEl.classList.add('vc-show');
+    });
+  }
+  function timeOf(ts) {
+    try {
+      return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return '';
+    }
   }
   function syncSendBar() {
     if (!WAKE || SHOT) return;
     if (!sendEl) buildSendBar();
     var sel = currentSelection();
     var sig = JSON.stringify(sel);
-    clearTimeout(sendTimer);
-    if (!sel.length || sig === sentSig) {
-      sendEl.classList.remove('vc-show', 'vc-sent');
-      root.classList.remove('vc-has-send');
+    var text = replyDraft();
+    var unchanged = sentInfo && sig === sentSig && !text;
+    document.querySelectorAll('[data-choice].vc-was-sent').forEach(function (el) {
+      el.classList.remove('vc-was-sent');
+    });
+    if (unchanged) {
+      // Sent, and nothing has changed since.
+      sendEl.classList.add('vc-sent');
+      sel.forEach(function (c) {
+        document.querySelectorAll('[data-choice]').forEach(function (el) {
+          if (el.dataset.choice === c.choice) el.classList.add('vc-was-sent');
+        });
+      });
+      var what =
+        sentInfo.labels && sentInfo.labels.length
+          ? ' · <b>' + esc(sentInfo.labels.join(', ')) + '</b>'
+          : '';
+      var m = sentInfo.message ? sentInfo.message.replace(/\s+/g, ' ') : '';
+      var said = m ? ' · “' + esc(m.length > 140 ? m.slice(0, 139) + '…' : m) + '”' : '';
+      sendText.innerHTML =
+        icon('check') +
+        '<span>Sent to ' +
+        esc(WHO) +
+        (sentInfo.at ? ' at ' + timeOf(sentInfo.at) : '') +
+        what +
+        said +
+        '</span>';
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sent';
       return;
     }
-    root.classList.add('vc-has-send');
     sendEl.classList.remove('vc-sent');
-    sendBtn.hidden = false;
-    sendText.innerHTML =
-      sel.length === 1
-        ? '<b>' + esc(sel[0].label) + '</b> selected'
-        : '<b>' + sel.length + ' selected</b>';
-    void sendEl.offsetWidth;
-    sendEl.classList.add('vc-show');
+    sendBtn.disabled = !sel.length && !text;
+    sendBtn.textContent = (sentInfo ? 'Send update to ' : 'Send to ') + WHO;
+    if (sel.length === 1)
+      sendText.innerHTML =
+        '<span><b>' +
+        esc(sel[0].label) +
+        '</b> selected' +
+        (text ? ' · with a note' : '') +
+        '</span>';
+    else if (sel.length > 1)
+      sendText.innerHTML =
+        '<span><b>' + sel.length + ' selected</b>' + (text ? ' · with a note' : '') + '</span>';
+    else if (text) sendText.innerHTML = '<span>Your reply</span>';
+    else
+      sendText.innerHTML =
+        '<span>' +
+        (document.querySelector('.vc-choices')
+          ? 'Pick an option, or write a reply'
+          : 'Write a reply') +
+        '</span>';
+  }
+  // The next screen after this one that hasn't been sent yet. Only later
+  // screens: earlier ones are usually drafts the person has moved past.
+  function nextUnsent() {
+    var list = D.screens || [];
+    var i = list.findIndex(function (x) {
+      return x.name === D.screen;
+    });
+    for (var j = i + 1; j < list.length; j++) if (!list[j].sent) return list[j].name;
+    return null;
   }
   function sendNow() {
     if (!WAKE) return;
     var sel = currentSelection();
+    var text = replyDraft();
+    if (!sel.length && !text) return;
     sentSig = JSON.stringify(sel);
-    sendEvent({ type: 'send', selection: sel, pins: pins.length });
-    if (!sendEl) buildSendBar();
-    sendText.innerHTML = 'Sent to <b>' + esc(WHO) + '</b>';
-    sendBtn.hidden = true;
-    sendEl.classList.add('vc-show', 'vc-sent');
-    clearTimeout(sendTimer);
-    root.classList.add('vc-has-send');
-    sendTimer = setTimeout(function () {
-      sendEl.classList.remove('vc-show');
-      root.classList.remove('vc-has-send');
-    }, 2400);
+    sentInfo = {
+      at: Date.now(),
+      labels: sel.map(function (c) {
+        return c.label;
+      }),
+      message: text || null,
+    };
+    var saved = sendEvent({
+      type: 'send',
+      selection: sel,
+      pins: requestCount(),
+      message: text || undefined,
+    });
+    (D.screens || []).forEach(function (x) {
+      if (x.name === D.screen) x.sent = true;
+    });
+    if (sendInput) {
+      sendInput.value = '';
+      autosize();
+      try {
+        sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // Best effort: nothing to do if this fails.
+      }
+    }
+    syncSendBar();
+    var to = nextUnsent();
+    if (to) {
+      sendText.innerHTML = icon('check') + '<span>Sent to ' + esc(WHO) + ' · next screen…</span>';
+      // Advance once the event is saved, never before: a reload mid-request
+      // could lose the Send.
+      var wait = new Promise(function (r) {
+        setTimeout(r, 650);
+      });
+      Promise.all([saved, wait]).then(function () {
+        go(to);
+      });
+    } else if (D.screens && D.screens.length > 1) {
+      sendText.innerHTML =
+        icon('check') + '<span>Sent to ' + esc(WHO) + ' · that was the last screen</span>';
+      setTimeout(syncSendBar, 2400);
+    }
   }
 
   // ---------- selection (v1 API, kept) ----------
@@ -353,6 +480,15 @@
       pane: pane ? (pane.classList.contains('dark') ? 'dark' : 'light') : undefined,
     });
     setTimeout(function () {
+      // Remember this screen's picks, so leaving and coming back keeps them.
+      if (target.closest('.options, .cards')) {
+        sendEvent({
+          type: 'select',
+          choices: currentSelection().map(function (c) {
+            return c.choice;
+          }),
+        });
+      }
       if (WAKE) return syncSendBar();
       var container = target.closest('.options') || target.closest('.cards');
       var selected = container ? container.querySelectorAll('.selected') : [];
@@ -365,10 +501,62 @@
   });
 
   // Make every choice reachable and operable from the keyboard.
+  // Choices must read as choices: each gets a radio (or check) slot and the
+  // group a "Choose one" label. A screen opts out with
+  // <meta name="vc-choices" content="plain">, a group with data-vc-plain.
+  var PLAIN = !!document.querySelector('meta[name="vc-choices"][content="plain"]');
+  function decorateChoice(el) {
+    var group = el.closest('.options, .cards');
+    if (PLAIN || !group || group.hasAttribute('data-vc-plain')) return;
+    var multi = group.dataset.multiselect !== undefined;
+    el.classList.add('vc-choice');
+    if (multi) el.classList.add('vc-multi');
+    if (!el.querySelector(':scope > .vc-radio')) {
+      el.appendChild(h('span', { class: 'vc-radio', 'aria-hidden': 'true' }, icon('check')));
+    }
+    if (!group.classList.contains('vc-choices')) {
+      group.classList.add('vc-choices');
+      if (!group.hasAttribute('role')) group.setAttribute('role', 'group');
+      var prev = group.previousElementSibling;
+      if (!(prev && prev.classList.contains('vc-choose'))) {
+        var lbl = h(
+          'div',
+          { class: 'vc-choose', id: 'vc-choose-' + Math.random().toString(36).slice(2, 8) },
+          multi ? 'Choose any' : 'Choose one'
+        );
+        group.parentNode.insertBefore(lbl, group);
+        group.setAttribute('aria-labelledby', lbl.id);
+      }
+      // Not one of these? Clear the pick and write a reply instead.
+      if (WAKE && !group.querySelector(':scope + .vc-own')) {
+        var own = h(
+          'button',
+          { type: 'button', class: 'vc-own' },
+          'None of these, I’ll write my own'
+        );
+        own.addEventListener('click', function () {
+          group.querySelectorAll('[data-choice].selected').forEach(function (o) {
+            o.classList.remove('selected');
+            if (o.hasAttribute('aria-pressed')) o.setAttribute('aria-pressed', 'false');
+          });
+          sendEvent({
+            type: 'select',
+            choices: currentSelection().map(function (c) {
+              return c.choice;
+            }),
+          });
+          syncSendBar();
+          if (sendInput) sendInput.focus();
+        });
+        group.parentNode.insertBefore(own, group.nextSibling);
+      }
+    }
+  }
   function enhanceChoices(scope) {
     scope.querySelectorAll('[data-choice]').forEach(function (el) {
       if (el.dataset.vcChoice) return;
       el.dataset.vcChoice = '1';
+      decorateChoice(el);
       var native = /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
       if (!native) {
         if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
@@ -395,6 +583,12 @@
 
   // ---------- history ----------
   function go(name) {
+    try {
+      if (bar && (bar.classList.contains('vc-show') || bar.matches(':hover')))
+        sessionStorage.setItem('vc-bar-open', String(Date.now()));
+    } catch {
+      // Best effort: nothing to do if this fails.
+    }
     var u = new URL(location.href);
     u.searchParams.delete('shot');
     if (!name || name === D.latest) u.searchParams.delete('screen');
@@ -407,6 +601,13 @@
     btn = {};
   function buildBar() {
     bar = h('div', { class: 'vc-bar', role: 'toolbar', 'aria-label': 'Visual companion' });
+    // Always visible: where you are, and a hint that there's more. Hover or
+    // focus expands it to the full bar.
+    btn.handle = h('button', {
+      class: 'vc-handle',
+      type: 'button',
+      'aria-label': 'Show screen controls',
+    });
     btn.prev = h(
       'button',
       {
@@ -422,7 +623,7 @@
       title: D.title || '',
       text: D.title || 'Visual companion',
     });
-    btn.count = h('span', { class: 'vc-count', 'aria-live': 'polite' });
+    btn.count = h('button', { class: 'vc-count', type: 'button', title: 'All screens (G)' });
     btn.next = h(
       'button',
       {
@@ -432,6 +633,17 @@
         title: 'Next screen (⌘→)',
       },
       icon('right')
+    );
+    btn.list = h(
+      'button',
+      {
+        class: 'vc-iconbtn',
+        type: 'button',
+        'aria-label': 'All screens',
+        'aria-expanded': 'false',
+        title: 'All screens (G)',
+      },
+      icon('list')
     );
     btn.pin = h(
       'button',
@@ -463,23 +675,32 @@
       'aria-label': 'Connecting',
       title: 'Connecting',
     });
+    var full = h('div', { class: 'vc-bar-full' });
     var nav = h('div', { class: 'vc-bar-group' });
     [btn.prev, where, btn.count, btn.next].forEach(function (n) {
       nav.appendChild(n);
     });
     var tools = h('div', { class: 'vc-bar-group' });
-    [btn.pin, btn.motion, btn.theme, btn.dot].forEach(function (n) {
+    [btn.list, btn.pin, btn.motion, btn.theme, btn.dot].forEach(function (n) {
       tools.appendChild(n);
     });
-    bar.appendChild(nav);
-    bar.appendChild(h('span', { class: 'vc-bar-gap' }));
-    bar.appendChild(tools);
+    full.appendChild(nav);
+    full.appendChild(h('span', { class: 'vc-bar-gap' }));
+    full.appendChild(tools);
+    bar.appendChild(btn.handle);
+    bar.appendChild(full);
+    btn.handle.addEventListener('click', function () {
+      bar.classList.add('vc-show');
+      btn.list.focus();
+    });
     btn.prev.addEventListener('click', function () {
       if (D.prev) go(D.prev);
     });
     btn.next.addEventListener('click', function () {
       if (D.next) go(D.next);
     });
+    btn.count.addEventListener('click', toggleJump);
+    btn.list.addEventListener('click', toggleJump);
     btn.pin.addEventListener('click', function () {
       setPinning(!pinning);
     });
@@ -492,14 +713,31 @@
     document.body.insertBefore(bar, document.body.firstChild);
     syncBar();
 
-    // Hidden until the pointer comes near the top or the bar takes focus.
+    // Coming from the previous screen with the bar open: keep it open, with
+    // no entrance, so stepping through screens never flashes the controls.
+    try {
+      var open = Number(sessionStorage.getItem('vc-bar-open') || 0);
+      sessionStorage.removeItem('vc-bar-open');
+      if (open && Date.now() - open < 10000) {
+        bar.classList.add('vc-show', 'vc-noanim');
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            bar.classList.remove('vc-noanim');
+          });
+        });
+      }
+    } catch {
+      // Best effort: nothing to do if this fails.
+    }
+
+    // Expanded while the pointer is near the top or the bar has focus.
     var hideTimer;
     document.addEventListener('mousemove', function (e) {
-      var near = e.clientY < 72 || bar.contains(e.target);
+      var near = e.clientY < 72 || bar.contains(e.target) || (jumpEl && jumpEl.contains(e.target));
       if (near) {
         clearTimeout(hideTimer);
         bar.classList.add('vc-show');
-      } else if (bar.classList.contains('vc-show') && !pinning) {
+      } else if (bar.classList.contains('vc-show') && !pinning && !jumpEl) {
         clearTimeout(hideTimer);
         hideTimer = setTimeout(function () {
           bar.classList.remove('vc-show');
@@ -507,8 +745,140 @@
       }
     });
     document.addEventListener('mouseleave', function () {
-      if (!pinning) bar.classList.remove('vc-show');
+      if (!pinning && !jumpEl) bar.classList.remove('vc-show');
     });
+  }
+
+  // ---------- jump list ----------
+  var jumpEl = null,
+    jumpActive = 0,
+    jumpItems = [];
+  function toggleJump() {
+    if (jumpEl) closeJump();
+    else openJump();
+  }
+  function closeJump(restore) {
+    if (!jumpEl) return;
+    jumpEl.remove();
+    jumpEl = null;
+    if (btn.list) btn.list.setAttribute('aria-expanded', 'false');
+    if (restore !== false && btn.list) btn.list.focus();
+  }
+  function openJump() {
+    var list = D.screens || [];
+    if (!list.length) return;
+    bar.classList.add('vc-show');
+    btn.list.setAttribute('aria-expanded', 'true');
+    jumpEl = h('div', { class: 'vc-jump', role: 'dialog', 'aria-label': 'All screens' });
+    var filter = null;
+    if (list.length > 8) {
+      filter = h('input', {
+        class: 'vc-jump-filter',
+        type: 'text',
+        placeholder: 'Filter ' + list.length + ' screens',
+        'aria-label': 'Filter screens',
+      });
+      jumpEl.appendChild(filter);
+    }
+    var ul = h('div', { class: 'vc-jump-list', role: 'listbox', 'aria-label': 'Screens' });
+    jumpEl.appendChild(ul);
+    var theme = currentTheme();
+    function render(term) {
+      ul.innerHTML = '';
+      jumpItems = [];
+      var t = (term || '').toLowerCase();
+      list.forEach(function (x, i) {
+        if (t && (x.title + ' ' + x.name).toLowerCase().indexOf(t) < 0) return;
+        var cur = x.name === D.screen;
+        var item = h('div', {
+          class: 'vc-jump-item' + (cur ? ' vc-current' : ''),
+          role: 'option',
+          id: 'vc-jump-' + i,
+          'aria-selected': 'false',
+          'data-name': x.name,
+        });
+        var thumb = h('span', { class: 'vc-jump-thumb' });
+        if (x.shot)
+          thumb.appendChild(
+            h('img', {
+              src: api('vc/shot/' + encodeURIComponent(x.name) + '.' + theme + '.png'),
+              alt: '',
+              loading: 'lazy',
+            })
+          );
+        var text = h('span', { class: 'vc-jump-text' });
+        text.appendChild(h('span', { class: 'vc-jump-title', text: x.title }));
+        text.appendChild(
+          h('span', {
+            class: 'vc-jump-sub',
+            text: i + 1 + ' · ' + x.name + (cur ? ' · you are here' : ''),
+          })
+        );
+        item.appendChild(thumb);
+        item.appendChild(text);
+        if (x.sent)
+          item.appendChild(
+            h('span', { class: 'vc-jump-sent', title: 'Sent' }, icon('check') + '<span>Sent</span>')
+          );
+        item.addEventListener('click', function () {
+          closeJump(false);
+          if (!cur) go(x.name);
+        });
+        item.addEventListener('mousemove', function () {
+          setActive(jumpItems.indexOf(item));
+        });
+        ul.appendChild(item);
+        jumpItems.push(item);
+      });
+      if (!jumpItems.length)
+        ul.appendChild(h('div', { class: 'vc-jump-empty', text: 'No screens match' }));
+      var here = jumpItems.findIndex(function (n) {
+        return n.classList.contains('vc-current');
+      });
+      setActive(t ? 0 : Math.max(0, here));
+    }
+    function setActive(i) {
+      if (!jumpItems.length) return;
+      jumpActive = clamp(i, 0, jumpItems.length - 1);
+      jumpItems.forEach(function (n, k) {
+        n.setAttribute('aria-selected', k === jumpActive ? 'true' : 'false');
+      });
+      jumpItems[jumpActive].scrollIntoView({ block: 'nearest' });
+      ul.setAttribute('aria-activedescendant', jumpItems[jumpActive].id);
+    }
+    jumpEl.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive(jumpActive + (e.key === 'ArrowDown' ? 1 : -1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (jumpItems[jumpActive]) jumpItems[jumpActive].click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeJump();
+      }
+    });
+    if (filter)
+      filter.addEventListener('input', function () {
+        render(filter.value);
+      });
+    render('');
+    document.body.appendChild(jumpEl);
+    if (filter) filter.focus();
+    else {
+      ul.tabIndex = 0;
+      ul.focus();
+    }
+    setTimeout(function () {
+      document.addEventListener('mousedown', function outside(e) {
+        if (!jumpEl) return document.removeEventListener('mousedown', outside);
+        if (!jumpEl.contains(e.target) && !bar.contains(e.target)) {
+          document.removeEventListener('mousedown', outside);
+          closeJump(false);
+        }
+      });
+    }, 0);
   }
   function peekBar() {
     if (!bar) return;
@@ -525,8 +895,10 @@
     btn.count.textContent = D.total ? D.index + 1 + ' / ' + D.total : '';
     btn.count.setAttribute(
       'aria-label',
-      D.total ? 'Screen ' + (D.index + 1) + ' of ' + D.total : ''
+      D.total ? 'Screen ' + (D.index + 1) + ' of ' + D.total + ', show all screens' : 'All screens'
     );
+    btn.handle.innerHTML =
+      '<span>' + (D.total ? D.index + 1 + ' / ' + D.total : '') + '</span>' + icon('more');
     var dark = currentTheme() === 'dark';
     btn.theme.innerHTML = icon(dark ? 'sun' : 'moon');
     btn.theme.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
@@ -566,275 +938,86 @@
       if (to) go(to);
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && WAKE && !noteEl) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && WAKE && !(review() && review().busy)) {
       e.preventDefault();
-      if (currentSelection().length) sendNow();
+      sendNow();
       return;
     }
     if (e.key === 'Escape') {
-      if (noteEl) return closeNote(true);
-      if (pinning) return setPinning(false);
+      if (jumpEl) return closeJump();
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
     var k = e.key.toLowerCase();
     if (k === 'c') {
-      setPinning(!pinning);
-      peekBar();
+      peekBar(); // review.js toggles picking
     } else if (k === 't') {
       setTheme(currentTheme() === 'dark' ? 'light' : 'dark');
       peekBar();
     } else if (k === 'm') {
       setMotion(reduced() ? 'full' : 'reduce');
       peekBar();
+    } else if (k === 'g' && bar) {
+      e.preventDefault();
+      toggleJump();
     }
   });
 
   // ---------- pins ----------
+  // review.js draws pins, the note and the pick hint: one implementation for
+  // fragments and full prototypes. The frame mounts it in the page (light DOM,
+  // so the chrome layer styles it) and hands it this page's event queue, so a
+  // pin is recorded and wakes the chat exactly as before.
   var pinning = false;
-  var pinLayer, noteEl, draft;
-  var pins = [];
-  function ensurePinLayer() {
-    if (pinLayer) return pinLayer;
-    pinLayer = h('div', { class: 'vc-pins', role: 'group', 'aria-label': 'Pinned notes' });
-    pinLayer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;';
-    document.body.appendChild(pinLayer);
-    return pinLayer;
+  function review() {
+    return window.__review || null;
   }
   function setPinning(on) {
-    pinning = on;
-    root.classList.toggle('vc-pinning', on);
-    if (!on) closeNote(true);
-    if (bar) bar.classList.toggle('vc-show', on);
-    hint(on ? 'Click anywhere to pin a note <span>· Esc to finish</span>' : null);
+    var r = review();
+    if (r) r.setPicking(on);
+  }
+  window.addEventListener('review:picking', function (e) {
+    pinning = !!e.detail;
+    if (bar) bar.classList.toggle('vc-show', pinning);
     syncBar();
-  }
-  function selectorFor(el) {
-    var parts = [];
-    while (el && el.nodeType === 1 && el !== document.body && parts.length < 6) {
-      if (el.id) {
-        parts.unshift('#' + CSS.escape(el.id));
-        break;
-      }
-      var s = el.tagName.toLowerCase();
-      var cls = [].filter
-        .call(el.classList, function (c) {
-          return c.indexOf('vc-') !== 0 && c !== 'selected';
-        })
-        .slice(0, 2);
-      if (cls.length) s += '.' + cls.map(CSS.escape).join('.');
-      var p = el.parentElement;
-      if (p) {
-        var same = [].filter.call(p.children, function (c) {
-          return c.tagName === el.tagName;
-        });
-        if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
-      }
-      parts.unshift(s);
-      el = p;
-    }
-    return parts.join(' > ');
-  }
-  function docSize() {
-    return { w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight };
-  }
-  // Where a pin goes now: relative to its element if that still exists, else its page point.
-  function pinPoint(p) {
-    if (p.selector && p.rel) {
-      var el;
-      try {
-        el = document.querySelector(p.selector);
-      } catch {
-        // Best effort: nothing to do if this fails.
-      }
-      if (el) {
-        var r = el.getBoundingClientRect();
-        if (r.width && r.height)
-          return {
-            x: r.left + scrollX + p.rel.x * r.width,
-            y: r.top + scrollY + p.rel.y * r.height,
-          };
-      }
-    }
-    return { x: p.x, y: p.y };
-  }
-  function renderPins() {
-    ensurePinLayer();
-    pinLayer.querySelectorAll('.vc-pin:not([data-draft])').forEach(function (n) {
-      n.remove();
-    });
-    pins.forEach(function (p) {
-      var pt = pinPoint(p);
-      var b = h('button', {
-        class: 'vc-pin',
-        type: 'button',
-        'aria-label': 'Note ' + p.n + ': ' + (p.note || ''),
-        'data-n': p.n,
-        text: String(p.n),
-      });
-      b.style.left = pt.x + 'px';
-      b.style.top = pt.y + 'px';
-      b.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openNote(p, b);
-      });
-      pinLayer.appendChild(b);
-    });
-  }
-  function nextN() {
-    return (
-      pins.reduce(function (m, p) {
-        return Math.max(m, p.n);
-      }, 0) + 1
-    );
-  }
-  function placeNote(anchorX, anchorY) {
-    var w = 264;
-    var x = anchorX + 18;
-    if (x + w > scrollX + innerWidth - 12) x = anchorX - w - 18;
-    noteEl.style.left = Math.max(scrollX + 8, x) + 'px';
-    noteEl.style.top = Math.max(scrollY + 8, anchorY - 12) + 'px';
-  }
-  function openDraft(e) {
-    closeNote(true);
-    var target = document.elementFromPoint(e.clientX, e.clientY) || document.body;
-    var r = target.getBoundingClientRect();
-    var size = docSize();
-    var n = nextN();
-    draft = {
-      n: n,
-      x: Math.round(e.pageX),
-      y: Math.round(e.pageY),
-      xPct: +((e.pageX / size.w) * 100).toFixed(2),
-      yPct: +((e.pageY / size.h) * 100).toFixed(2),
-      selector: selectorFor(target),
-      rel:
-        r.width && r.height
-          ? {
-              x: +((e.clientX - r.left) / r.width).toFixed(4),
-              y: +((e.clientY - r.top) / r.height).toFixed(4),
-            }
-          : null,
-      target: (target.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
-      tag: target.tagName.toLowerCase(),
-      viewport: { w: innerWidth, h: innerHeight },
-    };
-    ensurePinLayer();
-    var marker = h('button', {
-      class: 'vc-pin',
-      type: 'button',
-      'data-draft': '',
-      tabindex: '-1',
-      'aria-hidden': 'true',
-      text: String(n),
-    });
-    marker.style.left = draft.x + 'px';
-    marker.style.top = draft.y + 'px';
-    pinLayer.appendChild(marker);
-    draft.marker = marker;
-
-    noteEl = h('div', { class: 'vc-note', role: 'dialog', 'aria-label': 'Note ' + n });
-    noteEl.innerHTML =
-      '<label class="vc-sr" for="vc-note-input">Note ' +
-      n +
-      '</label>' +
-      '<textarea id="vc-note-input" rows="3" placeholder="What should change here?"></textarea>' +
-      '<div class="vc-note-actions"><button type="button" data-act="cancel">Cancel</button><button type="button" class="vc-primary" data-act="save">Pin note</button></div>';
-    pinLayer.appendChild(noteEl);
-    placeNote(draft.x, draft.y);
-    var ta = noteEl.querySelector('textarea');
-    ta.focus();
-    ta.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter' && !ev.shiftKey) {
-        ev.preventDefault();
-        saveDraft();
-      }
-    });
-    noteEl.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var act = ev.target.closest('[data-act]');
-      if (!act) return;
-      if (act.dataset.act === 'save') saveDraft();
-      else closeNote(true);
-    });
-  }
-  function saveDraft() {
-    if (!draft) return;
-    var note = noteEl.querySelector('textarea').value.trim();
-    if (!note) return noteEl.querySelector('textarea').focus();
-    var p = Object.assign({}, draft, { note: note });
-    delete p.marker;
-    pins.push(p);
-    closeNote(true);
-    renderPins();
-    sendEvent(Object.assign({ type: 'pin', selection: currentSelection() }, p));
-    toast('<b>Note ' + p.n + '</b> ' + (WAKE ? 'sent to ' + esc(WHO) : 'pinned' + feedbackLine()));
-  }
-  function openNote(p, anchor) {
-    closeNote(true);
-    ensurePinLayer();
-    noteEl = h('div', { class: 'vc-note', role: 'dialog', 'aria-label': 'Note ' + p.n });
-    noteEl.innerHTML =
-      '<div class="vc-note-meta">Note ' +
-      p.n +
-      '</div><div class="vc-note-text">' +
-      esc(p.note || '') +
-      '</div>' +
-      '<div class="vc-note-actions"><button type="button" data-act="delete">Remove</button><button type="button" class="vc-primary" data-act="close">Done</button></div>';
-    pinLayer.appendChild(noteEl);
-    var pt = pinPoint(p);
-    placeNote(pt.x, pt.y);
-    noteEl.querySelector('[data-act="close"]').focus();
-    noteEl.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var act = ev.target.closest('[data-act]');
-      if (!act) return;
-      if (act.dataset.act === 'delete') {
-        pins = pins.filter(function (x) {
-          return x.n !== p.n;
-        });
-        sendEvent({ type: 'pin-delete', n: p.n });
-        closeNote(false);
-        renderPins();
-      } else closeNote(false);
-      if (anchor && anchor.isConnected) anchor.focus();
-    });
-  }
-  function closeNote(dropDraft) {
-    if (noteEl) noteEl.remove();
-    noteEl = null;
-    if (dropDraft && draft) {
-      if (draft.marker) draft.marker.remove();
-      draft = null;
-    }
-  }
-  // In pin mode a click drops a note instead of doing whatever it would do.
-  document.addEventListener(
-    'click',
-    function (e) {
-      if (!pinning) return;
-      if (e.target.closest('.vc-bar, .vc-note, .vc-pin, .vc-chip, .vc-toast')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openDraft(e);
-    },
-    true
-  );
-  function loadPins() {
-    if (!D.screen) return;
-    fetch(api('vc/pins?screen=' + encodeURIComponent(D.screen)), { cache: 'no-store' })
-      .then(function (r) {
-        return r.json();
-      })
-      .then(function (list) {
-        pins = list || [];
-        renderPins();
-      })
-      .catch(function () {});
-  }
-  window.addEventListener('resize', function () {
-    if (pins.length) renderPins();
   });
+  window.addEventListener('review:saved', function (e) {
+    var p = e.detail || {};
+    toast(
+      '<b>Note ' +
+        p.n +
+        '</b> ' +
+        (p.kind === 'note'
+          ? 'kept as a note'
+          : WAKE
+            ? 'sent to ' + esc(WHO)
+            : 'pinned' + feedbackLine())
+    );
+  });
+  function requestCount() {
+    var r = review();
+    return r ? r.requests().length : 0;
+  }
+  window.REVIEW_CONFIG = {
+    name: D.title || D.screen,
+    screen: D.screen,
+    agent: R.label || 'the agent',
+    mount: 'light',
+    chrome: false,
+    ignore: '.vc-bar, .vc-chip, .vc-toast, .vc-send, .vc-jump',
+    // Fragments are stamped with data-src by the server; the raw file is the fallback.
+    sources: D.screen
+      ? [
+          {
+            url: api('files/' + encodeURIComponent(D.screen) + '.html'),
+            label: 'content/' + D.screen + '.html',
+          },
+        ]
+      : [],
+    post: function (ev) {
+      return sendEvent(Object.assign({ selection: currentSelection() }, ev));
+    },
+  };
 
   // ---------- live reload: WebSocket, then polling ----------
   var ws = null;
@@ -963,6 +1146,7 @@
         // screen that is already older than the one on view.
         syncHistory();
       } else if (data.type === 'screens') syncHistory();
+      else if (data.type === 'review' && data.screen === D.screen && review()) review().refresh();
     };
     ws.onclose = function () {
       clearTimeout(guard);
@@ -1664,8 +1848,32 @@
   window.vc = api_;
   window.brainstorm = api_; // v1 name
 
+  // Put back this screen's picks as the person left them. If that same
+  // selection was already sent, don't offer to send it again.
+  function restoreSaved() {
+    var sv = D.saved || {};
+    var picks = sv.choices && sv.choices.length ? sv.choices : sv.sent || [];
+    picks.forEach(function (c) {
+      document.querySelectorAll('[data-choice]').forEach(function (el) {
+        if (el.dataset.choice !== c) return;
+        el.classList.add('selected');
+        if (el.hasAttribute('aria-pressed')) el.setAttribute('aria-pressed', 'true');
+        window.selectedChoice = c;
+      });
+    });
+    if (sv.sentAt) {
+      var sentIds = (sv.sent || []).slice().sort().join('|');
+      sentInfo = { at: sv.sentAt, labels: sv.sentLabels || [], message: sv.sentMessage || null };
+      // The pick on screen is the one that was sent: show it as sent.
+      if (sentIds === picks.slice().sort().join('|')) sentSig = JSON.stringify(currentSelection());
+      else sentSig = '__changed__';
+    }
+    syncSendBar();
+  }
+
   // ---------- start ----------
   init(document);
+  if (!SHOT) restoreSaved();
   if (window.__vcMotion) applyMotionRules();
   if (!SHOT) {
     buildBar();
@@ -1693,7 +1901,6 @@
     rememberLatest(D.latest);
     connect();
   }
-  loadPins();
   var ready = function () {
     window.__vcReady = true;
     root.setAttribute('data-vc-ready', '');

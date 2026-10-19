@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import process from 'node:process';
 import { setTimeout, clearTimeout } from 'node:timers';
-import { URL } from 'node:url';
+import { URL, fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile, readFile, open } from 'node:fs/promises';
@@ -12,6 +13,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
 
 const { fetch, AbortSignal } = globalThis;
+// The space server's folder in the image, `/work/<SPACE_DIR>`: the one above this
+// file's acceptance/ folder, so it follows the folder when it moves (DOR-3007).
+const spaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = '/data/acceptance';
 await mkdir(root, { recursive: true, mode: 0o700 });
 const databaseUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -218,13 +222,13 @@ try {
   const test = spawn(
     process.execPath,
     [
-      '/work/apps/community/node_modules/@playwright/test/cli.js',
+      `${spaceDir}/node_modules/@playwright/test/cli.js`,
       'test',
       '--config',
       'acceptance/playwright.config.ts',
     ],
     {
-      cwd: '/work/apps/community',
+      cwd: spaceDir,
       env: {
         ...environment,
         COMMUNITY_ACCEPTANCE_ROOT: root,

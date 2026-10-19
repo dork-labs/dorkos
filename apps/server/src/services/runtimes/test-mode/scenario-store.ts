@@ -2,6 +2,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { InterruptOutcome, StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
 import { DEMO_TEAM_ROOM_SCENARIOS } from './demo-team-room-scenario.js';
+import { DEMO_WORKSPACE_SCENARIOS } from './demo-workspace-scenarios.js';
 import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
 import { CONNECTION_REQUEST_SCENARIOS } from './connection-request-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
@@ -291,6 +292,9 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   // The #team conversation the capture films: each agent answers through a
   // real room turn (`demo-team-room-scenario.ts`).
   ...DEMO_TEAM_ROOM_SCENARIOS,
+  // The turns the video team's demo workspace answers on camera
+  // (`demo-workspace-scenarios.ts`).
+  ...DEMO_WORKSPACE_SCENARIOS,
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,
   ...HELD_PROCESS_SCENARIOS,

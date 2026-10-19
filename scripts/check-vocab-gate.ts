@@ -10,7 +10,8 @@
  * runs it on every change instead of once.
  *
  * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, `apps/server/src`, and
- * `apps/community/src` (the space's own website, DOR-2653) —
+ * the space server's code and its web page (DOR-2653; their folders are
+ * `SPACE_SRC_DIR` and `SPACE_WEB_DIR` in `ci/space-server.env`) —
  * every workspace whose strings can reach a screen a DorkOS user reads,
  * including server-authored copy the client renders verbatim (a provisioning
  * error, an MCP tool title) — for TypeScript/TSX source, using the real
@@ -161,6 +162,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { readSpaceServer } from './lib/space-server.mjs';
 
 /** `relative()`'s output with OS separators normalized to `/`, for portable path matching. */
 function toPosixRelative(from: string, to: string): string {
@@ -227,18 +229,40 @@ export interface Violation {
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
-/**
- * Workspaces that render product copy a DorkOS user reads. `apps/community/src`
- * joined in DOR-2653: it is the space's own website and the API errors and
- * emails that site and the DorkOS app show, swept to "space" once DOR-2631
- * had renamed the app.
- */
-const DEFAULT_SCAN_ROOTS = [
+/** Workspaces that render product copy a DorkOS user reads. */
+const PRODUCT_SCAN_ROOTS = [
   'apps/client/src',
   'apps/site/src',
   'apps/server/src',
-  'apps/community/src',
+  // Copy the space's web page and the space server share (server-merge step 7).
+  'packages/shared/src/space-page',
 ];
+
+/**
+ * Add the space server's source to the scan roots unless a root already holds it.
+ *
+ * The space server's source joined the scan in DOR-2653: it is the space's own
+ * website and the API errors and emails that site and the DorkOS app show,
+ * swept to "space" once DOR-2631 had renamed the app. Its folder comes from
+ * `ci/space-server.env` (DOR-3007). Once the space server moves inside
+ * `apps/server/src`, that root already reaches it, and listing it again would
+ * report every hit in it twice.
+ *
+ * @param roots - The product roots.
+ * @param spaceSrcDir - The space server's source folder.
+ */
+export function withSpaceSource(roots: readonly string[], spaceSrcDir: string): string[] {
+  const covered = roots.some((root) => spaceSrcDir === root || spaceSrcDir.startsWith(`${root}/`));
+  return covered ? [...roots] : [...roots, spaceSrcDir];
+}
+
+const SPACE_SERVER = readSpaceServer(join(SCRIPT_DIR, '..'));
+// The space's web page is product copy too; it sits outside the server's code from the move
+// into apps/server (server-merge step 7) until it joins apps/client.
+const DEFAULT_SCAN_ROOTS = withSpaceSource(
+  withSpaceSource(PRODUCT_SCAN_ROOTS, SPACE_SERVER.spaceSrcDir),
+  SPACE_SERVER.spaceWebDir
+);
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
 const EXCLUDED_SEGMENTS = [

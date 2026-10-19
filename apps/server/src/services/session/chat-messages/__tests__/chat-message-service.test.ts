@@ -30,8 +30,9 @@ import type {
 } from '../../launch/launch-session.js';
 import type { SessionFacts } from '../../../extensions/agent-send/agent-send-defaults.js';
 import { ChatMessageStore } from '../chat-message-store.js';
+import { CHAT_LAUNCH_CAP_MESSAGE } from '../chat-queue-standing.js';
 import {
-  CHAT_BATCH_WINDOW_MS,
+  CHAT_MESSAGE_MAX,
   ChatMessageError,
   ChatMessageService,
   type ChatMessageServiceDeps,
@@ -203,6 +204,15 @@ afterEach(() => {
 });
 
 describe('send — to an idle chat', () => {
+  // DOR-3107: a sender whose turn read nobody's words but ours passes on
+  // nothing to strip; the chat it opens follows its agent's own level.
+  it('opens a chat that follows its agent’s level when the sending turn was not marked', async () => {
+    chat('chat-b');
+    levels.set('chat-a', { asks: 'never', reach: 'everything' });
+    await service.send(ANA, { to: 'chat-b', message: 'Please review PR 12.' });
+    expect(dispatched[0]!.origin).toEqual({ kind: 'chat-message' });
+  });
+
   it('dispatches as a chat message under the sender’s lock identity and the row’s queue id', async () => {
     chat('chat-b');
     const receipt = await service.send(ANA, { to: 'chat-b', message: '  Please review PR 12.  ' });
@@ -210,7 +220,9 @@ describe('send — to an idle chat', () => {
     expect(dispatched).toHaveLength(1);
     const [opts] = dispatched;
     const [row] = sentByAna();
-    expect(opts!.origin).toEqual({ kind: 'chat-message' });
+    // The sender's level is not known here, which is bounded like a marked
+    // turn: the chat it opens inherits nothing (DOR-3107).
+    expect(opts!.origin).toEqual({ kind: 'chat-message', marked: true });
     expect(opts!.sessionId).toBe('chat-b');
     expect(opts!.clientId).toBe('chat:chat-a');
     expect(opts!.messageId).toBe(row!.queueMessageId);
@@ -260,6 +272,23 @@ describe('send — to a busy chat', () => {
     expect(receipt).toMatchObject({ status: 'queued', position: 2 });
     expect(dispatched[0]!.countsTowardLaunchCap).toBe(false);
     expect(sentByAna()[0]!.status).toBe('queued');
+  });
+
+  it('says how many messages are ahead of it (DOR-2994)', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    queue.enqueue({ sessionId: 'chat-b', content: 'person words', clientId: PERSON });
+    await service.send(
+      { sessionId: 'chat-c', agentPath: '/agents/bo' },
+      {
+        to: 'chat-b',
+        message: 'from another chat',
+      }
+    );
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+    // It joins the other chat's row, so the person's message is the one ahead.
+    expect(receipt).toMatchObject({ position: 2, ahead: 1 });
   });
 });
 
@@ -335,6 +364,21 @@ describe('send — refusals', () => {
       'UNAVAILABLE'
     );
     expect(sentByAna()).toEqual([]);
+  });
+
+  it('says a capped send was not kept and must be sent again, never calling it a spin-off (DOR-2994)', async () => {
+    chat('chat-b');
+    dispatchImpl = async () =>
+      ({
+        refused: 'LAUNCH_CAP_FULL',
+        message: 'Too many spin-off chats are running (8). Try again when one finishes.',
+      }) as DispatchSessionMessageResult;
+
+    const err = await refusal(service.send(ANA, { to: 'chat-b', message: 'hi' }));
+
+    expect(err.message).toBe(CHAT_LAUNCH_CAP_MESSAGE);
+    expect(err.message).not.toMatch(/spin-off/);
+    expect(err.message).toMatch(/Nothing was kept/);
   });
 });
 
@@ -456,17 +500,61 @@ describe('send — batching', () => {
     expect(queue.list('chat-b')).toHaveLength(2);
   });
 
-  it('does not batch behind an agent row older than the window', async () => {
+  // DOR-3054: five messages sent minutes apart to a chat in an hour-long turn
+  // each got a row, so each ran as its own turn and the last arrived hours late.
+  it('batches behind an agent row however long it has waited', async () => {
     chat('chat-b');
     busy.add('chat-b');
     queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
     service.stop();
-    service = build({ now: () => Date.now() + CHAT_BATCH_WINDOW_MS + 60_000 });
+    service = build({ now: () => Date.now() + 60 * 60_000 });
 
     await service.send(ANA, { to: 'chat-b', message: 'from A' });
 
+    expect(dispatched).toEqual([]);
+    expect(queue.get('q-c')!.content).toMatch(/^from C\n\n/);
+  });
+
+  // DOR-3054: hours of messages into a chat stuck in a long turn must not
+  // become one prompt that fails all at once.
+  it('starts a new row once a batch would pass its size limit', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    queue.enqueue({
+      id: 'q-c',
+      sessionId: 'chat-b',
+      content: 'x'.repeat(5 * CHAT_MESSAGE_MAX - 10),
+      clientId: 'chat:chat-c',
+    });
+
+    await service.send(ANA, { to: 'chat-b', message: 'from A, long enough to pass the limit' });
+
     expect(dispatched).toHaveLength(1);
-    expect(queue.get('q-c')!.content).toBe('from C');
+    expect(queue.list('chat-b')).toHaveLength(2);
+    expect(queue.get('q-c')!.content).not.toContain('from A');
+  });
+
+  // DOR-3054, the done-when: N messages sent minutes apart to a busy chat all
+  // run at its next turn boundary, as one turn, in the order they were sent.
+  it('delivers N messages sent minutes apart together, in send order', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    let clock = Date.now();
+    service.stop();
+    service = build({ now: () => clock });
+    const words = ['one', 'two', 'three', 'four', 'five'];
+    for (const word of words) {
+      await service.send(ANA, { to: 'chat-b', message: `message ${word}` });
+      clock += 3 * 60_000;
+    }
+
+    const rows = queue.list('chat-b');
+    expect(rows).toHaveLength(1);
+    expect(dispatched).toHaveLength(1);
+    const at = words.map((word) => rows[0]!.content.indexOf(`message ${word}`));
+    expect(at.every((index) => index >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(sentByAna().every((row) => row.queueMessageId === rows[0]!.id)).toBe(true);
   });
 
   it('does not batch into a row being read into a turn right now', async () => {
@@ -549,6 +637,22 @@ describe('send — steer', () => {
     expect(receipt.status).toBe('steered');
   });
 
+  // DOR-3054: a steer that has to wait waits with the other agent messages,
+  // not a turn behind them.
+  it('batches a steer that has to wait with the agent messages already waiting', async () => {
+    levels.set(ANA.sessionId, MIDDLE);
+    levels.set('chat-b', LOOSE);
+    queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(dispatched).toEqual([]);
+    expect(receipt.status).toBe('queued');
+    expect(receipt.note).toMatch(/may do more than your chat can/);
+    expect(receipt.note).toMatch(/waits with the other agent messages there/);
+    expect(sentByAna()[0]!.queueMessageId).toBe('q-c');
+  });
+
   it('never steers into a turn looser than the sender: it waits, with a note', async () => {
     levels.set(ANA.sessionId, MIDDLE);
     levels.set('chat-b', LOOSE);
@@ -623,7 +727,11 @@ describe('send — interrupt', () => {
 
 describe('send — replies', () => {
   /** A message chat B sent chat A. */
-  function fromB(id: string, status: 'working' | 'delivered' = 'working', to = ANA.sessionId) {
+  function fromB(
+    id: string,
+    status: 'queued' | 'working' | 'delivered' = 'working',
+    to = ANA.sessionId
+  ) {
     store.insert({
       id,
       toSessionId: to,
@@ -677,6 +785,16 @@ describe('send — replies', () => {
     expect(sentByAna()[0]!.replyToId).toBe('bbbb2222');
     expect(store.get('bbbb2222')!.status).toBe('replied');
     expect(store.get('aaaa1111')!.status).toBe('delivered');
+  });
+
+  it('never calls a message still waiting in the queue replied (DOR-2994)', async () => {
+    fromB('aaaa1111', 'delivered');
+    fromB('bbbb2222', 'queued');
+
+    await service.send(ANA, { to: 'chat-b', message: 'unrelated news' });
+
+    expect(store.get('bbbb2222')!.status).toBe('queued');
+    expect(sentByAna()[0]!.replyToId).toBe('aaaa1111');
   });
 });
 
@@ -803,6 +921,48 @@ describe('the lifecycle of a sent message', () => {
     for (const id of ids) {
       expect(store.get(id)).toMatchObject({ status: 'failed', failureReason: expect.any(String) });
     }
+  });
+
+  it('a turn the runtime refused before the agent saw it → failed, never delivered, with its words (DOR-2994)', async () => {
+    const { queueId, ids } = await queuedPair();
+    lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+    lifecycle!({
+      phase: 'settled',
+      messageId: queueId,
+      sessionId: 'chat-b',
+      outcome: 'failed',
+      reason: 'pending-interaction',
+    });
+    for (const id of ids) {
+      // Written for the sender, never the refusing chat's "answer the open
+      // request", which the sender cannot do.
+      expect(store.get(id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'Not delivered: that chat is waiting on its person. Send it again later.',
+      });
+    }
+  });
+
+  it('says why in the receipt when the turn was refused before the send returned', async () => {
+    chat('chat-b');
+    dispatchImpl = async (opts) => {
+      lifecycle!({ phase: 'started', messageId: opts.messageId!, sessionId: 'chat-b' });
+      lifecycle!({
+        phase: 'settled',
+        messageId: opts.messageId!,
+        sessionId: 'chat-b',
+        outcome: 'failed',
+        reason: 'warm-ceiling',
+      });
+      return defaultDispatch(opts);
+    };
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+    expect(receipt).toMatchObject({
+      status: 'failed',
+      failureReason: 'Not delivered: that computer has too many chats open. Send it again later.',
+    });
   });
 
   it('dropped → failed, saying why', async () => {

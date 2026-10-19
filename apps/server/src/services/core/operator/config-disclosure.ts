@@ -229,6 +229,8 @@ export const CONFIG_DISCLOSURE = {
   // Whether chatting from the web is on (DOR-2946): a plain boolean. The hub's
   // address and the relay secret live in the relay's own file, never in config.
   'sessionRelay.enabled': 'expose',
+  // Whether the Docs experiment is on (DOR-2993): a plain boolean.
+  'docs.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a
@@ -473,6 +475,9 @@ export const CONFIG_DISCLOSURE = {
   // work runs on this machine, names no credential and no person, and an agent
   // that can see it can say why a session behaves the way it does.
   'runtimes.claudeCode.persistentSession': 'expose',
+  // How many agents may run at once here (DOR-3012). A number about this
+  // machine, naming no credential and no person.
+  'runtimes.claudeCode.maxWarmProcesses': 'expose',
   'runtimes.opencode.defaultModel': 'expose',
   'runtimes.codex.defaultModel': 'expose',
   'runtimes.codex.defaultEffort': 'expose',

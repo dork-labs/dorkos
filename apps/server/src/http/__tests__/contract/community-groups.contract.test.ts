@@ -59,6 +59,7 @@ import {
   checkContractCase,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 import {
   FAKE_ATTACHMENT_BYTES,
@@ -978,6 +979,7 @@ describe('contract: the space routes with login on', () => {
   it('answers the owner’s cookie at another name as that person', async () => {
     // The "from this machine" refusal is for a caller nobody signed in; a
     // signed-in owner on another device is a person, and is answered.
+    const cookie = await signInAt(server!.baseUrl, PROXIED_HOST, OWNER);
     await check(server, {
       path: '/api/community-connections',
       headers: { ...cookie, host: PROXIED_HOST },

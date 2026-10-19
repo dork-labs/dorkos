@@ -837,15 +837,30 @@ describe('relevant panel views', () => {
   });
 
   it('keeps the last view closed after remount until it is explicitly reopened', () => {
+    // Off a chat: in one, Profile cannot be closed (FB-60, below).
     const onlyProfile = contributions.filter((view) => view.id === 'profile');
-    const first = renderHook(() => usePanelViews(onlyProfile, '/session'));
+    const first = renderHook(() => usePanelViews(onlyProfile, '/team'));
     act(() => first.result.current.closeView('profile'));
     expect(useAppStore.getState().activeRightPanelTab).toBeNull();
     first.unmount();
-    const restored = renderHook(() => usePanelViews(onlyProfile, '/session'));
+    const restored = renderHook(() => usePanelViews(onlyProfile, '/team'));
     expect(restored.result.current.visible).toHaveLength(0);
     act(() => useAppStore.getState().requestRightPanel('profile', '/agents/one'));
     expect(restored.result.current.activeId).toBe('profile');
+  });
+  it('never closes the chat agent’s profile in a 1:1 chat, even over a close saved elsewhere (FB-60)', () => {
+    const onlyProfile = contributions.filter((view) => view.id === 'profile');
+    const offChat = renderHook(() => usePanelViews(onlyProfile, '/team'));
+    act(() => offChat.result.current.closeView('profile'));
+    expect(offChat.result.current.visible).toHaveLength(0);
+    offChat.unmount();
+    useAppStore.setState({ activeRightPanelTab: 'profile' });
+    const inChat = renderHook(() => usePanelViews(onlyProfile, '/session'));
+    expect(inChat.result.current.visible.map((v) => v.id)).toEqual(['profile']);
+    expect(inChat.result.current.visible[0]?.permanent).toBe(true);
+    act(() => inChat.result.current.closeView('profile'));
+    expect(inChat.result.current.visible.map((v) => v.id)).toEqual(['profile']);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
   });
   // Categories are discoverable through + without consuming tab space in every chat.
   it('starts with Profile and Files and shows Computer only for its bound agent', () => {

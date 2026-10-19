@@ -9,8 +9,10 @@ import {
   CommunityConnectionPollResponseSchema,
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
+  CommunityWakeAgentsFromSchema,
   type CommunityConnectionTransport,
 } from '@dorkos/shared/community-connections';
+import { CommunityTeammateSpendSchema } from '@dorkos/shared/community-teammates';
 import {
   CommunityNavigationResolveResponseSchema,
   CommunityNavigationStateSchema,
@@ -64,6 +66,32 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
     async getCommunityDisconnectImpact(ref) {
       return CommunityDisconnectImpactSchema.parse(
         await fetchJSON(baseUrl, `${path(ref)}/disconnect-impact`)
+      );
+    },
+    async getCommunityWakeAgentsFrom(ref) {
+      return CommunityWakeAgentsFromSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/wake-agents-from`)
+      );
+    },
+    async setCommunityWakeAgentsFrom(ref, wakeAgentsFrom) {
+      return CommunityWakeAgentsFromSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/wake-agents-from`, {
+          method: 'PUT',
+          body: JSON.stringify({ wakeAgentsFrom }),
+        })
+      );
+    },
+    async getCommunityTeammateSpend(ref) {
+      return CommunityTeammateSpendSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/teammate-spend`)
+      );
+    },
+    async setCommunityTeammateSpendLimit(ref, monthlyLimitUsd) {
+      return CommunityTeammateSpendSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/teammate-spend`, {
+          method: 'PUT',
+          body: JSON.stringify({ monthlyLimitUsd }),
+        })
       );
     },
     async getCommunityNavigation() {

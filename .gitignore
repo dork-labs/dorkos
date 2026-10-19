@@ -100,6 +100,10 @@ mockups/running-figure-v3.html
 .agents/skills/*__*
 # The visual companion's generated CSS (scripts/vc build); built on first use.
 .agents/skills/visual-companion/scripts/assets/
+# ...and what its tools write: the example prototype's build (build-proto.cjs),
+# and screenshots or note crops if a run ever lands them beside the skill.
+.agents/skills/visual-companion/examples/prototype/index.html
+.agents/skills/visual-companion/**/shots/
 .claude/skills/*__*
 .claude/settings.local.json
 .codex/hooks.json

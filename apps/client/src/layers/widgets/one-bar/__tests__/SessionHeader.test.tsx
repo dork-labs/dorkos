@@ -7,6 +7,12 @@ import { BarHarness } from './bar-harness';
 
 // The fixed cluster OneBar renders. Both are real widgets with their own data
 // needs; this suite is about what the BAR says, so they are stubbed at the seam.
+const directChat = vi.hoisted(() => ({ current: null as null | { roomId: string } }));
+vi.mock('@/layers/entities/room', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/room')>()),
+  useDirectChat: () => ({ data: directChat.current }),
+}));
+
 vi.mock('@/layers/widgets/inbox-bell', () => ({
   InboxBell: () => <button aria-label="Inbox">Inbox</button>,
 }));
@@ -67,6 +73,7 @@ function titleElement(text: string) {
 describe('SessionHeader', () => {
   afterEach(() => {
     cleanup();
+    directChat.current = null;
   });
 
   // --- Identity (D1): face · name · › · title ---
@@ -99,6 +106,20 @@ describe('SessionHeader', () => {
   it('says "New chat" before any title has been fetched at all', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL });
     expect(screen.getByText('New chat')).toBeInTheDocument();
+  });
+
+  it('calls an agent’s Direct chat "Direct", whatever its title, with no origin chip (S12)', () => {
+    directChat.current = { roomId: 'dm-ana' };
+    renderBar({
+      agentName: 'dorkbot',
+      agentVisual: VISUAL,
+      sessionTitle: 'Whatever the runtime called it',
+      origin: 'room',
+      originLabel: 'The DM underneath',
+    });
+    expect(screen.getByText('Direct')).toBeInTheDocument();
+    expect(screen.queryByText('Whatever the runtime called it')).not.toBeInTheDocument();
+    expect(screen.queryByText('The DM underneath')).toBeNull();
   });
 
   it('falls back to the directory name when the session has no agent', () => {

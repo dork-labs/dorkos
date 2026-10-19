@@ -7,6 +7,7 @@
  *
  * @module startup/steps/rooms
  */
+import { wireDirectChats } from '../../services/rooms/direct-chat/index.js';
 import {
   ReadCursorService,
   setReadCursorService,
@@ -75,6 +76,7 @@ import {
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { runsTeammateTurns } from '../../services/rooms/limits/teammate-turn.js';
+import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
 import { agentRuntimeTypeFrom } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import {
   followSessionRekeys,
@@ -195,6 +197,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     if (!agent || !projectPath) return false;
     return runsTeammateTurns(agentRuntimeTypeFrom(projectPath, agent.runtime));
   });
+  // What each teammate turn cost, counted against its space's monthly limit (DOR-2956).
+  wireTeammateSpend(refs.remoteCommunityRuntime.mirrors);
   refs.remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: refs.remoteCommunityRuntime.mirrors,
@@ -268,6 +272,12 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   // inbound chat bridge acts as this author for its lifecycle writes
   // (chats-as-channels §3.5, §10.9).
   const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
+  // Each agent's standing Direct chat with the person (rule S12, DOR-2997).
+  const directChats = wireDirectChats({
+    store: roomStore,
+    authors: roomAuthors,
+    rooms: roomService,
+  });
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
   // as-channels §6.7, DOR-899) — never the room registry's 'You'. One reader,
@@ -476,6 +486,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       },
       hasTranscript: async (agentPath, sessionId) =>
         (await transcripts.hasTranscript(agentPath, sessionId)).exists,
+      neverRan: async (sessionId) =>
+        !(await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
     };
     void repairRoomSessionBindings({ store: roomStore, ...refs.roomBindingTranscripts }).then(
       (report) => {
@@ -558,6 +570,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     canvasDocuments,
     resolveOperatorAuthorId,
     resolveOperatorDisplayName,
+    directChats,
     roomRepoStore,
     roomWorktrees,
     roomMerges,

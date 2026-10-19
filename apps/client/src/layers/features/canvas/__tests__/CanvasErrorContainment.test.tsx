@@ -14,6 +14,8 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 const jsonControl = { throws: true };
 // The route controls read their own server state and have their own suite.
 vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('../ui/CanvasJsonContent', () => ({
   CanvasJsonContent: () => {
     if (jsonControl.throws) throw new Error('json viewer boom');

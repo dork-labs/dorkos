@@ -524,7 +524,9 @@ function git(cwd: string, ...args: string[]): void {
       'commit.gpgsign=false',
       ...args,
     ],
-    { cwd, stdio: 'pipe' }
+    // No git config a host injects through the environment (Claude Code sets
+    // safe.bareRepository=explicit, which refuses the bare repos here).
+    { cwd, stdio: 'pipe', env: { ...process.env, GIT_CONFIG_COUNT: '0' } }
   );
 }
 

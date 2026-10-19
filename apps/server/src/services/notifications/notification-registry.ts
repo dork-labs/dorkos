@@ -34,17 +34,15 @@ import {
   type NotificationSubjectType,
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
-import { formatResetTime, limitWindowPhrase, ownerReplacementWhen } from './notification-copy.js';
+import { formatResetTime, limitWindowPhrase } from './notification-copy.js';
 import {
   EXTENSION_DECISION_PUSH_WINDOW_MS,
   extensionDecisionEscalation,
   extensionDecisionHistoryBody,
   subjectIdForCopy,
 } from './extension-decision-copy.js';
-import {
-  CONNECTOR_HOLD_ENTRIES,
-  type ConnectorHoldPayloads,
-} from './connector-hold-notifications.js';
+import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
+import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -67,7 +65,7 @@ export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
  * A payload carries ids and short, already-human sentences — never transcript
  * content, tool input, or anything that would be unsafe on a phone lock screen.
  */
-export interface NotificationPayloads extends ConnectorHoldPayloads {
+export interface NotificationPayloads extends DeclaredPayloads {
   /** An agent is parked on something only a person can answer. */
   'ask.pending': {
     sessionId: string;
@@ -378,27 +376,6 @@ export interface NotificationPayloads extends ConnectorHoldPayloads {
     /** When a reading confirmed the reset, ISO 8601: the reset's identity when `resetsAt` is unknown. */
     resetConfirmedAt: string;
   };
-  /**
-   * Someone asked the host to make someone else the owner of a community this person owns, or
-   * that request completed (DOR-2543). Raised from the owner's own connection list, the only
-   * connection the Community tells; see `emitters/community-owner-replacement.ts`.
-   */
-  'community.owner-replacement': {
-    /** The owner's connection ref: the subject, and where "Open" goes. */
-    ref: string;
-    /** What this DorkOS calls the community. */
-    communityLabel: string;
-    replacementId: string;
-  } & (
-    | {
-        phase: 'open';
-        /** The new owner can take over at any time now. */
-        claimable: boolean;
-        /** The earliest it can happen, ISO 8601; `null` until the owner's notice resolves. */
-        claimableAfter: string | null;
-      }
-    | { phase: 'completed'; newOwnerDisplayName: string }
-  );
   /** The one-time offer to run cheap checks on DorkOS credits (spec `heartbeats` §6.3). */
   'heartbeat.credits-offer': Record<string, never>;
   /** The daily digest. */
@@ -687,12 +664,6 @@ const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
  * so a different refusal is still told at once.
  */
 const CREDITS_REFUSED_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
-
-/**
- * How long one owner-replacement notice stays deduped: longer than any request can stay open,
- * which is the Community's longest wait (180 days) plus its 14-day claim window.
- */
-const OWNER_REPLACEMENT_DEDUPE_WINDOW_MS = 210 * 24 * 60 * 60 * 1000;
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -1235,35 +1206,6 @@ const ENTRIES: NotificationRegistryMap = {
     }),
   },
 
-  'community.owner-replacement': {
-    // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list and
-    // its hourly background check (`community-owner-notice-sweep.ts`, DOR-2760).
-    // `notable`, never `blocking`: nothing is stuck, the wait is at least a week, and the
-    // Community also emails the owner; it badges the bell and never reaches a phone.
-    kind: 'community.owner-replacement',
-    tier: 'notable',
-    storage: 'event',
-    // There is no community subject type; the subject id is the connection ref, which the
-    // app's link turns into that community's page.
-    subjectType: 'system',
-    locate: (p) => ({ subjectId: p.ref }),
-    title: (p) =>
-      p.phase === 'open'
-        ? `Someone asked to take over ${p.communityLabel}`
-        : `${p.newOwnerDisplayName} is now the owner of ${p.communityLabel}`,
-    body: (p) =>
-      p.phase === 'open'
-        ? `Unless you keep ownership, the host can make someone else its owner ${ownerReplacementWhen(p)}. Open the space to keep it.`
-        : 'You are still a member.',
-    actions: () => OPEN_ACTION,
-    dedupeKey: (p) => `owner-replacement:${p.ref}:${p.replacementId}:${p.phase}`,
-    // Longer than any request can stay open (the Community's longest wait, 180 days, plus its
-    // 14-day claim window). The table keeps only 30 days, so the emitter's own ledger is what
-    // makes it once for the whole life of a request.
-    dedupeWindowMs: OWNER_REPLACEMENT_DEDUPE_WINDOW_MS,
-    relay: 'never',
-  },
-
   'heartbeat.credits-offer': {
     // Raised once per computer by `heartbeats/triage/triage-checks.ts`, while
     // nobody has answered. `quiet`: an offer is never an alarm.
@@ -1301,8 +1243,9 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   // An agent's held irreversible action in a connected app, and how it ended
-  // (spec `trusted-by-default-flip` §5.6). Declared beside its emitter.
-  ...CONNECTOR_HOLD_ENTRIES,
+  // (spec `trusted-by-default-flip` §5.6), and a new browser using chat from
+  // the web here (DOR-2946). Declared beside their emitters.
+  ...DECLARED_ENTRIES,
 };
 
 /**
@@ -1369,10 +1312,19 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
  * connection list, and an hourly background check, by `emitters/community-owner-replacement.ts`.
  *
+ * `community.teammate-limit` joined them in DOR-2956. It is raised by a space's spending
+ * counter (`communities/remote/wake/teammate-spend.ts`) once a month, when teammates' turns
+ * reach the limit the owner set. `community.teammate-limits-reset` joined with it: raised once
+ * when the counter's file could not be read and was set aside.
+ *
  * `connector.destructive_pending` and `connector.destructive_executed` joined
  * them in DOR-2739. They are raised by
  * `services/connectors/execution/destructive-hold.ts` around an agent's
  * cancel window — see `connector-hold-notifications.ts`.
+ *
+ * `web.new_device` joined them in DOR-2946. It is raised by
+ * `services/core/session-relay/relay-devices.ts` the first time a browser
+ * uses chat from the web here — see `web-device-notifications.ts`.
  *
  * `schedule.armed_by_agent` joined them in DOR-2739. It is raised by
  * `services/tasks/lifecycle/create-task.ts` when one of our agents makes a
@@ -1399,10 +1351,11 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'credits.refused',
   'extension.approval',
   'extension.decision',
-  'community.owner-replacement',
+  ...COMMUNITY_NOTIFICATION_KINDS,
   'heartbeat.credits-offer',
   'connector.destructive_pending',
   'connector.destructive_executed',
+  'web.new_device',
 ];
 
 /**

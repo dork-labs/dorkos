@@ -20,6 +20,10 @@ const { redirect, params } = vi.hoisted(() => ({
   params: { current: { id: 'room-1' } as Record<string, unknown> },
 }));
 
+// A one-agent DM's redirect to its Direct chat has its own tests
+// (`use-direct-chat-redirect.test.tsx`); every room here is drawn.
+vi.mock('../model/use-direct-chat-redirect', () => ({ useDirectChatRedirect: () => 'show' }));
+
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => params.current,

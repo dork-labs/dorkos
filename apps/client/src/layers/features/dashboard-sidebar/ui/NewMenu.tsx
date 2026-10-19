@@ -38,9 +38,13 @@ import { useResolvedAgents } from '@/layers/entities/agent';
 import { createSmartGroup, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
+import {
+  directMessageTitle,
+  useOpenDirectChat,
+  useStartDirectMessage,
+} from '@/layers/entities/room';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useDirectoryState, useStartNewSession } from '@/layers/entities/session';
+import { useStartNewSession } from '@/layers/entities/session';
 import {
   ChannelCreateDialog,
   NewDirectMessageMenu,
@@ -241,8 +245,8 @@ export function NewMenu() {
 
   const navigate = useNavigate();
   const startNewSession = useStartNewSession();
-  const [, setDirectory] = useDirectoryState();
   const startDirectMessage = useStartDirectMessage();
+  const openDirectChat = useOpenDirectChat();
   const lastUsedAgent = useLastUsedAgent();
   const { update } = useUpdateSidebarPrefs();
 
@@ -320,16 +324,15 @@ export function NewMenu() {
 
   const startConversationWith = useCallback(
     (chosen: AgentPickerCandidate[]) => {
-      // **One door to an agent** (`sidebar-simplification` D2). One agent opens
-      // its session — the same conversation its sidebar row opens, resolved by
-      // the same resolve-or-mint lookup — because a 1:1 direct message was that
-      // session in disguise. The rule is read from `lib/one-door`, which is also
-      // what the button says, so the words and the destination cannot drift.
+      // **One door to an agent** (`sidebar-simplification` D2, rule S12). One
+      // agent opens its Direct chat — the same conversation its sidebar row
+      // opens — because you plus one agent is always the 1:1 view. The rule is
+      // read from `lib/one-door`, which is also what the button says, so the
+      // words and the destination cannot drift.
       const [only] = chosen;
       if (only !== undefined && opensAgentSession(chosen)) {
-        setDirectory(only.agentPath, {
-          onOpened: () => useInteractionStore.getState().recordOpened('agent', only.agentPath),
-        });
+        useInteractionStore.getState().recordOpened('agent', only.agentPath);
+        void openDirectChat({ agentPath: only.agentPath });
         return;
       }
       const title = directMessageTitle(chosen.map((candidate) => candidate.displayName));
@@ -346,7 +349,7 @@ export function NewMenu() {
         { onSuccess: openRoom }
       );
     },
-    [openRoom, setDirectory, startDirectMessage]
+    [openDirectChat, openRoom, startDirectMessage]
   );
 
   const nodes = buildNewMenuNodes({

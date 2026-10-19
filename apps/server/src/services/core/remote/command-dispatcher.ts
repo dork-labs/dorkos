@@ -30,8 +30,9 @@
  *
  * Commands run one at a time, in the order they arrived. `viewer_open` goes to
  * the session relay's dialer, which dials only the hub this computer pinned.
- * `inbox_pending` and `hub_assignment_changed` carry no authority, and this
- * build has no seat path to signal and no hub mode here, so each is
+ * `inbox_pending`, `hub_assignment_changed` and
+ * `agent_computer_assignment_changed` carry no authority, and this build has
+ * no seat path to signal and no hub or agent-computer reader here, so each is
  * acknowledged `ignored`;
  * `keepalive` never reaches here.
  *
@@ -273,7 +274,11 @@ export class CommandDispatcher {
       return this.deps.relayDialer?.onViewerOpen(command.expiresAt) ?? 'ignored';
     }
     // Signals only: no authority, and no seat path or hub mode here to wake.
-    if (command.kind === 'inbox_pending' || command.kind === 'hub_assignment_changed') {
+    if (
+      command.kind === 'inbox_pending' ||
+      command.kind === 'hub_assignment_changed' ||
+      command.kind === 'agent_computer_assignment_changed'
+    ) {
       return 'ignored';
     }
     const minted = mintCloudAuthority(command, {

@@ -3,9 +3,10 @@
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
- * succeeds, sign-in landing pages, where no landing is held, and a canvas
- * document's route controls, where no document declares a route. Heartbeats
- * and a hub's computers come from their own mocks.
+ * succeeds, sign-in landing pages, where no landing is held, a canvas
+ * document's route controls, where no document declares a route, a space's
+ * docs, where there are none, and signed-in devices, where there are none.
+ * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -31,7 +32,12 @@ type SliceMethods =
   | 'getCanvasDocRoutes'
   | 'reviewCanvasDocRoute'
   | 'approveCanvasDocRoute'
-  | 'revokeCanvasDocRoute';
+  | 'revokeCanvasDocRoute'
+  | 'getDocIndex'
+  | 'resolveDocLink'
+  | 'listSignedInDevices'
+  | 'signOutDevice'
+  | 'signOutEverywhereElse';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -47,6 +53,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     ...createMockHubTransport(),
     ...createMockSessionRelayTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    // Nobody is signed in anywhere, and every sign-out succeeds.
+    listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
+    signOutDevice: vi.fn().mockResolvedValue(undefined),
+    signOutEverywhereElse: vi.fn().mockResolvedValue({ signedOut: 0 }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),
@@ -69,5 +79,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     reviewCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
     approveCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
     revokeCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
+    getDocIndex: vi.fn().mockResolvedValue({ root: '/', docs: [], truncated: false }),
+    resolveDocLink: vi.fn().mockResolvedValue({ doc: null, complete: true }),
   };
 }
