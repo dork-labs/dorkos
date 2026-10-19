@@ -427,14 +427,20 @@ jobs:
       # The server's tsc needs about 4.4 GB, past Node's default heap of about
       # 4 GB, so it ran out of memory on some pull requests and not others. The
       # runner has 16 GB; the same ceiling the test job uses.
+      #
+      # `--concurrency=3` because the runner itself ran out of memory: at the
+      # end of the run five big tsc processes (server, client, desktop, evals,
+      # cli) overlapped, used memory reached 15.5 of 16 GB plus 2.5 GB of swap,
+      # and the runner killed the step ("The operation was canceled"), on PRs
+      # and in the merge queue alike (#3108). Three at once leaves room. The
+      # sampler prints each new memory peak, so the margin stays visible.
       - name: Typecheck every package that declares a typecheck script
         if: ${{ !cancelled() }}
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
-          # Memory sampler: prints a line each time used memory sets a new
-          # peak (in 512 MB steps), so a run the runner kills still shows how
-          # close it came.
+          # Prints a notice each time used memory sets a new peak (in 512 MB
+          # steps), so even a run the runner kills shows how close it came.
           (
             peak=0
             while sleep 3; do
@@ -448,4 +454,4 @@ jobs:
           ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
-          pnpm exec turbo typecheck --continue
+          pnpm exec turbo typecheck --continue --concurrency=3
