@@ -34,6 +34,7 @@
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { refuseTeammateTurnOn, roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
@@ -1420,9 +1421,8 @@ function collectReply(
 ): ReplyCollector {
   const abort = new AbortController();
   const startedAt = Date.now();
-  const ceiling = setTimeout(() => abort.abort(), bounds.ceilingMs);
-  // `unref` so a pending room turn never holds the process open on shutdown.
-  ceiling.unref?.();
+  // Waits again while the turn is parked on a person's answer (DOR-3113).
+  const ceiling = armLateReplyCeiling(abort, bounds.ceilingMs, projector);
 
   // Never rejects: both phases read this one promise, and the busy path reads
   // neither, so a rejection would surface as an unhandled one.
@@ -1544,7 +1544,7 @@ function collectReply(
       failed = true;
       clearActivity();
     } finally {
-      clearTimeout(ceiling);
+      ceiling.clear();
       // The turn has ended, one way or another. A prompt it was stopped on can
       // no longer be answered, so a notice about it now would be advice nobody
       // can act on — and a timer outliving its turn is a room that speaks about
@@ -1628,7 +1628,7 @@ function collectReply(
     })),
     cancel: () => {
       abort.abort();
-      clearTimeout(ceiling);
+      ceiling.clear();
       clearTimeout(deadline);
       stopWaitingOnEverything();
     },

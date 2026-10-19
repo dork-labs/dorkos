@@ -387,6 +387,12 @@ export interface DispatchPlan {
   /** When it started spending that budget. */
   startedWaitingAt: number;
   /**
+   * When it first waited on a person's answer the session's turn was parked on
+   * (DOR-3113). Set from then on, it keeps waiting while that turn runs, the
+   * minutes after the answer included, up to the park ceiling.
+   */
+  personWaitSince?: number;
+  /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be
    * given up on (either refusing mode) — unless {@link DispatchPlan.answered},
