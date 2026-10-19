@@ -498,8 +498,6 @@ function clampForStorage(value: string, max: number): string {
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
 
-}
-
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */
 function recordedArea(area: string | null): PermissionAreaId | null {
   return area === null ? null : (area as PermissionAreaId);
