@@ -63,7 +63,7 @@ import {
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
-import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import { matchWifiRefusedRoute } from '../../services/core/auth/sessions/wifi-level.js';
 import type { RoomTurnRequest } from '../../services/rooms/room-turn-port.js';
 import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
 import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
@@ -86,7 +86,6 @@ let otherRoomId: string;
 let rootId: string;
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 let statusOf: Record<string, string>;
-let fromWifi = false;
 /** Every turn a post started, with the ceiling it ran under. */
 const turns: RoomTurnRequest[] = [];
 
@@ -124,7 +123,6 @@ beforeEach(async () => {
   state.authEnabled = false;
   state.extensions = { roomAccess: {} };
   signedInUser = undefined;
-  fromWifi = false;
   turns.length = 0;
   statusOf = { social: 'compiled', off: 'disabled', plain: 'compiled' };
   db = createTestDb();
@@ -189,7 +187,6 @@ beforeEach(async () => {
       {
         before: async (c, next) => {
           if (signedInUser) c.set('user', signedInUser as never);
-          if (fromWifi) markIngress(c.env.incoming, 'wifi');
           await next();
         },
       }
@@ -598,14 +595,15 @@ describe('choosing rooms', () => {
     expect((state.extensions.roomAccess as Record<string, string[]>).plain).toBeUndefined();
   });
 
-  it('refuses picking rooms over Wi-Fi', async () => {
-    fromWifi = true;
-    const res = await request(server)
-      .put('/api/extensions/social/room-access')
-      .send({ roomIds: [roomId] });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NOT_FROM_WIFI');
-    expect((state.extensions.roomAccess as Record<string, string[]>).social).toBeUndefined();
+  it('is on the Wi-Fi refused list, so rooms are picked only at the computer', () => {
+    expect(
+      matchWifiRefusedRoute('PUT', ['/api/extensions/social/room-access'], false)
+    ).toMatchObject({ surface: 'host' });
+    // Reading the choice, replying and marking read stay allowed on Wi-Fi.
+    expect(
+      matchWifiRefusedRoute('GET', ['/api/extensions/social/room-access'], false)
+    ).toBeUndefined();
+    expect(matchWifiRefusedRoute('POST', [`${base()}/replies`], false)).toBeUndefined();
   });
 
   it('lists and counts only the rooms picked for it, never all of the person’s', async () => {

@@ -11,7 +11,7 @@
  * | `POST /:id/rooms/:roomId/threads/:entryId/replies`   | reply as the person       | room write |
  * | `PUT  /:id/rooms/:roomId/threads/:entryId/read`      | mark read                 | room write |
  * | `GET  /:id/room-access`                              | rooms the person picked   | no agent   |
- * | `PUT  /:id/room-access`                              | pick the rooms            | person bar, not Wi-Fi |
+ * | `PUT  /:id/room-access`                              | pick the rooms            | person bar; Wi-Fi refuses (`wifi-level.ts`) |
  *
  * **`:id` is the calling mini app**, filled by the client host. Every `rooms`
  * route also needs the mini app turned on, asking for rooms in its manifest
@@ -323,15 +323,6 @@ export function registerExtensionRoomRoutes(
   router.put('/:id/room-access', (c) => {
     const id = c.req.param('id');
     if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
-    // A standing grant outlives the request, and from Wi-Fi a person's yes is
-    // never a standing one (DOR-2969). Read from the listener's own mark, the
-    // signal the Wi-Fi level reads too.
-    if (honoRequestFacts(c).ingress === 'wifi') {
-      return c.json(
-        { error: 'Choose a mini app’s rooms at this computer.', code: 'NOT_FROM_WIFI' },
-        403
-      );
-    }
     const refused = refusedNotAPerson(c, ROOM_ACCESS_BAR);
     if (refused) return refused;
     const record = extensionManager.get(id);
