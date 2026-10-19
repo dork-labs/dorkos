@@ -512,6 +512,28 @@ release notes are the opposite — they need absolute URLs); and a UI-heavy rele
 often breaks its own capture locators — budget one locator fix + re-run into any
 release shipping conversation or marketplace UI.
 
+**Pinned commit: freeze the queue.** When the release must ship one exact,
+already-verified commit (the usual case once QA verifies a SHA), nothing else
+may merge between that commit and the release PR, or the squash carries
+unverified code. `publish:cli` refuses a commit that is not on `main` (6.10), so
+tagging a side-branch commit is not a way around it. Instead:
+
+1. Before arming the release PR, take every other PR out of the queue: put
+   `hold` on each armed or queued PR and disarm it (`gh pr merge --disable-auto
+<n>`; a PR already in the queue needs the GraphQL `dequeuePullRequest`).
+   Save the list.
+2. Keep guarding while the release PR is in the queue: anything armed in the
+   meantime gets the same `hold`.
+3. **The queue stays frozen until npm is curl-verified** (6.10:
+   `curl -sf https://registry.npmjs.org/dorkos/X.Y.Z` returns 200). Tagging is
+   not the end of the freeze, and neither is starting the publish.
+4. Only then take `hold` off and re-arm the saved list. A harness or CI fix
+   that turns a red check green goes first, so the next results mean
+   something.
+
+If the publish fails, retry it **from the tag** (`git checkout vX.Y.Z` in the
+release worktree), never from `main`. Main may have moved by then.
+
 ### 6.9: Tag the merged SHA, then check for stranded fragments
 
 After the queue lands the PR:
@@ -615,7 +637,7 @@ Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/pa
 
 Also tell the user the "Desktop Release" workflow is building the macOS + Windows apps on the same tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/desktop-release.yml`); it attaches their installers + `latest*.yml` to the **draft** release and then **publishes** it. **Until the workflow finishes, the GitHub Release stays a draft — hidden from the auto-updater and the public** (the npm/CLI release is already live regardless). First-ever notarization can take ~30–65 min; minutes thereafter. Once it publishes, `https://dorkos.ai/download/mac` and `/download/windows` resolve to the new installers and "Check for updates" works. A Windows-alpha failure never blocks the release (it is non-gating); a macOS build or verify failure holds the GitHub Release as a draft by design — re-run the failed job from the Actions UI, or publish the draft by hand once its assets look good. Either way the npm/CLI release is already live.
 
-If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
+If npm publish failed after the tag was pushed: retry `pnpm run publish:cli` from the tag (`git checkout vX.Y.Z`), never from `main`; check auth with `npm whoami` (see the token section above). If the queue was frozen for a pinned commit (6.8), it stays frozen until the retry is curl-verified.
 
 ### Phase 7.1: Tell the reporters (feedback sweep)
 
