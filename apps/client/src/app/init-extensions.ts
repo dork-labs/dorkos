@@ -8,7 +8,6 @@ import {
   Monitor,
   Puzzle,
   SquareTerminal,
-  User,
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
@@ -21,7 +20,7 @@ import {
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
-import { PROFILE_PANEL_ID } from '@/layers/features/profile';
+import { PROFILE_PANEL_ID, ProfileTabIcon } from '@/layers/features/profile';
 import { ROOM_PANEL_ID } from '@/layers/features/room-management';
 import { routeShowsRoom } from '@/layers/entities/room';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
@@ -170,7 +169,8 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   register('right-panel', {
     id: PROFILE_PANEL_ID,
     title: 'Profile',
-    icon: User,
+    // Whose profile it is, at a glance (FB-60).
+    icon: ProfileTabIcon,
     component: lazy(() =>
       import('@/layers/features/profile').then((m) => ({ default: m.ProfileDock }))
     ),

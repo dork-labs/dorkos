@@ -38,6 +38,8 @@ interface PanelHeaderContribution extends RightPanelContribution {
   watchers?: AuthorRef[];
   unread?: boolean;
   pinned?: boolean;
+  /** No close control and no Delete-to-close (FB-60). */
+  permanent?: boolean;
 }
 interface RightPanelHeaderProps {
   /**
@@ -274,7 +276,7 @@ function TabStrip({
                         }}
                         onKeyDown={(event) => {
                           activationSource.current = 'keyboard';
-                          if (event.key === 'Delete' && onCloseView) {
+                          if (event.key === 'Delete' && onCloseView && !contribution.permanent) {
                             event.preventDefault();
                             const index = contributions.findIndex((c) => c.id === contribution.id);
                             const neighbor = contributions[index + 1] ?? contributions[index - 1];
@@ -379,7 +381,7 @@ function TabStrip({
                     </TooltipTrigger>
                     <TooltipContent side="bottom">{contribution.title}</TooltipContent>
                   </Tooltip>
-                  {onCloseView && isActive && (
+                  {onCloseView && isActive && !contribution.permanent && (
                     <Button
                       variant="ghost"
                       size="icon-sm"

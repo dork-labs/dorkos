@@ -584,6 +584,7 @@ vi.mock('@/layers/features/right-panel', () => ({
 vi.mock('@/layers/features/profile', () => ({
   useProfileShortcut: () => {},
   useProfileDockDeepLink: () => {},
+  useProfileRootLinks: () => {},
   useLegacyProfileLinkRedirect: () => {},
 }));
 
