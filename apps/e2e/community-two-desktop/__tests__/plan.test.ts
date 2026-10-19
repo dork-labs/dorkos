@@ -15,7 +15,7 @@ describe('two-Desktop step plan', () => {
     const all = [...REMOTE_RUN_STEPS, ...skipped];
     expect(new Set(all).size).toBe(all.length);
     expect([...all].sort()).toEqual([...ALL_STEPS].sort());
-    expect(ALL_STEPS).toHaveLength(33); // 1-29 with 15b, 20b, 22b and 23b
+    expect(ALL_STEPS).toHaveLength(34); // 1-29 with 15b, 20b, 22b, 22c and 23b
   });
 
   it('runs the remote journey the spec names and gives every skip a reason', () => {
@@ -55,6 +55,7 @@ describe('two-Desktop step plan', () => {
   it('reads a step id from the start of its name only', () => {
     // Catches "15b" being read as "15", and unnumbered steps being counted.
     expect(stepIdOf('15b a reader scrolled up reopens at that row')).toBe('15b');
+    expect(stepIdOf('22c once teammates spend the limit')).toBe('22c');
     expect(stepIdOf('23b the space stopped hearing from B’s agent')).toBe('23b');
     expect(stepIdOf('15 A switches back to the community')).toBe('15');
     expect(stepIdOf('1 (skipped)')).toBe('1');

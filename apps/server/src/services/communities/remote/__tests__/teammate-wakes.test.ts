@@ -289,3 +289,45 @@ describe('a direct message with the agent', () => {
     expect(harness.runner.turns).toHaveLength(0);
   });
 });
+
+describe('the monthly limit on teammates’ turns (DOR-2956)', () => {
+  /** `members`, with this space's teammate spending already at its limit. */
+  const spent: RemoteWakeGate = {
+    ...members,
+    withinTeammateSpend: (ref) => ref !== REF,
+  };
+
+  it('keeps a teammate’s post as history once the month’s limit is spent', async () => {
+    const { harness, localRoom, post } = space({ gate: spent });
+
+    await post(TEAMMATE);
+
+    expect(harness.runner.turns).toHaveLength(0);
+    expect(harness.store.listEntriesAfter(localRoom.id, 0)).toHaveLength(1);
+  });
+
+  it('still wakes the agent for the owner’s own post', async () => {
+    const { harness, post } = space({ gate: spent });
+
+    await post(OWNER);
+
+    expect(harness.runner.turns).toHaveLength(1);
+  });
+
+  it('keeps a teammate’s direct message with the agent as history too', async () => {
+    // The bridge function is shared: a DM post is held to the same limit as a mention.
+    const { harness, post } = space({ gate: spent, kind: 'dm' });
+
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(0);
+  });
+
+  it('wakes as before while the month is within the limit', async () => {
+    const { harness, post } = space({ gate: { ...members, withinTeammateSpend: () => true } });
+
+    await post(TEAMMATE);
+
+    expect(harness.runner.turns).toHaveLength(1);
+  });
+});

@@ -76,6 +76,7 @@ import {
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { runsTeammateTurns } from '../../services/rooms/limits/teammate-turn.js';
+import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
 import { agentRuntimeTypeFrom } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import {
   followSessionRekeys,
@@ -196,6 +197,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     if (!agent || !projectPath) return false;
     return runsTeammateTurns(agentRuntimeTypeFrom(projectPath, agent.runtime));
   });
+  // What each teammate turn cost, counted against its space's monthly limit (DOR-2956).
+  wireTeammateSpend(refs.remoteCommunityRuntime.mirrors);
   refs.remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: refs.remoteCommunityRuntime.mirrors,

@@ -119,6 +119,16 @@ export const NOTIFICATION_KINDS = [
    */
   'community.owner-replacement',
   /**
+   * Turns teammates started in a space this person connected reached the monthly limit they set
+   * for it (DOR-2956). Once per space and month.
+   */
+  'community.teammate-limit',
+  /**
+   * The saved teammate limits couldn't be read and were set aside, so they need setting again
+   * (DOR-2956). Once per reset.
+   */
+  'community.teammate-limits-reset',
+  /**
    * The one-time offer to run agents' cheap checks on DorkOS credits (spec
    * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
    */

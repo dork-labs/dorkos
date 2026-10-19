@@ -57,6 +57,7 @@ import { PinnedHttpError } from '../../services/communities/remote/pinned-origin
 import { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
 import { RemoteAnswerIn } from '../../services/communities/remote/wake/answer-in.js';
 import { AnswerInStore } from '../../services/communities/remote/wake/answer-in-store.js';
+import { TeammateSpend } from '../../services/communities/remote/wake/teammate-spend.js';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { z } from 'zod';
 import {
@@ -1203,5 +1204,123 @@ describe('where agents answer without a mention is the owner’s call', () => {
   it('is no config key, so no agent’s config_patch can reach it', () => {
     const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
     expect(schema).not.toContain('answerIn');
+  });
+});
+
+// DOR-2956: the monthly limit on what teammates' turns in a space may cost is the owner's call
+// alone. Each case fails if the route lets an agent's identity, another local person, or a
+// malformed body change it.
+describe('the teammates’ monthly limit is the owner’s call', () => {
+  let spendDirectory: string;
+  let spendServer: Server;
+  let spend: TeammateSpend;
+  const spendRef = CommunityRefSchema.parse('remote_spend_a');
+
+  beforeAll(async () => {
+    spendDirectory = await mkdtemp(join(tmpdir(), 'community-teammate-spend-'));
+    const store = new RemoteConnectionStore(spendDirectory);
+    await store.addPending(
+      {
+        ref: spendRef,
+        ownerKey: 'author-a',
+        remoteCommunityId: 'remote-community',
+        label: 'DorkOS',
+        pinnedOrigin: 'https://community.example',
+        pairingId: 'pairing-spend',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'spend-verifier'
+    );
+    await store.complete(spendRef, 'author-a', 'remote-owner', 'token', {
+      state: 'verified',
+      effective: { read: true, post: true, enrollAgent: true, stream: true },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-10-06T00:00:00.000Z',
+      },
+    });
+    spend = new TeammateSpend(spendDirectory, store);
+    await spend.load();
+    spendServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          new RemoteCommunityPairingService(store),
+          navigation as never,
+          undefined,
+          undefined,
+          undefined,
+          new RemoteWakePolicy(store, []),
+          spend
+        ),
+      })
+    ).listen(0, '127.0.0.1');
+    await once(spendServer, 'listening');
+  });
+  afterAll(async () => {
+    spendServer.closeAllConnections();
+    await new Promise<void>((resolve) => spendServer.close(() => resolve()));
+    await rm(spendDirectory, { recursive: true, force: true });
+  });
+
+  const path = `/api/community-connections/${spendRef}/teammate-spend`;
+
+  it('is no limit until the owner sets one, and the gate follows at once', async () => {
+    const before = await request(spendServer).get(path).set('x-test-author', 'author-a');
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      monthlyLimitUsd: null,
+      spentUsd: 0,
+      approximate: false,
+      hasAgentsHere: false,
+    });
+
+    const changed = await request(spendServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ monthlyLimitUsd: 0.5 });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({ monthlyLimitUsd: 0.5 });
+    await spend.record(spendRef, 'author-a', 0.5);
+    expect(spend.allows(spendRef, 'author-a')).toBe(false);
+
+    const cleared = await request(spendServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ monthlyLimitUsd: null });
+    expect(cleared.body).toMatchObject({ monthlyLimitUsd: null });
+    expect(spend.allows(spendRef, 'author-a')).toBe(true);
+  });
+
+  it('refuses an agent and anyone here who is not the owner, and the limit stays', async () => {
+    await spend.setLimit(spendRef, 'author-a', 5);
+    for (const header of [
+      ['x-dorkos-agent', 'agent-token'],
+      ['x-test-author', 'author-b'],
+    ] as const) {
+      const refused = await request(spendServer)
+        .put(path)
+        .set(header[0], header[1])
+        .send({ monthlyLimitUsd: 500 });
+      expect(refused.status).toBe(403);
+      expect((await request(spendServer).get(path).set(header[0], header[1])).status).toBe(403);
+    }
+    expect((await spend.summary(spendRef, 'author-a')).monthlyLimitUsd).toBe(5);
+  });
+
+  it('refuses a limit that is not dollars above zero, and a connection that is not there', async () => {
+    // Review B1: a tenth of a cent rounds to nothing and is refused, never saved as $0.
+    for (const monthlyLimitUsd of [0, 0.004, -1, 'ten']) {
+      const malformed = await request(spendServer)
+        .put(path)
+        .set('x-test-author', 'author-a')
+        .send({ monthlyLimitUsd });
+      expect(malformed.status).toBe(400);
+    }
+    const missing = await request(spendServer)
+      .get('/api/community-connections/remote_missing/teammate-spend')
+      .set('x-test-author', 'author-a');
+    expect(missing.status).toBe(404);
   });
 });

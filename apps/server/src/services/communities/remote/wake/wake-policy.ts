@@ -14,6 +14,7 @@ import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
 import type { RemoteAnswerIn } from './answer-in.js';
+import type { TeammateSpend } from './teammate-spend.js';
 import {
   DEFAULT_WAKE_AGENTS_FROM,
   readWakeAgentsFrom,
@@ -66,6 +67,14 @@ export interface RemoteWakeGate {
     channelName: string,
     authorMemberId: string
   ): boolean;
+  /**
+   * Whether turns teammates start in this space are still within the monthly limit the owner set
+   * for it (DOR-2956). Absent, or with no limit set, always.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   */
+  withinTeammateSpend?(communityRef: CommunityRef, ownerAuthorId: string): boolean;
 }
 
 /** Where a connection points, which decides its default: the official space's is narrower. */
@@ -103,7 +112,8 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
     private readonly defaultFor: (place: WakePlace) => WakeAgentsFrom = () =>
       DEFAULT_WAKE_AGENTS_FROM,
-    private readonly answerIn?: RemoteAnswerIn
+    private readonly answerIn?: RemoteAnswerIn,
+    private readonly teammateSpend?: Pick<TeammateSpend, 'allows'>
   ) {
     store.onChange(() => {
       void this.reload();
@@ -232,6 +242,11 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     if (!entry) return false;
     if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
     return this.isOwnerPost(communityRef, ownerAuthorId, authorMemberId);
+  }
+
+  /** @inheritdoc */
+  withinTeammateSpend(communityRef: CommunityRef, ownerAuthorId: string): boolean {
+    return this.teammateSpend?.allows(communityRef, ownerAuthorId) ?? true;
   }
 
   /** @inheritdoc */
