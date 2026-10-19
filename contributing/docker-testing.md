@@ -2,7 +2,7 @@
 
 ## Overview
 
-DorkOS validates the published CLI (`npm install -g dorkos`) inside clean Linux containers so a broken build never reaches a real user — one `Dockerfile`, three build targets, driven by `pnpm` scripts locally and by GitHub Actions on every push to main. This guide covers testing DorkOS in an isolated container: sanity-checking local changes before you open a PR, validating a specific published npm version, and understanding what the CI legs actually assert.
+DorkOS validates the published CLI (`npm install -g dorkos`) inside clean Linux containers so a broken build never reaches a real user — one `Dockerfile`, several build targets, driven by `pnpm` scripts locally and by GitHub Actions on every push to main. This guide covers testing DorkOS in an isolated container: sanity-checking local changes before you open a PR, validating a specific published npm version, and understanding what the CI legs actually assert.
 
 ## Key Files
 
@@ -31,7 +31,7 @@ Note the split with `docs/self-hosting/docker.mdx`: that page is for people runn
 
 ## The Target × Install Mode Model
 
-The `Dockerfile` is one file with **three build targets** (a bare `docker build .` produces `runtime`, since it's the last stage) crossed with **two install modes** (`INSTALL_MODE` build-arg, default `tarball`).
+The `Dockerfile` is one file with **several build targets**, the CLI's three below plus `hub`, `hub-smoke` and the space server's `space` (a bare `docker build .` produces `runtime`, since it's the last stage) crossed with **two install modes** (`INSTALL_MODE` build-arg, default `tarball`).
 
 ### Build targets
 
@@ -40,6 +40,7 @@ The `Dockerfile` is one file with **three build targets** (a bare `docker build 
 | `smoke`       | CLI install sanity check only (`--version`, `--help`, `init`)               | Yes                         | No                          |
 | `integration` | Full server boot + API/client/terminal validation (`scripts/smoke-test.sh`) | Yes                         | No                          |
 | `runtime`     | The published product image                                                 | No                          | Yes (bare `docker build .`) |
+| `space`       | The space server's image, `ghcr.io/dork-labs/dorkos-community`              | No                          | No                          |
 
 ### Install modes
 

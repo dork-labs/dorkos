@@ -21,7 +21,7 @@ import { parseConfig } from '../../config.js';
 import { decisionSettings } from '../../decisions/settings.js';
 import { CENSUS_ENV } from './route-census.js';
 import { relative } from 'node:path';
-import { SPACE_ROOT, SPACE_SRC } from '../space-paths.js';
+import { REPO_ROOT, SPACE_ROOT, SPACE_SRC } from '../space-paths.js';
 
 const APP = SPACE_ROOT;
 const SRC = SPACE_SRC;
@@ -48,11 +48,22 @@ interface ImagePromises {
 /** The instructions that decide how the image runs; `ENV` is read apart, one setting at a time. */
 const RUNTIME_INSTRUCTIONS = ['WORKDIR', 'USER', 'EXPOSE', 'VOLUME', 'CMD'];
 
-const DOCKERFILE = readFileSync(new URL('Dockerfile', APP), 'utf8');
+/** The repository's Dockerfile, which builds the space image as its `space` target (step 7f). */
+const DOCKERFILE = readFileSync(new URL('Dockerfile', REPO_ROOT), 'utf8');
 
-/** The Dockerfile's stages, the final (runtime) one last. */
-const STAGES = DOCKERFILE.split(/^FROM /mu);
-const FINAL_STAGE = STAGES[STAGES.length - 1];
+/** The Dockerfile's stages, each starting at its `FROM` argument. */
+const STAGES = DOCKERFILE.split(/^FROM /mu).slice(1);
+
+/** The stage built as `name`, or an empty string when there is none. */
+function stage(name: string): string {
+  return (
+    STAGES.find((text) => new RegExp(`^\\S+ AS ${name}\\s*$`, 'mu').test(text.split('\n')[0])) ?? ''
+  );
+}
+
+/** The space image itself, and the stage that builds what it copies in. */
+const FINAL_STAGE = stage('space');
+const BUILD_STAGE = stage('space-build');
 
 /** The final stage's runtime instructions, keyed by instruction, in file order. */
 function runtimeInstructions(): Record<string, string[]> {
@@ -78,7 +89,7 @@ function runtimeEnv(): Record<string, string> {
 
 /** The sources the build stage's `RUN cp -R … /runtime/` puts into the runtime image. */
 function copiedIntoRuntime(): string[] {
-  const line = /^RUN cp -R (.+) \/runtime\/$/mu.exec(STAGES[STAGES.length - 2])?.[1];
+  const line = /^RUN cp -R (.+) \/runtime\/$/mu.exec(BUILD_STAGE)?.[1];
   return line ? line.trim().split(/\s+/u).sort() : [];
 }
 
@@ -249,6 +260,11 @@ describe('the image', () => {
     expect(actual.env).toEqual(baseline.env);
     expect(actual.runtime.CMD).toEqual(['["node", "dist-server/main.js"]']);
     expect(actual.runtime.EXPOSE).toEqual(['6481']);
+    // Built from the repository's Dockerfile as its `space` target, on its own base, while the
+    // DorkOS image stays the file's last stage, which a bare `docker build .` builds.
+    expect(FINAL_STAGE.split('\n')[0]).toBe('node:24-bookworm-slim AS space');
+    expect(BUILD_STAGE.split('\n')[0]).toBe('node:24-bookworm-slim AS space-build');
+    expect(STAGES[STAGES.length - 1].split('\n')[0]).toMatch(/ AS runtime$/u);
     expect(actual.env).toMatchObject({
       COMMUNITY_PORT: '6481',
       COMMUNITY_STORAGE_PATH: '/data/blobs',
@@ -275,7 +291,7 @@ describe('the image', () => {
         'apps/community/migrations',
       ])
     );
-    expect(DOCKERFILE).toMatch(/^COPY --from=build \/runtime \/app$/mu);
+    expect(FINAL_STAGE).toMatch(/^COPY --from=space-build \/runtime \/app$/mu);
   });
 
   it('keeps every offline operator command at its path, in the build', () => {

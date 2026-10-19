@@ -113,7 +113,7 @@ COMMUNITY_TEST_DATABASE_URL=postgres://postgres:password@localhost:5432/communit
 
 `GET /health` checks process health; it does not prove a member exists or that a local installation is paired. The PostgreSQL suite uses dedicated generated databases and fails if the database is unavailable, a file is uncollected, or a test is skipped outside its explicit capability exclusions. The S3 route suite additionally needs its disposable S3-compatible endpoint and credentials; see the Community README.
 
-After changing the Dockerfile, migrations, runtime dependencies, or startup composition, run the appropriate image smoke or integration check. For the native path, verify the local server package and the focused remote adapter, subscription, outbox, and qualified-route tests. A browser path should also prove the actual owner pairing, remote room, live update, and visible delivery behavior.
+After changing the space image (the root `Dockerfile`'s `space` target), migrations, runtime dependencies, or startup composition, run the appropriate image smoke or integration check. For the native path, verify the local server package and the focused remote adapter, subscription, outbox, and qualified-route tests. A browser path should also prove the actual owner pairing, remote room, live update, and visible delivery behavior.
 
 ## Troubleshooting
 

@@ -537,6 +537,17 @@ jobs:
       - name: Build and test without public network access
         if: steps.scope.outputs.run == 'true'
         run: bash "$SPACE_DIR/acceptance/run.sh"
+      # The release image is the root Dockerfile's `space` target (server-merge step 7f),
+      # which the acceptance image above does not build. Build it here, amd64 only and
+      # never pushed, so its ignore list, its package check and its layout are proven
+      # before a release tag first builds it. The build itself fails if the image would
+      # install a forbidden package (scripts/space-image/runtime-packages.mjs).
+      - name: Build the release space image
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          docker build --target space -t dorkos-space-check .
+          docker run --rm --entrypoint sh dorkos-space-check -c \
+            'test -f dist-server/main.js && test -f dist/index.html && ls migrations/*.sql >/dev/null && test "$(id -un)" = node'
       - name: Preserve packaged community reports
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7

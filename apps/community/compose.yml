@@ -15,7 +15,8 @@ services:
   community:
     build:
       context: ../..
-      dockerfile: apps/community/Dockerfile
+      dockerfile: Dockerfile
+      target: space
     depends_on:
       database:
         condition: service_healthy

@@ -42,7 +42,7 @@ describe('ci/space-server.env', () => {
 
   it('names a space server folder that exists, with the files the jobs read in it', () => {
     const { spaceDir } = readSpaceServer(root);
-    for (const file of ['Dockerfile', 'migrations', 'acceptance/run.sh', 'acceptance/Dockerfile']) {
+    for (const file of ['migrations', 'acceptance/run.sh', 'acceptance/Dockerfile']) {
       expect(existsSync(join(root, spaceDir, file)), `${spaceDir}/${file}`).toBe(true);
     }
   });

@@ -82,7 +82,11 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: ./${{ env.SPACE_DIR }}/Dockerfile
+          # The space image is the repository Dockerfile's `space` target (server-merge
+          # step 7f). This workflow's file name and the image name stay as they are: the
+          # launcher trusts both.
+          file: ./Dockerfile
+          target: space
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

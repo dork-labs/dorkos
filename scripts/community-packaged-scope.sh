@@ -34,6 +34,9 @@
 #                                        the rest of apps/server stays out
 #   ci/space-server.env                  where those folders are
 #   apps/client/vite.space.config.ts     the build of the space's web pages
+#   Dockerfile, .dockerignore            the space image is the Dockerfile's
+#                                        `space` target (step 7f)
+#   scripts/space-image/                 what the space image may install
 #   apps/{client,server}/src/…communit…  the local app's half of the journey:
 #                                        any file or directory named for
 #                                        communities, in ANY case, so the
@@ -128,6 +131,9 @@ SCOPE_PATTERNS=(
   "$(folder "$SPACE_WEB_DIR")"
   '^ci/space-server\.env$'
   '^apps/client/vite\.space\.config\.ts$'
+  '^Dockerfile$'
+  '^\.dockerignore$'
+  '^scripts/space-image/'
   "^apps/(client|server)/src/.*${communit}"
   "^packages/shared/src/.*${communit}"
   '^packages/shared/src/space-page/'
