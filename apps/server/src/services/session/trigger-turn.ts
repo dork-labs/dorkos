@@ -119,12 +119,12 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
-import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
 import { watchNotStarted } from './launch/turn-not-started.js';
 import type {
   PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
 } from './private-messages/acceptance.js';
+import { pausedErrorEvent } from './launch/paused-error-event.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -407,6 +407,12 @@ export interface TriggerTurnDeps {
    * which reads as "no".
    */
   isHelperWorking?(sessionId: string): boolean;
+  /**
+   * The background tasks the session's process still names as live
+   * (`AgentRuntime.liveHelperIds`), spared by the turn's stream-end sweep
+   * (FB-18). Absent for a runtime whose process ends with its turn.
+   */
+  liveHelperIds?(sessionId: string): string[];
   /**
    * The runtime answers {@link MessageOpts.dispatchHold} on every send
    * (`AgentRuntime.switchWhenReady` is its marker). Absent reads as "no": the
@@ -1041,6 +1047,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // The trigger content rides the turn_start (userMessage) so the EventLog is a
     // self-sufficient history source for log-backed runtimes (ADR-0263).
     const turn = feedProjector(projector, guarded, {
+      ...(deps.liveHelperIds !== undefined
+        ? { stillLive: () => deps.liveHelperIds!(sessionId) }
+        : {}),
       ...(opts.privateReceiptId === undefined ? { userMessage: content } : {}),
       // Which room post opened this turn (DOR-2113), so a history rebuilt from
       // this record shows the post as its author's, never the person's own.
@@ -1155,28 +1164,6 @@ export async function* tapEachEvent(
     // Empty stream or a throw before the first yield still releases the waiter.
     if (!fired) onEvent();
   }
-}
-
-/**
- * The error a turn refused because its agent is paused rides the stream as:
- * its own code, the agent's id in `reason` (the app offers Resume for it), and
- * no category or stack, because nothing broke (spec `audit-trail` PR5). Read
- * by its code, so this module need not load the pause service. `undefined`
- * for every other failure.
- */
-function pausedErrorEvent(err: unknown): StreamEvent | undefined {
-  if (!(err instanceof Error) || (err as Error & { code?: unknown }).code !== AGENT_PAUSED_CODE) {
-    return undefined;
-  }
-  const agentId = (err as Error & { agent?: { id?: unknown } }).agent?.id;
-  return {
-    type: 'error',
-    data: {
-      message: err.message,
-      code: AGENT_PAUSED_CODE,
-      ...(typeof agentId === 'string' ? { reason: agentId } : {}),
-    },
-  };
 }
 
 /**

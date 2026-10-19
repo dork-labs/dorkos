@@ -33,6 +33,7 @@ import type { AlwaysAllowScope, StreamEvent, TerminalReason } from '@dorkos/shar
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
+import { sweepStrandedChildren } from './turn-stream/stranded-children.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -1004,10 +1005,17 @@ export async function feedProjector(
   events: AsyncIterable<StreamEvent>,
   opts: Pick<RawOf<'turn_start'>, 'userMessage' | 'roomMessage' | 'origin'> & {
     onTurnStart?: (seq: number) => void;
+    /**
+     * The children the runtime still sees running when this stream ends. A
+     * warm process outlives its turn, so these are not lost and the sweep
+     * below spares them (FB-18). Absent means the process ended with the
+     * stream, and every child is swept.
+     */
+    stillLive?: () => readonly string[];
   } = {}
 ): Promise<void> {
   // Callers spread only the fields they have, so nothing here is undefined.
-  const { onTurnStart: _onTurnStart, ...fields } = opts;
+  const { onTurnStart: _onTurnStart, stillLive: _stillLive, ...fields } = opts;
   const start: RawOf<'turn_start'> = { type: 'turn_start', ...fields };
   // Two statements, and they must stay two. Folded into
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
@@ -1145,18 +1153,12 @@ export async function feedProjector(
     // has always claimed and that DOR-1088 / PR #906 actually enforce (turn
     // serialization plus a lock that refuses any live holder). If two streams
     // ever ran concurrently on one session, whichever finished first would
-    // retire the other's live children. The persistent pump keeps this correct
-    // for a different reason: its stream spans every turn, so the `finally` is
-    // the pump dying, which is still exactly when it stops being able to see
-    // them.
-    for (const taskId of projector.listRunningSubagents()) {
-      const untracked: RawOf<'subagent_update'> = {
-        type: 'subagent_update',
-        taskId,
-        status: 'untracked',
-      };
-      projector.ingest(untracked);
-    }
+    // retire the other's live children. On a warm (persistent-pump) process
+    // this stream is ONE turn's window, not the process's life, so a helper
+    // that outlives the reply is still in sight when it ends: the runtime names
+    // it in `stillLive` and it is spared (FB-18). When the process itself is
+    // gone the runtime names nothing, and every child is swept as before.
+    sweepStrandedChildren(projector, opts.stillLive);
     // Defensive: a stream that ends with a window still open — no `done` at all,
     // or a reopened continuation the runtime never terminated — still closes it
     // so the projection does not stay `streaming` forever.

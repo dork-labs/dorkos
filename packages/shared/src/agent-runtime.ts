@@ -1841,6 +1841,20 @@ export interface AgentRuntime {
   isHelperWorking?(sessionId: string): boolean;
 
   /**
+   * The ids of the background tasks (helpers, shells) a session's process
+   * still names as live after its turn ended. A turn's stream-end sweep
+   * spares these instead of calling them lost, so a helper that outlives the
+   * reply keeps its row (FB-18). The ids are the ones `subagent_update`
+   * carries as `taskId`.
+   *
+   * Optional, and empty when the process ended with its turn: a runtime with
+   * no process that outlives a turn omits it, and every child is swept.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  liveHelperIds?(sessionId: string): string[];
+
+  /**
    * The person chose Switch now on a message held for background work (spec
    * `warm-process-lifecycle` D2a, DOR-2065): the next send may restart the
    * agent even though its work is still running, ending that work.

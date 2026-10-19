@@ -561,6 +561,18 @@ export class SessionPump {
   }
 
   /**
+   * The background tasks this process still names as live (FB-18), or none
+   * when the pump holds no process. A turn ending on a warm process leaves them
+   * running, so a turn's stream-end sweep must not call them lost.
+   */
+  liveTaskIds(): string[] {
+    // Only while a process exists: the tracker keeps a crashed process's last
+    // level frame until the next launch replaces it, and that process's
+    // helpers died with it, so they must be swept, not spared.
+    return this.holdsProcess ? this.liveness.liveTaskIds() : [];
+  }
+
+  /**
    * The windower saw a `result` naming a prompt DorkOS never sent — the shape a
    * FOLDED delivery takes (spec `warm-process-lifecycle` D1).
    *

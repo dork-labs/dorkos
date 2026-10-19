@@ -112,7 +112,6 @@ import {
   resolveAgentHome,
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
-import { eventFanOut } from '../../core/event-fan-out.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
@@ -139,6 +138,7 @@ import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
 import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -881,7 +881,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // otherwise repopulate the cache from a session still holding the old set.
     if (changedProjectPath) this.forgetProjectCommands(changedProjectPath);
 
-    this.broadcastCommandsChanged();
+    broadcastCommandsChanged();
   }
 
   /**
@@ -899,7 +899,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   refreshProjectCommands(projectPath: string): void {
     this.forgetProjectCommands(projectPath);
-    this.broadcastCommandsChanged();
+    broadcastCommandsChanged();
   }
 
   /** Drop a cwd's cached command list and its warm-probe cooldown. */
@@ -1082,24 +1082,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const port = this.pluginReloadActivity;
     if (!port) return;
     port(entry);
-  }
-
-  /**
-   * Broadcast a `commands_changed` event on the unified `/api/events` stream so
-   * connected clients invalidate their command-registry query and re-fetch.
-   * Best-effort: a broadcast failure must never break the install path.
-   */
-  private broadcastCommandsChanged(): void {
-    try {
-      eventFanOut.broadcast('commands_changed', { changedAt: new Date().toISOString() });
-    } catch (err) {
-      // warn, not debug: a failed broadcast means OTHER connected windows never
-      // learn to re-fetch, so their command palette stays stale until a manual
-      // reload (the initiating window still has its mutation-side invalidation).
-      logger.warn('[refreshActivatedPlugins] commands_changed broadcast failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   /**
@@ -1467,6 +1449,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // The warm path only. A resumed turn's process ends with its turn, and the
     // CLI ends its own background work with it, so nothing can follow.
     return this.persistent.holdsBackgroundWork(sessionId);
+  }
+
+  /** @inheritdoc */
+  liveHelperIds(sessionId: string): string[] {
+    // The warm path only: a resumed turn's process ends with its turn and
+    // takes its background work with it, so its children are rightly swept.
+    return this.persistent.liveTaskIds(sessionId);
   }
 
   /** @inheritdoc */
@@ -2005,7 +1994,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         })),
         { provisional: true }
       );
-      this.broadcastCommandsChanged();
+      broadcastCommandsChanged();
       this.warmFailedAt.delete(cwd);
       logger.debug('[warmCommands] warmed command cache', { cwd, count: commands.length });
     } catch (err) {
