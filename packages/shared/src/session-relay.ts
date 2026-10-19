@@ -69,13 +69,23 @@
  * feature says so through {@link missingRelayFeature}, so the page can say
  * "this computer needs an update for X" instead of breaking.
  *
+ * **Agent computers.** A cloud computer that runs a person's agents for their
+ * hub speaks this same protocol, version and handshake, plus a few operations
+ * of its own that only exist when both sides advertise them. They live in
+ * `session-relay-agent-computer.ts`; nothing in this module serves them, so a
+ * linked Mac stays chats only.
+ *
  * Frame encoding mirrors `stream-socket.ts`: one JSON object per WebSocket text
- * frame, parsed fail-soft, so a bad frame is a dropped frame and never a torn
- * down connection.
+ * frame. Decoding never throws, but a frame that does not open or decode is
+ * not skipped: once the channel is sealed, both ends close the connection on
+ * one, because skipping a sealed frame would break its sequence. So a sender
+ * checks every frame against {@link encodeRelayFrame} before it goes out, and
+ * never sends one the peer would refuse.
  *
  * @module shared/session-relay
  */
 import { z } from 'zod';
+import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
 import {
   DENY_REASON_MAX_LENGTH,
   InterruptReceiptSchema,
@@ -96,14 +106,28 @@ export const SESSION_RELAY_VERSIONS = { min: 1, max: 1 } as const;
 
 /**
  * Longest frame either side accepts, in UTF-16 code units (up to about three
- * times as many bytes on the wire). Larger is dropped. A socket's own byte
- * limit must sit above that, or an oversized frame closes the connection
- * instead of being dropped.
+ * times as many bytes on the wire). A longer one fails to decode, which closes
+ * the connection once the channel is sealed. A socket's own byte limit must
+ * sit above this, so the refusal is the protocol's and not the socket's.
  */
 export const SESSION_RELAY_MAX_FRAME_LENGTH = 1_048_576;
 
+/**
+ * Most UTF-8 bytes of one inner frame's JSON: what fits in a sealed frame of
+ * {@link SESSION_RELAY_MAX_FRAME_LENGTH} once it is boxed (a 16-byte tag),
+ * base64url-encoded and wrapped in the sealed frame's own JSON (64 characters
+ * of room). The sealing in `apps/server` (`RelayChannel.seal`) refuses
+ * anything larger, so this is the real gate on every inner frame, and
+ * {@link encodeRelayFrame} applies it before the sealing ever sees a frame.
+ */
+export const SESSION_RELAY_MAX_INNER_FRAME_BYTES =
+  Math.floor(((SESSION_RELAY_MAX_FRAME_LENGTH - 64) * 3) / 4) - 16;
+
 /** Longest message a relayed sender may post, in characters. */
 export const SESSION_RELAY_MAX_MESSAGE_LENGTH = 200_000;
+
+/** The words of one relayed message: never empty, at most {@link SESSION_RELAY_MAX_MESSAGE_LENGTH}. */
+export const RelayMessageContentSchema = z.string().min(1).max(SESSION_RELAY_MAX_MESSAGE_LENGTH);
 
 /** Most streams one connection may hold open at once; the next is refused. */
 export const SESSION_RELAY_MAX_OPEN_STREAMS = 32;
@@ -164,31 +188,31 @@ export type SessionRelayFeature = (typeof SESSION_RELAY_FEATURES)[number];
  * A peer's advertised features. Plain strings rather than the enum, so a newer
  * peer's feature this build has never heard of is carried, not refused.
  */
-const AdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
+export const RelayAdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
 
 // === Ids ===
 
 /** Correlates one request with its one answer. Chosen by the web side. */
-const RequestIdSchema = z
+export const RelayRequestIdSchema = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[\w.:-]+$/);
 
 /** Names one open stream on the connection. Chosen by the web side. */
-const StreamIdSchema = RequestIdSchema;
+const StreamIdSchema = RelayRequestIdSchema;
 
 /**
  * A chat on the computer: a lowercase UUID (as `SessionSchema.id` is minted),
  * so it can never smuggle a path segment into a URL, and two spellings of one
  * id cannot pass two different checks.
  */
-const SessionIdSchema = z
+export const RelaySessionIdSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 /** A registered agent on the computer, by its Mesh id (a ULID). Never a directory. */
-const AgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+export const RelayAgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 
 /** A tool call a chat is waiting on, as its runtime named it. */
 const ToolCallIdSchema = z
@@ -264,14 +288,14 @@ const base64url = (max: number) =>
 /** List an agent's chats, newest first. Titles and times only, never a path. */
 const ChatsListRequestSchema = z.strictObject({
   op: z.literal('chats.list'),
-  agentId: AgentIdSchema,
+  agentId: RelayAgentIdSchema,
 });
 
 /** Open a chat's durable stream, resuming after `resume` when given. */
 const SessionStreamRequestSchema = z.strictObject({
   op: z.literal('session.stream'),
   streamId: StreamIdSchema,
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   resume: ResumeCursorSchema.optional(),
 });
 
@@ -282,17 +306,17 @@ const SessionStreamRequestSchema = z.strictObject({
  */
 const SessionSendRequestSchema = z.strictObject({
   op: z.literal('session.send'),
-  sessionId: SessionIdSchema,
-  content: z.string().min(1).max(SESSION_RELAY_MAX_MESSAGE_LENGTH),
-  clientMessageId: RequestIdSchema.optional(),
+  sessionId: RelaySessionIdSchema,
+  content: RelayMessageContentSchema,
+  clientMessageId: RelayRequestIdSchema.optional(),
   disposition: MessageDispositionSchema.optional(),
-  newChat: z.strictObject({ agentId: AgentIdSchema }).optional(),
+  newChat: z.strictObject({ agentId: RelayAgentIdSchema }).optional(),
 });
 
 /** Stop the chat's running turn and empty its queue, as the Stop button does. */
 const SessionInterruptRequestSchema = z.strictObject({
   op: z.literal('session.interrupt'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
 });
 
 /** The decision an approval challenge is bound to. */
@@ -305,7 +329,7 @@ const ApprovalDecisionSchema = z.enum(['approve', 'deny']);
  */
 const InteractionChallengeRequestSchema = z.strictObject({
   op: z.literal('interaction.challenge'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   toolCallId: ToolCallIdSchema,
   decision: ApprovalDecisionSchema,
 });
@@ -313,7 +337,7 @@ const InteractionChallengeRequestSchema = z.strictObject({
 /** A WebAuthn assertion over a challenge the computer issued, base64url fields. */
 export const RelayApprovalProofSchema = z.strictObject({
   /** The `challengeId` the computer answered `interaction.challenge` with. */
-  challengeId: RequestIdSchema,
+  challengeId: RelayRequestIdSchema,
   credentialId: base64url(1_400),
   clientDataJSON: base64url(4_096),
   authenticatorData: base64url(1_024),
@@ -353,7 +377,7 @@ export type RelayInteractionAnswer = z.infer<typeof InteractionAnswerSchema>;
 
 const InteractionRespondRequestSchema = z.strictObject({
   op: z.literal('interaction.respond'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   answer: InteractionAnswerSchema,
 });
 
@@ -377,7 +401,7 @@ export type RelayRequestOp = RelayRequest['op'];
 
 /** One chat in a `chats.list` answer: what a sidebar row needs, and no path. */
 export const RelayChatSummarySchema = z.strictObject({
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   title: z.string().max(500),
   updatedAt: z.string().datetime(),
   lastMessagePreview: z.string().max(500).optional(),
@@ -391,13 +415,13 @@ export const RelayResultBodySchemas = {
   'chats.list': z.strictObject({
     chats: z.array(RelayChatSummarySchema).max(SESSION_RELAY_MAX_CHATS),
   }),
-  'session.send': z.strictObject({ sessionId: SessionIdSchema }),
+  'session.send': z.strictObject({ sessionId: RelaySessionIdSchema }),
   'session.interrupt': z.strictObject({
     receipt: InterruptReceiptSchema,
     cancelledQueued: z.array(QueuedMessageSchema),
   }),
   'interaction.challenge': z.strictObject({
-    challengeId: RequestIdSchema,
+    challengeId: RelayRequestIdSchema,
     /** The bytes to sign, base64url. Opaque to the web side. */
     challenge: base64url(256),
     /** When the computer stops accepting a proof over it. */
@@ -510,7 +534,7 @@ export const RelayHelloFrameSchema = z.strictObject({
     .max(64)
     .regex(/^[\w.:-]+$/),
   versions: RelayVersionRangeSchema,
-  features: AdvertisedFeaturesSchema,
+  features: RelayAdvertisedFeaturesSchema,
   /** The computer's DorkOS version, for "needs an update" copy. */
   appVersion: z.string().min(1).max(64),
   nonce: RelayNonceSchema,
@@ -579,7 +603,7 @@ export const RelayWebFrameSchema = z.discriminatedUnion('type', [
    */
   z.strictObject({
     type: z.literal('request'),
-    id: RequestIdSchema,
+    id: RelayRequestIdSchema,
     request: RelayRequestSchema,
     /** The browser that asked; sent only to a computer that advertised `request.device`. */
     device: RelayDeviceSchema.optional(),
@@ -614,13 +638,13 @@ const RelayStreamFrameSchema = z.strictObject({
 export const RelayComputerFrameSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('result'),
-    id: RequestIdSchema,
+    id: RelayRequestIdSchema,
     ok: z.literal(true),
     body: z.unknown(),
   }),
   z.strictObject({
     type: z.literal('error'),
-    id: RequestIdSchema,
+    id: RelayRequestIdSchema,
     ok: z.literal(false),
     error: RelayErrorSchema,
   }),
@@ -727,7 +751,9 @@ function transcript(kind: string, input: RelayTranscriptInput, tail: string[]): 
 
 /**
  * Parse one frame, or `null` when it is too long, not JSON, or not a frame of
- * `schema`. Fails soft: a bad frame is dropped, the connection lives on.
+ * `schema`. Never throws; what a `null` means is the caller's to decide. Once
+ * the channel is sealed both ends close the connection on one, because a
+ * sealed frame cannot be skipped without breaking its sequence.
  *
  * @param raw - The raw text frame received from the socket.
  * @param schema - The schema for what this side expects next: the handshake
@@ -752,11 +778,23 @@ export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z
  * the peer to read, or not serializable at all, such as nested past the
  * engine's stack). The sender answers with an error instead.
  *
+ * A `sealed` frame is measured in characters against
+ * {@link SESSION_RELAY_MAX_FRAME_LENGTH}; every other frame, which is either
+ * plain handshake JSON or about to be sealed, in UTF-8 bytes against
+ * {@link SESSION_RELAY_MAX_INNER_FRAME_BYTES}, exactly as the sealing measures
+ * it. A frame this encodes therefore always seals.
+ *
  * @param frame - The frame to encode.
  */
 export function encodeRelayFrame(
   frame:
-    RelayWebFrame | RelayComputerFrame | RelayHelloFrame | RelayHandshakeAnswer | RelaySealedFrame
+    | RelayWebFrame
+    | RelayComputerFrame
+    | AgentComputerWebFrame
+    | AgentComputerFrame
+    | RelayHelloFrame
+    | RelayHandshakeAnswer
+    | RelaySealedFrame
 ): string | null {
   let text: string;
   try {
@@ -764,7 +802,10 @@ export function encodeRelayFrame(
   } catch {
     return null;
   }
-  return text.length > SESSION_RELAY_MAX_FRAME_LENGTH ? null : text;
+  if (frame.type === 'sealed') return text.length > SESSION_RELAY_MAX_FRAME_LENGTH ? null : text;
+  // Every code unit is at most three UTF-8 bytes, so most frames skip the count.
+  if (text.length * 3 <= SESSION_RELAY_MAX_INNER_FRAME_BYTES) return text;
+  return new TextEncoder().encode(text).length > SESSION_RELAY_MAX_INNER_FRAME_BYTES ? null : text;
 }
 
 // === Handshake ===

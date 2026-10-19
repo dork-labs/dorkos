@@ -313,11 +313,19 @@ describe('leaf and tool-schema compatibility', () => {
     expect(source).not.toMatch(
       /from ['"]\.\/(?:canvas-schemas|room-schemas|session-stream|schemas)\.js/u
     );
-    const helper = await readFile(new URL('../canvas-channel-json.ts', import.meta.url), 'utf8');
-    expect(helper.match(/^import .*$/gmu)).toEqual([
-      "import { z } from 'zod';",
-      "import { extendZodWithOpenApiOnce } from './zod-openapi.js';",
+    // Module specifiers, so a multi-line import is read whole.
+    const importsOf = async (file: string) =>
+      [
+        ...(await readFile(new URL(file, import.meta.url), 'utf8')).matchAll(
+          /^import [^;]*? from '([^']+)';$/gmsu
+        ),
+      ].map((match) => match[1]);
+    expect(await importsOf('../canvas-channel-json.ts')).toEqual([
+      'zod',
+      './bounded-json.js',
+      './zod-openapi.js',
     ]);
+    expect(await importsOf('../bounded-json.ts')).toEqual(['zod']);
     const openApiHelper = await readFile(new URL('../zod-openapi.ts', import.meta.url), 'utf8');
     expect(openApiHelper.match(/^import .*$/gmu)).toEqual([
       "import { z } from 'zod';",

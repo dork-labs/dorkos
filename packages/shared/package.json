@@ -397,6 +397,14 @@
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
     },
+    "./session-relay-agent-computer": {
+      "types": "./src/session-relay-agent-computer.ts",
+      "default": "./dist/session-relay-agent-computer.js"
+    },
+    "./bounded-json": {
+      "types": "./src/bounded-json.ts",
+      "default": "./dist/bounded-json.js"
+    },
     "./transport-hub": {
       "types": "./src/transport-hub.ts",
       "default": "./dist/transport-hub.js"
