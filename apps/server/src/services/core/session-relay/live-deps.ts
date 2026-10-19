@@ -13,7 +13,6 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Session } from '@dorkos/shared/types';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
-import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { boundaryRefusal } from '../../../lib/route-utils.js';
 import { parseResumeCursor } from '../../../lib/stream-cursor.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
@@ -35,6 +34,7 @@ import type { PendingApprovalCard } from './approval-challenges.js';
 import { bumpSignCount, readApprovalKeys } from './approval-key-store.js';
 import { readRelayPin } from './pin-store.js';
 import { relayApprovableCard } from './relay-approvable.js';
+import { relayProtectedRoots } from './relay-protected-roots.js';
 import type { RelayRequestServerDeps } from './relay-request-server.js';
 import type { RelayAgent, RelaySessionFacts } from './relay-serves.js';
 
@@ -195,7 +195,8 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
         ...(card.blockedPath !== undefined ? { blockedPath: card.blockedPath } : {}),
       };
     },
-    approvableCard: (card, cwd) => relayApprovableCard(card, { cwd, dorkHome: resolveDorkHome() }),
+    approvableCard: (card, cwd) =>
+      relayApprovableCard(card, { cwd, protectedRoots: relayProtectedRoots() }),
     approveTool: async (sessionId, toolCallId, approved, options) =>
       (await runtimeRegistry.resolveForSession(sessionId)).approveTool(
         sessionId,

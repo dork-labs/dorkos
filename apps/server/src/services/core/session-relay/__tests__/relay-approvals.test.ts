@@ -152,7 +152,7 @@ function harness(opts: HarnessOptions = {}) {
       hooks.onPending?.();
       return sessionId === CHAT ? (cards.get(toolCallId) ?? null) : null;
     },
-    approvableCard: (card, cwd) => relayApprovableCard(card, { cwd, dorkHome: home }),
+    approvableCard: (card, cwd) => relayApprovableCard(card, { cwd, protectedRoots: [home] }),
     approveTool,
     bumpSignCount: bumpSpy,
     now: () => now,

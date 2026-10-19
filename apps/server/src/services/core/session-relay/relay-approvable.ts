@@ -8,20 +8,33 @@
  *
  * - Claude Code `Bash`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
  *   `WebFetch`, `WebSearch`;
- * - Codex `Shell`, and Codex `ApplyPatch` that asks for no write root.
+ * - Codex `Shell`, and Codex `ApplyPatch` that asks for no write root and
+ *   whose every change is to an allowed file.
  *
  * Refused, whatever proof follows: every `mcp__*` tool (DorkOS's own and any
  * other server's), Codex `Permissions`, OpenCode `external_directory`, `Task`,
- * `Agent`, `ExitPlanMode`, and any name not on the list. A file tool whose
- * target sits in an agent harness's settings folder (`.claude/`, `.dork/`,
- * `.codex/`, `.opencode/`) or in DorkOS's data folder is refused too: writing
- * there changes what agents may do next. A Codex card whose input is the
+ * `Agent`, `ExitPlanMode`, and any name not on the list. A file change is
+ * refused when it lands in a harness settings folder (any `.claude*`,
+ * `.dork`, `.codex`, `.opencode` or `.agents` folder), in one of the
+ * protected roots the caller passes (DorkOS's data folder and every folder
+ * DorkOS resolves for a harness: Claude Code accounts, the Codex home,
+ * OpenCode's data and config folders, `~/.agents`), or in a file named
+ * `opencode.json`, `opencode.jsonc` or `.mcp.json`: writing there changes what
+ * agents may do next. A path with a `..` part is refused outright, so text
+ * folding can never step around a symlink. Paths are judged after following
+ * every symlink that exists, in the case the disk stores them, and compared
+ * without regard to case on macOS and Windows. A Codex card whose input is the
  * placeholder Codex shows when it does not know the real input is refused,
  * since the owner would sign an input that is not the one that runs.
  *
  * `Bash` and `Shell` cannot be classified from their text: a command can do
  * anything. They are allowed because each is a one-shot the owner reads in
  * full on the approve page before signing, never a standing permission.
+ *
+ * Accepted residuals: a folder made into a symlink after this check, by
+ * another process or another turn (the same class as an unasked shell, out of
+ * B4's scope), and Windows 8.3 short names (`PROGRA~1`), which are not
+ * expanded here.
  *
  * @module services/core/session-relay/relay-approvable
  */
@@ -40,8 +53,11 @@ const FILE_TOOLS: Record<string, string> = {
   NotebookEdit: 'notebook_path',
 };
 
-/** Folders whose contents decide what an agent harness may do. */
-const SETTINGS_FOLDERS = new Set(['.claude', '.dork', '.codex', '.opencode']);
+/** Folders whose contents decide what an agent harness may do (`.claude*` by prefix). */
+const SETTINGS_FOLDERS = new Set(['.dork', '.codex', '.opencode', '.agents']);
+
+/** Files that configure a harness wherever they sit. */
+const SETTINGS_FILES = new Set(['opencode.json', 'opencode.jsonc', '.mcp.json']);
 
 /**
  * The inputs Codex shows when the real one is unknown (`server-requests.ts`
@@ -52,21 +68,26 @@ const CODEX_PLACEHOLDER_INPUTS: Record<string, string> = {
   ApplyPatch: JSON.stringify({ changes: [] }),
 };
 
-/** Where a file tool's target is judged from. */
+/** Where a file change is judged from. */
 export interface RelayApprovableContext {
   /** The chat's folder, which a relative path resolves against. */
   cwd: string | null;
-  /** DorkOS's data folder. */
-  dorkHome: string;
+  /** Folders no web approval may write in: DorkOS's data folder and every harness folder. */
+  protectedRoots: readonly string[];
+  /** Compare without regard to case; defaults to true on macOS and Windows. */
+  caseInsensitive?: boolean;
 }
 
-/** A path with every existing part's symlinks resolved, the rest appended as written. */
+/**
+ * A path with its deepest existing ancestor resolved by the OS (symlinks
+ * followed, the case the disk stores), the rest appended as written.
+ */
 function realOrResolved(target: string): string {
   let existing = target;
   const rest: string[] = [];
   for (;;) {
     try {
-      return path.join(fs.realpathSync(existing), ...rest);
+      return path.join(fs.realpathSync.native(existing), ...rest);
     } catch {
       const parent = path.dirname(existing);
       if (parent === existing) return target;
@@ -82,25 +103,50 @@ function isWithin(child: string, parent: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-/** Whether a file tool's target is somewhere the web may write. */
-function fileTargetAllowed(
-  card: PendingApprovalCard,
-  field: string,
-  context: RelayApprovableContext
-): boolean {
-  let input: unknown;
-  try {
-    input = JSON.parse(card.input);
-  } catch {
-    return false;
-  }
-  const raw = (input as Record<string, unknown> | null)?.[field];
+/** Whether one file a tool would change is somewhere the web may write. */
+function targetAllowed(raw: unknown, context: RelayApprovableContext): boolean {
   if (typeof raw !== 'string' || raw === '') return false;
+  // Refused before resolving: `path.resolve` folds `..` as text, past any symlink.
+  if (raw.split(/[\\/]/).includes('..')) return false;
   if (!path.isAbsolute(raw) && context.cwd === null) return false;
-  const target = realOrResolved(path.resolve(context.cwd ?? '/', raw));
-  if (target.split(path.sep).some((part) => SETTINGS_FOLDERS.has(part))) return false;
-  const home = path.resolve(context.dorkHome);
-  return !isWithin(target, home) && !isWithin(target, realOrResolved(home));
+  const fold =
+    (context.caseInsensitive ?? (process.platform === 'darwin' || process.platform === 'win32'))
+      ? (text: string) => text.toLowerCase()
+      : (text: string) => text;
+  const target = fold(realOrResolved(path.resolve(context.cwd ?? '/', raw)));
+  const parts = target.split(path.sep);
+  if (parts.some((part) => part.startsWith('.claude') || SETTINGS_FOLDERS.has(part))) return false;
+  if (SETTINGS_FILES.has(path.basename(target))) return false;
+  return !context.protectedRoots.some((root) => {
+    const resolved = path.resolve(root);
+    return isWithin(target, fold(resolved)) || isWithin(target, fold(realOrResolved(resolved)));
+  });
+}
+
+/** The input as an object, or `null` when it is not a JSON object. */
+function inputObject(card: PendingApprovalCard): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(card.input);
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a Codex patch names at least one change, and only changes to allowed files. */
+function patchAllowed(card: PendingApprovalCard, context: RelayApprovableContext): boolean {
+  // A patch that also asks for a write root would widen where Codex may write.
+  if (card.blockedPath !== undefined) return false;
+  const changes = inputObject(card)?.changes;
+  if (!Array.isArray(changes) || changes.length === 0) return false;
+  return changes.every(
+    (change: unknown) =>
+      change !== null &&
+      typeof change === 'object' &&
+      targetAllowed((change as Record<string, unknown>).path, context)
+  );
 }
 
 /**
@@ -108,8 +154,8 @@ function fileTargetAllowed(
  * a challenge is issued and again when the signed answer arrives.
  *
  * @param card - The pending tool approval, as the chat holds it now.
- * @param context - The chat's folder and DorkOS's data folder.
- * @returns True only for a tool on the list, with a real input and an allowed target.
+ * @param context - The chat's folder and the protected roots.
+ * @returns True only for a tool on the list, with a real input and allowed targets.
  */
 export function relayApprovableCard(
   card: PendingApprovalCard,
@@ -118,8 +164,7 @@ export function relayApprovableCard(
   const placeholder = CODEX_PLACEHOLDER_INPUTS[card.toolName];
   if (placeholder !== undefined && card.input === placeholder) return false;
   if (ONE_SHOT_TOOLS.has(card.toolName)) return true;
-  // A patch that also asks for a write root would widen where Codex may write.
-  if (card.toolName === 'ApplyPatch') return card.blockedPath === undefined;
+  if (card.toolName === 'ApplyPatch') return patchAllowed(card, context);
   const field = FILE_TOOLS[card.toolName];
-  return field !== undefined && fileTargetAllowed(card, field, context);
+  return field !== undefined && targetAllowed(inputObject(card)?.[field], context);
 }
