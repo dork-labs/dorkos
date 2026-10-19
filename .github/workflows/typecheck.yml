@@ -431,4 +431,21 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           NODE_OPTIONS: --max-old-space-size=8192
-        run: pnpm exec turbo typecheck --continue
+        run: |
+          # Memory sampler: prints a line each time used memory sets a new
+          # peak (in 512 MB steps), so a run the runner kills still shows how
+          # close it came.
+          (
+            peak=0
+            while sleep 3; do
+              read -r used avail < <(free -m | awk '/^Mem:/{print $3, $7}')
+              swap=$(free -m | awk '/^Swap:/{print $3}')
+              if [ "$used" -ge $((peak + 512)) ]; then
+                peak=$used
+                echo "::notice::memory: ${used} MB used, ${avail} MB available, ${swap} MB swap"
+              fi
+            done
+          ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null' EXIT
+          pnpm exec turbo typecheck --continue
