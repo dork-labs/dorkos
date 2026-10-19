@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(server): review fixes for the raise of existing chats (DOR-3107)'
   - "feat(server): existing chats with your own agents rise to their agent's level, once, with one Undo (DOR-3107)"
 ---
 
