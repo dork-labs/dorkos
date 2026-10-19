@@ -93,6 +93,23 @@ const config: KnipConfig = {
       // gate, which is the opposite of what they are for.
       entry: ['perf/*.ts'],
     },
+    'apps/community': {
+      // The space's web pages live in apps/client (server-merge step 7e), but the space image
+      // builds them from this package's install, through a node_modules link in its Dockerfile.
+      ignoreDependencies: [
+        '@dork-labs/ui',
+        '@dorkos/icons',
+        '@tailwindcss/vite',
+        '@types/react',
+        '@types/react-dom',
+        '@vitejs/plugin-react',
+        'lucide-react',
+        'react',
+        'react-dom',
+        'tailwindcss',
+        'vite',
+      ],
+    },
     'packages/cli': {
       // Bundled into the CLI through `@dorkos/server` (esbuild), or required by
       // the bundled server at runtime; the CLI's own source never imports these

@@ -7,6 +7,7 @@ import testConfig from '@dorkos/eslint-config/test';
 
 import fsd from './eslint-rules/fsd.js';
 import routes from './eslint-rules/routes.js';
+import space from './eslint-rules/space.js';
 
 // The TS preset's `extensions`/`parsers`/`external-module-folders` — the settings
 // that let import-x parse a `.ts` dependency — minus its `import-x/resolver` key,
@@ -74,44 +75,17 @@ export default defineConfig([
   //
   // `src/space/` is a second site, not part of the app: the space's own web pages, which
   // `vite.space.config.ts` builds separately and the space server serves (server-merge step 7e).
-  // The two never import each other, so neither build can pull the other in; options replace
-  // rather than merge, so each block restates the server ban.
+  // `eslint-rules/space.js` keeps the two from importing each other, by resolved path.
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/space/**'],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            SERVER_IMPORT_BAN,
-            {
-              group: ['**/space', '**/space/**'],
-              message:
-                "The app never imports the space's own website (src/space); share code through @dorkos/shared.",
-            },
-          ],
-        },
-      ],
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [SERVER_IMPORT_BAN] }],
     },
   },
   {
-    files: ['src/space/**/*.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            SERVER_IMPORT_BAN,
-            {
-              group: ['@/*', '**/layers/**'],
-              message:
-                "The space's website never imports the app's code; share it through @dorkos/shared or @dork-labs/ui.",
-            },
-          ],
-        },
-      ],
-    },
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { space },
+    rules: { 'space/separate-sites': 'error' },
   },
 
   // FSD Layer Enforcement: shared/ cannot import higher layers, and inside

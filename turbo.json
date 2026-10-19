@@ -110,7 +110,8 @@
         "$TURBO_ROOT$/apps/community/browser-tests/**",
         "$TURBO_ROOT$/apps/community/load/**",
         "$TURBO_ROOT$/apps/community/scripts/**",
-        "$TURBO_ROOT$/apps/client/src/space/**"
+        "$TURBO_ROOT$/apps/client/src/space/**",
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
       ]
     },
     "@dorkos/server#typecheck": {
@@ -123,24 +124,40 @@
         "$TURBO_ROOT$/apps/community/browser-tests/**",
         "$TURBO_ROOT$/apps/community/load/**",
         "$TURBO_ROOT$/apps/community/scripts/**",
-        "$TURBO_ROOT$/apps/client/src/space/**"
+        "$TURBO_ROOT$/apps/client/src/space/**",
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
       ]
     },
     "@dorkos/community#build": {
       "dependsOn": ["generate:api-docs", "^build"],
       "outputs": ["dist/**", "dist-server/**"],
       "env": ["NODE_ENV", "VITE_*"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/server/src/services/spaces/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/server/src/services/spaces/**",
+        "$TURBO_ROOT$/apps/client/src/space/**",
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
+      ]
     },
     "@dorkos/community#typecheck": {
       "dependsOn": ["^build"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/server/src/services/spaces/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/server/src/services/spaces/**",
+        "$TURBO_ROOT$/apps/client/src/space/**",
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
+      ]
     },
     "@dorkos/community#test": {
       "dependsOn": ["^build"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/server/src/services/spaces/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/server/src/services/spaces/**",
+        "$TURBO_ROOT$/apps/client/src/space/**",
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
+      ]
     },
     "@dorkos/test-utils#test": {
       "dependsOn": ["^build"],

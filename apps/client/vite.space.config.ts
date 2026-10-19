@@ -12,6 +12,11 @@ import tailwindcss from '@tailwindcss/vite';
  */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Vite's esbuild reads the nearest tsconfig, which differs between a checkout and the image's
+  // build stage (which copies none). Pin what it would read, so both builds compile the same.
+  esbuild: {
+    tsconfigRaw: { compilerOptions: { target: 'ES2022', useDefineForClassFields: true } },
+  },
   root: fileURLToPath(new URL('./src/space/', import.meta.url)),
   publicDir: false,
   cacheDir: fileURLToPath(new URL('./node_modules/.vite-space/', import.meta.url)),

@@ -28,6 +28,10 @@ What the pipeline sees:
   copy the app renders, and the space is its own website.
 - Turbo inputs that named `apps/community/src/browser/**` name the new folder.
 - The tenancy receipt's unit runner accepts `apps/client` test files.
+- New guards: `scripts/__tests__/space-page-versions.test.ts` keeps the page's
+  packages on the same versions in `apps/client` and in the image's install,
+  and `apps/client/src/__tests__/space-boundary-lint.test.ts` proves the app
+  and the page never import each other.
 
 Hygiene, not an experiment: no gate timing or catch rate should move. Revert
 with the move.

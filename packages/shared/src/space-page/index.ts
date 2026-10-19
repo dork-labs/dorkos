@@ -187,7 +187,7 @@ export function removalAuthority(actor: RemovalActor, target: RemovalTarget): Re
  * memory only (`window.__dorkosLinkFragment`, read once by `apps/client/src/space/page-start/read-link-secret.ts`)
  * and replaces the address with the same one without it.
  *
- * the page's `index.html` carries exactly this text, which `page-start.test.ts` checks, and the page
+ * The page's `index.html` carries exactly this text, which `page-start.test.ts` checks, and the page
  * policy allows exactly this script by its hash (`PAGE_CSP`). Changing a character here changes
  * the hash with it; a copy in `index.html` that drifts is refused by the browser.
  */
