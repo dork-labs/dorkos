@@ -8,6 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sql } from 'drizzle-orm';
+import type { Db } from '@dorkos/db';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
   isNoLooserThan,
@@ -29,6 +32,9 @@ import {
 } from '../existing-chats-raise.js';
 import { personWriter } from '../permission-history.js';
 import { marksForTurn, withMarks } from '../../turn-power/turn-marks.js';
+import { chatLaunchMarks } from '../chat-launch-marks.js';
+import { senderCeilingJson } from '../../../session/chat-messages/chat-message-ceiling.js';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes as DeclaredModes;
@@ -116,6 +122,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   setChatModePort(null);
+  resetOutsiderTurns();
   for (const dir of cleanup) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -421,10 +428,107 @@ describe('openingMessageMarked', () => {
     expect(openingMessageMarked(JSON.stringify([level, 'runtime-default']))).toBe(false);
   });
 
+  it('reads an unknown sender stored with an outsider mark as marked', () => {
+    expect(
+      openingMessageMarked(
+        JSON.stringify({ bound: 'runtime-default', marks: { outsider: true } })
+      )
+    ).toBe(true);
+  });
+
+  it('reads an unknown sender stored with a teammate mark as marked', () => {
+    expect(
+      openingMessageMarked(
+        JSON.stringify({
+          bound: 'runtime-default',
+          marks: { teammate: [{ roomId: 'r', authorId: 'a' }] },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('reads an unknown sender stored with empty or junk marks as not marked', () => {
+    expect(openingMessageMarked(JSON.stringify({ bound: 'runtime-default', marks: {} }))).toBe(
+      false
+    );
+    expect(openingMessageMarked(JSON.stringify({ bound: 'runtime-default', marks: null }))).toBe(
+      false
+    );
+    expect(openingMessageMarked(JSON.stringify({ bound: 'runtime-default', marks: 'x' }))).toBe(
+      false
+    );
+  });
+
   it('reads the runtime default, an unmarked level, no message or junk as not marked', () => {
     expect(openingMessageMarked(JSON.stringify('runtime-default'))).toBe(false);
     expect(openingMessageMarked(JSON.stringify({ asks: 'never', reach: 'full' }))).toBe(false);
     expect(openingMessageMarked(undefined)).toBe(false);
     expect(openingMessageMarked('not json')).toBe(false);
+  });
+});
+
+// Security (DOR-3106): a chat an unknown-level sender opened after a stranger
+// reached it stays capped, even when the raise runs a boot late. The row is
+// written by #3107's real `senderCeilingJson` and read by the real
+// `chatLaunchMarks` over a real database.
+describe('a chat an unknown-level, stranger-reached sender opened', () => {
+  const NOW = '2026-10-19T12:00:00.000Z';
+  const FULL_LEVEL = levelOfMode(MODES, FULL)!;
+
+  /** A database with the sending chat, and the chat its message opened. */
+  async function openedBy(sender: string, opened: string): Promise<Db> {
+    const db = createTestDb();
+    for (const [id, origin] of [
+      [sender, 'interactive'],
+      [opened, 'chat-message'],
+    ] as const) {
+      db.run(sql`INSERT INTO session_metadata (session_id, runtime, launch_origin, created_at)
+        VALUES (${id}, 'claude-code', ${origin}, ${NOW})`);
+    }
+    // The sender's level is unknown (a restart); a stranger may have reached it.
+    const ceilingJson = await senderCeilingJson(
+      { turnLevelOf: () => undefined, ownLevelOf: async () => FULL_LEVEL },
+      { sessionId: sender, agentPath: '/agents/builder' }
+    );
+    db.run(sql`INSERT INTO chat_messages (id, to_session_id, from_session_id, from_agent_path,
+      from_agent_name, kind, text, delivery, status, ceiling_json, created_at, updated_at)
+      VALUES (${`m-${opened}`}, ${opened}, ${sender}, '/agents/builder', 'builder', 'message',
+        'hi', 'queue', 'delivered', ${ceilingJson}, ${NOW}, ${NOW})`);
+    return db;
+  }
+
+  /** The raise over that database, with the person-set record unseeded on the first boot only. */
+  async function raiseTwoBoots(db: Db, opened: string) {
+    const t = setup([chat(opened, { launchOrigin: 'chat-message' })]);
+    cleanup.push(t.dir);
+    const launchMarked = chatLaunchMarks(db, true);
+    let boots = 0;
+    t.deps.launchMarked = (row) => launchMarked(row.sessionId, row.launchOrigin);
+    t.deps.personSet = { isSeeded: () => (boots += 1) > 1, get: () => undefined };
+    const first = await raiseExistingChats(t.deps);
+    const second = await raiseExistingChats(t.deps);
+    return { t, first, second };
+  }
+
+  it('the raise is put off one boot, and the chat stays capped', async () => {
+    noteTurnOrigin('sender-marked', { kind: 'relay-binding' });
+    const db = await openedBy('sender-marked', 'opened-marked');
+
+    const { t, first, second } = await raiseTwoBoots(db, 'opened-marked');
+
+    expect(first).toBeNull();
+    expect(second).toEqual({ raised: 0 });
+    expect(t.modes.get('opened-marked')).toBe('default');
+    expect(t.writes).toEqual([]);
+  });
+
+  it('control: with no mark, the same chat is raised on the later boot', async () => {
+    const db = await openedBy('sender-plain', 'opened-plain');
+
+    const { t, first, second } = await raiseTwoBoots(db, 'opened-plain');
+
+    expect(first).toBeNull();
+    expect(second).toEqual({ raised: 1 });
+    expect(t.modes.get('opened-plain')).toBe(FULL);
   });
 });

@@ -102,6 +102,12 @@ describe('chatLaunchMarks', () => {
     opener('list', 'own-sender', [LEVEL, 'runtime-default']);
     opener('marked-list', 'own-sender', [{ ...LEVEL, outsider: true }, 'runtime-default']);
     opener('level', 'own-sender', LEVEL);
+    opener('kept-mark', 'own-sender', { bound: 'runtime-default', marks: { outsider: true } });
+    opener('kept-teammate', 'own-sender', {
+      bound: 'runtime-default',
+      marks: { teammate: [{ roomId: 'r', authorId: 'a' }] },
+    });
+    opener('kept-nothing', 'own-sender', { bound: 'runtime-default', marks: {} });
     opener('outsider', 'own-sender', { ...LEVEL, outsider: true });
     opener('teammate', 'own-sender', { ...LEVEL, teammate: [{ roomId: 'r', authorId: 'a' }] });
     opener('from-telegram', 'tg-sender', 'runtime-default');
@@ -111,6 +117,9 @@ describe('chatLaunchMarks', () => {
     expect(marked('list', 'chat-message')).toBe(false);
     expect(marked('marked-list', 'chat-message')).toBe(true);
     expect(marked('level', 'chat-message')).toBe(false);
+    expect(marked('kept-mark', 'chat-message')).toBe(true);
+    expect(marked('kept-teammate', 'chat-message')).toBe(true);
+    expect(marked('kept-nothing', 'chat-message')).toBe(false);
     expect(marked('no-opener', 'chat-message')).toBe(false);
     expect(marked('outsider', 'chat-message')).toBe(true);
     expect(marked('teammate', 'chat-message')).toBe(true);

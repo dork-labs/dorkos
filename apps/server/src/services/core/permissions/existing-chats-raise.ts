@@ -17,7 +17,8 @@
  *   `chat-launch-marks.ts` in production): only our own origins
  *   ({@link RAISED_LAUNCH_ORIGINS}, or none recorded) qualify, and of those a
  *   chat another chat's message or `session_start` opened is left alone when
- *   the opening row carries a mark or came from an outside chat, an agent launch
+ *   the opening row carries a mark (on its level, or beside an unknown sender's
+ *   runtime default) or came from an outside chat, an agent launch
  *   with no starting chat (the external `/mcp` server, unverified) is left
  *   alone, a room chat is raised only in a room of this computer with no
  *   bridge, no space copy and no marked, outside or Wi-Fi-held post, and a chat
@@ -81,6 +82,7 @@ import type {
 import type { Logger } from '@dorkos/shared/logger';
 
 import type { ActivityService } from '../../activity/activity-service.js';
+import { hasMarks, NO_MARKS, parseStoredMarks, type TurnMarks } from '../turn-power/turn-marks.js';
 import { UPGRADE_WRITER, recordPermissionChange } from './permission-history.js';
 import type { PermissionAgentRef } from './permission-service.js';
 
@@ -205,18 +207,38 @@ export async function setChatsBack(changes: readonly PermissionChange[]): Promis
   return { made, skipped };
 }
 
+/** Whether a stored value is a plain object (a level, or a marked runtime default). */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The marks one stored bound carries: a level's own mark fields, or the
+ * `marks` of `{"bound":"runtime-default","marks":{...}}` (what
+ * `senderCeilingJson` stores for an unknown-but-marked sender). The runtime
+ * default alone, and anything that is not an object, carries none.
+ */
+function storedBoundMarks(bound: unknown): TurnMarks {
+  if (!isObject(bound)) return NO_MARKS;
+  const fields = bound;
+  return isObject(fields) ? parseStoredMarks(JSON.stringify(fields)) : NO_MARKS;
+}
+
 /**
  * Whether a chat message's stored sender bound carries a mark: an outsider's
- * words or a teammate's chain, on the level itself or on any of the bounds a
- * list holds (`[level, cap]`, the shape #3107 stores for a marked sender). The
- * runtime default alone, a level with no marks, an unreadable value or no
- * message at all is unknown or unmarked, and raises.
+ * words or a teammate's chain, on the level itself, on any of the bounds a list
+ * holds (`[level, cap]`, the shape #3107 stores for a marked sender), or on a
+ * runtime default stored with its marks (`{"bound":"runtime-default","marks":
+ * {...}}`, #3107's shape for a sender whose level is unknown but which a
+ * stranger reached). The runtime default alone or with empty marks, a level
+ * with no marks, an unreadable value or no message at all is unknown or
+ * unmarked, and raises.
  *
  * Deliberately not `isMarkedBound` (`chat-message-ceiling.ts`), which reads the
- * runtime default as marked: every row this raise reads was written before the
- * build that ships it, when a sender whose level was unknown stored exactly
- * that, and unknown means raise. The raise runs once, at that build's first
- * start, before it writes a row of its own.
+ * runtime default as marked: a row written before #3107's marked shape, by a
+ * sender whose level was unknown, stored exactly that, and unknown means raise.
+ * A marked unknown sender's row says so in its `marks`, however many boots the
+ * raise is put off.
  *
  * @param ceilingJson - The opening message's `ceiling_json`, or `undefined` for none.
  */
@@ -229,11 +251,7 @@ export function openingMessageMarked(ceilingJson: string | undefined): boolean {
     return false;
   }
   const bounds = Array.isArray(value) ? value : [value];
-  return bounds.some((bound) => {
-    if (bound === null || typeof bound !== 'object' || Array.isArray(bound)) return false;
-    const marks = bound as { outsider?: unknown; teammate?: unknown };
-    return marks.outsider === true || Array.isArray(marks.teammate);
-  });
+  return bounds.some((bound) => hasMarks(storedBoundMarks(bound)));
 }
 
 /** Everything the raise reads and writes through. */

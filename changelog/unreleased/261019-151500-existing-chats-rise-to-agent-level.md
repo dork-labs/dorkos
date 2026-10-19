@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(server): the raise reads a kept mark beside an unknown sender as marked, and the deferred raise is tested (DOR-3106, Security 19:03)'
   - 'fix(server): a chat a Wi-Fi-held turn or a Wi-Fi sign-in opened stays capped (DOR-3106)'
   - 'fix(server): review fixes for unknown-means-raise: one durable launch reading, marked starts never loosen (DOR-3106)'
   - "fix(server): unknown means raise: your own agents' existing chats run at their own level (DOR-3106)"
