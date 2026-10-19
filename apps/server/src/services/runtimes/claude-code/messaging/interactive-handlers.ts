@@ -965,32 +965,18 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const decision = resolveModeDecision(gatePermissionMode(session));
-    // "Never ask" refuses ahead of everything below, the question and the safe
-    // lists included: whatever reaches this callback is a call the CLI would
-    // have asked about, and in this mode nobody is asked and nothing extra runs.
-    // `neverAsks` also covers a chat set to it whose turn a stricter ceiling
-    // holds to Plan, which would otherwise ask.
-    if (decision === 'refuse' || neverAsks(session)) {
-      log.info('[canUseTool] refused: the chat is set to never ask', {
-        toolName,
-        toolUseID: context.toolUseID,
-      });
-      return { behavior: 'deny', message: NEVER_ASK_DENIAL };
-    }
-    if (toolName === ASK_USER_QUESTION_TOOL) {
-      log.debug('[canUseTool] routing to question handler', {
-        toolName,
-        toolUseID: context.toolUseID,
-      });
-      return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
-    }
-
+    // "Never ask": `neverAsks` also covers a chat set to it whose turn a
+    // stricter ceiling holds to Plan, which would otherwise ask.
+    const refusing = decision === 'refuse' || neverAsks(session);
     // Safe-list membership is necessary but not sufficient: `isAutoAllowedCall`
     // has the last word, so a multiplexer tool can still be gated per argument
     // (DOR-625). A refused call is not denied — it falls through to the mode
     // table below, which raises a card.
     if (
-      (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
+      // Under Never ask only DorkOS's own tools pass here (DOR-3042). The
+      // CLI's read-only tools are still refused: `WebFetch` among them would
+      // let an unattended run reach a page nobody chose.
+      ((READ_ONLY_TOOLS.has(toolName) && !refusing) || DORKOS_AGENT_TOOLS.has(toolName)) &&
       // The name says "a DorkOS tool"; only the provenance can say the call is
       // served by the server DorkOS registered. A configured server that named
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
@@ -1007,6 +993,26 @@ export function createCanUseTool(
     ) {
       log.debug('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
       return { behavior: 'allow', updatedInput: input };
+    }
+
+    // "Never ask" refuses what any other mode would ask about, the question
+    // included: in this mode nobody is asked and nothing extra runs. DorkOS's
+    // own safe-listed calls above are not among them: they run without asking
+    // in every mode, so refusing them here would refuse what never asks, and a
+    // Never ask run could not read or post to its own room (DOR-3042).
+    if (refusing) {
+      log.info('[canUseTool] refused: the chat is set to never ask', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      return { behavior: 'deny', message: NEVER_ASK_DENIAL };
+    }
+    if (toolName === ASK_USER_QUESTION_TOOL) {
+      log.debug('[canUseTool] routing to question handler', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
     // Anything but an explicit `allow` asks, so a decision added later can
