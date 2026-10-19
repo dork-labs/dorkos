@@ -32,8 +32,8 @@ describe('runnerFor', () => {
     for (const outside of [
       'apps/server/src/services/spaces/__tests__/attachments.s3.test.ts',
       'apps/space/acceptance/driver.spec.ts',
-      // The space server's tests ran from apps/space/src before server-merge step 7.
-      'apps/space/src/__tests__/example.integration.test.ts',
+      // The space server's tests ran from apps/community/src before server-merge step 7.
+      'apps/community/src/__tests__/example.integration.test.ts',
       'packages/shared/src/__tests__/x.test.ts',
       'apps/server/src/services/spaces/__tests__/tenancy-test-harness.ts',
     ]) {

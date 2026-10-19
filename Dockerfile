@@ -202,7 +202,7 @@ ENTRYPOINT ["tini", "--", "node", "/opt/hub-smoke/run.mjs"]
 # DorkOS image. It never carries the machine store, runtime SDKs or a terminal: it
 # installs only the space package's own dependencies (`pnpm deploy` of
 # @dorkos/community), never the DorkOS server's. Its own base, not `base`, so the
-# image is byte-for-byte what it was when it built from apps/space/Dockerfile:
+# image is byte-for-byte what it was when it built from apps/community/Dockerfile:
 #   docker build --target space -t dorkos-space .
 FROM node:24-bookworm-slim AS space-build
 RUN corepack enable

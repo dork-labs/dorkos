@@ -51,7 +51,7 @@ export function runnerFor(file: string): ProofRunner {
   if (/^apps\/server\/src\/services\/spaces\/.+\.integration\.test\.ts$/.test(file)) return 'pg';
   if (/^apps\/space\/browser-tests\/.+\.spec\.ts$/.test(file)) return 'browser';
   if (
-    /^apps\/(community|server|client)\/src\/.+\.test\.tsx?$/.test(file) &&
+    /^apps\/(server|client)\/src\/.+\.test\.tsx?$/.test(file) &&
     !/\.(integration|s3)\.test\.tsx?$/.test(file)
   )
     return 'unit';
