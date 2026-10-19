@@ -929,6 +929,38 @@ function crossOrigin(req) {
   }
 }
 
+// The names this server answers to. A web page can point its own domain at
+// 127.0.0.1 (DNS rebinding) and then reach this port as if it were same-origin,
+// but its requests still name that domain in Host, so any other Host is refused.
+// DorkOS's preview proxy sends Host: localhost:<this port>. Names compare
+// case-insensitively and without a trailing dot (`localhost.` is localhost).
+const HOST_NAMES = ['localhost', '127.0.0.1', '[::1]'];
+let boundPort = PORT;
+function hostOk(req) {
+  const h = String(req.headers.host || '').toLowerCase();
+  const i = h.lastIndexOf(':');
+  if (i <= 0) return false;
+  const name = h.slice(0, i).replace(/\.$/, '');
+  return HOST_NAMES.includes(name) && h.slice(i + 1) === String(boundPort);
+}
+// A page on a website (not this computer) may not write, and may not open a
+// socket: browsers let any site open a websocket to localhost, and the socket
+// carries every screen change. No Origin at all is a local tool, not a page.
+function originOk(req) {
+  const origin = req.headers.origin;
+  return origin === undefined || LOCAL_ORIGIN.test(origin.toLowerCase());
+}
+const FOREIGN_ORIGIN = {
+  ok: false,
+  error: 'foreign-origin',
+  message: 'Only pages on this computer can write to the visual companion.',
+};
+const WRONG_HOST = {
+  ok: false,
+  error: 'wrong-host',
+  message: 'The visual companion answers only to localhost, 127.0.0.1 or [::1] on its own port.',
+};
+
 // A cross-origin write must carry the token `vc review open` minted for that
 // review (the `vt` in its link). Without it any local page could post a Send
 // that wakes the agent.
@@ -960,6 +992,7 @@ function readBody(req, cb) {
 // The page may be served under a proxy prefix (/…/preview/abc/), so every
 // route is matched on the path's tail and the page uses relative URLs.
 function handleRequest(req, res) {
+  if (!hostOk(req)) return send(res, 421, WRONG_HOST);
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   const tail = p.replace(/^.*\/(vc\/shot\/[^/]+|vc\/[^/]+|files\/[^/]+)$/, '$1');
@@ -1045,6 +1078,7 @@ function handleRequest(req, res) {
       if (!event || typeof event !== 'object' || Array.isArray(event))
         return send(res, 400, { ok: false, error: 'bad event' });
       const { vt, ...rest } = event;
+      if (!originOk(req)) return send(res, 403, FOREIGN_ORIGIN);
       if (crossOrigin(req) && !tokenOk(rest.screen, vt))
         return send(res, 403, {
           ok: false,
@@ -1077,6 +1111,16 @@ function handleRequest(req, res) {
 const clients = new Set();
 
 function handleUpgrade(req, socket) {
+  if (!hostOk(req)) {
+    socket.end(
+      'HTTP/1.1 421 Misdirected Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
+    );
+    return;
+  }
+  if (!originOk(req)) {
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    return;
+  }
   const key = req.headers['sec-websocket-key'];
   if (!key) {
     socket.destroy();
@@ -1152,8 +1196,15 @@ function handleMessage(text) {
     console.error('Failed to parse WebSocket message:', e.message);
     return;
   }
+  // `null`, a number or an array parses fine but is no event (and `null.type` throws).
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return;
   if (event.type === 'ping') return;
-  recordEvent(event);
+  // One bad frame must not take the server (and every open page) down with it.
+  try {
+    recordEvent(event);
+  } catch (e) {
+    console.error('Failed to record WebSocket event:', e.message);
+  }
 }
 
 function broadcast(msg) {
@@ -1354,14 +1405,15 @@ function startServer() {
   replayQueued();
 
   server.listen(PORT, HOST, () => {
+    boundPort = server.address().port;
     const info = JSON.stringify({
       type: 'server-started',
       v: VERSION,
       pid: process.pid,
-      port: PORT,
+      port: boundPort,
       host: HOST,
       url_host: URL_HOST,
-      url: 'http://' + URL_HOST + ':' + PORT,
+      url: 'http://' + URL_HOST + ':' + boundPort,
       session: SESSION_ID,
       agent_session: process.env.VC_AGENT_SESSION || null,
       session_dir: SESSION_DIR,
