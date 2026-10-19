@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d0734f9b-9af9-4eac-adcf-15fd78fbb0bc",
-  "prevId": "ce5e6858-d7a7-4c8d-9877-98a6b265e9d0",
+  "id": "33fbb974-5772-4676-a2b8-e2c5061e7998",
+  "prevId": "f3dc4677-febf-4ddb-b711-1c95d916cf8c",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -4319,6 +4319,13 @@
         },
         "user_agent": {
           "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "route": {
+          "name": "route",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -13914,7 +13921,7 @@
       "checkConstraints": {
         "remote_command_journal_verb": {
           "name": "remote_command_journal_verb",
-          "value": "\"remote_command_journal\".\"verb\" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open', 'hub_assignment_changed')"
+          "value": "\"remote_command_journal\".\"verb\" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open', 'hub_assignment_changed', 'agent_computer_assignment_changed')"
         },
         "remote_command_journal_ack_state": {
           "name": "remote_command_journal_ack_state",
