@@ -200,28 +200,56 @@ Each step ships on its own, deletes what it replaces, and leaves every chat read
 
 ## 8. UX
 
-**One shape, one feel.** Every conversation (channel, DM, Telegram, email, a doc's thread, a 1:1) uses the same entry, the same composer and the same states. Where they differ, it's density, never structure. A person who learns one learns all of them.
+**One shape, one feel.** Every conversation (channel, DM, group DM, Telegram, email, a doc's thread) uses the same entry, the same composer and the same states. Where they differ, it's density, never structure. A person who learns one learns all of them.
 
 The five promises are requirements the build must keep. The design for each follows.
 
-### 8.1 R1. 1:1s lose nothing
+### 8.1 R1. People talk in DMs; the session view loses nothing
 
-- **The 1:1 view doesn't change.** It keeps reading the session stream (`GET /api/sessions/:id/events`): tools, thinking, todos, subagents, token-by-token streaming.
-- **The log is invisible in a 1:1.** The person never sees a message twice, never sees a "copied to log" moment, and gets no new chrome. Step 4 is a storage change, and it has to look like nothing happened.
-- **No flash during the move.** Existing 1:1s open exactly as before, with history loading unanimated, the same scroll position and no re-render of the past.
-- **What a 1:1 gains is shared, not shown.** Its finished replies can now be found from search, linked from elsewhere and given an address (§6). The view itself stays the same.
+**Who's here no longer sets the view** (navigation fix, Dorian 2026-10-18; supersedes brief S12). A person always talks in a room. You and one agent make a **DM**. Add a member and it's a **group DM**. A **channel** is a room about a subject. The old 1:1 view is now the **Session** view, a power-user view of one agent's seat behind Settings › Show sessions (off by default). "Session" as the name is with Dorian.
 
-- **Who's here sets the view (brief S12, Dorian's yes 2026-10-17).** You plus one agent is always the 1:1 view. A second person or a second agent makes it a Room. Adding someone turns a 1:1 into a Room with one quiet line ("Cody joined"), never the reverse.
-- **One standing Direct chat per agent.** Talk on the agent opens it, its DM row opens it, and `relay_notify_user` pings land there with an unread dot on the agent's row and in Today. It's created on first need and never auto-archived. Work chats stay separate rows under the agent; a ping about one links to it rather than posting inside it. Not "newest chat": the landing spot would wander.
-- **Migration:** existing person + one agent `kind: 'dm'` rooms (made by `notify-dm.ts` and the Direct messages list) become the start of that agent's Direct chat, history unanimated with original timestamps, and the room row goes away.
+- **The session view doesn't change.** It keeps reading the session stream (`GET /api/sessions/:id/events`): tools, thinking, todos, subagents, token-by-token streaming, model, account, context and compaction.
+- **One DM per member set.** These all open the same DM, created on first need and never auto-archived:
+  - the agent's row
+  - Message on its hover card
+  - Open chat on its profile
+  - `relay_notify_user` pings
+  - the `dm.received` notification
+  - search hits
+- **The DM looks like a room and runs on the seat's session (§3.1):**
+  - a room header: face, name, working state, "Also in #…"
+  - the room composer's look, with slash commands kept and no status line
+  - the seat's session stream, so history, streaming and steps are all intact
+  - each reply's steps folded into one line, "Worked · N steps · Show work". Thinking never shows inline, but it stays one click away in Show work and the Work tab.
+  - asks and approvals inline
+- **The right panel matches the session view's:**
+  - Profile, Files, Canvas, Browser and Computer
+  - a **Work** tab (§8.2 and §8.3 in panel form)
+  - Terminal, with Show sessions on
 
-**Built ahead of step 4 (DOR-2997).** Until step 4 makes every 1:1 a `chat` conversation, the Direct chat is built from what exists, and nothing is copied or deleted:
+  The agent comes from `oneToOneDmAgentRef(room)`. The panel shows the agent of the chat you're in (FB-60).
+
+- **Coming from a channel:** Message carries the source entry into the DM as a chip ("↩ From #design · designer: …").
+  - On send, the chip becomes a link entry at the top of the person's message, rendered as a quote card that jumps back to the source.
+  - If the person dismisses the chip, nothing is posted.
+  - The two seats stay separate sessions (§3.1). The link is how one learns of the other.
+- **Parallel work:** **New topic** in the DM starts a separate session with the agent, with its own context. It shows in the DM as a card ("designer · Pricing review →"). At step 4 it becomes a thread with its own seat.
+- **Typing in a session:**
+  - **Behind a DM:** that session _is_ the DM, so nothing is lost.
+  - **Behind a channel seat:** the reply stays in the session (§3.1). The view says so above the composer: **"Replies here stay in this session. They don't post to #design."**
+    - Each finished reply gets **Post to #design**.
+    - The posted entry is the agent's words with a quiet origin line, "Posted by Dorian from a session ↗" (§8.5 style, linking to the turn).
+    - The person is recorded in the audit trail (C4).
+- **The session view always names what it's behind:** "behind your DM with designer ↩" or "behind designer in #design ↩".
+- **No flash, ever.** Phase 1 changes how Direct chats look and where clicks land, with no migration. Acceptance: all 16 Direct chats migrated on 2026-10-18 open in the DM view with full history, original times and streaming. At step 4 the record moves underneath with no visible change: history loads unanimated, with the same scroll position and no re-render of the past.
+
+**Built ahead of step 4 (DOR-2997).** Until step 4 makes the room the record, the DM is built from what exists, and nothing is copied or deleted:
 
 - **The room stays as the log underneath.** The operator-plus-one-agent `dm` room (found or made by its exact member set, `dm_member_key`) keeps every entry. `relay_notify_user` still posts there, so `read_room_history` and `post_to_room` keep working for agents, and search, the audit trail and read cursors keep keying on it.
-- **The Direct chat is the agent's seat session in that room** (`room_sessions`), minted on first need. It opens in the 1:1 view. Room turns already in it read as the person's message and the agent's work (DOR-2113 stamps).
-- **Entries that never opened a turn** (pings, and posts the agent made into this DM from its other chats) are drawn in the stream at their real time, unanimated, as ordinary messages from their author: a ping is the agent talking to the person, so it gets the avatar, name and body of any reply. (Showing a link to a work chat as a chip under it is still to come.) Only entries in this DM room appear; the agent's posts in other rooms never do. Opening the chat scrolls to the first unread ping under the "New messages" divider. The person's 1:1 messages go to the session, not the room.
+- **The Direct chat is the agent's seat session in that room** (`room_sessions`), minted on first need. It opens in the DM view (above). Room turns already in it read as the person's message and the agent's work (DOR-2113 stamps).
+- **Entries that never opened a turn** (pings, and posts the agent made into this DM from its other chats) are drawn in the stream at their real time, unanimated, as ordinary messages from their author: a ping is the agent talking to the person, so it gets the avatar, name and body of any reply. (Showing a link to a work chat as a chip under it is still to come.) Only entries in this DM room appear; the agent's posts in other rooms never do. Opening the chat scrolls to the first unread ping under the "New messages" divider. The person's DM messages go to the session, not the room, until step 4.
 - **The agent's next turn there gets the notes it hasn't seen**, fenced, so a reply to a ping has its context.
-- **Every door redirects.** The agent's row, Open chat, Today's DM item, the `dm.received` notification, search hits and any old `/channels?id=` link for such a room open the Direct chat, replacing the URL so Back does not bounce. Opening it marks the room read.
+- **Every door redirects.** The agent's row, Open chat, Today's DM item, the `dm.received` notification, search hits and any old `/channels?id=` link for such a room open the DM view, replacing the URL so Back does not bounce. Opening it marks the room read.
 - **A room that gains a member is a room from then on.** The next ping finds no two-member DM and makes a fresh one, and so a fresh Direct chat.
 - **Only the owner has Direct chats.** Anyone else's click on an agent still opens that agent's latest chat with them.
 - **The fold is forward-only and idempotent by construction:** no rows move, so there is nothing to undo and nothing to repeat.
@@ -232,12 +260,12 @@ The five promises are requirements the build must keep. The design for each foll
 - **Where it opens:** the right side panel, the same panel Watch uses (8.3), showing that one turn: its tools, thinking and subagents. Other turns of the session are collapsed above and below as "Earlier" and "Later" rows, so the turn sits in context without the whole transcript.
 - **Who sees it:** only readers who may read that session (open item 4). For everyone else the action is **absent, not disabled**, so a closed door isn't advertised.
 - **Keyboard:** with an entry focused, `Enter` opens its actions and Show work is one of them. `Esc` closes the panel and returns focus to the entry.
-- **In a 1:1** it isn't needed, because the work is already inline. It doesn't appear there.
+- **In a DM** Show work sits on every agent reply, beside its "Worked · N steps" line. **In the session view** it isn't needed, because the work is already inline.
 
 ### 8.3 R3. Watch
 
 - **Where it starts:** the room's "working" indicator for an agent (today's live peek) becomes a button: **Watch @designer**. Clicking it opens that agent's live turn in the right panel. It never opens by itself.
-- **What it shows:** the turn exactly as a 1:1 shows it, streaming: text, tools, thinking. It auto-follows the newest line until the person scrolls up; a "Jump to live" pill brings it back.
+- **What it shows:** the turn exactly as the session view shows it, streaming: text, tools, thinking. It auto-follows the newest line until the person scrolls up; a "Jump to live" pill brings it back.
 - **When the turn ends,** the panel stays open on the finished turn. Its post lands in the room whole, as always. A **Posted ↗** link in the panel scrolls the room to that entry and briefly highlights it (a 150ms tint in, fading over 1s).
 - **One panel, one agent.** Watching another agent swaps the panel's content with a 150ms crossfade, and a small switcher lists every agent working now.
 - **Calm for everyone else:** watching is private to the watcher. It posts nothing, notifies nobody and doesn't change what the agent does.
