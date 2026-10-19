@@ -73,6 +73,15 @@ export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
     ...(content !== undefined ? { content } : {}),
     ...(move !== undefined ? { move } : {}),
   });
+  if (message === 'not-yours') {
+    return c.json(
+      errorBody(
+        'Another chat sent this message. It can be moved or removed, not reworded.',
+        'QUEUED_MESSAGE_NOT_YOURS'
+      ),
+      409
+    );
+  }
   // Covers both "no such message on this queue" and "the move named an anchor
   // that is not on it" — from the caller's side those are one thing: an id
   // this queue does not have.

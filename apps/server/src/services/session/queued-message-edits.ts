@@ -62,7 +62,8 @@ export interface QueuedMessageEdit {
  * runs it is keyed by the same id.
  *
  * `undefined` means nothing on this session's queue has that id, or a move named
- * an anchor that is not on it — both are a `404` at the route.
+ * an anchor that is not on it — both are a `404` at the route. `'not-yours'`
+ * means the edit tried to reword a message another chat sent — a `409`.
  *
  * @param sessionId - The session whose queue holds the message
  * @param messageId - The server-minted message id
@@ -72,22 +73,25 @@ export function editQueuedMessage(
   sessionId: string,
   messageId: string,
   edit: QueuedMessageEdit
-): QueuedMessage | undefined {
+): QueuedMessage | 'not-yours' | undefined {
   const store = getMessageQueueStore();
   if (!store || !isQueuedOn(sessionId, messageId)) return undefined;
+  // Another chat's message is not the person's to reword (DOR-3060). Its row
+  // holds the fenced envelope the model gets, and a person only ever sees its
+  // words, so a reword would put another agent's words to the model unfenced,
+  // as if the person wrote them. Refused out loud, never ignored: a reword that
+  // answered "saved" and then vanished is the silent loss DOR-480 forbids. It
+  // may still be moved or removed.
+  const stored = store.get(messageId);
+  if (edit.content !== undefined && stored && isChatClientId(stored.enqueuedBy)) {
+    return 'not-yours';
+  }
   // The move goes FIRST: it is the only half that can be refused (a bogus or
   // cross-session anchor), and the reword cannot fail on a row already
   // confirmed present. Committing the reword before checking the move would
   // answer 404 while silently changing what the message says (DOR-1178).
   let record = edit.move ? store.move(messageId, edit.move) : store.get(messageId);
-  // Another chat's message is not the person's to reword (DOR-3060). Its row
-  // holds the fenced envelope the model gets, and a person only ever sees its
-  // words, so a reword would put another agent's words to the model unfenced,
-  // as if the person wrote them. It may be moved or removed; the words stay.
-  const theirs = record !== undefined && isChatClientId(record.enqueuedBy);
-  if (record && edit.content !== undefined && !theirs) {
-    record = store.updateContent(messageId, edit.content);
-  }
+  if (record && edit.content !== undefined) record = store.updateContent(messageId, edit.content);
   if (record) emitQueueUpdate(sessionId);
   return record ? toQueuedMessage(record) : undefined;
 }

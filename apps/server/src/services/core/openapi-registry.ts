@@ -1198,7 +1198,8 @@ registry.registerPath({
     'another message to land before or after rather than an index, because an index ' +
     'means something different to every window the moment anybody else edits the ' +
     'queue. The queue belongs to the SESSION: any client may edit any message on it, ' +
-    'whichever client enqueued it.',
+    'whichever client enqueued it — except that a message another chat sent may be ' +
+    'moved but never reworded (409).',
   request: {
     params: z.object({ id: z.string().uuid(), messageId: z.string() }),
     body: {
@@ -1216,6 +1217,10 @@ registry.registerPath({
     },
     404: {
       description: 'No such message on this queue (dispatched, removed, or never here)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The edit tried to reword a message another chat sent',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -819,7 +819,7 @@ describe('editing and removing what is waiting', () => {
     const edited = editQueuedMessage(session, queued.outcome.messageId, {
       content: 'first draft, spelled properly',
     });
-    expect(edited?.content).toBe('first draft, spelled properly');
+    expect(edited !== 'not-yours' && edited?.content).toBe('first draft, spelled properly');
 
     first.open();
     await settle();
@@ -851,18 +851,23 @@ describe('editing and removing what is waiting', () => {
 
   // DOR-3060: a person sees another chat's message as its words; a reword would
   // put those words to the model unfenced, as if the person wrote them.
-  it('never rewords another chat’s message, though it still moves', () => {
+  it('refuses to reword another chat’s message, though it still moves', () => {
     const fence =
       '--- BEGIN CHAT MESSAGE c0ffee12 ---\nKind: message\nhi\n--- END CHAT MESSAGE c0ffee12 ---';
     const theirs = store.enqueue({ sessionId: session, content: fence, clientId: 'chat:chat-a' });
     const mine = store.enqueue({ sessionId: session, content: 'mine', clientId: TAB });
 
-    expect(editQueuedMessage(session, theirs.id, { content: 'hi' })).toBeDefined();
+    // Refused out loud, and nothing about the row changes.
+    expect(editQueuedMessage(session, theirs.id, { content: 'hi' })).toBe('not-yours');
+    expect(editQueuedMessage(session, theirs.id, { content: 'hi', move: { after: mine.id } })).toBe(
+      'not-yours'
+    );
+    expect(store.list(session).map((r) => r.id)).toEqual([theirs.id, mine.id]);
     expect(store.get(theirs.id)?.content).toBe(fence);
 
-    editQueuedMessage(session, theirs.id, { content: 'hi', move: { after: mine.id } });
+    // A move alone still applies.
+    editQueuedMessage(session, theirs.id, { move: { after: mine.id } });
     expect(store.list(session).map((r) => r.id)).toEqual([mine.id, theirs.id]);
-    expect(store.get(theirs.id)?.content).toBe(fence);
   });
 
   it('will not reach into another session’s queue', async () => {
