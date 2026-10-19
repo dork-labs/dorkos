@@ -353,6 +353,32 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
 }
 
 /**
+ * A ceiling held to the new chat's runtime default as well, for a start whose
+ * turn is marked (DOR-3107, Dorian 2026-10-19 15:07, Security 15:10): the chat
+ * it opens is born capped, as one a marked turn's chat message opens is, since
+ * its first turn's ceiling alone would leave every later turn at the caller's
+ * level. The stricter of the two: a caller already at or below the default
+ * keeps its own level, and a caller set to never ask still starts only chats
+ * that cannot ask.
+ *
+ * @param ceiling - The caller's own ceiling.
+ * @param runtimeType - The runtime the new chat runs on.
+ */
+function cappedForMarkedStart(ceiling: Ceiling, runtimeType: string): Ceiling {
+  const modes = declaredModes(runtimeType);
+  const fallback = modes.values.find((m) => m.id === modes.default);
+  const level = fallback ?? FLOOR;
+  if (isNoLooserThan(level, ceiling.level)) return ceiling;
+  return {
+    ...ceiling,
+    level,
+    label: fallback?.label ?? FLOOR_LABEL,
+    inheritId: fallback?.id ?? null,
+    exact: false,
+  };
+}
+
+/**
  * The ceiling a caller with no chat (the external `/mcp` server) is held to:
  * the agent the token names, at its own Files & commands stop (spec
  * `trusted-by-default-flip` §5.2). Only a registered agent reaches here: a plain
@@ -388,17 +414,20 @@ export async function chatlessCallerStop(
  * @param callerStop - With no chat, the calling agent's own resolved Files &
  *   commands stop (its own, then the runtime's, then the global one), which
  *   is its ceiling; `null` keeps {@link NO_CHAT_CEILING_MODE}. Ignored in a
- *   chat, whose own level is the ceiling.
+ *   chat, whose own level is the ceiling. * @param marked - Whether the starting turn carries a mark: the new chat is
+ *   then also held to its runtime's default ({@link cappedForMarkedStart}).
  */
 export async function resolveStartPermission(
   requested: string | undefined,
   chat: CallingChat | null,
   runtimeType: string,
-  callerStop: PermissionStop | null = null
+  callerStop: PermissionStop | null = null,
+  marked = false
 ): Promise<
   { ok: true; permission: SessionStartPermission } | { ok: false; error: string; code: string }
 > {
-  const ceiling = await ceilingOf(chat, { stop: callerStop, runtimeType });
+  const own = await ceilingOf(chat, { stop: callerStop, runtimeType });
+  const ceiling = marked ? cappedForMarkedStart(own, runtimeType) : own;
   const grant = grantMode(requested, ceiling, runtimeType);
   if (!grant.ok) return grant;
   // Full autonomy is never granted silently. An approval card shows only the

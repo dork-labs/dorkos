@@ -27,6 +27,7 @@ import {
   PermissionChangedMetadataSchema,
   PermissionSuggestionDismissedMetadataSchema,
   PermissionSuggestionRestoredMetadataSchema,
+  chatModeWord,
   getPermissionArea,
   type PermissionAttribution,
   type PermissionChange,
@@ -135,6 +136,7 @@ const STOP_WORD: Record<string, string> = {
  */
 function valueWord(value: string | null, key: PermissionChange['key']): string {
   if (key.kind === 'files' && value !== null) return STOP_WORD[value] ?? value;
+  if (key.kind === 'chat') return chatModeWord(value);
   return stateWord(value);
 }
 
@@ -169,6 +171,8 @@ function subjectOf(change: PermissionChange, actionTitle: (id: string) => string
       return actionTitle(change.key.action);
     case 'files':
       return 'Files & commands';
+    case 'chat':
+      return 'One chat’s Files & commands';
   }
 }
 
@@ -203,6 +207,9 @@ function describePermissionChanges(
   actionTitle: (id: string) => string = (id) => id
 ): string {
   if (changes.length === 0) return 'No permission changed';
+  if (changes.length > 1 && changes.every((c) => c.key.kind === 'chat')) {
+    return `Files & commands changed in ${changes.length} existing chats`;
+  }
   const defaults = changes.filter((c) => c.target.kind === 'default');
   const agentIds = new Set(
     changes.flatMap((c) => (c.target.kind === 'agent' ? [c.target.agentId] : []))
@@ -567,6 +574,8 @@ function permissionKeyOf(change: PermissionChange): string {
       return `${layer}:action:${change.key.action}`;
     case 'files':
       return change.key.runtime ? `${layer}:files:${change.key.runtime}` : `${layer}:files`;
+    case 'chat':
+      return `${layer}:chat:${change.key.sessionId}`;
   }
 }
 

@@ -13559,6 +13559,24 @@
                           "required": [
                             "kind"
                           ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat"
+                              ]
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sessionId"
+                          ]
                         }
                       ]
                     },
@@ -13788,6 +13806,24 @@
                       "required": [
                         "kind"
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat"
+                          ]
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "sessionId"
+                      ]
                     }
                   ]
                 },
@@ -13951,6 +13987,24 @@
                     },
                     "required": [
                       "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "chat"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sessionId"
                     ]
                   }
                 ]

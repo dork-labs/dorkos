@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type {
-  PermissionHistoryEntry,
-  PermissionUndoSkip,
-  UndoPermissionChangeResponse,
+import {
+  chatModeWord,
+  type PermissionHistoryEntry,
+  type PermissionUndoSkip,
+  type UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import {
   undoConflictsOf,
@@ -29,6 +30,7 @@ export interface PermissionHistoryProps {
  * & commands.
  */
 function valueWord(value: string | null, change: PermissionUndoSkip['change']): string {
+  if (change.key.kind === 'chat') return chatModeWord(value);
   if (value === null) return change.target.kind === 'agent' ? 'the default' : 'the preset';
   switch (change.key.kind) {
     case 'files':
