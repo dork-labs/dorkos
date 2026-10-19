@@ -24,6 +24,12 @@ COPY packages/cloud-api packages/cloud-api
 COPY packages/connector-providers packages/connector-providers
 COPY packages/typescript-config packages/typescript-config
 COPY apps/community apps/community
+# The space server's code lives in the DorkOS server package (server-merge step 7); its build
+# (apps/community/tsconfig.build.json) still compiles it into apps/community/dist-server/. The
+# link lets that code find the space server's own packages without installing the DorkOS
+# server's, so nothing of the server's reaches this image.
+COPY apps/server/src/services/spaces apps/server/src/services/spaces
+RUN ln -s ../community/node_modules apps/server/node_modules
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build
 # This image copies only the community's slice of the workspace, so a root patch for a
 # package it never installs (when-exit, which the server reaches through conf) is

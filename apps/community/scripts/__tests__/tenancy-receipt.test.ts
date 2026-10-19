@@ -8,7 +8,7 @@ import {
   type ReceiptEntry,
 } from '../tenancy-receipt.js';
 
-const file = 'apps/community/src/__tests__/example.integration.test.ts';
+const file = 'apps/server/src/services/spaces/__tests__/example.integration.test.ts';
 const entries: ReceiptEntry[] = [
   { id: 'M1', requirement: 'x', proofs: [{ file, title: 'proves the row' }] },
 ];
@@ -30,10 +30,12 @@ describe('runnerFor', () => {
     expect(runnerFor('apps/community/browser-tests/switching.spec.ts')).toBe('browser');
     expect(runnerFor('apps/server/src/a/__tests__/b.test.ts')).toBe('unit');
     for (const outside of [
-      'apps/community/src/__tests__/attachments.s3.test.ts',
+      'apps/server/src/services/spaces/__tests__/attachments.s3.test.ts',
       'apps/community/acceptance/driver.spec.ts',
+      // The space server's tests ran from apps/community/src before server-merge step 7.
+      'apps/community/src/__tests__/example.integration.test.ts',
       'packages/shared/src/__tests__/x.test.ts',
-      'apps/community/src/__tests__/tenancy-test-harness.ts',
+      'apps/server/src/services/spaces/__tests__/tenancy-test-harness.ts',
     ]) {
       expect(() => runnerFor(outside), outside).toThrow(/No receipt runner/);
     }
@@ -63,7 +65,7 @@ describe('assertProofsPassed', () => {
     const other = {
       testResults: [
         {
-          name: '/checkout/apps/community/src/__tests__/other.integration.test.ts',
+          name: '/checkout/apps/server/src/services/spaces/__tests__/other.integration.test.ts',
           assertionResults: [{ title: 'proves the row', status: 'passed' }],
         },
       ],

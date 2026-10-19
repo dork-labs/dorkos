@@ -58,7 +58,9 @@ export default defineConfig({
   test: {
     name: 'community-pg',
     environment: 'node',
-    include: ['src/**/*.integration.test.ts'],
+    // The space server's code lives in the DorkOS server package (server-merge step 7).
+    dir: '../server/src/services/spaces',
+    include: ['**/*.integration.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,

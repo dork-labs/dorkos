@@ -4,20 +4,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { createBrowserTestPool } from './pool-lifecycle.js';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig, type CommunityConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { emailLinkComposers } from '../src/email-links/composers.js';
-import { resolveEmailLinkRequests } from '../src/email-links/resolver.js';
-import { deliverNextNotice } from '../src/mail/worker.js';
-import { createSmtpTransport } from '../src/mail/transport.js';
-import { startSmtpFake, type SmtpFake } from '../src/__tests__/smtp-fake.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig, type CommunityConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { emailLinkComposers } from '../../server/src/services/spaces/email-links/composers.js';
+import { resolveEmailLinkRequests } from '../../server/src/services/spaces/email-links/resolver.js';
+import { deliverNextNotice } from '../../server/src/services/spaces/mail/worker.js';
+import { createSmtpTransport } from '../../server/src/services/spaces/mail/transport.js';
+import {
+  startSmtpFake,
+  type SmtpFake,
+} from '../../server/src/services/spaces/__tests__/smtp-fake.js';
 
 // DOR-2710: the forgot-password round trip in a real browser. The sign-in form's "Forgot
 // password?" asks for a link, the mail lands in an in-process SMTP server, the page the link

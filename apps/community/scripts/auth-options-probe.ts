@@ -12,8 +12,8 @@
  * @module community/scripts/auth-options-probe
  */
 import type { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
 
 const chunks: Buffer[] = [];
 for await (const chunk of process.stdin) chunks.push(chunk as Buffer);

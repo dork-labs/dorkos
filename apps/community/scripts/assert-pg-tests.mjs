@@ -74,9 +74,9 @@ export function assertPgReport(report, expected) {
 }
 
 function expectedFixtures() {
-  return readdirSync(new URL('../src/', import.meta.url), { recursive: true }).filter((name) =>
-    name.endsWith('.integration.test.ts')
-  );
+  return readdirSync(new URL('../../server/src/services/spaces/', import.meta.url), {
+    recursive: true,
+  }).filter((name) => name.endsWith('.integration.test.ts'));
 }
 
 function main() {
