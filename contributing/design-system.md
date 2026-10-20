@@ -954,7 +954,7 @@ Rules that come with it:
 - **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
 - **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
 - **The count pill is neutral.** `CountPill` (`shared/ui/count-pill.tsx`) is neutral ink on a neutral tint (`bg-foreground/10 text-foreground`), never brand or warning colour, and caps at `9+` while its label reads the real number. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
-- **Mute keeps a mention's count.** A muted row loses its bold, but an @mention of you still shows its number.
+- **Mute keeps a mention's count, and only that.** A muted row loses its bold, but an @mention of you still shows its number. This holds for a muted direct message too: it counts real @mentions only, never every message. Mute means "stop pulling at me", so a DM that kept counting every message through mute would make mute a lie. Do not "fix" it.
 - **A collapsed container keeps its signal, as rows.** A folded section keeps its unread rows on screen under the header, drawn as they are when open. A section header never carries a count; its one mark is a working dot.
 - **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
 
