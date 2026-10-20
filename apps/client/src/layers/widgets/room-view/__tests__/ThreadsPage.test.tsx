@@ -187,6 +187,13 @@ describe('ThreadsPage', () => {
     expect(screen.getAllByTestId('thread-card')).toHaveLength(30);
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
     expect(transport.listThreads).toHaveBeenCalledTimes(1);
+    // The last press took its own button away, so focus lands on the first
+    // card it added rather than falling to the page.
+    const firstNew = screen
+      .getAllByTestId('thread-card')
+      .find((card) => card.getAttribute('data-thread-root') === 'entry-124');
+    expect(firstNew).toBeDefined();
+    expect(firstNew!.contains(document.activeElement)).toBe(true);
   });
 
   it('offers no "Show more" when every thread fits', async () => {

@@ -4,7 +4,7 @@
  *
  * @module widgets/room-view/ui/threads/ThreadsPage
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { MessageSquareReply } from 'lucide-react';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
@@ -13,17 +13,8 @@ import { Button, EmptyState, PageContainer, PageHeading, Skeleton } from '@/laye
 import { useRoomOpenThreadStore, useTeamRoom, useThreads } from '@/layers/entities/room';
 import { useRoomAgentDirectory } from '../../model/agent-info-context';
 import { useFreshThreadRooms } from '../../model/use-fresh-thread-rooms';
+import { useShownThreads } from '../../model/use-shown-threads';
 import { ThreadCard } from './ThreadCard';
-
-/**
- * How many cards the page draws before "Show more", and how many each press
- * adds.
- *
- * **Each card reads its room and that room's history**, so a page that drew
- * all fifty threads the list can hold would fire about a hundred requests the
- * moment it opened. Twelve fills a tall screen; the rest are a press away.
- */
-export const THREADS_PAGE_SIZE = 12;
 
 /**
  * Open one thread in the room it lives in.
@@ -56,6 +47,9 @@ function useOpenThreadInRoom(): (thread: ThreadSummary) => void {
   );
 }
 
+/** No threads yet — one shared array, so an empty read never rebuilds the list. */
+const NO_THREADS: readonly ThreadSummary[] = [];
+
 /**
  * Every thread you are in, as cards.
  *
@@ -67,8 +61,21 @@ export function ThreadsPage() {
   const threads = useThreads();
   const agents = useRoomAgentDirectory();
   const openThread = useOpenThreadInRoom();
-  const [shown, setShown] = useState(THREADS_PAGE_SIZE);
+  const shown = useShownThreads(threads.data ?? NO_THREADS);
+  const list = useRef<HTMLUListElement>(null);
   useFreshThreadRooms(threads.data);
+
+  // The press that showed the last page took its own button away: hand focus
+  // to the first card it added, at the control a keyboard reader would want.
+  const { focusId, focused } = shown;
+  useEffect(() => {
+    if (focusId === null) return;
+    const card = list.current?.querySelector<HTMLElement>(
+      `[data-thread-root="${CSS.escape(focusId)}"]`
+    );
+    card?.querySelector<HTMLElement>('button')?.focus();
+    focused();
+  }, [focusId, focused]);
 
   return (
     <PageContainer width="reading">
@@ -98,19 +105,19 @@ export function ThreadsPage() {
         />
       ) : (
         <>
-          <ul className="flex flex-col gap-3" aria-label="Your threads">
-            {threads.data.slice(0, shown).map((thread) => (
+          <ul ref={list} className="flex flex-col gap-3" aria-label="Your threads">
+            {shown.visible.map((thread) => (
               <li key={thread.rootEntryId}>
                 <ThreadCard thread={thread} agents={agents} onOpen={openThread} />
               </li>
             ))}
           </ul>
-          {threads.data.length > shown && (
+          {shown.hasMore && (
             <Button
               variant="outline"
               size="sm"
               className="mt-3 self-start"
-              onClick={() => setShown((count) => count + THREADS_PAGE_SIZE)}
+              onClick={shown.showMore}
             >
               Show more
             </Button>
