@@ -96,7 +96,13 @@ export function agentMember(
   path: string,
   displayName: string
 ): NonNullable<RoomSummary['participants']>[number] {
-  return { id: `agent:${path}`, kind: 'agent', displayName, handle: null, agentRef: agentAuthorRef(path) };
+  return {
+    id: `agent:${path}`,
+    kind: 'agent',
+    displayName,
+    handle: null,
+    agentRef: agentAuthorRef(path),
+  };
 }
 
 /**

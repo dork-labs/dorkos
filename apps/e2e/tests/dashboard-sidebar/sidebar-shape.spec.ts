@@ -112,22 +112,28 @@ test.describe('Dashboard Sidebar — the list @smoke', { tag: SOLE_SIDEBAR_TAG }
   }) => {
     // The shared server may hold another spec's direct messages, so the room
     // list this page reads is narrowed to its channels.
-    await page.route((url) => url.pathname === '/api/rooms', async (route: Route) => {
-      if (route.request().method() !== 'GET') return route.continue();
-      const response = await route.fetch();
-      const body = (await response.json()) as { rooms: { kind: string }[]; warnings: unknown[] };
-      await route.fulfill({
-        response,
-        json: { ...body, rooms: body.rooms.filter((room) => room.kind !== 'dm') },
-      });
-    });
-    await page.route((url) => url.pathname === '/api/config', async (route: Route) => {
-      if (route.request().method() !== 'GET') return route.continue();
-      const response = await route.fetch();
-      const body = (await response.json()) as { ui: { sidebar: { pinned: unknown[] } } };
-      body.ui.sidebar.pinned = [];
-      await route.fulfill({ response, json: body });
-    });
+    await page.route(
+      (url) => url.pathname === '/api/rooms',
+      async (route: Route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const response = await route.fetch();
+        const body = (await response.json()) as { rooms: { kind: string }[]; warnings: unknown[] };
+        await route.fulfill({
+          response,
+          json: { ...body, rooms: body.rooms.filter((room) => room.kind !== 'dm') },
+        });
+      }
+    );
+    await page.route(
+      (url) => url.pathname === '/api/config',
+      async (route: Route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const response = await route.fetch();
+        const body = (await response.json()) as { ui: { sidebar: { pinned: unknown[] } } };
+        body.ui.sidebar.pinned = [];
+        await route.fulfill({ response, json: body });
+      }
+    );
     await basePage.goto();
     await basePage.waitForAppReady();
     await basePage.ensureSidebarOpen();

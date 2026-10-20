@@ -95,9 +95,7 @@ test.describe('Rooms — the thread sheet on a phone', () => {
     await openThread(page);
     const sheet = page.getByTestId('room-thread-sheet');
     // Let the slide finish before the swipe begins.
-    await expect
-      .poll(async () => (await sheet.boundingBox())?.x ?? -1)
-      .toBeLessThanOrEqual(1);
+    await expect.poll(async () => (await sheet.boundingBox())?.x ?? -1).toBeLessThanOrEqual(1);
 
     // A real finger, through CDP: a pointer drag from the header's middle
     // across most of the screen.

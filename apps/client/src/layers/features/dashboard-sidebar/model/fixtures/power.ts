@@ -59,9 +59,16 @@ const rooms: RoomSummary[] = Array.from({ length: ROOM_COUNT }, (_, index) =>
           kind: 'dm',
           title: `Person ${index}`,
           unreadCount: 2,
-          participants: [person('person:dorian', 'Dorian'), person(`person-${index}`, `Person ${index}`)],
+          participants: [
+            person('person:dorian', 'Dorian'),
+            person(`person-${index}`, `Person ${index}`),
+          ],
         })
-      : agentDm(`dm-${index}`, agentPath(index % AGENT_COUNT), displayNames[agentPath(index % AGENT_COUNT)] ?? '')
+      : agentDm(
+          `dm-${index}`,
+          agentPath(index % AGENT_COUNT),
+          displayNames[agentPath(index % AGENT_COUNT)] ?? ''
+        )
     : room({
         id: `room-${index}`,
         kind: 'channel',

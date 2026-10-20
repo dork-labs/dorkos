@@ -509,7 +509,14 @@ function directMessagesSection(
     rows.length === 0
       ? doorRow('message-agent', 'add', 'Message an agent', 'dms:empty')
       : doorRow('message-someone', 'add', 'Message an agent or person', 'dms:message-someone');
-  const filled = section('dms', 'Direct messages', [...rows, door], state, 'section:dms', isWorking);
+  const filled = section(
+    'dms',
+    'Direct messages',
+    [...rows, door],
+    state,
+    'section:dms',
+    isWorking
+  );
   // `section` answers `null` only for no rows, and the door is always a row.
   return filled as SidebarSectionModel;
 }

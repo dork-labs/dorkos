@@ -497,9 +497,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     await page.reload();
     await basePage.waitForAppReady();
     await basePage.ensureSidebarOpen();
-    const sections = dashboardSidebar.panel.locator(
-      '[data-sidebar-section^="group:"]'
-    );
+    const sections = dashboardSidebar.panel.locator('[data-sidebar-section^="group:"]');
     await expect(sections.first()).toContainText(secondGroupName);
     await expect(sections.nth(1)).toContainText(groupName);
   });

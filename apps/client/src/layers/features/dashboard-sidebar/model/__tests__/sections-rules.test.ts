@@ -80,12 +80,7 @@ describe('the order, top to bottom', () => {
 
   it('ends with Add-ons, once a mini app has added a page', () => {
     const state: SidebarState = { ...quietFixture, addOns: [addOn('crm', '', 'Clients')] };
-    expect(sections(state).map((entry) => entry.id)).toEqual([
-      'top',
-      'channels',
-      'dms',
-      'addons',
-    ]);
+    expect(sections(state).map((entry) => entry.id)).toEqual(['top', 'channels', 'dms', 'addons']);
   });
 
   it('emits the fixed sections in the tuple’s order', () => {
@@ -266,7 +261,10 @@ describe('Direct messages — an agent is its direct message', () => {
     };
     expect(keys(state, 'dms').slice(0, 2)).toEqual([`agent:${CARDAMOM}`, `agent:${SAFFRON}`]);
 
-    const recent = { ...state, prefs: prefs({ sections: { dms: { collapsed: false, sortMode: 'recent' } } }) };
+    const recent = {
+      ...state,
+      prefs: prefs({ sections: { dms: { collapsed: false, sortMode: 'recent' } } }),
+    };
     expect(keys(recent, 'dms').slice(0, 2)).toEqual([`agent:${SAFFRON}`, `agent:${CARDAMOM}`]);
     expect(section(recent, 'dms')?.options).toEqual({ sortMode: 'recent' });
   });
@@ -356,7 +354,9 @@ describe('the operator’s own sections', () => {
   it('takes a filed room out of its home section', () => {
     const state: SidebarState = {
       ...busyFixture,
-      prefs: prefs({ groups: [manualGroup('g', 'Design', [{ kind: 'room', roomId: 'room-design' }])] }),
+      prefs: prefs({
+        groups: [manualGroup('g', 'Design', [{ kind: 'room', roomId: 'room-design' }])],
+      }),
     };
     expect(keys(state, 'channels')).not.toContain('room:room-design');
     expect(keys(state, 'group:g')).toEqual(['room:room-design']);

@@ -102,7 +102,10 @@ export function SidebarBootShowcases() {
                   initial="hidden"
                   animate="shown"
                 >
-                  <motion.div variants={REVEAL_SECTION} transition={revealTransition(reducedMotion)}>
+                  <motion.div
+                    variants={REVEAL_SECTION}
+                    transition={revealTransition(reducedMotion)}
+                  >
                     <SettledPanel />
                   </motion.div>
                 </motion.div>

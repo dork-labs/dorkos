@@ -201,8 +201,7 @@ export function RoomThreadPanel({
   // long thread never scrolls away the message it is about. The feed then holds
   // the replies alone, and numbers them from one.
   const rootInFeed = !pushed;
-  const articleCount =
-    root === undefined || partial ? -1 : (rootInFeed ? 1 : 0) + replies.length;
+  const articleCount = root === undefined || partial ? -1 : (rootInFeed ? 1 : 0) + replies.length;
   // What the line under the root says — the same number the room's own reply
   // row shows for this thread.
   const replyCount = honestReplyCount(replies.length, knownReplies);

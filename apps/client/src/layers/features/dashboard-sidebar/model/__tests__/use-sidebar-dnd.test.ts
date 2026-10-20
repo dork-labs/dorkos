@@ -399,9 +399,7 @@ describe('R3 — a drop into a section that fills itself', () => {
   it('is rejected wherever the row came from', () => {
     const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
     for (const drag of [dragAgent('/web', inGroup('g1')), dragAgent('/other', UNGROUPED)]) {
-      expect(classifySidebarDrop(p, drag, dropContainer(TOP)).kind).toBe(
-        'reject-computed-section'
-      );
+      expect(classifySidebarDrop(p, drag, dropContainer(TOP)).kind).toBe('reject-computed-section');
       expect(classifySidebarDrop(p, drag, dropContainer(ADDONS)).kind).toBe(
         'reject-computed-section'
       );

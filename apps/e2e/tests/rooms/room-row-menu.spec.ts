@@ -79,9 +79,7 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
     // this and its partner below were the two waits in the file still on
     // Playwright's bare 5s default, on a machine this suite's own fixtures
     // describe as routinely several worktrees deep in concurrent agents.
-    const notInHint = dashboardSidebar
-      .section('channels')
-      .getByLabel('You’re not in this channel');
+    const notInHint = dashboardSidebar.section('channels').getByLabel('You’re not in this channel');
     await expect(notInHint).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     // And the way back is right there in the composer's own place. Waited in
