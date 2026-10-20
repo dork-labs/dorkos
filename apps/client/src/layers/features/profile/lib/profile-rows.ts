@@ -137,7 +137,16 @@ export interface ProfileRowsContext {
    * ticking caller so the row moves with the clock; defaults to now.
    */
   now?: number;
+  /**
+   * Leave out the session's machinery: the model and account it runs on, and
+   * how many chats it has (DOR-3075). Set beside a DM while Show sessions is
+   * off, where the session behind the chat is not shown.
+   */
+  quietSessionDetail?: boolean;
 }
+
+/** The rows a DM keeps behind Show sessions: what it runs on, and its chats. */
+const SESSION_DETAIL_ROWS = new Set(['runs-on', 'sessions']);
 
 /** An agent's promises, as the Commitments row wants them. */
 export interface ProfileCommitmentsSummary {
@@ -629,5 +638,11 @@ export function rowsFor(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
         return member.kind === 'agent' ? otherAgentRows(member, ctx) : personRows(member, ctx);
     }
   })();
-  return groups.filter((group) => group.rows.length > 0);
+  return groups
+    .map((group) =>
+      ctx.quietSessionDetail
+        ? { ...group, rows: group.rows.filter((row) => !SESSION_DETAIL_ROWS.has(row.id)) }
+        : group
+    )
+    .filter((group) => group.rows.length > 0);
 }

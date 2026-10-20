@@ -353,3 +353,21 @@ describe('rooms, wherever they appear', () => {
     expect(flat(build(SELF)).find((row) => row.id === 'rooms')!.value).toBeNull();
   });
 });
+
+describe('beside a DM with Show sessions off (DOR-3075)', () => {
+  const ids = (groups: ProfileRowGroup[]) => flat(groups).map((row) => row.id);
+
+  it('leaves out what the agent runs on and how many chats it has', () => {
+    const quiet = ids(build(MANAGED, { quietSessionDetail: true }));
+    expect(quiet).not.toContain('runs-on');
+    expect(quiet).not.toContain('sessions');
+    // Everything else stays.
+    expect(quiet).toContain('about');
+    expect(quiet).toContain('tasks');
+  });
+
+  it('keeps them everywhere else, exactly as before', () => {
+    expect(ids(build(MANAGED))).toEqual(expect.arrayContaining(['runs-on', 'sessions']));
+    expect(ids(build(MANAGED, { quietSessionDetail: false }))).toEqual(ids(build(MANAGED)));
+  });
+});

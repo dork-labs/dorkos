@@ -55,6 +55,11 @@ export interface ProfileViewProps {
    * session. Hides Message: the composer is right there.
    */
   inOwnSession?: boolean;
+  /**
+   * Leave out the model, account and chat count (DOR-3075): docked beside a
+   * DM while Show sessions is off.
+   */
+  quietSessionDetail?: boolean;
   /** What is pushed on top of the profile. */
   stack: ProfileStackState;
   /** Push a page, or a chained profile. */
@@ -75,6 +80,7 @@ export function ProfileView({
   roster,
   home,
   inOwnSession,
+  quietSessionDetail = false,
   stack,
   onPush,
   onPop,
@@ -135,6 +141,7 @@ export function ProfileView({
       : null,
     heartbeat: heartbeat.data ?? null,
     now,
+    quietSessionDetail,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
