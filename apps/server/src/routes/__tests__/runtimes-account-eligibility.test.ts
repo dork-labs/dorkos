@@ -492,6 +492,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/no-auto-move', () => {
       .send({ noAutoMove: true });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.error).toBe('Only a person can choose whether agents move here automatically.');
     expect(state.sets).toBe(0);
     expect(rows()[0]).not.toHaveProperty('noAutoMove');
     expect(emit).not.toHaveBeenCalled();

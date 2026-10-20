@@ -83,7 +83,7 @@ function AutoMoveSwitch({
             Move agents here automatically
           </Label>
           <p className="text-muted-foreground text-xs">
-            When an agent runs out of usage in a room.
+            When an agent runs out in a room, it can continue here.
           </p>
         </div>
       </div>

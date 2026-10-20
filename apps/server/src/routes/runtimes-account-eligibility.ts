@@ -102,6 +102,20 @@ const ACCOUNT_RULES_BAR: PersonBarCopy = {
     'only a person makes. Ask them to change it in Settings → Runtimes.',
 };
 
+/** What the person bar says when anything but a person flips an account's automatic-move switch. */
+const NO_AUTO_MOVE_BAR: PersonBarCopy = {
+  error: 'Only a person can choose whether agents move here automatically.',
+  code: 'operator_only_config',
+  subject: 'whether agents move to each Claude account automatically',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Whether agents move to an account automatically is something a person sets in their ` +
+    `own copy of the app, not something another site can change for them.`,
+  agent:
+    'DorkOS changed nothing. Whether agents move to a Claude account automatically is a ' +
+    'decision only a person makes. Ask them to change it in Settings → Runtimes.',
+};
+
 /** The refusal for a folder outside the directory boundary. */
 const OUTSIDE_BOUNDARY = {
   error: 'That folder is outside the folders DorkOS may open.',
@@ -221,8 +235,12 @@ function knownAccountIds(): Set<string> {
  * The person bar's 403 (or the cookie bar's) for anything but a person, or
  * `undefined` when a person is asking.
  */
-function refuseIfNotAPerson(c: Context<ApiEnv>, caller: RequestFacts): Response | undefined {
-  const refusal = assessPerson(caller, ACCOUNT_RULES_BAR);
+function refuseIfNotAPerson(
+  c: Context<ApiEnv>,
+  caller: RequestFacts,
+  copy: PersonBarCopy = ACCOUNT_RULES_BAR
+): Response | undefined {
+  const refusal = assessPerson(caller, copy);
   return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
 }
 
@@ -479,7 +497,7 @@ export function mountAccountEligibilityRoutes(
 
   router.put('/claude-code/accounts/:id/no-auto-move', async (c) => {
     const caller = honoRequestFacts(c);
-    const refused = refuseIfNotAPerson(c, caller);
+    const refused = refuseIfNotAPerson(c, caller, NO_AUTO_MOVE_BAR);
     if (refused) return refused;
     const parsed = NoAutoMoveSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {

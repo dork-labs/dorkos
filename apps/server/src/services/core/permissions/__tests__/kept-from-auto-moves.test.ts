@@ -85,7 +85,7 @@ describe('the migration and its one history line', () => {
     expect(world.events).toHaveLength(1);
     const event = world.events[0]!;
     expect(event.actorLabel).toBe('Upgrade');
-    expect(event.summary).toBe('AB1: Not used for automatic moves');
+    expect(event.summary).toBe('AB1: Move agents here automatically turned off');
     const metadata = event.metadata as unknown as PermissionChangedMetadata;
     expect(metadata).toMatchObject({
       surface: 'upgrade',
@@ -140,7 +140,7 @@ describe('Undo of the line', () => {
     expect(rows(store)[0]).not.toHaveProperty('noAutoMove');
     expect(undone.skipped).toEqual([]);
     expect(undone.changes).toEqual([expect.objectContaining({ before: 'on', after: null })]);
-    expect(world.events[1]!.summary).toBe('Undo: AB1: Used for automatic moves');
+    expect(world.events[1]!.summary).toBe('Undo: AB1: Move agents here automatically turned on');
     expect((world.events[1]!.metadata as unknown as PermissionChangedMetadata).undoOf).toBe(
       world.events[0]!.id
     );

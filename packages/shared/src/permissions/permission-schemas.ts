@@ -385,6 +385,6 @@ export const KEPT_FROM_AUTO_MOVES = 'on';
  */
 export function autoMoveWord(value: string | null): string {
   return value === KEPT_FROM_AUTO_MOVES
-    ? 'Not used for automatic moves'
-    : 'Used for automatic moves';
+    ? 'Move agents here automatically turned off'
+    : 'Move agents here automatically turned on';
 }

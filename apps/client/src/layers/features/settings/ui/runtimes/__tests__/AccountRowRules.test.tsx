@@ -40,7 +40,9 @@ describe('AccountRowRules — automatic moves', () => {
     const transport = renderRules({ accountId: 'work', onlyProjects: null, noAutoMove: false });
     const toggle = screen.getByRole('switch', SWITCH);
     expect(toggle).toBeChecked();
-    expect(screen.getByText('When an agent runs out of usage in a room.')).toBeInTheDocument();
+    expect(
+      screen.getByText('When an agent runs out in a room, it can continue here.')
+    ).toBeInTheDocument();
 
     await userEvent.click(toggle);
 
@@ -69,13 +71,13 @@ describe('AccountRowRules — automatic moves', () => {
   it("shows the server's sentence when the change is refused", async () => {
     const transport = renderRules({ accountId: 'work', onlyProjects: null, noAutoMove: false });
     vi.mocked(transport.setAccountNoAutoMove).mockRejectedValueOnce(
-      new Error('Only a person can change where an account may be used.')
+      new Error('Only a person can choose whether agents move here automatically.')
     );
 
     await userEvent.click(screen.getByRole('switch', SWITCH));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Only a person can change where an account may be used.'
+      'Only a person can choose whether agents move here automatically.'
     );
   });
 });
