@@ -31,6 +31,10 @@ import { logger } from '../../../lib/logger.js';
 export interface ChatRiseFacts {
   /** Whether the chat may follow its agent's level up. Unknown answers `false`. */
   mayRise: (sessionId: string) => boolean;
+  /** Whether the chat's turns carry a mark or a hold: launch marks, held, a stranger reached it. Unknown answers `true`. */
+  marked: (sessionId: string) => boolean;
+  /** Whether a person set the chat's mode by hand. */
+  personSet: (sessionId: string) => boolean;
   /** Note that a person set the chat's mode themselves. Never throws. */
   notePersonSetMode: (sessionId: string) => void;
 }
@@ -59,29 +63,45 @@ export function chatRiseFacts(): ChatRiseFacts | null {
 export function createChatRiseFacts(db: Db): ChatRiseFacts {
   // Rooms are read fresh: a post marked a minute ago must stop the next rise.
   const launchMarked = chatLaunchMarks(db, false);
+  /** The chat's row, read under its first id. */
+  const rowOf = (sessionId: string) =>
+    db
+      .select({
+        byPerson: sessionMetadata.permissionModeByPerson,
+        launchOrigin: sessionMetadata.launchOrigin,
+      })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, primaryOf(sessionId)))
+      .get();
+  /** Whether a known row's chat is marked or held. */
+  const rowMarked = (sessionId: string, launchOrigin: string | null): boolean => {
+    const key = primaryOf(sessionId);
+    return launchMarked(key, launchOrigin) || lastTurnHeld(key) || chatHeardOutsider(key);
+  };
+  /** Run a read, answering `fallback` (and saying so) when it throws. */
+  const guarded = (sessionId: string, fallback: boolean, read: () => boolean): boolean => {
+    try {
+      return read();
+    } catch (err) {
+      logger.warn('[agent-level] could not read a chat’s facts; it keeps its mode', {
+        sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return fallback;
+    }
+  };
   return {
-    mayRise: (sessionId) => {
-      try {
-        const key = primaryOf(sessionId);
-        const row = db
-          .select({
-            byPerson: sessionMetadata.permissionModeByPerson,
-            launchOrigin: sessionMetadata.launchOrigin,
-          })
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, key))
-          .get();
-        if (!row || row.byPerson === true) return false;
-        if (launchMarked(key, row.launchOrigin)) return false;
-        return !lastTurnHeld(key) && !chatHeardOutsider(key);
-      } catch (err) {
-        logger.warn('[agent-level] could not read whether a chat may rise; it keeps its mode', {
-          sessionId,
-          err: err instanceof Error ? err.message : String(err),
-        });
-        return false;
-      }
-    },
+    mayRise: (sessionId) =>
+      guarded(sessionId, false, () => {
+        const row = rowOf(sessionId);
+        return !!row && row.byPerson !== true && !rowMarked(sessionId, row.launchOrigin);
+      }),
+    marked: (sessionId) =>
+      guarded(sessionId, true, () => {
+        const row = rowOf(sessionId);
+        return !row || rowMarked(sessionId, row.launchOrigin);
+      }),
+    personSet: (sessionId) => guarded(sessionId, false, () => rowOf(sessionId)?.byPerson === true),
     notePersonSetMode: (sessionId) => {
       try {
         db.insert(sessionMetadata)

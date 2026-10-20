@@ -349,6 +349,76 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
     });
   });
 
+  describe('which agent holds a chat (QA rows G and H)', () => {
+    it('G: a chat in a nested subfolder of its agent’s folder cards after the cap', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-g', { permissionMode: 'bypassPermissions' });
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('chat-g', 'write it', { cwd: `${ANA}/sub/deep` }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('H: a chat in a sibling worktree is held by the agent recorded at launch', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-h', { permissionMode: 'bypassPermissions' });
+      vi.spyOn(registry, 'getSessionAgentPath').mockResolvedValue(ANA);
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('chat-h', 'write it', { cwd: '/work/ana-wt' }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('holds a chat to the default when its recorded agent matches no folder', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-gone', { permissionMode: 'bypassPermissions' });
+      vi.spyOn(registry, 'getSessionAgentPath').mockResolvedValue('/agents/unregistered');
+      await run(runtime.sendMessage('chat-gone', 'write it', { cwd: '/work/elsewhere' }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('never raises a chat found only by an enclosing folder', async () => {
+      const runtime = boot();
+      seedChat('chat-g-up', 'default');
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-g-up', 'hi', { cwd: `${ANA}/sub` }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+  });
+
+  describe('a level mode a caller sent is dropped (Security Must)', () => {
+    const sentLevel = { levelPermissionMode: 'bypassPermissions' } as Partial<MessageOpts>;
+
+    it('on a marked seat', async () => {
+      const runtime = boot();
+      seedSeat('seat-strip-marked', 'default');
+      agentStops.set(ANA, 'autonomy');
+      await run(
+        runtime.sendMessage(
+          'seat-strip-marked',
+          'hi',
+          seatOpts(ANA, { ...sentLevel, permissionCeiling: 'runtime-default' })
+        )
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('on a chat a person capped', async () => {
+      const runtime = boot();
+      seedChat('chat-strip-capped', 'default', { permissionModeByPerson: true });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-strip-capped', 'hi', { cwd: ANA, ...sentLevel }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('on a chat with no agent', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-strip-plain', { permissionMode: 'default' });
+      await run(
+        runtime.sendMessage('chat-strip-plain', 'hi', { cwd: '/work/nobody', ...sentLevel })
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+  });
+
   describe('the raise (QA rows)', () => {
     it('a seat stored at Ask, its agent then uncapped to Full: the same room writes with 0 cards', async () => {
       const runtime = boot();

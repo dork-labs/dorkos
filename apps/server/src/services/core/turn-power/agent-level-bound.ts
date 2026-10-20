@@ -45,6 +45,7 @@
  *   mode, nothing outside launched or marked it, and no stranger reached it;
  * - its stored mode is not one a person picks on purpose (Plan, Never ask), it
  *   is not on another computer, and its agent is not one kept as it is;
+ * - the turn's agent was found by identity, not only by an enclosing folder;
  * - the level is looser than the stored mode.
  *
  * Only a person moves the level a chat rises to: it is read through the
@@ -53,9 +54,12 @@
  *
  * ## Fails closed
  *
- * When the turn's agent is known but its level cannot be read, the turn is held
- * to the runtime's own default mode. A turn with no agent (a plain chat in a
- * folder that belongs to nobody) has no agent level, and runs as before.
+ * When the turn's agent is known but its level cannot be read, or the chat has a
+ * recorded agent that no folder can be matched to (`resolveLevelAgent`), the
+ * turn is held to the runtime's own default mode. A turn with no agent at all
+ * (a plain chat in a folder that belongs to nobody, with no recorded agent)
+ * has no agent level, and runs as before. A `levelPermissionMode` a caller sent
+ * is always dropped: only this seam sets it.
  *
  * Out of scope: a turn already running when the level changes (DOR-3177).
  *
@@ -76,12 +80,8 @@ import {
   type DeclaredModes,
 } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  chatAgentOf,
-  homeOf,
-  resolveAgentHome,
-  turnAgentOf,
-} from '../agent-identity/agent-home.js';
+import path from 'node:path';
+import { homeOf, resolveAgentHome, turnAgentOf } from '../agent-identity/agent-home.js';
 import {
   resolveAgentLaunchLevel,
   type AgentLaunchLevel,
@@ -151,13 +151,64 @@ export function levelBinds(
   });
 }
 
-/** The agent a turn belongs to: the one it names, its folder's, else the one recorded for its chat. */
+/**
+ * Whose level holds a turn: an agent found by identity (`exact`, which alone
+ * may rise), an agent found only by an enclosing folder (it may only lower),
+ * `'unmatched'` when the chat has a recorded agent that no folder can be
+ * matched to (the turn is held to the runtime's default), or `undefined` for a
+ * chat that belongs to no agent at all.
+ */
+export type LevelAgent = { agentPath: string; exact: boolean } | 'unmatched' | undefined;
+
+/** The nearest folder at or above `dir` that resolves to an agent's home, by identity. */
+function enclosingAgentHome(dir: string): string | undefined {
+  let current = path.resolve(dir);
+  for (;;) {
+    const home = homeOf(resolveAgentHome(current));
+    if (home) return home;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+/**
+ * Find whose level holds a chat's turn (DOR-3175). The turn's own identity
+ * first (its home, a linked worktree of it, or the agent it names). Then the
+ * nearest enclosing agent folder, so a chat working in a subfolder of its
+ * agent's folder is held too. Then the agent recorded for the chat at launch,
+ * so a chat in a sibling worktree is held too. A recorded agent nothing can be
+ * matched to is `'unmatched'`, never "no agent": a folder outside every agent's
+ * is not a way around the cap. One answer for the turn's check and the history
+ * count, so the two agree.
+ *
+ * @param cwd - Where the turn stands.
+ * @param opts - The turn's options, for the agent it names.
+ * @param recorded - The agent recorded for the chat at launch, when there is one.
+ */
+export function resolveLevelAgent(
+  cwd: string | undefined,
+  opts: Pick<MessageOpts, 'forAgent' | 'roomTurn'> | undefined,
+  recorded: string | null | undefined
+): LevelAgent {
+  const identity = resolveAgentHome(cwd, turnAgentOf(opts));
+  const home = homeOf(identity);
+  if (home) return { agentPath: home, exact: true };
+  const recordedHome = recorded ? enclosingAgentHome(recorded) : undefined;
+  const enclosing = cwd ? enclosingAgentHome(cwd) : undefined;
+  if (enclosing) return { agentPath: enclosing, exact: false };
+  if (identity.kind === 'refused') return 'unmatched';
+  if (recordedHome) return { agentPath: recordedHome, exact: recordedHome === recorded };
+  return recorded ? 'unmatched' : undefined;
+}
+
+/** The agent a turn belongs to, by {@link resolveLevelAgent}. */
 async function agentOfTurn(
   runtime: AgentRuntime,
   sessionId: string,
   opts: MessageOpts | undefined,
   recordedAgentOf: AgentLevelBoundDeps['recordedAgentOf']
-): Promise<string | undefined> {
+): Promise<LevelAgent> {
   let cwd = opts?.cwd;
   if (cwd === undefined) {
     try {
@@ -166,10 +217,8 @@ async function agentOfTurn(
       cwd = undefined;
     }
   }
-  const home = homeOf(resolveAgentHome(cwd, turnAgentOf(opts)));
-  if (home) return home;
-  if (!cwd || !recordedAgentOf) return undefined;
-  return chatAgentOf(await recordedAgentOf(sessionId), cwd);
+  const recorded = recordedAgentOf ? await recordedAgentOf(sessionId) : undefined;
+  return resolveLevelAgent(cwd, opts, recorded);
 }
 
 /** Whether the turn carries a mark or is held: an outsider's, a teammate's, or the runtime's default. */
@@ -224,12 +273,16 @@ function rises(
  * @param opts - The send's options.
  * @param deps - Where the stored mode, the recorded agent and the level come from.
  */
-export async function boundTurnOpts<O extends MessageOpts | undefined>(
+export async function boundTurnOpts(
   runtime: AgentRuntime,
   sessionId: string,
-  opts: O,
+  incoming: MessageOpts | undefined,
   deps: AgentLevelBoundDeps
-): Promise<O | MessageOpts> {
+): Promise<MessageOpts | undefined> {
+  // Only this seam may say a turn starts from its agent's level: one a caller
+  // sent is dropped, whatever happens below, so nothing upstream can skip the
+  // stored mode, a person's cap, the schedule rule or the marks.
+  const opts = withoutLevelMode(incoming);
   let capabilities: RuntimeCapabilities;
   try {
     capabilities = runtime.getCapabilities();
@@ -237,13 +290,19 @@ export async function boundTurnOpts<O extends MessageOpts | undefined>(
     return opts;
   }
   const declared = capabilities.permissionModes;
-  let agentPath: string | undefined;
+  let agent: LevelAgent;
   try {
-    agentPath = await agentOfTurn(runtime, sessionId, opts, deps.recordedAgentOf);
+    agent = await agentOfTurn(runtime, sessionId, opts, deps.recordedAgentOf);
   } catch {
-    agentPath = undefined;
+    // A recorded agent could not be read: held to the default, not let through.
+    agent = 'unmatched';
   }
-  if (!agentPath) return opts;
+  if (agent === undefined) return opts;
+  if (agent === 'unmatched') {
+    const held = levelOfMode(declared, declared.default);
+    return held ? boundBy(declared, held, storedOf(deps, sessionId), opts) : opts;
+  }
+  const { agentPath } = agent;
 
   let level: TurnPermissionLevel | undefined;
   let levelMode: string | undefined;
@@ -263,18 +322,41 @@ export async function boundTurnOpts<O extends MessageOpts | undefined>(
   }
   if (level === undefined) return opts;
 
-  let stored: string | null | undefined;
-  try {
-    stored = deps.storedModeOf(sessionId);
-  } catch {
-    stored = undefined;
-  }
-  const sent: O | MessageOpts =
-    levelMode !== undefined && rises(runtime, sessionId, agentPath, stored, levelMode, opts)
+  const stored = storedOf(deps, sessionId);
+  const sent: MessageOpts | undefined =
+    agent.exact &&
+    levelMode !== undefined &&
+    rises(runtime, sessionId, agentPath, stored, levelMode, opts)
       ? { ...(opts ?? {}), levelPermissionMode: levelMode }
       : opts;
-  if (!levelBinds(declared, level, stored, sent)) return sent;
-  return { ...(sent ?? {}), permissionCeiling: withBound(sent?.permissionCeiling, level) };
+  return boundBy(declared, level, stored, sent);
+}
+
+/** The options without a `levelPermissionMode` a caller sent. */
+function withoutLevelMode(opts: MessageOpts | undefined): MessageOpts | undefined {
+  if (opts?.levelPermissionMode === undefined) return opts;
+  const { levelPermissionMode: _dropped, ...rest } = opts;
+  return rest;
+}
+
+/** The session's stored mode; a failure reads as none, which binds. */
+function storedOf(deps: AgentLevelBoundDeps, sessionId: string): string | null | undefined {
+  try {
+    return deps.storedModeOf(sessionId);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The options with `level` added to their ceiling when it holds the turn down. */
+function boundBy(
+  declared: DeclaredModes,
+  level: TurnPermissionLevel,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): MessageOpts | undefined {
+  if (!levelBinds(declared, level, stored, opts)) return opts;
+  return { ...(opts ?? {}), permissionCeiling: withBound(opts?.permissionCeiling, level) };
 }
 
 /**

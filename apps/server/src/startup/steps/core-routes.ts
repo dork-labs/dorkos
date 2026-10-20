@@ -597,7 +597,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     observer: permissionObserver,
     arrivals: arrivalRecord,
     personSet: personSetPermissions,
-    levelReachNote: levelReachNoteFor(db),
+    levelReachNote: levelReachNoteFor(db, configManager),
   });
   // The person-set floor is seeded once, on the first boot that has it, from
   // what each agent's file holds and what the history says a person set

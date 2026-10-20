@@ -1,67 +1,121 @@
 /**
- * The note a person's change to an agent's level carries (DOR-3175): how many
- * existing chats meet the new level at their next turn, by the turn-start rules.
+ * The note a person's change to a level carries (DOR-3175): how many existing
+ * chats meet it at their next turn, counted by direction. QA's setup: Ana has
+ * four chats (room A, a marked room, G in a nested subfolder, H in a sibling
+ * worktree). A cap reaches all four; lifting it raises the three unmarked ones.
  */
 import { describe, it, expect } from 'vitest';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { PermissionChange } from '@dorkos/shared/permissions';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { createLevelReachNote, type AgentChatRow } from '../level-reach-note.js';
+import type { LevelAgent } from '../../turn-power/agent-level-bound.js';
+import { createLevelReachNote, type LevelChatRow } from '../level-reach-note.js';
 
 const ANA = '/agents/ana';
+const BOB = '/agents/bob';
 
-/** A person's Files & commands change on Ana. */
-function filesChange(after: 'ask' | 'act' | 'autonomy'): PermissionChange {
+/** A Claude Code chat of Ana's at `mode`. */
+function chat(sessionId: string, mode: string | null, agentPath = ANA): LevelChatRow {
+  return { sessionId, runtime: 'claude-code', permissionMode: mode, agentPath, cwd: null };
+}
+
+/** A person's change to an agent's own Files & commands stop. */
+function agentChange(
+  before: PermissionStop | null,
+  after: PermissionStop | null,
+  agentPath = ANA
+): PermissionChange {
   return {
-    target: { kind: 'agent', agentId: 'ana', agentPath: ANA, agentName: 'Ana' },
+    target: { kind: 'agent', agentId: agentPath, agentPath, agentName: 'Ana' },
     key: { kind: 'files' },
-    before: null,
+    before,
     after,
   } as PermissionChange;
 }
 
-/** The note reader over these chats, with Ana's level at `levelMode`. */
-function noteFor(chats: AgentChatRow[], levelMode: string, followers: string[] = []) {
+/** A world: these chats, Ana's own stop now, the global stop now. */
+function world(opts: {
+  chats: LevelChatRow[];
+  own: Record<string, PermissionStop | null>;
+  global?: PermissionStop | null;
+  agents?: Record<string, LevelAgent>;
+  marked?: string[];
+  byHand?: string[];
+}) {
   return createLevelReachNote({
-    chatsOf: (agentPath) => (agentPath === ANA ? chats : []),
+    chats: () => opts.chats,
+    agentOf: (row) =>
+      opts.agents?.[row.sessionId] ??
+      (row.agentPath ? { agentPath: row.agentPath, exact: true } : undefined),
     modes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
-    levelModeOf: async () => levelMode,
-    mayRise: (sessionId) => followers.includes(sessionId),
+    ownStop: async (agentPath) => opts.own[agentPath] ?? null,
+    defaultStops: () => ({ global: opts.global ?? 'autonomy', perRuntime: {} }),
+    marked: (id) => (opts.marked ?? []).includes(id),
+    personSet: (id) => (opts.byHand ?? []).includes(id),
   });
 }
 
+/** QA's four chats, all born at Full. */
+const QA_CHATS = [
+  chat('room-a', 'bypassPermissions'),
+  chat('room-marked', 'bypassPermissions'),
+  chat('chat-g', 'bypassPermissions'),
+  chat('chat-h', 'bypassPermissions'),
+];
+const QA_AGENTS: Record<string, LevelAgent> = {
+  'chat-g': { agentPath: ANA, exact: false },
+};
+
 describe('the level-reach note (DOR-3175)', () => {
-  it('counts the chats a cap holds down', async () => {
-    const note = noteFor(
-      [
-        { sessionId: 'a', runtime: 'claude-code', permissionMode: 'bypassPermissions' },
-        { sessionId: 'b', runtime: 'claude-code', permissionMode: 'acceptEdits' },
-        { sessionId: 'c', runtime: 'claude-code', permissionMode: 'default' },
-      ],
-      'default'
-    );
-    expect(await note([filesChange('ask')])).toBe(
-      '2 existing chats run at the new level from their next turn.'
+  it('a cap counts every chat it reaches, the marked one included', async () => {
+    const note = world({
+      chats: QA_CHATS,
+      own: { [ANA]: 'ask' },
+      agents: QA_AGENTS,
+      marked: ['room-marked'],
+    });
+    expect(await note([agentChange(null, 'ask')])).toBe('4 chats follow it');
+  });
+
+  it('lifting it counts only the chats that go up, not the marked one', async () => {
+    const note = world({
+      chats: QA_CHATS,
+      own: { [ANA]: 'autonomy' },
+      agents: QA_AGENTS,
+      marked: ['room-marked'],
+    });
+    expect(await note([agentChange('ask', 'autonomy')])).toBe('3 chats rose');
+  });
+
+  it('a raise names the chats set by hand that stay lower', async () => {
+    const note = world({
+      chats: [chat('seeded', 'default'), chat('by-hand', 'default')],
+      own: { [ANA]: 'autonomy' },
+      byHand: ['by-hand'],
+    });
+    expect(await note([agentChange('ask', 'autonomy')])).toBe(
+      '1 chat rose, 1 set by hand stay lower'
     );
   });
 
-  it('counts only the chats that follow their agent up', async () => {
-    const note = noteFor(
-      [
-        { sessionId: 'follows', runtime: 'claude-code', permissionMode: 'default' },
-        { sessionId: 'capped', runtime: 'claude-code', permissionMode: 'default' },
-        { sessionId: 'plan', runtime: 'claude-code', permissionMode: 'plan' },
-      ],
-      'bypassPermissions',
-      ['follows', 'plan']
-    );
-    expect(await note([filesChange('autonomy')])).toBe(
-      '1 existing chat runs at the new level from its next turn.'
-    );
+  it('a global change reaches the chats of agents with no stop of their own', async () => {
+    const note = world({
+      chats: [chat('ana-1', 'bypassPermissions'), chat('bob-1', 'bypassPermissions', BOB)],
+      own: { [ANA]: null, [BOB]: 'autonomy' },
+      global: 'ask',
+    });
+    const global = {
+      target: { kind: 'default' },
+      key: { kind: 'files' },
+      before: 'autonomy',
+      after: 'ask',
+    } as PermissionChange;
+    expect(await note([global])).toBe('1 chat follows it');
   });
 
-  it('says so when no chat changes, and says nothing for a change to no level', async () => {
-    const note = noteFor([], 'default');
-    expect(await note([filesChange('ask')])).toBe('No existing chats change.');
+  it('carries no note when no chat changes, or the change moves no level', async () => {
+    const note = world({ chats: [chat('c', 'plan')], own: { [ANA]: 'ask' } });
+    expect(await note([agentChange(null, 'ask')])).toBeUndefined();
     expect(
       await note([
         {
