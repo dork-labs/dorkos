@@ -5,7 +5,6 @@
  * @module widgets/session/lib/work-turns
  */
 import type { ChatMessage } from '@/layers/shared/model';
-import { formatDuration } from '@/layers/shared/lib';
 import { hasWork } from '@/layers/features/chat';
 
 /** One turn of a session: the words that opened it and the replies to them. */
@@ -85,7 +84,8 @@ export function turnStartsByReply(messages: readonly ChatMessage[]): Map<string,
 /**
  * How long a turn took, worded for the line under a reply: from the words
  * that opened it to the reply's own time, which is when its turn was saved.
- * `null` when either time is missing or they do not make sense together,
+ * Whole seconds from one second up ("4s", "1m 12s"); `null` under a second,
+ * when either time is missing, or when they do not make sense together,
  * rather than a number that is not true.
  *
  * @param startedAt - When the turn opened (ISO 8601).
@@ -97,8 +97,12 @@ export function turnDuration(
 ): string | null {
   if (!startedAt || !repliedAt) return null;
   const ms = Date.parse(repliedAt) - Date.parse(startedAt);
-  if (!Number.isFinite(ms) || ms <= 0) return null;
-  return formatDuration(ms);
+  // Under a second is not worth a number: the line just says how many steps.
+  if (!Number.isFinite(ms) || ms < 1000) return null;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const rest = seconds % 60;
+  return rest === 0 ? `${seconds / 60}m` : `${Math.floor(seconds / 60)}m ${rest}s`;
 }
 
 /**

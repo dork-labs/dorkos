@@ -239,6 +239,20 @@ describe('SessionTranscript folding a DM reply’s work', () => {
     expect(screen.getByTestId('dm-working-line')).toBeInTheDocument();
   });
 
+  it('names no time for a turn under a second', () => {
+    const quick: ChatMessage[] = [
+      MESSAGES[0]!,
+      {
+        ...MESSAGES[1]!,
+        parts: [tool('t1', 'Read'), { type: 'text', text: 'Three causes.' }],
+        timestamp: '2026-10-20T14:41:00.600Z',
+      },
+    ];
+    draw(quick);
+
+    expect(screen.getByTestId('dm-worked-line')).toHaveTextContent(/^Worked · 1 step\s*Show work$/);
+  });
+
   it('names no time it does not know', () => {
     draw(MESSAGES.map((message) => ({ ...message, timestamp: '' })));
 
