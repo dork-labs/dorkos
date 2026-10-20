@@ -94,17 +94,43 @@ describe('CanvasBrowserContent — why a page cannot talk to its agent', () => {
   );
 
   it('says nothing when the scripts went in', async () => {
-    // A later load of the same frame replaces an earlier refusal.
-    getFrameBridgeStatus.mockResolvedValueOnce({ bridge: 'refused', reason: 'csp' });
+    getFrameBridgeStatus.mockResolvedValue({ bridge: 'added' });
+    await loadedFrame('page.html');
+    await act(async () => {});
+    expect(getFrameBridgeStatus).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-bridge-refusal]')).toBeNull();
+  });
+
+  it('forgets the reason once the page navigates itself, and asks nothing about it', async () => {
+    getFrameBridgeStatus.mockResolvedValue({ bridge: 'refused', reason: 'csp' });
     const frame = await loadedFrame('page.html');
     expect(await screen.findByText(COPY.csp)).toBeInTheDocument();
-    getFrameBridgeStatus.mockResolvedValue({ bridge: 'added' });
+    // A link clicked inside the frame: a second load the host did not issue.
     await act(async () => {
       fireEvent.load(frame);
     });
     await act(async () => {});
-    expect(getFrameBridgeStatus).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[data-bridge-refusal]')).toBeNull();
+    expect(getFrameBridgeStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again when the host reloads the page', async () => {
+    getFrameBridgeStatus.mockResolvedValue({ bridge: 'refused', reason: 'markup' });
+    const frame = await loadedFrame('page.html');
+    expect(await screen.findByText(COPY.markup)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Reload'));
+    const reloaded = await waitFor(() => {
+      const element = document.querySelector('iframe');
+      expect(element).not.toBeNull();
+      expect(element).not.toBe(frame);
+      return element as HTMLIFrameElement;
+    });
+    expect(document.querySelector('[data-bridge-refusal]')).toBeNull();
+    await act(async () => {
+      fireEvent.load(reloaded);
+    });
+    expect(await screen.findByText(COPY.markup)).toBeInTheDocument();
+    expect(getFrameBridgeStatus).toHaveBeenCalledTimes(2);
   });
 
   it('says nothing before the frame has loaded', async () => {

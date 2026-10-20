@@ -31,9 +31,17 @@ import type {
   WorkbenchBridgeStatusResponse,
 } from '@dorkos/shared/schemas';
 import { validateBoundary } from '../../lib/boundary.js';
+import { WORKBENCH } from '../../config/constants.js';
 
 /** How many pages the ledger remembers, newest kept. */
 const MAX_ENTRIES = 512;
+
+/**
+ * The longest key the ledger keeps. A preview path comes off the network, so
+ * without this a page could pin megabytes of keys; a longer one is simply not
+ * remembered, which the canvas shows as nothing at all.
+ */
+const MAX_KEY_CHARS = 2048;
 
 /**
  * The loopback hosts a browser document's URL can name, mirrored from the
@@ -53,7 +61,7 @@ export const FRAME_BRIDGE_AGENT_NOTES: Record<FrameBridgeRefusal, string> = {
   encoding:
     'The page is not UTF-8 (by its Content-Type charset, a <meta charset>, or its bytes). ' +
     'Save and serve it as UTF-8.',
-  oversize: 'The page is over 5 MB of HTML, past the size DorkOS adds its scripts to.',
+  oversize: `The page is over ${WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES / (1024 * 1024)} MB of HTML, past the size DorkOS adds its scripts to.`,
   'no-head':
     'The page has no explicit <head> start tag before its content. Add <head>…</head> ' +
     'before the body.',
@@ -72,10 +80,12 @@ export class FrameBridgeLedger {
   /**
    * Remember one serving decision, replacing the page's previous one.
    *
-   * @param key - The page, from {@link servedFileKey} or {@link previewPageKey}.
+   * @param key - The page, from {@link servedFileKey} or {@link previewPageKey}; one
+   *   longer than {@link MAX_KEY_CHARS} is not kept.
    * @param reason - The refusal, or `null` when the scripts went in.
    */
   record(key: string, reason: FrameBridgeRefusal | null): void {
+    if (key.length > MAX_KEY_CHARS) return;
     this.#entries.delete(key);
     this.#entries.set(key, reason);
     if (this.#entries.size > MAX_ENTRIES) {

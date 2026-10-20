@@ -4241,12 +4241,18 @@ export type WorkbenchProbeResponse = z.infer<typeof WorkbenchProbeResponseSchema
  * - `csp` — an enforcing Content-Security-Policy does not allow inline scripts,
  *   or the page declares a policy in a `<meta>` tag.
  * - `encoding` — the page is not UTF-8 (by header, `<meta charset>` or bytes).
- * - `oversize` — the page is over the 5 MB instrumentation cap.
+ * - `oversize` — the page is over {@link FRAME_SCRIPT_HTML_MAX_BYTES}.
  * - `no-head` — the page has no explicit `<head>` tag to put the scripts in.
  * - `markup` — something before or inside the `<head>` (or between `</head>`
  *   and the body) is outside what the injector can place a script after safely.
  * - `fixed-source` — the scripts themselves failed their own build-time check.
  */
+/**
+ * The largest HTML page DorkOS adds its frame scripts to (bytes). The server's
+ * buffering cap and the `oversize` copy both read this one number.
+ */
+export const FRAME_SCRIPT_HTML_MAX_BYTES = 5 * 1024 * 1024;
+
 export const FrameBridgeRefusalSchema = z
   .enum(['csp', 'encoding', 'oversize', 'no-head', 'markup', 'fixed-source'])
   .openapi('FrameBridgeRefusal');
@@ -4263,7 +4269,7 @@ export const WorkbenchBridgeStatusRequestSchema = z
   .discriminatedUnion('kind', [
     z.object({
       kind: z.literal('serve'),
-      cwd: z.string().min(1),
+      cwd: z.string().min(1).max(4096),
       /** The file, relative to `cwd` or absolute inside it. */
       path: z.string().min(1).max(4096),
     }),

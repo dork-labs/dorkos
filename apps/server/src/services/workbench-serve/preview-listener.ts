@@ -625,7 +625,8 @@ export class PreviewListenerManager {
       const raw = Buffer.concat(chunks);
       const decision = injectFrameScripts(raw, { contentType, enforcingPolicies });
       frameBridgeLedger.record(page, decision.reason);
-      if (decision.instrumented) headers['content-type'] = 'text/html; charset=utf-8';
+      // Node lower-cases relayed header names, so this replaces the dev server's.
+      headers['content-type'] = decision.contentType;
       headers['content-length'] = decision.bytes.length;
       res.writeHead(upstreamRes.statusCode ?? 502, headers);
       res.end(decision.bytes);

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(canvas): pages with inline SVG in the body keep their line to the agent (DOR-3131)'
+  - 'fix(canvas): frame scripts refuse empty comments before the head and always send UTF-8 (DOR-3131)'
 ---
 
 ### Fixed

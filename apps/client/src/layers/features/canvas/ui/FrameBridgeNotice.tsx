@@ -1,10 +1,12 @@
-import type { FrameBridgeRefusal } from '@dorkos/shared/schemas';
+import { FRAME_SCRIPT_HTML_MAX_BYTES, type FrameBridgeRefusal } from '@dorkos/shared/schemas';
+
+const MAX_MB = FRAME_SCRIPT_HTML_MAX_BYTES / (1024 * 1024);
 
 /** One line per refusal code, for the person looking at the page. */
 const REFUSAL_COPY: Record<FrameBridgeRefusal, string> = {
   csp: 'This page’s security policy blocks added scripts, so it can’t talk to its agent.',
   encoding: 'This page isn’t saved as UTF-8, so it can’t talk to its agent.',
-  oversize: 'This page is over 5 MB, so it can’t talk to its agent.',
+  oversize: `This page is over ${MAX_MB} MB, so it can’t talk to its agent.`,
   'no-head': 'This page has no <head> tag, so it can’t talk to its agent.',
   markup: 'DorkOS can’t safely read this page’s <head>, so it can’t talk to its agent.',
   'fixed-source': 'DorkOS couldn’t connect this page to its agent.',

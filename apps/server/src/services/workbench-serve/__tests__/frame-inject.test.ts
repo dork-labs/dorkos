@@ -299,3 +299,69 @@ describe('the body is the page’s own business (DOR-3131)', () => {
     );
   });
 });
+
+describe('comments end where a browser ends them', () => {
+  it.each([
+    // Empty comments: the browser closes them at once, so `evil()` would run
+    // in an implied head before the shim if the scanner read on to `-->`.
+    '<!doctype html><!--><script>evil()</script>--><html><head></head><body></body></html>',
+    '<!doctype html><!---><script>evil()</script>--><html><head></head><body></body></html>',
+    '<html><head><!--><script>evil()</script>--></head><body></body></html>',
+    '<html><head></head><!---><meta http-equiv="content-security-policy" content="x">--><body></body></html>',
+    // `--!>` closes a comment too.
+    '<!-- a --!><script>evil()</script> --><html><head></head><body></body></html>',
+    // A nested opener, and a comment that never ends.
+    '<!-- <!-- --><html><head></head><body></body></html>',
+    '<!-- never ends <html><head></head><body></body></html>',
+  ])('refuses %s', (value) => {
+    const raw = Buffer.from(value);
+    const result = inject(raw);
+    expect(result.reason).toBe('markup');
+    expect(result.bytes).toBe(raw);
+  });
+
+  it.each([
+    '<!----><html><head></head><body></body></html>',
+    '<!-- a - b ---><html><head></head><body></body></html>',
+    '<!---x--><html><head></head><body></body></html>',
+  ])('reads a comment that ends at its `-->`: %s', (value) => {
+    expect(inject(value).instrumented).toBe(true);
+  });
+});
+
+describe('between </head> and the body, head-bound markup keeps the head rules', () => {
+  it.each(['html', 'head', 'template', 'noframes', 'frameset', 'basefont', 'bgsound'])(
+    'refuses <%s> after </head>',
+    (name) => {
+      const value = `<html><head></head><${name}><body></body></html>`;
+      expect(inject(value).reason).toBe('markup');
+    }
+  );
+
+  it('reads past an end tag the parser ignores there, to a policy it still puts in the head', () => {
+    const value =
+      '<html><head></head></div></p><meta http-equiv="content-security-policy" content="x"><body></body></html>';
+    expect(inject(value).reason).toBe('csp');
+  });
+
+  it('refuses a charset declared after </head>', () => {
+    expect(inject('<html><head></head><meta charset="utf-8"><body></body></html>').reason).toBe(
+      'markup'
+    );
+  });
+});
+
+describe('the Content-Type the caller must send', () => {
+  it('is always UTF-8 for an instrumented page, whatever the page came with', () => {
+    const result = inject(html, [], 'text/html');
+    expect(result.instrumented).toBe(true);
+    expect(result.contentType).toBe('text/html; charset=utf-8');
+  });
+
+  it('is the original one for a page served unchanged', () => {
+    expect(inject(html, [], 'text/html; charset=latin1').contentType).toBe(
+      'text/html; charset=latin1'
+    );
+    expect(inject('<div>x</div>', [], 'text/html').contentType).toBe('text/html');
+  });
+});

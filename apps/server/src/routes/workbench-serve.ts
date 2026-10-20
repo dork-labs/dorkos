@@ -355,6 +355,7 @@ async function handleServe(c: Context<ApiEnv>) {
         // The one policy this response enforces is the sandbox set above.
         const decision = injectFrameScripts(raw, { contentType, enforcingPolicies: [policy] });
         frameBridgeLedger.record(servedFileKey(resolved), decision.reason);
+        c.header('Content-Type', decision.contentType);
         c.header('Content-Length', String(decision.bytes.length));
         return c.body(new Uint8Array(decision.bytes));
       }

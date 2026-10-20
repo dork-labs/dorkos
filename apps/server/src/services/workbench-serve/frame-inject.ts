@@ -10,10 +10,21 @@ export interface FrameInjectionOptions {
   enforcingPolicies: readonly string[];
 }
 
+/** The Content-Type an instrumented page must be sent with. */
+export const INSTRUMENTED_CONTENT_TYPE = 'text/html; charset=utf-8';
+
 /** Refusal keeps the exact original bytes, including unsupported encodings. */
 export interface FrameInjectionResult {
   bytes: Buffer;
   instrumented: boolean;
+  /**
+   * The exact Content-Type the caller must send with `bytes`. For an
+   * instrumented page it is always {@link INSTRUMENTED_CONTENT_TYPE}: the scan
+   * stops where the body starts, which is only safe while the charset is
+   * certain, so a `<meta charset>` in the body can never re-decode the page.
+   * A refused page keeps the Content-Type it came with.
+   */
+  contentType: string;
   /** Why the scripts were not added, as a stable code; `null` when they were. */
   reason: FrameBridgeRefusal | null;
 }
@@ -60,6 +71,14 @@ const VOID = new Set([
   'wbr',
 ]);
 const SCRIPT_TAGS = `<script>${DOC_FRAME_SHIM_SCRIPT}</script><script>${DEVTOOLS_AGENT_SCRIPT}</script>`;
+/**
+ * Our own scripts must end where they appear to: no `</script`, and no `<!--`
+ * that could start the double-escaped state and swallow the page's own end tag.
+ * Fixed source, so checked once when the module loads.
+ */
+const FIXED_SOURCE_SAFE = [DOC_FRAME_SHIM_SCRIPT, DEVTOOLS_AGENT_SCRIPT].every(
+  (source) => !/<\/script[\t\n\f\r />]|<!--/i.test(source)
+);
 
 function utf8ContentType(value: string): boolean {
   const pieces = value.split(';');
@@ -203,6 +222,11 @@ function insertionPoint(html: string): Placement {
     /<head[\t\n\f\r />]/i.test(html.slice(i)) ? MARKUP : { refusal: 'no-head' };
   while (i < html.length) {
     if (html.startsWith('<!--', i)) {
+      // A browser ends a comment earlier than `-->` in three ways: `<!-->` and
+      // `<!--->` are whole empty comments, and `--!>` closes one. Text after any
+      // of them is markup, so each is refused rather than read as comment text;
+      // so are a nested `<!--` and a comment with no end.
+      if (html[i + 4] === '>' || html.startsWith('->', i + 4)) return MARKUP;
       const end = html.indexOf('-->', i + 4);
       if (end < 0 || /--|<!/.test(html.slice(i + 4, end))) return MARKUP;
       i = end + 3;
@@ -301,6 +325,7 @@ export function injectFrameScripts(
   const refuse = (reason: FrameBridgeRefusal): FrameInjectionResult => ({
     bytes: raw,
     instrumented: false,
+    contentType: options.contentType,
     reason,
   });
   if (raw.length > WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) return refuse('oversize');
@@ -316,16 +341,11 @@ export function injectFrameScripts(
   const placement = insertionPoint(html);
   if ('refusal' in placement) return refuse(placement.refusal);
   const at = placement.at;
-  // Our own scripts must end where they appear to: no `</script`, and no `<!--`
-  // that could start the double-escaped state and swallow the page's own end tag.
-  if (
-    /<\/script[\t\n\f\r />]|<!--/i.test(DOC_FRAME_SHIM_SCRIPT) ||
-    /<\/script[\t\n\f\r />]|<!--/i.test(DEVTOOLS_AGENT_SCRIPT)
-  )
-    return refuse('fixed-source');
+  if (!FIXED_SOURCE_SAFE) return refuse('fixed-source');
   return {
     bytes: Buffer.from(html.slice(0, at) + SCRIPT_TAGS + html.slice(at), 'utf8'),
     instrumented: true,
+    contentType: INSTRUMENTED_CONTENT_TYPE,
     reason: null,
   };
 }

@@ -1,4 +1,5 @@
 /** Server-only constants — timeouts, limits, and tuning parameters. */
+import { FRAME_SCRIPT_HTML_MAX_BYTES } from '@dorkos/shared/schemas';
 
 export const INTERVALS = {
   /** How often to run session health checks (ms). */
@@ -76,7 +77,7 @@ export const WORKBENCH = {
    * page declaring a non-UTF-8 charset already gets. 5 MB is far above any real
    * app shell and far below anything that would trouble the server.
    */
-  PREVIEW_HTML_INJECT_MAX_BYTES: 5 * 1024 * 1024,
+  PREVIEW_HTML_INJECT_MAX_BYTES: FRAME_SCRIPT_HTML_MAX_BYTES,
   /**
    * How long the loopback port probe waits for a connection before answering
    * "nothing is listening". A connection to a port on this same machine either

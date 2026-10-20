@@ -100,6 +100,12 @@ export async function readSessionCanvasDocument(
   // row, because that is what the row IS for these types.
   const content = document.content;
   if (content.type === 'browser' || content.type === 'url') {
+    // The folder the page was served from, and the root a file path is confined
+    // to: the row's own tree when it records one, else the CALLING session's
+    // folder from its verified context (never an argument). `bridgeKeyFor` runs
+    // the same boundary checks as the sign and serve routes against it, so this
+    // can name only a file the session could already have served, and it reads
+    // nothing but the recorded decision.
     const cwd = canvas.resolvedTreeOf(scope, document.id) ?? context.cwd ?? null;
     const bridge = await describeFrameBridge(content.url, cwd);
     return { note: UNTRUSTED_NOTE, ...metadata, content, ...(bridge ? { bridge } : {}) };

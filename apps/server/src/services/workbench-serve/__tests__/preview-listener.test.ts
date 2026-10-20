@@ -172,6 +172,13 @@ beforeAll(async () => {
         res.end('<html><head><title>dev</title></head><body>hi</body></html>');
         return;
       }
+      if (url.startsWith('/bare-charset')) {
+        // No charset on the header, and a body `<meta charset>` that would
+        // re-decode the page if the header did not settle it.
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><head></head><body><meta charset="iso-2022-jp">hi</body></html>');
+        return;
+      }
       if (url.startsWith('/icons')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(
@@ -942,6 +949,19 @@ describe('PreviewListenerManager — the canvas can ask why (DOR-3131)', () => {
     expect(frameBridgeLedger.status(previewPageKey(upstreamPort, '/icons/a b'))).toEqual({
       bridge: 'added',
     });
+  });
+
+  it('sends an instrumented page as certain UTF-8 when the dev server named no charset', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    const res = await fetchPreview(listenPort, '/bare-charset', { headers: { cookie } });
+    expect(res.body).toContain('dorkos-doc');
+    // Exactly one Content-Type, and it is UTF-8: the body was never read, so a
+    // body `<meta charset>` must not be able to change how the page decodes.
+    const fields = res.rawHeaders.filter(
+      (_, i) => i % 2 === 0 && /^content-type$/i.test(res.rawHeaders[i])
+    );
+    expect(fields).toHaveLength(1);
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
   });
 
   it('records the stable reason for each page it served unchanged', async () => {

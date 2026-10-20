@@ -7,7 +7,8 @@
  * cannot see that decision itself: a frame's response headers are invisible to
  * the page that framed it, and a dev server preview is another origin. So after
  * each `load` of the frame it asks the server, naming the page the way it
- * opened it, and answers the stable refusal code or `null`.
+ * opened it, and answers the stable refusal code or `null`. Only the load the
+ * host issued is asked about: after the page navigates itself, it says nothing.
  *
  * @module features/canvas/model/use-frame-bridge-refusal
  */
@@ -80,9 +81,20 @@ export function useFrameBridgeRefusal({
     const ask: WorkbenchBridgeStatusRequest = JSON.parse(queryJson);
     let live = true;
     let latest = 0;
+    // A frame element's first `load` is the page the host asked for. Any later
+    // one is the page navigating itself (a link, a form, `location`), which the
+    // host cannot name, so it forgets the answer rather than show the reason for
+    // the page that is no longer there.
+    const loaded = new WeakSet<EventTarget>();
     const onLoad = (event: Event): void => {
-      if (event.target !== iframeRef.current) return;
+      const frame = event.target;
+      if (frame === null || frame !== iframeRef.current) return;
       const asked = ++latest;
+      if (loaded.has(frame)) {
+        setFound(null);
+        return;
+      }
+      loaded.add(frame);
       transportRef.current.getFrameBridgeStatus(ask).then(
         (status) => {
           if (!live || asked !== latest) return;
