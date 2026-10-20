@@ -199,6 +199,15 @@ catalog and marked `gpt-6-astra` as the default. The same probe on `0.147.0` log
 model-cache schema error and omitted Astra, which is why the two packages must remain
 on the same current version.
 
+**2026-10-20 update:** the pin moved to `0.163.0` across the whole family (SDK, bundled
+CLI, desktop per-platform aliases, `CODEX_PACKAGE_VERSION`, `PINNED_CODEX_APP_SERVER_VERSION`).
+The SDK's `index.d.ts` gained only `CyberAccessProgram` and an optional
+`TurnOptions.cyberAccessProgram`; the `ThreadEvent` and `ThreadItem` unions are unchanged.
+The app-server protocol added four server notifications (`thread/readState/changed`,
+`thread/attachment/updated`, `thread/prediction/updated`, `account/gatewayOAuth/changed`),
+all disposed as `ignored`, and the snapshot was regenerated from the 0.163.0 binary. See
+`research/runtime-upgrades/codex-sdk/0.154.0-to-0.163.0/`.
+
 **2026-09-11 update:** the pin moved to `0.154.0` across the whole family (SDK, bundled
 CLI, desktop per-platform aliases, `CODEX_PACKAGE_VERSION`). The npm package is
 byte-identical to `0.153.4` — `dist/index.d.ts` hashes to sha256 `954d28be…` at both
