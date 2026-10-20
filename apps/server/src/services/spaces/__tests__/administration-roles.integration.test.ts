@@ -1724,6 +1724,8 @@ const actions: Action<unknown>[] = [
     route: 'GET /settings',
     allowed: MEMBERS_OF_A,
     status: 200,
+    // A person's paired app reads it too (DOR-3005), so an agent's bearer is read, then refused.
+    refused: { agent: 403 },
     call: () => ({ method: 'GET', path: scoped('/settings') }),
     effect: async (body) => {
       expect(JSON.parse(body.toString('utf8'))).toMatchObject({ communityId: alphaId });
@@ -2033,10 +2035,11 @@ const actions: Action<unknown>[] = [
 
   // ── Member, invitation, agent and channel duties (existing rules) ─────────
   define({
-    rule: 'Member directory: owner and admin by existing rules',
+    rule: 'Member directory: every member sees who is in the space (DOR-3005)',
     route: 'GET /members',
-    allowed: MODERATORS,
+    allowed: MEMBERS_OF_A,
     status: 200,
+    refused: { agent: 403 },
     call: () => ({ method: 'GET', path: scoped('/members') }),
     effect: async (body) => {
       const { members } = JSON.parse(body.toString('utf8')) as { members: { memberId: string }[] };

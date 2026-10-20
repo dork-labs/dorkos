@@ -24,6 +24,8 @@ import { memberIsLeaving } from '../../erasure/guards.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
 import { recheckReturningName } from '../../moderation/display-names.js';
+import { requirePerson } from '../../moderation/person.js';
+import { projectMemberDirectory, readMemberDirectory } from '../../content/member-directory.js';
 
 async function live(
   client: PoolClient,
@@ -159,15 +161,16 @@ export function registerMemberRoutes(
     now: () => Date;
   }
 ) {
+  // The person's own membership, for their browser or their paired app's `read` grant (DOR-3005).
   app.get('/me', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor } = await requirePerson(c, auth, pool, 'read');
     const result = await pool.query<Member & { handle: string; created_at: Date }>(
       // member-kind: by-grant
       'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND community_id=$2 AND active',
       [actor.id, actor.community_id]
     );
     const row = result.rows[0];
-    const current = await requireMember(c, auth, pool);
+    const { member: current } = await requirePerson(c, auth, pool, 'read');
     if (!row || current.id !== actor.id)
       throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
     return json(c, CommunityWireMemberResponseSchema, {
@@ -183,34 +186,33 @@ export function registerMemberRoutes(
     });
   });
 
+  // Who is in the space, for every member and their paired app's `read` grant (DOR-3005). Only an
+  // owner or admin sees when someone joined; only in their own browser, who is muted. Without
+  // `include` an owner's or admin's page is exactly as before: installed apps parse it strictly.
   app.get('/members', async (c) => {
-    const actor = await requireMember(c, auth, pool);
-    const query = CommunityWireMemberDirectoryQuerySchema.parse(
+    const { member: actor, credential } = await requirePerson(c, auth, pool, 'read');
+    const { cursor, limit, include } = CommunityWireMemberDirectoryQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
-    const limit = query.limit ?? 50;
-    const rows = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin']);
-      return client.query<Member & { handle: string; created_at: Date }>(
-        `SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members
-         WHERE community_id=$1 AND kind='person' AND active AND ($2::uuid IS NULL OR id>$2::uuid)
-         ORDER BY id LIMIT $3`,
-        [actor.community_id, query.cursor ?? null, limit + 1]
-      );
-    });
-    const members = rows.rows.slice(0, limit);
-    return json(c, CommunityWireMemberDirectoryPageSchema, {
-      members: members.map((row) => ({
-        memberId: row.id,
-        kind: 'human' as const,
-        displayName: row.display_name,
-        handle: row.handle,
-        role: row.role,
-        ownerMemberId: null,
-        joinedAt: row.created_at.toISOString(),
-      })),
-      nextCursor: rows.rows.length > limit ? members.at(-1)!.id : null,
-    });
+    const withAgents = include.has('agents');
+    const { role, rows } = await transaction(pool, async (client) => ({
+      role: await requireLiveRole(client, actor, ['owner', 'admin', 'member']),
+      rows: await readMemberDirectory(client, actor.community_id, {
+        cursor: cursor ?? null,
+        limit: limit ?? 50,
+        withAgents,
+      }),
+    }));
+    const moderator = role === 'owner' || role === 'admin';
+    return json(
+      c,
+      CommunityWireMemberDirectoryPageSchema,
+      projectMemberDirectory(rows, {
+        moderator,
+        showMutes: withAgents && moderator && credential === 'session',
+        withAvailability: include.has('availability'),
+      })
+    );
   });
 
   app.delete('/members/:id', async (c) => {

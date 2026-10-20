@@ -29,6 +29,8 @@ import { COMMUNITY_DM_ERROR_CODES, COMMUNITY_DM_ROUTES } from './community-dm-wi
 export * from './community-moderation-wire.js';
 // Agents, and where each runs and whether it is there, live in their own module.
 export * from './community-agent-wire.js';
+// The member directory, people with their agents, likewise.
+export * from './community-directory-wire.js';
 // Direct messages with an agent, and what a space's server understands, likewise.
 export * from './community-dm-wire.js';
 export * from './community-features-wire.js';
@@ -402,16 +404,6 @@ export const CommunityWireMemberRoleUpdateRequestSchema = z.strictObject({
 /** Role change receipt with the current member projection. */
 export const CommunityWireMemberResponseSchema = z.strictObject({
   member: CommunityWireMemberSchema,
-});
-/** Bounded human directory for owner/admin member selection. */
-export const CommunityWireMemberDirectoryQuerySchema = z.strictObject({
-  cursor: z.uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-/** One page of public human member descriptions, with no account fields. */
-export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
-  members: z.array(CommunityWireMemberSchema).max(100),
-  nextCursor: z.uuid().nullable(),
 });
 /** The lowest minimum age a host may ask people to confirm before they create an account. */
 export const COMMUNITY_MINIMUM_AGE_FLOOR = 13;
