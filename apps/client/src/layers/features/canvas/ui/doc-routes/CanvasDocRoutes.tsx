@@ -6,7 +6,8 @@
  * and how many wait on a person; it opens the list of routes, each with its
  * destination, events, state, end time and limits, and the Review/Allow and
  * Turn off actions. A declared route is shown Off until someone allows it:
- * nothing is enabled by silence.
+ * nothing is enabled by silence. Beside it, {@link CanvasDocWork} shows work
+ * that expired or ended in doubt, when there is any.
  *
  * @module features/canvas/ui/doc-routes/CanvasDocRoutes
  */
@@ -23,6 +24,7 @@ import {
 import { routesSummary } from '../../lib/doc-routes';
 import { useBrowserOnline, useCanvasDocRoutes } from '../../model/use-canvas-doc-routes';
 import { CanvasDocRouteItem } from './CanvasDocRouteItem';
+import { CanvasDocWork } from './CanvasDocWork';
 
 /** What the trigger says: the state worth a glance, never a bare count of routes. */
 function triggerSummary(on: number, waiting: number): string {
@@ -52,8 +54,10 @@ export function CanvasDocRoutes({ documentId }: { documentId: string }) {
   return (
     <div
       data-testid="doc-routes-bar"
-      className="text-muted-foreground flex items-center justify-end border-b px-3 py-1 text-xs"
+      className="text-muted-foreground flex items-center justify-end gap-1 border-b px-3 py-1 text-xs"
     >
+      {/* Work that expired or ended in doubt; draws nothing when there is none. */}
+      <CanvasDocWork documentId={documentId} routes={list} online={online} />
       <ResponsivePopover open={open} onOpenChange={setOpen} modal fullHeight>
         <ResponsivePopoverTrigger asChild>
           <Button
