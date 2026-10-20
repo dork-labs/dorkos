@@ -69,6 +69,6 @@ export async function wifiModeRaiseReply(
  * @param sessionId - The chat.
  * @param requested - The mode the change set, or `undefined` when it set none.
  */
-export function notePersonChatMode(sessionId: string, requested: string | undefined): void {
+export function notePersonMode(sessionId: string, requested: string | undefined): void {
   if (requested !== undefined) chatRiseFacts()?.notePersonSetMode(sessionId);
 }

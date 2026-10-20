@@ -42,11 +42,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { recordAccepted } from './session-message-accepted.js';
-import {
-  launchRefusalReply,
-  notePersonChatMode,
-  wifiModeRaiseReply,
-} from './session-route-replies.js';
+import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -676,7 +672,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       fastMode,
     });
     if (!updated.updated) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
-    notePersonChatMode(sessionId, requestedMode);
+    notePersonMode(sessionId, requestedMode);
 
     const cwd = (cwdParam as string) || vaultRoot;
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
