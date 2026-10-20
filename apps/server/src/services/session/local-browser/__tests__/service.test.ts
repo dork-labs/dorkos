@@ -986,6 +986,7 @@ describe('the Cloud origin (DOR-3196)', () => {
     'https://cloud.dorkos.ai/',
     'https://cloud.dorkos.ai/any/path',
     'https://x.cloud.dorkos.ai/',
+    'https://dorkos.ai/any/path',
   ])('refuses an agent navigation to %s before it is dispatched', async (target) => {
     const { service, page } = await create();
     await selectOwned(service);
@@ -1043,6 +1044,15 @@ describe('the Cloud origin (DOR-3196)', () => {
     addFrame('https://cloud.dorkos.ai/frame');
     await expect(service.observe()).rejects.toMatchObject(refused);
     expect(page.evaluateHandle).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('never describes a Cloud tab to the agent, even one the person opened', async () => {
+    const { service, navigate } = await create();
+    await selectOwned(service);
+    navigate('https://cloud.dorkos.ai/some/page?token=secret');
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
     await service.disconnect();
   });
 

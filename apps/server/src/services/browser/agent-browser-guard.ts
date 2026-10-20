@@ -13,20 +13,20 @@
  * 2. starts it blocked from the Cloud origin, with the two layers
  *    `withCloudOriginBlocked` describes.
  *
- * Fails closed: a browser whose session file still holds Cloud entries, or
- * whose block cannot be written, is left out of the session rather than
- * started unguarded. The origin list comes from `@dorkos/shared/cloud-origin`
+ * Fails closed: a browser that brings sign-ins or routes DorkOS cannot clean
+ * or block (`unguardableBrowserReason`), whose session file still holds Cloud
+ * entries, or whose block cannot be written, is left out of the session
+ * rather than started unguarded. The origin list comes from `@dorkos/shared/cloud-origin`
  * and this server's own Cloud configuration, never from a manifest.
  *
  * @module services/browser/agent-browser-guard
  */
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  agentBrowserConfigFileOf,
   agentBrowserStateFileOf,
   isPlaywrightBrowser,
+  unguardableBrowserReason,
   withCloudOriginBlocked,
 } from '@dorkos/shared/agent-browser';
 import {
@@ -44,8 +44,8 @@ import {
   ensureAgentBrowserStateFile,
 } from '../mesh/agent-browser-preset.js';
 
-/** The folder, under the DorkOS data directory, the guarded Playwright MCP configs live in. */
-export const AGENT_BROWSER_CONFIG_SEGMENTS = ['browser', 'guard'] as const;
+/** Path segments, under the DorkOS data directory, of the guarded Playwright MCP config. */
+export const AGENT_BROWSER_CONFIG_SEGMENTS = ['browser', 'agent-browser-guard.json'] as const;
 
 const RESOLVER_FLAG = '--host-resolver-rules=';
 
@@ -129,50 +129,19 @@ export function scrubAgentBrowserState(
 }
 
 /**
- * The guarded Playwright MCP config: the operator's own `--config` settings,
- * when they named a readable one, with Chrome told that every Cloud host
- * resolves to nothing.
- *
- * @param operatorConfig - The config file the manifest named, if any.
- * @param entries - The Cloud list.
- */
-function guardedConfig(
-  operatorConfig: string | undefined,
-  entries: readonly CloudOriginEntry[]
-): string {
-  let config: Record<string, unknown> = {};
-  if (operatorConfig) {
-    try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(operatorConfig, 'utf8'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-        config = parsed as Record<string, unknown>;
-    } catch {
-      // An unreadable operator config would have failed the browser anyway; the
-      // guarded one still starts it, blocked.
-    }
-  }
-  const browser = { ...(config.browser as Record<string, unknown> | undefined) };
-  const launchOptions = { ...(browser.launchOptions as Record<string, unknown> | undefined) };
-  const args = Array.isArray(launchOptions.args) ? (launchOptions.args as unknown[]) : [];
-  const isRules = (arg: unknown): arg is string =>
-    typeof arg === 'string' && arg.startsWith(RESOLVER_FLAG);
-  const theirRules = args.filter(isRules).map((arg) => arg.slice(RESOLVER_FLAG.length));
-  const rules = [chromeHostResolverRules(entries), ...theirRules].filter(Boolean).join(', ');
-  launchOptions.args = [...args.filter((arg) => !isRules(arg)), `${RESOLVER_FLAG}${rules}`];
-  browser.launchOptions = launchOptions;
-  return `${JSON.stringify({ ...config, browser }, null, 2)}\n`;
-}
-
-/**
- * Write a guarded config where a browser can load it, named by its content so
- * two agents with different operator configs never overwrite each other's.
- * Rewritten only when missing or different.
+ * Write the guarded Playwright MCP config: Chrome told that every Cloud host
+ * resolves to nothing. Rewritten only when missing or different.
  *
  * @returns The file's path.
  */
-function writeGuardedConfig(dorkHome: string, content: string): string {
-  const digest = createHash('sha256').update(content).digest('hex').slice(0, 16);
-  const file = path.join(dorkHome, ...AGENT_BROWSER_CONFIG_SEGMENTS, `config-${digest}.json`);
+function writeGuardedConfig(dorkHome: string, entries: readonly CloudOriginEntry[]): string {
+  const file = path.join(dorkHome, ...AGENT_BROWSER_CONFIG_SEGMENTS);
+  const config = {
+    browser: {
+      launchOptions: { args: [`${RESOLVER_FLAG}${chromeHostResolverRules(entries)}`] },
+    },
+  };
+  const content = `${JSON.stringify(config, null, 2)}\n`;
   try {
     if (fs.readFileSync(file, 'utf8') === content) return file;
   } catch {
@@ -190,7 +159,14 @@ function writeGuardedConfig(dorkHome: string, content: string): string {
  * @param servers - The servers about to reach a runtime, by name.
  * @param options - The data directory, the Cloud list and a logger, all defaulted.
  */
-export function guardAgentBrowsers<T extends { transport: string; args?: readonly string[] }>(
+export function guardAgentBrowsers<
+  T extends {
+    transport: string;
+    command?: string;
+    args?: readonly string[];
+    env?: Readonly<Record<string, string>>;
+  },
+>(
   servers: Record<string, T>,
   options: {
     dorkHome?: string;
@@ -209,6 +185,13 @@ export function guardAgentBrowsers<T extends { transport: string; args?: readonl
       guarded[name] = connection;
       continue;
     }
+    const reason = unguardableBrowserReason(connection);
+    if (reason) {
+      options.logger?.warn(
+        `[agent-browser] left "${name}" out: ${reason}, so DorkOS cannot keep it off DorkOS Cloud`
+      );
+      continue;
+    }
     ensureAgentBrowserStateFile(connection, dorkHome);
     const stateFile = agentBrowserStateFileOf(connection);
     if (stateFile) {
@@ -222,10 +205,7 @@ export function guardAgentBrowsers<T extends { transport: string; args?: readonl
     }
     let configFile: string;
     try {
-      configFile = writeGuardedConfig(
-        dorkHome,
-        guardedConfig(agentBrowserConfigFileOf(connection), entries)
-      );
+      configFile = writeGuardedConfig(dorkHome, entries);
     } catch {
       options.logger?.warn(
         `[agent-browser] left "${name}" out: DorkOS could not write its DorkOS Cloud block`

@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
-import { cloudOriginEntries, playwrightBlockedOrigins } from '@dorkos/shared/cloud-origin';
+import {
+  chromeHostResolverRules,
+  cloudOriginEntries,
+  playwrightBlockedOrigins,
+} from '@dorkos/shared/cloud-origin';
 import {
   guardAgentBrowsers,
   scrubAgentBrowserState,
@@ -112,48 +116,34 @@ describe('guardAgentBrowsers', () => {
     const args = guarded.browser!.args;
     expect(args[args.indexOf('--blocked-origins') + 1]).toBe(playwrightBlockedOrigins(entries));
     const configFile = args[args.indexOf('--config') + 1]!;
-    expect(configFile.startsWith(path.join(dorkHome, 'browser', 'guard'))).toBe(true);
+    expect(configFile).toBe(path.join(dorkHome, 'browser', 'agent-browser-guard.json'));
     expect(JSON.parse(fs.readFileSync(configFile, 'utf8'))).toEqual({
       browser: {
-        launchOptions: {
-          args: [
-            '--host-resolver-rules=MAP cloud.dorkos.ai ~NOTFOUND, MAP *.cloud.dorkos.ai ~NOTFOUND',
-          ],
-        },
+        launchOptions: { args: [`--host-resolver-rules=${chromeHostResolverRules(entries)}`] },
       },
     });
+    expect(fs.statSync(configFile).mode & 0o777).toBe(0o600);
     expect(readState().cookies.map((c) => c.domain)).toEqual(['github.com']);
   });
 
-  it('carries the operator’s own config over, with the Cloud rules first', () => {
-    const mine = path.join(dorkHome, 'mine.json');
-    fs.writeFileSync(
-      mine,
-      JSON.stringify({
-        browser: {
-          launchOptions: { args: ['--lang=fr', '--host-resolver-rules=MAP a.test 1.2.3.4'] },
-        },
-        timeouts: { action: 9 },
-      })
-    );
+  it.each([
+    ['its own config', ['--config', '/mine.json']],
+    ['a browser it attaches to', ['--cdp-endpoint', 'http://127.0.0.1:9222']],
+    ['the operator’s own Chrome', ['--extension']],
+    ['a second saved session', ['--storage-state=/other.json']],
+  ])('leaves out a browser with %s, and never touches its session', (_label, extra) => {
+    seedOldState();
+    const before = fs.readFileSync(stateFile, 'utf8');
     const connection = agentBrowserConnection(stateFile);
-    connection.args.push('--config', mine);
-    const guarded = guardAgentBrowsers({ browser: connection }, { dorkHome, entries });
-    const args = guarded.browser!.args;
-    const configFile = args[args.indexOf('--config') + 1]!;
-    expect(configFile).not.toBe(mine);
-    expect(args.filter((arg) => arg === '--config')).toHaveLength(1);
-    expect(JSON.parse(fs.readFileSync(configFile, 'utf8'))).toEqual({
-      browser: {
-        launchOptions: {
-          args: [
-            '--lang=fr',
-            '--host-resolver-rules=MAP cloud.dorkos.ai ~NOTFOUND, MAP *.cloud.dorkos.ai ~NOTFOUND, MAP a.test 1.2.3.4',
-          ],
-        },
-      },
-      timeouts: { action: 9 },
-    });
+    connection.args.push(...extra);
+    const warn = vi.fn();
+    const guarded = guardAgentBrowsers(
+      { browser: connection },
+      { dorkHome, entries, logger: { warn } }
+    );
+    expect(guarded).toEqual({});
+    expect(warn).toHaveBeenCalledOnce();
+    expect(fs.readFileSync(stateFile, 'utf8')).toBe(before);
   });
 
   it('leaves out a browser whose session holds a Cloud sign-in it may not edit', () => {

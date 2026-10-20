@@ -3,13 +3,15 @@
  * exact connection `guardAgentBrowsers` hands a runtime, run through the
  * pinned `@playwright/mcp`, never reaches the Cloud origin by any path.
  *
- * A local server plays both an ordinary site and "Cloud": the operator's own
- * config maps the Cloud hosts to it, so a request that got through would be
+ * A local server plays both an ordinary site and "Cloud": a Chrome host rule
+ * sends the Cloud hosts to it, so a request that got through would be
  * counted. A first, unguarded browser proves that mapping works (it reaches
- * fake Cloud through a redirect); the guarded browser then tries a direct
- * visit to the root and to a path, a subdomain, a redirect, a redirect to a
- * subdomain, an iframe, a popup and a page fetch, and fake Cloud must see
- * none of them, while the ordinary site still loads with its saved cookie.
+ * fake Cloud through a redirect). The guarded browser gets the same mapping
+ * added AFTER DorkOS's own rules (Chrome takes the first rule that matches),
+ * then tries a direct visit to the root and to a path, a subdomain, the
+ * website, a redirect, a redirect to a subdomain, an iframe, a popup and a
+ * page fetch. Fake Cloud must see none of them, while the ordinary site still
+ * loads with its saved cookie.
  *
  * It needs the system Chrome and `npx`, so it never runs in CI or in
  * `pnpm test`: it is armed only by `DORKOS_BROWSER_SMOKE=1`, which no task
@@ -76,7 +78,7 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
     root = fs.mkdtempSync(path.join(tmpdir(), 'dorkos-cloud-block-smoke-'));
     server = http.createServer((req, res) => {
       const host = req.headers.host ?? '';
-      if (host.includes('cloud.dorkos.ai')) {
+      if (host.includes('dorkos.ai')) {
         cloudHits.push(`${host}${req.url}`);
         res.end('fake cloud');
         return;
@@ -123,27 +125,18 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
         origins: [],
       })
     );
-    // The operator's own config sends the Cloud hosts to the local server, so a
-    // request that got through would be counted.
+    // Sends every DorkOS host to the local server, so a request that got through is counted.
     const port = new URL(site).port;
-    const mapping = path.join(root, 'operator-config.json');
+    const mapping = `MAP dorkos.ai 127.0.0.1:${port}, MAP *.dorkos.ai 127.0.0.1:${port}`;
+    const mappingFile = path.join(root, 'mapping.json');
     fs.writeFileSync(
-      mapping,
-      JSON.stringify({
-        browser: {
-          launchOptions: {
-            args: [
-              `--host-resolver-rules=MAP cloud.dorkos.ai 127.0.0.1:${port}, MAP *.cloud.dorkos.ai 127.0.0.1:${port}`,
-            ],
-          },
-        },
-      })
+      mappingFile,
+      JSON.stringify({ browser: { launchOptions: { args: [`--host-resolver-rules=${mapping}`] } } })
     );
     const connection = agentBrowserConnection(stateFile);
-    connection.args.push('--config', mapping);
 
     // Control: unguarded, a redirect reaches fake Cloud.
-    const unguarded = await startBrowser(connection.args, root);
+    const unguarded = await startBrowser([...connection.args, '--config', mappingFile], root);
     await unguarded.call('browser_navigate', { url: `${site}/to-cloud` }).catch(() => '');
     await unguarded.close();
     expect(cloudHits.length).toBeGreaterThan(0);
@@ -154,12 +147,22 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
       { dorkHome, entries: cloudOriginEntries() }
     );
     expect(fs.readFileSync(stateFile, 'utf8')).not.toContain('cloud_session');
-    const browser = await startBrowser(guarded.browser!.args, root);
+    const guardedArgs = guarded.browser!.args;
+    const configFile = guardedArgs[guardedArgs.indexOf('--config') + 1]!;
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8')) as {
+      browser: { launchOptions: { args: string[] } };
+    };
+    config.browser.launchOptions.args = config.browser.launchOptions.args.map(
+      (arg) => `${arg}, ${mapping}`
+    );
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    const browser = await startBrowser(guardedArgs, root);
     try {
       const direct = await browser.call('browser_navigate', { url: 'http://cloud.dorkos.ai/' });
       expect(direct).toContain('net::ERR_BLOCKED_BY_CLIENT');
       await browser.call('browser_navigate', { url: 'http://cloud.dorkos.ai/any/path' });
       await browser.call('browser_navigate', { url: 'https://app.cloud.dorkos.ai/' });
+      await browser.call('browser_navigate', { url: 'http://dorkos.ai/any/path' });
       const redirected = await browser.call('browser_navigate', { url: `${site}/to-cloud` });
       expect(redirected).toContain('net::ERR_NAME_NOT_RESOLVED');
       await browser.call('browser_navigate', { url: `${site}/to-cloud-sub` });

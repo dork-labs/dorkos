@@ -199,8 +199,10 @@ export class LocalBrowserService {
       );
   }
 
-  /** A tool may describe the selected tab only, never other browser tabs. */
+  /** A tool may describe the selected tab only, never other browser tabs, and never a Cloud one. */
   async agentState(): Promise<LocalBrowserState> {
+    const selected = this.tabs.get(this.selectedTabId ?? '');
+    if (selected && !selected.isClosed()) this.refuseCloudPage(selected);
     return this.snapshot(true);
   }
 

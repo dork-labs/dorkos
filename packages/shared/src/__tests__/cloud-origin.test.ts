@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLOUD_ORIGIN,
   CLOUD_ORIGIN_REFUSAL,
+  CLOUD_WEBSITE,
   chromeHostResolverRules,
   cloudOriginEntries,
   cookieReachesCloud,
@@ -12,29 +13,35 @@ import {
 import { links } from '../links.js';
 
 describe('the Cloud origin list', () => {
-  it('is the production Cloud origin when nothing is configured', () => {
+  const production = [
+    { kind: 'host', host: 'cloud.dorkos.ai' },
+    { kind: 'host', host: 'dorkos.ai' },
+  ];
+
+  it('is the production Cloud origin and the website when nothing is configured', () => {
     expect(CLOUD_ORIGIN).toBe(links.cloudApi);
-    expect(cloudOriginEntries()).toEqual([{ kind: 'host', host: 'cloud.dorkos.ai' }]);
+    expect(CLOUD_WEBSITE).toBe(links.site);
+    expect(cloudOriginEntries()).toEqual(production);
   });
 
-  it('adds the configured Cloud service, but never the default website', () => {
+  it('adds the configured Cloud addresses, once each', () => {
     expect(
-      cloudOriginEntries({ DORKOS_CLOUD_URL: links.site, DORKOS_CLOUD_API_URL: undefined })
-    ).toEqual([{ kind: 'host', host: 'cloud.dorkos.ai' }]);
+      cloudOriginEntries({ DORKOS_CLOUD_URL: links.site, DORKOS_CLOUD_API_URL: links.cloudApi })
+    ).toEqual(production);
     expect(
       cloudOriginEntries({
         DORKOS_CLOUD_URL: 'http://localhost:3000',
         DORKOS_CLOUD_API_URL: 'https://staging.cloud.example/',
       })
     ).toEqual([
-      { kind: 'host', host: 'cloud.dorkos.ai' },
+      ...production,
       { kind: 'host', host: 'staging.cloud.example' },
       { kind: 'origin', protocol: 'http:', host: 'localhost', port: '3000' },
     ]);
   });
 
   it('ignores a configured value that is not a web address', () => {
-    expect(cloudOriginEntries({ DORKOS_CLOUD_API_URL: 'not a url' })).toHaveLength(1);
+    expect(cloudOriginEntries({ DORKOS_CLOUD_API_URL: 'not a url' })).toEqual(production);
   });
 
   it('keeps the refusal short enough for app copy', () => {
@@ -51,16 +58,21 @@ describe('isCloudOriginUrl', () => {
     'https://CLOUD.dorkos.ai./',
     'https://app.cloud.dorkos.ai/',
     'https://a.b.cloud.dorkos.ai/',
+    'https://dorkos.ai/',
+    'https://dorkos.ai/any/path',
+    'https://www.dorkos.ai/',
+    'https://approve.dorkos.ai/',
+    'blob:https://cloud.dorkos.ai/0b1c',
+    'https://user@cloud.dorkos.ai/',
   ])('matches %s', (url) => {
     expect(isCloudOriginUrl(url)).toBe(true);
   });
 
   it.each([
-    'https://dorkos.ai/',
-    'https://dorkos.ai/docs',
-    'https://approve.dorkos.ai/',
-    'https://evilcloud.dorkos.ai/',
+    'https://notdorkos.ai/',
     'https://cloud.dorkos.ai.example.com/',
+    'https://cloud.dorkos.ai@example.com/',
+    'blob:https://example.com/0b1c',
     'https://example.com/?next=https://cloud.dorkos.ai/',
     'about:blank',
     'not a url',
@@ -77,15 +89,17 @@ describe('isCloudOriginUrl', () => {
 });
 
 describe('cookieReachesCloud', () => {
-  it.each(['cloud.dorkos.ai', '.cloud.dorkos.ai', 'app.cloud.dorkos.ai', '.dorkos.ai'])(
-    'treats a cookie for %s as a Cloud cookie',
-    (domain) => {
-      expect(cookieReachesCloud(domain)).toBe(true);
-    }
-  );
+  it.each([
+    'cloud.dorkos.ai',
+    '.cloud.dorkos.ai',
+    'app.cloud.dorkos.ai',
+    'dorkos.ai',
+    '.dorkos.ai',
+  ])('treats a cookie for %s as a Cloud cookie', (domain) => {
+    expect(cookieReachesCloud(domain)).toBe(true);
+  });
 
-  // A host-only `dorkos.ai` cookie is never sent to a subdomain, so it is not Cloud's.
-  it.each(['dorkos.ai', 'github.com', '.github.com', 'evilcloud.dorkos.ai', ''])(
+  it.each(['github.com', '.github.com', 'notdorkos.ai', 'dorkos.ai.example.com', ''])(
     'keeps a cookie for %s',
     (domain) => {
       expect(cookieReachesCloud(domain)).toBe(false);
@@ -113,20 +127,17 @@ describe('withoutCloudOrigin', () => {
 });
 
 describe('the browser forms of the list', () => {
-  it('blocks the Cloud host and its subdomains, on any port, in Playwright MCP', () => {
-    expect(playwrightBlockedOrigins().split(';')).toEqual([
-      'cloud.dorkos.ai',
-      'http://cloud.dorkos.ai:*',
-      'https://cloud.dorkos.ai:*',
-      '*.cloud.dorkos.ai',
-      'http://*.cloud.dorkos.ai:*',
-      'https://*.cloud.dorkos.ai:*',
-    ]);
+  it('blocks each host and its subdomains, on any port, in Playwright MCP', () => {
+    expect(playwrightBlockedOrigins().split(';')).toEqual(
+      ['cloud.dorkos.ai', 'dorkos.ai'].flatMap((host) =>
+        [host, `*.${host}`].flatMap((h) => [h, `http://${h}:*`, `https://${h}:*`])
+      )
+    );
   });
 
   it('makes the Cloud hosts unresolvable in Chrome, and never all of localhost', () => {
     expect(chromeHostResolverRules()).toBe(
-      'MAP cloud.dorkos.ai ~NOTFOUND, MAP *.cloud.dorkos.ai ~NOTFOUND'
+      'MAP cloud.dorkos.ai ~NOTFOUND, MAP *.cloud.dorkos.ai ~NOTFOUND, MAP dorkos.ai ~NOTFOUND, MAP *.dorkos.ai ~NOTFOUND'
     );
     const local = cloudOriginEntries({ DORKOS_CLOUD_URL: 'http://localhost:3000' });
     expect(chromeHostResolverRules(local)).not.toContain('localhost');
