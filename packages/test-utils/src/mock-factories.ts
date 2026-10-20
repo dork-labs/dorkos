@@ -656,7 +656,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       // for a remote client renders its LOCAL variant by default. A test about
       // the remote experience overrides this to `false` and says so.
       isLocalCaller: true,
-      onTrustedConnection: true,
       port: 4242,
       uptime: 0,
       workingDirectory: '/test',

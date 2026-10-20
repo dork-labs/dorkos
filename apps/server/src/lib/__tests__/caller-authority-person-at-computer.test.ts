@@ -97,13 +97,14 @@ describe('requirePersonAtThisComputer', () => {
   ] as const)(
     'refuses everyone but the owner’s browser session through %s',
     async (_l, ingress) => {
-      for (const described of [
+      const callers: DescribedRequest[] = [
         {},
         { user: OWNER_KEY },
         { user: GUEST_COOKIE },
         { user: OWNER_COOKIE, headers: { 'x-dorkos-agent': 't' } },
         { user: OWNER_COOKIE, headers: { [APPROVAL_TOKEN_HEADER]: 'tok' } },
-      ]) {
+      ];
+      for (const described of callers) {
         expect(requirePersonAtThisComputer(await through(ingress, described))).toBe('not-a-person');
       }
     }

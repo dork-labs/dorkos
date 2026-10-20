@@ -109,7 +109,7 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 let agentHeader: string | undefined;
 
 /** The listener a request arrived through, when not the main one (DOR-2969). */
-let arrivedVia: 'wifi' | 'own-tunnel' | undefined;
+let arrivedVia: 'wifi' | 'own-tunnel' | 'managed' | undefined;
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
