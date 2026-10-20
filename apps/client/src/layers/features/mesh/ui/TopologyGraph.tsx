@@ -7,7 +7,7 @@
  *
  * @module features/mesh/ui/TopologyGraph
  */
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -26,6 +26,7 @@ import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
 import { TopologyLegend } from './TopologyLegend';
+import { OpenMeshNote } from './OpenMeshNote';
 import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
@@ -105,6 +106,10 @@ function TopologyGraphInner({
 
   const namespaces = topology?.namespaces;
   const accessRules = topology?.accessRules;
+  const openMesh = topology?.openMesh ?? false;
+  // Set when ELK refuses the graph, so the map says so instead of drawing an
+  // empty canvas (DOR-3154).
+  const [layoutFailed, setLayoutFailed] = useState(false);
 
   // Adapter & binding data (only fetched when Relay is enabled).
   const relayEnabled = useRelayEnabled();
@@ -239,11 +244,17 @@ function TopologyGraphInner({
           });
           setLayoutedNodes(merged);
           setLayoutedEdges(rawEdges);
+          setLayoutFailed(false);
           setIsLayouting(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) setIsLayouting(false);
+      .catch((err: unknown) => {
+        // A refused layout leaves the map with no nodes, so say why (DOR-3154).
+        console.warn('[topology] layout failed; the map has no nodes to draw', err);
+        if (!cancelled) {
+          setLayoutFailed(true);
+          setIsLayouting(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -282,6 +293,20 @@ function TopologyGraphInner({
         title="Couldn’t draw the map of your agents"
         description="Couldn’t reach DorkOS. Check that it’s running."
         onRetry={() => void refetch()}
+      />
+    );
+  }
+
+  if (layoutFailed && layoutedNodes.length === 0) {
+    return (
+      <QueryErrorState
+        className="h-full"
+        title="Couldn’t draw the map of your agents"
+        description="The map couldn’t be laid out. Try again."
+        onRetry={() => {
+          void refetch();
+          handleResetLayout();
+        }}
       />
     );
   }
@@ -392,6 +417,7 @@ function TopologyGraphInner({
         )}
         <TopologyLegend namespaces={legendEntries} />
       </ReactFlow>
+      {openMesh && <OpenMeshNote />}
       {/* Contextual hints for adapter/binding onboarding */}
       {relayEnabled && hasAgents && !hasAdapters && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
