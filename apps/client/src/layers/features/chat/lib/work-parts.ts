@@ -19,7 +19,8 @@ import { isConnectionRequestTool } from '@/layers/features/connections';
  *
  * Never work, because each one is for the person: a question, an approval
  * (asked or answered), an agent's request for an app, a message to another
- * chat, and every notice and error. Those stay in the conversation.
+ * chat, a tool that draws an app the person uses (an MCP App's `ui://`
+ * reference), and every notice and error. Those stay in the conversation.
  *
  * @param part - One part of an assistant message.
  */
@@ -29,6 +30,7 @@ export function isWorkPart(part: MessagePart): boolean {
   return (
     part.type === 'tool_call' &&
     !part.interactiveType &&
+    !part.ui &&
     !isConnectionRequestTool(part.toolName) &&
     !isMessagingToolName(part.toolName)
   );
