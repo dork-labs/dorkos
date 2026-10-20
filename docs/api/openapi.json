@@ -14382,6 +14382,52 @@
           "source"
         ]
       },
+      "AgentLevelResponse": {
+        "type": "object",
+        "properties": {
+          "effective": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "effectiveMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "declared": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "cappedByPerson": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "effective",
+          "effectiveMode",
+          "declared",
+          "cappedByPerson"
+        ]
+      },
       "PatchAgentPermissionsBody": {
         "type": "object",
         "properties": {
@@ -83233,6 +83279,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/level": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read the level an agent runs at",
+        "description": "The Files & commands level a new chat of this agent starts at, before any per-chat limit, the level its runtime's agents get by default, and whether a person's setting holds it lower.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLevelResponse"
                 }
               }
             }
