@@ -79,14 +79,16 @@ describe('OperatorIdentityForm', () => {
   it('keeps a saved name when the handle is refused, and retries only the handle', async () => {
     const onSaved = await renderForm();
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error('reserved'), { code: 'HANDLE_RESERVED' })
+      Object.assign(new Error('@everyone is reserved for DorkOS. Pick a different one.'), {
+        code: 'HANDLE_RESERVED',
+      })
     );
 
     fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Kai' } });
     fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'everyone' } });
     fireEvent.click(screen.getByTestId('confirm-identity'));
 
-    expect(await screen.findByText(/@everyone is spoken for/)).toBeTruthy();
+    expect(await screen.findByText(/@everyone is reserved for DorkOS/)).toBeTruthy();
     expect(onSaved).not.toHaveBeenCalled();
     expect(mockTransport.updateProfile).toHaveBeenCalledTimes(1);
     // The name survived the refusal: still in the field, still saved.
@@ -94,7 +96,7 @@ describe('OperatorIdentityForm', () => {
 
     fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'kai' } });
     // Typing is acting on the refusal, so its sentence goes.
-    expect(screen.queryByText(/@everyone is spoken for/)).toBeNull();
+    expect(screen.queryByText(/@everyone is reserved for DorkOS/)).toBeNull();
     fireEvent.click(screen.getByTestId('confirm-identity'));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -145,9 +147,7 @@ describe('OperatorIdentityForm', () => {
     fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'kai' } });
     fireEvent.click(screen.getByTestId('confirm-identity'));
 
-    expect(
-      await screen.findByText('@kai belongs to someone else. Pick a different one.')
-    ).toBeTruthy();
+    expect(await screen.findByText('@kai is taken. Pick a different one.')).toBeTruthy();
     expect(toast.error).not.toHaveBeenCalled();
   });
 

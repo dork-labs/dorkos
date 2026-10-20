@@ -372,6 +372,7 @@ describe('the rows', () => {
     await renderProfile(MANAGED);
     expect(rowLabels()).toEqual([
       'about',
+      'handle',
       'runs-on',
       'personality',
       'reports-to',

@@ -66,9 +66,9 @@ export function FieldNote({ tone, children }: { tone: 'error' | 'ok'; children: 
   );
 }
 
-/** What every field card is handed: the operator's own roster row. */
+/** What every field card is handed: the roster row it edits. */
 export interface ProfileFieldProps {
-  /** The operator's own roster row. */
+  /** The operator's own roster row, or, for the handle, an agent they manage. */
   member: TeamMember;
 }
 
@@ -212,38 +212,50 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
   );
 }
 
-/** Your `@handle`: what people and agents type to reach you. */
+/**
+ * An `@handle`: what people and agents type to reach you, or to reach an agent
+ * you manage (DOR-3156). Same field, same route; only the author id differs —
+ * an agent's roster `id` is its manifest id, so its author id rides its facts.
+ */
 export function ProfileHandleField({ member }: ProfileFieldProps) {
   const mounted = useMountedRef();
   const setHandle = useSetAuthorHandle({ isShownInline: () => mounted.current });
   const [handle, setHandleText] = useServerSeededDraft(member.handle ?? '');
   const handleChanged = handle.trim() !== (member.handle ?? '');
+  const isAgent = member.kind === 'agent';
+  const authorId = isAgent ? member.agent?.authorId : member.id;
 
   return (
     <FieldCard>
       <FieldCardContent className="space-y-3">
         <SettingRow
           label="Handle"
-          description="What others type after @ to reach you."
+          description={
+            isAgent
+              ? 'What others type after @ to reach this agent.'
+              : 'What others type after @ to reach you.'
+          }
           orientation="vertical"
         >
           <div className="flex gap-2">
             <Input
               value={handle}
               maxLength={64}
-              placeholder="yourname"
+              placeholder={isAgent ? 'agentname' : 'yourname'}
               aria-label="Handle"
+              disabled={!authorId}
               onChange={(e) => setHandleText(e.target.value)}
             />
             <Button
               size="sm"
-              disabled={!handleChanged || setHandle.isPending}
-              onClick={() => setHandle.mutate({ authorId: member.id, handle: handle.trim() })}
+              disabled={!authorId || !handleChanged || setHandle.isPending}
+              onClick={() => authorId && setHandle.mutate({ authorId, handle: handle.trim() })}
             >
               Save
             </Button>
           </div>
         </SettingRow>
+        {!authorId && <FieldNote tone="ok">It gets a handle when it first joins a room.</FieldNote>}
         {setHandle.isError && (
           <FieldNote tone="error">{handleErrorMessage(setHandle.error, handle.trim())}</FieldNote>
         )}

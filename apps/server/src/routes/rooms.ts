@@ -55,6 +55,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { renameAuthorHandle } from '../services/rooms/handles/rename-author-handle.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
@@ -443,6 +444,10 @@ router.patch('/:id/members/:authorId', (c) => {
  * owner and renamed as the person — in a loop, at whatever rate it liked, which
  * is precisely the mechanism this route claims not to have.
  *
+ * **A person may rename an agent** (DOR-3156), from any device they are signed
+ * in on (DOR-3172). A rename of an agent writes one quiet line in each room it
+ * is in (`renameAuthorHandle`).
+ *
  * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
  * mistaken for a room id, because a room id is a ULID and this path has a second
  * segment matched literally.
@@ -455,7 +460,9 @@ router.patch('/authors/:authorId/handle', (c) => {
       throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
     }
     return c.json(
-      toAuthorRef(getRoomService().authorRegistry.setHandle(c.req.param('authorId'), body.handle))
+      toAuthorRef(
+        renameAuthorHandle(getRoomService(), caller().id, c.req.param('authorId'), body.handle)
+      )
     );
   });
 });

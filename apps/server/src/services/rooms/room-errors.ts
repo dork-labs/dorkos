@@ -51,11 +51,17 @@ export type RoomErrorCode =
   | 'HANDLE_TAKEN'
   /**
    * A handle somebody asked for is tombstoned to another author, or is one of
-   * the seeded broadcast reservations (`everyone`, `here`, `channel`). A freed
+   * the seeded broadcast reservations (`everyone`, `here`, `channel`, `room`). A freed
    * handle stays its original author's forever, and they may take it back
    * (spec `handles` §3).
    */
   | 'HANDLE_RESERVED'
+  /**
+   * A handle somebody asked for reads as another author's, live or released,
+   * once both are case-folded and skeletoned by Unicode TR39 (`d0rian` beside
+   * `dorian`, DOR-3156). The message names the handle it looks like.
+   */
+  | 'HANDLE_LOOKALIKE'
   /** A handle somebody asked for fails the grammar in `@dorkos/shared/handle`. */
   | 'INVALID_HANDLE'
   | 'NESTED_THREAD'

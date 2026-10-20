@@ -236,6 +236,17 @@ function formatDate(iso: string): string | null {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** The Handle row: what people type after @, and the page that changes it. */
+function handleRow(member: TeamMember): ProfileRowModel {
+  return {
+    id: 'handle',
+    kind: 'nav',
+    label: 'Handle',
+    value: member.handle === null ? 'Add a handle' : `@${member.handle}`,
+    page: 'handle',
+  };
+}
+
 /** Your own rows: the four things about you, then the two lists you are in. */
 function selfRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   return [
@@ -243,13 +254,7 @@ function selfRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[
       id: 'identity',
       rows: [
         { id: 'name', kind: 'nav', label: 'Name', value: member.displayName, page: 'name' },
-        {
-          id: 'handle',
-          kind: 'nav',
-          label: 'Handle',
-          value: member.handle === null ? 'Add a handle' : `@${member.handle}`,
-          page: 'handle',
-        },
+        handleRow(member),
         {
           id: 'photo',
           kind: 'nav',
@@ -409,6 +414,9 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
   const folder = member.agent?.projectPath;
   const setup: ProfileRowModel[] = [
     { id: 'about', kind: 'nav', label: 'About', value: ctx.description ?? null, page: 'about' },
+    // A person may rename an agent they manage (DOR-3156), on the same page as
+    // their own handle.
+    handleRow(member),
     { id: 'runs-on', kind: 'pick', label: 'Runs on', value: runsOnValue(member), pick: 'runs-on' },
     {
       id: 'personality',

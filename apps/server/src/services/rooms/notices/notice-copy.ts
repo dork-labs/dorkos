@@ -953,3 +953,36 @@ export function buildRoomArchivedNotice(agentName: string, subjectAuthorId: stri
     subjectAuthorId,
   };
 }
+
+/**
+ * The quiet `handle_changed` line for an agent a person gave a new handle
+ * (DOR-3156), written once in each room the agent is in.
+ *
+ * It names both handles, because the reader's next message is the one it
+ * changes: `@ana` no longer reaches anybody, and `@ana-pm` does. Earlier
+ * messages are untouched, since every mention was resolved to the agent when it
+ * was sent.
+ *
+ * @param by - The person who renamed it, as a room line names them.
+ * @param agentName - Display name of the agent.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param from - The handle it had, or `null` when it had none.
+ * @param to - The handle it has now, or `null` when it was cleared.
+ */
+export function buildHandleChangedNotice(
+  by: string,
+  agentName: string,
+  subjectAuthorId: string,
+  from: string | null,
+  to: string | null
+): RoomEntryBody {
+  // A line starts with a capital even when the person is "the operator".
+  const who = by.charAt(0).toUpperCase() + by.slice(1);
+  const text =
+    to === null
+      ? `${who} removed ${agentName}'s handle @${from}.`
+      : from === null
+        ? `${who} gave ${agentName} the handle @${to}.`
+        : `${who} renamed ${agentName} from @${from} to @${to}.`;
+  return { text, notice: 'handle_changed', subjectAuthorId };
+}
