@@ -1,7 +1,8 @@
-import { useCallback, Fragment } from 'react';
+import { useCallback, useMemo, Fragment } from 'react';
 import type { ChatMessage } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
+import { isWorkPart } from '../../lib/work-parts';
 import { isSettledQuestion, questionEnding } from '../../lib/question-state';
 import { StreamingText } from './StreamingText';
 import {
@@ -52,12 +53,30 @@ function isCollapsiblePart(part: NonNullable<ChatMessage['parts']>[number]): boo
 }
 
 /**
+ * Which of a reply's parts to draw (DOR-3075).
+ *
+ * - `all` — everything, the way a session draws it.
+ * - `reply` — what the agent said and asked, for a chat drawn as a DM. Its
+ *   work (thinking, tool calls, todos, subagents) is left to the line under
+ *   the reply and to the Work tab.
+ * - `work` — the work alone, every step shown and none hidden, for the Work tab.
+ */
+export type AssistantContentShow = 'all' | 'reply' | 'work';
+
+/**
  * Renders assistant message content by mapping over message parts.
  * Handles text parts (via StreamingText), tool call parts (via AutoHideToolCall),
  * approval parts (via ApprovalPrompt), and question parts (via QuestionPrompt).
  * Reads session/interaction state from MessageContext instead of props.
  */
-export function AssistantMessageContent({ message }: { message: ChatMessage }) {
+export function AssistantMessageContent({
+  message,
+  show = 'all',
+}: {
+  message: ChatMessage;
+  /** Which of the parts to draw. See {@link AssistantContentShow}. */
+  show?: AssistantContentShow;
+}) {
   const {
     sessionId,
     isStreaming,
@@ -78,8 +97,15 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
   // Two fields, not the whole store: any app-store write used to redraw every
   // assistant row, memoized or not (DOR-2895).
   const expandToolCalls = useAppStore((s) => s.expandToolCalls);
-  const autoHideToolCalls = useAppStore((s) => s.autoHideToolCalls);
-  const parts = message.parts ?? [];
+  // The Work tab exists to show every step, so nothing there hides itself.
+  const autoHideToolCalls = useAppStore((s) => s.autoHideToolCalls) && show !== 'work';
+  const allParts = message.parts ?? [];
+  // A part left out is not drawn at all, so the runs below never see it.
+  const parts = useMemo(
+    () =>
+      show === 'all' ? allParts : allParts.filter((part) => isWorkPart(part) === (show === 'work')),
+    [allParts, show]
+  );
   // What this chat sent other chats — the Sent cards' live state. One shared
   // read per chat however many messages ask for it.
   const { sent } = useChatActivity(sessionId);
@@ -518,7 +544,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         const elements = seg.indices.map((i) => renderPart(parts[i], i));
         return (
           <div key={`run-${seg.indices[0]}`} className="my-3">
-            <CollapsibleRun>{elements}</CollapsibleRun>
+            {show === 'work' ? elements : <CollapsibleRun>{elements}</CollapsibleRun>}
           </div>
         );
       })}
@@ -531,11 +557,13 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           gaps between tool calls instead of collapsing and reopening on each
           one. A message read back from history never carries it, so a reopened
           transcript shows the settled summary and nothing moves. */}
-      <TouchChipStrip
-        parts={parts}
-        sessionId={sessionId}
-        turnActive={message._streaming === true}
-      />
+      {show !== 'reply' && (
+        <TouchChipStrip
+          parts={parts}
+          sessionId={sessionId}
+          turnActive={message._streaming === true}
+        />
+      )}
     </>
   );
 }
