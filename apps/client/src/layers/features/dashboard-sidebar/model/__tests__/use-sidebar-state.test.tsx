@@ -347,3 +347,37 @@ describe('useSidebarState — the open chat’s agent (DOR-2845)', () => {
     });
   });
 });
+
+describe('useSidebarState — @mentions come from the room list (BC-40)', () => {
+  afterEach(() => {
+    ROOMS.length = 0;
+    cleanup();
+  });
+
+  /** A channel as the room list carries it. */
+  function listed(id: string, extra: Record<string, unknown>) {
+    return {
+      id,
+      kind: 'channel',
+      slug: id,
+      title: id,
+      topic: null,
+      archived: false,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      lastActivityAt: '2026-10-01T00:00:00.000Z',
+      participants: null,
+      ...extra,
+    };
+  }
+
+  it('carries each room’s server-counted mentions, and leaves out rooms with none', () => {
+    ROOMS.push(
+      listed('named', { unreadCount: 5, mentionCount: 2 }),
+      listed('busy', { unreadCount: 40, mentionCount: 0 }),
+      // A room the viewer is not in has no cursor, so the server sends no count.
+      listed('outside', { unreadCount: null })
+    );
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.mentions).toEqual({ named: 2 });
+  });
+});

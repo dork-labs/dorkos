@@ -271,6 +271,23 @@ describe('useRoomListStream', () => {
       expect(badge(queryClient, 'room-2')).toBe(4);
     });
 
+    it('caps the mention count at what is still unread, and clears it with the room', () => {
+      const { queryClient } = setup();
+      queryClient.setQueryData(['rooms', 'list', null], [
+        { id: 'room-1', kind: 'channel', title: 'Backend', unreadCount: 6, mentionCount: 3 },
+      ] as unknown as RoomSummary[]);
+      const mentions = () =>
+        queryClient.getQueryData<RoomSummary[]>(['rooms', 'list', null])?.[0]?.mentionCount;
+
+      // Two messages still above the other device's cursor: at most two of them
+      // can name the reader.
+      handlers.get('read_cursor')!(cursorEvent({ unreadCount: 2 }));
+      expect(mentions()).toBe(2);
+
+      handlers.get('read_cursor')!(cursorEvent({ unreadCount: 0 }));
+      expect(mentions()).toBe(0);
+    });
+
     it('moves the open room copy of the cursor, so the reader is not re-marked', () => {
       const { queryClient } = setup();
       seedOpenRoom(queryClient, 'me', 2);

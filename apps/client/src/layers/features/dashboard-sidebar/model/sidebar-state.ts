@@ -290,13 +290,18 @@ export interface SidebarState {
    */
   lastTouchedByYouAt: Readonly<Record<string, string>>;
   /**
-   * Room id → how many times the operator is @mentioned above their read
-   * cursor.
+   * Room id → how many unread entries @mention the operator, from
+   * `RoomSummary.mentionCount`.
    *
    * **Beyond §A2's table, and unavoidable.** BC-40's one exception — "@mentions
    * pierce mute" — cannot be evaluated without knowing that a mention exists,
-   * and `RoomSummary.unreadCount` counts messages rather than mentions. A room
-   * absent from this map has no mentions the client knows about.
+   * and `RoomSummary.unreadCount` counts messages rather than mentions. It is
+   * also what turns a channel's bold name into a number: a channel only counts
+   * what was aimed at you.
+   *
+   * The server counts it from the room log above the operator's read cursor,
+   * never from notifications, so it clears when the room is read. A room
+   * absent from this map has no unread mentions, or a source that cannot say.
    */
   mentions: Readonly<Record<string, number>>;
   /**

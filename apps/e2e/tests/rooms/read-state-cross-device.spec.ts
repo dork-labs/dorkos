@@ -15,11 +15,16 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
  * ADR 260808-140956).
  *
  * The promise is small to say and impossible to test anywhere but here: read a
- * conversation on your laptop and its unread badge goes out on your phone,
- * straight away, without anybody refreshing anything. Every layer under this is
+ * conversation on your laptop and its bold unread name goes back to regular
+ * weight on your phone, straight away, without anybody refreshing anything.
+ *
+ * **Bold, not a number.** A channel's new messages make its row bold and draw
+ * no count — a count is only for messages aimed at you — so the row's
+ * `data-row-state` is what is read here: `emphasized` while unread, `quiet`
+ * once read elsewhere, `active` on the device that opened it. Every layer under this is
  * unit-tested — the store's monotonic write, the route's delegation into the
  * rooms domain, the broadcast, the client's patch of the room list — and all of
- * them can be green while the badge on the second screen stays lit, because
+ * them can be green while the second screen stays bold, because
  * what joins them is a live SSE connection held by a browser this process does
  * not own.
  *
@@ -32,7 +37,7 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
  * **What makes the assertion mean something.** The room list is not polled:
  * there is no `refetchInterval` anywhere in `entities/room`, and the second
  * cockpit issues no mutation of its own. So the only thing that can take that
- * badge down is the `read_cursor` frame arriving on its global event stream. If
+ * bold away is the `read_cursor` frame arriving on its global event stream. If
  * the broadcast is removed, nothing else clears it and this goes red — which is
  * the check being provable, not merely present.
  *
@@ -40,7 +45,7 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
  * an agent turn.
  */
 test.describe('Read state — one mark, every device @smoke', () => {
-  test('M-08: reading a room on one device takes its badge down on the other', async ({
+  test('M-08: reading a room on one device takes its bold away on the other', async ({
     browser,
     page,
     basePage,
@@ -49,19 +54,22 @@ test.describe('Read state — one mark, every device @smoke', () => {
   }) => {
     const slug = `e2e-xdev-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug);
-    // Three entries nobody has read. Three is the number asserted below, not
-    // "some" — a badge that reads a different count is a different bug.
+    // Three entries nobody has read, and none of them names the reader — so
+    // the row is bold and carries no count.
     await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
-    // The badge comes off the room LIST, which lags the entry write. Waiting
-    // here keeps a slow projection from being reported as a missing badge.
+    // The bold comes off the room LIST, which lags the entry write. Waiting
+    // here keeps a slow projection from being reported as a missing signal.
     await roomsApi.waitForUnread(room.id, 3);
 
     // Device one: the fixture's own page.
     await openCockpit(basePage);
     const rowA = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
-    await expect(rowA).toHaveAccessibleName(`#${slug} 3 unread`, {
+    await expect(rowA).toHaveAttribute('data-row-state', 'emphasized', {
       timeout: SERVER_ROUND_TRIP_MS,
     });
+    // A channel only counts what was aimed at you: the name is said once and
+    // nothing follows it.
+    await expect(rowA).toHaveAccessibleName(`#${slug}`);
 
     // Device two: a second context, opened AFTER the room exists so its first
     // read of the room list already holds it (see `openCockpit`).
@@ -74,9 +82,9 @@ test.describe('Read state — one mark, every device @smoke', () => {
       const rowB = roomsPageB.rowIn(roomsPageB.channels, `#${slug}`);
       // Both screens agree it is unread before anybody reads it. Asserting this
       // is what stops the test passing on a second cockpit that never rendered
-      // the room at all — "no badge" would otherwise be indistinguishable from
+      // the room at all — "not bold" would otherwise be indistinguishable from
       // "no row".
-      await expect(rowB).toHaveAccessibleName(`#${slug} 3 unread`, {
+      await expect(rowB).toHaveAttribute('data-row-state', 'emphasized', {
         timeout: SERVER_ROUND_TRIP_MS,
       });
 
@@ -86,13 +94,15 @@ test.describe('Read state — one mark, every device @smoke', () => {
         timeout: SERVER_ROUND_TRIP_MS,
       });
       await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
-      await expect(rowA).toHaveAccessibleName(`#${slug}`);
+      await expect(rowA).toHaveAttribute('data-row-state', 'active');
 
-      // And device two puts its badge away, having been told. Deliberately no
+      // And device two drops the bold, having been told. Deliberately no
       // `pageB.reload()` between the click and this line: a reload would prove
       // only that the server stored the cursor, which the route tests already
       // say. What is on trial here is the live path.
-      await expect(rowB).toHaveAccessibleName(`#${slug}`, { timeout: SERVER_ROUND_TRIP_MS });
+      await expect(rowB).toHaveAttribute('data-row-state', 'quiet', {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
     } finally {
       await secondDevice.close();
     }
@@ -104,7 +114,7 @@ test.describe('Read state — one mark, every device @smoke', () => {
     roomsPage,
     basePage,
   }) => {
-    // The other half of "one mark": durability. The test above proves the badge
+    // The other half of "one mark": durability. The test above proves the bold
     // moves live; this one proves the thing it moved to is stored per PERSON
     // and not per browser — a fresh context, which has never seen this room and
     // holds no storage of its own, must open already knowing it is read.
@@ -118,13 +128,13 @@ test.describe('Read state — one mark, every device @smoke', () => {
 
     await openCockpit(basePage);
     const rowA = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
-    await expect(rowA).toHaveAccessibleName(`#${slug} 2 unread`, {
+    await expect(rowA).toHaveAttribute('data-row-state', 'emphasized', {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await rowA.click();
-    // Waiting on the SERVER's count rather than on the badge: this test is
+    // Waiting on the SERVER's count rather than on the row: this test is
     // about what a later reader is told, so the write has to have landed before
-    // that reader loads. Asserting the badge would leave the second cockpit
+    // that reader loads. Asserting the row would leave the second cockpit
     // racing the cursor write.
     await roomsApi.waitForUnread(room.id, 0);
 
@@ -136,8 +146,9 @@ test.describe('Read state — one mark, every device @smoke', () => {
 
       const rowB = roomsPageB.rowIn(roomsPageB.channels, `#${slug}`);
       await expect(rowB).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      // Cold, from storage this browser has never written to: no badge, and the
-      // name said once.
+      // Cold, from storage this browser has never written to: not bold, and
+      // the name said once.
+      await expect(rowB).toHaveAttribute('data-row-state', 'quiet');
       await expect(rowB).toHaveAccessibleName(`#${slug}`);
     } finally {
       await laterDevice.close();

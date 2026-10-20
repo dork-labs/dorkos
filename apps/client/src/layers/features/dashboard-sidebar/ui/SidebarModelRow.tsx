@@ -32,7 +32,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { ContributedIcon, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { ContributedIcon, CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
@@ -40,6 +40,7 @@ import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
+import { directedCountLabel } from './rooms/directed-count-label';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { buildRowMotion } from './motion/sidebar-motion';
 import { useSidebarChrome } from './SidebarChrome';
@@ -464,9 +465,8 @@ function GenericRowFromModel({
       }
       {...(leavesPanel ? { titleText: row.primary } : {})}
       isActive={isActive}
-      // Muted drops every signal the row was using to ask for something — the
-      // bold, and the badge below — and keeps the label at full contrast
-      // (DOR-1098).
+      // Muted drops the bold and keeps the label at full contrast (DOR-1098);
+      // a mention's count below is the one signal that survives it.
       emphasized={row.unread.tier !== 'none' && !row.muted}
       muted={row.muted}
       {...(row.reservesVerbLine ? { reservesVerbLine: true } : {})}
@@ -488,13 +488,15 @@ function GenericRowFromModel({
       rowMotion={rowMotion}
       {...(drag ? { drag } : {})}
       trailing={
-        row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (
-          <span
-            className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
-            aria-label={`${row.unread.count} unread`}
-          >
-            {row.unread.count}
-          </span>
+        // Mute is already in the tier: `deriveUnreadSignal` lets only a
+        // mention through it, so a directed count on a muted row is one that
+        // is meant to be seen. These rows are threads and the like, never a
+        // direct message (those are `RoomRow`), so what they count is mentions.
+        row.unread.tier === 'directed' && row.unread.count !== undefined ? (
+          <CountPill
+            count={row.unread.count}
+            label={directedCountLabel(row.unread.count, 'mentions')}
+          />
         ) : undefined
       }
     />

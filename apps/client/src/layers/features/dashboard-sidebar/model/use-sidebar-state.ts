@@ -74,15 +74,6 @@ export const SIDEBAR_CLOCK_TICK_MS = 60_000;
 const NO_PATHS: string[] = [];
 
 /**
- * No @mention counts, as one identity.
- *
- * No client source can count them above a read cursor, so the field is always
- * this — omission, never a guess (BC-40). A shared empty rather than a fresh
- * `{}`, so it is never the reason a memo below it rebuilds.
- */
-const NO_MENTIONS: Record<string, number> = {};
-
-/**
  * The value a slot was last given, until it is given a different one by the
  * caller's own definition of different.
  *
@@ -237,11 +228,6 @@ export interface UseSidebarStateOptions {
 /**
  * Everything the sidebar is a function of, as one memoized snapshot.
  *
- * One field is still waiting for a source and says so where it is filled:
- * `mentions`, which no client source can count above a read cursor. Its absence
- * is the specified behaviour rather than a gap — omission, never a guess
- * (BC-40).
- *
  * @param options - What the calling surface draws for itself. Desktop passes
  * nothing.
  */
@@ -301,6 +287,22 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     if (boot.fleetKnown) return all;
     return all.filter((room) => room.kind !== 'dm');
   }, [roomsQuery.data, boot.fleetKnown]);
+  // **@mentions come from the room list itself** (BC-40). The server counts
+  // them from the log above the reader's own cursor (`RoomSummary.mentionCount`),
+  // so this is a projection, never a second count. A room the server sent no
+  // count for has no entry: omission, never a guess. Built from every room
+  // rather than the fleet-gated list above, because a mention is not a face.
+  // Held while equal, so a list refetch that moved no count rebuilds nothing.
+  const mentions = useShallowStable(
+    useMemo(() => {
+      const counts: Record<string, number> = {};
+      for (const room of roomsQuery.data ?? []) {
+        const count = room.mentionCount ?? 0;
+        if (count > 0) counts[room.id] = count;
+      }
+      return counts;
+    }, [roomsQuery.data])
+  );
   const threadsQuery = useThreads();
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
 
@@ -540,9 +542,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       interactions,
       userLastMessageAt,
       lastTouchedByYouAt,
-      // No client source counts @mentions above a read cursor. A source that
-      // cannot say has no entry — omission, never a guess (BC-40).
-      mentions: NO_MENTIONS,
+      mentions,
       ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
       todayAutomatedExpanded,
       addOns,
@@ -567,6 +567,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       interactions,
       userLastMessageAt,
       lastTouchedByYouAt,
+      mentions,
       todayAutomatedExpanded,
       addOns,
       activeTarget,

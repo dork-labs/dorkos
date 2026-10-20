@@ -689,12 +689,90 @@ describe('RoomRow working dot', () => {
     expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();
   });
 
-  it('keeps the working dot and the unread badge apart', () => {
-    // Two different facts about one row — messages waiting to be read, and work
+  it('keeps the working dot and the count pill apart', () => {
+    // Two different facts about one row — messages aimed at you, and work
     // running right now — so one must never be mistaken for the other.
-    renderRow(channel({ working: 1, unreadCount: 2 }));
+    renderRow(channel({ working: 1, unreadCount: 2, mentionCount: 1 }));
     expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
-    expect(screen.getByLabelText('2 unread')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 mention')).toBeInTheDocument();
+  });
+
+  it('puts a direct message’s working dot on the face, not after the name', () => {
+    const { container } = renderRow(
+      { ...oneToOne('/repo/ana'), working: 1 },
+      {
+        visual: { kind: 'identity', visual: { color: '#7c3aed', emoji: '🐙' } },
+      }
+    );
+    expect(container.querySelector('[data-slot="room-avatar-working"]')).not.toBeNull();
+    // No trailing dot: the face carries it, and the words stay for a reader
+    // who cannot see either.
+    expect(screen.queryByRole('img', { name: /working/ })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-sidebar-row]')).toHaveAccessibleName(
+      /^Ana\s*1 agent working$/
+    );
+  });
+
+  it('keeps a channel’s dot after its name, and no face dot', () => {
+    const { container } = renderRow(channel({ working: 1 }));
+    expect(screen.getByRole('img', { name: '1 agent working' })).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="room-avatar-working"]')).toBeNull();
+  });
+});
+
+describe('RoomRow unread', () => {
+  /** The row's own button — not the "…" beside it, whose name also starts with the room's. */
+  const row = () => document.querySelector<HTMLElement>('[data-sidebar-row]')!;
+
+  it('makes a channel with new messages bold, and draws no number', () => {
+    const { container } = renderRow(channel({ unreadCount: 12, mentionCount: 0 }));
+    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
+    expect(container.querySelector('[data-slot="count-pill"]')).toBeNull();
+    expect(row()).toHaveAccessibleName('#general');
+  });
+
+  it('counts only the mentions in a channel', () => {
+    renderRow(channel({ unreadCount: 12, mentionCount: 3 }));
+    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
+    // jsdom joins inline parts without the space a browser puts between them.
+    expect(row()).toHaveAccessibleName(/^#general\s*3 mentions$/);
+    expect(screen.getByLabelText('3 mentions')).toHaveTextContent('3');
+  });
+
+  it('counts every new message in a direct message', () => {
+    renderRow({ ...oneToOne('/repo/ana'), unreadCount: 2, mentionCount: 0 });
+    expect(screen.getByLabelText('2 new messages')).toHaveTextContent('2');
+    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
+  });
+
+  it('caps the pill at 9+ and reads the real number out', () => {
+    renderRow(channel({ unreadCount: 40, mentionCount: 14 }));
+    expect(screen.getByLabelText('14 mentions')).toHaveTextContent('9+');
+  });
+
+  it('keeps a muted room at regular weight, and still shows a mention’s count', () => {
+    const { container, unmount } = renderRow(channel({ unreadCount: 5, mentionCount: 0 }), {
+      isMuted: true,
+    });
+    expect(row()).toHaveAttribute('data-row-state', 'quiet');
+    expect(container.querySelector('[data-slot="count-pill"]')).toBeNull();
+    unmount();
+
+    renderRow(channel({ unreadCount: 5, mentionCount: 2 }), { isMuted: true });
+    expect(row()).toHaveAttribute('data-row-state', 'quiet');
+    expect(screen.getByLabelText('2 mentions')).toHaveTextContent('2');
+  });
+
+  it('draws the pill in neutral ink, never the brand colour', () => {
+    renderRow(channel({ unreadCount: 3, mentionCount: 1 }));
+    const pill = screen.getByLabelText('1 mention');
+    expect(pill.className).toContain('text-foreground');
+    expect(pill.className).not.toMatch(/brand|warning/);
+  });
+
+  it('is quiet when the reader is caught up', () => {
+    renderRow(channel({ unreadCount: 0, mentionCount: 0 }));
+    expect(row()).toHaveAttribute('data-row-state', 'quiet');
   });
 });
 
