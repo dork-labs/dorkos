@@ -24,7 +24,8 @@ const json = (schema: z.ZodType, description: string) => ({
 const PEOPLE_ONLY = json(
   ErrorSchema,
   'An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that ' +
-    'needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)'
+    'needs it, not the owner at the computer DorkOS runs on or on an encrypted connection ' +
+    '(`NEEDS_PERSON_AT_THIS_COMPUTER`)'
 );
 const SIGNED_OUT = json(ErrorSchema, 'Not signed in');
 
@@ -56,9 +57,10 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     tags: TAGS,
     summary: 'Sign out one device',
     description:
-      'Ends one sign-in and closes every stream, socket and terminal it had open. Your own ' +
-      'current sign-in from anywhere; any other only from a person at the computer DorkOS ' +
-      'runs on.',
+      'Ends one sign-in, closes every stream, socket and terminal it had open, and stops ' +
+      'the chats it started. Your own current sign-in from anywhere; any other only from ' +
+      'the owner at the computer DorkOS runs on or on an encrypted connection, never ' +
+      'plain-http Wi-Fi.',
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Signed out' },
@@ -75,7 +77,8 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Sign out everywhere else',
     description:
       'Ends every sign-in but the asking one (all of them when the asker has none) and closes ' +
-      'what each had open. Only from a person at the computer DorkOS runs on.',
+      'what each had open. Only from the owner at the computer DorkOS runs on or on an ' +
+      'encrypted connection, never plain-http Wi-Fi.',
     responses: {
       200: json(SignOutEverywhereElseResultSchema, 'How many sign-ins ended'),
       401: SIGNED_OUT,

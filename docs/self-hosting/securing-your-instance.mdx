@@ -38,9 +38,11 @@ The email is a **local identifier only**: it is never verified and no email is e
 <Step>
 ### You're signed in
 
-Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
+Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. On another device it ends after 90 days however often you use it, and after 7 days on Wi-Fi. Sign out anytime from **Settings → Login & security**. After too many wrong passwords for one account, sign-ins to it pause for a few minutes.
 
-**Settings → Login & security → Signed-in devices** lists every browser and device your account is signed in on, how each one connects, and when it was last used. Signing one out ends everything it had open, its chat streams and terminals included. You can sign this device out from anywhere, but other devices only from the computer DorkOS runs on.
+**Settings → Login & security → Signed-in devices** lists every browser and device your account is signed in on, how each one connects, and when it was last used. Signing one out ends everything it had open, its chat streams and terminals included, and stops any chat it started. You can sign this device out from anywhere. Other devices you can sign out from the computer DorkOS runs on, or from a device signed in over remote access or any `https` link, but not over plain Wi-Fi.
+
+Where you connect from never changes what you can do once you're signed in over a secure link: on remote access, your own tunnel or an `https` proxy, you get exactly what you get at the computer. Plain Wi-Fi is the one exception, because anyone on the same network could copy that sign-in, so it keeps the lower level described [below](#on-your-own-wi-fi).
 
 Turning **Ask for a password on this computer too** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and this computer opens DorkOS without a password again. Other devices still sign in as the owner.
 

@@ -18,7 +18,7 @@ export {
   type SpacesAccessState,
 } from './model/use-experiment-enabled';
 export { useConfigSync } from './model/use-config-sync';
-export { useLocalCaller } from './model/use-local-caller';
+export { useLocalCaller, useTrustedConnection } from './model/use-local-caller';
 export { useOnWifi } from './model/use-on-wifi';
 export { useIsHub } from './model/use-is-hub';
 export { useEngagedWindow } from './model/use-engaged-window';
