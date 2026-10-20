@@ -21,6 +21,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { effectivePlacement, placementShows } from '@dorkos/shared/mini-app-placement';
 import { useConfig, usePanelTabPlacements } from '@/layers/entities/config';
+import { GroupDmMemberPicker, useDirectMessagePanel } from '@/layers/features/direct-message';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { usePanelViews } from '../model/use-panel-views';
 import { PanelViewsMenu } from './PanelViewsMenu';
@@ -109,6 +110,16 @@ export function RightPanelContainer({
   // nobody chose. Null until the first explicit open.
   const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);
 
+  // The DM the panel sits beside, while the DM view is on (DOR-3075): its tabs
+  // match a session's, and a group DM's follow the member picked at the top.
+  const dmPanel = useDirectMessagePanel();
+  const dmKind = dmPanel?.kind ?? null;
+  const dmShowSessions = dmPanel?.showSessions ?? false;
+  const directMessage = useMemo(
+    () => (dmKind === null ? null : { kind: dmKind, showSessions: dmShowSessions }),
+    [dmKind, dmShowSessions]
+  );
+
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
 
@@ -127,9 +138,19 @@ export function RightPanelContainer({
             cwd,
             explicitAgentPath,
             isRemoteCommunityRoom,
+            directMessage,
           })
       ),
-    [allContributions, pathname, transport, agentId, cwd, explicitAgentPath, isRemoteCommunityRoom]
+    [
+      allContributions,
+      pathname,
+      transport,
+      agentId,
+      cwd,
+      explicitAgentPath,
+      isRemoteCommunityRoom,
+      directMessage,
+    ]
   );
 
   // Mini-app tabs also follow their placement rules (spec `mini-app-placement`).
@@ -269,6 +290,9 @@ export function RightPanelContainer({
           </>
         }
       />
+      {dmPanel?.kind === 'group' && rightPanelOpen && (
+        <GroupDmMemberPicker members={dmPanel.members} />
+      )}
       <div
         className="min-h-0 flex-1 overflow-hidden"
         {...(views.activeId &&

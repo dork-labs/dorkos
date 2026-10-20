@@ -30,6 +30,11 @@ vi.mock('../model/use-placement-here', () => ({
   }),
 }));
 vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
+// Beside no DM: the panel these tests describe is the one with the DM view off.
+vi.mock('@/layers/features/direct-message', () => ({
+  useDirectMessagePanel: () => null,
+  GroupDmMemberPicker: () => null,
+}));
 vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
 vi.mock('@/layers/entities/local-browser', () => ({
   useLocalBrowserState: () => ({ data: undefined }),

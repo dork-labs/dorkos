@@ -6,7 +6,9 @@
  * and the session behind it (`useSessionViewLinks`), says who the agent is and
  * which channels it shares with the person, and puts Message, Profile and the
  * agent's session on its identity card (`AgentHoverCard`). The surfaces that
- * draw a DM (the session widget, the one bar) compose these.
+ * draw a DM (the session widget, the one bar) compose these. The right panel
+ * asks which DM it sits beside (`useDirectMessagePanel`), and a group DM's
+ * panel is scoped to a member picked at its top (`GroupDmMemberPicker`).
  *
  * @module features/direct-message
  */
@@ -24,6 +26,9 @@ export {
 } from './model/use-direct-message-agent';
 export { useAgentCard, type AgentCard, type AgentCardInput } from './model/use-agent-card';
 export { AgentHoverCard, type AgentHoverCardProps } from './ui/AgentHoverCard';
+export { useDirectMessagePanel, type DirectMessagePanel } from './model/use-direct-message-panel';
+export { GroupDmMemberPicker, type GroupDmMemberPickerProps } from './ui/GroupDmMemberPicker';
+export { groupDmMembers, isGroupDm, type GroupDmMember } from './lib/group-dm';
 export {
   directMessageMode,
   sharedChannels,
