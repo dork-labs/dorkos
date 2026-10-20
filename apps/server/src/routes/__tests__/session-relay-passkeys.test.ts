@@ -928,33 +928,33 @@ describe('a damaged passkeys file', () => {
 });
 
 describe('a server listening on ::1, as a default install on macOS does', () => {
-  /** One request over IPv6 loopback, as a browser at `http://localhost:<port>` sends it. */
+  /** One request over IPv6 loopback, under the `Host` a browser at that address sends. */
   function send(
     server: http.Server,
-    pathname: string,
-    body: unknown,
+    request: { method: 'GET' | 'POST'; pathname: string; host: string; body?: unknown },
     headers: Record<string, string> = {}
-  ): Promise<{ status: number; body: Record<string, unknown> }> {
+  ): Promise<{ status: number; text: string }> {
     const { port: p } = server.address() as AddressInfo;
-    const data = JSON.stringify(body);
+    const data = request.body === undefined ? undefined : JSON.stringify(request.body);
     return new Promise((resolve, reject) => {
       const req = http.request(
         {
           host: '::1',
           port: p,
-          method: 'POST',
-          path: pathname,
+          method: request.method,
+          path: request.pathname,
           headers: {
-            Host: `localhost:${p}`,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(data),
+            Host: `${request.host}:${p}`,
+            ...(data === undefined
+              ? {}
+              : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }),
             ...headers,
           },
         },
         (res) => {
           let text = '';
           res.on('data', (chunk) => (text += chunk));
-          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
         }
       );
       req.on('error', reject);
@@ -962,9 +962,12 @@ describe('a server listening on ::1, as a default install on macOS does', () => 
     });
   }
 
-  it('names localhost in returnTo, and the passkey finishes from there', async () => {
+  it('names [::1] in returnTo, serves the page there, and the passkey finishes from it', async () => {
     const server = http.createServer(
-      honoGroupListener({ path: '/api/session-relay', routes: createSessionRelayRoutes(deps) })
+      honoGroupListener([
+        { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+        { path: '/', routes: createRelayPasskeyPageRoutes() },
+      ])
     );
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -972,23 +975,38 @@ describe('a server listening on ::1, as a default install on macOS does', () => 
     });
     try {
       const { port: p } = server.address() as AddressInfo;
-      const started = await send(server, '/api/session-relay/passkeys/start', {
-        password: PASSWORD,
-        label: 'MacBook passkey',
+      // The owner's browser is on `localhost`, which on macOS reaches `::1`.
+      const started = await send(server, {
+        method: 'POST',
+        pathname: '/api/session-relay/passkeys/start',
+        host: 'localhost',
+        body: { password: PASSWORD, label: 'MacBook passkey' },
       });
       expect(started.status).toBe(200);
+      const body = JSON.parse(started.text) as { statement: string; challenge: string };
       const statement = decodeStepUpStatement(
-        decodeStepUpBase64url(started.body.statement as string)
+        decodeStepUpBase64url(body.statement)
       ) as PasskeyEnrolStatementV1;
-      expect(statement.returnTo).toBe(`http://localhost:${p}/relay-passkey`);
-      const attestation = authenticatorFor(statement).attest({
-        challenge: started.body.challenge as string,
-      });
+      // The IP literal, never the name `localhost` (RFC 8252 §8.3).
+      expect(statement.returnTo).toBe(`http://[::1]:${p}/relay-passkey`);
+
+      // The approve page sends the browser to `returnTo`: the page answers a `[::1]` Host.
+      for (const pathname of ['/relay-passkey', '/relay-passkey.js']) {
+        const page = await send(server, { method: 'GET', pathname, host: '[::1]' });
+        expect(page.status, pathname).toBe(200);
+      }
+
+      // Its script posts from `http://[::1]:<port>`: the classifier calls it this computer.
+      const attestation = authenticatorFor(statement).attest({ challenge: body.challenge });
       const res = await send(
         server,
-        '/api/session-relay/passkeys/finish',
-        { statement: started.body.statement, attestation: registration(attestation) },
-        { Origin: `http://localhost:${p}` }
+        {
+          method: 'POST',
+          pathname: '/api/session-relay/passkeys/finish',
+          host: '[::1]',
+          body: { statement: body.statement, attestation: registration(attestation) },
+        },
+        { Origin: `http://[::1]:${p}` }
       );
       expect(res.status).toBe(200);
       expect(readApprovalKeys(home)?.keys).toHaveLength(1);
