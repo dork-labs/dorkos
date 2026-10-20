@@ -1,3 +1,8 @@
+import { createFileSaveRecoveryRoutes } from './file-saves/recovery.js';
+import { createCanvasDocRouteControlRoutes } from './canvas-doc-route-controls.js';
+import type { DocRouteControls } from '../services/canvas/doc-channel/route-controls/controls.js';
+import type { ActivityService } from '../services/activity/activity-service.js';
+import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 /** Private document event endpoints, behind the app's host, origin and session gates. */
 import type { ServerResponse } from 'node:http';
 import bodyParser from 'body-parser';
@@ -52,8 +57,11 @@ function refusalClass(status: number): DocChannelRejectionClass {
 
 /** The composition root resolves authenticated callers; page envelopes carry no authority. */
 export interface DocChannelHttp {
+  fileWrites?: InstallationFileWrites;
   service: DocChannelService;
   metrics?: DocChannelMetrics;
+  /** A person's route controls (`routes/canvas-doc-route-controls.ts`). */
+  routeControls?: DocRouteControls;
   actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
 }
 
@@ -101,8 +109,12 @@ function documentId(c: Context<ApiEnv>): string {
  * Build the document event routes.
  *
  * @param source - The document channel, read per request; `undefined` answers 503.
+ * @param activity - The Activity feed the route controls record answers in.
  */
-export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<ApiEnv> {
+export function createCanvasDocEventRoutes(
+  source: DocChannelHttpSource,
+  activity?: () => Pick<ActivityService, 'emit'> | undefined
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   function dependencies(): DocChannelHttp {
@@ -215,6 +227,11 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
   // Claim every path under `/api/canvas/docs`, served or not, so a request to
   // one no route serves still gets this group's body limit before its `/api`
   // 404, as it always had.
+  router.route(
+    '/',
+    createFileSaveRecoveryRoutes(() => source()?.fileWrites)
+  );
+  router.route('/', createCanvasDocRouteControlRoutes(source, activity));
   router.all('*', (c) => c.notFound());
   return router;
 }

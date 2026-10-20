@@ -16,6 +16,7 @@ import {
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
+  ConnectorAccessLevelSchema,
   ConnectionReadinessSchema,
   ConnectorCapabilityAvailabilitySchema,
   ConnectorGrantReconciliationStatusSchema,
@@ -338,6 +339,13 @@ export const ConnectorConnectionSummarySchema = z
     agentCount: z.number().int().nonnegative(),
     /** The every-agent grant, or null when only named agents have access. */
     everyAgent: ConnectorEveryAgentAccessSchema.nullable(),
+    /**
+     * The level every agent was given, or null when the account is not shared
+     * with every agent. Read from the owner's intent rather than the grants,
+     * so a share whose grants are not in place yet (the app could not be read)
+     * still shows. Absent from an older server.
+     */
+    everyAgentLevel: ConnectorAccessLevelSchema.nullable().optional(),
     subscriptionCount: z.number().int().nonnegative(),
     usage: ConnectorUsageCountsSchema,
     /**

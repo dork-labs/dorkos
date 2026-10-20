@@ -41,18 +41,21 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                                                                                                                |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                                                                                                  |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                                                                                                               |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                                                                                                  |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                                                                                                        |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                                                                                                   |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                |
-| Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                     |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                       |
+| Group                     | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                                                                                                                                                                                                                                                       |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                                                                                                                                                                                                                                         |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                                                                                                                                                                                                                                         |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                                                                                                                                                                                                                                               |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                                                                                                                                                                                                                                          |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                                                                                                                                                       |
+| Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches                                                                                                                                        |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                                                                                                                                                            |
+| Hubs and agent computers  | a hub reads who it belongs to and confirms it (`/v1/hubs/self/assignment`) and says when to wake it next (`/v1/hubs/self/next-wake`); the account's cloud agent computers: list, make, start (with an optional reason), stop and delete; linking a computer to its hub (`link-code`, `/v1/agent-computers/self/assignment`); a computer saying it is busy (`/v1/agent-computers/self/activity`); asking a computer to dial its hub (`viewer-open`) |
+| Account directory         | `GET /v1/directory` (computers, agents and whether they are there, quiet hours and time zone, the spaces the account belongs to), an instance's own report, settings, forgetting a space                                                                                                                                                                                                                                                           |
+| Approvals from the web    | the statement a computer asks its owner to sign with a passkey (approving a tool call, adding an approvals passkey), its one canonical byte form and challenge, and the messages between a hub's page and the approve page                                                                                                                                                                                                                         |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                                                                                                                                                              |
 
 ### What is deliberately not in it
 
@@ -336,6 +339,192 @@ that server's single-use owner claim; it never owns one itself.
   list and a `not_found` answer mean the same thing: open every page as before.
 
 Every link to a community is a runtime value.
+
+### Hubs: a person's own DorkOS in the cloud
+
+A **hub** is one person's DorkOS run by the service. It runs no agents. The service keeps a pool of
+hubs that belong to nobody, and gives one to a person the first time they open the full app.
+"Hub" is a word for the wire and for code: nothing a person reads says it.
+
+- **A pooled hub has no owner.** `GET /v1/hubs/self/assignment` (that hub's own instance key; any
+  other caller gets `not_found`) reads `{ state: 'pooled' }`, and the hub refuses every sign-in.
+  Nobody becomes its owner by visiting first. It reads again when a `hub_assignment_changed`
+  command arrives (one is sent at assignment), and otherwise every `pollAfterSeconds`. An
+  assignment it cannot read, or a state it does not know, counts as pooled.
+- **The owner is an account id at one issuer, never an email.** An assigned hub reads
+  `ownerAccountId`, `issuer`, its `address` (an https origin with nothing after it), its
+  `frontDoorProof` and, once registered, its `signIn` client (public, with PKCE and one exact
+  redirect address). A sign-in is the owner only when its issuer is exactly `issuer` and its
+  subject is exactly `ownerAccountId`.
+- **The owner never changes.** An assigned hub is never reassigned. After the hub confirms, only the
+  address, the proof and the sign-in client may change, under a new `assignmentId`. A read naming
+  another owner or issuer is a fault: the hub refuses it and stops serving.
+- **The front-door proof works like the remote edge proof.** Refuse any request without exactly
+  one copy of the header carrying the secret, before any other handling, then strip it. Unlike a
+  remote credential, the hub may read it again (it must serve again after a restart), but it still
+  carries `ONE_TIME_CREDENTIAL_META`: never log it, relay it or hand it to a browser.
+- **Replacing the proof overlaps.** The service sends `hub_assignment_changed`; the front door
+  keeps the old proof until the hub confirms the new `assignmentId`; the hub accepts the new proof
+  once read and the old one until `REMOTE_EDGE_PROOF_OVERLAP_SECONDS` after confirming. An ended
+  assignment reads `not_found`, and the hub stops serving.
+- **The hub makes its own auth secret.** The service never sends one and never holds one.
+- **Confirm before traffic.** `POST /v1/hubs/self/assignment/confirm` names the `assignmentId`
+  applied; the front door sends a person's traffic only after that.
+
+### Cloud agent computers
+
+A hub never holds a hosting supplier's credentials. It asks the service, and the service makes the
+call.
+
+- **Who may call:** the person, or the account's own hub (its instance key). Never an agent
+  computer's key or a person's own computer's key, because making or starting a computer spends
+  money. Anyone else gets `not_found`.
+- `GET /v1/computers` lists them; `POST /v1/computers` makes one, retry-safe by `idempotencyKey`
+  (a repeat answers `replayed: true`). A refusal a larger allowance or a card would lift is
+  `entitlement_required`.
+- `v1Path.computerStart` and `v1Path.computerStop` answer at once with the state the computer is
+  moving to. Starting a running computer, or stopping a stopped one, answers the computer as it is.
+  A start may carry `{ reason }` (`turn`, `viewer` or `beat`, tolerant), for metering only; a start
+  with no body works as before.
+- `DELETE v1Path.computer(id)` deletes the computer, its disk and its snapshots. The person only,
+  with a recent sign-in (an older one is `forbidden`). It cannot be undone.
+- `state` and `stopReason` are tolerant. `stopReason` is `requested`, `idle`, `out_of_credits`,
+  `held` (the account) or `suspended` (this one computer); `reasonText`, when present, is the
+  service's own words to show as given.
+
+### How an agent computer boots, and where it may reach
+
+The service starts an agent computer with `DORKOS_SERVER_ROLE=agent-computer`,
+`DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE`, and `DORKOS_CLOUD_API_URL` (an https origin with no path).
+
+- **The key is a file, never an environment variable.** `DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE`
+  is the path of a file holding the computer's instance API key (16 characters or more). The
+  service mounts it at mode 0600, owned by the user the DorkOS server runs as, and passes only the
+  path. Linux keeps a process's startup environment readable by any process of the same user, so
+  the server refuses to start if `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` is set at all, or if the file
+  is readable by group or others or not owned by the server's user.
+- **Two users.** The DorkOS server runs as the key file's owner. Agents, their shells and package
+  code run as a different user that can't read the key file, signal the server or trace it. The
+  model gateway grant the server hands its own agent runtime gets the same treatment.
+- `hidepid=2` on `/proc` is optional extra hardening, not the fix.
+
+Its volume is owned by root. It
+exits with status 0 within 5 seconds of SIGINT. Its image is public and signed.
+
+It may reach the public internet, its own hub through the hub's front door, and the model gateway.
+It may not reach the hosting supplier's private network (other machines, even the same account's),
+a cloud metadata address, any private address range, or anything on the service except the public
+`/v1` API. The service's network policy enforces this, outside the computer; the computer's own
+settings are not relied on.
+
+### Linking an agent computer to its hub
+
+- **The hub mints the code.** It is the same format as the code a person's own computer links
+  with: 16 characters of uppercase Crockford base32, 80 bits. The hub hands it over with
+  `POST v1Path.computerLinkCode(computerId)` (`{ code, expiresAt }`, answered 204). The hub's own
+  key only; a computer that is not the account's is `not_found`.
+- **Single use, ten minutes at most, one computer.** The hub mints with `expiresAt` exactly
+  `AGENT_COMPUTER_LINK_CODE_TTL_SECONDS` out. The service refuses one later than its own receipt plus
+  that and `AGENT_COMPUTER_LINK_CODE_CLOCK_SKEW_SECONDS`, with `malformed_request` (the schema has no
+  clock, so it does not check). The hub binds each code to that `computerId` in its own records and
+  checks both when the code is redeemed; it keeps these codes apart from the ones its owner mints for
+  their own computers, and keeps them across the hub sleeping. One live code per computer: a new one
+  replaces the old. (The hub's side of this lands with the linking step.)
+- **Handed out once.** `GET /v1/agent-computers/self/assignment` (that computer's own key; anyone
+  else gets `not_found`) reads `{ computerId, hubOrigin, ownerAccountId, issuer, linkCode,
+pollAfterSeconds }`. The service deletes the code once the computer has read it and never logs
+  it, so a later read has `linkCode: null`. The code carries `ONE_TIME_CREDENTIAL_META`.
+- **The service never vouches for a key.** The computer makes its own Ed25519 key pair; the hub
+  pins its public half when the code is redeemed, as it does for a Mac. A used code is worthless.
+- **An accepted risk (H3).** The service holds the live code until the computer reads it, so
+  someone inside the service could redeem it first with a key of their own. That is accepted: the
+  service already runs the computer. The hub treats a second redeem for a computer that is already
+  linked as a security event: it unlinks the computer, tells the person, and mints a new code.
+- `agent_computer_assignment_changed` asks the computer to read its assignment again. It carries
+  nothing else, and the service sends it only to a computer whose version knows it, as it does for
+  the hub's own command.
+
+### Busy computers and sleeping hubs
+
+- **`PUT /v1/agent-computers/self/activity`** (that computer's key) takes `{ busy }` and answers 204. Busy holds for `AGENT_COMPUTER_BUSY_TTL_SECONDS` (ten minutes) unless sent again, so a
+  crashed turn cannot keep a computer running forever. `AGENT_COMPUTER_BUSY_MAX_SECONDS` = 21600:
+  after 6 hours in a row, the service stops the computer and tells the owner, whatever `busy` says.
+  The service stops a computer for being idle only once its idle window has passed with `busy`
+  false or expired.
+- **`PUT /v1/hubs/self/next-wake`** (the hub's key) takes `{ at }`, a time or null, and answers 204. The service wakes the hub at `at` for its due schedules, at most once every
+  `HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS`. An `at` more than `HUB_NEXT_WAKE_MAX_AHEAD_DAYS` days ahead
+  is ignored, not refused: a hub whose next schedule is that far out has done nothing wrong, and
+  it sends the time again the next time it is awake.
+- **Inference on an agent computer.** `POST /v1/inference/tokens` also takes an agent computer's
+  instance key. Tokens stay short-lived, the limits apply per computer and per account, what it
+  spends is billed to the account that owns it, and the preview gate applies as it does today.
+  `agentRef` is the agent's id on the computer's hub: the computer's own claim, used for
+  attribution and billing only, never for authorization.
+
+### Asking a computer to dial its hub
+
+`POST /v1/instances/{instanceId}/viewer-open` (the account's hub) sends a `viewer_open` command on
+that computer's command stream and answers `{ commandId, queuedAt }`. A computer that is not the
+account's is `not_found`.
+
+- **No address, no authority.** A computer dials only the hub address and key it pinned when its
+  owner turned this on.
+- **One at a time.** At most one waits per computer; asking again answers the waiting one.
+- **It expires.** One not acknowledged by its `expiresAt` is dropped, never retried. Builds from
+  before this command cannot read it and never acknowledge it; they log that they ignored it.
+- `hub_assignment_changed` is the hub's own signal on the same stream: read the assignment again.
+  It carries nothing else. Neither command is ever a reason to act on a tunnel.
+
+**Full control from the web is an entitlement.** `limits.fullControl` says whether the account may
+open a linked computer's terminal, files and settings from the web; absent reads as no.
+`limits.cloudComputers` says how many cloud agent computers it may have.
+
+### The account directory
+
+`GET /v1/directory` is what one account has across every DorkOS it uses: its instances (`role`:
+`computer`, `hub` or `agent-computer`), the agents on each and whether they are there, its quiet
+hours and time zone, and the spaces it belongs to. An empty account gets empty lists, never a 404.
+
+| Caller                                    | Read | Own report | Settings | Forget a space |
+| ----------------------------------------- | ---- | ---------- | -------- | -------------- |
+| the person's session                      | yes  | no         | yes      | yes            |
+| the person's hub, or a computer of theirs | yes  | yes        | yes      | yes            |
+| a cloud agent computer                    | no   | yes        | no       | no             |
+
+An instance key acts for the person who linked it. An instance linked to an organization, and any
+refused call, gets `not_found`.
+
+- **It remembers where things are, never how to get in.** No entry carries a sign-in, a token, a
+  transcript or a message.
+- **Spaces.** Each has a `name`, an https `address`, how the account learned of it (`sources`:
+  `service`, `sign-in`, `computer`), which instances joined it, and the person's `role` and the
+  space's `state` (both null when only a computer reported it). `hostSpaceId` is the hosting
+  server's own id when this service hosts it. One entry per normalised address (lower-case scheme
+  and host, no default port, no trailing slash, no query or fragment). A name from this service's
+  servers beats one from a sign-in, which beats one a computer reported. An address on this
+  machine (`localhost`) is refused, because on another device it means a different machine.
+- **Forgetting a space sticks.** `DELETE /v1/directory/spaces/{spaceId}` keeps a quiet mark, so the
+  next report does not add it straight back; only a fresh sign-in to it or a new join does. It
+  never ends the membership.
+- **Agents.** `instanceId` is where an agent lives: a person's computer, or the hub for a cloud
+  agent. `worksOn` names the cloud agent computer a cloud agent works on.
+- **Availability is the service's.** For a person's computer it comes from reports (`unknown` is
+  never shown as offline). For a hub or an agent computer it comes from the machine's state: asleep
+  but able to wake is `available`, and only stopped for credits, a hold or a suspension, or failed,
+  is `offline`. Render it; never recompute it.
+- **Reports.** `PUT /v1/directory/instances/self` sends the instance's picture: its agents (id and
+  name), the spaces it joined (name and address) and its `reach` (`off`, `chat` or `full-control`).
+  A part that is present replaces that part (`spaces: []` means none); a part that is absent stays
+  as it was. `reportedAt` orders them: the service drops one older than the last it kept. Send one
+  every `reportEverySeconds`. `DELETE` the same route when its owner turns sync off.
+- **A link to a computer never comes from the computer.** `remoteAddress` is filled in by the
+  service from the managed remote address it issued, and only when `reach` is `full-control`.
+- **Settings belong to the account.** `PATCH /v1/directory/settings` changes the time zone, quiet
+  hours (which may cross midnight) and `learnSpacesFromSignIn`. `onlyIfUnset: true` is for a
+  computer moving its own quiet hours up once: it applies only while the account has none.
+- **New values do not break a page.** `role`, `availability`, `reach`, a space's `sources`, `role`
+  and `state`, and a computer's `state` and `stopReason` are tolerant: a value added later reads as
+  `unrecognised`. Generate their JSON Schema with `{ io: 'input' }`.
 
 ### Money is never a number
 

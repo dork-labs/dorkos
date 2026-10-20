@@ -71,7 +71,7 @@
         "apps/server/src/services/workspace/",
         "specs/central-workspace-disposal/",
         "specs/managed-remote-app-consumer/",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -107,7 +107,7 @@
         "packages/ui/",
         "apps/design-system/",
         "apps/client/src/layers/shared/ui/",
-        "apps/community/src/browser/components/Admission"
+        "apps/client/src/space/components/Admission"
       ]
     },
     {
@@ -124,6 +124,7 @@
       "description": "Config file system, settings reference, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "config-migrations",
         "config-schema",
         "packages/cli/"
       ]
@@ -231,12 +232,14 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Verifying a change against a live instance; traps that make a check pass while proving nothing; the agent browser for signed-in third-party sites and parallel Playwright sessions",
+      "description": "Real-browser verification, isolated instances, live local page tools, artifact proof runners and evidence limits",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",
         "multi-window",
-        "agent-browser"
+        "agent-browser",
+        "local-browser",
+        "scripts/local-browser/"
       ]
     },
     {
@@ -443,7 +446,7 @@
       "guide": "community-server.md",
       "description": "Independent Community: browser, admission, native local participation, streams, files, exports, recovery and Postgres checks",
       "patterns": [
-        "apps/community/",
+        "apps/space/",
         "community-wire",
         "community-pg"
       ]
@@ -452,8 +455,8 @@
       "guide": "official-community-operations.md",
       "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
       "patterns": [
-        "apps/community/src/live/monitoring.ts",
-        "apps/community/load/",
+        "apps/server/src/services/spaces/live/monitoring.ts",
+        "apps/space/load/",
         "official-community-operations"
       ]
     },
@@ -514,6 +517,14 @@
         "apps/site/src/db/auth-schema",
         "apps/site/drizzle",
         "apps/server/src/services/rooms/author-registry"
+      ]
+    },
+    {
+      "guide": "keep-awake.md",
+      "description": "Keep-awake on a real Mac: the opt-in caffeinate smoke (`pnpm --filter @dorkos/keep-awake smoke`), why it is not in CI, and the manual battery, background-helper, lid and denied-recovery scenarios with their `pmset` commands",
+      "patterns": [
+        "packages/keep-awake/",
+        "services/core/keep-awake/"
       ]
     },
     {
@@ -626,7 +637,7 @@
       "patterns": [
         "apps/server/src/services/",
         "transport.ts",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -800,6 +811,14 @@
       ]
     },
     {
+      "doc": "docs/self-hosting/space-server-setup.mdx",
+      "description": "Step-by-step `dorkos community deploy` walkthrough: plan, consent, stops and resume, owner setup, first invite, connecting DorkOS, removal",
+      "patterns": [
+        "packages/cli/src/commands/community-deploy/",
+        "apps/client/src/space/components/(Admission|Manage)"
+      ]
+    },
+    {
       "doc": "docs/account/index.mdx",
       "description": "DorkOS accounts + device-linking self-hosted instances",
       "patterns": [
@@ -815,7 +834,7 @@
       "patterns": [
         "apps/server/src/services/",
         "transport.ts",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -848,14 +867,15 @@
     },
     {
       "doc": "docs/guides/agent-browser.mdx",
-      "description": "Signed-in browser: `dorkos browser`, the MCP servers card, bare-CLI setup, the security trade-off",
+      "description": "Live local browser: two choices, saved sign-ins, Pause, included Playwright, platform limits, and legacy CLI tools",
       "patterns": [
+        "local-browser",
+        "use-panel-views",
         "packages/cli/src/commands/browser",
         "packages/cli/src/lib/agent-browser/",
         "packages/shared/src/agent-browser",
         "agent-browser-preset",
-        "mcp-browser-capabilities",
-        "SignedInBrowserCard"
+        "mcp-browser-capabilities"
       ]
     },
     {
@@ -1027,7 +1047,7 @@
       "doc": "docs/guides/dorkos-community.mdx",
       "description": "The DorkOS Community Space guide (gated: not open yet), join/leave, display name, report, rules, moderation",
       "patterns": [
-        "apps/community/",
+        "apps/space/",
         "specs/official-community-space/"
       ]
     },

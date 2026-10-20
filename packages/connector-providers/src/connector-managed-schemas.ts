@@ -23,6 +23,11 @@ export const MANAGED_CONNECTOR_ERROR_CODES = {
   managedConnectorsUnavailable: 'managed_connectors_unavailable',
   /** The service has no sign-in setup for this app, so starting again won't help. */
   connectionSetupMissing: 'connection_setup_missing',
+  /**
+   * The service's own sign-in setup for this app failed its safety check, so
+   * starting again won't help until the service side is fixed.
+   */
+  connectionSetupConflict: 'connection_setup_conflict',
   invalidRequest: 'invalid_request',
   internalError: 'internal_error',
   notFound: 'not_found',

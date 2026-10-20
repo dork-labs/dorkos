@@ -1,5 +1,4 @@
 import type { MetadataRoute } from 'next';
-import { MARKETPLACE_CATEGORIES } from '@dorkos/marketplace';
 import { siteConfig } from '@/config/site';
 import { source, blog } from '@/lib/source';
 import { gitLastModified } from '@/lib/metadata';
@@ -9,42 +8,23 @@ import {
   CATEGORY_LABELS,
   type FeatureCategory,
 } from '@/layers/features/marketing';
-import { fetchMarketplaceJson } from '@/layers/features/marketplace';
+import { fetchMarketplaceJson, marketplaceSitemapEntries } from '@/layers/features/marketplace';
 
 const BASE_URL = siteConfig.url;
 
 /**
- * Build sitemap entries for the marketplace browse page, privacy page, the 16
- * statically generated category landing pages, and one entry per published
- * package.
+ * Build the marketplace sitemap entries (see {@link marketplaceSitemapEntries}).
  *
- * These are static/registry-driven URLs with no reliable modification signal, so
- * `lastModified` is omitted entirely (fabricating a date is actively harmful for
- * Google's trust model). Wraps {@link fetchMarketplaceJson} in try/catch so a
- * registry outage degrades to just the static entries — the sitemap must
- * keep generating even when the upstream registry is unavailable.
+ * Wraps {@link fetchMarketplaceJson} in try/catch so a registry outage degrades
+ * to the static entries with every category listed — the sitemap must keep
+ * generating even when the upstream registry is unavailable.
  */
 async function buildMarketplaceEntries(): Promise<MetadataRoute.Sitemap> {
-  const staticEntries: MetadataRoute.Sitemap = [
-    { url: `${BASE_URL}/marketplace`, changeFrequency: 'daily', priority: 0.9 },
-    { url: `${BASE_URL}/marketplace/privacy`, changeFrequency: 'monthly', priority: 0.4 },
-    ...MARKETPLACE_CATEGORIES.map((category) => ({
-      url: `${BASE_URL}/marketplace/category/${category}`,
-      changeFrequency: 'weekly' as const,
-      priority: 0.6,
-    })),
-  ];
-
   try {
     const marketplace = await fetchMarketplaceJson();
-    const packageEntries: MetadataRoute.Sitemap = marketplace.plugins.map((pkg) => ({
-      url: `${BASE_URL}/marketplace/${pkg.name}`,
-      changeFrequency: 'weekly' as const,
-      priority: 0.7,
-    }));
-    return [...staticEntries, ...packageEntries];
+    return marketplaceSitemapEntries(BASE_URL, marketplace.plugins);
   } catch {
-    return staticEntries;
+    return marketplaceSitemapEntries(BASE_URL, null);
   }
 }
 
@@ -65,6 +45,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/security`, changeFrequency: 'monthly', priority: 0.4 },
     { url: `${BASE_URL}/privacy`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${BASE_URL}/terms`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${BASE_URL}/cloud/terms`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${BASE_URL}/cookies`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${BASE_URL}/blog`, changeFrequency: 'weekly', priority: 0.6 },
   ];

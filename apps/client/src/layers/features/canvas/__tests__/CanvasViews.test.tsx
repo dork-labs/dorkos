@@ -8,6 +8,8 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 
 // Mock streamdown to avoid CSS import issues in jsdom
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
 vi.mock('streamdown', () => ({
   Streamdown: ({ children }: { children: string }) => (
     <div data-testid="streamdown">{children}</div>
@@ -90,6 +92,7 @@ vi.mock('@/layers/shared/model', async () => {
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    useUnifiedPanelChrome: () => false,
     documentsInView: (docs: MockDoc[], view: string) =>
       docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,

@@ -3,6 +3,7 @@
 export const STORAGE_KEYS = {
   FONT_SIZE: 'dorkos-font-size',
   FONT_FAMILY: 'dorkos-font-family',
+  LOCAL_BROWSER_CHOICE: 'dorkos-local-browser-choice-v1',
   RECENT_CWDS: 'dorkos-recent-cwds',
   PICKER_VIEW: 'dorkos-picker-view',
   PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
@@ -137,6 +138,14 @@ export const QUERY_TIMING = {
   GIT_STATUS_STALE_TIME_MS: 5_000,
   /** Message history staleTime (ms). */
   MESSAGE_STALE_TIME_MS: 0,
+  /**
+   * How often a list the event stream already keeps current checks again
+   * anyway, in case an event was missed or a change has no event of its own
+   * (DOR-2909). The event is the real update; this is only the safety net, so
+   * it is slow. Polls pause on their own while the tab is hidden (TanStack's
+   * `refetchIntervalInBackground` defaults to false).
+   */
+  EVENT_BACKSTOP_REFETCH_MS: 60_000,
 } as const;
 
 export const CELEBRATIONS = {
@@ -186,6 +195,12 @@ export interface SettingsTabEntry {
   label: string;
   /** The sidebar group it sits under. */
   group: 'You' | 'Agents' | 'This computer' | typeof SETTINGS_ADVANCED_GROUP;
+  /**
+   * `false` for a tab that cannot apply on a hub (a person's own DorkOS in the
+   * cloud): it has no agent runtimes, no remote access of its own, and is
+   * never linked to a DorkOS account from here. See {@link settingsTabsFor}.
+   */
+  onHub?: false;
 }
 
 /**
@@ -202,19 +217,19 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   { id: 'profile', label: 'Profile', group: 'You' },
   // The DorkOS account's one home, directly after Profile: who you are, then
   // the account attached to you (DOR-2628).
-  { id: 'account', label: 'DorkOS account', group: 'You' },
+  { id: 'account', label: 'DorkOS account', group: 'You', onHub: false },
   { id: 'appearance', label: 'Appearance', group: 'You' },
   { id: 'preferences', label: 'Preferences', group: 'You' },
   // "How loud may this be?" is a personal preference, not a system question.
   { id: 'notifications', label: 'Notifications', group: 'You' },
-  { id: 'runtimes', label: 'Runtimes', group: 'Agents' },
+  { id: 'runtimes', label: 'Runtimes', group: 'Agents', onHub: false },
   // What agents may do, for everyone — the answer to "why did my agent ask".
   { id: 'permissions', label: 'Permissions', group: 'Agents' },
   // How DorkOS reaches your apps; the Connections page is for the apps.
   { id: 'connections', label: 'Connections', group: 'Agents' },
   // The local half of what was the Access tab (DOR-2628).
   { id: 'security', label: 'Login & security', group: 'This computer' },
-  { id: 'remote-access', label: 'Remote access', group: 'This computer' },
+  { id: 'remote-access', label: 'Remote access', group: 'This computer', onHub: false },
   { id: 'privacy', label: 'Privacy & data', group: 'This computer' },
   { id: 'server', label: 'Server', group: SETTINGS_ADVANCED_GROUP },
   { id: 'tools', label: 'Tools', group: SETTINGS_ADVANCED_GROUP },
@@ -226,3 +241,15 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   // Only the three actions you cannot take back by hand (DOR-1758).
   { id: 'danger', label: 'Danger zone', group: SETTINGS_ADVANCED_GROUP },
 ];
+
+/**
+ * The Settings tabs that apply where the app runs: every one on a person's own
+ * computer, and on a hub only those not marked `onHub: false`.
+ *
+ * @param isHub - Whether the app runs on a hub (`useIsHub`).
+ */
+export function settingsTabsFor(isHub: boolean): readonly SettingsTabEntry[] {
+  return isHub
+    ? SETTINGS_TAB_DIRECTORY.filter((entry) => entry.onHub !== false)
+    : SETTINGS_TAB_DIRECTORY;
+}

@@ -217,7 +217,7 @@ describe('streamToNodeResponse', () => {
       destroyed: false,
       writableFinished: true,
     });
-    const c = { env: { outgoing } } as unknown as Context<ApiEnv>;
+    const c = { env: { outgoing }, var: {} } as unknown as Context<ApiEnv>;
     const marker = await streamToNodeResponse(c, () => undefined);
     expect(marker).not.toBe(RESPONSE_ALREADY_SENT);
     expect([...marker.headers]).toEqual([...RESPONSE_ALREADY_SENT.headers]);
@@ -229,7 +229,7 @@ describe('streamToNodeResponse', () => {
       destroyed: true,
       writableFinished: false,
     });
-    const c = { env: { outgoing } } as unknown as Context<ApiEnv>;
+    const c = { env: { outgoing }, var: {} } as unknown as Context<ApiEnv>;
     let aborted: boolean | undefined;
     await streamToNodeResponse(c, (_res, { signal }) => {
       aborted = signal.aborted;

@@ -5,6 +5,7 @@
  */
 export { TransportProvider, useOptionalTransport, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
+export { registerCanvasDocumentClosePreparation } from './app-store/canvas-document-close';
 export {
   useAppTabsStore,
   useAppTabs,
@@ -56,6 +57,7 @@ export {
 } from './server-config/use-feature-enabled';
 export {
   SPACES_EXPERIMENT,
+  DOCS_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
   officialSpaceLink,
@@ -268,3 +270,16 @@ export {
 } from './interaction/use-roving-focus';
 export type { SidebarDragActivatorProps } from './interaction/use-roving-focus';
 export { useRovingGrid } from './interaction/use-roving-grid';
+export {
+  PanelResourceChrome,
+  PanelResourceVisible,
+  useUnifiedPanelChrome,
+  useTerminalResourceChrome,
+} from './panel-resources/chrome';
+export { useVisualViewportBounds } from './viewport/use-visual-viewport-bounds';
+export {
+  documentPanelScope,
+  legacyDocumentPanelScope,
+  readPanelViewPreferences,
+} from './panel-resources/preferences';
+export type { PanelViewPreference, PanelViewPreferences } from './panel-resources/preferences';

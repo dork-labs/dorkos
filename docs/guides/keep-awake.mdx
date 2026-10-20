@@ -20,9 +20,9 @@ Any agent at work on this computer counts:
 - a scheduled task while it runs
 - a message an agent is answering from another agent or a chat app
 
-Background helpers an agent starts inside a reply count too, because the reply isn't finished until they are.
+Background work counts too. When an agent hands a job to a background helper and says it will report back, DorkOS keeps the computer awake until that work is done, and while the agent writes its report. A helper counts for as long as it works. Other background work, such as a server left running or a timer, counts for at most 20 minutes after the reply ends.
 
-About 30 seconds after the last one ends, DorkOS lets go. The short wait means a quick run of replies doesn't switch it on and off over and over.
+About 3 minutes after the last one ends, DorkOS lets go. The wait covers the gap between one reply and the next, so a run of replies doesn't let the computer doze off in between.
 
 ## How to tell
 
@@ -34,11 +34,11 @@ When nothing is running, the cup goes away.
 
 Keeping your computer awake only stops it from falling asleep on its own. Some things still put it to sleep:
 
-- **Closing the lid on battery.** A laptop always sleeps when you close it while it's running on battery.
+- **Closing the lid.** Most laptops sleep when you close the lid. A Mac stays awake with the lid closed only when it's plugged in, connected to an external display, and has an external keyboard, mouse or trackpad. On Windows and Linux, it depends on your lid settings.
 - **A low battery.** When the battery runs low, the computer sleeps to protect itself. Nothing can stop that.
 - **Choosing Sleep yourself.** If you put it to sleep, it sleeps.
 
-The screen still turns off on its usual timer. Only the computer stays on.
+The screen still turns off on its usual timer, and usually locks. Only the computer stays on, so agents keep working behind the lock screen.
 
 Keeping a computer awake uses more battery. If that matters more to you than finishing the work, turn it off.
 
@@ -56,7 +56,11 @@ DorkOS uses the sleep tool your computer already has:
 - **Linux:** `systemd-inhibit`. Best effort, not yet confirmed on real installs. On a computer you reach over SSH, the system may refuse the request.
 - **Windows:** a built-in Windows setting, through PowerShell. Best effort, not yet confirmed on real installs.
 
-If DorkOS can't keep your computer awake, the Sleep setting says why and the switch is greyed out. Your agents still run as usual.
+If DorkOS can't keep your computer awake, the Sleep setting says why. Your agents still run as usual.
+
+If your computer refused the request, DorkOS tries again on its own: after 30 seconds, then waiting longer each time, up to every 10 minutes. To try again right away, switch the setting off and back on. If the refusal never goes away, as on Linux reached over SSH, the retry every 10 minutes is harmless.
+
+If the sleep tool is missing, or this system has none, the switch is greyed out.
 
 In a container, such as Docker, there's nothing to keep awake: the computer running the container decides when it sleeps. The setting says so.
 

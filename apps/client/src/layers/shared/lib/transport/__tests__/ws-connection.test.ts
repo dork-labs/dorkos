@@ -347,4 +347,34 @@ describe('WSConnection', () => {
     expect(FakeSocket.instances.length).toBeGreaterThan(opened);
     conn.destroy();
   });
+
+  it('reports a socket parked by a hidden tab as down, and its reopen as a recovery (DOR-2896)', () => {
+    // The global stream has no replay, so a parked socket misses events. Only a
+    // down state lets the caller re-sync when the tab is shown again.
+    const onStateChange = vi.fn();
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {}, onStateChange });
+    conn.connect();
+    latest().open();
+    conn.enableVisibilityOptimization(1_000);
+    onStateChange.mockClear();
+
+    try {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(1_000);
+      expect(onStateChange.mock.calls.map(([state]) => state)).toEqual(['reconnecting']);
+
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      latest().open();
+      expect(onStateChange.mock.calls.map(([state]) => state)).toEqual([
+        'reconnecting',
+        'connecting',
+        'connected',
+      ]);
+    } finally {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      conn.destroy();
+    }
+  });
 });

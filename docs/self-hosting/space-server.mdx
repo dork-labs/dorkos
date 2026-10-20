@@ -42,6 +42,8 @@ dorkos community deploy --remove-uncertain <run-id>   # Check, and maybe remove,
 dorkos community deploy --forget <run-id>   # Stop listing a setup once everything it made is gone
 ```
 
+For every step in order, from signing in to inviting your first person, see [Set Up a Space Server, Step by Step](/docs/self-hosting/space-server-setup).
+
 ## If setup stops partway
 
 Sometimes setup stops without knowing whether it created something, for example when you press Control-C just as it starts a create. Then setup doesn't offer `--resume`, because resuming can't get past that step. It gives you `--remove-uncertain` instead, which checks that one thing:
@@ -77,15 +79,18 @@ Your space server sends no email until you give it your own mail server, with `C
 - New accounts get a link to confirm their email.
 - Someone whose account has no password can get a sign-in link by email.
 
-Without mail, people who lose their password ask you, and you reset it with the recovery command in [`apps/community/RECOVERY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/RECOVERY.md). The settings, and the sender checks that keep these emails out of spam, are in [`apps/community/DEPLOYMENT.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/DEPLOYMENT.md#optional-mail).
+Without mail, people who lose their password ask you, and you reset it with the recovery command in [`apps/space/RECOVERY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/space/RECOVERY.md). The settings, and the sender checks that keep these emails out of spam, are in [`apps/space/DEPLOYMENT.md`](https://github.com/dork-labs/dorkos/blob/main/apps/space/DEPLOYMENT.md#optional-mail).
 
 ## The full recipe
 
-The step-by-step guide, including how to do every step by hand, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).
+The step-by-step guide, including how to do every step by hand, is [`apps/space/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/space/FLY.md).
 
 ## Next Steps
 
 <Cards>
+  <Card title="Step by Step" href="/docs/self-hosting/space-server-setup">
+    Every step of setup, from signing in to your first invite
+  </Card>
   <Card title="Spaces" href="/docs/guides/communities">
     Start, join, and use a space from the DorkOS app
   </Card>

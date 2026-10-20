@@ -34,6 +34,7 @@ import path from 'path';
 import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { WORKBENCH } from '../config/constants.js';
 import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';
 import {
@@ -117,6 +118,17 @@ router.post('/sign', async (c) => {
   const parsed = WorkbenchSignRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
     return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+  }
+
+  if (currentServerRole() === 'hub') {
+    // A hub previews nothing (DOR-2937). Its front door publishes one address,
+    // as a tunnel does, so a dev server's own origin cannot be reached; and a
+    // file served there would be served on the hub's own address, where a
+    // hostile page could pass for the hub. Each answer is one the browser
+    // already explains in a sentence.
+    return c.json(
+      parsed.data.kind === 'serve' ? { url: null } : { url: null, unavailable: 'tunnel' as const }
+    );
   }
 
   if (parsed.data.kind === 'serve') {
@@ -205,6 +217,11 @@ router.post('/probe', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
   }
+  // A hub's own ports are not the person's, so it does not say. The browser
+  // then asks for a preview anyway, which a hub answers as a tunnel would.
+  if (currentServerRole() === 'hub') {
+    return c.json({ error: 'No dev servers are looked for here.', code: 'NOT_ON_HUB' }, 409);
+  }
   const listening = await probeLoopbackPort(parsed.data.port);
   return c.json({ listening });
 });
@@ -220,6 +237,8 @@ router.post('/probe', async (c) => {
  * `*splat` joined its decoded segments.
  */
 async function handleServe(c: Context<ApiEnv>) {
+  // A hub mints no serve token, so none can be good here.
+  if (currentServerRole() === 'hub') return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
   // Response sandboxing also covers top-level navigation and SVG/documents;
   // the iframe attribute alone only isolates the app's embedded view.
   // The concrete auth-origin list includes Vite, desktop development and the

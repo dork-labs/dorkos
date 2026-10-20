@@ -46,6 +46,8 @@ import {
   STALE_BACKGROUND_WORK_MS,
   wakeChatsCutShort,
 } from '../wake-cut-short-work.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { noteTurnHold, setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 
 /** A record written moments ago, well inside the staleness bound. */
 const RECENT = Date.now();
@@ -71,6 +73,24 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(dorkHome, { recursive: true, force: true });
+});
+
+describe('a wake for a chat whose latest turn was held (DOR-3037)', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  it('runs at the runtime default, and a chat whose turn was not held runs as it was', async () => {
+    setContinuationHoldDb(createTestDb());
+    noteTurnHold('sess-held', true);
+    noteTurnHold('sess-free', false);
+    ledger.hold({ key: 'k-h', sessionId: 'sess-held', cwd: '/projects/one', since: RECENT });
+    ledger.hold({ key: 'k-f', sessionId: 'sess-free', cwd: '/projects/two', since: RECENT });
+    await boot();
+    const bySession = new Map(
+      dispatchMessage.mock.calls.map((call) => [call[0].sessionId, call[0].permissionCeiling])
+    );
+    expect(bySession.get('sess-held')).toBe('runtime-default');
+    expect(bySession.get('sess-free')).toBeUndefined();
+  });
 });
 
 describe('a boot with background work a previous run left behind', () => {

@@ -13,10 +13,9 @@ import {
   or,
   type Db,
 } from '@dorkos/db';
-import {
-  ConnectorAuthenticationFlowStateSchema,
-  type ConnectorAuthenticationFlowCreateRequest,
-  type ConnectorAuthenticationFlowState,
+import type {
+  ConnectorAuthenticationFlowCreateRequest,
+  ConnectorAuthenticationFlowState,
 } from '@dorkos/shared/connector-resource-schemas';
 import type {
   ConnectionId,
@@ -29,11 +28,14 @@ import {
   type ConnectStartRefusal,
 } from '@dorkos/shared/connector-provider';
 import {
+  CONNECT_REFUSAL_COPY,
   CONNECTOR_AUTHENTICATION_FLOW_TTL_MS,
   SIGN_IN_COPY,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
+import type { TrustedConnectionSharing } from '../access/trusted-sharing.js';
+import { publicFlowState } from './authentication-flow-public.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
 import { cleanupInFlight } from './owed-cleanup.js';
 
@@ -56,13 +58,6 @@ export class ConnectorAuthenticationFlowError extends Error {
   }
 }
 
-/** What a flow refused for good says, for every surface that shows its reason. */
-const REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
-  service_not_ready: SIGN_IN_COPY.serviceNotReady,
-  account_link_required: SIGN_IN_COPY.accountLinkRequired,
-  service_unavailable: SIGN_IN_COPY.serviceUnavailable,
-};
-
 /** Construction options for restart-safe local authentication flows. */
 export interface ConnectorAuthenticationFlowServiceOptions {
   /** Canonical connector database. */
@@ -75,6 +70,12 @@ export interface ConnectorAuthenticationFlowServiceOptions {
   readonly flowTtlMs?: number;
   /** Injectable durable flow id source. */
   readonly createId?: () => string;
+  /**
+   * Shares a brand-new connection with every agent on a Trusted install
+   * (spec `trusted-by-default-flip` §5.6). Absent: a new connection starts
+   * with nobody holding access.
+   */
+  readonly sharing?: Pick<TrustedConnectionSharing, 'shareNewConnection' | 'follow'>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -108,6 +109,7 @@ export class ConnectorAuthenticationFlowService {
   private readonly now: () => Date;
   private readonly flowTtlMs: number;
   private readonly createId: () => string;
+  private readonly sharing: ConnectorAuthenticationFlowServiceOptions['sharing'];
 
   /** Construct the durable flow coordinator. */
   constructor(options: ConnectorAuthenticationFlowServiceOptions) {
@@ -116,6 +118,7 @@ export class ConnectorAuthenticationFlowService {
     this.now = options.now ?? (() => new Date());
     this.flowTtlMs = options.flowTtlMs ?? CONNECTOR_AUTHENTICATION_FLOW_TTL_MS;
     this.createId = options.createId ?? ulid;
+    this.sharing = options.sharing;
   }
 
   /**
@@ -204,13 +207,13 @@ export class ConnectorAuthenticationFlowService {
     if (!row) {
       throw new ConnectorAuthenticationFlowError('flow_not_found', 'Sign-in request not found.');
     }
-    if (row.state !== 'starting' && row.state !== 'pending') return this.toPublic(row);
+    if (row.state !== 'starting' && row.state !== 'pending') return publicFlowState(row);
 
     const now = this.now();
     if (Date.parse(row.expiresAt) <= now.getTime()) {
       this.finishPending(row.id, 'expired', now);
       row = this.ownedFlow(owner, flowId)!;
-      return this.toPublic(row);
+      return publicFlowState(row);
     }
     if (row.cleanupSnapshotJson === null) {
       this.finishPending(
@@ -219,16 +222,16 @@ export class ConnectorAuthenticationFlowService {
         now,
         'This saved sign-in can no longer be used. Start a new sign-in from Accounts.'
       );
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
-    if (row.state === 'starting' || !row.providerFlowId) return this.toPublic(row);
+    if (row.state === 'starting' || !row.providerFlowId) return publicFlowState(row);
 
     const provider = this.registry.resolveProviderInstance(
       row.providerInstanceId as ConnectorProviderInstanceId
     );
     if (!provider || !this.sameProviderGeneration(provider, row.executionConfigGeneration)) {
       this.finishPending(row.id, 'failed', now, SIGN_IN_COPY.wayChanged);
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
 
     const polledProviderFlowId = row.providerFlowId;
@@ -241,11 +244,11 @@ export class ConnectorAuthenticationFlowService {
     if (!row) {
       throw new ConnectorAuthenticationFlowError('flow_not_found', 'Sign-in request not found.');
     }
-    if (row.state !== 'pending') return this.toPublic(row);
+    if (row.state !== 'pending') return publicFlowState(row);
     const afterPoll = this.now();
     if (Date.parse(row.expiresAt) <= afterPoll.getTime()) {
       this.finishPending(row.id, 'expired', afterPoll, undefined, polledProviderFlowId);
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
     const currentProvider = this.ownedProvider(
       owner,
@@ -263,12 +266,12 @@ export class ConnectorAuthenticationFlowService {
         SIGN_IN_COPY.wayChanged,
         polledProviderFlowId
       );
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
-    if (result.status === 'pending') return this.toPublic(row);
+    if (result.status === 'pending') return publicFlowState(row);
     if (result.status === 'failed' || !result.account) {
       this.finishPending(row.id, 'failed', afterPoll, SIGN_IN_COPY.failed, polledProviderFlowId);
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
 
     const accountResult = ProviderConnectedAccountSchema.safeParse(result.account);
@@ -285,7 +288,7 @@ export class ConnectorAuthenticationFlowService {
         'This sign-in belongs to a different way of reaching the app. Start again from Connections.',
         polledProviderFlowId
       );
-      return this.toPublic(this.ownedFlow(owner, flowId)!);
+      return publicFlowState(this.ownedFlow(owner, flowId)!);
     }
 
     const accountData = accountResult.data;
@@ -297,7 +300,7 @@ export class ConnectorAuthenticationFlowService {
       previous.providerInstanceId === provider.instanceId &&
       previous.externalAccountRef === accountData.externalAccountRef;
     const completedAt = this.now().toISOString();
-    this.db.transaction(() => {
+    const sharedId = this.db.transaction((tx): string | undefined => {
       const snapshot = this.cleanupSnapshotCurrent(owner, row, accountData.externalAccountRef);
       if (!snapshot.current) {
         this.finishPending(
@@ -307,7 +310,7 @@ export class ConnectorAuthenticationFlowService {
           'This account changed while you were signing in. Start a new sign-in.',
           polledProviderFlowId
         );
-        return;
+        return undefined;
       }
       // The person just signed in to this same account at the service, so
       // ending its earlier sign-in there would undo their newer choice.
@@ -322,6 +325,18 @@ export class ConnectorAuthenticationFlowService {
           .where(inArray(connections.id, snapshot.cancel))
           .run();
       }
+      // Only a brand-new connection is shared; a reconnect keeps its levels.
+      const isNew = !tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(
+          and(
+            eq(connections.providerInstanceId, provider.instanceId),
+            eq(connections.externalAccountRef, accountData.externalAccountRef),
+            isNull(connections.removedAt)
+          )
+        )
+        .get();
       const account = this.registry.recordConnect(provider, accountData, {
         allowRemovedReplacement: true,
       });
@@ -356,8 +371,15 @@ export class ConnectorAuthenticationFlowService {
       if (transition.changes !== 1) {
         throw new Error('Authentication flow changed before its connection could be recorded.');
       }
+      const createdBy = ownerColumns(owner).ownerId;
+      const shared =
+        isNew && this.sharing?.shareNewConnection(tx, { connectionId: account.id, createdBy });
+      return shared ? account.id : undefined;
     });
-    return this.toPublic(this.ownedFlow(owner, flowId)!);
+    // Read the app now, so the grants exist before anyone opens it; the
+    // sign-in never waits on the service.
+    if (sharedId) void this.sharing?.follow(sharedId);
+    return publicFlowState(this.ownedFlow(owner, flowId)!);
   }
 
   /** Mark process-interrupted starts unknown without replaying their upstream create. */
@@ -574,7 +596,7 @@ export class ConnectorAuthenticationFlowService {
       if (error instanceof ConnectStartRefusedError) {
         // The service said no, and why, before anything started: say so, and
         // let the person see that starting again would end the same way.
-        this.finishStarting(flowId, 'failed', this.now(), REFUSAL_COPY[error.refusal], {
+        this.finishStarting(flowId, 'failed', this.now(), CONNECT_REFUSAL_COPY[error.refusal], {
           failureCode: error.refusal,
         });
       } else {
@@ -586,7 +608,7 @@ export class ConnectorAuthenticationFlowService {
         );
       }
     }
-    return this.toPublic(this.ownedFlow(owner, flowId)!);
+    return publicFlowState(this.ownedFlow(owner, flowId)!);
   }
 
   private finishStarting(
@@ -719,7 +741,7 @@ export class ConnectorAuthenticationFlowService {
         }
       }
     }
-    return this.toPublic(row);
+    return publicFlowState(row);
   }
 
   private ownedProvider(
@@ -886,55 +908,5 @@ export class ConnectorAuthenticationFlowService {
 
   private sameProviderGeneration(provider: ConnectorProvider, generation: number): boolean {
     return this.registry.providerExecutionConfigGeneration(provider) === generation;
-  }
-
-  private toPublic(
-    row: NonNullable<ReturnType<ConnectorAuthenticationFlowService['ownedFlow']>>
-  ): ConnectorAuthenticationFlowState {
-    const base = {
-      flowId: row.id,
-      providerInstanceId: row.providerInstanceId,
-      toolkit: row.toolkit,
-      createdAt: row.createdAt,
-      expiresAt: row.expiresAt,
-    };
-    switch (row.state) {
-      case 'starting':
-        return ConnectorAuthenticationFlowStateSchema.parse({ ...base, state: row.state });
-      case 'pending':
-        return ConnectorAuthenticationFlowStateSchema.parse({
-          ...base,
-          state: row.state,
-          ...(row.authorizeUrl ? { authorizeUrl: row.authorizeUrl } : {}),
-        });
-      case 'connected':
-        return ConnectorAuthenticationFlowStateSchema.parse({
-          ...base,
-          state: row.state,
-          connectionId: row.resultConnectionId,
-          completedAt: row.completedAt,
-        });
-      case 'failed':
-        return ConnectorAuthenticationFlowStateSchema.parse({
-          ...base,
-          state: row.state,
-          reason: row.failureReason,
-          ...(row.failureCode ? { failureCode: row.failureCode } : {}),
-          completedAt: row.completedAt,
-        });
-      case 'start_unknown':
-        return ConnectorAuthenticationFlowStateSchema.parse({
-          ...base,
-          state: row.state,
-          reason: row.failureReason,
-          completedAt: row.completedAt,
-        });
-      case 'expired':
-        return ConnectorAuthenticationFlowStateSchema.parse({
-          ...base,
-          state: row.state,
-          completedAt: row.completedAt,
-        });
-    }
   }
 }

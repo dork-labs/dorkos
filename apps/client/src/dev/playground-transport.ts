@@ -283,6 +283,16 @@ export function createPlaygroundTransport(): Transport {
       // page is the honest answer for a playground with no server: a quiet bell.
       // The community list also mounts in Messaging; no server means no connections.
       if (prop === 'listCommunityConnections') return async () => [];
+      // Re-seat: an agent that has answered, with one other account to move to.
+      if (prop === 'getRoomReseatOptions') {
+        return async () => ({
+          current: { id: 'claude4', label: 'Claude4' },
+          accounts: [
+            { id: 'claude3', label: 'Claude3', color: '#64748b', eligible: true, reason: '' },
+          ],
+          seated: true,
+        });
+      }
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }
@@ -299,6 +309,20 @@ export function createPlaygroundTransport(): Transport {
       }
       if (prop === 'getRemoteAccessReport') {
         return async () => playgroundRemoteReport;
+      }
+      // Wi-Fi access is a switch the playground can flip too; `null` is not a
+      // status, and the card reads its addresses off one.
+      if (prop === 'getLanAccess' || prop === 'setLanAccess') {
+        return async (enabled?: boolean) => ({
+          enabled: enabled ?? false,
+          listening: enabled ?? false,
+          supported: true,
+          setByEnvironment: null,
+          port: 4242,
+          localName: 'studio.local',
+          addresses: ['192.168.1.20'],
+          error: null,
+        });
       }
       // One named room, so the `AppTabStrip` showcase can demo a channel tab
       // reading "#general" the way the real header does — every other id
@@ -366,6 +390,9 @@ export function createPlaygroundTransport(): Transport {
         return async () => ({ project: null, allow: null, accounts: [] });
       }
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
+      if (prop === 'setAccountNoAutoMove') {
+        return async (_id: string, noAutoMove: boolean) => ({ noAutoMove });
+      }
       // The DorkOS model form (the first run's "Other service" row) reads what
       // is saved before it draws; nothing saved and no credits is the honest
       // answer, and `null` is neither.

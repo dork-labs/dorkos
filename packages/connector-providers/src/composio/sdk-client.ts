@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import { Composio, ComposioRequestCancelledError } from '@composio/core';
 import { stableStringify } from '../stable-stringify.js';
+import { usesFileInput } from './file-input.js';
 import type { ConnectorAuthenticationSetup, ConnectorToolkit } from '../connector-provider.js';
 import type {
   ConnectorCatalogPageRequest,
@@ -268,15 +269,6 @@ function schemaHash(inputSchema: Record<string, unknown>): string {
   return `sha256:${createHash('sha256').update(stableStringify(inputSchema)).digest('hex')}`;
 }
 
-/** Detect SDK file inputs that require an explicit upload capability. */
-function containsFilePathInput(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(containsFilePathInput);
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  if (record.format === 'path' || record.file_uploadable === true) return true;
-  return Object.values(record).some(containsFilePathInput);
-}
-
 const SUPPORTED_ACCOUNT_SCHEMES = ['API_KEY', 'BEARER_TOKEN', 'BASIC', 'NO_AUTH'] as const;
 
 function normalizedSchemes(values: readonly string[] | undefined): Set<string> {
@@ -531,7 +523,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
         retryable: false,
       };
     }
-    if (containsFilePathInput(input.operation.inputSchema)) {
+    if (usesFileInput(input.operation.inputSchema, input.arguments)) {
       return {
         status: 'error',
         code: 'UNSUPPORTED_FILE_INPUT',

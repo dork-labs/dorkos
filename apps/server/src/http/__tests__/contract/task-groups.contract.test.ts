@@ -43,6 +43,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -392,12 +393,14 @@ contractSuite(
       expect: { status: 200, headers: JSON_TYPE, schema: z.object({ status: z.string() }).loose() },
     },
     {
-      name: 'GET /api/runtimes/opencode/openrouter/oauth/callback answers a page for an unknown state',
+      name: 'GET /api/runtimes/opencode/openrouter/oauth/callback sends an unknown state to the landing page',
       path: '/api/runtimes/opencode/openrouter/oauth/callback?state=nobody&code=nothing',
       expect: {
-        status: 400,
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-        schema: z.string().startsWith('<!doctype html>').includes('Sign-in failed'),
+        status: 303,
+        headers: {
+          location: /\/signed-in\?landing=[A-Za-z0-9_-]+$/,
+          'cache-control': 'no-store',
+        },
       },
     },
 
@@ -736,6 +739,10 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
   beforeAll(async () => {
     ollama = await startOllamaStub();
     server = await bootComposedServer({ DORKOS_OLLAMA_URL: ollama.url });
+    // The composed server runs on the test-mode runtime, whose never-ask mode
+    // id a SKILL.md `schedule:` block cannot hold, so no stop of its own here:
+    // schedules take the fallback mode, as they did before Trusted.
+    await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();
@@ -983,16 +990,48 @@ const PROXIED_HOST = 'dorkos.contract.example';
 
 describe('contract: the loopback-only routes, reached by a name that is not this computer', () => {
   let server: ComposedServer | undefined;
+  let cookie: Record<string, string>;
+  const OWNER = {
+    email: `owner-${randomUUID().slice(0, 8)}@dork.test`,
+    password: 'a-long-password-1',
+  };
   beforeAll(async () => {
     server = await bootComposedServer({ ...NO_OLLAMA, DORKOS_TRUSTED_HOSTS: PROXIED_HOST });
+    // An owner exists and this computer still asks for no password. Another
+    // device must sign in as that owner (ADR 261015-125850 rule 3); the routes'
+    // own "only on this computer" answers are what a signed-in caller there hears.
+    const origin = { origin: server.baseUrl };
+    await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // Signed in there, since a sign-in works only where it was made (DOR-2969).
+    cookie = await signInAt(server.baseUrl, PROXIED_HOST, OWNER);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();
   }, 30_000);
 
-  const remote = { host: PROXIED_HOST };
+  /** The owner, signed in on another device that reaches this server by name. */
+  const remote = () => ({ ...cookie, host: PROXIED_HOST, origin: `http://${PROXIED_HOST}` });
+  const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 
-  it('refuses every connect, provisioning and model-setup action', async () => {
+  it('asks another device with no session to sign in, with the this-computer password off', async () => {
+    for (const [method, url] of [
+      ['GET', '/api/runtimes/claude-code/credential'],
+      ['POST', '/api/runtimes/codex/provision'],
+      ['GET', '/api/runtimes/opencode/openrouter/oauth/callback?state=x'],
+      ['GET', '/api/runtimes/claude-code/accounts/usage'],
+      ['GET', '/api/tasks'],
+    ] as const) {
+      await check(server, {
+        method,
+        path: url,
+        headers: { host: PROXIED_HOST },
+        body: method === 'GET' ? undefined : {},
+        expect: { status: 401, headers: JSON_TYPE, schema: AUTH_REQUIRED },
+      });
+    }
+  });
+
+  it('refuses the signed-in owner there every connect, provisioning and model-setup action', async () => {
     for (const [method, url, expected] of [
       ['GET', '/api/runtimes/claude-code/credential', CONNECT_LOCAL_ONLY],
       ['POST', '/api/runtimes/claude-code/credential', CONNECT_LOCAL_ONLY],
@@ -1019,30 +1058,30 @@ describe('contract: the loopback-only routes, reached by a name that is not this
       await check(server, {
         method,
         path: url,
-        headers: remote,
+        headers: remote(),
         body: method === 'GET' ? undefined : {},
         expect: { status: 403, headers: JSON_TYPE, body: expected },
       });
     }
   });
 
-  it('answers the OAuth landing with a plain refusal', async () => {
+  it('answers the signed-in owner there the OAuth landing with a plain refusal', async () => {
     await check(server, {
       path: '/api/runtimes/opencode/openrouter/oauth/callback?state=x',
-      headers: remote,
+      headers: remote(),
       expect: { status: 403, body: 'Not available.' },
     });
   });
 
-  it('still answers the routes any caller may read', async () => {
+  it('still answers the signed-in owner there the routes any person may read', async () => {
     await check(server, {
       path: '/api/runtimes/claude-code/accounts/usage',
-      headers: remote,
+      headers: remote(),
       expect: { status: 200, schema: z.object({ accounts: z.array(z.unknown()) }).strict() },
     });
     await check(server, {
       path: '/api/tasks',
-      headers: remote,
+      headers: remote(),
       expect: { status: 200, schema: TASK_LIST },
     });
   });
@@ -1061,6 +1100,8 @@ describe('contract: the same groups with login on', () => {
     server = await bootComposedServer(NO_OLLAMA);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // No stop of its own, for the test-mode reason the login-off block gives.
+    await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
     await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = {

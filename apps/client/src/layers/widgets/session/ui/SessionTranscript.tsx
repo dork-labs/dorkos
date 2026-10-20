@@ -36,6 +36,7 @@ import {
 } from '@/layers/features/conversation';
 import {
   buildListRows,
+  createListRowsCache,
   ChatEmptyState,
   resolveMessageAuthor,
   StagedContextNote,
@@ -49,9 +50,12 @@ import {
   ChatStopLine,
   interleaveStopNotices,
   useChatActivity,
+  useEarlierMessages,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
-import { useRenderSlot } from '@/layers/shared/lib';
+import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
+import { LoadEarlierRow } from './LoadEarlierRow';
+import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
  * What the transcript is called when a screen reader lands in it.
@@ -60,6 +64,14 @@ import { useRenderSlot } from '@/layers/shared/lib';
  * inventing one would name the feed after something the reader cannot see.
  */
 const TRANSCRIPT_FEED_LABEL = 'Conversation';
+
+/** The "Earlier messages" control's row: one object, so it is never a new row. */
+const LOAD_EARLIER_ROW: ConversationRow = {
+  kind: 'notice',
+  id: 'session-load-earlier',
+  at: '',
+  body: null,
+};
 
 /**
  * Stable empty part list. A fresh `[]` per render would re-run the approval
@@ -145,6 +157,11 @@ interface SessionTranscriptProps {
    * chat's first line already says, for the person, why it exists.
    */
   foldFirstPrompt?: boolean;
+  /**
+   * The log under an agent's Direct chat (rule S12), read by the chat panel.
+   * Its pings are drawn where they landed. Absent for an ordinary chat.
+   */
+  directLog?: DirectChatLog;
 }
 
 /**
@@ -161,56 +178,89 @@ interface SessionTranscriptProps {
  * @param props - The transcript and everything a row needs to be interactive.
  */
 export function SessionTranscript({
-  messages: transcript,
+  messages: windowTranscript,
   sessionId,
   isLoadingHistory = false,
   hydrated = false,
   isTextStreaming = false,
   activeToolCallId = null,
-  onToolRef,
+  onToolRef: onToolRefProp,
   focusedOptionIndex = -1,
-  onToolDecided,
-  onRetry,
-  onSigninComplete,
-  onChooseModel,
+  onToolDecided: onToolDecidedProp,
+  onRetry: onRetryProp,
+  onSigninComplete: onSigninCompleteProp,
+  onChooseModel: onChooseModelProp,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
   allowsDenyReason,
   landOnRow,
   foldFirstPrompt = false,
+  directLog,
 }: SessionTranscriptProps) {
+  // Row handlers keep one identity, so a row whose message did not change can
+  // skip its render: `onRetry` alone used to change on every streamed word, and
+  // with it every visible row re-drew its markdown (DOR-2895).
+  const onToolRef = useStableCallback(onToolRefProp);
+  const onToolDecided = useStableCallback(onToolDecidedProp);
+  const onRetry = useStableCallback(onRetryProp);
+  const onSigninComplete = useStableCallback(onSigninCompleteProp);
+  const onChooseModel = useStableCallback(onChooseModelProp);
   // A "Stopped by" line wherever another chat's agent stopped this one (spec
   // `spin-off-chats` §6), placed by when it happened. The rows are drawn from
   // this list; every rule about MESSAGES — what is new, what is final, where
   // a message sits in the feed, what has been read — counts the transcript
   // itself, because a stop line is not a message and one arriving late must
   // not shift any of them.
+  // A long conversation opens on its newest messages; older pages the reader
+  // asked for go in front (DOR-2889). Everything below counts them as messages.
+  const earlier = useEarlierMessages(sessionId, windowTranscript);
+  const transcript = earlier.messages;
   const { stops } = useChatActivity(sessionId);
-  const messages = useMemo(() => interleaveStopNotices(transcript, stops), [transcript, stops]);
-  // Each row's position among the messages, or -1 for a stop line.
+  // An agent's Direct chat also draws the pings that reached it from the
+  // agent's other chats, where they landed (rule S12). Like stop lines, they
+  // are not transcript messages, so none of the rules below count them.
+  const transcriptWhole = !earlier.canLoadEarlier;
+  const direct = useMemo(
+    () => withDirectNotes(transcript, directLog, transcriptWhole),
+    [transcript, directLog, transcriptWhole]
+  );
+  const messages = useMemo(
+    () => interleaveStopNotices(direct.messages, stops),
+    [direct.messages, stops]
+  );
+  // Each row's position among the messages, or -1 for a stop line or a note.
   const transcriptIndex = useMemo(() => {
     let next = 0;
-    return messages.map((m) => (m._chatStop ? -1 : next++));
+    return messages.map((m) => (m._chatStop || m._directNote ? -1 : next++));
   }, [messages]);
   // How long the transcript was when this mount first had one — the line between
   // history and what arrived since, which decides which rows animate. Latched in
   // a slot rather than state: it is read in the same render that captures it, and
   // capturing it must not cause a render of its own.
+  // Counted in the whole conversation (`messagesBefore`), so neither an older
+  // page read in front nor a whole-history reload shifts the line (DOR-2889).
   const historyCount = useRenderSlot<number | null>(null);
-  if (historyCount.read() === null && transcript.length > 0) historyCount.write(transcript.length);
+  if (historyCount.read() === null && transcript.length > 0)
+    historyCount.write(earlier.messagesBefore + transcript.length);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
   // The first message a person would have typed, when it is folded: the first
   // plain user turn. -1 when nothing is folded.
+  // Only when the loaded messages start at the beginning: in a long chat's
+  // window, the first user message is not the one that started it.
   const foldedPromptIndex = useMemo(
     () =>
-      foldFirstPrompt
+      foldFirstPrompt && !earlier.canLoadEarlier
         ? messages.findIndex(
             (m) =>
-              m.role === 'user' && m.messageType === undefined && !m._stagedContext && !m._chatStop
+              m.role === 'user' &&
+              m.messageType === undefined &&
+              !m._stagedContext &&
+              !m._chatStop &&
+              !m._directNote
           )
         : -1,
-    [foldFirstPrompt, messages]
+    [foldFirstPrompt, earlier.canLoadEarlier, messages]
   );
   const birthRecord = useAgentBirthRecord(sessionId);
 
@@ -260,7 +310,8 @@ export function SessionTranscript({
 
   const { lastSeenMessageId, unreadFromStart, markSeen, isHydrated } = useUnreadCursor(
     sessionId,
-    transcript
+    transcript,
+    earlier.messagesBefore
   );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
@@ -290,34 +341,54 @@ export function SessionTranscript({
     }
   }, [messages]);
 
+  // The layout reuses the rows of everything a streamed word did not change,
+  // so a long chat is not laid out again per word (DOR-2912). That needs the
+  // author resolver to keep its identity until the authors themselves change.
+  const resolveAuthor = useCallback(
+    (message: ChatMessage) => resolveMessageAuthor(message, authorContext),
+    [authorContext]
+  );
+  const [layoutCache] = useState(createListRowsCache);
   const listRows = useMemo(
     () =>
       buildListRows(messages, {
-        resolveAuthor: (message) => resolveMessageAuthor(message, authorContext),
+        resolveAuthor,
         now,
-        lastSeenMessageId,
-        unreadFromStart,
+        // An unread ping in a Direct chat is where the reader left off.
+        lastSeenMessageId: direct.lastSeenBeforeUnread ?? lastSeenMessageId,
+        unreadFromStart: direct.unreadFromStart || unreadFromStart,
+        cache: layoutCache,
       }),
-    [messages, authorContext, now, lastSeenMessageId, unreadFromStart]
+    [messages, resolveAuthor, now, lastSeenMessageId, unreadFromStart, direct, layoutCache]
   );
 
-  const rows = useMemo<ConversationRow[]>(
-    () =>
-      listRows.map((row) => {
-        if (row.kind === 'day-divider')
-          return { kind: 'day-divider', id: row.key, label: row.label };
-        if (row.kind === 'unread-divider') return { kind: 'unread-divider', id: row.key };
-        return {
-          kind: 'message',
-          id: row.key,
-          payload: row.message,
-          grouping: row.grouping,
-          author: row.author,
-          at: row.message.timestamp,
-        };
-      }),
-    [listRows]
-  );
+  // One view row per layout row, kept with it, so reused layout rows hand the
+  // timeline the very same objects as last time.
+  const [viewRows] = useState(() => new WeakMap<ListRow, ConversationRow>());
+  const rows = useMemo<ConversationRow[]>(() => {
+    const built = listRows.map((row) => {
+      const known = viewRows.get(row);
+      if (known) return known;
+      const view: ConversationRow =
+        row.kind === 'day-divider'
+          ? { kind: 'day-divider', id: row.key, label: row.label }
+          : row.kind === 'unread-divider'
+            ? { kind: 'unread-divider', id: row.key }
+            : {
+                kind: 'message',
+                id: row.key,
+                payload: row.message,
+                grouping: row.grouping,
+                author: row.author,
+                at: row.message.timestamp,
+              };
+      viewRows.set(row, view);
+      return view;
+    });
+    // Above everything, as the ceiling of what is loaded (see `LoadEarlierRow`).
+    return earlier.canLoadEarlier ? [LOAD_EARLIER_ROW, ...built] : built;
+  }, [listRows, viewRows, earlier.canLoadEarlier]);
+  const rowOffset = earlier.canLoadEarlier ? 1 : 0;
 
   /**
    * Render one row by kind.
@@ -328,7 +399,10 @@ export function SessionTranscript({
    */
   const renderRow = useCallback<ConversationRowRenderer>(
     (_row, ctx) => {
-      const row: ListRow = listRows[ctx.index]!;
+      if (rowOffset === 1 && ctx.index === 0) {
+        return <LoadEarlierRow loading={earlier.isLoadingEarlier} onLoad={earlier.loadEarlier} />;
+      }
+      const row: ListRow = listRows[ctx.index - rowOffset]!;
       if (row.kind === 'day-divider') return <DayDivider label={row.label} />;
       if (row.kind === 'unread-divider') return <UnreadDivider />;
 
@@ -364,7 +438,7 @@ export function SessionTranscript({
       // nothing has come after it. Anything following takes the offer away —
       // the next prompt, a steer, or the staged note two branches up, which is
       // a user-role message even though it draws no bubble.
-      const isFinalMessage = position === transcript.length - 1;
+      const isFinalMessage = position >= 0 && position === transcript.length - 1;
       const isLastAssistant = isFinalMessage && message.role === 'assistant';
       // Fence-based supersede (DOR-302): a widget in this message is stale only
       // when a NEWER fence-bearing message exists. Fence-less messages get
@@ -381,7 +455,8 @@ export function SessionTranscript({
           grouping={row.grouping}
           author={row.author}
           sessionId={sessionId}
-          isNew={history !== null && position >= history}
+          directRoomId={directLog?.roomId}
+          isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
           isFinalMessage={isFinalMessage}
@@ -406,11 +481,16 @@ export function SessionTranscript({
     },
     [
       listRows,
+      rowOffset,
+      earlier.isLoadingEarlier,
+      earlier.loadEarlier,
+      earlier.messagesBefore,
       transcript.length,
       transcriptIndex,
       lastWidgetFenceIndex,
       foldedPromptIndex,
       sessionId,
+      directLog?.roomId,
       historyCount,
       isTextStreaming,
       activeToolCallId,
@@ -457,7 +537,8 @@ export function SessionTranscript({
       // is a round trip, so anchoring before it lands would put every
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
-      landingReady={isHydrated}
+      // A link to an old message waits until the pages holding it are read.
+      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true)}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}

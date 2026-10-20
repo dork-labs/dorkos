@@ -46,6 +46,11 @@
  *
  * @module routes/capabilities-invoke
  */
+import {
+  isFromWifi,
+  NOT_FROM_WIFI,
+  WIFI_ACTION_REFUSAL,
+} from '../services/core/auth/sessions/wifi-level.js';
 import { Hono } from 'hono';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
@@ -101,6 +106,11 @@ export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Ho
     // `check_update`) accept `{}`.
     const input = readJsonBody(c, { emptyAs: {} });
     const facts = honoRequestFacts(c);
+    // A Wi-Fi sign-in reads through capabilities, but acts at the computer
+    // (DOR-2969): an `act` or `destructive` one is refused before it runs.
+    if (isFromWifi(facts) && capability.tier !== 'observe') {
+      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    }
 
     try {
       // Attribute the call when the caller presented a resolved agent token

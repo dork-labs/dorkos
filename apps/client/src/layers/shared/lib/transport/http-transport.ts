@@ -11,6 +11,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveStableClientId } from './client-id';
 import { createComputerMethods } from './computer-methods';
+import { createLocalBrowserMethods } from './local-browser-methods';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
@@ -46,6 +47,10 @@ import { createOnboardingMethods } from './onboarding-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
 import { createAuditMethods } from './audit-methods';
+import { createHubMethods } from './hub-methods';
+import { createDeviceMethods } from './device-methods';
+import { createSignInLandingMethods } from './sign-in-landing-methods';
+import { createDocLinkMethods } from './doc-link-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -60,6 +65,7 @@ import { createAuditMethods } from './audit-methods';
 export interface HttpTransport
   extends
     ReturnType<typeof createComputerMethods>,
+    ReturnType<typeof createLocalBrowserMethods>,
     ReturnType<typeof createTasksMethods>,
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
@@ -94,7 +100,11 @@ export interface HttpTransport
     ReturnType<typeof createOnboardingMethods>,
     ReturnType<typeof createSearchMethods>,
     ReturnType<typeof createAccountMethods>,
-    ReturnType<typeof createAuditMethods> {}
+    ReturnType<typeof createAuditMethods>,
+    ReturnType<typeof createHubMethods>,
+    ReturnType<typeof createDeviceMethods>,
+    ReturnType<typeof createSignInLandingMethods>,
+    ReturnType<typeof createDocLinkMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -112,6 +122,7 @@ export class HttpTransport implements Transport {
     Object.assign(
       this,
       createComputerMethods(baseUrl, () => this.clientId),
+      createLocalBrowserMethods(baseUrl),
       createTasksMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
@@ -146,7 +157,11 @@ export class HttpTransport implements Transport {
       createOnboardingMethods(baseUrl),
       createSearchMethods(baseUrl),
       createAccountMethods(baseUrl),
-      createAuditMethods(baseUrl)
+      createAuditMethods(baseUrl),
+      createHubMethods(baseUrl),
+      createDeviceMethods(baseUrl),
+      createSignInLandingMethods(baseUrl),
+      createDocLinkMethods(baseUrl)
     );
   }
 }

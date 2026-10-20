@@ -150,7 +150,7 @@ async function signInFully(
   expect(started.alreadyConnected).toBe(false);
   pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
   const cb = await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
-  expect(cb).toEqual({ connected: true, serverName: SERVER });
+  expect(cb).toMatchObject({ connected: true, serverName: SERVER });
   return started.flowId;
 }
 

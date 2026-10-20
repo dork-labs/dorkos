@@ -10,11 +10,13 @@ import {
   type CommunityDeliverySnapshot,
 } from './community-deliveries.js';
 import type { HaltRoomResponse } from './room-schemas.js';
+import type { RemoteCommunityDmTransport } from './community-dm-views.js';
 import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireHandleSchema,
   CommunityConnectionAccessSchema,
   CommunityWireDisplayNameSchema,
+  CommunityWireMemberAvailabilityFields,
 } from './community-wire.js';
 import {
   CommunityAttachmentSchema,
@@ -126,9 +128,21 @@ export type RemoteCommunityPostRequest = z.infer<typeof RemoteCommunityPostReque
 export const RemoteCommunityPostResponseSchema = z.strictObject({
   entry: RemoteCommunityEntrySchema,
 });
+/**
+ * One row of a space channel's roster. An agent's row may carry where it runs and whether it is
+ * there (`runsOn`, `lastSeenAt`, `availability`), only when the space reports availability
+ * (DOR-2878). A row from a space without it has none of the three, and shows no status.
+ * Strict: this app refuses an availability state it does not know, so a new one must sit behind
+ * a new `/features` flag that an app asks for.
+ */
+export const RemoteCommunityMemberSchema = CommunityMemberSchema.extend(
+  CommunityWireMemberAvailabilityFields
+).strict();
+/** One row of a space channel's roster. */
+export type RemoteCommunityMember = z.infer<typeof RemoteCommunityMemberSchema>;
 /** The authorized room roster, including each agent's human owner. */
 export const RemoteCommunityMembersResponseSchema = RoomAddressSchema.extend({
-  members: z.array(CommunityMemberSchema.strict()),
+  members: z.array(RemoteCommunityMemberSchema),
   stale: z.boolean(),
 })
   .strict()
@@ -183,6 +197,8 @@ export const RemoteCommunityEnrollmentSchema = z.strictObject({
   ownerDisplayName: z.string().min(1),
   roomIds: z.array(id),
   active: z.boolean(),
+  /** Whether its owner lets people message it directly in this space, as this install set it. */
+  acceptsDms: z.boolean().optional(),
 });
 /** Enrollment details without bearer, filesystem path or local runtime settings. */
 export type RemoteCommunityEnrollment = z.infer<typeof RemoteCommunityEnrollmentSchema>;
@@ -266,7 +282,7 @@ export const RemoteCommunityEventSchema = z
 export type RemoteCommunityEvent = z.infer<typeof RemoteCommunityEventSchema>;
 
 /** Local-server-only operations; each room address always includes its connection ref. */
-export interface RemoteCommunityTransport {
+export interface RemoteCommunityTransport extends RemoteCommunityDmTransport {
   /** Discover visible rooms for one connection, including explicit stale cache state. */
   listRemoteCommunityRooms(ref: string): Promise<RemoteCommunityRoomsResponse>;
   /** Read permissions and metadata for one qualified room. */

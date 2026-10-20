@@ -29,6 +29,11 @@ vi.mock('../model/use-placement-here', () => ({
     here: { page: pathname.split('/').filter(Boolean)[0] ?? 'home' },
   }),
 }));
+vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/local-browser', () => ({
+  useLocalBrowserState: () => ({ data: undefined }),
+}));
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: {} }),
   usePanelTabPlacements: () => [],
@@ -115,6 +120,7 @@ vi.mock('../model/use-right-panel-sizing', () => ({
 let mockCwd: string | null = null;
 let mockAgentId: string | null = null;
 vi.mock('@/layers/entities/session', () => ({
+  useSessionId: () => [null, vi.fn()],
   useDirectoryState: () => [mockCwd, vi.fn()],
 }));
 vi.mock('@/layers/entities/agent', () => ({
@@ -161,6 +167,9 @@ describe('RightPanelContainer — switching to another project’s chat (DOR-257
     panelEvents.length = 0;
     mockIsBelowDesktop = false;
     useAppStore.setState({
+      panelViewPreferences: {},
+      canvasSessionId: null,
+      canvasSessionCwd: undefined,
       rightPanelOpen: false,
       activeRightPanelTab: null,
       rightPanelLayoutKey: null,

@@ -82,6 +82,7 @@ import { z } from 'zod';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
+import { TRUSTED_CARRYOVERS } from './trusted-carryovers.js';
 
 /**
  * How a stored value is compared against the fresh default to decide which one
@@ -118,8 +119,24 @@ import { logger } from '../../../lib/logger.js';
  * empty map (no project limits). Any rule a person stated is narrower than none,
  * so a stored list or a non-empty map is protective as it stands (spec
  * `flow-multiproject` §8.1: which projects a Claude account may work in).
+ *
+ * `oneOf` is for a choice among named values where some of them ask more of
+ * agents than others ({@link ProtectiveCarryover.protectiveValues}): the Careful
+ * preset, or a trust stop at Ask. A stored value in that set is carried when the
+ * fresh value differs; anything else is not.
+ *
+ * `entries` is for a map of per-item states whose default is empty: the changes
+ * a person made on top of a permission preset. Only the entries whose state is
+ * in {@link ProtectiveCarryover.protectiveValues} are carried, merged over the
+ * fresh map; an Allowed entry is the permissive side and is left behind.
+ *
+ * `stamped` is for the record that a once-per-install step ran, whose default
+ * `null` means "not yet". When running the step loosens a default, a set stamp
+ * is the protective side: a stored string is carried when the fresh value is
+ * `null`, so a wipe never runs the step a second time.
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled';
+export type CarryoverDirection =
+  'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled' | 'oneOf' | 'entries' | 'stamped';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -135,6 +152,16 @@ export interface ProtectiveCarryover {
    * to compare against.
    */
   wildcard?: string;
+  /**
+   * For `direction: 'oneOf'` and `'entries'`, the values that protect the
+   * person: the ones that make agents ask, or stop them.
+   */
+  protectiveValues?: readonly string[];
+  /**
+   * For `direction: 'oneOf'`, what a stored `null` amounts to, when the fresh
+   * default is looser than it. Carried as that value.
+   */
+  nullMeans?: string;
   /** Why losing this on a wipe would cost the person a protection. */
   reason: string;
 }
@@ -351,6 +378,9 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
   // for the rule to protect until the person registers the account again, and
   // a row cannot be carried by one leaf without its folder and id. Pinned by
   // `protected-state.test.ts`.
+  // Trusted by default (DOR-2739): every way a person asked agents to ask
+  // first, and the once-per-install step stamps.
+  ...TRUSTED_CARRYOVERS,
   {
     path: 'scheduler.maxConcurrentRuns',
     direction: 'lower',
@@ -483,7 +513,9 @@ function writePath(root: Record<string, unknown>, path: string, value: unknown):
   let cursor = root;
   for (const part of parts) {
     const next = cursor[part];
-    if (next === null || typeof next !== 'object') cursor[part] = {};
+    // Copied, never written through: a container here can be the fresh
+    // config's own object, and a deeper path must not edit it in place.
+    cursor[part] = next !== null && typeof next === 'object' ? { ...next } : {};
     cursor = cursor[part] as Record<string, unknown>;
   }
   cursor[leaf] = value;
@@ -605,6 +637,26 @@ function moreProtective(
         return undefined;
       }
       return stored as Record<string, unknown>;
+    }
+    case 'oneOf': {
+      const value = stored === null && entry.nullMeans !== undefined ? entry.nullMeans : stored;
+      if (typeof value !== 'string') return undefined;
+      return entry.protectiveValues?.includes(value) && value !== fresh ? value : undefined;
+    }
+    case 'entries': {
+      // Only the entries that ask or stop are carried, merged over the fresh
+      // map so a default entry is never lost. An Allowed entry stays behind.
+      if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return undefined;
+      const kept = Object.entries(stored as Record<string, unknown>).filter(
+        ([, state]) => typeof state === 'string' && entry.protectiveValues?.includes(state)
+      );
+      if (kept.length === 0) return undefined;
+      const base =
+        fresh !== null && typeof fresh === 'object' ? (fresh as Record<string, unknown>) : {};
+      return { ...base, ...Object.fromEntries(kept) };
+    }
+    case 'stamped': {
+      return typeof stored === 'string' && fresh === null ? stored : undefined;
     }
     case 'restricted': {
       // See the CarryoverDirection doc: this compares STORED against the fresh

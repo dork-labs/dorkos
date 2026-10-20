@@ -60,7 +60,7 @@ import {
   CommandRegistrySchema,
   HealthResponseSchema,
   ErrorResponseSchema,
-  HistoryMessageSchema,
+  HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
   TaskRunSchema,
@@ -818,6 +818,31 @@ registry.registerPath({
             "The session's project directory (boundary-checked). Optional for a " +
             'session the server can already place; required for a cold session it cannot.',
         }),
+      since: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. When the history holds it, only that message and the ones after ' +
+            'it come back, with `tail: true`; otherwise the whole history (DOR-2890).',
+        }),
+      before: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. Answers the page of up to 100 messages directly older than it, ' +
+            'with `earlierMessages` counting what remains before the page. An id no message ' +
+            'has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).',
+        }),
+      newest: z
+        .enum(['1'])
+        .optional()
+        .openapi({
+          description:
+            'Answers only the newest 150 messages, as the stream snapshot carries them, ' +
+            'with `earlierMessages` counting the rest (DOR-2889).',
+        }),
     }),
   },
   responses: {
@@ -825,14 +850,15 @@ registry.registerPath({
       description: 'Message history',
       content: {
         'application/json': {
-          schema: z.object({ messages: z.array(HistoryMessageSchema) }),
+          schema: HistoryReadSchema,
         },
       },
     },
     404: {
       description:
-        "Could not determine this session's working directory (SESSION_CWD_REQUIRED). " +
-        'Retry with an explicit `cwd`.',
+        "Could not determine this session's working directory (SESSION_CWD_REQUIRED); " +
+        'retry with an explicit `cwd`. Or `before` names a message the history does ' +
+        'not hold (HISTORY_CURSOR_UNKNOWN).',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -7560,7 +7586,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Take a document off this session’s canvas',
   description:
-    'The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.',
+    'When no original file save is unresolved, the row is deleted and every window is told to drop it. An unresolved save refuses closure so the original document identity remains available for settlement. Restoring an optimistically closed tab does not restore a lost local draft or pending request.',
   request: { params: SessionCanvasParams },
   responses: {
     204: { description: 'Closed' },
@@ -7569,6 +7595,14 @@ registry.registerPath({
     403: sessionCanvasPeopleOnly,
     503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
+    409: {
+      description: 'Original save needs settlement; document remains open',
+      content: {
+        'application/json': {
+          schema: z.object({ error: z.string(), code: z.literal('DOC_SAVE_RECOVERY_REQUIRED') }),
+        },
+      },
+    },
   },
 });
 

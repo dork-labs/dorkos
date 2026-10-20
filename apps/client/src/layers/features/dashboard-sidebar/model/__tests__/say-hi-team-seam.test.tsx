@@ -125,6 +125,8 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/room')>()),
   useRooms: () => ({ data: ROOMS, isLoading: false }),
   useThreads: () => THREADS,
+  // No session on screen is an agent's Direct chat here (rule S12).
+  useDirectChat: () => ({ data: null }),
 }));
 
 vi.mock('@/layers/entities/config', async (importOriginal) => {

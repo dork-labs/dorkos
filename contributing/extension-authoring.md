@@ -7,7 +7,7 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 DorkOS reuses a few words that sound interchangeable but name different things. Keep them straight:
 
 - **Extension** (what this guide is about) — a runtime module: a flat directory with an `extension.json` manifest and an `index.ts` exporting `activate()`, compiled on demand by esbuild and discovered by scanning. Identified by its manifest **`id`**, never an npm package name. It is **not** a workspace package and never lives in `packages/`.
-- **Mini app**: the product-story name for an extension, above all one an agent builds for a person (the first of the three differentiators in `AGENTS.md`). The code, the API and this guide keep the word **extension** (`create_extension`, `/x/<id>` pages); docs say "mini apps (the app calls them extensions)". Built today: an agent builds one and a person approves it before it runs. A **Shape** is a different thing: a setup bundle that can carry extensions (see `contributing/shapes.md`).
+- **Mini app**: the product-story name for an extension, above all one an agent builds for a person (the first of the three differentiators in `AGENTS.md`). The code, the API and this guide keep the word **extension** (`create_extension`, `/x/<id>` pages); docs say "mini apps (the app calls them extensions)". Built today: an agent builds one and, on a Trusted install, it runs at once (on Careful a person approves it first). A **Shape** is a different thing: a setup bundle that can carry extensions (see `contributing/shapes.md`).
 - **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/relay`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
 - **Core extension** — a first-party extension that ships in the repo at `apps/server/src/core-extensions/<id>/` and is staged to `~/.dork/extensions/<id>/` at startup (ADR-0271). Same manifest, compiler, and lifecycle as a user extension — only the origin differs. Today: `hello-world`, `linear-issues`, `marketplace`.
 - **Marketplace package** — a _distributable_ unit with a `.dork/manifest.json` whose `type` is one of five: `agent`, `plugin`, `skill-pack`, `adapter`, `shape` (ADR-0230). **"Extension" is not one of the five.** A `plugin`-type package can _bundle_ extensions, declared via the `.claude-plugin/dorkos.json` sidecar (ADR-0236) — so an extension is a _layer inside_ a plugin, not a package type.
@@ -253,6 +253,34 @@ api.navigate(`/session?session=${sessionId}`);
 - **Accounts.** A start picks an account the same way any new chat does. When no account may work in the project it is refused with `account_not_allowed_here`; until account rules exist, this cannot happen, but handle it now.
 - **A refusal throws `StartWorkError`** with `code` and a plain `message` you can show as it is. Nothing was started. Match on `err.code` rather than `instanceof`: your bundle carries its own copy of the class. It sits behind the person bar with the residual the bar documents, so the chat is always recorded as started by your extension, click or not.
 
+### Discussing an item in a room thread
+
+`api.rooms` lets a mini app read a room thread and reply to it **as the person signed in** (DOR-3017): "discuss this post" without leaving the page. Declare it in the manifest, and the person picks the rooms it may use in Settings → Extensions:
+
+```json
+{ "capabilities": { "rooms": true } }
+```
+
+```typescript
+const thread = await api.rooms.readThread(roomId, post.threadId);
+// thread.root, thread.replies (oldest first, newest 200), thread.unreadCount
+const stop = api.rooms.subscribeThread(roomId, post.threadId, (reply) => add(reply));
+await api.rooms.reply(roomId, post.threadId, 'Looks good');
+await api.rooms.markRead(roomId, post.threadId);
+const counts = await api.rooms.unreadCounts(
+  roomId,
+  posts.map((p) => p.threadId)
+);
+```
+
+- **Scoped twice.** Only rooms the person picked for your mini app (`api.rooms.listRooms()` lists them), and inside those only what the person can read. With none picked, every call is refused with `room_not_allowed`, and so is every call from a mini app whose manifest does not ask for rooms. Rooms bridged to another chat app can't be picked, and a reply into one is refused. Turning a mini app's code off, or replacing it with another copy, drops its rooms.
+- **Replies are the person's.** A reply is stored under the person's own author id, shows under their name, and wakes mentioned agents as if they had typed it. Nothing in the call names an author. Every reply, and every refused one, is in the audit trail as `extension.room_reply`, with the mini app named.
+- **Only from the person's own window.** A reply or mark-read needs DorkOS's own page origin, the window's client id, and the person's browser session (or, with no password on this computer, no credential at all). An agent that names itself, a script, another site, anything relayed and a server half that runs in its own process (`"runtime": "subprocess"`) are refused with `person_required`.
+- **What it cannot stop, stated.** Your page code runs in the person's window, with their access: it can reply without a click, call any room route directly, and change its own room list, so the room choice bounds a well-behaved mini app and is not a sandbox, and the mini app named in the audit is the one the request claimed to be (the `startWork` residual). A server half that runs inside DorkOS (the default) has DorkOS's own access and can do the same. With no password on this computer, a program on it that copies the app's headers reads as the person (DOR-505); turning on "Ask for a password on this computer too" closes that.
+- **Unread** counts replies from anyone but the person, above the higher of where they read the room and where `markRead` left the thread.
+- **Live replies** arrive through `subscribeThread`, yours included, and replies written while the connection was down arrive once it is back. The stream stops when the person takes the room away. It closes when your mini app deactivates.
+- **A refusal throws `RoomAccessError`** with `code` (`room_not_allowed`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -265,7 +293,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`.
 
 ### Events
 
@@ -988,7 +1016,7 @@ if (ctx.inbox !== undefined) {
 
 #### `ctx.requirePerson`
 
-Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
+Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every router route that changes state on a person's behalf (settings, pause and resume). A fetch handler uses `requirePerson()` or `checkPerson(caller)` instead (see [Serving with a fetch handler](#serving-with-a-fetch-handler)):
 
 ```typescript
 router.put('/settings', ctx.requirePerson, saveSettings);
@@ -1165,15 +1193,16 @@ router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 
 #### Serving with a fetch handler
 
-`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there:
+`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
 
 ```typescript
 import { Hono } from 'hono';
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { requirePerson, type ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const register: ServerExtensionRegister = (_router, ctx) => {
   const app = new Hono();
   app.get('/status', async (c) => c.json({ data: await ctx.storage.loadData() }));
+  app.put('/settings', requirePerson(), async (c) => c.json(await save(await c.req.json())));
   return { fetch: app.fetch };
 };
 
@@ -1186,9 +1215,11 @@ A server entry that needs nothing from `ctx` can export the handler's owner itse
 - **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
 - **Order.** In-process, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. For an extension that runs in its own process, the `dataProxy` is asked first, in DorkOS, and what it passes on goes to the process: its router, then `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
 - **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
-- **People only.** `ctx.requirePerson` is Express middleware, so a route that must refuse agents and other sites belongs on the router.
+- **Who is asking.** The second argument, `caller` (`ExtensionCaller`), carries the person bar's verdict on this request: `caller.person` is `{ ok: true }` or the refusal to answer with, worded with your extension's name, the same verdict `ctx.requirePerson` acts on. A Hono app reads it as `c.env`. It is decided by DorkOS on the real request, in-process and for an extension in its own process alike; the request your handler sees carries no header a caller could forge it with.
+- **People only.** `requirePerson()` from `@dorkos/extension-api/server` is Hono middleware that answers anyone but a person with that refusal and never runs the route. A handler written without Hono calls `checkPerson(caller)`, which returns the refusal `Response` or `null`. Both fail closed on a caller they cannot read. Same residuals as `ctx.requirePerson`.
+- **Reply headers.** One rule for every fetch reply, in-process or not (`http/reply-headers.ts`): content and caching headers, other `x-` headers (no `x-dorkos-`) and a `location` inside `/api/ext/<id>/` pass; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped, and `content-security-policy: sandbox; default-src 'none'` plus `x-content-type-options: nosniff` are always set, so an HTML page a handler serves never runs script (an OAuth callback page that calls `window.close()` does not work; finish the flow in your extension's own page instead). A `location` on the handler's own origin is moved under the mount first, since that is where its paths live: `c.redirect('/done')` sends the browser to `/api/ext/<id>/done`. A `location` on any other origin is dropped. A router's in-process replies still go straight to the socket, which is one reason it is on its way out (DOR-2856).
 
-How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request`).
+How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request` and passes the caller). In an extension's own process, a fetch-only extension never reaches Express: `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is. That `require` offers `express`, `@dorkos/extension-api`, `@dorkos/extension-api/server` and Node's built-ins, and nothing else: no `require.resolve`, `require.cache` or `require.main`, and any other module name is refused. Bundle what you use.
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 
@@ -1265,7 +1296,7 @@ Where it is proven: the isolation suite (`apps/server/src/services/extensions/is
 | `ERR_EXTENSION_NET_DENIED`: `<host:port> isn't in this extension's allow.net list.` | Add the host (and port) to `allow.net`. The person is asked again.                             |
 | `ERR_ACCESS_DENIED` with a path                                                     | Write under `ctx.filesDir`, or read from `assets/`.                                            |
 | `<name> isn't in this extension's allow.run list.`                                  | Add the program to `allow.run`. The person is asked again.                                     |
-| `Isolated extensions must bundle their dependencies: <name>`                        | Bundle the package into `server.ts`'s output instead of requiring it at runtime.               |
+| `Extensions must bundle their dependencies: <name>`                                 | Bundle the package into `server.ts`'s output instead of requiring it at runtime.               |
 | `Isolated extensions can't run programs synchronously; use the async form.`         | Use `spawn`, `execFile` or `exec`.                                                             |
 | The card says it can't run with its limits on this computer                         | This computer's Node did not confirm the limits. It stays off; nothing runs in DorkOS instead. |
 
@@ -1688,11 +1719,13 @@ An extension runs in two places, and the approval covers both:
 - **In the server process.** `test_extension` and the server half of `reload_extensions --id` execute the extension's code with the server's own privileges, outside the tier gate.
 - **In the app page.** `GET /api/extensions/:id/bundle` serves the client bundle the browser `import()`s and `activate()`s. That is same-origin JavaScript carrying the person's session, so it is not a lesser place to run — it can call the API as the operator, including the route that approves the server half.
 
-So a person allows each extension once, before any of its code runs anywhere, and after that the loop above is unprompted.
+So each extension is allowed once, before any of its code runs anywhere, and after that the loop above is unprompted.
+
+**An extension your agent creates is allowed as it is created (ADR 261006-225605, item 5).** On a Trusted install, `create_extension` in a session approves the folder it has just scaffolded, through the same fields a person's yes writes (`approvedToRun`, `approvedSources`, `approvedPermissions`), before the first scan sees it, so it never shows up as waiting. The reply carries `autoApproved` (the permission set it covers), and Activity records `extension.auto_approved` with the agent, the folder and that set. Nothing else is skipped: the approval names this folder and today's declared permissions, so a marketplace or hand-copied copy of the same id, or a later manifest that asks for more, waits for a person. It is not given on Careful, for an id the person said "Not now" to, when the scaffolder refuses a name already in use, or over the external `/mcp` server, whose caller DorkOS cannot tell from an outsider. Everything below describes an extension that waits.
 
 What this looks like in practice:
 
-- The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
+- The **first** `test_extension` or server-entry load for an extension that waits is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
 - Its client bundle is not served either, so the extension contributes nothing to the app until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
 - The person turns it on, once: **Turn it on** on the extension's card in Settings > Extensions, or 👍 on its row in the Activity inbox (below). Both halves start immediately; no restart, no page reload.
 - **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — and is never spent by use. It is not tied to file contents, so edits never re-ask; another plugin or path carrying the same id does.
@@ -1708,7 +1741,7 @@ Both answers name the exact copy the row showed (path, plugin and version; the S
 
 Everything that is not execution still works while you wait, which is what makes the wait cheap: you can create and edit files, and compiling reports real errors. Only running is held back.
 
-There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory (or a plugin installed into the project) reusing the id of an extension the person approved for another copy. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
+There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere: an agent that could write it could approve any code, from anywhere. The one approval DorkOS writes on an agent's behalf is the one above, for the folder `create_extension` just made. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory (or a plugin installed into the project) reusing the id of an extension the person approved for another copy. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
 
 `reload_extensions --id` also refuses an extension the user has turned **off**, rather than quietly turning it back on. Turn it on in Settings first.
 

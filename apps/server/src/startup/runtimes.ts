@@ -37,6 +37,7 @@ import {
   LocalSessionAttachmentStore,
   setSessionAttachmentStore,
 } from '../services/session/attachments/index.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 /** What registering the runtimes needs from the startup that came before it. */
 export interface RuntimeStartupDeps {
@@ -70,6 +71,15 @@ export interface RegisteredRuntimes {
  * @returns See {@link RegisteredRuntimes}.
  */
 export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<RegisteredRuntimes> {
+  // A hub runs no agents (ADR 261015-042933): its agents work on agent
+  // computers it asks Cloud to start. It registers nothing, so nothing on it
+  // can start a turn, and a route that needs a runtime refuses as it does for
+  // any runtime that is not registered. It still talks to DorkOS Cloud.
+  if (currentServerRole() === 'hub') {
+    initCloudLinkManager();
+    logger.info('[DorkOS] Hub mode: no agent runtimes on this server');
+    return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay: null };
+  }
   const { db, dorkHome } = deps;
   let claudeRuntime: ClaudeCodeRuntime | null = null;
   let doeRuntime: DoeRuntime | null = null;
@@ -112,6 +122,12 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     const { composeTestModeCloud } =
       await import('../services/runtimes/test-mode/compose-test-cloud.js');
     doeRuntime = composeTestModeCloud(runtimeRegistry);
+    // A beat on demand for seeded installs (`routes/test-heartbeat.ts`).
+    const [{ addTestControlGroup }, { createTestHeartbeatRoutes }] = await Promise.all([
+      import('../routes/test-control.js'),
+      import('../routes/test-heartbeat.js'),
+    ]);
+    addTestControlGroup('/heartbeat', createTestHeartbeatRoutes());
   } else {
     // Where images a turn produces live is chosen HERE and nowhere else: the
     // adapters and the serving route depend on the `SessionAttachmentStore`

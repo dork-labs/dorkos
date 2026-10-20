@@ -29,6 +29,7 @@
  *
  * @module server/services/rooms/notices/notice-log
  */
+import type { TurnFailure } from '../turn-guards/turn-waits.js';
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -49,6 +50,7 @@ import {
   buildBusyNotice,
   buildHaltedNotice,
   buildTurnFailedNotice,
+  buildSlotWaitNotice,
   buildWaitingNotice,
   BUSY_CONTEXTS,
   type AgentHaltOutcome,
@@ -156,6 +158,12 @@ export interface SilenceContext {
    */
   pausedAt?: string;
   /**
+   * For a `failed` reason with a usage limit: the room tried to move the agent
+   * to another account and none had usage left, so the line says so and
+   * `outOfUsageUntil` is the soonest any account is back. Ignored otherwise.
+   */
+  noOtherAccount?: boolean;
+  /**
    * This message named this agent, even though no stored mention says so.
    *
    * The third route into {@link RoomNoticeLog.directlyAsked}, and it exists
@@ -182,6 +190,11 @@ export interface SilenceContext {
    * failure.
    */
   outOfUsageUntil?: string | null;
+  /**
+   * Why a failed turn failed (DOR-3012): the line names a refusal a person can
+   * understand, and the log records the detail on every failure.
+   */
+  failure?: TurnFailure;
 }
 
 /**
@@ -433,6 +446,9 @@ export class RoomNoticeLog {
           // a `runtime_gone` run can say WHICH program an install is missing
           // without reading the prose back out of the notice.
           ...(context.runtime !== undefined ? { runtime: context.runtime } : {}),
+          // Why a failed turn failed, on every one (DOR-3012).
+          ...(context.failure !== undefined ? { failedBecause: context.failure.detail } : {}),
+          ...(context.failure?.refusal !== undefined ? { refusal: context.failure.refusal } : {}),
         },
       });
     if (damped) {
@@ -480,24 +496,36 @@ export class RoomNoticeLog {
     room: Room,
     entry: RoomEntry,
     agent: NoticeSubject,
-    waiting: { kind: WaitingKind; toolName?: string }
+    waiting: { kind: WaitingKind | 'slot'; toolName?: string }
   ): void {
-    const key = agentNoticeKey(room.id, agent.authorId);
+    // A slot wait keeps its own memory: it is not a person-wait, and a turn
+    // that waited for a slot and then stopped on an approval must still say so
+    // (DOR-3012).
+    const slot = waiting.kind === 'slot';
+    const key = agentNoticeKey(room.id, agent.authorId) + (slot ? SLOT_WAIT_SUFFIX : '');
     const damped = this.noticedWaiting.has(key);
     // Not a refusal — nothing was declined, the turn is simply parked — so it
     // keeps `info` and stays outside `logRefusal`. It carries `damped` for the
     // same reason a refusal carries `visibility`: a wait nobody was told about
     // is the forty-one minutes this notice exists to prevent.
-    logger.info('[rooms] a turn stopped to wait for a person', {
-      roomId: room.id,
-      authorId: agent.authorId,
-      kind: waiting.kind,
-      ...(waiting.toolName !== undefined ? { toolName: waiting.toolName } : {}),
-      damped,
-      entryId: entry.id,
-    });
+    logger.info(
+      slot
+        ? '[rooms] a turn is waiting for a free agent slot'
+        : '[rooms] a turn stopped to wait for a person',
+      {
+        roomId: room.id,
+        authorId: agent.authorId,
+        kind: waiting.kind,
+        ...(waiting.toolName !== undefined ? { toolName: waiting.toolName } : {}),
+        damped,
+        entryId: entry.id,
+      }
+    );
     if (damped) return;
-    const body = buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind);
+    const body =
+      waiting.kind === 'slot'
+        ? buildSlotWaitNotice(agent.displayName, agent.authorId)
+        : buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind);
     if (this.writeNotice(room, entry, agent.authorId, body)) remember(this.noticedWaiting, key);
   }
 
@@ -588,6 +616,33 @@ export class RoomNoticeLog {
     const written = this.writeNotice(room, entry, null, buildBudgetNotice(scope));
     record(written ? 'shown' : 'silent');
     if (written) this.noticedBudget.add(room.id);
+  }
+
+  /**
+   * A person's name as a room line names them: never the registry's 'You',
+   * because the next turn reads the line back (DOR-2458).
+   *
+   * @param authorId - The person.
+   */
+  nameOf(authorId: string): string {
+    return this.deps.nameForAgents(authorId) ?? 'Somebody';
+  }
+
+  /**
+   * Say in the room that an agent's seat moved to a fresh session (the
+   * `agent_reseated` line). One line per move and never damped: each move is
+   * its own news, and a seat moves at most once per message it answers.
+   *
+   * @param room - The room.
+   * @param entry - The message the move was made to answer, for the cascade
+   *   stamp and the thread; `null` for a move nobody's message caused (by hand).
+   * @param body - The line, from `buildAgentReseatedNotice`.
+   * @returns Whether it landed.
+   */
+  reportReseat(room: Room, entry: RoomEntry | null, body: RoomEntryBody): boolean {
+    const about = body.subjectAuthorId ?? null;
+    if (entry !== null) return this.writeNotice(room, entry, about, body);
+    return this.write(room.id, body, about, { cascade: { root: room.id, depth: 0 } });
   }
 
   /**
@@ -804,6 +859,7 @@ export class RoomNoticeLog {
    */
   turnEnded(roomId: string, authorId: string): void {
     this.noticedWaiting.delete(agentNoticeKey(roomId, authorId));
+    this.noticedWaiting.delete(agentNoticeKey(roomId, authorId) + SLOT_WAIT_SUFFIX);
   }
 
   /**
@@ -962,6 +1018,9 @@ export function directlyAsked(
  */
 const NOTICE_KEY_SEPARATOR = '\u0000';
 
+/** Marks a slot wait's key in the waiting memory, apart from a person-wait's. */
+const SLOT_WAIT_SUFFIX = `${NOTICE_KEY_SEPARATOR}slot`;
+
 /**
  * The `(room, agent)` identity, for map keys only. Nothing parses it back apart.
  *
@@ -1049,8 +1108,14 @@ const SILENCE_BODIES: Record<
   (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
   busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
-  failed: (agent, { outOfUsageUntil }) =>
-    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil),
+  failed: (agent, { outOfUsageUntil, failure, noOtherAccount }) =>
+    buildTurnFailedNotice(
+      agent.displayName,
+      agent.authorId,
+      outOfUsageUntil,
+      failure?.refusal,
+      noOtherAccount
+    ),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),

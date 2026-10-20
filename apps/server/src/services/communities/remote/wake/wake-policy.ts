@@ -14,6 +14,7 @@ import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
 import type { RemoteAnswerIn } from './answer-in.js';
+import type { TeammateSpend } from './teammate-spend.js';
 import {
   DEFAULT_WAKE_AGENTS_FROM,
   readWakeAgentsFrom,
@@ -32,6 +33,16 @@ export interface RemoteWakeGate {
    */
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
   /**
+   * Whether `authorMemberId` is this owner's own account in the space, so their post keeps the
+   * owner's power rather than a teammate's (DOR-2955). Absent answers no: every post is a
+   * teammate's.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   * @param authorMemberId - The message author's member id in the space.
+   */
+  isOwnerPost?(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
+  /**
    * Whether every person's post in this channel wakes this owner's agents there, mention or not
    * (spec `official-community-space` D11). Absent answers no, everywhere.
    *
@@ -42,7 +53,8 @@ export interface RemoteWakeGate {
   answersIn?(communityRef: CommunityRef, ownerAuthorId: string, channelName: string): boolean;
   /**
    * Spend one wake of the answer-in budget for this author in this channel, or refuse once the
-   * author's or the channel's share is spent. Absent refuses every one.
+   * author's or the channel's share is spent. Since DOR-2955 it is also the ONE budget every
+   * teammate wake pays from, mention or not. Absent, the bridge holds teammates to its own.
    *
    * @param communityRef - The local connection ref.
    * @param ownerAuthorId - The local owner the connection belongs to.
@@ -55,6 +67,14 @@ export interface RemoteWakeGate {
     channelName: string,
     authorMemberId: string
   ): boolean;
+  /**
+   * Whether turns teammates start in this space are still within the monthly limit the owner set
+   * for it (DOR-2956). Absent, or with no limit set, always.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   */
+  withinTeammateSpend?(communityRef: CommunityRef, ownerAuthorId: string): boolean;
 }
 
 /** Where a connection points, which decides its default: the official space's is narrower. */
@@ -92,7 +112,8 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
     private readonly defaultFor: (place: WakePlace) => WakeAgentsFrom = () =>
       DEFAULT_WAKE_AGENTS_FROM,
-    private readonly answerIn?: RemoteAnswerIn
+    private readonly answerIn?: RemoteAnswerIn,
+    private readonly teammateSpend?: Pick<TeammateSpend, 'allows'>
   ) {
     store.onChange(() => {
       void this.reload();
@@ -220,7 +241,18 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
     if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
-    return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
+    return this.isOwnerPost(communityRef, ownerAuthorId, authorMemberId);
+  }
+
+  /** @inheritdoc */
+  withinTeammateSpend(communityRef: CommunityRef, ownerAuthorId: string): boolean {
+    return this.teammateSpend?.allows(communityRef, ownerAuthorId) ?? true;
+  }
+
+  /** @inheritdoc */
+  isOwnerPost(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
+    const ownerMemberId = this.entries?.get(key(communityRef, ownerAuthorId))?.ownerMemberId;
+    return typeof ownerMemberId === 'string' && ownerMemberId === authorMemberId;
   }
 }
 

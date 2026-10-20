@@ -110,6 +110,8 @@ afterEach(cleanup);
 
 // --- Mocks: everything the palette needs that is NOT rooms ---
 
+// The palette asks whether it runs on a hub; these cases run on a computer.
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => false }));
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),

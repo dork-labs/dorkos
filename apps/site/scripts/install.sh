@@ -6,12 +6,20 @@ DORKOS_VERSION="latest"
 DORKOS_NO_PROMPT="${DORKOS_NO_PROMPT:-0}"
 MIN_NODE_VERSION="22.22.3"
 DRY_RUN=0
+# Optional anonymous install tag from dorkos.ai (`--ref=...`). Handed to the CLI,
+# which keeps it on this computer; nothing here sends it anywhere.
+INSTALL_REF=""
 
 # Parse arguments: first non-flag arg is the version
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --no-prompt) DORKOS_NO_PROMPT=1 ;;
+    --ref=*)
+      # Plain characters only; the CLI checks the exact shape and ignores anything else.
+      candidate="${arg#--ref=}"
+      if [[ "$candidate" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then INSTALL_REF="$candidate"; fi
+      ;;
     --) ;; # skip separator
     --help)
       echo "Usage: curl -fsSL https://dorkos.ai/install | bash [-s VERSION]"
@@ -19,6 +27,7 @@ for arg in "$@"; do
       echo "Flags (pass after -s --):"
       echo "  --dry-run     Show what would happen without installing"
       echo "  --no-prompt   Skip all interactive prompts (for CI)"
+      echo "  --ref=REF     Install tag from dorkos.ai, kept on this computer"
       echo "  --help        Show this help"
       echo ""
       echo "Examples:"
@@ -71,6 +80,9 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] Would run: npm install -g dorkos@${DORKOS_VERSION}"
   echo "[dry-run] Node.js $(node --version) ✓"
   echo "[dry-run] npm $(npm --version) ✓"
+  if [ -n "$INSTALL_REF" ]; then
+    echo "[dry-run] Would keep install tag on this computer: ${INSTALL_REF}"
+  fi
   exit 0
 fi
 
@@ -95,6 +107,13 @@ if ! command -v dorkos &>/dev/null; then
 fi
 
 # ─── Post-install ─────────────────────────────────────────────────
+
+# Hand the install tag to the CLI, which stores it once in its data folder and
+# sends it only if you later turn on feature-usage data. An older CLI without
+# `--ref` just refuses the flag; the install still succeeds.
+if [ -n "$INSTALL_REF" ]; then
+  dorkos "--ref=${INSTALL_REF}" --version >/dev/null 2>&1 || true
+fi
 
 INSTALLED_VERSION=$(dorkos --version 2>/dev/null || echo "unknown")
 

@@ -42,6 +42,10 @@ const policy = z.object({
   type: z.enum(['default', 'custom']),
   credentials: credentials.optional(),
   shared_credentials: z.object({}).strict().optional(),
+  // Composio added this to every config read in October 2026. Like
+  // `shared_credentials` it holds values given to every connected account,
+  // so only an empty object is known to carry nothing.
+  shared_connection_fields: z.object({}).strict().optional(),
   proxy_config: z.null().optional(),
   restrict_to_following_tools: z.array(z.string()).max(0).optional(),
   tool_access_config: toolAccess,
@@ -69,6 +73,7 @@ const knownKeys = new Set([
   'proxy_config',
   'restrict_to_following_tools',
   'shared_credentials',
+  'shared_connection_fields',
 ]);
 function scopes(value: string | string[] | undefined): string[] {
   return [
@@ -111,11 +116,22 @@ export function projectComposioAuthenticationConfigPolicy(
       : policy
   ).safeParse(raw);
   if (!parsed.success) return undefined;
+  const scopeList = scopes(parsed.data.credentials?.scopes);
+  const userScopeList = scopes(parsed.data.credentials?.user_scopes);
+  // Composio stores `scopes: []` on every API-key, bearer, basic and no-auth
+  // config it creates, so an empty scope list holds no credential. Any other
+  // key, or any scope at all, still counts as one.
+  const credentialsEmpty = Object.keys(parsed.data.credentials ?? {}).every(
+    (key) =>
+      (key === 'scopes' || key === 'user_scopes') &&
+      scopeList.length === 0 &&
+      userScopeList.length === 0
+  );
   return {
     type: parsed.data.type,
-    scopes: scopes(parsed.data.credentials?.scopes),
-    userScopes: scopes(parsed.data.credentials?.user_scopes),
-    credentialsEmpty: Object.keys(parsed.data.credentials ?? {}).length === 0,
+    scopes: scopeList,
+    userScopes: userScopeList,
+    credentialsEmpty,
     routerEnabled: parsed.data.is_enabled_for_tool_router,
   };
 }

@@ -57,8 +57,9 @@ function synchronousSource<T>(value: T): T {
   return value;
 }
 /** Read source binding and current tree policy WITHOUT filesystem calls, including inside a supplied tx. */
-export function readDocSourceDescriptor(
-  deps: DocSourceDependencies,
+function readSourceDescriptor(
+  deps: Pick<DocSourceDependencies, 'db' | 'documents'> &
+    Partial<Pick<DocSourceDependencies, 'roomRepos'>>,
   documentId: string,
   tx?: DbTransaction
 ): DocSourceDescriptor {
@@ -98,7 +99,7 @@ export function readDocSourceDescriptor(
   } else if (parsed.kind === 'room') {
     if (!physical.resolvedCwd) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
     if (physical.treeKind === 'room-main' || physical.treeKind === 'worktree') {
-      if (!synchronousSource(deps.roomRepos.getRow(parsed.id)))
+      if (!deps.roomRepos || !synchronousSource(deps.roomRepos.getRow(parsed.id)))
         throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
       result.allowedRoot =
         physical.treeKind === 'room-main'
@@ -117,4 +118,24 @@ export function readDocSourceDescriptor(
   }
   if (!result.rootCandidate) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
   return result;
+}
+
+/** Existing general source policy, preserving Room callers unchanged. */
+export function readDocSourceDescriptor(
+  deps: DocSourceDependencies,
+  documentId: string,
+  tx?: DbTransaction
+): DocSourceDescriptor {
+  return readSourceDescriptor(deps, documentId, tx);
+}
+
+/** Ordinary document saves read only current session/agent-cwd source policy, without Room dependencies. */
+export function readSessionDocSourceDescriptor(
+  deps: Pick<DocSourceDependencies, 'db' | 'documents'>,
+  documentId: string,
+  tx?: DbTransaction
+): DocSourceDescriptor {
+  const source = readSourceDescriptor(deps, documentId, tx);
+  if (parseScope(source.scope).kind !== 'session') throw new DocChannelNotFoundError();
+  return source;
 }

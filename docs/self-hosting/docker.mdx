@@ -99,7 +99,7 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
     DORKOS_ALLOW_INSECURE_BIND: {
       type: 'boolean',
       description:
-        'Set to true by the image so it can bind 0.0.0.0. Turn on login before exposing the container (see Securing Your Instance).',
+        'Set to true by the image so it can bind 0.0.0.0. Create the owner account before exposing the container (see Securing Your Instance).',
       default: "'true'",
     },
     DORKOS_TRUSTED_HOSTS: {
@@ -335,10 +335,12 @@ volumes:
 ### With a reverse proxy
 
 <Callout type="error">
-  **Turn on login before you point a domain at DorkOS.** The Docker image ships with login off, and it
-  binds to every network address so port forwarding works. With login off, anyone who reaches the port
-  gets full control: your chats, your files, and your agents, spending your Claude quota. Create the
-  owner account and require login first:
+  **Create the owner account before you point a domain at DorkOS.** The image binds to every network
+  address so port forwarding works. Until an owner account exists, anyone who reaches the port gets
+  full control: your chats, your files, and your agents, spending your Claude quota. This open start
+  lasts one more release; a later one asks for a one-time setup code instead. Once the owner exists,
+  every browser visit needs a password, and the `dorkos` command inside the container still works
+  without one. Create the owner account first:
 
 ```bash
 docker exec -it dorkos dorkos auth enable
@@ -422,7 +424,7 @@ Fetch the token from inside the container:
 docker exec dorkos cat /home/node/.dork/mcp-local-token
 ```
 
-Send it as a Bearer token (a key you attach to each request) on your calls to `/mcp`. Once you turn on login, per-user API keys replace this token. See the [MCP server guide](/docs/integrations/mcp-server) for the full setup.
+Send it as a Bearer token (a key you attach to each request) on your calls to `/mcp`. From another device, or once this computer asks for a password too, per-user API keys replace this token. See the [MCP server guide](/docs/integrations/mcp-server) for the full setup.
 
 ## Building from Source
 

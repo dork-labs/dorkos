@@ -55,6 +55,11 @@ export const NOTIFICATION_KINDS = [
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
   'schedule.parked',
+  /**
+   * One of our agents made a schedule and it runs without asking, because the
+   * install is Trusted (ADR 261006-225605). An event, with Pause and Open.
+   */
+  'schedule.armed_by_agent',
   /** An agent asked to do something irreversible and is waiting on a yes. Standing. */
   'approval.pending',
   /** A session hit an error and stopped. Standing, per error episode. */
@@ -114,10 +119,34 @@ export const NOTIFICATION_KINDS = [
    */
   'community.owner-replacement',
   /**
+   * Turns teammates started in a space this person connected reached the monthly limit they set
+   * for it (DOR-2956). Once per space and month.
+   */
+  'community.teammate-limit',
+  /**
+   * The saved teammate limits couldn't be read and were set aside, so they need setting again
+   * (DOR-2956). Once per reset.
+   */
+  'community.teammate-limits-reset',
+  /**
    * The one-time offer to run agents' cheap checks on DorkOS credits (spec
    * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
    */
   'heartbeat.credits-offer',
+  /**
+   * An agent's irreversible action in a connected app is waiting out its
+   * 60-second cancel window (spec `trusted-by-default-flip` §5.6). Anyone but
+   * that agent may cancel it. A second row of this kind says how a cancelled or
+   * dropped one ended.
+   */
+  'connector.destructive_pending',
+  /** A held connected-app action ran when its cancel window ended. */
+  'connector.destructive_executed',
+  /**
+   * A browser this computer had never seen used chat from the web here, over
+   * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
+   */
+  'web.new_device',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

@@ -256,6 +256,10 @@ describe('the surface', () => {
       '/v1/invitations/',
       '/v1/remote/',
       '/v1/communities',
+      '/v1/hubs/',
+      '/v1/computers',
+      '/v1/agent-computers/',
+      '/v1/directory',
     ]) {
       expect(
         paths.some((route) => route.startsWith(group)),
@@ -711,6 +715,17 @@ describe('the seat reconciliation additions', () => {
     expect(Object.keys(contract.AgentClaimRequestSchema.shape)).not.toContain('naturalKeyHash');
   });
 
+  it('defines authEnabled by whether other devices must sign in, not by one login switch', () => {
+    // ADR 261015-125850 retired the global "Require login" switch: this
+    // computer may be trusted with no password while every other device still
+    // signs in. The exposure predicate Cloud re-checks is about other devices,
+    // so the field's published meaning must say so, or an instance and Cloud
+    // would read the same `true` two ways.
+    const description = contract.AgentClaimRequestSchema.shape.authEnabled.description ?? '';
+    expect(description).toContain('every request that does not come from this computer');
+    expect(description).toContain('never a single global login switch');
+  });
+
   it('says who a new address is for, and makes accepting the exposure explicit', () => {
     const request = {
       seatId: 'seat_0001',
@@ -887,6 +902,56 @@ describe('the inference refusal reasons', () => {
     ]) {
       expect(contract.InferenceRefusalReasonSchema.safeParse(reason).success).toBe(true);
     }
+  });
+
+  it('starts the account hold for exactly three reasons, and every other reason passes', () => {
+    const holds = contract.InferenceRefusalReasonSchema.options.filter((reason) =>
+      contract.startsAccountHold(reason)
+    );
+    expect(holds.sort()).toEqual([
+      'balance_exhausted',
+      'daily_limit_reached',
+      'entitlement_required',
+    ]);
+  });
+
+  it('never starts the hold, and never throws, on a missing, unknown or malformed reason', () => {
+    for (const reason of [undefined, null, '', 'some_new_reason', 'BALANCE_EXHAUSTED', 7, {}, []]) {
+      expect(() => contract.startsAccountHold(reason)).not.toThrow();
+      expect(contract.startsAccountHold(reason)).toBe(false);
+    }
+    const body = (dorkos_reason?: unknown) => ({
+      type: 'error',
+      error: {
+        type: 'rate_limit_error',
+        message: 'Slow down.',
+        dorkos_code: 'any_code',
+        dorkos_reason,
+      },
+      request_id: null,
+    });
+    for (const odd of [undefined, 'some_new_reason', 7, { nested: true }]) {
+      const parsed = contract.InferenceErrorBodySchema.safeParse(body(odd));
+      expect(parsed.success, String(odd)).toBe(true);
+      expect(contract.startsAccountHold(parsed.data?.error.dorkos_reason)).toBe(false);
+    }
+  });
+
+  it('reads the refusal body the endpoint sends, keeping a known reason', () => {
+    const parsed = contract.InferenceErrorBodySchema.parse({
+      type: 'error',
+      error: {
+        type: 'invalid_request_error',
+        message: 'Out of credit.',
+        dorkos_code: 'whatever_the_endpoint_says',
+        dorkos_reason: 'balance_exhausted',
+      },
+      request_id: null,
+    });
+    expect(parsed.error.dorkos_reason).toBe('balance_exhausted');
+    expect(contract.startsAccountHold(parsed.error.dorkos_reason)).toBe(true);
+    // The endpoint's own code is an open string, never an enum.
+    expect(parsed.error.dorkos_code).toBe('whatever_the_endpoint_says');
   });
 
   it('separates a daily limit from an empty balance, because the action differs', () => {

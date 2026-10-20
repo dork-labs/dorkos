@@ -382,6 +382,15 @@ function mountStatus(
 /** The heartbeats the composition root started, for {@link stopHeartbeats}. */
 let running: HeartbeatsHandle | undefined;
 
+/**
+ * The heartbeats {@link startHeartbeats} started, or undefined before then and
+ * after {@link stopHeartbeats}. Read by the test-only beat trigger
+ * (`routes/test-heartbeat.ts`), which asks the real runner for a beat.
+ */
+export function runningHeartbeats(): HeartbeatsHandle | undefined {
+  return running;
+}
+
 /** Stop the heartbeats {@link startHeartbeats} started, at shutdown. */
 export function stopHeartbeats(): void {
   running?.stop();

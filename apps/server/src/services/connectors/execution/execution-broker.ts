@@ -227,13 +227,23 @@ export class ConnectorExecutionBroker {
     }
   }
 
+  /**
+   * A destructive action runs only on a person's approval of this exact
+   * authority, or on a cancel window this exact authority waited out
+   * (`destructive-hold.ts`). Either is bound to the digest it was given for, so
+   * neither can be spent on another action or account.
+   */
   private assertApprovalBinding(
     capabilityId: ConnectorRuntimeExecutionCapabilityId,
     approval: GrantedApproval | undefined,
     digest: string
   ): void {
     if (capabilityId !== 'connectors.execute_destructive') return;
-    if (!approval || approval.via !== 'approval' || approval.authorityBindingDigest !== digest) {
+    const bound =
+      approval !== undefined &&
+      (approval.via === 'approval' || approval.via === 'hold') &&
+      approval.authorityBindingDigest === digest;
+    if (!bound) {
       throw new CapabilityToolError({
         error:
           'This is a high-risk action, so the person must approve this exact action before it runs.',

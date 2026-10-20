@@ -33,7 +33,13 @@ export interface AuthUser {
 /** The resolved session + user, or `null` when signed out. */
 export interface AuthSession {
   user: AuthUser;
-  session: { id: string; expiresAt: string; userId: string };
+  session: {
+    id: string;
+    expiresAt: string;
+    userId: string;
+    /** Signed in on a shared or public computer: signed out when idle. */
+    publicComputer?: boolean;
+  };
 }
 
 /** A normalized error from an auth call (never thrown — returned in {@link AuthResult}). */
@@ -79,6 +85,15 @@ export interface ApiKeyList {
 /** The auth client surface consumed by this slice's hooks. Mirrors `better-auth/client`. */
 export interface AuthClient {
   signIn: {
+    /**
+     * Start a sign-in with another account (on a person's own DorkOS in the
+     * cloud, their DorkOS account): answers where to send the browser.
+     */
+    social(input: {
+      provider: string;
+      callbackURL: string;
+      errorCallbackURL: string;
+    }): Promise<AuthResult<{ url: string; redirect: boolean }>>;
     email(input: {
       email: string;
       password: string;
@@ -86,11 +101,18 @@ export interface AuthClient {
     }): Promise<AuthResult<{ token: string; user: AuthUser }>>;
   };
   signUp: {
-    email(input: {
-      email: string;
-      password: string;
-      name: string;
-    }): Promise<AuthResult<{ token?: string; user: AuthUser }>>;
+    /**
+     * Create an account. `options.setupCode` is the code this computer prints
+     * when the owner is created from another device (DOR-2968).
+     */
+    email(
+      input: {
+        email: string;
+        password: string;
+        name: string;
+      },
+      options?: { setupCode?: string }
+    ): Promise<AuthResult<{ token?: string; user: AuthUser }>>;
   };
   signOut(): Promise<AuthResult<{ success: boolean }>>;
   getSession(): Promise<AuthResult<AuthSession | null>>;
@@ -124,13 +146,14 @@ export function createAuthRestClient(baseUrl: string): AuthClient {
   async function request<T>(
     method: 'GET' | 'POST',
     path: string,
-    body?: unknown
+    body?: unknown,
+    extraHeaders: Record<string, string> = {}
   ): Promise<AuthResult<T>> {
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/auth${path}`, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...extraHeaders },
         credentials: 'include',
         body: body === undefined ? undefined : JSON.stringify(body),
       });
@@ -151,9 +174,20 @@ export function createAuthRestClient(baseUrl: string): AuthClient {
   return {
     signIn: {
       email: (input) => request('POST', '/sign-in/email', input),
+      social: (input) => request('POST', '/sign-in/social', input),
     },
     signUp: {
-      email: (input) => request('POST', '/sign-up/email', input),
+      email: (input, options) =>
+        request(
+          'POST',
+          '/sign-up/email',
+          input,
+          options?.setupCode
+            ? // Letters, digits and dashes only: a header value outside Latin-1
+              // makes fetch throw, and the server ignores everything else anyway.
+              { 'X-DorkOS-Setup-Code': options.setupCode.replace(/[^0-9A-Za-z-]/g, '') }
+            : {}
+        ),
     },
     signOut: () => request('POST', '/sign-out'),
     getSession: () => request('GET', '/get-session'),

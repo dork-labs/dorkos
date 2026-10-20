@@ -11,6 +11,7 @@
  * @module services/marketplace/telemetry/telemetry-reporter
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import { getOrCreateInstanceId } from '../../../lib/instance-id.js';
 import {
   registerTelemetryReporter,
@@ -18,7 +19,7 @@ import {
   type TelemetryReporter,
 } from './telemetry-hook.js';
 
-const TELEMETRY_ENDPOINT = 'https://dorkos.ai/api/telemetry/install';
+const TELEMETRY_ENDPOINT = siteUrl('/api/telemetry/install');
 
 /**
  * The wire-format payload sent to the dorkos.ai telemetry endpoint.

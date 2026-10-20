@@ -37,13 +37,14 @@
  * @module shared/feedback
  */
 import { configuredRuntimes } from './config-schema.js';
+import { links } from './links.js';
 import { defuseSystemTags } from './untrusted-text.js';
 
 /** The DorkOS repository on GitHub, in `owner/name` form. */
-export const FEEDBACK_REPO = 'dork-labs/dorkos';
+export const FEEDBACK_REPO = links.repoSlug;
 
 /** Base URL for opening a new prefilled GitHub issue. */
-export const FEEDBACK_ISSUES_NEW_URL = `https://github.com/${FEEDBACK_REPO}/issues/new`;
+export const FEEDBACK_ISSUES_NEW_URL = `${links.repo}/issues/new`;
 
 /** The kind of feedback a report carries. */
 export type FeedbackKind = 'bug' | 'feature' | 'runtime';

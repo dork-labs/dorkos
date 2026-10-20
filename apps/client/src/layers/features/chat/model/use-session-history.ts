@@ -11,7 +11,11 @@ import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
-import { useSessionChatStore, type SessionScopedCwd } from '@/layers/entities/session';
+import {
+  useHistoryWindowStore,
+  useSessionChatStore,
+  type SessionScopedCwd,
+} from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
 import type { ChatMessage } from './chat-types';
 
@@ -27,6 +31,13 @@ interface UseSessionHistoryParams {
   sessionCwd: SessionScopedCwd;
   enableMessagePolling: boolean;
   isStreaming: boolean;
+  /**
+   * Whether the session's live stream already holds its history (its snapshot
+   * landed, now or on an earlier visit). Then this read is skipped: the stream
+   * is what the chat draws, and asking again re-sent the whole chat on every
+   * revisit (DOR-2890).
+   */
+  streamHydrated: boolean;
   setMessages: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
 }
 
@@ -46,6 +57,7 @@ export function useSessionHistory({
   sessionCwd,
   enableMessagePolling,
   isStreaming,
+  streamHydrated,
   setMessages,
 }: UseSessionHistoryParams) {
   const isTabVisible = useTabVisibility();
@@ -59,18 +71,28 @@ export function useSessionHistory({
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
 
+  // Read when the history seeds, without re-running the seed when it flips.
+  const streamHydratedRef = useRef(streamHydrated);
+  useEffect(() => {
+    streamHydratedRef.current = streamHydrated;
+  }, [streamHydrated]);
+
   // ---------------------------------------------------------------------------
   // History query (TanStack Query with adaptive polling)
   // ---------------------------------------------------------------------------
 
   const historyQuery = useQuery({
     queryKey: ['messages', sessionId, selectedCwd],
-    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined),
+    // The newest messages only, as the snapshot carries them (DOR-2889): a
+    // first visit to a long chat must not download all of it.
+    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined, { newest: true }),
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
     // session's own (DOR-1444). The URL supplies the scope on the first render.
-    enabled: sessionId !== null,
+    // A read already out when the snapshot lands still finishes; nothing new
+    // goes out after it, polling included.
+    enabled: sessionId !== null && !streamHydrated,
     refetchInterval: () => {
       if (isStreaming) return false;
       if (!enableMessagePolling) return false;
@@ -107,6 +129,13 @@ export function useSessionHistory({
       // and would overwrite optimistic messages.
       if (isStreaming) return;
       if (sid) useSessionChatStore.getState().updateSession(sid, { historySeeded: true });
+      // Where this window starts, while it is what the chat draws (DOR-2889):
+      // the "Earlier messages" control and the unread rule count from it. Once
+      // the stream's snapshot is in, the snapshot says.
+      if (sessionId && !streamHydratedRef.current) {
+        const earlier = historyQuery.data.earlierMessages ?? 0;
+        useHistoryWindowStore.getState().noteSnapshot(sessionId, history[0]!.id, earlier);
+      }
       setMessages(history.map(mapHistoryMessage));
       return;
     }
@@ -118,7 +147,7 @@ export function useSessionHistory({
         setMessages
       );
     }
-  }, [historyQuery.data, isStreaming, sid, setMessages]);
+  }, [historyQuery.data, isStreaming, sessionId, sid, setMessages]);
 
   return { historyQuery };
 }

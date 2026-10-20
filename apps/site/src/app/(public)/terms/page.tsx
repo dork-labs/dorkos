@@ -25,7 +25,7 @@ export default function TermsOfServicePage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Terms of Service</h1>
-          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 14, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by {company.legalName}, a {company.entityType} formed in{' '}
             {company.jurisdiction}. When these terms say “we,” that is who you are agreeing with.
@@ -61,6 +61,13 @@ export default function TermsOfServicePage() {
           <p className="text-warm-gray leading-relaxed">
             The MIT license is the real agreement for the software itself. These terms only cover
             this website and the services we host on it.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            The paid DorkOS Cloud services have their own{' '}
+            <Link href="/cloud/terms" className="text-charcoal hover:text-brand-orange underline">
+              Terms for DorkOS Cloud
+            </Link>
+            .
           </p>
         </section>
 
@@ -137,10 +144,10 @@ export default function TermsOfServicePage() {
           <p className="text-warm-gray leading-relaxed">
             Questions about these terms? Email us at{' '}
             <a
-              href={`mailto:${company.contactEmail}`}
+              href={`mailto:${company.emails.contact}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              {company.contactEmail}
+              {company.emails.contact}
             </a>
             .
           </p>

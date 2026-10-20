@@ -17,7 +17,7 @@
  *
  * @module services/core/capabilities/registry
  */
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { startedByOutsider } from '../turn-power/turn-marks.js';
 import { createHash } from 'node:crypto';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
@@ -213,6 +213,15 @@ export interface CapabilityPreflightResult {
    */
   readonly approvalServiceAction?: ApprovalServiceAction;
 }
+
+/**
+ * The only capabilities that may declare `cancelWindow`, the 60-second hold
+ * that stands in for an approval card (spec `trusted-by-default-flip` §5.6).
+ * `composeRegistry` refuses any other, so a new one is a reviewed edit here.
+ */
+export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
+  'connectors.execute_destructive',
+]);
 
 /**
  * The hand-registered MCP tools one MCP server built, reachable by the request
@@ -592,6 +601,12 @@ export function composeRegistry(
         );
       }
 
+      // A cancel window lets an irreversible call run without a card; only the
+      // one action spec `trusted-by-default-flip` §5.6 designed it for may
+      // declare one (see `CANCEL_WINDOW_CAPABILITY_IDS`).
+      if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
+        throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
+      }
       if (!id.startsWith(`${domain.name}.`)) {
         throw new Error(
           `Capability registry: id "${id}" must be prefixed with its domain name "${domain.name}." (declared in domain "${domain.name}").`
@@ -810,7 +825,7 @@ export function composeRegistry(
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
-        ...(supplied.sessionId && turnStartedByOutsider(supplied.sessionId)
+        ...(supplied.sessionId && startedByOutsider(supplied.sessionId)
           ? { turnStartedByOutsider: true }
           : {}),
       };
@@ -835,10 +850,20 @@ export function composeRegistry(
         if (supplied.handTools) invocationContext.handTools = supplied.handTools;
       }
 
+      // An eligible destructive connected-app call waits out a cancel window
+      // instead of raising a card (spec `trusted-by-default-flip` §5.6). It
+      // runs only if nobody cancels, on a `hold` approval bound to the
+      // preflight's authority; a cancel throws, and nothing runs.
+      const cancelWindow =
+        preflight && !supplied.approvalToken && capability.cancelWindow
+          ? await capability.cancelWindow(deps, parsed, supplied, preflight)
+          : undefined;
+      if (cancelWindow) invocationContext.approval = await cancelWindow();
+
       // Existing trusted callers retain their ordinary bypass. A capability with
       // live preflight always reaches the tier gate, so destructive connector
       // execution still consumes a bound approval even for a trusted operator.
-      if (!supplied.trusted || preflight) {
+      if (!cancelWindow && (!supplied.trusted || preflight)) {
         // The permission, resolved fresh for THIS call (spec `agent-permissions`
         // D6). A trusted caller is a person, whom no agent permission governs, so
         // it passes `null` and the tier alone decides, exactly as before.
@@ -848,6 +873,7 @@ export function composeRegistry(
               action: capability,
               input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
+              ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card

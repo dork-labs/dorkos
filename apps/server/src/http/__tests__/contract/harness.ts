@@ -138,8 +138,16 @@ async function waitUntilUp(
   throw new Error(`The server did not answer /api/health in ${BOOT_TIMEOUT_MS} ms:\n${output()}`);
 }
 
+/** How many ports a boot tries before it gives up. */
+const BOOT_ATTEMPTS = 3;
+
 /**
  * Boot the composed server on a free port with a throwaway data directory.
+ *
+ * {@link freePort} releases its port before the server takes it, so another
+ * socket in this worker (an outgoing request's own port, say) can take it in
+ * between. A boot that loses that race is tried again on a new port; any
+ * other failure is thrown as it is.
  *
  * @param extra - More environment for the server, over the defaults.
  * @returns The running server.
@@ -147,6 +155,22 @@ async function waitUntilUp(
 export async function bootComposedServer(
   extra: Record<string, string> = {}
 ): Promise<ComposedServer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await bootOnce(extra);
+    } catch (error) {
+      const lostPort = error instanceof Error && /Port \d+ is already in use/.test(error.message);
+      if (!lostPort || attempt >= BOOT_ATTEMPTS) throw error;
+    }
+  }
+}
+
+/**
+ * One boot on one free port.
+ *
+ * @param extra - More environment for the server, over the defaults.
+ */
+async function bootOnce(extra: Record<string, string>): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
   // The `r` keeps the tag alphanumeric: eight hex digits that happen to be all
@@ -331,4 +355,40 @@ export function contractSuite(
       await checkContractCase(server!.baseUrl, testCase);
     });
   });
+}
+
+/**
+ * Sign the owner in at a name that is not this computer, as a browser there
+ * would, and return the cookie header it set. A sign-in works only on the
+ * route it was made on (DOR-2969), so a case about another device signs in
+ * there rather than replaying the cookie this computer got. The proxy is
+ * named as https, as a browser keeps a `Secure` cookie only over https.
+ *
+ * @param baseUrl - The composed server.
+ * @param host - The name the request arrives at.
+ * @param credentials - The owner's email and password.
+ * @returns The `cookie` header, ready to spread into a case's headers.
+ */
+export async function signInAt(
+  baseUrl: string,
+  host: string,
+  credentials: { email: string; password: string }
+): Promise<{ cookie: string }> {
+  const res = await send(
+    baseUrl,
+    'POST',
+    '/api/auth/sign-in/email',
+    {
+      host,
+      origin: `https://${host}`,
+      'x-forwarded-proto': 'https',
+      'content-type': 'application/json',
+    },
+    JSON.stringify(credentials)
+  );
+  if (res.status !== 200) {
+    throw new Error(`sign-in at ${host} answered ${res.status}: ${res.text.slice(0, 300)}`);
+  }
+  const set = res.headers['set-cookie'] ?? [];
+  return { cookie: set.map((value) => value.split(';')[0]!).join('; ') };
 }

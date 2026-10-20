@@ -51,9 +51,11 @@ import {
 import {
   forgetMessageOrigin,
   holdTurnOriginFor,
+  noteHeldMessage,
   messageDispatched,
   messageTurnStarted,
 } from '../origin/outsider-turns.js';
+import { ceilingHoldsToDefault } from '../message-dispatcher/held-to-default.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -81,8 +83,9 @@ export interface DispatchSessionMessageOpts {
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
+   * `refusal` says why, when the runtime refused it before the agent saw it.
    */
-  onSettled?: (outcome: 'ok' | 'failed') => void;
+  onSettled?: (outcome: 'ok' | 'failed', refusal?: string) => void;
   /**
    * Count this launch against {@link AGENT_LAUNCH_MAX_LIVE}: a session nobody
    * typed into (an agent's `session_start`, an automatic carry-over) holds one
@@ -292,9 +295,9 @@ export async function dispatchSessionMessage(
   try {
     const result = await launchSessionMessage({
       ...opts,
-      onSettled: (outcome) => {
+      onSettled: (outcome, refusal) => {
         release();
-        opts.onSettled?.(outcome);
+        opts.onSettled?.(outcome, refusal);
       },
     });
     // Nothing is running for a launch that was refused or not accepted.
@@ -543,15 +546,17 @@ async function launchSessionMessage(
     cwd: effectiveCwd,
     ...(forAgent !== undefined ? { forAgent } : {}),
   });
+  // A person typing, here or from the web through the session relay.
+  const personTyped = origin.kind === 'interactive' || origin.kind === 'session-relay';
   if (paused) {
     agentPause()?.recordHeld(paused, {
-      via: origin.kind === 'interactive' ? 'message' : 'turn',
+      via: personTyped ? 'message' : 'turn',
       sessionId,
     });
     return { refused: 'AGENT_PAUSED', message: `${paused.name} is paused.`, agentId: paused.id };
   }
 
-  if (origin.kind === 'interactive') await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
+  if (personTyped) await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
   // `persistSessionRuntime` binds a session that has none — including one whose
@@ -603,6 +608,8 @@ async function launchSessionMessage(
   const isNewSession = await holdTurnOriginFor(messageId, () =>
     runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
+  // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
+  if (ceilingHoldsToDefault(opts.permissionCeiling)) noteHeldMessage(messageId);
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)
@@ -717,9 +724,9 @@ async function launchSessionMessage(
       // The 202 has long since gone out by the time this fires. It is the only
       // moment the server learns how a detached turn ended, which is exactly
       // what the debug buffer is asked for during an incident.
-      onSettled: (outcome) => {
+      onSettled: (outcome, refusal) => {
         recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered');
-        onSettled?.(outcome);
+        onSettled?.(outcome, refusal);
       },
     })
   );

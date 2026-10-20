@@ -37,7 +37,7 @@ export class RightPanelPage {
   readonly roomTab: Locator;
   /** The Canvas contextual tab — documents, data, diffs, widgets and apps. */
   readonly canvasTab: Locator;
-  /** The Browser contextual tab — the pages the embedded browser renders. */
+  /** The local Browser contextual tab — the live browser shared with an agent. */
   readonly browserTab: Locator;
   /** The tab strip's scroll container — the box the edge fades are measured against. */
   readonly tabScroller: Locator;
@@ -64,7 +64,9 @@ export class RightPanelPage {
     this.pulseTab = this.header.getByRole('tab', { name: 'Pulse' });
     this.roomTab = this.header.getByRole('tab', { name: 'Room' });
     this.canvasTab = this.header.getByRole('tab', { name: 'Canvas' });
-    this.browserTab = this.header.getByRole('tab', { name: 'Browser' });
+    this.browserTab = this.header
+      .locator('[role="tab"][data-view-category="local-browser"]')
+      .first();
     // The scroller is the tablist's parent; there is no test id on it, and adding
     // one would put a test hook in the shell header for a box the DOM already
     // identifies unambiguously.
@@ -95,6 +97,32 @@ export class RightPanelPage {
         'main-content,right-panel': { expandToSizes: {}, layout: [100 - rightPct, rightPct] },
       })
     );
+  }
+
+  /** Select an existing concrete view, or add an eligible view through the + menu. */
+  async selectView(name: string | RegExp) {
+    await this.ensureTabStripOpen();
+    const tab = this.header.getByRole('tab', { name, exact: typeof name === 'string' });
+    const category =
+      typeof name === 'string'
+        ? {
+            Browser: 'local-browser',
+            'Page previews': 'browser',
+            Canvas: 'canvas',
+            Terminal: 'terminal',
+          }[name]
+        : undefined;
+    const concrete = category
+      ? this.header.locator(`[role="tab"][data-view-category="${category}"]`).first()
+      : undefined;
+    if (await tab.count()) {
+      await tab.click();
+    } else if (concrete && (await concrete.count())) {
+      await concrete.click();
+    } else {
+      await this.header.getByRole('button', { name: 'Add view', exact: true }).click();
+      await this.page.getByRole('menuitem', { name, exact: typeof name === 'string' }).click();
+    }
   }
 
   /** Width of the tab strip's scroll box, or 0 when the panel is collapsed or absent. */
@@ -128,6 +156,7 @@ export class RightPanelPage {
    * toggle's own label and clicks only when it says the panel is closed.
    */
   async ensureTabStripOpen() {
+    await this.basePage.waitForAppReady();
     const tablist = this.header.getByRole('tablist');
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
@@ -139,7 +168,6 @@ export class RightPanelPage {
         .then(() => true)
         .catch(() => false);
       if (showing && (await this.tabStripWidth()) > 0) return;
-      await this.page.waitForTimeout(200);
     }
     throw new Error('the right panel never opened wide enough to measure its tab strip');
   }
@@ -195,7 +223,7 @@ export class RightPanelPage {
    * @param contributionId - Id of the contribution whose tab should be selected.
    */
   async activateTabWithoutFocus(contributionId: string) {
-    const tab = this.header.locator(`#right-panel-tab-${contributionId}`);
+    const tab = this.header.locator(`[id="right-panel-tab-${contributionId}"]`);
     await tab.dispatchEvent('mousedown', { button: 0, ctrlKey: false });
     await tab.evaluate((element) => (element as HTMLElement).click());
     await expect(tab, `the ${contributionId} tab must accept synthetic selection`).toHaveAttribute(
@@ -244,9 +272,18 @@ export class RightPanelPage {
 
   /** Open the panel if it is currently closed (idempotent). */
   async open() {
-    const label = await this.toggle.getAttribute('aria-label');
-    if (label?.startsWith('Open')) {
-      await this.toggle.click();
+    // A modal phone sheet hides the top-bar toggle from the accessibility tree.
+    // Its accessible close action proves it is open, even before tabs finish layout.
+    const close = this.header
+      .getByRole('button', { name: 'Close panel', exact: true })
+      .and(this.page.locator(':not([inert], [inert] *)'));
+    if (await close.isVisible()) return;
+    try {
+      const label = await this.toggle.getAttribute('aria-label', { timeout: 1_000 });
+      if (label?.startsWith('Open')) await this.toggle.click({ timeout: 1_000 });
+    } catch (error) {
+      // Layout restoration can open the sheet between reading and clicking the toggle.
+      if (!(await close.isVisible())) throw error;
     }
   }
 }

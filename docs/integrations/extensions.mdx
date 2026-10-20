@@ -20,36 +20,54 @@ export function activate(api: ExtensionAPI): () => void {
 }
 ```
 
-`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), reading and replying in a room thread as you (`api.rooms`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
 
 ## Your extension's own API
 
 An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. You can write that API in two ways.
 
 - **With the router.** `register(router, ctx)` gets an Express router. Add routes to it: `router.get('/status', …)` answers `GET /api/ext/my-extension/status`.
-- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. Any handler of that shape, such as a Hono app, works as it is: `return { fetch: app.fetch }`. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
+- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. Any handler of that shape, such as a Hono app, works as it is: `return { fetch: app.fetch }`. Hono is built in, so `import { Hono } from 'hono'` works with nothing installed. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
 
 ```typescript title="server.ts"
+import { Hono } from 'hono';
+import { requirePerson } from '@dorkos/extension-api/server';
+
 export default function register(router, ctx) {
-  return {
-    async fetch(request) {
-      const { pathname } = new URL(request.url);
-      if (pathname === '/status') return Response.json(await ctx.storage.loadData());
-      return Response.json({ error: 'Not found' }, { status: 404 });
-    },
-  };
+  const app = new Hono();
+  app.get('/status', async (c) => c.json(await ctx.storage.loadData()));
+  app.put('/settings', requirePerson(), async (c) => {
+    await ctx.storage.saveData(await c.req.json());
+    return c.json({ ok: true });
+  });
+  return { fetch: app.fetch };
 }
 ```
 
 What to know about a fetch handler:
 
 - **It sees the path after your mount.** A request to `/api/ext/my-extension/status?x=1` reaches it as `/status?x=1`.
-- **It answers every request it gets.** Return your own 404 for a path you don't serve. If you also add router routes, the router answers first and the fetch handler gets the rest.
+- **It answers every request it gets.** Return your own 404 for a path you don't serve (a Hono app does this for you). If you also add router routes, the router answers first and the fetch handler gets the rest.
 - **A JSON body is ready to read** with `request.json()`. Any other body arrives as it was sent.
+- **It knows who is asking.** Its second argument says whether a person sent the request. A Hono app reads it as `c.env`.
+- **To keep a route to people only,** put `requirePerson()` in front of it, as above. Agents and other sites get a plain refusal, and the route never runs. A handler written without Hono calls `checkPerson(caller)` from `@dorkos/extension-api/server` and returns the answer it gives back, if any.
+- **Some reply headers are dropped.** It can't set cookies, and a page it serves can't run scripts. Content and caching headers, and your own `x-` headers, go through.
+- **Redirects stay inside your extension.** `c.redirect('/done')` sends the browser to `/api/ext/<your-id>/done`. A redirect to another website is dropped.
 - **If it throws,** the caller gets an error and DorkOS keeps running.
-- **To keep a route to people only,** put it on the router behind `ctx.requirePerson`.
 
 Nothing in your API runs until you approve the extension, and turning it off stops the API at once.
+
+## Discussing an item in a room thread
+
+A mini app can show a room thread on its own page and let you reply there, so you can talk about a post or a task without leaving it. It needs `"capabilities": { "rooms": true }` in its manifest.
+
+- **You choose the rooms.** In Settings → Extensions, the mini app's card lists **Rooms it can use**. A well-behaved mini app reads and replies only there, and only where you can read yourself. Replacing a mini app with another copy clears its rooms.
+- **Replies are yours.** A reply sent from the mini app shows under your name, the same as one you typed in the room, and mentions wake agents as usual. The audit trail records each one with the mini app named.
+- **Agents can't reply as you through it.** An agent that names itself, another website and anything relayed are refused.
+- **It's not a sandbox.** A mini app's page runs in your window with your access, so it can reply without a click and change its own room list. Its server half, if it runs inside DorkOS, can do anything DorkOS can. With no password on this computer, a program on it can act as you too. Only turn on mini apps you trust, and turn on "Ask for a password on this computer too" to close the last gap.
+- **It keeps track of what you've read,** per thread, and shows new replies as they arrive.
+
+Authors: see `api.rooms` in `contributing/extension-authoring.md`.
 
 ## Messaging an agent from the server half
 
@@ -65,7 +83,7 @@ Nothing in your API runs until you approve the extension, and turning it off sto
 
 An extension with a server half can give your agents tools while it runs. A mail extension, for example, can offer a "Send an email" tool, and your agents can call it the way they call any DorkOS tool.
 
-- **You approve the extension first.** Its tools exist only while the extension is turned on and approved to run. Turn it off, stop it or remove it, and its tools are gone from the next tool list.
+- **The extension is approved first.** One your agent builds is approved as it is made, unless you chose Careful; any other waits for you. Its tools exist only while the extension is turned on and approved to run. Turn it off, stop it or remove it, and its tools are gone from the next tool list.
 - **You see what it gives before you say yes.** The Activity inbox row that asks you to turn an extension on says what it would give your agents, such as "Would give agents 3 tools and 1 skill". Open it with ⓘ to see each tool and what it can do: **Reads**, **Acts**, or **Asks you first**. Its card in **Settings → Extensions** shows the same list. It says "Gives agents" while the extension runs and "Would give agents" while it is off or waiting for you.
 - **A tool or skill DorkOS turns down says why.** If a tool or skill is set up wrong, it is listed as left out, with the reason under it, and it never reaches your agents. The extension's other tools and skills still work.
 - **Each tool says how much it can do.** A tool that only reads runs when an agent calls it. A tool that changes something sits in the **Extension tools** area of **Settings → Permissions**, where you can set every extension's tools, or one tool, to Allowed, Ask or Blocked. A tool that deletes or removes something asks you every time, even if you set it to Allowed.

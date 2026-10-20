@@ -36,6 +36,7 @@
  *
  * @module app/api/webhooks/linear
  */
+import { docsUrl } from '@dorkos/shared/links';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { and, eq, ne } from 'drizzle-orm';
@@ -67,7 +68,7 @@ const SIGNATURE_HEADER = 'linear-signature';
  * right for the per-row `/feedback/[id]` links in `POST /api/feedback`,
  * which are genuinely origin-bound.
  */
-const CHANGELOG_URL = 'https://dorkos.ai/docs/changelog';
+const CHANGELOG_URL = docsUrl('/changelog');
 
 /**
  * Loose schema for the slice of a Linear `Issue` webhook this route reads.

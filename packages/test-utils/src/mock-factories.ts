@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import { commitmentTransportMocks } from './mock-commitments.js';
 import { roomFileTransportMocks } from './mock-room-files.js';
+import { directChatTransportMocks } from './mock-direct-chats.js';
 import { remoteCommunityTransportMocks } from './mock-remote-community.js';
+import { communityConnectionTransportMocks } from './mock-community-connections.js';
 import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import { doeTransportMocks } from './doe-transport-mocks.js';
 import type {
@@ -711,15 +713,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // No bindings by default: a room whose agents have never answered is the
     // shape a test gets unless it is specifically about where the work runs.
     listRoomSessions: vi.fn().mockResolvedValue({ bindings: [] }),
-    // Answers as if the emoji went ON, and hands back the shipped quick row —
-    // the shape a capsule reads without a second request.
-    toggleReaction: vi.fn().mockResolvedValue({
-      accepted: true,
-      entryId: 'entry-mock',
-      emoji: '👍',
-      reacted: true,
-      frequents: ['👍', '❤️', '🎉'],
-    }),
+    ...directChatTransportMocks(),
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),
@@ -1303,7 +1297,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       changeCount: 0,
       filesAndCommands: {
         stop: null,
-        presetStop: null,
+        presetStop: 'autonomy',
         runtimes: [],
         exceptions: [],
         followingAgentIds: [],
@@ -1390,29 +1384,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     applyShape: vi.fn(),
     forkShape: vi.fn(),
     ...remoteCommunityTransportMocks(),
-    listCommunityConnections: vi.fn().mockResolvedValue([]),
-    startCommunityConnection: vi.fn(),
-    getCommunityConnection: vi.fn(),
-    pollCommunityConnection: vi.fn(),
-    cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
-    disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [] }),
-    getCommunityDisconnectImpact: vi.fn().mockResolvedValue({ agents: [] }),
-    getCommunityNavigation: vi
-      .fn()
-      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
-    moveCommunityNavigation: vi
-      .fn()
-      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
-    rememberCommunityNavigation: vi
-      .fn()
-      .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
-    rememberCommunityInstallationDestination: vi.fn().mockResolvedValue({
-      ownerKey: 'local-owner',
-      installationDestination: { path: '/', search: {} },
-      order: [],
-      destinations: [],
-    }),
-    resolveCommunityNavigation: vi.fn().mockResolvedValue(null),
+    ...communityConnectionTransportMocks(),
 
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({

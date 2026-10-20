@@ -413,7 +413,8 @@ describe('sdk-event-mapper context usage capture', () => {
 
   function assistantWithUsage(
     parentToolUseId: string | null,
-    usage?: Record<string, number>
+    usage?: Record<string, number>,
+    model?: string
   ): Parameters<typeof mapSdkMessage>[0] {
     return {
       type: 'assistant',
@@ -422,6 +423,7 @@ describe('sdk-event-mapper context usage capture', () => {
         role: 'assistant',
         content: [{ type: 'text', text: 'hi' }],
         ...(usage ? { usage } : {}),
+        ...(model ? { model } : {}),
       },
       session_id: 's',
     } as unknown as Parameters<typeof mapSdkMessage>[0];
@@ -513,6 +515,23 @@ describe('sdk-event-mapper context usage capture', () => {
       cacheReadTokens: 20,
       cacheCreationTokens: 30,
     });
+  });
+
+  it('records the main-thread model, never a subagent one, to pick the right window', async () => {
+    const session = makeSession();
+    await collectEvents(
+      assistantWithUsage(null, { input_tokens: 1 }, 'claude-opus-5-5'),
+      session,
+      sessionId,
+      makeToolState()
+    );
+    await collectEvents(
+      assistantWithUsage('toolu_parent_1', { input_tokens: 1 }, 'claude-haiku-4-5-20251001'),
+      session,
+      sessionId,
+      makeToolState()
+    );
+    expect(session.lastRequestModel).toBe('claude-opus-5-5');
   });
 
   it('leaves lastRequestUsage unset when the assistant message carries no usage', async () => {

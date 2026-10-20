@@ -3,6 +3,11 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
+import {
+  trustStopPatchRaises,
+  wifiRaiseRefusal,
+} from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -44,10 +49,14 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
+import {
+  frontDoorPathsOf,
+  frontDoorSubjectOf,
+} from '../services/core/operator/front-door-settings.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
-  isLocalCaller,
   readCallerAuthority,
+  refuseFrontDoorChange,
   refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
@@ -58,11 +67,14 @@ import { getMeshInitError } from '../services/mesh/mesh-state.js';
 import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION, IS_DEV_BUILD } from '../lib/version.js';
 import { logger, logError } from '../lib/logger.js';
-import { hasAnyApiKey } from '../services/core/auth/index.js';
+import { hasAnyApiKey, readOwnerEmail } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -107,7 +119,7 @@ router.get('/', async (c) => {
   }).config;
   const latestVersion = await getLatestVersion();
 
-  // This response is per-CALLER, not per-server, since `isLocalCaller` below
+  // This response is per-CALLER, not per-server, since `isAtThisComputer` below
   // answers for the request that asked. A shared cache between DorkOS and a
   // browser — a reverse proxy, or the tunnel provider's edge — could otherwise
   // hand a phone the answer it computed for a request from the machine itself,
@@ -125,7 +137,9 @@ router.get('/', async (c) => {
     // Sign in button that could only ever 403 (DOR-1655). Answered by the same
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
-    isLocalCaller: isLocalCaller(honoRequestFacts(c)),
+    isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    callerRoute: requestSessionRoute(honoRequestFacts(c)),
+    serverRole: currentServerRole(),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],
@@ -306,7 +320,11 @@ router.get('/', async (c) => {
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     },
-    auth: configManager.get('auth') ?? { enabled: false },
+    // The owner's email rides with the flag so Settings › Login & security can
+    // tell "sign in as the owner" from "create one" before the switch flips.
+    // Turning login on for an install that already has an owner used to open
+    // the create form and dead-end on a duplicate email (DOR-2964).
+    auth: { ...(configManager.get('auth') ?? { enabled: false }), ownerEmail: readOwnerEmail() },
     // The two engaged-window ceilings, and the five automatic-reply limits.
     //
     // The ceilings are READ-ONLY here: the cockpit prints them inside the
@@ -365,14 +383,18 @@ router.get('/', async (c) => {
       // Where each mini app's right-panel tab shows (spec `mini-app-placement`).
       // The panel and Settings both read it; `[]` covers the pre-migration read.
       panelTabs: configManager.get('ui')?.panelTabs ?? [],
-      // The power-door answer (spec `full-power-defaults`, D1). Both halves go
-      // out because the cockpit decides from them whether the door is put up at
-      // all: `fullPowerDecidedAt` is the "already asked" signal for both the
-      // onboarding stage and the one-time modal, and `fullPowerChoice` is what
-      // pre-selects `canInitiate` on a new binding. `?? null` covers the
-      // pre-migration read window only.
-      fullPowerDecidedAt: configManager.get('ui')?.fullPowerDecidedAt ?? null,
-      fullPowerChoice: configManager.get('ui')?.fullPowerChoice ?? null,
+      // Whether this person has seen the "agents now work without asking"
+      // notice (ADR 261006-225605). The app decides from it whether to show
+      // the notice at all. `?? null` covers the pre-migration read window only.
+      trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
+    },
+    // The permission preset, so the app can tell a Trusted install from a
+    // Careful one without a second request (`trustPosture`), and the apps the
+    // Trusted upgrade shared, which the trust notice names. The full picture,
+    // with every area, is `GET /api/permissions`.
+    permissions: {
+      preset: configManager.get('permissions')?.preset ?? null,
+      sharedAtUpgrade: configManager.get('permissions')?.sharedAtUpgrade ?? [],
     },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`
@@ -519,6 +541,22 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
         };
       }
 
+      // ## THE FRONT-DOOR BAR — how DorkOS is reached is changed at this computer
+      //
+      // The Owner-only front-door settings (`front-door-settings.ts`, DOR-2969)
+      // take the bar every front-door route runs: the owner, using the app, at
+      // this computer. Never Wi-Fi, a tunnel, the relay, an agent or a key, so
+      // a device reached from outside cannot widen its own reach.
+      const frontDoorPaths = frontDoorPathsOf(paths);
+      const frontDoor =
+        frontDoorPaths.length > 0
+          ? refuseFrontDoorChange(caller, frontDoorSubjectOf(frontDoorPaths[0]!))
+          : undefined;
+      if (frontDoor) {
+        const { status, code, error } = frontDoor;
+        return { status, code, error, message: error, paths: frontDoorPaths };
+      }
+
       return undefined;
     },
   };
@@ -586,12 +624,20 @@ async function awaitAccountReconcile(): Promise<void> {
 router.patch('/', async (c) => {
   try {
     const accountsBefore = claudeAccountFields();
+    const patch = readJsonBody(c);
+    // From Wi-Fi, a Files & commands stop may tighten, never loosen (DOR-3037).
+    if (
+      isFromWifi(honoRequestFacts(c)) &&
+      trustStopPatchRaises(patch, configManager.get('runtimes'))
+    ) {
+      return c.json(wifiRaiseRefusal(), 403);
+    }
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
     // adds is who the caller is and what a refusal looks like over HTTP.
     const result = applyGuardedConfigWrite({
-      patch: readJsonBody(c),
+      patch,
       authority: requestConfigWriteAuthority(honoRequestFacts(c)),
       source: 'PATCH /api/config',
       // This route cannot say WHO is calling it, and does not pretend to. With
@@ -685,9 +731,10 @@ router.put('/agents/defaultAgent', (c) => {
  * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
  * token (DOR-278).
  *
- * Only applies in login-off mode with no `MCP_API_KEY` override — those are the
- * only conditions under which the local token gates the surface. When an env
- * override is set or login is on, the local token does not apply, so this 409s
+ * Only applies to a caller the gate leaves open (this computer, asking for no
+ * password) with no `MCP_API_KEY` override — the only conditions under which
+ * the local token gates the surface. Anywhere else the token does not apply,
+ * so this 409s
  * rather than silently minting a token that nothing would honor. On success it
  * writes a fresh `0600` token, refreshes the cached value the middleware and the
  * config DTO read, and returns it so the settings tab can show the new value.
@@ -704,11 +751,14 @@ router.post('/mcp/rotate-token', (c) => {
         409
       );
     }
-    if (configManager.get('auth')?.enabled === true) {
+    // The token works only for a caller the gate leaves open: this computer,
+    // not asking for a password. Anyone else (another device, or this computer
+    // when it asks) has no use for it, so it is neither shown nor replaced.
+    if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
       return c.json(
         {
           error:
-            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
         },
         409
       );
@@ -730,8 +780,8 @@ router.post('/mcp/rotate-token', (c) => {
  * The token deliberately does not ride `GET /api/config`: a POST-only reveal
  * never lands in GET caches or logs, and the settings tab fetches it on demand
  * instead of every config read carrying the secret. Same applicability rules as
- * rotate: 409 when an `MCP_API_KEY` override is set or login is on (the local
- * token does not apply there).
+ * rotate: 409 when an `MCP_API_KEY` override is set or the caller is not one the
+ * gate leaves open (the local token does not apply there).
  *
  * Honest scope note: in login-off mode this endpoint sits behind the same
  * loopback trust boundary as the cockpit, so any local process with socket
@@ -751,11 +801,14 @@ router.post('/mcp/reveal-token', (c) => {
         409
       );
     }
-    if (configManager.get('auth')?.enabled === true) {
+    // The token works only for a caller the gate leaves open: this computer,
+    // not asking for a password. Anyone else (another device, or this computer
+    // when it asks) has no use for it, so it is neither shown nor replaced.
+    if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
       return c.json(
         {
           error:
-            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
         },
         409
       );

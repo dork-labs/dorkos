@@ -19,6 +19,7 @@ const ALL_KINDS: ContextKind[] = [
   'room_context',
   'seed_context',
   'approval_verdict',
+  'direct_notes',
   'accounts_access',
   'doc_events',
   'context_warning',

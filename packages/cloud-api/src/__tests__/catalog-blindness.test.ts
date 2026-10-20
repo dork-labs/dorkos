@@ -192,6 +192,16 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
   CommunityMoveStateSchema: 'the stages of reading an owner export into a new community',
   CommunityMoveFailureCodeSchema: 'what went wrong with an export, in terms a person can act on',
+  HubAssignmentStateSchema: 'whether a hub belongs to a person yet; names no allowance',
+  CloudComputerStateSchema: 'where an agent computer is in its life, not what anybody bought',
+  CloudComputerStopReasonSchema: 'why an agent computer is stopped, in terms the app can show',
+  CloudComputerStartReasonSchema: 'what woke a computer (a turn, a viewer, a beat), for metering',
+  DirectoryInstanceRoleSchema: 'which of three program roles an instance plays; a structural fact',
+  DirectoryAvailabilitySchema: 'whether something reported recently, derived from a timestamp',
+  DirectoryReachLevelSchema: 'how far a person let the web reach a computer, set at that computer',
+  DirectorySpaceSourceSchema: 'how the account learned of a space, not what it costs',
+  DirectorySpaceRoleSchema: 'what a person may do in a space, not what they bought',
+  DirectorySpaceStateSchema: 'whether a space is open or archived',
 };
 
 /**
@@ -532,7 +542,7 @@ describe('catalog blindness: the emitted declarations', () => {
     // lines and no same-line pattern can see them — while `cap` inside
     // "capability" and `rate` inside "enumerate" made ordinary prose a
     // liability. A threshold is a NUMBER, wrapped or not, spelled however the
-    // author likes. The whole emitted surface carries six digits today, and
+    // author likes. The whole emitted surface carries only these digits today, and
     // every one of them is in the list below with its reason, which is the same
     // bargain MECHANISM_ENUMS strikes: the exception is cheap, and a person
     // writes it down.
@@ -546,18 +556,34 @@ describe('catalog blindness: the emitted declarations', () => {
       [/\b[1-5]\d{2}\b/g, 'an HTTP status code'],
       [/\b\d{1,2}(st|nd|rd|th)\b/gi, 'a day of the month'],
       [/\b\d{1,2}-day\b/gi, 'a length of a calendar month'],
+      [/base64(url)?/gi, 'the name of an encoding, as in base64url'],
+      [/sha-?256/gi, 'the name of a hash, as in SHA-256'],
+      [
+        /\b[A-Za-z]+StatementV1[A-Za-z]*\b/g,
+        'a step-up statement schema name, as in StepUpStatementV1Schema',
+      ],
     ];
+    const stripAllowed = (line: string): string => {
+      let rest = line;
+      for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
+      return rest;
+    };
 
     const offenders: string[] = [];
     for (const [file, text] of emitted) {
       for (const [index, line] of text.split('\n').entries()) {
         if (!/^\s*(\/\*\*|\*)/.test(line)) continue;
-        let rest = line;
-        for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
-        if (/\d/.test(rest)) offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
+        if (/\d/.test(stripAllowed(line))) {
+          offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
+        }
       }
     }
     expect(offenders).toEqual([]);
+    // Negative control: a versioned-looking name that is not a statement schema
+    // still carries a number the guard must see.
+    for (const line of [' * Upgrade to ProV20 today.', ' * Billed as TierV100PerMonth.']) {
+      expect(/\d/.test(stripAllowed(line)), line).toBe(true);
+    }
     // The allowlist is the precision, so it has to stay a list somebody reads.
     for (const [pattern, reason] of allowed) {
       expect(reason.length, `${pattern} needs a real reason, not a placeholder`).toBeGreaterThan(

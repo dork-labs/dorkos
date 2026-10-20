@@ -1,0 +1,1995 @@
+import {
+  boolean,
+  integer,
+  bigint,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  uniqueIndex,
+  index,
+  primaryKey,
+  check,
+  foreignKey,
+  customType,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+/** A `timestamptz NOT NULL DEFAULT now()` column, the shape every row's own time takes. */
+export const time = (name: string) =>
+  timestamp(name, { withTimezone: true }).notNull().defaultNow();
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+
+// A reference from one community-owned row to another is declared once, as the table's
+// (community_id, …) tenant foreignKey below, never also as a column `.references()`: the tenant
+// key enforces the plain one, and a second key doubles every insert's and delete's checks (0027).
+
+/** Immutable identity and display record for this independent deployment. */
+export const communities = pgTable(
+  'communities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    description: text('description'),
+    admissionPolicy: text('admission_policy').notNull().default('invite_only'),
+    settingsVersion: integer('settings_version').notNull().default(1),
+    iconBlobKey: text('icon_blob_key'),
+    iconContentType: text('icon_content_type'),
+    lifecycle: text('lifecycle').notNull().default('pending_owner'),
+    lifecycleVersion: integer('lifecycle_version').notNull().default(1),
+    suspendedFromState: text('suspended_from_state'),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    deleteRequestedAt: timestamp('delete_requested_at', { withTimezone: true }),
+    deleteAfter: timestamp('delete_after', { withTimezone: true }),
+    deleteRequestedBy: uuid('delete_requested_by'),
+    deletionFromState: text('deletion_from_state'),
+    deletionFromPriorState: text('deletion_from_prior_state'),
+    heldFromState: text('held_from_state'),
+    heldAt: timestamp('held_at', { withTimezone: true }),
+    deletionNoticeAt: timestamp('deletion_notice_at', { withTimezone: true }),
+    deleteRequestedByHostActor: text('delete_requested_by_host_actor'),
+    legalHoldAt: timestamp('legal_hold_at', { withTimezone: true }),
+    legalHoldByHostActor: text('legal_hold_by_host_actor'),
+    legalHoldReference: text('legal_hold_reference'),
+    /** When an import finished restoring this community's history from an owner export. */
+    importedAt: timestamp('imported_at', { withTimezone: true }),
+    /** The host's whole-community takedown this pending deletion belongs to (0025). */
+    takedownId: uuid('takedown_id'),
+    /** The space's rules (NULL is none) and their version, which only grows (0034). */
+    rulesText: text('rules_text'),
+    rulesVersion: integer('rules_version').notNull().default(0),
+    /** Display names no member may take (0034). */
+    reservedNames: text('reserved_names')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
+      .notNull()
+      .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'communities_lifecycle',
+      sql`${table.lifecycle} IN ('pending_owner','active','archived','suspended','held','deletion_pending')`
+    ),
+    check('communities_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+    check('communities_settings_version', sql`${table.settingsVersion} > 0`),
+    check(
+      'communities_admission_policy',
+      sql`${table.admissionPolicy} IN ('invite_only','closed','open')`
+    ),
+    check(
+      'communities_rules_text_check',
+      sql`${table.rulesText} IS NULL OR char_length(${table.rulesText}) BETWEEN 1 AND 20000`
+    ),
+    check('communities_rules_version_check', sql`${table.rulesVersion} >= 0`),
+    check('communities_reserved_names_check', sql`cardinality(${table.reservedNames}) <= 200`),
+    check('communities_rules_shape', sql`${table.rulesText} IS NULL OR ${table.rulesVersion} > 0`),
+    check(
+      'communities_name_length',
+      sql`${table.name} = btrim(${table.name}) AND char_length(${table.name}) BETWEEN 1 AND 80`
+    ),
+    check(
+      'communities_description_length',
+      sql`${table.description} IS NULL OR char_length(${table.description}) <= 1000`
+    ),
+    check(
+      'communities_icon_metadata',
+      sql`(${table.iconBlobKey} IS NULL AND ${table.iconContentType} IS NULL) OR (${table.iconBlobKey} IS NOT NULL AND ${table.iconContentType} IS NOT NULL AND ${table.iconContentType} IN ('image/png','image/jpeg','image/gif','image/webp'))`
+    ),
+    check(
+      'communities_suspension_state',
+      sql`(${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} IS NOT NULL AND ${table.suspendedFromState} IN ('active','archived','held') AND ${table.suspendedAt} IS NOT NULL) OR (${table.lifecycle} <> 'suspended' AND ${table.suspendedFromState} IS NULL AND ${table.suspendedAt} IS NULL)`
+    ),
+    check(
+      'communities_deletion_state',
+      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND num_nonnulls(${table.deleteRequestedBy}, ${table.deleteRequestedByHostActor}) = 1 AND (${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days' OR (${table.takedownId} IS NOT NULL AND ${table.deleteAfter} >= ${table.deleteRequestedAt} + interval '24 hours'))) OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL AND ${table.deleteRequestedByHostActor} IS NULL)`
+    ),
+    check(
+      'communities_deletion_from_state',
+      sql`(${table.deletionFromState} IS NULL OR ${table.deletionFromState} IN ('active','archived','suspended','held')) AND (${table.deletionFromPriorState} IS NULL OR ${table.deletionFromPriorState} IN ('active','archived','held')) AND ((${table.lifecycle} <> 'deletion_pending' AND ${table.deletionFromState} IS NULL AND ${table.deletionFromPriorState} IS NULL) OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} IS NOT NULL AND ${table.deletionFromState} IN ('suspended','held')) = (${table.deletionFromPriorState} IS NOT NULL)))`
+    ),
+    check(
+      'communities_hold_state',
+      sql`(${table.heldFromState} IS NULL) = (${table.heldAt} IS NULL) AND (${table.heldFromState} IS NULL OR ${table.heldFromState} IN ('active','archived')) AND (${table.deletionNoticeAt} IS NULL OR ${table.heldFromState} IS NOT NULL) AND (${table.heldFromState} IS NOT NULL) = (${table.lifecycle} = 'held' OR (${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} = 'held') OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} = 'held' OR ${table.deletionFromPriorState} = 'held')))`
+    ),
+    check(
+      'communities_takedown',
+      sql`${table.takedownId} IS NULL OR (${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedByHostActor} IS NOT NULL)`
+    ),
+    check(
+      'communities_host_requester',
+      sql`${table.deleteRequestedByHostActor} IS NULL OR ${table.deleteRequestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'communities_legal_hold',
+      sql`(${table.legalHoldAt} IS NULL) = (${table.legalHoldByHostActor} IS NULL) AND (${table.legalHoldByHostActor} IS NULL OR ${table.legalHoldByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$') AND (${table.legalHoldReference} IS NULL OR (${table.legalHoldAt} IS NOT NULL AND char_length(${table.legalHoldReference}) BETWEEN 1 AND 200))`
+    ),
+  ]
+);
+
+/** Per-community content version, bumped with every erasure change and read by export commit. */
+export const communityContentVersions = pgTable(
+  'community_content_versions',
+  {
+    communityId: uuid('community_id')
+      .primaryKey()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    version: bigint('version', { mode: 'number' }).notNull().default(1),
+  },
+  (table) => [check('community_content_versions_version_check', sql`${table.version} > 0`)]
+);
+
+/** Irreversible history used to refuse a single-community backout after multi-tenant use. */
+export const communityBackoutFence = pgTable(
+  'community_backout_fence',
+  {
+    singleton: boolean('singleton').primaryKey().default(true),
+    firstCommunityId: uuid('first_community_id'),
+    multipleCommunitiesUsed: boolean('multiple_communities_used').notNull().default(false),
+  },
+  (table) => [check('community_backout_fence_singleton_check', sql`${table.singleton}`)]
+);
+
+/** Better Auth core user table, using its native camelCase PostgreSQL columns. */
+export const users = pgTable('user', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('emailVerified').notNull().default(false),
+  image: text('image'),
+  /** The transaction that last cleared every way into the account (0031); see request-start.ts. */
+  accessClearedXid: customType<{ data: string }>({ dataType: () => 'xid8' })('access_cleared_xid'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+/** Better Auth core sessions. */
+export const sessions = pgTable(
+  'session',
+  {
+    id: text('id').primaryKey(),
+    expiresAt: timestamp('expiresAt').notNull(),
+    token: text('token').notNull().unique(),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+    updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+    ipAddress: text('ipAddress'),
+    userAgent: text('userAgent'),
+    userId: text('userId')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+  },
+  (table) => [index('session_user_idx').on(table.userId)]
+);
+/** Better Auth OAuth and password accounts. */
+export const accounts = pgTable(
+  'account',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('accountId').notNull(),
+    providerId: text('providerId').notNull(),
+    userId: text('userId')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accessToken: text('accessToken'),
+    refreshToken: text('refreshToken'),
+    idToken: text('idToken'),
+    accessTokenExpiresAt: timestamp('accessTokenExpiresAt'),
+    refreshTokenExpiresAt: timestamp('refreshTokenExpiresAt'),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+    updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+  },
+  (table) => [
+    index('account_user_idx').on(table.userId),
+    // One outside identity links to one account (0031).
+    uniqueIndex('account_provider_account_key').on(table.providerId, table.accountId),
+  ]
+);
+/**
+ * A provider sign-in whose email matched an existing account, held until the person proves that
+ * account's password (0031). Only the browser token's hash is stored; single use, 10 minutes.
+ */
+export const pendingSignInLinks = pgTable(
+  'pending_sign_in_links',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    accountId: text('account_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check('pending_sign_in_links_token_hash_check', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'pending_sign_in_links_provider_id_check',
+      sql`${table.providerId} IN ('google','github','oidc')`
+    ),
+    check(
+      'pending_sign_in_links_account_id_check',
+      sql`char_length(${table.accountId}) BETWEEN 1 AND 255`
+    ),
+    index('pending_sign_in_links_user_idx').on(table.userId),
+    index('pending_sign_in_links_expires_idx').on(table.expiresAt),
+  ]
+);
+/**
+ * A request for a mailed reset, sign-in or confirmation link (0032), recorded the same way for
+ * every address and resolved later by the mail worker. The address is kept as a keyed hash; its
+ * plain text only until the resolver reads it.
+ */
+export const emailLinkRequests = pgTable(
+  'email_link_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    emailHash: text('email_hash').notNull(),
+    email: text('email'),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    pendingLinkHash: text('pending_link_hash'),
+    state: text('state').notNull(),
+    outboxId: uuid('outbox_id'),
+    createdAt: time('created_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'email_link_requests_kind_check',
+      sql`${table.kind} IN ('password_reset','sign_in','email_confirmation')`
+    ),
+    check('email_link_requests_email_hash_check', sql`${table.emailHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_requests_email_check',
+      sql`${table.email} IS NULL OR char_length(${table.email}) <= 320`
+    ),
+    check(
+      'email_link_requests_pending_link_hash_check',
+      sql`${table.pendingLinkHash} IS NULL OR ${table.pendingLinkHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'email_link_requests_state_check',
+      sql`${table.state} IN ('pending','throttled','queued','dropped')`
+    ),
+    check(
+      'email_link_requests_shape',
+      sql`(${table.kind} = 'password_reset' AND ${table.userId} IS NULL AND ${table.pendingLinkHash} IS NULL) OR (${table.kind} = 'sign_in' AND ${table.userId} IS NOT NULL AND ${table.pendingLinkHash} IS NOT NULL AND ${table.email} IS NULL) OR (${table.kind} = 'email_confirmation' AND ${table.userId} IS NOT NULL AND ${table.pendingLinkHash} IS NULL AND ${table.email} IS NULL)`
+    ),
+    check(
+      'email_link_requests_resolved',
+      sql`(${table.state} = 'pending' AND ${table.resolvedAt} IS NULL) OR (${table.state} <> 'pending' AND ${table.resolvedAt} IS NOT NULL AND ${table.email} IS NULL)`
+    ),
+    index('email_link_requests_due_idx')
+      .on(table.createdAt)
+      .where(sql`state = 'pending'`),
+    index('email_link_requests_email_idx').on(table.emailHash, table.createdAt),
+    index('email_link_requests_user_idx').on(table.userId, table.createdAt),
+    index('email_link_requests_created_idx').on(table.createdAt),
+  ]
+);
+/**
+ * One mailed link (0032), stored only as the SHA-256 of its 256-bit token: single use,
+ * short-lived, replaced by a newer link of the same kind, deleted when the account is cleared.
+ */
+export const emailLinkTokens = pgTable(
+  'email_link_tokens',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    kind: text('kind').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id').notNull(),
+    outboxId: uuid('outbox_id').notNull(),
+    emailHash: text('email_hash').notNull(),
+    passwordFingerprint: text('password_fingerprint'),
+    pendingLinkHash: text('pending_link_hash'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check('email_link_tokens_token_hash_check', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_tokens_kind_check',
+      sql`${table.kind} IN ('password_reset','sign_in','email_confirmation')`
+    ),
+    check('email_link_tokens_email_hash_check', sql`${table.emailHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_tokens_pending_link_hash_check',
+      sql`${table.pendingLinkHash} IS NULL OR ${table.pendingLinkHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'email_link_tokens_shape',
+      sql`(${table.kind} = 'password_reset') = (${table.passwordFingerprint} IS NOT NULL) AND (${table.kind} = 'sign_in') = (${table.pendingLinkHash} IS NOT NULL)`
+    ),
+    check(
+      'email_link_tokens_one_end',
+      sql`${table.consumedAt} IS NULL OR ${table.supersededAt} IS NULL`
+    ),
+    index('email_link_tokens_user_idx').on(table.userId, table.kind),
+    index('email_link_tokens_expires_idx').on(table.expiresAt),
+  ]
+);
+/** Better Auth verification codes. */
+export const verifications = pgTable('verification', {
+  id: text('id').primaryKey(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+
+/** Host operations authority, deliberately separate from community membership. */
+export const hostOperators = pgTable('host_operators', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  createdAt: time('created_at'),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
+
+/** Host-owned machine credentials for host routes. Only the secret's hash is stored. */
+export const hostApiKeys = pgTable(
+  'host_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    label: text('label').notNull(),
+    prefix: text('prefix').notNull(),
+    secretHash: text('secret_hash').notNull().unique(),
+    scopes: text('scopes').array().notNull(),
+    issuedVia: text('issued_via').notNull(),
+    issuedByUserId: text('issued_by_user_id').references(() => users.id),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id),
+    successorId: uuid('successor_id').references((): AnyPgColumn => hostApiKeys.id),
+  },
+  (table) => [
+    index('host_api_keys_created_idx').on(table.createdAt.desc(), table.id),
+    check(
+      'host_api_keys_label',
+      sql`${table.label} = btrim(${table.label}) AND char_length(${table.label}) BETWEEN 1 AND 80`
+    ),
+    check('host_api_keys_prefix', sql`${table.prefix} ~ '^dkh_[A-Za-z0-9_-]{6}$'`),
+    check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'host_api_keys_scopes',
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 11 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close','communities:reserved_names','accounts:read']::text[]`
+    ),
+    check(
+      'host_api_keys_issuer',
+      sql`(${table.issuedVia} = 'browser' AND ${table.issuedByUserId} IS NOT NULL) OR (${table.issuedVia} = 'command' AND ${table.issuedByUserId} IS NULL)`
+    ),
+    check(
+      'host_api_keys_revoker',
+      sql`${table.revokedByUserId} IS NULL OR ${table.revokedAt} IS NOT NULL`
+    ),
+    check(
+      'host_api_keys_successor',
+      sql`${table.successorId} IS NULL OR ${table.expiresAt} IS NOT NULL`
+    ),
+  ]
+);
+
+/** Metadata-only audit log for actions performed with host authority. */
+export const hostAuditEvents = pgTable(
+  'host_audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    actorKind: text('actor_kind').notNull().default('person'),
+    actorUserId: text('actor_user_id').references(() => users.id),
+    actorApiKeyId: uuid('actor_api_key_id').references(() => hostApiKeys.id),
+    subjectApiKeyId: uuid('subject_api_key_id').references(() => hostApiKeys.id),
+    communityId: uuid('community_id'),
+    action: text('action').notNull(),
+    priorState: text('prior_state'),
+    nextState: text('next_state'),
+    changedFields: text('changed_fields').array().notNull().default([]),
+    /** SHA-256 of a takedown's record.json, on its `takedown.evidence_stored` row (0020). */
+    evidenceRecordSha256: text('evidence_record_sha256'),
+    /** The account closure a closure row is about (0030). Never the account itself. */
+    subjectAccountClosureId: uuid('subject_account_closure_id'),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    index('host_audit_events_community_created_idx').on(
+      table.communityId,
+      table.createdAt,
+      table.id
+    ),
+    check('host_audit_events_action', sql`${table.action} ~ '^[a-z][a-z0-9_.]{0,79}$'`),
+    check('host_audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+    check(
+      'host_audit_events_actor_kind',
+      sql`${table.actorKind} IN ('person','api_key','offline','system')`
+    ),
+    check(
+      'host_audit_events_evidence_record_sha256',
+      sql`${table.evidenceRecordSha256} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'host_audit_events_actor',
+      sql`(${table.actorKind} = 'person') = (${table.actorUserId} IS NOT NULL) AND (${table.actorKind} = 'api_key') = (${table.actorApiKeyId} IS NOT NULL)`
+    ),
+  ]
+);
+
+/** Durable singleton gate for legacy tenant and blob namespace reconciliation. */
+export const tenantReconciliation = pgTable(
+  'tenant_reconciliation',
+  {
+    singleton: boolean('singleton').primaryKey().default(true),
+    generation: bigint('generation', { mode: 'number' }).notNull().default(1),
+    validatedGeneration: bigint('validated_generation', { mode: 'number' }),
+    state: text('state').notNull().default('dirty'),
+    communityId: uuid('community_id').references(() => communities.id),
+    namespaceDigest: text('namespace_digest'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }).notNull().defaultNow(),
+    reasonCode: text('reason_code').notNull().default('migration_pending'),
+  },
+  (table) => [
+    check('tenant_reconciliation_singleton', sql`${table.singleton}`),
+    check('tenant_reconciliation_generation', sql`${table.generation} > 0`),
+    check('tenant_reconciliation_state', sql`${table.state} IN ('dirty','ready')`),
+    check(
+      'tenant_reconciliation_ready',
+      sql`(${table.state} = 'dirty' AND ${table.completedAt} IS NULL) OR (${table.state} = 'ready' AND ${table.completedAt} IS NOT NULL AND ${table.validatedGeneration} = ${table.generation} AND ${table.namespaceDigest} ~ '^[a-f0-9]{64}$')`
+    ),
+  ]
+);
+
+/** Human admissions and their authority. */
+export const members = pgTable(
+  'members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    userId: text('user_id').references(() => users.id),
+    displayName: text('display_name').notNull(),
+    /** A person's typeable address; null for an agent, whose handle lives in `agents` (0040). */
+    handle: text('handle'),
+    role: text('role').notNull(),
+    active: boolean('active').notNull().default(true),
+    createdAt: time('created_at'),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
+    /** `imported` for an author an import restored from an owner export. */
+    origin: text('origin').notNull().default('native'),
+    /** Until when this person and their agents cannot post (0034). */
+    mutedUntil: timestamp('muted_until', { withTimezone: true }),
+    /** The rules version this person accepted; 0 for none (0034). */
+    rulesAcceptedVersion: integer('rules_accepted_version').notNull().default(0),
+    /** `person`, or `agent` for an agent's own membership row (0040, specs/server-merge D3). */
+    kind: text('kind').notNull().default('person'),
+    /** The person an agent row belongs to; null for a person (0040). */
+    ownerMemberId: uuid('owner_member_id'),
+  },
+  (table) => [
+    check('members_rules_accepted_version_check', sql`${table.rulesAcceptedVersion} >= 0`),
+    check(
+      'members_user_presence',
+      sql`${table.kind} = 'agent' OR ${table.userId} IS NOT NULL OR ${table.erasedAt} IS NOT NULL OR (${table.origin} = 'imported' AND NOT ${table.active})`
+    ),
+    check('members_kind', sql`${table.kind} IN ('person','agent')`),
+    check(
+      'members_agent_shape',
+      sql`(${table.kind} = 'person' AND ${table.ownerMemberId} IS NULL AND ${table.handle} IS NOT NULL) OR (${table.kind} = 'agent' AND ${table.ownerMemberId} IS NOT NULL AND ${table.ownerMemberId} <> ${table.id} AND ${table.userId} IS NULL AND ${table.handle} IS NULL AND ${table.role} = 'member' AND ${table.mutedUntil} IS NULL AND ${table.rulesAcceptedVersion} = 0)`
+    ),
+    foreignKey({
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [table.communityId, table.id],
+      name: 'members_owner_tenant_fk',
+    }),
+    check('members_origin', sql`${table.origin} IN ('native','imported')`),
+    check(
+      'members_erased_husk',
+      sql`${table.erasedAt} IS NULL OR (${table.userId} IS NULL AND NOT ${table.active})`
+    ),
+    uniqueIndex('members_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('members_community_user_unique').on(table.communityId, table.userId),
+    uniqueIndex('members_handle_unique').on(table.communityId, table.handle),
+    index('members_community_kind_active_idx').on(table.communityId, table.kind, table.active),
+    index('members_owner_idx')
+      .on(table.ownerMemberId)
+      .where(sql`${table.ownerMemberId} IS NOT NULL`),
+    index('members_user_idx')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
+  ]
+);
+
+/** One-use owner setup grants. */
+export const bootstrapGrants = pgTable(
+  'bootstrap_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    purpose: text('purpose').notNull().default('first_install'),
+    communityId: uuid('community_id').references(() => communities.id),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: text('revoked_by').references(() => users.id),
+    revokedByApiKeyId: uuid('revoked_by_api_key_id').references(() => hostApiKeys.id),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'bootstrap_grants_purpose_tenant',
+      sql`(${table.purpose} = 'first_install' AND ${table.communityId} IS NULL) OR (${table.purpose} = 'owner_claim' AND ${table.communityId} IS NOT NULL)`
+    ),
+    index('bootstrap_grants_community_idx').on(table.communityId),
+    check(
+      'bootstrap_grants_revocation',
+      sql`(${table.revokedAt} IS NULL AND ${table.revokedBy} IS NULL AND ${table.revokedByApiKeyId} IS NULL) OR (${table.revokedAt} IS NOT NULL AND num_nonnulls(${table.revokedBy}, ${table.revokedByApiKeyId}) = 1)`
+    ),
+  ]
+);
+
+/** Non-secret idempotency receipt for host-created pending communities. */
+export const communityCreationReceipts = pgTable(
+  'community_creation_receipts',
+  {
+    idempotencyKey: text('idempotency_key').primaryKey(),
+    operatorUserId: text('operator_user_id').references(() => hostOperators.userId),
+    operatorApiKeyId: uuid('operator_api_key_id').references(() => hostApiKeys.id),
+    payloadHash: text('payload_hash').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .unique()
+      .references(() => communities.id),
+    ownerClaimGrantId: uuid('owner_claim_grant_id')
+      .notNull()
+      .unique()
+      .references(() => bootstrapGrants.id),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'community_creation_receipts_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check(
+      'community_creation_receipts_payload_hash_check',
+      sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'community_creation_receipts_operator',
+      sql`num_nonnulls(${table.operatorUserId}, ${table.operatorApiKeyId}) = 1`
+    ),
+  ]
+);
+
+/** Human admission invitations, scoped optionally to one channel. */
+export const invites = pgTable(
+  'invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    issuerMemberId: uuid('issuer_member_id').notNull(),
+    channelId: uuid('channel_id'),
+    tokenHash: text('token_hash').notNull().unique(),
+    seatLimit: integer('seat_limit').notNull(),
+    useCount: integer('use_count').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    uniqueIndex('invites_community_id_unique').on(table.communityId, table.id),
+    foreignKey({
+      name: 'invites_issuer_tenant_fk',
+      columns: [table.communityId, table.issuerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'invites_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+  ]
+);
+/** One seat per invitation and account. */
+export const inviteUses = pgTable(
+  'invite_uses',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    inviteId: uuid('invite_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.inviteId, table.userId] }),
+    index('invite_uses_community_idx').on(table.communityId),
+    index('invite_uses_user_idx').on(table.userId),
+    foreignKey({
+      name: 'invite_uses_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
+  ]
+);
+/** Short-lived signup approval rows. */
+export const pendingAdmissions = pgTable(
+  'pending_admissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    inviteId: uuid('invite_id').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    accountId: text('account_id'),
+    boundAt: timestamp('bound_at', { withTimezone: true }),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    index('pending_admissions_expires_at_idx').on(table.expiresAt, table.id),
+    uniqueIndex('pending_admissions_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('pending_admissions_account_binding_unique').on(
+      table.communityId,
+      table.id,
+      table.accountId
+    ),
+    check(
+      'pending_admissions_binding_shape',
+      sql`(${table.accountId} IS NULL AND ${table.boundAt} IS NULL AND ${table.consumedAt} IS NULL) OR (${table.accountId} IS NOT NULL AND ${table.boundAt} IS NOT NULL)`
+    ),
+    foreignKey({
+      name: 'pending_admissions_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
+  ]
+);
+/** Content-free receipts for retrying a committed admission response. */
+export const admissionReceipts = pgTable(
+  'admission_receipts',
+  {
+    admissionId: uuid('admission_id')
+      .primaryKey()
+      .references(() => pendingAdmissions.id, { onDelete: 'cascade' }),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    inviteId: uuid('invite_id').notNull(),
+    accountId: text('account_id').notNull(),
+    memberId: uuid('member_id').notNull(),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('admission_receipts_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'admission_receipts_admission_tenant_fk',
+      columns: [table.communityId, table.admissionId],
+      foreignColumns: [pendingAdmissions.communityId, pendingAdmissions.id],
+    }),
+    foreignKey({
+      name: 'admission_receipts_admission_account_fk',
+      columns: [table.communityId, table.admissionId, table.accountId],
+      foreignColumns: [
+        pendingAdmissions.communityId,
+        pendingAdmissions.id,
+        pendingAdmissions.accountId,
+      ],
+    }),
+    foreignKey({
+      name: 'admission_receipts_invite_tenant_fk',
+      columns: [table.communityId, table.inviteId],
+      foreignColumns: [invites.communityId, invites.id],
+    }),
+    foreignKey({
+      name: 'admission_receipts_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+/** Browser approval pairing requests. */
+export const connectionPairings = pgTable(
+  'connection_pairings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    verifierHash: text('verifier_hash').notNull(),
+    installName: text('install_name').notNull(),
+    scopes: text('scopes').array().notNull(),
+    memberId: uuid('member_id'),
+    codeHash: text('code_hash'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    polledAt: timestamp('polled_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    index('connection_pairings_community_idx').on(table.communityId),
+    index('connection_pairings_member_idx')
+      .on(table.memberId)
+      .where(sql`${table.memberId} IS NOT NULL`),
+    foreignKey({
+      name: 'connection_pairings_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+/** Revocable server-to-server personal grants, stored as hashes. */
+export const connectionGrants = pgTable(
+  'connection_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    memberId: uuid('member_id').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    installName: text('install_name').notNull(),
+    scopes: text('scopes').array().notNull(),
+    historyOnly: boolean('history_only').notNull().default(false),
+    createdAt: time('created_at'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('connection_grants_community_idx').on(table.communityId),
+    index('connection_grants_member_idx').on(table.memberId),
+    foreignKey({
+      name: 'connection_grants_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+
+/** Durable channel identity and commit-serialized sequence counter. */
+export const channels = pgTable(
+  'channels',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    name: text('name').notNull(),
+    description: text('description'),
+    visibility: text('visibility').notNull(),
+    archived: boolean('archived').notNull().default(false),
+    lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
+    epoch: integer('epoch').notNull().default(1),
+    createdAt: time('created_at'),
+    /** Every newly admitted person joins this channel, when it is public and not archived (0033). */
+    autoJoin: boolean('auto_join').notNull().default(false),
+    /** Seconds each person waits between posts here; 0 is off (0034). */
+    slowModeSeconds: integer('slow_mode_seconds').notNull().default(0),
+    /** `channel`, or `dm` for a direct message between one person and one agent (0046). */
+    kind: text('kind').notNull().default('channel'),
+    /** A direct message's person, and its agent's member row; null for a channel (0046). */
+    dmMemberId: uuid('dm_member_id'),
+    dmAgentId: uuid('dm_agent_id'),
+  },
+  (table) => [
+    uniqueIndex('channels_community_id_unique').on(table.communityId, table.id),
+    check('channels_slow_mode_seconds_check', sql`${table.slowModeSeconds} BETWEEN 0 AND 21600`),
+    check('channels_kind', sql`${table.kind} IN ('channel','dm')`),
+    check(
+      'channels_dm_shape',
+      sql`(${table.kind} = 'channel' AND ${table.dmMemberId} IS NULL AND ${table.dmAgentId} IS NULL) OR (${table.kind} = 'dm' AND ${table.dmMemberId} IS NOT NULL AND ${table.dmAgentId} IS NOT NULL AND ${table.dmMemberId} <> ${table.dmAgentId} AND ${table.visibility} = 'private' AND NOT ${table.autoJoin})`
+    ),
+    uniqueIndex('channels_one_dm')
+      .on(table.communityId, table.dmMemberId, table.dmAgentId)
+      .where(sql`${table.kind} = 'dm'`),
+  ]
+);
+/** Explicit human channel membership. */
+export const channelMembers = pgTable(
+  'channel_members',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    memberId: uuid('member_id').notNull(),
+    joinedAt: time('joined_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.memberId] }),
+    index('channel_members_member_idx').on(table.memberId),
+    index('channel_members_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'channel_members_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'channel_members_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+
+/** Agent identities are bound to one active human owner. */
+export const agents = pgTable(
+  'agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    ownerMemberId: uuid('owner_member_id').notNull(),
+    displayName: text('display_name').notNull(),
+    handle: text('handle').notNull(),
+    localAgentId: text('local_agent_id'),
+    /**
+     * The connection grant (installation) that enrolled this agent, or NULL for a legacy row
+     * enrolled before the Community recorded it. A request made with a grant acts only on its
+     * own agents, legacy ones, and ones whose enrolling grant is no longer live. No foreign key:
+     * see migration 0029.
+     */
+    enrolledByGrantId: uuid('enrolled_by_grant_id'),
+    /** What kind of computer runs the agent, from its app's last report; NULL until one (0039). */
+    runsOn: text('runs_on'),
+    /** When its app last reported it; NULL reads as unknown, never offline (0039). */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /** Whether its owner lets people send it direct messages; off until they do (0046). */
+    acceptsDms: boolean('accepts_dms').notNull().default(false),
+    active: boolean('active').notNull().default(true),
+    createdAt: time('created_at'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('agents_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('agents_handle_unique').on(table.communityId, table.handle),
+    uniqueIndex('agents_grant_local_id_unique')
+      .on(table.enrolledByGrantId, table.localAgentId)
+      .where(sql`${table.enrolledByGrantId} IS NOT NULL`),
+    uniqueIndex('agents_owner_local_id_legacy_unique')
+      .on(table.ownerMemberId, table.localAgentId)
+      .where(sql`${table.enrolledByGrantId} IS NULL`),
+    index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
+    check('agents_runs_on_check', sql`${table.runsOn} IN ('computer', 'agent-computer')`),
+    foreignKey({
+      name: 'agents_owner_tenant_fk',
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    // Every agent has its own member row, with its id (0042).
+    foreignKey({
+      name: 'agents_member_fk',
+      columns: [table.communityId, table.id],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+/** Agent bearer records contain only token hashes. */
+export const agentCredentials = pgTable(
+  'agent_credentials',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    agentId: uuid('agent_id').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdAt: time('created_at'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('agent_credentials_community_idx').on(table.communityId),
+    index('agent_credentials_agent_idx').on(table.agentId),
+    foreignKey({
+      name: 'agent_credentials_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+  ]
+);
+/** Explicit agent channel membership. */
+export const agentChannelMembers = pgTable(
+  'agent_channel_members',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    agentId: uuid('agent_id').notNull(),
+    joinedAt: time('joined_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.agentId] }),
+    index('agent_channel_members_community_idx').on(table.communityId),
+    index('agent_channel_members_agent_idx').on(table.agentId),
+    foreignKey({
+      name: 'agent_channel_members_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'agent_channel_members_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+  ]
+);
+/** One handle namespace shared by humans and agents. */
+export const communityHandles = pgTable(
+  'community_handles',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    handle: text('handle').notNull(),
+    memberId: uuid('member_id').unique(),
+    agentId: uuid('agent_id').unique(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityId, table.handle] }),
+    foreignKey({
+      name: 'community_handles_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'community_handles_agent_tenant_fk',
+      columns: [table.communityId, table.agentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+  ]
+);
+
+/** Shared immutable entry content and resolved mention identities. */
+export const entries = pgTable(
+  'entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    /** Always set: an agent's message names the agent's own member row (0042). */
+    authorMemberId: uuid('author_member_id').notNull(),
+    authorAgentId: uuid('author_agent_id'),
+    authorDisplayName: text('author_display_name').notNull(),
+    text: text('text').notNull(),
+    parentEntryId: uuid('parent_entry_id'),
+    threadRootEntryId: uuid('thread_root_entry_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    createdAt: time('created_at'),
+    erasedAt: timestamp('erased_at', { withTimezone: true }),
+    /** When the entry was removed in place (0016); its text is then a tombstone sentence. */
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    /** The kind of remover: `author`, `moderator`, or `host`; set exactly when removedAt is. */
+    removedBy: text('removed_by'),
+  },
+  (table) => [
+    check('entries_removed_by', sql`${table.removedBy} IN ('author','moderator','host')`),
+    check('entries_removed_pair', sql`(${table.removedAt} IS NULL) = (${table.removedBy} IS NULL)`),
+    uniqueIndex('entries_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('entries_channel_seq_unique').on(table.channelId, table.seq),
+    // Partial, so erasure's rewrite of idempotency_key is not a row-key update (0013).
+    uniqueIndex('entries_author_key_unique')
+      .on(table.authorMemberId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.authorMemberId} IS NOT NULL`),
+    uniqueIndex('entries_agent_key_unique')
+      .on(table.authorAgentId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.authorAgentId} IS NOT NULL`),
+    // One author, a member; an agent author is that same member (0042).
+    check(
+      'entries_one_author',
+      sql`${table.authorMemberId} IS NOT NULL AND (${table.authorAgentId} IS NULL OR ${table.authorAgentId} = ${table.authorMemberId})`
+    ),
+    index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
+    // Serve the reply and thread-root foreign key checks when a message is deleted.
+    index('entries_parent_ref_idx')
+      .on(table.parentEntryId, table.communityId)
+      .where(sql`${table.parentEntryId} IS NOT NULL`),
+    index('entries_thread_root_ref_idx')
+      .on(table.threadRootEntryId, table.communityId)
+      .where(sql`${table.threadRootEntryId} IS NOT NULL`),
+    index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
+    // The watch-only checks read the last few minutes across every space (0036).
+    index('entries_created_idx').on(table.createdAt),
+    foreignKey({
+      name: 'entries_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'entries_author_member_tenant_fk',
+      columns: [table.communityId, table.authorMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'entries_author_agent_tenant_fk',
+      columns: [table.communityId, table.authorAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    foreignKey({
+      name: 'entries_parent_tenant_fk',
+      columns: [table.communityId, table.parentEntryId],
+      foreignColumns: [table.communityId, table.id],
+    }),
+    foreignKey({
+      name: 'entries_thread_root_tenant_fk',
+      columns: [table.communityId, table.threadRootEntryId],
+      foreignColumns: [table.communityId, table.id],
+    }),
+  ]
+);
+/** Ordered, tenant-qualified human or agent targets mentioned by one entry. */
+export const entryMentions = pgTable(
+  'entry_mentions',
+  {
+    entryId: uuid('entry_id').notNull(),
+    position: integer('position').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    mentionedMemberId: uuid('mentioned_member_id'),
+    mentionedAgentId: uuid('mentioned_agent_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.entryId, table.position] }),
+    foreignKey({
+      name: 'entry_mentions_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'entry_mentions_member_tenant_fk',
+      columns: [table.communityId, table.mentionedMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'entry_mentions_agent_tenant_fk',
+      columns: [table.communityId, table.mentionedAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    check('entry_mentions_position', sql`${table.position} > 0`),
+    check(
+      'entry_mentions_exactly_one_target',
+      sql`(${table.mentionedMemberId} IS NULL) <> (${table.mentionedAgentId} IS NULL)`
+    ),
+    index('entry_mentions_member_idx').on(table.communityId, table.mentionedMemberId),
+    index('entry_mentions_agent_idx').on(table.communityId, table.mentionedAgentId),
+  ]
+);
+/** Unbound or entry-bound blob metadata. */
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    uploaderMemberId: uuid('uploader_member_id'),
+    uploaderAgentId: uuid('uploader_agent_id'),
+    entryId: uuid('entry_id'),
+    blobKey: text('blob_key').notNull().unique(),
+    displayName: text('display_name').notNull(),
+    contentType: text('content_type').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    checksum: text('checksum').notNull(),
+    idempotencyKey: text('idempotency_key'),
+    requestHash: text('request_hash'),
+    uploadedAt: time('uploaded_at'),
+    cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+    cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('attachments_community_id_unique').on(table.communityId, table.id),
+    index('attachments_entry_idx').on(table.entryId),
+    index('attachments_channel_idx').on(table.channelId),
+    uniqueIndex('attachments_human_retry_idx')
+      .on(table.uploaderMemberId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.uploaderMemberId} IS NOT NULL`),
+    uniqueIndex('attachments_agent_retry_idx')
+      .on(table.uploaderAgentId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.uploaderAgentId} IS NOT NULL`),
+    index('attachments_orphan_idx')
+      .on(table.cleanupNextAttemptAt, table.uploadedAt, table.id)
+      .where(sql`${table.entryId} IS NULL`),
+    check(
+      'attachments_exactly_one_uploader',
+      sql`(${table.uploaderMemberId} IS NULL) <> (${table.uploaderAgentId} IS NULL)`
+    ),
+    foreignKey({
+      name: 'attachments_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'attachments_uploader_member_tenant_fk',
+      columns: [table.communityId, table.uploaderMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'attachments_uploader_agent_tenant_fk',
+      columns: [table.communityId, table.uploaderAgentId],
+      foreignColumns: [agents.communityId, agents.id],
+    }),
+    foreignKey({
+      name: 'attachments_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }),
+  ]
+);
+/**
+ * One export: a background job while `queued` or `building`, then a private archive until it
+ * expires. Version 1 rows hold one blob in `blobKey`; version 2 rows keep their blobs in
+ * {@link exportSegments}.
+ */
+export const exportArchives = pgTable(
+  'export_archives',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    /** Null only for an evidence export, which nobody asked for (0025). */
+    requesterMemberId: uuid('requester_member_id'),
+    scope: text('scope').notNull(),
+    /** The whole-community takedown an evidence export preserves (0025). */
+    evidenceTakedownId: uuid('evidence_takedown_id'),
+    blobKey: text('blob_key').unique(),
+    byteSize: bigint('byte_size', { mode: 'number' }),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+    cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Community content version at snapshot; set only on version 1 rows written after erasure. */
+    contentVersion: bigint('content_version', { mode: 'number' }),
+    formatVersion: integer('format_version').notNull().default(1),
+    state: text('state').notNull().default('ready'),
+    /** max(seq) per exported channel when the job started. */
+    watermark: jsonb('watermark'),
+    lastCheckedRedactionId: bigint('last_checked_redaction_id', { mode: 'number' }),
+    verifiedContentVersion: bigint('verified_content_version', { mode: 'number' }),
+    rebuildPasses: integer('rebuild_passes').notNull().default(0),
+    progressDone: bigint('progress_done', { mode: 'number' }).notNull().default(0),
+    progressTotal: bigint('progress_total', { mode: 'number' }),
+    dataComplete: boolean('data_complete').notNull().default(false),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    runMs: bigint('run_ms', { mode: 'number' }).notNull().default(0),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+  },
+  (table) => [
+    uniqueIndex('export_archives_community_id_unique').on(table.communityId, table.id),
+    check('export_archives_scope', sql`${table.scope} IN ('personal','owner','evidence')`),
+    check(
+      'export_archives_evidence',
+      sql`(${table.scope} = 'evidence') = (${table.requesterMemberId} IS NULL) AND (${table.scope} = 'evidence') = (${table.evidenceTakedownId} IS NOT NULL)`
+    ),
+    check('export_archives_format_version', sql`${table.formatVersion} IN (1,2,3)`),
+    check(
+      'export_archives_state',
+      sql`${table.state} IN ('queued','building','ready','failed','cancelled')`
+    ),
+    check(
+      'export_archives_blob_key_format',
+      sql`(${table.formatVersion} = 1) = (${table.blobKey} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_ready_fields',
+      sql`(${table.state} = 'ready') = (${table.byteSize} IS NOT NULL AND ${table.expiresAt} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_version_one_ready',
+      sql`${table.formatVersion} >= 2 OR ${table.state} = 'ready'`
+    ),
+    check(
+      'export_archives_ended',
+      sql`(${table.state} IN ('failed','cancelled')) = (${table.endedAt} IS NOT NULL)`
+    ),
+    check(
+      'export_archives_failure',
+      sql`(${table.state} = 'failed') = (${table.failureCode} IS NOT NULL)`
+    ),
+    check('export_archives_failure_code', sql`${table.failureCode} ~ '^[A-Z][A-Z0-9_]{0,63}$'`),
+    check('export_archives_rebuild_passes', sql`${table.rebuildPasses} >= 0`),
+    check('export_archives_failures', sql`${table.failures} >= 0`),
+    check('export_archives_run_ms', sql`${table.runMs} >= 0`),
+    check(
+      'export_archives_progress',
+      sql`${table.progressDone} >= 0 AND (${table.progressTotal} IS NULL OR ${table.progressTotal} >= 0)`
+    ),
+    index('export_archives_expiry_idx')
+      .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
+      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('export_archives_open_owner_unique')
+      .on(table.communityId)
+      .where(sql`${table.scope} = 'owner' AND ${table.state} IN ('queued','building')`),
+    uniqueIndex('export_archives_open_personal_unique')
+      .on(table.requesterMemberId)
+      .where(sql`${table.scope} = 'personal' AND ${table.state} IN ('queued','building')`),
+    uniqueIndex('export_archives_open_evidence_unique')
+      .on(table.evidenceTakedownId)
+      .where(sql`${table.scope} = 'evidence' AND ${table.state} IN ('queued','building')`),
+    index('export_archives_due_idx')
+      .on(table.claimedAt.asc().nullsFirst(), table.createdAt)
+      .where(sql`${table.state} IN ('queued','building')`),
+    index('export_archives_requester_idx').on(
+      table.communityId,
+      table.requesterMemberId,
+      table.createdAt.desc()
+    ),
+    index('export_archives_ended_idx')
+      .on(table.endedAt)
+      .where(sql`${table.state} IN ('failed','cancelled')`),
+    foreignKey({
+      name: 'export_archives_requester_tenant_fk',
+      columns: [table.communityId, table.requesterMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+/**
+ * The consecutive blobs of one version 2 archive, each holding whole zip entries. A row exists
+ * only while its blob is committed; every path that queues the blob deletes the row with it.
+ */
+export const exportSegments = pgTable(
+  'export_segments',
+  {
+    exportId: uuid('export_id').notNull(),
+    segmentNo: integer('segment_no').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    kind: text('kind').notNull(),
+    blobKey: text('blob_key').notNull().unique(),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    firstChannelId: uuid('first_channel_id'),
+    firstSeq: bigint('first_seq', { mode: 'number' }),
+    lastChannelId: uuid('last_channel_id'),
+    lastSeq: bigint('last_seq', { mode: 'number' }),
+    readRedactionId: bigint('read_redaction_id', { mode: 'number' }),
+    entriesIndex: bytea('entries_index').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    entryCount: integer('entry_count').notNull(),
+    fileCount: integer('file_count').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.exportId, table.segmentNo] }),
+    foreignKey({
+      name: 'export_segments_archive_tenant_fk',
+      columns: [table.communityId, table.exportId],
+      foreignColumns: [exportArchives.communityId, exportArchives.id],
+    }).onDelete('cascade'),
+    check('export_segments_segment_no', sql`${table.segmentNo} > 0`),
+    check('export_segments_kind', sql`${table.kind} IN ('data','collection','tail')`),
+    check('export_segments_byte_size', sql`${table.byteSize} > 0`),
+    check('export_segments_content_digest', sql`${table.contentDigest} ~ '^[a-f0-9]{64}$'`),
+    check('export_segments_entry_count', sql`${table.entryCount} >= 0`),
+    check('export_segments_file_count', sql`${table.fileCount} >= 0`),
+    check(
+      'export_segments_data_range',
+      sql`(${table.kind} = 'data') = (${table.firstChannelId} IS NOT NULL AND ${table.firstSeq} IS NOT NULL AND ${table.lastChannelId} IS NOT NULL AND ${table.lastSeq} IS NOT NULL AND ${table.readRedactionId} IS NOT NULL)`
+    ),
+    index('export_segments_community_idx').on(table.communityId),
+  ]
+);
+/** Ordered, tenant-qualified channel selection captured by one export archive. */
+export const exportArchiveChannels = pgTable(
+  'export_archive_channels',
+  {
+    exportArchiveId: uuid('export_archive_id').notNull(),
+    position: integer('position').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.exportArchiveId, table.position] }),
+    foreignKey({
+      name: 'export_archive_channels_archive_tenant_fk',
+      columns: [table.communityId, table.exportArchiveId],
+      foreignColumns: [exportArchives.communityId, exportArchives.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'export_archive_channels_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    check('export_archive_channels_position', sql`${table.position} > 0`),
+    index('export_archive_channels_channel_idx').on(table.communityId, table.channelId),
+  ]
+);
+/** Durable cleanup work for blobs whose metadata transaction did not commit. */
+export const pendingBlobDeletions = pgTable(
+  'pending_blob_deletions',
+  {
+    blobKey: text('blob_key').primaryKey(),
+    createdAt: time('created_at'),
+    attempts: integer('attempts').notNull().default(0),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('pending_blob_deletions_due_idx').on(table.nextAttemptAt, table.createdAt, table.blobKey),
+  ]
+);
+/** Tenant ownership and lifecycle for every managed attachment or export object. */
+export const managedBlobs = pgTable(
+  'managed_blobs',
+  {
+    blobKey: text('blob_key').primaryKey(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    purpose: text('purpose').notNull(),
+    communityLifecycleVersion: integer('community_lifecycle_version').notNull(),
+    state: text('state').notNull().default('reserved'),
+    byteSize: bigint('byte_size', { mode: 'number' }),
+    checksum: text('checksum'),
+    createdAt: time('created_at'),
+    storedAt: timestamp('stored_at', { withTimezone: true }),
+    committedAt: timestamp('committed_at', { withTimezone: true }),
+    /** The takedown whose evidence export reserved this blob (0025). */
+    evidenceTakedownId: uuid('evidence_takedown_id'),
+  },
+  (table) => [
+    uniqueIndex('managed_blobs_community_key_unique').on(table.communityId, table.blobKey),
+    index('managed_blobs_community_state_idx').on(table.communityId, table.state, table.createdAt),
+    // The SQL index also INCLUDEs byte_size so the usage sum is an index-only scan.
+    index('managed_blobs_community_usage_idx').on(table.communityId, table.state, table.purpose),
+    check(
+      'managed_blobs_purpose',
+      sql`${table.purpose} IN ('attachment','export','icon','legacy_cleanup','import_staging')`
+    ),
+    check('managed_blobs_key', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'managed_blobs_state',
+      sql`${table.state} IN ('reserved','stored','committed','pending_delete','evidence_hold')`
+    ),
+    check('managed_blobs_lifecycle_version', sql`${table.communityLifecycleVersion} > 0`),
+    check(
+      'managed_blobs_stored_metadata',
+      sql`(${table.state} = 'reserved' AND ${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.state} IN ('stored','committed','evidence_hold') AND ${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL) OR (${table.state} = 'pending_delete' AND ((${table.byteSize} IS NULL AND ${table.checksum} IS NULL AND ${table.storedAt} IS NULL) OR (${table.byteSize} IS NOT NULL AND ${table.byteSize} > 0 AND ${table.checksum} IS NOT NULL AND ${table.storedAt} IS NOT NULL)))`
+    ),
+    check(
+      'managed_blobs_commit_timestamp',
+      sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete','evidence_hold'))`
+    ),
+    check(
+      'managed_blobs_evidence_takedown',
+      sql`${table.evidenceTakedownId} IS NULL OR ${table.purpose} = 'export'`
+    ),
+  ]
+);
+
+/** Durable bounded cleanup state for one tenant deletion request. */
+export const communityDeletionJobs = pgTable(
+  'community_deletion_jobs',
+  {
+    communityId: uuid('community_id')
+      .primaryKey()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    requestedByMemberId: uuid('requested_by_member_id'),
+    requestedByHostActor: text('requested_by_host_actor'),
+    lifecycleVersion: integer('lifecycle_version').notNull(),
+    state: text('state').notNull().default('waiting'),
+    deleteAfter: timestamp('delete_after', { withTimezone: true }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+    updatedAt: time('updated_at'),
+    /** The whole-community takedown this deletion belongs to (0025). */
+    takedownId: uuid('takedown_id'),
+  },
+  (table) => [
+    foreignKey({
+      name: 'community_deletion_jobs_requester_tenant_fk',
+      columns: [table.communityId, table.requestedByMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    index('community_deletion_jobs_due_idx').on(table.nextAttemptAt, table.communityId),
+    check(
+      'community_deletion_jobs_requester',
+      sql`num_nonnulls(${table.requestedByMemberId}, ${table.requestedByHostActor}) = 1 AND (${table.requestedByHostActor} IS NULL OR ${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')`
+    ),
+    check('community_deletion_jobs_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+    check(
+      'community_deletion_jobs_takedown',
+      sql`${table.takedownId} IS NULL OR ${table.requestedByHostActor} IS NOT NULL`
+    ),
+    check('community_deletion_jobs_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'community_deletion_jobs_state_check',
+      sql`${table.state} IN ('waiting','deleting','retrying')`
+    ),
+    check(
+      'community_deletion_jobs_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+  ]
+);
+
+/** Per-object retry state retained until the tenant database transaction completes. */
+export const communityDeletionBlobProgress = pgTable(
+  'community_deletion_blob_progress',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    blobKey: text('blob_key').notNull(),
+    state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    lastErrorClass: text('last_error_class'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityId, table.blobKey] }),
+    index('community_deletion_blob_progress_due_idx').on(
+      table.communityId,
+      table.nextAttemptAt,
+      table.blobKey
+    ),
+    check('community_deletion_blob_progress_key_check', sql`${table.blobKey} ~ '^[a-f0-9]{64}$'`),
+    check('community_deletion_blob_progress_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'community_deletion_blob_progress_state_check',
+      sql`${table.state} IN ('pending','deleted','retrying')`
+    ),
+    check(
+      'community_deletion_blob_progress_error_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'community_deletion_blob_progress_deleted_check',
+      sql`(${table.state} = 'deleted') = (${table.deletedAt} IS NOT NULL)`
+    ),
+  ]
+);
+
+/** Content-free, expiring proof that a tenant deletion completed. */
+export const communityDeletionTombstones = pgTable(
+  'community_deletion_tombstones',
+  {
+    communityId: uuid('community_id').primaryKey(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+    outcome: text('outcome').notNull(),
+    retryCount: integer('retry_count').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    requestedBy: text('requested_by'),
+    requestedByHostActor: text('requested_by_host_actor'),
+  },
+  (table) => [
+    index('community_deletion_tombstones_expiry_idx').on(table.expiresAt, table.communityId),
+    check('community_deletion_tombstones_outcome_check', sql`${table.outcome} = 'deleted'`),
+    check('community_deletion_tombstones_retry_count_check', sql`${table.retryCount} >= 0`),
+    check(
+      'community_deletion_tombstones_requester',
+      sql`(${table.requestedBy} IS NULL AND ${table.requestedByHostActor} IS NULL) OR (${table.requestedBy} = 'owner' AND ${table.requestedByHostActor} IS NULL) OR (${table.requestedBy} = 'host' AND ${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')`
+    ),
+    check(
+      'community_deletion_tombstones_times_check',
+      sql`${table.completedAt} >= ${table.requestedAt} AND ${table.expiresAt} = ${table.completedAt} + interval '30 days'`
+    ),
+  ]
+);
+/** Monotonic per-human read positions. */
+export const readCursors = pgTable(
+  'read_cursors',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    memberId: uuid('member_id').notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+    updatedAt: time('updated_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.memberId] }),
+    index('read_cursors_community_idx').on(table.communityId),
+    index('read_cursors_member_idx').on(table.memberId),
+    foreignKey({
+      name: 'read_cursors_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'read_cursors_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+/** Atomic owner quota bucket. */
+export const ownerQuotaWindows = pgTable(
+  'owner_quota_windows',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    ownerMemberId: uuid('owner_member_id').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    postCount: integer('post_count').notNull().default(0),
+    uploadBytes: bigint('upload_bytes', { mode: 'number' }).notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerMemberId, table.windowStart] }),
+    index('owner_quota_windows_community_idx').on(table.communityId),
+    foreignKey({
+      name: 'owner_quota_windows_owner_tenant_fk',
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+// `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0036).
+
+// `community_limits` and `member_limit_overrides` live in `schema/limits.ts` (0012).
+
+/** A person's request to erase one membership or their whole account after 72 hours. */
+export const erasureRequests = pgTable(
+  'erasure_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    communityId: uuid('community_id').references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id'),
+    parentRequestId: uuid('parent_request_id'),
+    state: text('state').notNull().default('scheduled'),
+    executeAfter: timestamp('execute_after', { withTimezone: true }).notNull(),
+    createdAt: time('created_at'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+    lastErrorClass: text('last_error_class'),
+  },
+  (table) => [
+    foreignKey({
+      name: 'erasure_requests_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'erasure_requests_parent_request_id_fkey',
+      columns: [table.parentRequestId],
+      foreignColumns: [table.id],
+    }),
+    check('erasure_requests_kind_check', sql`${table.kind} IN ('membership','account')`),
+    check(
+      'erasure_requests_state_check',
+      sql`${table.state} IN ('scheduled','running','completed','cancelled')`
+    ),
+    check('erasure_requests_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'erasure_requests_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'erasure_requests_kind_shape',
+      sql`(${table.kind} = 'account' AND ${table.communityId} IS NULL AND ${table.memberId} IS NULL AND (${table.userId} IS NOT NULL OR ${table.state} IN ('completed','cancelled'))) OR (${table.kind} = 'membership' AND ${table.communityId} IS NOT NULL AND ${table.memberId} IS NOT NULL AND ${table.userId} IS NULL)`
+    ),
+    check('erasure_requests_window', sql`${table.executeAfter} >= ${table.createdAt}`),
+    check(
+      'erasure_requests_state_times',
+      sql`(${table.state} = 'scheduled' AND ${table.startedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'running' AND ${table.startedAt} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'completed' AND ${table.startedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.cancelledAt} IS NULL) OR (${table.state} = 'cancelled' AND ${table.startedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.cancelledAt} IS NOT NULL)`
+    ),
+    uniqueIndex('erasure_requests_open_membership_unique')
+      .on(table.communityId, table.memberId)
+      .where(sql`${table.state} IN ('scheduled','running')`),
+    uniqueIndex('erasure_requests_open_account_unique')
+      .on(table.userId)
+      .where(sql`${table.kind} = 'account' AND ${table.state} IN ('scheduled','running')`),
+    index('erasure_requests_due_idx')
+      .on(table.nextAttemptAt, table.executeAfter)
+      .where(sql`${table.state} IN ('scheduled','running')`),
+    index('erasure_requests_community_idx').on(table.communityId, table.state),
+    index('erasure_requests_parent_idx').on(table.parentRequestId),
+  ]
+);
+
+/**
+ * A host's closure of someone's account (0030): their access ended at once, and their account
+ * erasure waits its window. `userId` has no foreign key, so the row outlives the account until
+ * the cleanup sweep deletes it 30 days after it ends.
+ */
+export const accountClosures = pgTable(
+  'account_closures',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(),
+    erasureRequestId: uuid('erasure_request_id').references(() => erasureRequests.id, {
+      onDelete: 'set null',
+    }),
+    state: text('state').notNull().default('closed'),
+    reason: text('reason').notNull(),
+    reference: text('reference'),
+    personRequested: boolean('person_requested').notNull(),
+    requestedByHostActor: text('requested_by_host_actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    createdAt: time('created_at'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('account_closures_open_unique')
+      .on(table.userId)
+      .where(sql`${table.state} = 'closed'`),
+    uniqueIndex('account_closures_idempotency_unique').on(
+      table.requestedByHostActor,
+      table.idempotencyKey
+    ),
+    index('account_closures_user_idx').on(table.userId, table.createdAt),
+    index('account_closures_erasure_idx').on(table.erasureRequestId),
+    check(
+      'account_closures_state_check',
+      sql`${table.state} IN ('closed','cancelled','completed')`
+    ),
+    check(
+      'account_closures_reason_check',
+      sql`${table.reason} IN ('under_minimum_age','legal_order','other')`
+    ),
+    check('account_closures_reference_check', sql`${table.reference} ~ '^[A-Za-z0-9 ._#-]{1,80}$'`),
+    check(
+      'account_closures_requested_by_host_actor_check',
+      sql`${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'account_closures_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('account_closures_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'account_closures_other_reference',
+      sql`${table.reason} <> 'other' OR ${table.reference} IS NOT NULL`
+    ),
+    check(
+      'account_closures_state_times',
+      sql`(${table.state} = 'closed' AND ${table.cancelledAt} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'cancelled' AND ${table.cancelledAt} IS NOT NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.cancelledAt} IS NULL)`
+    ),
+  ]
+);
+
+/**
+ * One finished erasure, by id only, written in the transaction that finishes it. No foreign
+ * keys: a row must outlive the community and account it names, so that re-applying it after a
+ * backup restore erases them again. `nonce` lets a read cursor notice a restore.
+ */
+export const erasureJournal = pgTable(
+  'erasure_journal',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    nonce: uuid('nonce').notNull().defaultRandom(),
+    kind: text('kind').notNull(),
+    communityId: uuid('community_id'),
+    memberId: uuid('member_id'),
+    userId: text('user_id'),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    index('erasure_journal_created_idx').on(table.createdAt),
+    check(
+      'erasure_journal_record',
+      sql`(${table.kind} = 'member' AND ${table.communityId} IS NOT NULL AND ${table.memberId} IS NOT NULL AND ${table.userId} IS NULL) OR (${table.kind} = 'account' AND ${table.userId} IS NOT NULL AND ${table.communityId} IS NULL AND ${table.memberId} IS NULL)`
+    ),
+  ]
+);
+
+/** Content-free record of each entry an erasure changed, for the redaction feed. */
+export const entryRedactions = pgTable(
+  'entry_redactions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    channelId: uuid('channel_id').notNull(),
+    entryId: uuid('entry_id').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    // DEFERRABLE INITIALLY DEFERRED in the migration, so a batch never holds the channel.
+    foreignKey({
+      name: 'entry_redactions_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'entry_redactions_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }).onDelete('cascade'),
+    index('entry_redactions_channel_idx').on(table.channelId, table.id),
+    index('entry_redactions_community_id_idx').on(table.communityId, table.id),
+    index('entry_redactions_entry_idx').on(table.entryId),
+  ]
+);
+
+// `community_short_names` and `released_short_names` live in `schema/short-names.ts` (0015).
+
+// `removed_file_blobs` lives in `schema/removed-file-blobs.ts` (0020).
+
+/**
+ * Notices waiting to be mailed, or already resolved. Never an address: the worker reads the
+ * recipient's email when it sends. `recipient_user_id` has no foreign key on purpose, so an
+ * account erasure can delete the account while its queued notice stays to fail.
+ */
+export const noticeOutbox = pgTable(
+  'notice_outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // NULL only for an account-level notice, which belongs to no community (0032).
+    communityId: uuid('community_id').references(() => communities.id),
+    kind: text('kind').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    recipientUserId: text('recipient_user_id').notNull(),
+    state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'notice_outbox_kind_check',
+      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed','account.sign_in_linked','account.password_reset','account.sign_in_link','account.email_confirmation')`
+    ),
+    check(
+      'notice_outbox_community_shape',
+      sql`${table.communityId} IS NOT NULL OR ${table.kind} IN ('account.password_reset','account.sign_in_link','account.email_confirmation')`
+    ),
+    check('notice_outbox_state_check', sql`${table.state} IN ('pending','accepted','failed')`),
+    check('notice_outbox_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'notice_outbox_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'notice_outbox_state_shape',
+      sql`(${table.state} = 'pending' AND ${table.nextAttemptAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.state} = 'accepted' AND ${table.acceptedAt} IS NOT NULL AND ${table.failedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NULL) OR (${table.state} = 'failed' AND ${table.failedAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NOT NULL)`
+    ),
+    index('notice_outbox_due_idx').on(table.state, table.nextAttemptAt),
+    index('notice_outbox_community_idx').on(table.communityId),
+    index('notice_outbox_subject_idx').on(table.subjectId),
+  ]
+);
+
+const OPEN_OWNER_REPLACEMENT_STATES = sql`('notifying','waiting','claimable')`;
+const CLOSED_OWNER_REPLACEMENT_STATES = sql`('completed','objected','withdrawn','superseded','expired')`;
+
+/**
+ * A host's request to make the account named in it the owner of a community whose owner has
+ * left. At most one is open per community; a closed one never reopens. The claim token is
+ * stored only as its hash, and only while the request is open.
+ */
+export const ownerReplacements = pgTable(
+  'owner_replacements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    state: text('state').notNull().default('notifying'),
+    reason: text('reason').notNull(),
+    /** The host's own pointer; never shown to admins or members, never in mail or audit. */
+    reference: text('reference'),
+    /** Whether the request names an account; kept after it closes, for the host's list. */
+    claimantNamed: boolean('claimant_named').notNull(),
+    /**
+     * The named account's OIDC issuer and subject. They identify a person, so they live only as
+     * long as the request: the helper that closes a request (task 2.3's `end.ts`) clears them.
+     */
+    claimantOidcIssuer: text('claimant_oidc_issuer'),
+    claimantOidcSubject: text('claimant_oidc_subject'),
+    claimTokenHash: text('claim_token_hash').unique(),
+    claimReissuedAt: timestamp('claim_reissued_at', { withTimezone: true }),
+    requestedByHostActor: text('requested_by_host_actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    afterObjection: boolean('after_objection').notNull(),
+    afterWithdrawal: boolean('after_withdrawal').notNull(),
+    /** Why a withdrawn request was withdrawn; set on exactly the withdrawn ones. */
+    withdrawnCause: text('withdrawn_cause'),
+    priorOwnerMemberId: uuid('prior_owner_member_id').notNull(),
+    newOwnerMemberId: uuid('new_owner_member_id'),
+    noticeState: text('notice_state').notNull().default('pending'),
+    noticeResolvedAt: timestamp('notice_resolved_at', { withTimezone: true }),
+    verifiedAddress: boolean('verified_address'),
+    claimableAfter: timestamp('claimable_after', { withTimezone: true }),
+    /** The latest earliest-date a notice promised the owner; the stored date is never before it (0028). */
+    noticePromisedAt: timestamp('notice_promised_at', { withTimezone: true }),
+    reminderQueuedAt: timestamp('reminder_queued_at', { withTimezone: true }),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'owner_replacements_state_check',
+      sql`${table.state} IN ('notifying','waiting','claimable','completed','objected','withdrawn','superseded','expired')`
+    ),
+    check(
+      'owner_replacements_reason_check',
+      sql`${table.reason} IN ('owner_left_group','owner_unreachable','other')`
+    ),
+    check(
+      'owner_replacements_reference_check',
+      sql`${table.reference} ~ '^[A-Za-z0-9 ._#-]{1,80}$'`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_issuer_check',
+      sql`char_length(${table.claimantOidcIssuer}) BETWEEN 1 AND 2048`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_subject_check',
+      sql`char_length(${table.claimantOidcSubject}) BETWEEN 1 AND 255`
+    ),
+    check(
+      'owner_replacements_claim_token_hash_check',
+      sql`${table.claimTokenHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'owner_replacements_requested_by_host_actor_check',
+      sql`${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'owner_replacements_withdrawn_cause_check',
+      sql`${table.withdrawnCause} IN ('cancelled','suspended','deletion')`
+    ),
+    check(
+      'owner_replacements_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('owner_replacements_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'owner_replacements_notice_state_check',
+      sql`${table.noticeState} IN ('pending','accepted','failed')`
+    ),
+    check(
+      'owner_replacements_claimant',
+      sql`(${table.claimantOidcIssuer} IS NULL) = (${table.claimantOidcSubject} IS NULL)`
+    ),
+    check(
+      'owner_replacements_claimant_named',
+      sql`(${table.claimantNamed} OR ${table.claimantOidcIssuer} IS NULL) AND (${table.state} NOT IN ${OPEN_OWNER_REPLACEMENT_STATES} OR (${table.claimantOidcIssuer} IS NOT NULL) = ${table.claimantNamed})`
+    ),
+    check(
+      'owner_replacements_withdrawn_cause',
+      sql`(${table.state} = 'withdrawn') = (${table.withdrawnCause} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_notice',
+      sql`(${table.noticeState} = 'pending') = (${table.noticeResolvedAt} IS NULL)`
+    ),
+    check(
+      'owner_replacements_waiting',
+      sql`${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.noticeState} <> 'pending'`
+    ),
+    check(
+      'owner_replacements_claimable_after',
+      sql`(${table.state} <> 'notifying' OR ${table.claimableAfter} IS NULL) AND (${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.claimableAfter} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_window',
+      sql`(${table.state} NOT IN ('notifying','waiting') OR ${table.claimExpiresAt} IS NULL) AND (${table.state} NOT IN ('claimable','completed','expired') OR ${table.claimExpiresAt} IS NOT NULL) AND (${table.claimExpiresAt} IS NULL OR (${table.claimableAfter} IS NOT NULL AND ${table.claimExpiresAt} > ${table.claimableAfter}))`
+    ),
+    check(
+      'owner_replacements_reminder',
+      sql`${table.reminderQueuedAt} IS NULL OR ${table.claimableAfter} IS NOT NULL`
+    ),
+    check(
+      'owner_replacements_ended',
+      sql`(${table.state} IN ${CLOSED_OWNER_REPLACEMENT_STATES}) = (${table.endedAt} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_new_owner',
+      sql`(${table.state} = 'completed') = (${table.newOwnerMemberId} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_token',
+      sql`(${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}) = (${table.claimTokenHash} IS NOT NULL)`
+    ),
+    foreignKey({
+      name: 'owner_replacements_prior_owner_tenant_fk',
+      columns: [table.communityId, table.priorOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'owner_replacements_new_owner_tenant_fk',
+      columns: [table.communityId, table.newOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    uniqueIndex('owner_replacements_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('owner_replacements_idempotency').on(
+      table.communityId,
+      table.requestedByHostActor,
+      table.idempotencyKey
+    ),
+    uniqueIndex('owner_replacements_open_unique')
+      .on(table.communityId)
+      .where(sql`${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}`),
+    index('owner_replacements_objected_idx')
+      .on(table.communityId, table.endedAt.desc())
+      .where(sql`${table.state} = 'objected'`),
+    index('owner_replacements_requested_idx').on(
+      table.communityId,
+      table.requestedAt.desc(),
+      table.id.desc()
+    ),
+  ]
+);

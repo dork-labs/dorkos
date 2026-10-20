@@ -175,6 +175,69 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves).toEqual({});
   });
 
+  it('carries every way a person asked agents to ask first, and nothing Trusted already gives', () => {
+    // A wipe lands on Trusted (DOR-2739), so Careful, an Ask or Act stop and
+    // an Ask or Blocked change all have to survive it. Allowed, Full autonomy
+    // and the Trusted preset are the fresh values and carry nothing.
+    const salvaged = salvageProtectedState(
+      {
+        permissions: {
+          preset: 'careful',
+          defaults: {
+            areas: { rooms: 'ask', tasks: 'allowed', reach: 'blocked' },
+            actions: { 'tasks.delete': 'ask', 'mesh.unregister': 'allowed' },
+          },
+        },
+        runtimes: {
+          defaultTrustStop: 'act',
+          claudeCode: { defaultTrustStop: 'ask' },
+          codex: { defaultTrustStop: 'autonomy' },
+          opencode: { defaultTrustStop: null },
+        },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({
+      'permissions.preset': 'careful',
+      'permissions.defaults.areas': { rooms: 'ask', reach: 'blocked' },
+      'permissions.defaults.actions': { 'tasks.delete': 'ask' },
+      'runtimes.defaultTrustStop': 'act',
+      'runtimes.claudeCode.defaultTrustStop': 'ask',
+    });
+    expect(salvaged.dropped).toEqual([]);
+  });
+
+  it('carries nothing from a Trusted install', () => {
+    const salvaged = salvageProtectedState(
+      {
+        permissions: { preset: 'trusted', defaults: { areas: { rooms: 'allowed' }, actions: {} } },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({});
+  });
+
+  it('carries the once-per-install Trusted stamps, so a wipe never runs either step twice', () => {
+    const salvaged = salvageProtectedState(
+      {
+        permissions: {
+          trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+          sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+        },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({
+      'permissions.trustedStoresAppliedAt': '2026-10-10T08:00:00.000Z',
+      'permissions.sharedAppsAppliedAt': '2026-10-12T08:00:00.000Z',
+    });
+    // An unset stamp is the fresh value: nothing to carry.
+    expect(
+      salvageProtectedState({ permissions: { sharedAppsAppliedAt: null } }, fresh).leaves
+    ).toEqual({});
+  });
+
   it('carries a login gate that was switched on', () => {
     const salvaged = salvageProtectedState({ auth: { enabled: true } }, fresh);
     expect(salvaged.leaves['auth.enabled']).toBe(true);
@@ -488,6 +551,60 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(new ConfigManager(dir).get('telemetry').install).toBe(false);
   });
 
+  it('keeps a Careful install Careful across recovery (DOR-2739)', () => {
+    // The wipe lands on Trusted now, so without the carryover this install
+    // would come back working without asking.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'careful',
+        defaults: { areas: { rooms: 'ask' }, actions: { 'tasks.delete': 'ask' } },
+        upgradeSweptVersion: null,
+      },
+      runtimes: { defaultTrustStop: 'ask' },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').preset).toBe('careful');
+    expect(manager.get('permissions').defaults).toEqual({
+      areas: { rooms: 'ask' },
+      actions: { 'tasks.delete': 'ask' },
+    });
+    expect(manager.get('runtimes').defaultTrustStop).toBe('ask');
+    expect(manager.validate()).toEqual({ valid: true });
+  });
+
+  it('keeps a Careful install with no stop of its own asking across recovery (DOR-2739)', () => {
+    // "Keep asking me" left the stop at `null` (each runtime's own default,
+    // which asks). A wipe must not hand that install Full autonomy.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'careful',
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
+      runtimes: { defaultTrustStop: null },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').preset).toBe('careful');
+    expect(manager.get('runtimes').defaultTrustStop).toBe('ask');
+  });
+
+  it('keeps both Trusted step stamps across recovery (DOR-2739)', () => {
+    // Without them a wipe would open a mesh the person closed and share apps
+    // with every agent again on the next boot.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'trusted',
+        defaults: { areas: {}, actions: {} },
+        trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+        sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+      },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').trustedStoresAppliedAt).toBe('2026-10-10T08:00:00.000Z');
+    expect(manager.get('permissions').sharedAppsAppliedAt).toBe('2026-10-12T08:00:00.000Z');
+    expect(manager.validate()).toEqual({ valid: true });
+  });
+
   it('keeps a login gate across recovery', () => {
     const { dir } = seedInvalidConfig({ auth: { enabled: true } });
     const manager = new ConfigManager(dir);
@@ -636,6 +753,22 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     // Preferences go, as a reset should. The protection stays, whole.
     expect(manager.get('server').port).toBe(4242);
     expect(manager.get('telemetry')).toEqual(OPTED_OUT);
+  });
+
+  it('keeps both Trusted step stamps across a full reset() (DOR-2739)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
+    dirs.push(dir);
+    const manager = new ConfigManager(dir);
+    manager.set('permissions', {
+      ...manager.get('permissions'),
+      trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+      sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+    });
+
+    manager.reset();
+
+    expect(manager.get('permissions').trustedStoresAppliedAt).toBe('2026-10-10T08:00:00.000Z');
+    expect(manager.get('permissions').sharedAppsAppliedAt).toBe('2026-10-12T08:00:00.000Z');
   });
 
   it('still resets telemetry when that section is named outright', () => {

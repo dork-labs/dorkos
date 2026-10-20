@@ -79,6 +79,16 @@ export {
   useRemoteCommunityAgents,
 } from './model/use-remote-community';
 export {
+  useRemoteCommunityDms,
+  useRemoteCommunityDm,
+  useRemoteCommunityAgentDmEntries,
+  remoteDmTitle,
+} from './model/use-remote-community-dms';
+export {
+  useCommunityTeammates,
+  useUpdateCommunityTeammates,
+} from './model/use-community-teammates';
+export {
   useRemoteCommunityStream,
   applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,

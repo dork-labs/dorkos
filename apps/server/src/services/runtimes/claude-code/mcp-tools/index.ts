@@ -5,6 +5,7 @@
  * @module services/runtimes/claude-code/mcp-tools
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { requiresDocPrincipal } from './doc-principal-policy.js';
 import type { McpToolDeps, McpToolSession } from './types.js';
 import {
   DORKOS_MCP_SERVER_NAME,
@@ -263,7 +264,9 @@ export function handRegisteredInSessionToolSet(
     ...getTraceTools(deps),
     ...getMeshTools(deps),
     ...getAgentTools(deps),
-    ...getExtensionTools(deps),
+    // The same provenance the task tools read: present in a session, so a
+    // Trusted install approves an extension our agent creates (ADR 261006-225605).
+    ...getExtensionTools(deps, resolveTaskProvenance),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each
@@ -384,13 +387,9 @@ export function createDorkOsToolServer(
   // One resolver for both halves of the tool surface, so the session's identity is
   // looked up once and the two paths cannot disagree about who is calling.
   const resolveContext = createInSessionContextResolver(identity);
-  // Registry capabilities additionally learn WHICH session is calling, read per
-  // tool call (the live session's canonical `sdkSessionId` over the trigger id,
-  // mirroring the DevTools read-time resolution) so resumable flows can bind to
-  // the invoking session without accepting a caller-selected replacement.
-  // …and WHERE that session lives, so a capability whose work outlives the
-  // process (a sign-in the person finishes in a browser) can be resumed in the
-  // right directory after a restart (DOR-981).
+  // Read canonical session/cwd per call so resumable capabilities stay bound
+  // to the invoking session after SDK rekey. Both tool halves share identity;
+  // caller arguments never select these values.
   const resolveCapabilityContext = async (capabilityId: string, signal?: AbortSignal) => {
     const base = await resolveContext();
     const invokingSessionId = session?.sdkSessionId || sessionId;
@@ -405,8 +404,11 @@ export function createDorkOsToolServer(
     };
     const connectorTurn = session?.connectorTurn;
     if (!connectorTurn) return invocation;
-    if (connectorTurn.isConnectorCapabilityId(capabilityId)) {
-      return { ...invocation, serverPrincipal: await connectorTurn.resolvePrincipal() };
+    if (connectorTurn.isConnectorCapabilityId(capabilityId) || requiresDocPrincipal(capabilityId)) {
+      signal?.throwIfAborted();
+      const serverPrincipal = await connectorTurn.resolvePrincipal();
+      signal?.throwIfAborted();
+      return { ...invocation, serverPrincipal };
     }
     // `connector_recommend` reads the caller's own granted connections to say
     // what is already connected; without the principal it leaves that out.

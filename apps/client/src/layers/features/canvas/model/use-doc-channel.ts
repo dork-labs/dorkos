@@ -4,6 +4,7 @@ import { useTransport } from '@/layers/shared/model';
 import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import type { CanvasChannelFrame } from '@dorkos/shared/canvas-channel-schemas';
 import { createDocChannelRecovery } from './doc-channel-recovery';
+import type { FileSaveBinding } from './file-save/receipt-operation';
 import {
   emptyDocChannelView,
   projectDocChannelPort,
@@ -16,13 +17,18 @@ export function useDocChannel(documentId: string): {
   channel: WidgetChannelPort;
   events: CanvasChannelFrame[];
   frameAdmission?: NativeFrameAdmission;
+  fileSaveBinding?: FileSaveBinding;
+  fileSaveObservation: 'pending' | 'ready' | 'unavailable';
 } {
   const transport = useTransport();
   const [view, setView] = useState<DocChannelView>(() =>
     emptyDocChannelView(documentId, transport)
   );
+  const [observation, setObservation] = useState({ documentId, transport, pending: true });
   useLayoutEffect(() => {
-    const recovery = createDocChannelRecovery(documentId, transport, setView);
+    const recovery = createDocChannelRecovery(documentId, transport, setView, (pending) => {
+      setObservation({ documentId, transport, pending });
+    });
     return () => recovery.dispose();
   }, [documentId, transport]);
   const current =
@@ -30,5 +36,28 @@ export function useDocChannel(documentId: string): {
       ? view
       : emptyDocChannelView(documentId, transport);
   const channel = useMemo(() => projectDocChannelPort(current), [current]);
-  return { channel, events: current.events, frameAdmission: current.frameAdmission };
+  const fileSaveBinding = useMemo(() => {
+    const incarnation = current.snapshot?.incarnation;
+    const binding = current.binding;
+    return incarnation && binding
+      ? Object.freeze({
+          incarnation: Object.freeze({ ...incarnation }),
+          current: () => binding.current('read'),
+        })
+      : undefined;
+  }, [current.snapshot?.incarnation, current.binding]);
+  return {
+    channel,
+    events: current.events,
+    frameAdmission: current.frameAdmission,
+    fileSaveBinding,
+    fileSaveObservation:
+      observation.documentId !== documentId ||
+      observation.transport !== transport ||
+      observation.pending
+        ? 'pending'
+        : current.available && current.binding?.verified && current.snapshot?.incarnation
+          ? 'ready'
+          : 'unavailable',
+  };
 }

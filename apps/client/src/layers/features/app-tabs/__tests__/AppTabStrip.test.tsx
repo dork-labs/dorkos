@@ -272,6 +272,20 @@ describe('AppTabStrip', () => {
     expect(other).not.toHaveAttribute('aria-controls');
   });
 
+  it('gives only the active tab the tinted surface, so it reads as active in both themes', () => {
+    // The old `bg-background` surface was darker than the strip in dark mode,
+    // so you couldn't tell which tab was active. Its tint is the cue.
+    renderStrip([DASHBOARD, AGENTS], AGENTS.id);
+    const active = screen.getByRole('tab', { name: /Team/ });
+    const other = screen.getByRole('tab', { name: /Home/ });
+    expect(active).toHaveAttribute('aria-selected', 'true');
+    expect(active).toHaveClass('bg-secondary', 'text-foreground');
+    expect(active).not.toHaveClass('bg-background');
+    expect(other).toHaveAttribute('aria-selected', 'false');
+    expect(other).not.toHaveClass('bg-secondary');
+    expect(other).toHaveClass('text-muted-foreground/80');
+  });
+
   it('activates a clicked tab', () => {
     renderStrip([DASHBOARD, AGENTS]);
     fireEvent.click(screen.getByRole('tab', { name: /Team/ }));

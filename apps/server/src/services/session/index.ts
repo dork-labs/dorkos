@@ -51,6 +51,7 @@ export type {
 // same truncation, as the session pane two panes away (DOR-1351).
 export { deriveSessionActivity } from './activity/derive-activity.js';
 export { persistenceModeFor } from './projector-persistence.js';
+export { wireSessionEventStore, sweepIdleProjectors } from './replay/projector-idle-sweep.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './replay/event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
@@ -201,7 +202,7 @@ export {
   setSessionLimitStore,
 } from './fleet/session-limit-store.js';
 export { startLimitPlanning, onLimitPlanWritten } from './fleet/limit-plans.js';
-export { installContinueService } from './fleet/continue-service.js';
+export { continueActivity, installContinueService } from './fleet/continue-service.js';
 export { installResumeService } from './fleet/resume-service.js';
 export {
   applySessionFleetOverlay,

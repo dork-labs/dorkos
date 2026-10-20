@@ -12,7 +12,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
+import { checkConnectorArguments, withoutOptionalNulls } from '@dorkos/shared/connector-arguments';
 import {
   ConnectorOperationRevisionSchema,
   type ConnectorExecutionTarget,
@@ -631,10 +631,11 @@ export class ConnectorExecutionAuthorizationService {
   }
 
   /**
-   * The arguments exactly as the agent sent them, once they satisfy the
-   * operation's frozen input schema. Nothing is filled in, coerced or dropped:
-   * the digest binds, the audit records and the provider receives this very
-   * object, and the provider applies its own defaults (`checkConnectorArguments`).
+   * The arguments as the agent sent them, once they satisfy the operation's
+   * frozen input schema. Only a `null` on an optional field is dropped first
+   * (`withoutOptionalNulls`); nothing is filled in or coerced. The digest
+   * binds, the audit records and the provider receives this very object, and
+   * the provider applies its own defaults (`checkConnectorArguments`).
    */
   private validateArguments(
     inputSchemaJson: string,
@@ -647,13 +648,14 @@ export class ConnectorExecutionAuthorizationService {
     try {
       inputSchema = JSON.parse(inputSchemaJson);
     } catch {
-      inputSchema = undefined;
+      // Unreadable: left undefined, and refused as such below.
     }
+    const cleaned = withoutOptionalNulls(inputSchema, argumentsValue);
     const check =
       inputSchema !== null && typeof inputSchema === 'object' && !Array.isArray(inputSchema)
-        ? checkConnectorArguments(inputSchema as Record<string, unknown>, argumentsValue)
+        ? checkConnectorArguments(inputSchema as Record<string, unknown>, cleaned)
         : ({ ok: false, reason: 'schema_unreadable' } as const);
-    if (check.ok) return argumentsValue;
+    if (check.ok) return cleaned;
     if (check.reason === 'schema_unreadable') {
       return refuse(
         'CONNECTOR_ARGUMENTS_INVALID',

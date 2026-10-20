@@ -56,6 +56,7 @@ const COLORS = [
   { name: 'Accent', token: '--dui-accent', className: 'bg-dui-accent' },
   { name: 'Destructive', token: '--dui-destructive', className: 'bg-dui-destructive' },
   { name: 'Brand', token: '--dui-brand', className: 'bg-dui-brand' },
+  { name: 'Brand text', token: '--dui-brand-text', className: 'bg-dui-brand-text' },
   { name: 'Success', token: '--dui-success', className: 'bg-dui-success' },
 ] as const;
 

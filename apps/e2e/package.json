@@ -13,6 +13,7 @@
     "capture:record": "tsx capture/record.ts",
     "capture:process": "tsx capture/process.ts",
     "capture:archive": "tsx capture/archive.ts",
+    "demo": "CAPTURE_SHARD=20 tsx capture/demo/run.ts",
     "shard-timings": "tsx reporters/refresh-shard-timings.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/shared": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@playwright/test": "^1.63.0",

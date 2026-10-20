@@ -19,6 +19,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import send from 'send';
 import serveStatic from 'serve-static';
+import { currentServerRole } from '../lib/server-role.js';
 import { createFirstContactMarker } from './first-contact.js';
 
 /**
@@ -95,6 +96,22 @@ const SHELL_CSP = [
 ].join('; ');
 
 /**
+ * {@link SHELL_CSP} on a hub (DOR-2937): no plain-`http:` frame or object.
+ * A hub is only ever reached over HTTPS, so the one `http:` page a browser
+ * would still frame there is its own `localhost`, which is the computer the
+ * person is sitting at. That computer's previews never render inside a hub.
+ */
+const HUB_SHELL_CSP = SHELL_CSP.replace(
+  "object-src 'self' data: https: http:",
+  "object-src 'self' data: https:"
+).replace("frame-src 'self' https: http:", "frame-src 'self' https:");
+
+/** The policy for the shell this server sends: {@link HUB_SHELL_CSP} on a hub. */
+function shellCsp(): string {
+  return currentServerRole() === 'hub' ? HUB_SHELL_CSP : SHELL_CSP;
+}
+
+/**
  * The headers the SPA shell carries, on both the static hit and the deep-link
  * fallback: what may cache it, and what its page is allowed to do.
  *
@@ -106,12 +123,14 @@ const SHELL_CSP = [
  * a poisoned entry) does not. The shell is a few KB, so never storing it costs
  * nothing and removes the failure mode outright.
  *
- * The policy is {@link SHELL_CSP}.
+ * The policy is {@link shellCsp}.
  */
-const SHELL_HEADERS = {
-  'Cache-Control': 'no-store',
-  'Content-Security-Policy': SHELL_CSP,
-} as const;
+const SHELL_CACHE_CONTROL = 'no-store';
+
+/** {@link SHELL_CACHE_CONTROL} and the shell's policy, read when each shell goes out. */
+function shellHeaders(): Record<string, string> {
+  return { 'Cache-Control': SHELL_CACHE_CONTROL, 'Content-Security-Policy': shellCsp() };
+}
 
 /**
  * Cache-Control for content-hashed bundles under `/assets/`.
@@ -140,7 +159,7 @@ const HASHED_ASSET_DIR = 'assets';
  * @param filePath - Absolute path of the file the static handler resolved.
  */
 function cacheControlForDistFile(distPath: string, filePath: string): string | null {
-  if (path.basename(filePath) === 'index.html') return SHELL_HEADERS['Cache-Control'];
+  if (path.basename(filePath) === 'index.html') return SHELL_CACHE_CONTROL;
   const relative = path.relative(distPath, filePath);
   if (relative.split(path.sep)[0] === HASHED_ASSET_DIR) return IMMUTABLE_ASSET_HEADER;
   return null;
@@ -198,7 +217,7 @@ export function createClientFiles(distPath: string): ClientFilesHandler {
         // the policy too — the fallback below is only reached by deep links,
         // so setting it there alone would leave the app's most common entry
         // unprotected.
-        res.setHeader('Content-Security-Policy', SHELL_HEADERS['Content-Security-Policy']);
+        res.setHeader('Content-Security-Policy', shellCsp());
       }
       const cacheControl = cacheControlForDistFile(distPath, filePath);
       if (cacheControl) res.setHeader('Cache-Control', cacheControl);
@@ -224,7 +243,7 @@ export function createClientFiles(distPath: string): ClientFilesHandler {
       // be read most carefully, and most misleading.
       send(req, 'index.html', { root: distPath })
         .on('headers', (out: ServerResponse) => {
-          for (const [name, value] of Object.entries(SHELL_HEADERS)) out.setHeader(name, value);
+          for (const [name, value] of Object.entries(shellHeaders())) out.setHeader(name, value);
           // On `finish`, not `send`'s own `end`: a HEAD or a 304 streams no
           // body, and still put the shell in front of a browser.
           out.once('finish', noteShellServed);

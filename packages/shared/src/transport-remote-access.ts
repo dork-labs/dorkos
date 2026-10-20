@@ -10,7 +10,7 @@
  * @module shared/transport-remote-access
  */
 import type { RemoteAccessMode } from './config-schema.js';
-import type { RemoteAccessReport } from './schemas.js';
+import type { LanAccessStatus, RemoteAccessReport } from './schemas.js';
 
 /** The remote access methods every Transport implements. Each write answers with the full report. */
 export interface RemoteAccessTransport {
@@ -39,4 +39,17 @@ export interface RemoteAccessTransport {
    * its credential, and cancel a pending setup. Resolves with the report.
    */
   withdrawRemoteAccess(): Promise<RemoteAccessReport>;
+  /**
+   * Read whether other devices on this network can open DorkOS, and the
+   * addresses they use (DOR-2930).
+   */
+  getLanAccess(): Promise<LanAccessStatus>;
+  /**
+   * Let devices on this network in, or stop them. Takes effect at once, no
+   * restart. Turning it on needs login first: a refusal carries
+   * `AUTH_REQUIRED_FOR_EXPOSURE`, the same code the tunnel uses.
+   *
+   * @param enabled - `true` to open the network listener, `false` to close it.
+   */
+  setLanAccess(enabled: boolean): Promise<LanAccessStatus>;
 }

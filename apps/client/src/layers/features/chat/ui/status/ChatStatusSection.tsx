@@ -11,6 +11,7 @@ import {
   useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
+import { useOnWifi } from '@/layers/entities/config';
 import { useProjectForCwd } from '@/layers/entities/project';
 import {
   useCapabilitiesForRuntime,
@@ -20,6 +21,7 @@ import {
 import {
   StatusLine,
   SessionPopover,
+  WifiTurnCapPill,
   AutoModeConfirmDialog,
   UsageRevealPopover,
   useGitStatus,
@@ -36,6 +38,7 @@ import {
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
+  isPhoneDensity,
   useMakeDefaultStop,
   MakeDefaultStopLine,
   type StatusPromotionContext,
@@ -105,6 +108,7 @@ export function ChatStatusSection({
 }: ChatStatusSectionProps) {
   // The real width of the bar, not a viewport breakpoint — see `useStatusBudget`.
   const { ref: barRef, budget } = useStatusBudget();
+  const onWifi = useOnWifi();
   // Resolved first so the client-known runtime can scope every runtime-aware
   // query below (status/model/auto-mode), even before the session has a
   // server-side row to resolve `sessionId` against.
@@ -338,6 +342,8 @@ export function ChatStatusSection({
     // Holds the item on the line while its picker is open, so choosing the
     // safest stop does not pull the popover out from under the person.
     permissionPickerOpen: pickerOpen,
+    // From Wi-Fi the chip says what every turn runs at, so it always shows.
+    onWifi,
     // `null` on a runtime with no way of working to offer, which is most of them.
     plan: workingMode ? { active: planActive } : null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
@@ -416,7 +422,7 @@ export function ChatStatusSection({
   });
 
   const { items, overflow } = applyStatusBudget(
-    selectPromotedItems({ ctx: promotionContext, pins, nodes }),
+    selectPromotedItems({ ctx: promotionContext, pins, nodes, density: budget.density }),
     budget
   );
 
@@ -434,33 +440,39 @@ export function ChatStatusSection({
       )}
       <StatusLine
         items={items}
+        nameFirst={isPhoneDensity(budget.density)}
         trailing={
-          <SessionPopover
-            open={sessionOpen}
-            onOpenChange={setSessionOpen}
-            diagnostics={diagnostics}
-            controls={{
-              // The same switch the line's chip carries, so a bar too narrow to
-              // hold the chip cannot take planning away.
-              plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
-            }}
-            promotionContext={promotionContext}
-            overflowCount={overflow}
-            addOns={
-              extensionItems.visible.length > 0 ? (
-                <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
-              ) : undefined
-            }
-            urgentAction={
-              promotedCompactAction
-                ? {
-                    label: `Compact chat · ${compaction.percent}% full`,
-                    onAction: compaction.onCompact,
-                    pending: compaction.pending,
-                  }
-                : null
-            }
-          />
+          <span className="flex items-center gap-2">
+            {/* From Wi-Fi every turn asks before acting (DOR-3037): outside the
+                budget, so a busy line never hides it. */}
+            <WifiTurnCapPill compact={budget.density !== 'full'} />
+            <SessionPopover
+              open={sessionOpen}
+              onOpenChange={setSessionOpen}
+              diagnostics={diagnostics}
+              controls={{
+                // The same switch the line's chip carries, so a bar too narrow to
+                // hold the chip cannot take planning away.
+                plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
+              }}
+              promotionContext={promotionContext}
+              overflowCount={overflow}
+              addOns={
+                extensionItems.visible.length > 0 ? (
+                  <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
+                ) : undefined
+              }
+              urgentAction={
+                promotedCompactAction
+                  ? {
+                      label: `Compact chat · ${compaction.percent}% full`,
+                      onAction: compaction.onCompact,
+                      pending: compaction.pending,
+                    }
+                  : null
+              }
+            />
+          </span>
         }
       />
       {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}

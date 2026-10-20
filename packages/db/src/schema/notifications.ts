@@ -38,6 +38,7 @@ export const notifications = sqliteTable(
       enum: [
         'ask.pending',
         'schedule.parked',
+        'schedule.armed_by_agent',
         // Declared for completeness with `NotificationKind`; nothing writes a
         // row under it today, because a capability approval's history already
         // lives in the `approvals` table (DOR-1570). Drizzle's `enum` is a
@@ -61,7 +62,12 @@ export const notifications = sqliteTable(
         'extension.approval',
         'extension.decision',
         'community.owner-replacement',
+        'community.teammate-limit',
+        'community.teammate-limits-reset',
         'heartbeat.credits-offer',
+        'connector.destructive_pending',
+        'connector.destructive_executed',
+        'web.new_device',
       ],
     }).notNull(),
 

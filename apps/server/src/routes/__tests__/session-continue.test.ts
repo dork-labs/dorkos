@@ -40,6 +40,11 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
+// Which listener a request came through, for the Wi-Fi case (DOR-3037).
+vi.mock('../../services/core/auth/sessions/wifi-level.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/sessions/wifi-level.js')>()),
+  isFromWifi: vi.fn(() => false),
+}));
 vi.mock('../../services/session/fleet/continue-service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/session/fleet/continue-service.js')>()),
   continueOptions: vi.fn(),
@@ -63,6 +68,7 @@ import {
   waitForReset,
 } from '../../services/session/fleet/continue-service.js';
 import { rejectUnknownModel } from '../session-model-gate.js';
+import { isFromWifi } from '../../services/core/auth/sessions/wifi-level.js';
 import { AccountNotAllowedError } from '../../services/core/usage/account-eligibility.js';
 import {
   SessionLimitStore,
@@ -132,6 +138,25 @@ describe('the out-of-usage routes', () => {
     expect(body).toEqual({ account: 'spare', model: 'sonnet' });
     expect(deps.clientId).toBe('client-9');
     expect(deps.checkModel).toBe(rejectUnknownModel);
+  });
+
+  it('holds the continuing turn to the runtime default when asked from Wi-Fi', async () => {
+    vi.mocked(continueSession).mockResolvedValue({ sessionId: 'new-1' });
+    vi.mocked(isFromWifi).mockReturnValue(true);
+    try {
+      const res = await request(testServer).post(`${base}/continue`).send({ account: 'spare' });
+      expect(res.status).toBe(202);
+    } finally {
+      vi.mocked(isFromWifi).mockReturnValue(false);
+    }
+    expect(vi.mocked(continueSession).mock.calls[0]![2].permissionCeiling).toBe('runtime-default');
+  });
+
+  it('carries no ceiling for a continue asked at this computer', async () => {
+    vi.mocked(continueSession).mockResolvedValue({ sessionId: 'new-1' });
+    const res = await request(testServer).post(`${base}/continue`).send({ account: 'spare' });
+    expect(res.status).toBe(202);
+    expect(vi.mocked(continueSession).mock.calls[0]![2].permissionCeiling).toBeUndefined();
   });
 
   // Continuing onto DorkOS credits spends the account's money, so it asks the

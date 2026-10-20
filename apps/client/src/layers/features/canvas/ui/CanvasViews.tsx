@@ -11,7 +11,7 @@
  *
  * @module features/canvas/ui/CanvasViews
  */
-import { useAppStore, documentsInView } from '@/layers/shared/model';
+import { useAppStore, documentsInView, useUnifiedPanelChrome } from '@/layers/shared/model';
 import type { CanvasView } from '@/layers/shared/lib';
 import { CanvasHeader, canvasPanelId, canvasTabDomId } from './CanvasHeader';
 import { CanvasErrorBoundary } from './CanvasErrorBoundary';
@@ -19,6 +19,7 @@ import { CanvasRenderer } from './CanvasRenderer';
 import { CanvasHeldUpdateBanner } from './CanvasHeldUpdateBanner';
 import { CanvasSplash } from './CanvasSplash';
 import { RoomCanvasBody } from './room/RoomCanvasBody';
+import { CanvasDocRoutes } from './doc-routes/CanvasDocRoutes';
 
 /**
  * Shared body for one of the two document views — rendered in the right panel's
@@ -29,6 +30,7 @@ import { RoomCanvasBody } from './room/RoomCanvasBody';
  * returns the reader to the document they left there.
  */
 function CanvasBody({ view }: { view: CanvasView }) {
+  const unified = useUnifiedPanelChrome();
   const openDocuments = useAppStore((s) => s.openDocuments);
   const activeDocumentId = useAppStore((s) =>
     view === 'browser' ? s.activeBrowserDocumentId : s.activeCanvasDocumentId
@@ -51,13 +53,17 @@ function CanvasBody({ view }: { view: CanvasView }) {
 
   return (
     <>
-      <CanvasHeader
-        view={view}
-        documents={headerDocs}
-        activeDocumentId={activeDocumentId}
-        onActivate={activate}
-        onClose={close}
-      />
+      {!unified && (
+        <CanvasHeader
+          view={view}
+          documents={headerDocs}
+          activeDocumentId={activeDocumentId}
+          onActivate={activate}
+          onClose={close}
+        />
+      )}
+      {/* The open document's event routes; draws nothing when it declares none. */}
+      {active && <CanvasDocRoutes key={active.id} documentId={active.id} />}
       {/* Above the scroll container, so the choice stays put while the document
           scrolls under it — and outside the tabpanel, because it is about the
           document rather than part of it. */}
@@ -78,7 +84,9 @@ function CanvasBody({ view }: { view: CanvasView }) {
         id={panelId}
         tabIndex={-1}
         className="min-h-0 flex-1 overflow-auto focus-visible:outline-none"
-        {...(active ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) } : {})}
+        {...(!unified && active
+          ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) }
+          : {})}
       >
         {active ? (
           // Contain each document's viewer: a render throw (stale lazy chunk,

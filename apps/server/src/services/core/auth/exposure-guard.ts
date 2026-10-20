@@ -5,14 +5,14 @@
  * The tunnel passcode used to be the only thing standing between "localhost
  * only" and "anyone on the network". This guard replaces that role with a
  * single, hard rule: an instance may be exposed (an ngrok tunnel, or a
- * non-loopback `app.listen` bind) only when local login is enabled AND an owner
- * account exists. Every other combination blocks.
+ * non-loopback `app.listen` bind) only when an owner account exists.
  *
- * Requiring BOTH facts is deliberate. `auth.enabled: false` means the session
- * gate never runs, so even with users on disk the API is open — exposure must
- * stay blocked until the flag is on. The client's enable-login flow (task 1.5)
- * makes flipping it one step, routing the operator into owner-account creation
- * via the {@link AUTH_REQUIRED_FOR_EXPOSURE} contract.
+ * The owner is the whole requirement, not "Ask for a password on this computer
+ * too": the gate asks every request from another device for a person session
+ * whatever that setting says (`gate-policy.ts`, ADR 261015-125850 rule 3), so
+ * what exposure needs is someone those devices can sign in as. The client's
+ * owner-setup flow routes the operator into account creation via the
+ * {@link AUTH_REQUIRED_FOR_EXPOSURE} contract.
  *
  * Two enforcement points consume this module:
  * - **Tunnel start** (`routes/tunnel.ts`) and the boot-time tunnel autostart
@@ -23,12 +23,10 @@
  *
  * Everything here is pure and injectable: the predicates
  * ({@link isExposureAllowed}, {@link checkBindAllowed}) take plain facts, and
- * the readers ({@link readExposureState}) pull from `configManager` and the auth
- * `user` table, so they mock cleanly without a live DB.
+ * the reader ({@link readExposureState}) pulls from the auth `user` table, so they mock cleanly without a live DB.
  *
  * @module services/core/auth/exposure-guard
  */
-import { configManager } from '../config-manager.js';
 import { isLoopbackHost } from '../../../lib/trusted-origins.js';
 import { hasAnyUser } from './index.js';
 
@@ -44,35 +42,30 @@ export const AUTH_REQUIRED_FOR_EXPOSURE = 'AUTH_REQUIRED_FOR_EXPOSURE';
 export const EXPOSURE_REQUIRES_LOGIN_MESSAGE =
   'Exposing DorkOS requires a login. Create an owner account first.';
 
-/** The two facts the exposure decision depends on. */
+/** The fact the exposure decision depends on. */
 export interface ExposureState {
-  /** Whether local login (the request gate) is enabled (`config.auth.enabled`). */
-  authEnabled: boolean;
   /** Whether at least one user (owner) account exists in the auth `user` table. */
   hasUsers: boolean;
 }
 
 /**
- * Pure predicate: exposure beyond localhost is allowed only when login is enabled
- * AND an owner account exists. Every other combination blocks.
+ * Pure predicate: exposure beyond localhost is allowed only when an owner
+ * account exists.
  *
  * @param state - The resolved {@link ExposureState}.
  * @returns `true` when the instance may be exposed, `false` otherwise.
  */
 export function isExposureAllowed(state: ExposureState): boolean {
-  return state.authEnabled === true && state.hasUsers === true;
+  return state.hasUsers === true;
 }
 
 /**
- * Read the live {@link ExposureState} from the config store and the auth `user`
- * table. Both reads are synchronous (`configManager.get` and a better-sqlite3
- * `.get()`), so this is safe on a route handler's hot path.
+ * Read the live {@link ExposureState} from the auth `user` table. The read is
+ * synchronous (a better-sqlite3 `.get()`), so this is safe on a route
+ * handler's hot path.
  */
 export function readExposureState(): ExposureState {
-  return {
-    authEnabled: configManager.get('auth')?.enabled === true,
-    hasUsers: hasAnyUser(),
-  };
+  return { hasUsers: hasAnyUser() };
 }
 
 /**
@@ -102,6 +95,12 @@ export interface BindCheckInput {
    * the network boundary.
    */
   allowInsecureBind: boolean;
+  /**
+   * Whether this server is a hub. A hub binds beyond loopback before it has an
+   * owner: its login is always on and only provisioning can make an account,
+   * so nobody can reach it unsigned-in, owner or not.
+   */
+  hub?: boolean;
 }
 
 /** Result of {@link checkBindAllowed}. */
@@ -122,10 +121,11 @@ export interface BindCheckResult {
 export function bindRefusalMessage(host: string): string {
   return (
     `Refusing to start: DORKOS_HOST is "${host}", a non-loopback address that ` +
-    `exposes DorkOS beyond this machine, but login is not configured.\n` +
-    `Enable login first, then restart:\n` +
+    `exposes DorkOS beyond this machine, but no owner account exists for other ` +
+    `devices to sign in as.\n` +
+    `Create the owner account first, then restart:\n` +
     `  - run \`dorkos auth enable\`, or\n` +
-    `  - open Settings > Login & security and turn on "Require login" (create an owner account).\n` +
+    `  - open DorkOS on this computer and create the owner account in Settings > Login & security.\n` +
     `If this host is intentionally isolated (e.g. a container that owns the ` +
     `network boundary), set DORKOS_ALLOW_INSECURE_BIND=true to override.`
   );
@@ -134,9 +134,10 @@ export function bindRefusalMessage(host: string): string {
 /** Warning logged when a non-loopback bind is permitted only by the escape hatch. */
 function insecureBindWarning(host: string): string {
   return (
-    `Binding to non-loopback host "${host}" without a login because ` +
-    `DORKOS_ALLOW_INSECURE_BIND=true. DorkOS is reachable from the network with ` +
-    `no credentials — ensure the surrounding environment restricts access.`
+    `⚠️ Binding to non-loopback host "${host}" with no owner account because ` +
+    `DORKOS_ALLOW_INSECURE_BIND=true. Until an owner account exists, anyone who ` +
+    `reaches this port gets full control. Create the owner now. A coming release ` +
+    `will ask for a one-time setup code printed here instead.`
   );
 }
 
@@ -153,6 +154,7 @@ function insecureBindWarning(host: string): string {
 export function checkBindAllowed(input: BindCheckInput): BindCheckResult {
   if (isLoopbackHost(input.host)) return { allowed: true };
   if (input.exposureAllowed) return { allowed: true };
+  if (input.hub === true) return { allowed: true };
   if (input.allowInsecureBind) return { allowed: true, warning: insecureBindWarning(input.host) };
   return { allowed: false, reason: bindRefusalMessage(input.host) };
 }
@@ -165,8 +167,9 @@ export interface A2aExposureInput {
   host: string;
   /**
    * Whether a network-reachable credential gates the A2A surface: `MCP_API_KEY`,
-   * the legacy `config.mcp.apiKey` compat key, or login enabled. The login-off
-   * local token (DOR-278) gates JSON-RPC execution too, but it is loopback-only
+   * the legacy `config.mcp.apiKey` compat key, or an owner account (every
+   * request from another device then needs that account's key). The local
+   * token (DOR-278) gates JSON-RPC execution too, but it is loopback-only
    * (a `0600` file a remote caller cannot read), so it does not count here — this
    * flag governs whether A2A may mount on a non-loopback bind.
    */
@@ -198,7 +201,7 @@ export function a2aRefusalMessage(host: string): string {
     `discovery endpoints, which list agent names and descriptions) to the network.\n` +
     `Enable auth for the A2A surface, then restart:\n` +
     `  - set MCP_API_KEY=<secret> (A2A clients send it as \`Authorization: Bearer <secret>\`), or\n` +
-    `  - enable login (run \`dorkos auth enable\`, or Settings > Login & security > "Require login").\n` +
+    `  - create an owner account (run \`dorkos auth enable\`, or Settings > Login & security).\n` +
     `If this host is intentionally isolated (e.g. a container that owns the network ` +
     `boundary), DORKOS_ALLOW_INSECURE_BIND=true also permits the mount.`
   );

@@ -13,7 +13,7 @@ import {
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
 import { EveryAgentAccessNotice, useEveryAgentConnectorGrants } from '@/layers/entities/connectors';
-import { useConfig } from '@/layers/entities/config';
+import { useConfig, useIsHub } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -91,6 +91,8 @@ export function CreateAgentDialog() {
         : null;
   const offerSchedules = useOfferSchedules(offerPackage);
   const { data: config } = useConfig();
+  // A hub holds none of the person's projects, so the wizard offers no import there.
+  const importHere = useIsHub() ? undefined : handleImport;
   // Where a marketplace agent lives: its package's own folder, so updates find
   // it. The person's name for it is its display name.
   const packageDirectory =
@@ -320,7 +322,7 @@ export function CreateAgentDialog() {
                   <AgentGallery
                     onDesignYourOwn={handleDesignYourOwn}
                     onSelectTemplate={handleSelectTemplate}
-                    onImport={handleImport}
+                    onImport={importHere}
                   />
                 )}
                 {step === 'arrival' && seed && (
@@ -347,7 +349,7 @@ export function CreateAgentDialog() {
                     jobLine={jobLine}
                     previewCapabilities={previewCapabilities}
                     onBack={handleBackFromNaming}
-                    onImportInstead={handleImport}
+                    onImportInstead={importHere}
                     onCreate={() => handleCreate()}
                     isCreating={createAgent.isPending}
                     packageSchedules={offerSchedules.schedules}

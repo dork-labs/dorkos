@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SquareTerminal } from 'lucide-react';
 import { Button, type TabActivationSource } from '@/layers/shared/ui';
-import { useAppStore, useTransport } from '@/layers/shared/model';
-import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
+import {
+  useAppStore,
+  useTransport,
+  useUnifiedPanelChrome,
+  useTerminalResourceChrome,
+  PanelResourceVisible,
+} from '@/layers/shared/model';
+import {
+  readTerminalTabs,
+  writeTerminalTabs,
+  appendLateTerminal,
+  subscribeLateTerminals,
+  type TerminalTabsState,
+} from '../lib/terminal-id-store';
 import { TerminalInstance } from './TerminalInstance';
 import { TerminalTabs, TERMINAL_PANEL_ID, terminalTabDomId } from './TerminalTabs';
 
@@ -23,6 +35,8 @@ interface TerminalTab {
    * server-side destroy (which would kill the other window's live shell).
    */
   superseded: boolean;
+  /** Closing the view preserves its live or pending PTY. */
+  hidden: boolean;
 }
 
 /** The panel's tab state: the open tabs and which one is active. */
@@ -38,22 +52,44 @@ function nextTabKey(): string {
 }
 
 /** Build the initial panel state for a (session, cwd) from persisted tabs. */
-function buildInitialState(sessionId: string | null, cwd: string): PanelState {
-  const { ids, activeIndex } = readTerminalTabs(sessionId, cwd);
+function buildInitialState(
+  sessionId: string | null,
+  cwd: string,
+  createRequested = false
+): PanelState {
+  const { ids, activeIndex, closedIds } = readTerminalTabs(sessionId, cwd);
   if (ids.length === 0) {
     // No stored terminals — seed one fresh shell so opening the panel lands you
     // straight in a terminal (not an empty state). Explicitly closing every tab
     // later shows the empty state; only a fresh mount re-seeds.
     const key = nextTabKey();
-    return { tabs: [{ key, ptyId: null, label: 1, superseded: false }], activeKey: key };
+    return {
+      tabs: [{ key, ptyId: null, label: 1, superseded: false, hidden: false }],
+      activeKey: key,
+    };
   }
   const tabs: TerminalTab[] = ids.map((id, i) => ({
     key: nextTabKey(),
     ptyId: id,
     label: i + 1,
     superseded: false,
+    hidden: closedIds?.includes(id) ?? false,
   }));
-  return { tabs, activeKey: tabs[activeIndex]?.key ?? tabs[0].key };
+  const active = tabs[activeIndex];
+  if (createRequested) {
+    const fresh: TerminalTab = {
+      key: nextTabKey(),
+      ptyId: null,
+      label: tabs.length + 1,
+      superseded: false,
+      hidden: false,
+    };
+    return { tabs: [...tabs, fresh], activeKey: fresh.key };
+  }
+  return {
+    tabs,
+    activeKey: (active && !active.hidden ? active : tabs.find((tab) => !tab.hidden))?.key ?? null,
+  };
 }
 
 /** Drop the tab with `key`, activating a sensible neighbor if it was active. */
@@ -63,7 +99,13 @@ function removeTab(state: PanelState, key: string): PanelState {
   const tabs = state.tabs.filter((t) => t.key !== key);
   if (state.activeKey !== key) return { tabs, activeKey: state.activeKey };
   // Prefer the tab that shifts into this slot, else the previous one, else none.
-  const neighbor = tabs[index] ?? tabs[index - 1] ?? null;
+  const neighbor =
+    tabs.slice(index).find((tab) => !tab.hidden) ??
+    tabs
+      .slice(0, index)
+      .reverse()
+      .find((tab) => !tab.hidden) ??
+    null;
   return { tabs, activeKey: neighbor?.key ?? null };
 }
 
@@ -76,7 +118,7 @@ function isPersistable(tab: TerminalTab): tab is TerminalTab & { ptyId: string }
 }
 
 /** Derive the persisted `{ ids, activeIndex }` view from live panel state. */
-function toPersisted(state: PanelState): { ids: string[]; activeIndex: number } {
+function toPersisted(state: PanelState): TerminalTabsState {
   const ids = state.tabs.filter(isPersistable).map((t) => t.ptyId);
   const activeTab = state.tabs.find((t) => t.key === state.activeKey);
   // An active tab with no persisted id (still spawning, or superseded) has
@@ -86,7 +128,11 @@ function toPersisted(state: PanelState): { ids: string[]; activeIndex: number } 
     activeTab && isPersistable(activeTab)
       ? ids.indexOf(activeTab.ptyId)
       : Math.max(0, ids.length - 1);
-  return { ids, activeIndex };
+  const closedIds = state.tabs
+    .filter(isPersistable)
+    .filter((tab) => tab.hidden)
+    .map((tab) => tab.ptyId);
+  return { ids, activeIndex, ...(closedIds.length ? { closedIds } : {}) };
 }
 
 /**
@@ -126,8 +172,24 @@ export function TerminalPanel() {
  */
 function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: string }) {
   const transport = useTransport();
+  const unified = useUnifiedPanelChrome();
+  const visible = useContext(PanelResourceVisible);
+  const publishChrome = useTerminalResourceChrome((s) => s.publish);
 
-  const [state, setState] = useState<PanelState>(() => buildInitialState(sessionId, cwd));
+  // Read without consuming during initialization: StrictMode may initialize twice.
+  const [initialCreateRequest] = useState(() => {
+    const request = useTerminalResourceChrome.getState().createRequest;
+    return unified && request?.scope === `${sessionId ?? ''}:${cwd}` ? request : null;
+  });
+  const [state, setState] = useState<PanelState>(() =>
+    buildInitialState(sessionId, cwd, initialCreateRequest !== null)
+  );
+  useEffect(() => {
+    if (initialCreateRequest)
+      useTerminalResourceChrome
+        .getState()
+        .consumeCreate(initialCreateRequest.scope, initialCreateRequest.id);
+  }, [initialCreateRequest]);
   // Whether the instance revealed by the LAST activation should grab keyboard
   // focus. True for pointer clicks, tab creation, and the initial mount (the
   // user wants to type into the shell); false for keyboard strip traversal —
@@ -143,6 +205,29 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     stateRef.current = state;
   });
 
+  useLayoutEffect(() => {
+    const adopt = (terminal: { id: string; closed: boolean }) => {
+      setState((s) => {
+        if (s.tabs.some((tab) => tab.ptyId === terminal.id)) return s;
+        const label = s.tabs.reduce((max, tab) => Math.max(max, tab.label), 0) + 1;
+        const adopted: TerminalTab = {
+          key: nextTabKey(),
+          ptyId: terminal.id,
+          label,
+          superseded: false,
+          hidden: terminal.closed,
+        };
+        // Late observation never steals the replacement owner's active/new-shell intent.
+        return { ...s, tabs: [...s.tabs, adopted] };
+      });
+    };
+    const unsubscribe = subscribeLateTerminals(sessionId, cwd, adopt);
+    // Concurrent rendering may yield after initialization; reconcile once before persistence.
+    const stored = readTerminalTabs(sessionId, cwd);
+    for (const id of stored.ids) adopt({ id, closed: stored.closedIds?.includes(id) ?? false });
+    return unsubscribe;
+  }, [sessionId, cwd]);
+
   // Persist the open ids + active index on every change, so a refresh restores
   // the tabs. Never clears on unmount — that is what lets the shells survive a
   // reload (the persisted ids stay until a shell exits or a tab is closed).
@@ -154,7 +239,13 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     setFocusOnActivate(true);
     setState((s) => {
       const label = s.tabs.reduce((max, t) => Math.max(max, t.label), 0) + 1;
-      const tab: TerminalTab = { key: nextTabKey(), ptyId: null, label, superseded: false };
+      const tab: TerminalTab = {
+        key: nextTabKey(),
+        ptyId: null,
+        label,
+        superseded: false,
+        hidden: false,
+      };
       return { tabs: [...s.tabs, tab], activeKey: tab.key };
     });
   }, []);
@@ -165,6 +256,20 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   // consumed on resolution; keys of creates that ultimately reject just expire
   // with the body.
   const closedPendingKeysRef = useRef(new Set<string>());
+  // Synchronous requests survive delayed create callbacks and owner unmount.
+  const hiddenKeysRef = useRef(new Set<string>());
+  const hideTab = useCallback((key: string) => {
+    hiddenKeysRef.current.add(key);
+    setFocusOnActivate(false);
+    setState((s) => {
+      const tabs = s.tabs.map((tab) => (tab.key === key ? { ...tab, hidden: true } : tab));
+      return {
+        tabs,
+        activeKey:
+          s.activeKey === key ? (tabs.find((tab) => !tab.hidden)?.key ?? null) : s.activeKey,
+      };
+    });
+  }, []);
 
   const closeTab = useCallback(
     (key: string, source: TabActivationSource) => {
@@ -208,8 +313,12 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   }, []);
 
   const activateTab = useCallback((key: string, source: TabActivationSource) => {
+    hiddenKeysRef.current.delete(key);
     setFocusOnActivate(source === 'pointer');
-    setState((s) => (s.activeKey === key ? s : { ...s, activeKey: key }));
+    setState((s) => ({
+      tabs: s.tabs.map((tab) => (tab.key === key ? { ...tab, hidden: false } : tab)),
+      activeKey: key,
+    }));
   }, []);
 
   /**
@@ -233,13 +342,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
         return;
       }
       if (reattached) return;
-      const stored = readTerminalTabs(sessionId, cwd);
-      if (!stored.ids.includes(id)) {
-        writeTerminalTabs(sessionId, cwd, {
-          ids: [...stored.ids, id],
-          activeIndex: stored.activeIndex,
-        });
-      }
+      appendLateTerminal(sessionId, cwd, { id, closed: hiddenKeysRef.current.has(key) });
     },
     [transport, sessionId, cwd]
   );
@@ -265,7 +368,11 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
       }
       setState((s) => ({
         ...s,
-        tabs: s.tabs.map((t) => (t.key === key ? { ...t, ptyId: id } : t)),
+        tabs: s.tabs.map((t) =>
+          t.key === key
+            ? { ...t, ptyId: id, hidden: t.hidden || hiddenKeysRef.current.has(key) }
+            : t
+        ),
       }));
     },
     [handleLateSpawn]
@@ -277,18 +384,53 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     setState((s) => removeTab(s, key));
   }, []);
 
+  useEffect(() => {
+    if (!unified) return;
+    const find = (id: string) => state.tabs.find((t) => (t.ptyId ?? t.key) === id);
+    publishChrome({
+      scope: `${sessionId ?? ''}:${cwd}`,
+      tabs: state.tabs.map((t) => ({
+        id: t.ptyId ?? t.key,
+        title: `Shell ${t.label}`,
+        closed: t.hidden,
+      })),
+      activeId: state.tabs.find((t) => t.key === state.activeKey)?.ptyId ?? state.activeKey,
+      activate: (id, source) => {
+        const tab = find(id);
+        if (tab) activateTab(tab.key, source);
+      },
+      create: createTab,
+      hide: (id) => {
+        const tab = find(id);
+        if (tab) hideTab(tab.key);
+      },
+      stop: (id, source) => {
+        const tab = find(id);
+        if (tab) closeTab(tab.key, source);
+      },
+    });
+  }, [unified, state, sessionId, cwd, activateTab, createTab, closeTab, hideTab, publishChrome]);
+  useEffect(
+    () => () => {
+      if (unified) publishChrome(null);
+    },
+    [unified, publishChrome]
+  );
+
   return (
     <div className="flex h-full flex-col">
-      <TerminalTabs
-        tabs={state.tabs.map((t) => ({ key: t.key, label: `Terminal ${t.label}` }))}
-        activeKey={state.activeKey}
-        onActivate={activateTab}
-        onClose={closeTab}
-        onCreate={createTab}
-      />
+      {!unified && (
+        <TerminalTabs
+          tabs={state.tabs.map((t) => ({ key: t.key, label: `Terminal ${t.label}` }))}
+          activeKey={state.activeKey}
+          onActivate={activateTab}
+          onClose={closeTab}
+          onCreate={createTab}
+        />
+      )}
       <div
         className="relative min-h-0 flex-1 overflow-hidden"
-        {...(state.activeKey
+        {...(!unified && state.activeKey
           ? {
               id: TERMINAL_PANEL_ID,
               role: 'tabpanel',
@@ -310,7 +452,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
               key={tab.key}
               cwd={cwd}
               initialPtyId={tab.ptyId}
-              active={tab.key === state.activeKey}
+              active={visible && !tab.hidden && tab.key === state.activeKey}
               focusOnActivate={focusOnActivate}
               onCreated={(id) => handleCreated(tab.key, id)}
               onEnded={() => handleEnded(tab.key)}

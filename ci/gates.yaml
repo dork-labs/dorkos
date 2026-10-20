@@ -72,6 +72,9 @@ gates:
   - id: wf.cli-smoke-test.integration-test
     source: .github/workflows/cli-smoke-test.yml
     purpose: Runs the Docker integration image end to end against the packed CLI.
+  - id: wf.cli-smoke-test.hub-smoke-test
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Boots the hub image against a stand-in for DorkOS Cloud and proves it refuses while pooled, takes an assignment, and admits only front-door traffic.
 
   # --- codeql.yml ---
   - id: wf.codeql.analyze
@@ -153,6 +156,9 @@ gates:
   - id: wf.publish-docker.build-and-push
     source: .github/workflows/publish-docker.yml
     purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
+  - id: wf.publish-docker.build-and-push-hub
+    source: .github/workflows/publish-docker.yml
+    purpose: On a release tag, builds the hub image DorkOS Cloud boots, pushes it to GHCR by version and commit, and attests and verifies its digest.
   - id: wf.publish-docker.mirror-docker-hub
     source: .github/workflows/publish-docker.yml
     purpose: Mirrors the released image to Docker Hub when the mirror is switched on.

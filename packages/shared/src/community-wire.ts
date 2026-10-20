@@ -22,9 +22,16 @@ import {
   COMMUNITY_MODERATION_ROUTES,
   CommunityWireSlowModeSecondsSchema,
 } from './community-moderation-wire.js';
+import { CommunityWireMemberAvailabilityFields } from './community-agent-wire.js';
+import { COMMUNITY_DM_ERROR_CODES, COMMUNITY_DM_ROUTES } from './community-dm-wire.js';
 
 // Bans, mutes, slow mode, rules, display names and reports live in their own module.
 export * from './community-moderation-wire.js';
+// Agents, and where each runs and whether it is there, live in their own module.
+export * from './community-agent-wire.js';
+// Direct messages with an agent, and what a space's server understands, likewise.
+export * from './community-dm-wire.js';
+export * from './community-features-wire.js';
 
 export * from './community-export-archive.js';
 
@@ -72,6 +79,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   ban: '/api/v1/bans/:id',
   memberBan: '/api/v1/members/:id/ban',
   ...COMMUNITY_MODERATION_ROUTES,
+  ...COMMUNITY_DM_ROUTES,
   channelAutoJoin: '/api/v1/channels/auto-join',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
@@ -97,6 +105,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   exportArchiveBytes: '/api/v1/exports/:id/archive',
   exportCancel: '/api/v1/exports/:id/cancel',
   agents: '/api/v1/agents',
+  agentAvailability: '/api/v1/agents/availability',
+  features: '/api/v1/features',
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
   meConnection: '/api/v1/me/connection',
@@ -376,6 +386,8 @@ export const CommunityWireMemberSchema = z.strictObject({
   /** Agent owner's display name, scoped to a roster this caller may already read. */
   ownerDisplayName: z.string().min(1).nullable().optional(),
   joinedAt: timestamp,
+  // An agent's `runsOn`, `lastSeenAt` and `availability`, only when asked for (DOR-2877).
+  ...CommunityWireMemberAvailabilityFields,
 });
 /** Public roster row. */
 export type CommunityWireMember = z.infer<typeof CommunityWireMemberSchema>;
@@ -409,6 +421,8 @@ export const COMMUNITY_MINIMUM_AGE_CEILING = 21;
 export const CommunityWireSignInMarkSchema = z.enum(['dorkos']);
 /** A brand mark a host may name for its OpenID Connect sign-in button. */
 export type CommunityWireSignInMark = z.infer<typeof CommunityWireSignInMarkSchema>;
+/** ISO 3166-1 alpha-2 country codes, at least one: a host's allowed countries. */
+const COUNTRY_CODES = z.array(z.string().regex(/^[A-Z]{2}$/u)).min(1);
 /** Public provider availability, without OAuth IDs, secrets or callback details. */
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
@@ -434,6 +448,12 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
     .max(COMMUNITY_MINIMUM_AGE_CEILING)
     .nullable(),
   /**
+   * The ISO 3166-1 alpha-2 codes of the countries a person must confirm they live in before a new
+   * account is created, or `null` when the host lets everyone sign up. A Community from before
+   * this setting reads as `null`, which is what it does. Signing in never asks.
+   */
+  allowedCountries: COUNTRY_CODES.nullable().default(null),
+  /**
    * Whether this space mails reset, sign-in and confirmation links: on exactly when the host set
    * up mail. A Community from before these links reads as `false`, which is what it does.
    */
@@ -442,15 +462,17 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
 /** Public sign-in options: which buttons the sign-in page shows beside email and password. */
 export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
 
-/** A person's confirmation, before a new account is created, that they meet the minimum age. */
-export const CommunityWireAgeConfirmationRequestSchema = z.strictObject({
+/**
+ * A person's confirmation, before a new account is created, that they meet one of the host's
+ * sign-up rules: the minimum age (`POST /api/v1/age-confirmation`) or living in one of the allowed
+ * countries (`POST /api/v1/country-confirmation`). Both take and return the same shape.
+ */
+export const CommunityWireSignUpConfirmationRequestSchema = z.strictObject({
   confirmed: z.literal(true),
 });
 /** The confirmation holds until `expiresAt`, long enough for a provider's sign-up round trip. */
-export const CommunityWireAgeConfirmationResponseSchema = z.strictObject({
-  confirmed: z.literal(true),
-  expiresAt: timestamp,
-});
+export const CommunityWireSignUpConfirmationResponseSchema =
+  CommunityWireSignUpConfirmationRequestSchema.extend({ expiresAt: timestamp });
 
 const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
@@ -1154,41 +1176,6 @@ export const CommunityWireGrantListResponseSchema = z.strictObject({
 /** Disconnecting every installation requires current password confirmation. */
 export const CommunityWireDisconnectAllRequestSchema = z.strictObject({ password: id });
 
-/** An enrolled agent identity and owner bond, without a credential. */
-export const CommunityWireAgentSchema = z.strictObject({
-  memberId: id,
-  displayName: z.string().min(1),
-  handle: CommunityWireHandleSchema,
-  ownerMemberId: id,
-  active: z.boolean(),
-});
-/** An enrolled agent identity. */
-export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
-/**
- * Enrollment request made under a scoped personal grant. The community records the grant as the
- * agent's enrolling installation, so two installations sharing a `localAgentId` get one agent
- * each.
- */
-export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
-  // A local harness owns this identifier. It is deliberately not constrained
-  // to the community service's UUID vocabulary.
-  localAgentId: z.string().min(1).max(256),
-  displayName: z.string().min(1),
-  /** The server derives a collision-safe handle when omitted. */
-  handle: CommunityWireHandleSchema.optional(),
-});
-/** Public agent management response. */
-export const CommunityWireAgentResponseSchema = z.strictObject({ agent: CommunityWireAgentSchema });
-/**
- * The caller's active agents. A member signed in to the community sees all of theirs. A
- * personal grant (one installation) sees only the agents it enrolled, plus any enrolled before
- * the community recorded grants or whose enrolling grant was revoked, and can recover, rotate,
- * remove and place in channels only those.
- */
-export const CommunityWireAgentListResponseSchema = z.strictObject({
-  agents: z.array(CommunityWireAgentSchema),
-});
-
 /** Owner transfer requires current owner reauthentication. */
 export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
@@ -1454,6 +1441,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'SIGN_IN_REFUSED',
   // Mute, slow mode and rules (0034); older readers see an unknown code.
   ...COMMUNITY_MODERATION_ERROR_CODES,
+  // Direct messages with an agent (DOR-2955); older readers see an unknown code.
+  ...COMMUNITY_DM_ERROR_CODES,
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

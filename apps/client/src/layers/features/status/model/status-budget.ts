@@ -189,6 +189,17 @@ export function resolveStatusBudget(width: number | null): StatusBudget {
 }
 
 /**
+ * Whether a density is one only a phone-width line reaches: the agent is the
+ * left cluster's only item, and its name is what gives way (see `StatusLine`'s
+ * `nameFirst`).
+ *
+ * @param density - The line's current density.
+ */
+export function isPhoneDensity(density: StatusDensity): boolean {
+  return density === 'identity' || density === 'avatar';
+}
+
+/**
  * Rank two promoted items for a contested slot: urgency first, then the pin.
  *
  * A pin raises priority without buying immunity — an item that is in the line
@@ -246,6 +257,11 @@ const WIDE_ITEM_SLOTS = 2;
  * so the one that gives way is always the least urgent of them. A wide item is
  * charged {@link WIDE_ITEM_SLOTS}, or whatever is left when that is less.
  *
+ * Below the `full` tier a held item (see `StatusBarItemConfig.held`) is taken
+ * before any ranking, so the control a person acts on never moves under the
+ * `⋯`. It counts as rigid, since the row will not squeeze it either. Each item
+ * comes back with `held` resolved for this width.
+ *
  * The left cluster is trimmed by density rather than by count, and those drops are
  * deliberately **not** counted in `overflow`. Saying less about where you are is
  * not the same as withholding news, and a permanent `+1` beside the `⋯` on every
@@ -259,22 +275,29 @@ export function applyStatusBudget(
   budget: StatusBudget
 ): BudgetedStatusLine {
   const dropped = new Set<StatusBarItemKey>(budget.dropped);
+  // Below `full` a held item is taken first and never squeezed; at `full` every
+  // value is drawn whole, so nothing needs holding there.
+  const holding = budget.density !== 'full';
+  const held = (item: PromotedStatusItem) => holding && item.held;
   const right = items.filter((item) => item.cluster === 'right');
   const kept = new Set<StatusBarItemKey>();
   let rigidKept = 0;
   let slotsUsed = 0;
-  for (const item of [...right].sort(byUrgency)) {
+  const ranked = [...right].sort((a, b) => Number(held(b)) - Number(held(a)) || byUrgency(a, b));
+  for (const item of ranked) {
     if (slotsUsed >= budget.rightBudget) break;
-    if (item.rigid && rigidKept >= MAX_RIGID_ITEMS) continue;
-    if (item.rigid) rigidKept += 1;
+    // A held item will not give up a pixel either, so it counts against the cap.
+    const unshrinkable = item.rigid || held(item);
+    if (unshrinkable && rigidKept >= MAX_RIGID_ITEMS) continue;
+    if (unshrinkable) rigidKept += 1;
     kept.add(item.key);
     slotsUsed += item.wide ? Math.min(WIDE_ITEM_SLOTS, budget.rightBudget - slotsUsed) : 1;
   }
 
   return {
-    items: items.filter((item) =>
-      item.cluster === 'right' ? kept.has(item.key) : !dropped.has(item.key)
-    ),
+    items: items
+      .filter((item) => (item.cluster === 'right' ? kept.has(item.key) : !dropped.has(item.key)))
+      .map((item) => (item.held === held(item) ? item : { ...item, held: held(item) })),
     overflow: right.length - kept.size,
   };
 }

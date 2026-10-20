@@ -14,11 +14,16 @@ import {
   useIsMobile,
   useSlotContributions,
   useTransport,
+  PanelResourceChrome,
+  PanelResourceVisible,
+  useVisualViewportBounds,
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { effectivePlacement, placementShows } from '@dorkos/shared/mini-app-placement';
 import { useConfig, usePanelTabPlacements } from '@/layers/entities/config';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
+import { usePanelViews } from '../model/use-panel-views';
+import { PanelViewsMenu } from './PanelViewsMenu';
 import { MiniAppTabMenu } from './MiniAppTabMenu';
 import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
 import { useRightPanelSizing } from '../model/use-right-panel-sizing';
@@ -79,6 +84,7 @@ export function RightPanelContainer({
   const setActiveTabView = useAppStore((s) => s.setActiveRightPanelTabView);
   const overlayOnly = useIsBelowDesktop();
   const isPhone = useIsMobile();
+  const viewport = useVisualViewportBounds();
   const panelRef = useRef<ImperativePanelHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -138,7 +144,7 @@ export function RightPanelContainer({
     () => new Map(savedPlacements.map((entry) => [entry.tab, entry])),
     [savedPlacements]
   );
-  const { visibleContributions, hiddenMiniAppTabs } = useMemo(() => {
+  const { visibleContributions: placedContributions, hiddenMiniAppTabs } = useMemo(() => {
     const visible: typeof routeContributions = [];
     const hidden: typeof routeContributions = [];
     for (const c of routeContributions) {
@@ -152,6 +158,11 @@ export function RightPanelContainer({
     }
     return { visibleContributions: visible, hiddenMiniAppTabs: hidden };
   }, [routeContributions, here, savedByTab]);
+
+  const views = usePanelViews(placedContributions, pathname);
+  const visibleContributions = views.visible;
+  const sessionId = useAppStore((s) => s.sessionId);
+  const terminalScope = `${sessionId ?? ''}:${cwd}`;
 
   // Auto-select a default tab when the active tab is not visible. View-only: this
   // must not persist over the per-agent stored preference (DOR-227), so a tab
@@ -168,10 +179,10 @@ export function RightPanelContainer({
     // the person was on, and nothing would put it back.
     if (hereState.status === 'pending') return;
     if (visibleContributions.length > 0) {
-      const activeIsVisible = visibleContributions.some((c) => c.id === activeTab);
+      const activeIsVisible = visibleContributions.some((c) => c.category === activeTab);
       if (!activeIsVisible) {
         const firstContextual = visibleContributions.find((c) => !c.isGlobal);
-        setActiveTabView((firstContextual ?? visibleContributions[0]).id);
+        setActiveTabView((firstContextual ?? visibleContributions[0]).category);
       }
     }
   }, [visibleContributions, activeTab, setActiveTabView, hereState.status]);
@@ -202,7 +213,12 @@ export function RightPanelContainer({
     }
   }, [shouldShow, defaultPct]);
 
-  const activeContribution = visibleContributions.find((c) => c.id === activeTab);
+  const activeContribution = views.available.find(
+    (c) => c.id === activeTab && visibleContributions.some((view) => view.category === c.id)
+  );
+  const terminalContribution = views.available.find((c) => c.id === 'terminal');
+  const TerminalComponent = terminalContribution?.component;
+  const terminalRetained = views.terminal !== null || activeTab === 'terminal';
   const ActiveComponent = activeContribution?.component;
   const ActiveHeaderActions = activeContribution?.headerActions;
 
@@ -213,8 +229,27 @@ export function RightPanelContainer({
     <>
       <RightPanelHeader
         contributions={visibleContributions}
+        activeId={views.activeId}
+        onActivate={views.activate}
+        onCloseView={views.closeView}
         actions={
           <>
+            <PanelViewsMenu
+              views={views.allViews}
+              activeId={views.activeId}
+              onActivate={views.activate}
+              onCreateBrowser={views.createBrowser}
+              onCreateDocument={views.createDocument}
+              onRemoveDocument={views.removeDocument}
+              onPinDocument={views.pinDocument}
+              documentPinned={views.documentPinned}
+              onCreateTerminal={views.createTerminal}
+              onStopTerminal={
+                activeTab === 'terminal' && views.terminal?.activeId
+                  ? () => views.terminal?.stop(views.terminal.activeId!, 'pointer')
+                  : undefined
+              }
+            />
             {ActiveHeaderActions ? (
               <Suspense fallback={null}>
                 <ActiveHeaderActions />
@@ -236,28 +271,46 @@ export function RightPanelContainer({
       />
       <div
         className="min-h-0 flex-1 overflow-hidden"
-        {...(visibleContributions.length > 1 &&
-        activeTab &&
+        {...(views.activeId &&
         // A route/transport change can transiently leave activeTab pointing at
         // a filtered-out contribution (until the auto-select effect corrects
         // it) — never emit aria-labelledby for a tab that isn't rendered.
-        visibleContributions.some((c) => c.id === activeTab)
+        visibleContributions.some((c) => c.category === activeTab)
           ? {
               id: RIGHT_PANEL_PANEL_ID,
               role: 'tabpanel',
-              'aria-labelledby': rightPanelTabDomId(activeTab),
+              'aria-labelledby': rightPanelTabDomId(views.activeId!),
             }
           : {})}
       >
         <PanelErrorBoundary tabId={activeTab}>
           <Suspense fallback={null}>
-            {/* Pulse is the always-present global tab, so there is always a
-                visible contribution and the auto-select effect always resolves an
-                active one — `ActiveComponent` is only briefly undefined for the
-                single frame before that effect runs, where rendering nothing is
-                correct. The Wave-1 "nothing to inspect" empty state is therefore
-                unreachable and has been removed. */}
-            {ActiveComponent ? <ActiveComponent /> : null}
+            {/* Closing a view hides its presenter; retained terminals keep their resource owner. */}
+            <PanelResourceChrome value>
+              {rightPanelOpen && activeTab !== 'terminal' && ActiveComponent ? (
+                <ActiveComponent />
+              ) : null}
+              {TerminalComponent && terminalRetained && (
+                <div
+                  key={terminalScope}
+                  hidden={activeTab !== 'terminal' || !rightPanelOpen || !activeContribution}
+                  className="h-full"
+                >
+                  <PanelResourceVisible
+                    value={activeTab === 'terminal' && rightPanelOpen && !!activeContribution}
+                  >
+                    <PanelErrorBoundary tabId={activeTab}>
+                      <TerminalComponent />
+                    </PanelErrorBoundary>
+                  </PanelResourceVisible>
+                </div>
+              )}
+              {!activeContribution && (
+                <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-sm">
+                  Add a view to this panel.
+                </div>
+              )}
+            </PanelResourceChrome>
           </Suspense>
         </PanelErrorBoundary>
       </div>
@@ -270,8 +323,14 @@ export function RightPanelContainer({
       <ResponsiveSheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
         <ResponsiveSheetContent
           showCloseButton={false}
+          style={{
+            top: viewport.top,
+            bottom: 'auto',
+            height: viewport.height,
+            maxHeight: viewport.height,
+          }}
           className={cn(
-            'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0',
+            'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]',
             isPhone && 'sm:max-w-full',
             isPhone &&
               activeTab &&
@@ -335,7 +394,10 @@ export function RightPanelContainer({
         }}
         style={animate ? { transition: panelTransition('flex-grow', shouldShow) } : undefined}
       >
-        <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden border-l">
+        <div
+          inert={!shouldShow}
+          className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden border-l"
+        >
           {panelInner}
         </div>
       </Panel>

@@ -1,3 +1,4 @@
+import { links, repoUrl } from '@dorkos/shared/links';
 import { app, BrowserWindow, Menu, shell } from 'electron';
 import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
@@ -112,15 +113,15 @@ function buildHelpLinkItems(): Electron.MenuItemConstructorOptions[] {
   return [
     {
       label: 'DorkOS Documentation',
-      click: () => shell.openExternal('https://dorkos.ai/docs'),
+      click: () => shell.openExternal(links.docs),
     },
     {
       label: 'Report an Issue',
-      click: () => shell.openExternal('https://github.com/dork-labs/dorkos/issues'),
+      click: () => shell.openExternal(repoUrl('/issues')),
     },
     {
-      label: 'dorkos.ai',
-      click: () => shell.openExternal('https://dorkos.ai'),
+      label: new URL(links.site).host,
+      click: () => shell.openExternal(links.site),
     },
   ];
 }

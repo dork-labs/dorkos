@@ -66,12 +66,17 @@ import { useSidebarChrome } from './SidebarChrome';
  * @param active - What the router says is open, or `null`.
  * @param homeRoomId - The room `/` is showing, when `/` is showing — `null`
  *   everywhere else. Only Home's own row consults it.
+ * @param pendingAgentPath - The agent a click is heading to while its chat is
+ *   being looked up, or `null`. While set, that agent's row is the only one
+ *   lit, so the click shows at once (DOR-2891). Tint only, like `homeRoomId`.
  */
 export function isRowActive(
   target: SidebarTarget,
   active: SidebarTarget | null,
-  homeRoomId: string | null = null
+  homeRoomId: string | null = null,
+  pendingAgentPath: string | null = null
 ): boolean {
+  if (pendingAgentPath !== null) return target.kind === 'agent' && target.path === pendingAgentPath;
   // **Home's room, lit without being "active".** `/` draws #team, so its row has
   // to look open there — but `/` has no active target and deliberately does not
   // get one (`useActiveTarget` explains what widening it broke). A thread row
@@ -215,7 +220,12 @@ function SidebarModelRowBody({
 }) {
   const chrome = useSidebarChrome();
   const target = row.target;
-  const isActive = isRowActive(target, chrome.activeTarget, chrome.homeRoomId);
+  const isActive = isRowActive(
+    target,
+    chrome.activeTarget,
+    chrome.homeRoomId,
+    chrome.pendingAgentPath
+  );
 
   if (target.kind === 'agent') {
     return (
@@ -480,7 +490,7 @@ function GenericRowFromModel({
       trailing={
         row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (
           <span
-            className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
+            className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
             aria-label={`${row.unread.count} unread`}
           >
             {row.unread.count}

@@ -127,7 +127,7 @@ export function TasksPanel() {
             <p className="text-muted-foreground text-sm">No schedules for this agent.</p>
             <button
               onClick={handleCreateBlank}
-              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
             >
               New schedule
             </button>
@@ -172,7 +172,7 @@ export function TasksPanel() {
               setEditTask(undefined);
               setDialogOpen(true);
             }}
-            className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+            className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
           >
             New schedule
           </button>

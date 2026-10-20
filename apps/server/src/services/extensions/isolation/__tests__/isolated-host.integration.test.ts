@@ -182,13 +182,13 @@ describe('IsolatedExtensionHost (real child processes)', () => {
     expect(await host.start()).toEqual({
       ok: false,
       code: 'server_start_failed',
-      message: "Probe couldn't start: Isolated extensions must bundle their dependencies: lodash.",
+      message: "Probe couldn't start: Extensions must bundle their dependencies: lodash.",
     });
     const host2 = makeHost(h);
     await startOk(host2);
     expect(await probe(host2, 'requireOther', 'left-pad')).toMatchObject({
       ok: false,
-      message: 'Isolated extensions must bundle their dependencies: left-pad',
+      message: 'Extensions must bundle their dependencies: left-pad',
     });
   });
 

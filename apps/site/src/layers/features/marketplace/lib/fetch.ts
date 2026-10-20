@@ -8,6 +8,7 @@
  * @module features/marketplace/lib/fetch
  */
 
+import { links } from '@dorkos/shared/links';
 import {
   parseMarketplaceWithSidecar,
   resolvePluginSource,
@@ -17,7 +18,7 @@ import {
   type PluginSource,
 } from '@dorkos/marketplace';
 
-const MARKETPLACE_ROOT_URL = 'https://raw.githubusercontent.com/dork-labs/marketplace/main';
+const MARKETPLACE_ROOT_URL = `https://raw.githubusercontent.com/${links.marketplaceRepoSlug}/main`;
 const MARKETPLACE_URL = `${MARKETPLACE_ROOT_URL}/.claude-plugin/marketplace.json`;
 const DORKOS_SIDECAR_URL = `${MARKETPLACE_ROOT_URL}/.claude-plugin/dorkos.json`;
 

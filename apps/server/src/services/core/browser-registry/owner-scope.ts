@@ -1,10 +1,10 @@
 /** Server-resolved metadata ownership. No browser or grant authority is issued here. */
 import type { RequestFacts } from '../../../http/request-facts.js';
-import { isLocalCaller, refuseUnlessAccountOwner } from '../../../lib/caller-authority.js';
+import { refuseUnlessAccountOwner } from '../../../lib/caller-authority.js';
 import { readOwnerAccount } from '../auth/index.js';
-import { configManager } from '../config-manager.js';
 import { getRoomService } from '../../rooms/index.js';
 import { resolveOperatorAuthor } from '../../rooms/operator-author.js';
+import { credentialGated, isAtThisComputer } from '../auth/gate-policy.js';
 
 declare const ownerScopeBrand: unique symbol;
 /** Opaque one-use scope; structural/serialized copies have no private membership. */
@@ -37,9 +37,9 @@ export function createBrowserOwnerScopeResolver() {
     resolve(caller: RequestFacts): BrowserOwnerScope | null {
       if (retired) return null;
       try {
-        const loginEnabled = configManager.get('auth')?.enabled === true;
+        const loginEnabled = credentialGated(caller);
         if (refuseUnlessAccountOwner(caller) !== undefined) return null;
-        if (!loginEnabled && !isLocalCaller(caller)) return null;
+        if (!loginEnabled && !isAtThisComputer(caller)) return null;
         const ownerId = readOwnerAccount()?.id ?? null;
         const author = resolveOperatorAuthor(getRoomService().authorRegistry);
         const ownerAuthorId = author.id;
@@ -53,10 +53,10 @@ export function createBrowserOwnerScopeResolver() {
         // Author resolution can observe storage. Recheck the actual bars and
         // ownership correspondence before publishing any private scope.
         if (
-          (configManager.get('auth')?.enabled === true) !== loginEnabled ||
+          credentialGated(caller) !== loginEnabled ||
           (readOwnerAccount()?.id ?? null) !== ownerId ||
           refuseUnlessAccountOwner(caller) !== undefined ||
-          (!loginEnabled && !isLocalCaller(caller)) ||
+          (!loginEnabled && !isAtThisComputer(caller)) ||
           retired
         )
           return null;

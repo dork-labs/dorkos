@@ -24,6 +24,7 @@ import {
   RemoteAccessModeSchema,
 } from './config-schema.js';
 import { SavedPlacementSchema } from './mini-app-placement.js';
+import { PERMISSION_PRESETS } from './permissions/permission-ids.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -2489,6 +2490,13 @@ export const SystemStatusEventSchema = z
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 
 /**
+ * The `status` a turn carries while it waits for a free agent slot on this
+ * computer (DOR-3012). Unlike the SDK's own tokens it is shown: the chat's
+ * status strip reads its `message`, and a room says the agent is waiting.
+ */
+export const SLOT_WAIT_STATUS = 'waiting_for_slot';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its
@@ -3688,6 +3696,56 @@ export const HistoryMessageSchema = z
 
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
+/**
+ * How many of a session's newest messages a hydration snapshot carries
+ * (DOR-2889). Older ones are read a page at a time, on request.
+ */
+export const HISTORY_WINDOW_LIMIT = 150;
+
+/** How many earlier messages one page of a session's history holds. */
+export const HISTORY_PAGE_LIMIT = 100;
+
+/**
+ * A history read: the whole history, or the part a {@link HistoryReadQuery}
+ * asked for.
+ *
+ * - `since` a message: `tail` is set when the server found that message, and
+ *   `messages` then starts at it and runs to the end, so the caller keeps what
+ *   it already holds before it and replaces the rest. When the server did not
+ *   find it, the answer is the whole history, without `tail` (DOR-2890).
+ * - `before` a message: the page directly older than it, with
+ *   `earlierMessages` (DOR-2889).
+ * - `newest`: the newest {@link HISTORY_WINDOW_LIMIT} messages, with
+ *   `earlierMessages` when older ones exist.
+ *
+ * So only a read that asked for nothing, or a `since` that missed, is whole.
+ */
+export const HistoryReadSchema = z
+  .object({
+    messages: z.array(HistoryMessageSchema),
+    tail: z.boolean().optional(),
+    /**
+     * How many messages precede the first one here, on a page (`before`) or the
+     * newest window (`newest`). Absent means none, or that this is a tail.
+     */
+    earlierMessages: z.number().int().nonnegative().optional(),
+  })
+  .openapi('HistoryRead');
+
+export type HistoryRead = z.infer<typeof HistoryReadSchema>;
+
+/**
+ * Which part of a history to read (see `Transport.getMessages`): a tail from a
+ * message (`since`), the page older than a message (`before`), or the newest
+ * window (`newest`). Each answers less than the whole history, except a
+ * `since` the server cannot find (see {@link HistoryReadSchema}).
+ */
+export interface HistoryReadQuery {
+  since?: string;
+  before?: string;
+  newest?: boolean;
+}
+
 // === Command Types ===
 
 export const CommandEntrySchema = z
@@ -3755,43 +3813,16 @@ export type FileListResponse = z.infer<typeof FileListResponseSchema>;
 
 // === File Write (canvas file-backed editing) ===
 
-/**
- * Request to write content back to an existing file within a session's working
- * directory. Used by the editable markdown canvas. `path` is resolved against
- * `cwd` and confined to it server-side; the file must already exist (this never
- * creates files). When `expectedHash` is present the write is conditional
- * (optimistic concurrency): the server rejects with 409 if the on-disk content
- * hashes differently, i.e. it changed since the client loaded it. Omit
- * `expectedHash` to force an unconditional overwrite.
- */
-export const WriteFileRequestSchema = z
-  .object({
-    cwd: z.string().min(1),
-    path: z.string().min(1),
-    content: z.string(),
-    /** SHA-256 the write is conditional on (used once the client has a hash). */
-    expectedHash: z.string().optional(),
-    /**
-     * Baseline content the write is conditional on, when the client has no hash
-     * yet (the first save). The server hashes it — this keeps all hashing
-     * server-side so the client needs no `crypto.subtle` (unavailable on
-     * insecure origins). Ignored if `expectedHash` is also present.
-     */
-    expectedContent: z.string().optional(),
-  })
-  .openapi('WriteFileRequest');
-
-export type WriteFileRequest = z.infer<typeof WriteFileRequestSchema>;
-
-/** Result of a successful file write: the SHA-256 of the bytes now on disk. */
-export const WriteFileResponseSchema = z
-  .object({
-    ok: z.literal(true),
-    hash: z.string(),
-  })
-  .openapi('WriteFileResponse');
-
-export type WriteFileResponse = z.infer<typeof WriteFileResponseSchema>;
+export {
+  WriteFileRequestSchema,
+  WriteFileResponseSchema,
+  FileDocumentSaveRequestSchema,
+  FileDocumentSaveReceiptSchema,
+  type WriteFileRequest,
+  type WriteFileResponse,
+  type FileDocumentSaveRequest,
+  type FileDocumentSaveReceipt,
+} from './file-save/schemas.js';
 
 // === Workbench file service (tree + content + CRUD) ===
 //
@@ -4164,8 +4195,8 @@ export const WorkbenchSignResponseSchema = z
     url: z.string().nullable(),
     /**
      * Why there is no URL:
-     * - `tunnel` — the caller reached DorkOS through a tunnel, which publishes
-     *   one port and not the preview's.
+     * - `tunnel` — the caller reached DorkOS through a tunnel or a hub's front
+     *   door, which publishes one address and not the preview's.
      * - `no-port` — every port in the configured preview range is in use.
      */
     unavailable: z.enum(['tunnel', 'no-port']).optional(),
@@ -4267,6 +4298,38 @@ export const TunnelStatusSchema = z
   .openapi('TunnelStatus');
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
+
+// === Wi-Fi Access (DOR-2930) ===
+
+/**
+ * Whether other devices on the same network can open DorkOS, and the addresses
+ * they use. Read by Settings → Remote access; every write answers with it.
+ */
+export const LanAccessStatusSchema = z
+  .object({
+    /** The `server.lanAccess` setting: the person asked for it. */
+    enabled: z.boolean(),
+    /** Whether the network listener is open right now. */
+    listening: z.boolean(),
+    /** Whether the switch works on this computer at all (a Mac, for now). */
+    supported: z.boolean(),
+    /**
+     * The environment setting that decides where DorkOS listens instead, e.g.
+     * `DORKOS_HOST=0.0.0.0`, or `null`. While one is set the switch does nothing.
+     */
+    setByEnvironment: z.string().nullable(),
+    /** The port other devices use, the same one this computer uses. */
+    port: z.number().int(),
+    /** This computer's Bonjour name, e.g. `studio.local`, when it has one. */
+    localName: z.string().nullable(),
+    /** This computer's current network addresses (IPv4), a backup for the name. */
+    addresses: z.array(z.string()),
+    /** Why the listener could not open, when it could not. */
+    error: z.string().nullable(),
+  })
+  .openapi('LanAccessStatus');
+
+export type LanAccessStatus = z.infer<typeof LanAccessStatusSchema>;
 
 // === Remote Access Report ===
 
@@ -4532,10 +4595,22 @@ export const ServerConfigSchema = z
     isDevMode: z
       .boolean()
       .openapi({ description: 'Whether the server is running a development build' }),
+    serverRole: z.enum(['computer', 'hub']).optional().openapi({
+      description:
+        'What this server is: a person`s own computer, or a hub (their own DorkOS in the cloud), where the settings that only make sense on a computer do not apply. Absent from an older server, which is a computer',
+    }),
     isLocalCaller: z.boolean().openapi({
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
+    callerRoute: z
+      .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
+      }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
@@ -4599,6 +4674,10 @@ export const ServerConfigSchema = z
               onlyProjects: z.array(ProjectRefSchema).nullable().optional().openapi({
                 description:
                   'The projects this account may work in ("Only for client-app"), or null for any project (spec flow-multiproject §8). Change it with PUT /api/runtimes/claude-code/accounts/:id/only-projects, never by writing it back through PATCH /api/config. Absent on a server too old to report it',
+              }),
+              noAutoMove: z.boolean().optional().openapi({
+                description:
+                  'True when DorkOS never moves a room agent to this account on its own (a person still may). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
               }),
             })
           )
@@ -4951,7 +5030,12 @@ export const ServerConfigSchema = z
     auth: z
       .object({
         enabled: z.boolean().openapi({
-          description: 'Whether local owner login is required to reach the API and MCP endpoints',
+          description:
+            '"Ask for a password on this computer too": whether a request from this computer needs a sign-in. Another device always needs one, whatever this says',
+        }),
+        ownerEmail: z.string().nullable().optional().openapi({
+          description:
+            "The owner account's email, or `null` when nobody has registered yet. Turning login on asks the owner to sign in as this address when an owner exists, and offers to create one when it is `null`",
         }),
       })
       .optional()
@@ -5052,18 +5136,12 @@ export const ServerConfigSchema = z
         // Where each mini app's right-panel tab shows (spec
         // `mini-app-placement`). Also defined in mini-app-placement.ts.
         panelTabs: z.array(SavedPlacementSchema),
-        // The two halves of the power-door answer (spec `full-power-defaults`,
-        // D1). On the wire because the cockpit decides from them whether to put
-        // the door up at all — a curated DTO that omitted them would leave the
-        // one-time modal unable to tell an unanswered install from an answered
-        // one, which is how a "shown once" moment becomes a nag.
-        fullPowerDecidedAt: z.string().nullable().openapi({
+        // Whether this person has seen the one-time "agents now work without
+        // asking" notice (ADR 261006-225605). On the wire because the app
+        // decides from it whether to show the notice at all.
+        trustNoticeSeenAt: z.string().nullable().openapi({
           description:
-            'When this person answered the full-power door, either way (ISO 8601), or null when they have not been asked yet. Non-null means never ask again',
-        }),
-        fullPowerChoice: z.enum(['full', 'supervised']).nullable().openapi({
-          description:
-            "What they chose at the full-power door: 'full' or 'supervised', or null when they have not answered. Records the answer only — it grants nothing on its own",
+            'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
       })
       .optional()
@@ -5072,6 +5150,19 @@ export const ServerConfigSchema = z
       description:
         'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
     }),
+    permissions: z
+      .object({
+        preset: z.enum(PERMISSION_PRESETS).nullable().openapi({
+          description:
+            "The permission preset every area starts from: 'trusted' or 'careful' ('balanced' and 'full' are older choices still read). null reads as 'trusted'",
+        }),
+        sharedAtUpgrade: z.array(z.string()).optional().openapi({
+          description:
+            'Connection ids the once-per-install Trusted step shared with every agent because nobody held access to them. The one-time trust notice names them',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'The permission preset; the full picture is GET /api/permissions' }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',
@@ -5354,6 +5445,33 @@ export const TaskRunTriggerSchema = z
 
 export type TaskRunTrigger = z.infer<typeof TaskRunTriggerSchema>;
 
+/**
+ * The turn marks a schedule was created or last edited under (DOR-3036, `specs/turn-marks`), as
+ * its approval card shows them: words from outside the owner's circle, and each teammate in a
+ * shared space whose message started the chain, with the names DorkOS knew when it was written.
+ */
+export const ScheduleOriginMarksSchema = z
+  .object({
+    /** The turn read words DorkOS can't vouch for: a stranger's message, or another agent's that carried one. */
+    outsider: z.literal(true).optional(),
+    /** Each teammate whose message started the chain, and the space room they wrote in. */
+    teammate: z
+      .array(
+        z.object({
+          roomId: z.string(),
+          authorId: z.string(),
+          /** The teammate's name when the mark was written, or null when it was unknown. */
+          name: z.string().nullable().default(null),
+          /** The room's title when the mark was written, or null when it was unknown. */
+          room: z.string().nullable().default(null),
+        })
+      )
+      .optional(),
+  })
+  .openapi('ScheduleOriginMarks');
+
+export type ScheduleOriginMarks = z.infer<typeof ScheduleOriginMarksSchema>;
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5537,7 +5655,18 @@ export const TaskSchema = z
      * such. `null` on every schedule a person or an agent explained themselves.
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
+    /**
+     * The turn marks the schedule was created or last edited under, or null for an unmarked
+     * turn or a person's own schedule (DOR-3036). A marked schedule waits for a person, whatever
+     * the trust preset; approving it clears this.
+     */
+    originMarks: ScheduleOriginMarksSchema.nullable().optional(),
     nextRun: z.string().nullable().optional(),
+    /**
+     * When the schedule last started a run (ISO 8601), or null when it never
+     * has. Response-only; ABSENT from an older server.
+     */
+    lastRunAt: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.
      *
@@ -7167,10 +7296,12 @@ export const KeepAwakeStatusSchema = z
       description: 'The `keepAwake.whileAgentsWork` setting.',
     }),
     supported: z.boolean().openapi({
-      description: 'Whether this computer can be held awake at all.',
+      description:
+        'Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried.',
     }),
     reason: KeepAwakeUnsupportedReasonSchema.nullable().openapi({
-      description: 'Why not, when `supported` is false; null otherwise.',
+      description:
+        'Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.',
     }),
     asserted: z.boolean().openapi({
       description: 'Whether the operating system is being told to stay awake right now.',

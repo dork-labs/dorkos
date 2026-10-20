@@ -21,6 +21,10 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 
 // jsdom cannot load Milkdown/ProseMirror. The stub surfaces the value and the
 // editable flag, which is how these cases read "is the person still editing".
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value, editable }: { value: string; editable: boolean }) => (
     <div data-testid="blintz-canvas" data-editable={String(editable)}>
@@ -33,10 +37,19 @@ vi.mock('../ui/BlintzCanvas', () => ({
 // only has to say the document is file-backed, which is what offers the pencil.
 vi.mock('../model/use-canvas-file-save', () => ({
   useCanvasFileSave: () => ({
+    recovery: {
+      identity: {},
+      supported: false,
+      current: () => false,
+      discover: async () => ({ status: 'idle' }),
+      recover: async () => ({ status: 'idle' }),
+      inspectCurrent: async () => ({ status: 'idle' }),
+    },
     status: 'idle',
     conflict: null,
     canSave: true,
     save: vi.fn().mockResolvedValue('saved'),
+    prepareFinalSave: () => ({ cancel: vi.fn(), flush: vi.fn() }),
     overwrite: vi.fn(),
     adoptDisk: vi.fn(),
     getConfirmedBase: () => ({ content: '', hash: null }),

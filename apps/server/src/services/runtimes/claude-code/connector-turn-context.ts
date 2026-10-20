@@ -47,11 +47,31 @@ export class ClaudeConnectorTurnContext {
 
   /** Open and resolve the structural principal on the first connector call. */
   async resolvePrincipal(): Promise<ServerPrincipalProof> {
+    this.assertCurrent();
     this.supervisor?.assertUsable();
     this.opening ??= this.openAndResolve();
-    const principal = await this.opening;
+    await this.opening;
+    this.assertCurrent();
+    const binding = this.binding;
+    if (!binding) throw new Error('Runtime tools are unavailable for this Claude turn.');
+    this.assertCurrent();
+    const resolved = await this.options.tools.principals.resolve({
+      bearer: binding.bearer,
+      expectedRuntime: 'claude-code',
+      expectedCanonicalCwd: this.options.cwd,
+    });
+    this.assertCurrent();
     this.supervisor?.assertUsable();
-    return principal;
+    if (resolved.status === 'refused') {
+      await this.revoke('setup_failed');
+      throw new Error('Runtime tools are unavailable for this Claude turn.');
+    }
+    return resolved.principal;
+  }
+
+  private assertCurrent(): void {
+    if (!this.active) throw new Error('Claude runtime turn is retired.');
+    this.controller.signal.throwIfAborted();
   }
 
   /** Cancel pending setup and revoke an already-open binding immediately. */
@@ -78,6 +98,7 @@ export class ClaudeConnectorTurnContext {
   }
 
   private async openAndResolve(): Promise<ServerPrincipalProof> {
+    this.assertCurrent();
     const binding = await this.options.tools.principals.openTurn(
       {
         runtime: 'claude-code',
@@ -94,6 +115,7 @@ export class ClaudeConnectorTurnContext {
       throw this.controller.signal.reason;
     }
 
+    this.assertCurrent();
     const resolved = await this.options.tools.principals.resolve({
       bearer: binding.bearer,
       expectedRuntime: 'claude-code',
@@ -103,6 +125,7 @@ export class ClaudeConnectorTurnContext {
       await this.revokeBinding('setup_failed');
       throw new Error('Connector tools are unavailable for this Claude turn.');
     }
+    this.assertCurrent();
     const createSupervisor =
       this.options.tools.createLeaseSupervisor ??
       ((options) => new ConnectorTurnLeaseSupervisor(options));

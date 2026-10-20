@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, stat, utimes } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Session } from '@dorkos/shared/types';
@@ -28,10 +28,13 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 import {
+  SESSION_LIST_APPEND_SWEEP_EVERY,
   SESSION_LIST_DEBOUNCE_MS,
+  SESSION_LIST_MIN_RESCAN_GAP_MS,
   SESSION_LIST_RECONCILE_MS,
   watchSessionList,
 } from '../sessions/session-list-watcher.js';
+import { chokidarTreeWatcher } from '../sessions/transcripts/session-tree-watch.js';
 import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
@@ -92,7 +95,7 @@ describe('watchSessionList', () => {
     };
     // Fake ONLY the debounce timers: the initial inventory does real fs.readdir
     // I/O, which must still complete on the real event loop (see flushIoUntil).
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   });
 
   /**
@@ -175,7 +178,10 @@ describe('watchSessionList', () => {
   });
 
   function start(): AsyncIterator<SessionListEvent> {
-    return watchSessionList(reader as TranscriptReader)[Symbol.asyncIterator]();
+    // chokidar is mocked here, so it is the watch these tests drive by hand.
+    return watchSessionList(reader as TranscriptReader, undefined, chokidarTreeWatcher)[
+      Symbol.asyncIterator
+    ]();
   }
 
   // REGRESSION (chokidar v4+ removed glob support): the watch target must be
@@ -391,8 +397,145 @@ describe('watchSessionList', () => {
     const pending = it.next();
     inventory[dirA] = [makeSession('alpha-1', { updatedAt: '2026-01-02T00:00:00.000Z' })];
     handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS);
     expect(((await pending).value as SessionListEvent).type).toBe('session_upserted');
+    await it.return?.();
+  });
+
+  // DOR-2893: a working agent writes its transcript many times a second for
+  // minutes. Each pause in that stream used to be a re-scan and an upsert.
+  it('re-scans a project whose transcript keeps changing at most once per gap', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    const it = start();
+    await it.next();
+    await awaitInitialScan();
+    listSessionsInDir.mockClear();
+
+    // Ten seconds of writes, a change every 400 ms: longer apart than the
+    // debounce, so a debounce alone would have re-scanned after every one.
+    for (let elapsed = 0; elapsed < 10_000; elapsed += 400) {
+      handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+      await vi.advanceTimersByTimeAsync(400);
+    }
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS);
+
+    // The reconcile sweep's first pass re-scans every dir once on its own.
+    const rescans = listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA).length;
+    expect(rescans).toBeGreaterThanOrEqual(3);
+    expect(rescans).toBeLessThanOrEqual(Math.ceil(10_000 / SESSION_LIST_MIN_RESCAN_GAP_MS) + 2);
+    await it.return?.();
+  });
+
+  it('re-scans a change long after the last re-scan within the debounce', async () => {
+    const it = start();
+    await awaitInitialScan();
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS);
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS * 2);
+    listSessionsInDir.mockClear();
+
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS);
+    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toHaveLength(1);
+    await it.return?.();
+  });
+
+  it('never pushes a pending re-scan back, however fast the writes come', async () => {
+    const it = start();
+    await awaitInitialScan();
+    listSessionsInDir.mockClear();
+
+    // A change every 50 ms: a debounce that restarted on each one would never fire.
+    for (let elapsed = 0; elapsed < 1_000; elapsed += 50) {
+      handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toHaveLength(1);
+    await it.return?.();
+  });
+
+  // DOR-2907: an append moves no directory's mtime, so a change event the watch
+  // dropped used to leave the row stale until the session changed again.
+  /**
+   * Run the reconcile sweeps on the fake clock. Each sweep reads the disk
+   * before it schedules the next, so before each step the REAL loop turns until
+   * a timer is pending again: a sweep still waiting on its `readdir`/`stat`s
+   * holds none. Bounded by the real clock, not by a count of turns: a turn
+   * takes microseconds, and one `stat` on a busy CI runner can take far longer,
+   * so a fixed count let all 240 steps pass before the disk answered (the merge
+   * queue failed this test that way). Stops when `done` says so, or after
+   * `steps` half-seconds of the fake clock (two minutes by default).
+   */
+  async function runSweepsUntil(done: () => boolean, steps = 240): Promise<void> {
+    for (let step = 0; step < steps && !done(); step++) {
+      const deadline = Date.now() + 5_000;
+      for (let turn = 0; turn < 5 || (vi.getTimerCount() === 0 && Date.now() < deadline); turn++) {
+        await new Promise((r) => setImmediate(r));
+      }
+      await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS * 2);
+    }
+  }
+
+  // DOR-2907: an append moves no directory's mtime, so a change event the watch
+  // dropped used to leave the row stale until the session changed again.
+  it('re-scans a project at the minute check when a transcript changed after its row was read', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    await writeFile(join(dirA, 'alpha-1.jsonl'), '{}\n'); // written now, after the row's time
+    const it = start();
+    await awaitInitialScan();
+    // Past the first sweep, which re-scans every dir it has never seen.
+    await runSweepsUntil(() => false, 14);
+    listSessionsInDir.mockClear();
+
+    await runSweepsUntil(() => listSessionsInDir.mock.calls.some(([dir]) => dir === dirA));
+
+    expect(listSessionsInDir.mock.calls.some(([dir]) => dir === dirA)).toBe(true);
+    await it.return?.();
+  });
+
+  it('leaves a project alone at the minute check when its rows match the files', async () => {
+    const file = join(dirA, 'alpha-1.jsonl');
+    await writeFile(file, '{}\n');
+    // A modification time 0.7 ms past a whole millisecond: rounding and
+    // truncating it disagree, which is how the check once mistook every such
+    // file for a changed one.
+    await utimes(file, 1_790_000_000, 1_790_000_000.0007);
+    // As the transcript reader builds the row.
+    inventory[dirA] = [
+      makeSession('alpha-1', { updatedAt: (await stat(file)).mtime.toISOString() }),
+    ];
+    const it = start();
+    await awaitInitialScan();
+    await runSweepsUntil(() => false, 14);
+    listSessionsInDir.mockClear();
+
+    await runSweepsUntil(() => false);
+
+    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toEqual([]);
+    await it.return?.();
+  });
+
+  it('does not hold back a new transcript behind the gap', async () => {
+    const it = start();
+    await awaitInitialScan();
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(300);
+    listSessionsInDir.mockClear();
+
+    // A change right after a re-scan waits out the gap…
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listSessionsInDir).not.toHaveBeenCalled();
+
+    // …but a new chat in the same project shows up at once, taking it along.
+    inventory[dirA] = [makeSession('alpha-2')];
+    const pending = it.next();
+    handlerFor('add')(join(dirA, 'alpha-2.jsonl'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
+    expect(((await pending).value as SessionListEvent).type).toBe('session_upserted');
+    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS);
+    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
     await it.return?.();
   });
 

@@ -66,6 +66,7 @@ import {
 } from './messaging/plugin-reload-policy.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
+import { assignTurnBounds } from './turn-bounds.js';
 import {
   resolveClaudeBinaryBeforePath,
   resolveClaudeCliPath,
@@ -96,7 +97,6 @@ import { logger } from '../../../lib/logger.js';
 import { SESSIONS } from '../../../config/constants.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
-import type { TranscriptImageRef } from './sessions/transcript-parser.js';
 import { attachTranscriptImages } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
@@ -112,7 +112,6 @@ import {
   resolveAgentHome,
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
-import { eventFanOut } from '../../core/event-fan-out.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
@@ -139,6 +138,7 @@ import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
 import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -300,7 +300,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cache.setClaudeCliPath(this.claudeCliPath);
     // The account probe spawns too; it runs the binary a session would.
     setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
-    this.transcriptReader = new TranscriptReader();
+    this.transcriptReader = new TranscriptReader({
+      attachImages: (sessionId, messages, images) =>
+        attachTranscriptImages(this.attachments, sessionId, messages, images),
+    });
   }
 
   /**
@@ -667,21 +670,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           })
         : undefined;
     session.connectorTurn = connectorTurn;
-    // Unconditionally, `false` included: a warm session a person later talks
-    // to must hold for their answer again (spec `agent-permissions` D6).
-    session.unattendedApprovals = opts?.unattendedApprovals === true;
-    // Per turn too, for the same reason: an automatic carry-over's first turn
-    // has nobody to ask, and the person who opens it next does.
-    session.unattendedTurn = opts?.unattended === true;
-    // Per turn as well, and the one of the three that bounds what the turn may
-    // DO: a turn another agent's post or a stranger's message started runs no
-    // looser than its sender (spec `trusted-by-default-flip` §4). Cleared when
-    // absent, so a person's next turn runs at the level they chose.
-    if (opts?.permissionCeiling !== undefined) {
-      session.turnPermissionCeiling = opts.permissionCeiling;
-    } else {
-      delete session.turnPermissionCeiling;
-    }
+    // Who may be asked, how far the turn reaches, and which room a teammate's
+    // turn is fenced to: all per turn, all assigned on every send.
+    assignTurnBounds(session, opts);
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&
@@ -890,7 +881,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // otherwise repopulate the cache from a session still holding the old set.
     if (changedProjectPath) this.forgetProjectCommands(changedProjectPath);
 
-    this.broadcastCommandsChanged();
+    broadcastCommandsChanged();
   }
 
   /**
@@ -908,7 +899,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   refreshProjectCommands(projectPath: string): void {
     this.forgetProjectCommands(projectPath);
-    this.broadcastCommandsChanged();
+    broadcastCommandsChanged();
   }
 
   /** Drop a cwd's cached command list and its warm-probe cooldown. */
@@ -1091,24 +1082,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const port = this.pluginReloadActivity;
     if (!port) return;
     port(entry);
-  }
-
-  /**
-   * Broadcast a `commands_changed` event on the unified `/api/events` stream so
-   * connected clients invalidate their command-registry query and re-fetch.
-   * Best-effort: a broadcast failure must never break the install path.
-   */
-  private broadcastCommandsChanged(): void {
-    try {
-      eventFanOut.broadcast('commands_changed', { changedAt: new Date().toISOString() });
-    } catch (err) {
-      // warn, not debug: a failed broadcast means OTHER connected windows never
-      // learn to re-fetch, so their command palette stays stale until a manual
-      // reload (the initiating window still has its mutation-side invalidation).
-      logger.warn('[refreshActivatedPlugins] commands_changed broadcast failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   /**
@@ -1337,9 +1310,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
     // through the same interrupt→close escalation the running path uses.
     const bootingQuery = this.persistent.bootingQuery(sessionId);
-    if (bootingQuery !== undefined) {
+    if (bootingQuery !== undefined)
       return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
-    }
+    // Or a turn still waiting for a free slot, with no process at all yet
+    // (DOR-3012): ending the wait is the whole of stopping it.
+    if (this.persistent.stopSlotWait(sessionId)) return { outcome: 'acked', runtime: this.type };
     // Or a turn the AGENT started, which never armed `session.activeQuery`
     // either: nobody dispatched it, so the pump's `running` edge never fired
     // (spec `warm-process-lifecycle` D6, the Stop rule). Without this, Stop on a
@@ -1477,6 +1452,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  liveHelperIds(sessionId: string): string[] {
+    // The warm path only: a resumed turn's process ends with its turn and
+    // takes its background work with it, so its children are rightly swept.
+    return this.persistent.liveTaskIds(sessionId);
+  }
+
+  /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
     if (this.persistent.isHelperWorking(sessionId)) return true;
     // The resume path: the running turn's own tracker. Its ceiling is measured
@@ -1552,8 +1534,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async findSession(sessionId: string): Promise<Session | null> {
-    return this.transcriptReader.findSession(sessionId);
+  async findSession(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null> {
+    return this.transcriptReader.findSession(sessionId, options);
   }
 
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
@@ -1624,15 +1606,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * interactions.
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    const images: TranscriptImageRef[] = [];
-    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId, images);
-    // The same seam, for the same reason: the reader stays a JSONL parser, and
-    // what DorkOS did with the bytes a tool returned is overlaid back here.
-    // Re-materializing is idempotent — the attachment id is derived from the
-    // tool call, so reopening a transcript finds the first read's file instead
-    // of writing a second copy (`media-capture.ts`).
+    // Images tool results carried come back already placed: the reader's cache
+    // stores and splices each one the first time its line is parsed, through
+    // the attacher handed to it in the constructor. That keeps the reader a
+    // JSONL parser that learns nothing about where DorkOS keeps bytes.
     //
-    // **Idempotent only because both paths key storage on the CANONICAL id.**
+    // **Idempotent only because storage is keyed on the CANONICAL id.**
     // `sessionId` here is already canonical: both callers translate first
     // (`getSessionSnapshot`'s `historyId`, and `GET /:id/messages`'s
     // `internalSessionId`), because the transcript on disk is named by it. The
@@ -1648,8 +1627,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // only one that rebuilds history by re-parsing a transcript rather than
     // replaying recorded `image_attachment` events, which carry their URL
     // (`services/session/event-log-history.ts`).
-    await attachTranscriptImages(this.attachments, sessionId, messages, images);
-    // And the third pass, for the refusals nobody was asked about (DOR-795): a
+    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
+    // A further pass, for the refusals nobody was asked about (DOR-795): a
     // BACKGROUNDED subagent's denied tool call is written into the child's
     // transcript, not this one, so without this the conversation comes back
     // showing an agent that stopped making progress for no stated reason.
@@ -2015,7 +1994,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         })),
         { provisional: true }
       );
-      this.broadcastCommandsChanged();
+      broadcastCommandsChanged();
       this.warmFailedAt.delete(cwd);
       logger.debug('[warmCommands] warmed command cache', { cwd, count: commands.length });
     } catch (err) {

@@ -6,7 +6,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
-import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { bypassesManagedIngress } from '../managed-host-guard.js';
 
 function request(host: string): IncomingMessage {
@@ -28,7 +28,7 @@ describe('bypassesManagedIngress', () => {
   it('lets the same hostname through once the managed ingress admitted it', () => {
     setManagedHosts(['abc.remote.example']);
     const req = request('abc.remote.example');
-    markManagedIngress(req);
+    markIngress(req, 'managed');
     expect(bypassesManagedIngress(req)).toBe(false);
   });
 

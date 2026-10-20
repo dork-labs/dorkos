@@ -7,6 +7,8 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   'api',
   'assets',
   'c',
+  // Signed download links (DOR-2957).
+  'u',
   'claim',
   'host',
   'join',

@@ -20,12 +20,15 @@ import {
   MemoryCapExceededError,
   MemoryIOError,
   MemoryMatchError,
+  MemoryNoteError,
   MemoryNoteShapeError,
   MemorySnapshotSchema,
   MemoryUnsupportedError,
   type AgentMemoryRef,
   type MemoryHit,
   type MemoryHits,
+  type MemoryNoteList,
+  type MemoryNoteListQuery,
   type MemoryProvider,
   type MemoryProviderInfo,
   type MemoryQuery,
@@ -43,6 +46,8 @@ export interface FakeMemoryProviderOpts {
   search?: boolean;
   /** Whether {@link FakeMemoryProvider.consolidate} runs or refuses. Defaults to `true`. */
   consolidate?: boolean;
+  /** Whether notes files are kept, or every note call refuses. Defaults to `true`. */
+  notes?: boolean;
   /**
    * How many characters one agent's memory may hold. Small by default so a cap
    * case is a short string rather than a page of filler.
@@ -80,6 +85,12 @@ export class FakeMemoryProvider implements MemoryProvider {
   private readonly _capChars: number;
   private readonly _memories = new Map<string, string>();
   private readonly _unreadable = new Set<string>();
+  /** Notes files per agent: name → text, description and a write order for "newest first". */
+  private readonly _noteFiles = new Map<
+    string,
+    Map<string, { content: string; description: string; tick: number }>
+  >();
+  private _tick = 0;
 
   /**
    * Construct a fake provider with the given capability configuration.
@@ -92,6 +103,7 @@ export class FakeMemoryProvider implements MemoryProvider {
       capabilities: {
         search: opts.search ?? true,
         consolidate: opts.consolidate ?? true,
+        notes: opts.notes ?? true,
       },
     };
     this._capChars = opts.capChars ?? FAKE_MEMORY_CAP_CHARS;
@@ -134,6 +146,7 @@ export class FakeMemoryProvider implements MemoryProvider {
   }
 
   write(ref: AgentMemoryRef, op: MemoryWriteOp): Promise<MemoryWriteResult> {
+    if (op.note !== undefined) return this._writeNote(ref, op, op.note);
     if (this._unreadable.has(ref.agentId)) {
       return Promise.reject(new MemoryIOError('write', new Error('fake backend is unreadable')));
     }
@@ -190,7 +203,56 @@ export class FakeMemoryProvider implements MemoryProvider {
   }
 
   forget(ref: AgentMemoryRef, selector: MemorySelector): Promise<void> {
-    return this.write(ref, { action: 'remove', oldText: selector.text }).then(() => undefined);
+    return this.write(ref, {
+      action: 'remove',
+      oldText: selector.text,
+      ...(selector.note ? { note: selector.note } : {}),
+    }).then(() => undefined);
+  }
+
+  listNotes(ref: AgentMemoryRef, query: MemoryNoteListQuery): Promise<MemoryNoteList> {
+    if (!this.info.capabilities.notes) return Promise.reject(this._notesOff('listNotes'));
+    const needle = query.query?.toLowerCase();
+    const all = [...(this._noteFiles.get(ref.agentId) ?? new Map()).entries()]
+      .sort(([, a], [, b]) => b.tick - a.tick)
+      .filter(
+        ([name, file]) =>
+          !needle ||
+          name.toLowerCase().includes(needle) ||
+          file.description.toLowerCase().includes(needle)
+      );
+    const start = query.cursor && /^\d+$/.test(query.cursor) ? Number(query.cursor) : 0;
+    const size = query.limit ?? 50;
+    const page = all.slice(start, start + size).map(([name, file]) => ({
+      name,
+      description: file.description,
+      bytes: Buffer.byteLength(file.content, 'utf8'),
+      updatedAt: new Date(Date.UTC(2026, 0, 1) + file.tick * 1000).toISOString(),
+    }));
+    return Promise.resolve({
+      status: 'ok' as const,
+      notes: page,
+      total: all.length,
+      recentlyMigrated: 0,
+      ...(start + size < all.length ? { nextCursor: String(start + size) } : {}),
+    });
+  }
+
+  readNote(ref: AgentMemoryRef, name: string): Promise<MemorySnapshot> {
+    if (!this.info.capabilities.notes) return Promise.reject(this._notesOff('readNote'));
+    const file = this._noteFiles.get(ref.agentId)?.get(name);
+    return Promise.resolve(
+      MemorySnapshotSchema.parse(
+        file && file.content.trim() !== ''
+          ? {
+              status: 'present',
+              content: file.content,
+              bytes: Buffer.byteLength(file.content, 'utf8'),
+              truncated: false,
+            }
+          : { status: 'absent', content: '', bytes: 0, truncated: false }
+      )
+    );
   }
 
   consolidate(ref: AgentMemoryRef): Promise<void> {
@@ -233,6 +295,59 @@ export class FakeMemoryProvider implements MemoryProvider {
    */
   seed(agentId: string, content: string): void {
     this._memories.set(agentId, content);
+  }
+
+  /**
+   * Apply one op to a notes file, with the same refusals as the capped memory.
+   *
+   * @param ref - Whose note.
+   * @param op - The change.
+   * @param name - Which note.
+   */
+  private _writeNote(
+    ref: AgentMemoryRef,
+    op: MemoryWriteOp,
+    name: string
+  ): Promise<MemoryWriteResult> {
+    if (!this.info.capabilities.notes) return Promise.reject(this._notesOff('write'));
+    if ((op.action === 'add' || op.action === 'replace') && LINE_BREAK.test(op.text)) {
+      return Promise.reject(new MemoryNoteShapeError(op.action));
+    }
+    const files = this._noteFiles.get(ref.agentId) ?? new Map();
+    const existing = files.get(name);
+    if (!existing && op.action !== 'add') {
+      return Promise.reject(new MemoryNoteError('no-such-note', name));
+    }
+    if (!existing && op.action === 'add' && !op.description) {
+      return Promise.reject(new MemoryNoteError('needs-description', name));
+    }
+    let after: string;
+    try {
+      after = this._apply(existing?.content ?? '', op);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+    if (after.trim() === '') {
+      // Removing a note's last line removes the note, as on the builtin engine.
+      files.delete(name);
+      return Promise.resolve({ created: false, chars: 0, bytes: 0 });
+    }
+    files.set(name, {
+      content: after,
+      description: existing?.description ?? (op.action === 'add' ? op.description! : ''),
+      tick: ++this._tick,
+    });
+    this._noteFiles.set(ref.agentId, files);
+    return Promise.resolve({
+      created: !existing,
+      chars: after.length,
+      bytes: Buffer.byteLength(after, 'utf8'),
+    });
+  }
+
+  /** The refusal every note call gets when this fake has `notes` off. */
+  private _notesOff(method: string): MemoryUnsupportedError {
+    return new MemoryUnsupportedError(this.info.id, 'notes', method, 'this fake has notes off');
   }
 
   /** The notes currently held for a ref, one per line, blank lines dropped. */

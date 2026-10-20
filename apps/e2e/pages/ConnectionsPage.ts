@@ -13,6 +13,8 @@ import { openFromCommandPalette } from './command-palette';
 export class ConnectionsPage {
   readonly page: Page;
   readonly heading: Locator;
+  /** Routed page content, excluding the separate global right inspector. */
+  readonly content: Locator;
   /** The one list: search, Yours, All apps, For developers. */
   readonly list: Locator;
   /** "Yours" — absent on a first visit, when nothing is connected. */
@@ -30,6 +32,7 @@ export class ConnectionsPage {
     // clipped box satisfies Playwright's visibility check either way, which
     // would make a "visible" assertion here pass without meaning anything.
     this.heading = page.getByRole('heading', { name: 'Connections', level: 1 });
+    this.content = page.locator('[data-route-fade]', { has: this.heading });
     this.list = page.getByTestId('connections-list');
     this.yours = page.getByRole('region', { name: 'Yours', exact: true });
     this.allApps = page.getByRole('region', { name: /^(All apps|Apps)$/ });

@@ -17,7 +17,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { isLocalCaller, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { refuseFrontDoorChange, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { creditsModelsFor } from '../services/core/cloud/credits-models.js';
 import { heldCreditsToken } from '../services/core/cloud/credits-inference.js';
 import {
@@ -29,6 +29,7 @@ import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials.js';
 import { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import { doeCreditsInUse, peekDoeCreditsPick } from '../services/runtimes/doe/auto-model.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 // Preserve the persisted schema's validations while keeping key references server-owned.
 const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({
@@ -38,7 +39,7 @@ const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({
 
 /** The 403 for a caller that is not at this computer, or `undefined` when it is. */
 function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
-  if (isLocalCaller(honoRequestFacts(c))) return undefined;
+  if (isAtThisComputer(honoRequestFacts(c))) return undefined;
   return c.json({ error: 'Model setup is only available on this computer.' }, 403);
 }
 
@@ -47,8 +48,13 @@ function refuseNonOwner(c: Context<ApiEnv>): Response | undefined {
   const notLocal = refuseNonLoopback(c);
   if (notLocal) return notLocal;
   const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
-  if (!refusal) return undefined;
-  return c.json({ error: 'Only the owner can change model settings.', code: refusal }, 403);
+  if (refusal) {
+    return c.json({ error: 'Only the owner can change model settings.', code: refusal }, 403);
+  }
+  // Then the front-door bar (DOR-2969), which the owner bar leaves open in one
+  // posture: with the gate open, a bearer the gate never read is a program.
+  const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'model settings');
+  return frontDoor ? c.json({ error: frontDoor.error, code: frontDoor.code }, 403) : undefined;
 }
 
 /**

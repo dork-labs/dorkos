@@ -1,11 +1,12 @@
 'use client';
 
+import { siteConfig } from '@/config/site';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, useInView, useReducedMotion } from 'motion/react';
 import { Copy, Check, Download, ChevronDown } from 'lucide-react';
 import { CommandChip } from '@/layers/shared/ui/command-chip';
-import { trackHeroInstallCopy, trackHeroDownload, type InstallMethod } from '@/lib/analytics';
+import { prepareInstallCopy, trackHeroDownload, type InstallMethod } from '@/lib/analytics';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 import { usePlatform, type Platform } from '../lib/use-platform';
 
@@ -19,7 +20,7 @@ const INSTALL_METHODS = [
   {
     id: 'curl',
     label: 'One-liner',
-    command: 'curl -fsSL https://dorkos.ai/install | bash',
+    command: siteConfig.installCommand,
     description: 'Checks Node.js, installs via npm, offers setup wizard.',
     recommended: true,
   },
@@ -36,6 +37,9 @@ const INSTALL_METHODS = [
 
 /** The terminal one-liner — the launch-critical native install path. */
 const CURL_COMMAND = INSTALL_METHODS[0].command;
+
+/** One copy of the one-liner, with a per-copy install ref when one applies. */
+const copyCurlCommand = () => prepareInstallCopy(CURL_COMMAND, 'curl');
 
 /**
  * Scramble/decode effect — each position cycles through random characters
@@ -118,7 +122,7 @@ function OtherWaysToInstall({
             <p className="text-charcoal font-mono text-[11px] tracking-[0.08em] uppercase">npm</p>
             <CommandChip
               command="npm install -g dorkos"
-              onCopied={() => trackHeroInstallCopy('npm')}
+              prepareCopy={() => prepareInstallCopy('npm install -g dorkos', 'npm')}
             />
             <p className="text-warm-gray-light font-mono text-[11px]">Requires Node 22+.</p>
           </div>
@@ -188,7 +192,7 @@ function DownloadHero() {
         <p className="text-warm-gray-light font-mono text-xs tracking-[0.04em]">
           Prefer the terminal?
         </p>
-        <CommandChip command={CURL_COMMAND} onCopied={() => trackHeroInstallCopy('curl')} />
+        <CommandChip command={CURL_COMMAND} prepareCopy={copyCurlCommand} />
         <p className="text-warm-gray-light font-mono text-[11px] tracking-[0.02em]">
           On an Intel Mac? This works everywhere.
         </p>
@@ -236,7 +240,7 @@ function WindowsDownloadHero() {
         <p className="text-warm-gray-light font-mono text-xs tracking-[0.04em]">
           Prefer the terminal?
         </p>
-        <CommandChip command={CURL_COMMAND} onCopied={() => trackHeroInstallCopy('curl')} />
+        <CommandChip command={CURL_COMMAND} prepareCopy={copyCurlCommand} />
       </div>
 
       <OtherWaysToInstall showNpm currentPlatform="windows" />
@@ -263,9 +267,10 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
   const handleCopy = useCallback(() => {
     // Always copy the real command, never the scrambled display text — and only
     // confirm once the write actually succeeds (insecure contexts reject).
-    navigator.clipboard.writeText(activeMethod.command).then(
+    const copy = prepareInstallCopy(activeMethod.command, activeMethod.id as InstallMethod);
+    navigator.clipboard.writeText(copy.text).then(
       () => {
-        trackHeroInstallCopy(activeMethod.id as InstallMethod);
+        copy.onCopied();
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       },

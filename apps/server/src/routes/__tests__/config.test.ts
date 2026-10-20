@@ -13,7 +13,10 @@ import {
 } from '@dorkos/shared/config-schema';
 
 /** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
-const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
+const owner = vi.hoisted(() => ({
+  account: { id: 'user_cockpit', name: 'Owner' } as unknown,
+  email: null as string | null,
+}));
 // The session gate lets every request through: with login off it is a
 // pass-through anyway, and the cases that turn login on present the identity it
 // would have proved (`configApp` below) to reach the route's own bars.
@@ -24,6 +27,7 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => owner.account,
+  readOwnerEmail: () => owner.email,
 }));
 
 // Mock tunnel-manager and agent-manager to avoid side effects
@@ -104,6 +108,9 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 /** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
 let agentHeader: string | undefined;
 
+/** The listener a request arrived through, when not the main one (DOR-2969). */
+let arrivedVia: 'wifi' | 'own-tunnel' | undefined;
+
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
  * (DOR-483). Each test still gets a FRESH app — its own config directory, its
@@ -164,12 +171,17 @@ async function configApp(configRouter: Hono<ApiEnv>) {
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
+  arrivedVia = undefined;
   return honoGroupListener(
     { path: '/api/config', routes: configRouter },
     {
       before: async (c, next) => {
         if (signedInUser) c.set('user', signedInUser);
         if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        if (arrivedVia) {
+          const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
+          markIngress(c.env.incoming, arrivedVia);
+        }
         await next();
       },
     }
@@ -652,6 +664,50 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('an account kept out of automatic moves (Re-seat P0)', () => {
+    const row = { id: 'claude-ab1', path: '/Users/me/.claude-ab1', label: 'AB1', color: null };
+
+    async function storedFlag(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const accounts = configManager.getDot('runtimes.claudeCode.accounts') as Array<{
+        id: string;
+        noAutoMove?: unknown;
+      }>;
+      return accounts.find((a) => a.id === 'claude-ab1')?.noAutoMove;
+    }
+
+    beforeEach(async () => {
+      // The person keeps the account out, which is the state the upgrade leaves.
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: true }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('refuses an agent clearing the flag, and keeps it on', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.accounts[].noAutoMove');
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('lets the person clear it through the same door', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(false);
+    });
+  });
+
   describe('the account rules in a PATCH (spec flow-multiproject §8.1)', () => {
     // Purpose: a write that states a rule in the wrong shape is refused, never
     // stored as the wider "no rule" the tolerant read would make of it.
@@ -769,6 +825,11 @@ describe('PATCH /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
       expect(res.body.claudeCode.defaultAccountColor).toBe('#d6336c');
     });
+  });
+
+  it('says what the server is, so the app can drop settings that cannot apply', async () => {
+    const res = await request(server).get('/api/config').expect(200);
+    expect(res.body.serverRole).toBe('computer');
   });
 
   describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
@@ -1271,6 +1332,18 @@ describe('GET /api/config', () => {
     vi.resetModules();
   });
 
+  it('names the owner’s email so turning login on can ask them to sign in (DOR-2964)', async () => {
+    const none = await request(server).get('/api/config').expect(200);
+    expect(none.body.auth).toMatchObject({ ownerEmail: null });
+
+    owner.email = 'dorian@example.com';
+    try {
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.auth).toMatchObject({ enabled: false, ownerEmail: 'dorian@example.com' });
+    } finally {
+      owner.email = null;
+    }
+  });
   it('includes boundary field in response', async () => {
     const res = await request(server).get('/api/config');
 
@@ -1313,7 +1386,8 @@ describe('GET /api/config', () => {
       const { executionDefaults } = res.body;
 
       expect(typeof executionDefaults.runtime).toBe('string');
-      expect(executionDefaults.trustStop).toBeNull();
+      // Trusted by default (ADR 261006-225605): a fresh install starts at Full autonomy.
+      expect(executionDefaults.trustStop).toBe('autonomy');
       expect(Array.isArray(executionDefaults.perRuntime)).toBe(true);
       for (const entry of executionDefaults.perRuntime) {
         expect(Object.keys(entry).sort()).toEqual([
@@ -1907,6 +1981,7 @@ describe('GET /api/config', () => {
           defaultEffort: null,
           defaultTrustStop: null,
           persistentSession: false,
+          maxWarmProcesses: null,
         },
       });
 
@@ -2053,38 +2128,26 @@ describe('GET /api/config', () => {
     expect(res.body.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
-  it('reports the power door unanswered on a fresh install', async () => {
+  it('reports the trust notice unseen, and a Trusted preset, on a fresh install', async () => {
     const res = await request(server).get('/api/config').expect(200);
 
-    expect(res.body.ui.fullPowerDecidedAt).toBeNull();
-    expect(res.body.ui.fullPowerChoice).toBeNull();
+    expect(res.body.ui.trustNoticeSeenAt).toBeNull();
+    expect(res.body.ui).not.toHaveProperty('fullPowerDecidedAt');
+    expect(res.body.ui).not.toHaveProperty('fullPowerChoice');
+    expect(res.body.permissions).toEqual({ preset: 'trusted', sharedAtUpgrade: [] });
   });
 
-  it('records either answer at the power door, and reads it back on the next GET', async () => {
-    // The round trip the door relies on: it writes the answer and every later
-    // launch decides from this read whether to put the modal up again.
-    const decidedAt = '2026-08-22T11:15:00.000Z';
+  it('records the trust notice as seen, and reads it back on the next GET', async () => {
+    // The round trip the notice relies on: it writes the stamp, and every
+    // later launch decides from this read whether to show it again.
+    const seenAt = '2026-10-07T11:15:00.000Z';
     await request(server)
       .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: decidedAt, fullPowerChoice: 'supervised' } })
+      .send({ ui: { trustNoticeSeenAt: seenAt } })
       .expect(200);
 
     const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.fullPowerDecidedAt).toBe(decidedAt);
-    expect(res.body.ui.fullPowerChoice).toBe('supervised');
-  });
-
-  it('recording the answer alone unlocks nothing (invariant A1)', async () => {
-    // "Supervised" is a first-class answer and changes nothing anywhere; and
-    // even `'full'` is only a record — the capabilities ride on the OTHER keys
-    // the door's accept sends in the same request, each through its own gate.
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: '2026-08-22T11:15:00.000Z', fullPowerChoice: 'full' } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBeNull();
+    expect(res.body.ui.trustNoticeSeenAt).toBe(seenAt);
   });
 
   // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
@@ -2191,5 +2254,121 @@ describe('PUT /api/config/agents/defaultAgent', () => {
       .expect(200);
 
     expect(res.body.defaultAgent).toBe('my-agent');
+  });
+});
+
+describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('lets the owner at this computer change one', async () => {
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ tunnel: { domain: 'me.ngrok.app' } })
+      .expect(200);
+    expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
+  });
+
+  it.each([
+    ['Wi-Fi', 'wifi'],
+    ['the own tunnel', 'own-tunnel'],
+  ] as const)("refuses the owner's own sign-in over %s", async (_l, via) => {
+    arrivedVia = via;
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.paths).toEqual(['auth.enabled']);
+  });
+
+  it('refuses a signed-in person at this computer who is not the owner', async () => {
+    signedInUser = { userId: 'user_member', credential: 'cookie' };
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ server: { lanAccess: true } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+  });
+
+  it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {
+    arrivedVia = 'wifi';
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+    expect(res.body.config.ui.theme).toBe('dark');
+  });
+});
+
+describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('takes a tighter stop for everyone and for one runtime', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'act', claudeCode: { defaultTrustStop: 'ask' } } })
+      .expect(200);
+  });
+
+  it('refuses a looser one, for everyone or for one runtime, and changes nothing', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    const everyone = await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(403);
+    expect(everyone.body).toEqual({
+      error: 'Raising permissions works only at this computer.',
+      code: 'NOT_FROM_WIFI',
+    });
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
+      .expect(403);
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.get('runtimes')?.defaultTrustStop).toBe('ask');
+  });
+
+  it('takes a looser one at this computer', async () => {
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(200);
   });
 });

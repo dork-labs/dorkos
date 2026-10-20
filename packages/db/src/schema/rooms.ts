@@ -692,6 +692,21 @@ export const roomEntries = sqliteTable(
      */
     dispatchId: text('dispatch_id'),
 
+    /**
+     * The turn marks the post was written under (DOR-3036, `specs/turn-marks`): JSON
+     * `{ outsider?: true, teammate?: [{ roomId, authorId }] }`, `{}` for a known unmarked turn, and
+     * NULL when nobody knows (an unverified caller, a row from before this column). Kept so a
+     * restart does not read a teammate-marked agent post as merely an outsider's. Off the wire.
+     */
+    turnMarks: text('turn_marks'),
+
+    /**
+     * Whether the turns this post starts, and the beats that read it, are held
+     * to the runtime's default: a person wrote it from Wi-Fi (DOR-3037). Kept on
+     * the row so the hold outlives a restart. Off the wire, like `dispatchId`.
+     */
+    heldToDefault: integer('held_to_default', { mode: 'boolean' }).notNull().default(false),
+
     /** The entry this one answers, in this same room. Null for a top-level entry. */
     parentEntryId: text('parent_entry_id'),
 

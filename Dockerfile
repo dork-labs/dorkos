@@ -1,6 +1,7 @@
 # DorkOS — Multi-stage Dockerfile
 #
-# One file, three user-facing build targets (smoke, integration, runtime),
+# One file, seven build targets (smoke, integration, hub, hub-smoke, space-build,
+# space, runtime),
 # selected among two install modes. The default (bare `docker build .`) is the
 # published `runtime` image; the other targets are for CI and local testing.
 #
@@ -29,6 +30,15 @@
 # Full integration test (add --build-arg INSTALL_MODE=npm for the published package):
 #   docker build --target integration -t dorkos-integration . && \
 #     docker run --rm dorkos-integration
+#
+# Hub image (a person's own DorkOS in the cloud, DOR-2935). DorkOS Cloud boots
+# it with its instance key and its /v1 origin; see the `hub` stage:
+#   docker build --target hub -t dorkos-hub .
+#   docker run --rm -p 4242:4242 -e DORKOS_HUB_INSTANCE_KEY=... \
+#     -e DORKOS_CLOUD_API_URL=https://... dorkos-hub
+#
+# Hub smoke test: boots the hub image against a stand-in for Cloud:
+#   docker build --target hub-smoke -t dorkos-hub-smoke . && docker run --rm dorkos-hub-smoke
 
 ARG NODE_VERSION=24
 # Declared before the first FROM so the install-stage selection
@@ -106,14 +116,12 @@ RUN chmod +x /usr/local/bin/smoke-test
 # Run init (creates ~/.dork/config.json) then the full integration tests.
 CMD dorkos init --yes && smoke-test
 
-# ── runtime (published product image) ──────────────────────────────────────
-# Last stage, so a bare `docker build .` produces it. Built FROM base — no
-# toolchain in the final image; the compiled global npm tree is copied from the
-# install stage.
-FROM base AS runtime
+# ── served (what the runtime and hub images share) ─────────────────────────
+# Built FROM base — no toolchain in the final images; the compiled global npm
+# tree is copied from the install stage. Each image adds its own bind settings.
+FROM base AS served
 
 LABEL org.opencontainers.image.source="https://github.com/dork-labs/dorkos"
-LABEL org.opencontainers.image.description="DorkOS — the coordination layer for autonomous AI agents"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # tini reaps zombies and forwards signals for clean shutdown.
@@ -138,11 +146,8 @@ RUN mkdir -p /home/node/.dork && chown node:node /home/node/.dork
 USER node
 WORKDIR /home/node
 
-# Bind to all interfaces so Docker port forwarding works. The container owns the
-# network boundary, so opt out of the non-loopback bind guard (accounts-and-auth
-# task 1.3) that would otherwise refuse to start without a login.
+# Bind to all interfaces so Docker port forwarding works.
 ENV DORKOS_HOST=0.0.0.0
-ENV DORKOS_ALLOW_INSECURE_BIND=true
 
 EXPOSE 4242
 
@@ -153,3 +158,117 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.DORKOS_PORT||4242)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["tini", "--", "dorkos"]
+
+# ── hub (a person's own DorkOS in the cloud) ───────────────────────────────
+# Hub mode (DOR-2934): no agent runtimes, login always on, every request from
+# another device. Cloud sets DORKOS_HUB_INSTANCE_KEY and DORKOS_CLOUD_API_URL
+# at boot; the key is read from the environment every boot, never written to
+# disk. Mount a volume at /home/node/.dork for the hub's data. Never set
+# DORKOS_ALLOW_INSECURE_BIND here: a hub refuses to boot with it, and needs no
+# escape hatch, because login is always on. The health check answers on any
+# Host without the front-door proof, from the moment the hub listens.
+#
+# Cloud mounts a new volume at the data folder owned by root, so the image
+# starts as root, and scripts/hub-entrypoint.sh gives the folder to node and
+# drops to node before DorkOS starts. DorkOS itself never runs as root. Cloud
+# stops a sleeping hub with SIGINT and a 5-second grace period; tini passes it
+# on.
+FROM served AS hub
+LABEL org.opencontainers.image.description="DorkOS hub: a person's own DorkOS in the cloud"
+ENV DORKOS_SERVER_ROLE=hub
+# USER root below would otherwise point HOME at /root; DorkOS runs as node.
+ENV HOME=/home/node
+USER root
+COPY --chmod=755 scripts/hub-entrypoint.sh /usr/local/bin/hub-entrypoint
+ENTRYPOINT ["tini", "--", "hub-entrypoint", "dorkos"]
+
+# ── hub-smoke ──────────────────────────────────────────────────────────────
+# Boots the hub image against a stand-in for Cloud and checks what Cloud
+# relies on: the health check, the refusals while pooled, taking an
+# assignment, and the front-door checks (scripts/hub-smoke/run.mjs). It runs as
+# root, as the hub image does, and starts the hub through the image's own
+# entrypoint, so a root-owned data folder is part of what it checks (mount an
+# empty root-owned folder at /home/node/.dork).
+FROM hub AS hub-smoke
+COPY scripts/hub-smoke/ /opt/hub-smoke/
+# Boot the hub with this image's own bind address, data folder and entrypoint.
+ENV DORKOS_HUB_SMOKE_ISOLATE=0
+ENV DORKOS_HUB_SMOKE_BIN="hub-entrypoint dorkos"
+HEALTHCHECK NONE
+ENTRYPOINT ["tini", "--", "node", "/opt/hub-smoke/run.mjs"]
+
+# ── space (the space server, published as ghcr.io/dork-labs/dorkos-community) ─
+# Server-merge step 7f: the space server's image builds from this file, beside the
+# DorkOS image. It never carries the machine store, runtime SDKs or a terminal: it
+# installs only the space package's own dependencies (`pnpm deploy` of
+# @dorkos/community), never the DorkOS server's. Its own base, not `base`, so the
+# image is byte-for-byte what it was when it built from apps/community/Dockerfile:
+#   docker build --target space -t dorkos-space .
+FROM node:24-bookworm-slim AS space-build
+RUN corepack enable
+WORKDIR /work
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
+COPY apps/space/package.json apps/space/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/relay/package.json packages/relay/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/decisions/package.json packages/decisions/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/icons/package.json packages/icons/package.json
+COPY packages/test-utils/package.json packages/test-utils/package.json
+COPY packages/cloud-api/package.json packages/cloud-api/package.json
+COPY packages/connector-providers/package.json packages/connector-providers/package.json
+COPY packages/eslint-config/package.json packages/eslint-config/package.json
+COPY packages/typescript-config/package.json packages/typescript-config/package.json
+RUN pnpm install --frozen-lockfile --ignore-scripts
+COPY packages/shared packages/shared
+COPY packages/decisions packages/decisions
+COPY packages/ui packages/ui
+COPY packages/icons packages/icons
+COPY packages/cloud-api packages/cloud-api
+COPY packages/connector-providers packages/connector-providers
+COPY packages/typescript-config packages/typescript-config
+COPY apps/space apps/space
+# The space server's code lives in the DorkOS server package (server-merge step 7); its build
+# (apps/space/tsconfig.build.json) still compiles it into apps/space/dist-server/. The
+# link lets that code find the space server's own packages without installing the DorkOS
+# server's, so nothing of the server's reaches this image.
+COPY apps/server/src/services/spaces apps/server/src/services/spaces
+RUN ln -s ../space/node_modules apps/server/node_modules
+# Its web pages are in apps/client (step 7e), built by their own Vite config into
+# apps/space/dist/; the same link gives them the space package's own packages.
+COPY apps/client/vite.space.config.ts apps/client/vite.space.config.ts
+COPY apps/client/src/space apps/client/src/space
+RUN ln -s ../space/node_modules apps/client/node_modules
+RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build
+# This image copies only the community's slice of the workspace, so a root patch for a
+# package it never installs (when-exit, which the server reaches through conf) is
+# "unused" here, and pnpm deploy refuses unused patches by default. The v0.114.0 and
+# v0.114.1 images failed to build on exactly that.
+RUN pnpm --config.allow-unused-patches=true --filter @dorkos/community deploy --prod --legacy --ignore-scripts /runtime
+# The space server never loads the SQLite driver drizzle-orm brings in as an optional
+# peer: remove it, then refuse to build an image that installs the machine store, a
+# runtime SDK, a terminal or the DorkOS server.
+COPY scripts/space-image scripts/space-image
+RUN node scripts/space-image/runtime-packages.mjs /runtime --prune
+RUN cp -R apps/space/dist apps/space/dist-server apps/space/migrations /runtime/
+
+FROM node:24-bookworm-slim AS space
+WORKDIR /app
+COPY --from=space-build /runtime /app
+RUN mkdir -p /data/blobs && chown node:node /data/blobs
+USER node
+ENV COMMUNITY_PORT=6481 COMMUNITY_STORAGE_PATH=/data/blobs NODE_ENV=production
+EXPOSE 6481
+VOLUME /data/blobs
+CMD ["node", "dist-server/main.js"]
+
+# ── runtime (published product image) ──────────────────────────────────────
+# Last stage, so a bare `docker build .` produces it. The container owns the
+# network boundary, so it opts out of the non-loopback bind guard
+# (accounts-and-auth task 1.3) that would otherwise refuse to start without a
+# login.
+FROM served AS runtime
+LABEL org.opencontainers.image.description="DorkOS — the coordination layer for autonomous AI agents"
+ENV DORKOS_ALLOW_INSECURE_BIND=true

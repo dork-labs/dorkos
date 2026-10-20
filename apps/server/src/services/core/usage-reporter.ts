@@ -7,7 +7,7 @@
  * supported clients use (Transport → server → owned ingest).
  *
  * Consent, exactly like the heartbeat and install channels:
- *   - `config.telemetry.usage` must be on (defaults `true`, Tier 1), AND
+ *   - `config.telemetry.usage` must be on (defaults `false`, opt-in), AND
  *   - no env kill switch is set (`resolveTelemetryConsent` folds in
  *     `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`), AND
  *   - the Tier 1 notice gate captured at boot is open (`decideTier1Boot`'s
@@ -26,6 +26,7 @@
  * @module services/core/usage-reporter
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import {
   TelemetryEventSchema,
   TelemetryEventInputSchema,
@@ -37,7 +38,7 @@ import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where usage-event batches are delivered. */
-export const USAGE_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
+export const USAGE_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Default gap between automatic flushes (60s). */
 export const USAGE_FLUSH_INTERVAL_MS = 60_000;
@@ -70,6 +71,13 @@ export interface UsageReporterOptions {
    */
   enabled: boolean;
   /**
+   * Live consent, read on every report and flush: the `telemetry.usage` setting
+   * through the env kill switch, as it is NOW. `enabled` is only the boot-time
+   * snapshot, so without this a person turning usage off mid-run would keep
+   * sending until the next restart. Defaults to always-true (tests).
+   */
+  isConsentLive?: () => boolean;
+  /**
    * Debug mode (`DORKOS_TELEMETRY_DEBUG`): print each batch to stderr instead of
    * sending it over the network.
    */
@@ -99,6 +107,8 @@ interface ReporterState {
   instanceId: string | null;
   /** Guards against overlapping async flushes. */
   flushing: boolean;
+  /** See {@link UsageReporterOptions.isConsentLive}. */
+  isConsentLive: () => boolean;
 }
 
 let state: ReporterState | null = null;
@@ -132,6 +142,7 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
     timer: null,
     instanceId: null,
     flushing: false,
+    isConsentLive: options.isConsentLive ?? (() => true),
   };
 
   const intervalMs = options.flushIntervalMs ?? USAGE_FLUSH_INTERVAL_MS;
@@ -147,7 +158,25 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
   state.timer = setTimeout(tick, intervalMs);
   state.timer.unref();
 
-  logger.info('[Telemetry] Usage reporter registered (consent: opt-out, notice-gated)');
+  logger.info('[Telemetry] Usage reporter registered (consent: opt-in, notice-gated)');
+}
+
+/**
+ * Whether the reporter is registered with consent on, so an event reported now
+ * can actually leave. Lets a producer that records "already sent" locally (the
+ * install funnel) avoid marking an event sent that a disabled reporter dropped.
+ */
+export function isUsageReporterActive(): boolean {
+  return state !== null && liveConsent(state);
+}
+
+/** Read live consent; a reader that throws counts as no. */
+function liveConsent(s: ReporterState): boolean {
+  try {
+    return s.isConsentLive();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -159,7 +188,7 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
  * @param input - The `{ event, properties }` half; the envelope is filled at flush.
  */
 export function reportUsageEvent(input: TelemetryEventInput): void {
-  if (!state) return;
+  if (!state || !liveConsent(state)) return;
   // Defensive: the registry is the source of truth even though the input is
   // typed. A malformed event is dropped, never sent.
   const parsed = TelemetryEventInputSchema.safeParse(input);
@@ -185,6 +214,11 @@ export function reportUsageEvent(input: TelemetryEventInput): void {
 export async function flushUsageEvents(): Promise<void> {
   const s = state;
   if (!s || s.flushing || s.queue.length === 0) return;
+  // Consent withdrawn since these were queued: drop them, send nothing.
+  if (!liveConsent(s)) {
+    s.queue.length = 0;
+    return;
+  }
   s.flushing = true;
   try {
     const drained = s.queue.splice(0, USAGE_BATCH_MAX);

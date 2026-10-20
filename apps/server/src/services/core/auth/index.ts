@@ -8,11 +8,13 @@
  *
  * ## Registration policy
  *
- * Sign-up is open only while the `user` table is empty; the first registered
- * user becomes the `owner`. Once any user exists every further sign-up is
- * rejected (a `databaseHooks.user.create.before` hook that throws
- * `FORBIDDEN`). A future invites spec reopens registration via invitation
- * tokens only.
+ * Whether a sign-up may create an account is decided per request by
+ * `decideRegistration` (`./registration-policy.ts`), which the
+ * `databaseHooks.user.create.before` hook asks. Today that keeps the old rule:
+ * sign-up is open only while the `user` table is empty, the first registered
+ * user becomes the `owner`, and once any user exists every further sign-up is
+ * rejected with `FORBIDDEN`. The policy already knows where the request came
+ * from, so setup codes (F5) and hub provisioning (A2) plug in there.
  *
  * ## Lifecycle
  *
@@ -45,6 +47,8 @@ import {
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { hubSignInPlugin } from '../hub/hub-sign-in.js';
+import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
@@ -54,7 +58,17 @@ import { logger } from '../../../lib/logger.js';
 import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
+import {
+  currentRegistrationCaller,
+  decideRegistration,
+  registrationAllowed,
+} from './registration-policy.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
+import { refuseWithoutSetupCode } from './setup-code-gate.js';
+import { stampSessionRoute } from './sessions/session-route.js';
+import { endSession } from './sessions/live-connections.js';
+import { discardSetupCode } from './setup-code.js';
 
 /**
  * The parts of the auth options that shape the instance's TYPE: the plugins
@@ -67,15 +81,24 @@ import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
  * Keep this in step with {@link buildAuthOptions}: adding a plugin there without
  * adding it here is a type error, which is the point.
  */
-type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
+type AuthOptions = Omit<BetterAuthOptions, 'user' | 'session' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
-  plugins: [ReturnType<typeof apiKey>];
+  session: NonNullable<BetterAuthOptions['session']> & {
+    additionalFields: { route: { type: 'string'; required: false; input: false } };
+  };
+  plugins: [
+    ReturnType<typeof apiKey>,
+    ReturnType<typeof desktopSignInPlugin>,
+    ReturnType<typeof hubSignInPlugin>,
+  ];
 };
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
 export type Auth = ReturnType<typeof betterAuth<AuthOptions>>;
 
 const isProduction = env.NODE_ENV === 'production';
+
+export { AUTH_COOKIES_SECURE } from './cookie-security.js';
 
 /**
  * Whether a Better Auth log call is the benign one-time "Base URL is not set"
@@ -167,7 +190,12 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     }),
     // Local accounts: email is an identifier only. No verification, no SMTP.
     // Password hashing stays the Better Auth default (scrypt).
-    emailAndPassword: { enabled: true, requireEmailVerification: false },
+    // A hub has no passwords: its owner signs in with their DorkOS account,
+    // so sign-in, sign-up and resets by password are off there (A4).
+    emailAndPassword: {
+      enabled: currentServerRole() !== 'hub',
+      requireEmailVerification: false,
+    },
     user: {
       additionalFields: {
         // Marks the first user as 'owner'; nullable + server-only (never
@@ -175,10 +203,27 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
         role: { type: 'string', required: false, input: false },
       },
     },
+    // A hub's only sign-in is its owner's DorkOS account, matched by account
+    // id, so no sign-in may link itself to an account by email (A4).
+    account: { accountLinking: { enabled: currentServerRole() !== 'hub' } },
     session: {
+      // A sign-in lasts 30 days and each day of use pushes that back, so a
+      // device used weekly never signs out (DOR-2968). Set here rather than
+      // left to the library default, which is 7 days.
+      expiresIn: SESSION_LIFETIME_SECONDS,
+      updateAge: SESSION_REFRESH_SECONDS,
       // Signed short-TTL session snapshot in a cookie so hot paths (SSE
       // reconnect, high-frequency polling) avoid a DB read per request.
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
+      cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
+      additionalFields: {
+        // A sign-in on a shared or public computer (`public-computer.ts`). Set
+        // only by the server, at sign-in.
+        publicComputer: { type: 'boolean', required: false, input: false, defaultValue: false },
+        // The route the sign-in came in on, and the only one the session
+        // works on (`./sessions/session-route.ts`). Server-only: stamped by the
+        // session-create hook below, never taken from a request.
+        route: { type: 'string', required: false, input: false },
+      },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
     //
@@ -209,7 +254,11 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // backfill. The columns in `packages/db/src/schema/auth.ts` keep their
     // now-inert defaults on purpose: rewriting a SQLite column default means
     // rebuilding the table for zero behavior change.
-    plugins: [apiKey({ rateLimit: { enabled: false } })],
+    // The desktop window's own sign-in (F3, `desktop-sign-in.ts`): one
+    // endpoint, server code only.
+    // On a hub, the owner signs in with their DorkOS account
+    // (`services/core/hub/hub-sign-in.ts`); inert on a person's own computer.
+    plugins: [apiKey({ rateLimit: { enabled: false } }), desktopSignInPlugin(), hubSignInPlugin()],
     // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
     // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
     // list, so the origins this server already answers over HTTP and over the
@@ -235,21 +284,39 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       user: {
         create: {
           before: async (userData) => {
-            // Owner-only registration: allow sign-up only while the user table
-            // is empty, and stamp the first user as the owner. (Single-writer
-            // local instance, so the empty-table check is race-free enough for
-            // P1; the invites spec adds real multi-user provisioning.)
+            // Owner-only registration, decided per request: allowed only while
+            // the user table is empty, and the first user is the owner.
+            // (Single-writer local instance, so the empty-table check is
+            // race-free enough; the invites spec adds multi-user provisioning.)
             const existing = db.select({ id: user.id }).from(user).limit(1).get();
-            if (existing) {
+            const caller = currentRegistrationCaller();
+            const mode = decideRegistration({
+              caller,
+              hasUsers: existing !== undefined,
+              role: currentServerRole(),
+            });
+            if (!registrationAllowed(mode, caller)) {
+              // A hub's owner comes from DorkOS Cloud, never from a sign-up
+              // form, and a pooled hub has no owner yet, so "an owner already
+              // exists" would be untrue there.
+              if (mode === 'provisioned') {
+                throw new APIError('FORBIDDEN', {
+                  code: REGISTRATION_PROVISIONED,
+                  message: 'Accounts here come from DorkOS. Sign in with your DorkOS account.',
+                });
+              }
               throw new APIError('FORBIDDEN', {
                 code: 'REGISTRATION_CLOSED',
                 message:
                   'Registration is closed. An owner account already exists for this DorkOS instance.',
               });
             }
+            if (mode === 'setup-code') refuseWithoutSetupCode(caller);
             return { data: { ...userData, role: 'owner' } };
           },
           after: async (created) => {
+            // However the owner was made, an unused setup code is now moot.
+            discardSetupCode();
             // The account in the audit log, linked to the install id the log
             // named its owner by until now (spec `audit-trail` §3.2).
             recordAccountCreated(created);
@@ -265,14 +332,37 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Sign-ins and sign-outs in the audit log (spec `audit-trail` PR2):
       // Better Auth keeps sessions, not their history.
       session: {
-        create: { after: async (created) => recordSignedIn(created) },
-        delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
+        create: {
+          // Every session records the route it was made on (DOR-2969).
+          before: async (data) => ({ data: stampSessionRoute(data) }),
+          after: async (created) => recordSignedIn(created),
+        },
+        delete: {
+          after: async (deleted, ctx) => {
+            // Signing out ends what that sign-in had open (DOR-2969).
+            endSession(deleted.id);
+            recordSessionEnded(deleted, ctx?.path);
+          },
+        },
       },
     },
     // Failed sign-ins and API keys created or revoked, in the audit log.
     hooks: { after: authAuditAfterHook },
   };
 }
+
+/** How long a person session lasts without use: 30 days, rolling (DOR-2968). */
+export const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+
+/** How often use extends a session: at most once a day. */
+export const SESSION_REFRESH_SECONDS = 24 * 60 * 60;
+
+/**
+ * How long a signed session snapshot in the cookie is trusted without a
+ * database read: 5 minutes. A revoked session can keep answering reads for at
+ * most this long, which `dorkos auth reset-password` says plainly.
+ */
+export const SESSION_COOKIE_CACHE_SECONDS = 5 * 60;
 
 let activeAuth: Auth | undefined;
 let activeDb: Db | undefined;
@@ -352,8 +442,9 @@ export function setUserImage(userId: string, image: string | null): void {
  * caller is `PATCH /api/profile`, which writes it beside
  * `config.profile.displayName` so the two rungs cannot disagree.
  *
- * Nullable is deliberately not offered: Better Auth's column is `NOT NULL`, and
- * "no name" is not a thing the profile form can ask for.
+ * Nullable is deliberately not offered: Better Auth's column is `NOT NULL`.
+ * Sign-up stores an empty string until the person names themselves (DOR-2964),
+ * but clearing a name back to empty is not a thing the profile form can ask for.
  *
  * A no-op when auth was never initialized — an install with login off has a
  * roster and no `user` row, which is a supported state rather than a failure.
@@ -399,6 +490,18 @@ export function readOwnerAccount(): Account | null {
 }
 
 /**
+ * The owner account's email, or `null` when nobody has registered yet (or auth
+ * was never initialized).
+ *
+ * `GET /api/config` reads this so turning login on can ask the existing owner
+ * to sign in rather than offering a create form that can only fail (DOR-2964).
+ */
+export function readOwnerEmail(): string | null {
+  const owner = readOwnerAccount();
+  return owner ? (getUserById(owner.id)?.email ?? null) : null;
+}
+
+/**
  * Whether at least one Better Auth API key exists (any owner-owned or seeded key).
  *
  * Returns `false` when auth was never initialized. Uses a synchronous
@@ -434,6 +537,12 @@ export {
   type RequestUser,
   type VerifyRequestAuthOptions,
 } from './session-gate.js';
+
+/**
+ * The refusal code for a sign-up on a hub (DOR-2934). Distinct from
+ * `REGISTRATION_CLOSED`, which the client reads as "an owner already exists".
+ */
+export const REGISTRATION_PROVISIONED = 'REGISTRATION_PROVISIONED';
 
 // The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
 // startup seed on a clean seam right after `initAuth`.

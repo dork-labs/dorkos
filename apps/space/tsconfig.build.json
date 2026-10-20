@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-server",
+    "rootDir": "../server/src/services/spaces"
+  },
+  "include": ["../server/src/services/spaces/**/*.ts"],
+  "exclude": [
+    "../server/src/services/spaces/**/*.test.ts",
+    "../server/src/services/spaces/**/__tests__/**"
+  ]
+}

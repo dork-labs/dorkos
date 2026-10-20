@@ -2,7 +2,7 @@
  * The redaction sync's own decisions, against a real SQLite mirror and a scripted feed: where it
  * resumes, when it starts over, what it skips, and when it stops asking. The end-to-end proof
  * against a real Community server, including the bytes on disk, is
- * `apps/community/src/__tests__/redaction-mirror.integration.test.ts`.
+ * `apps/server/src/services/spaces/__tests__/redaction-mirror.integration.test.ts`.
  *
  * @module services/communities/remote/__tests__/remote-redaction-sync
  */
@@ -396,6 +396,8 @@ describe('RemoteRedactionSync', () => {
       (localAgentId) => (localAgentId === 'local-ana' ? ana.id : null),
       () => Date.parse('2026-09-24T00:00:00.000Z')
     );
+    // Every agent here runs where a teammate's turn can be held (DOR-2955).
+    bridge.useTeammateRuntimes(() => true);
     const room = {
       communityRef: REF,
       remoteRoomId: ROOM,

@@ -88,6 +88,8 @@ export interface PromoContext {
    * is still a question they have answered.
    */
   remoteAccessConfigured: boolean;
+  /** Whether this server is a hub, which has no remote access of its own. */
+  isHub: boolean;
 }
 
 /** Full promo definition */

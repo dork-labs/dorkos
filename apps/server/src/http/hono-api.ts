@@ -1,3 +1,5 @@
+import { createLocalBrowserRoutes } from '../routes/local-browser.js';
+import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 /**
  * The server's routing: the chain (`http/api-chain.ts`) with every route group
  * mounted on it, and the client build behind them in production.
@@ -8,14 +10,14 @@
  *
  * @module http/hono-api
  */
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Hono } from 'hono';
 import { env } from '../env.js';
+import { clientDistPath } from './client-dist.js';
 import { getAuth } from '../services/core/auth/index.js';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
+import { mountDesktopSignIn } from './desktop-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
 import type { Db } from '@dorkos/db';
@@ -68,10 +70,12 @@ import {
   type ExtensionDecisionsRouterDeps,
 } from '../routes/extension-decisions.js';
 import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
-import fileRoutes from '../routes/files.js';
+import { createFileRoutes } from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
+import { createHubComputerRoutes } from '../routes/hub-computers.js';
+import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
 import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
 import {
   createHeartbeatTriageRoutes,
@@ -82,6 +86,7 @@ import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/ma
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
 import mcpConfigRoutes from '../routes/mcp-config.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
+import { createSignInLandingRoutes } from '../routes/sign-in-landings.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import { createMockMcpOAuthRoutes } from '../routes/mock-mcp-oauth-server.js';
 import modelRoutes from '../routes/models.js';
@@ -96,7 +101,12 @@ import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
+import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
+import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
+import { createDevicesRoutes } from '../routes/devices.js';
+import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
@@ -115,7 +125,9 @@ import {
   type UnclaimedChatsRouterDeps,
 } from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
+import { createTestAccountWorldRoutes } from '../routes/test-account-world.js';
 import tunnelRoutes from '../routes/tunnel.js';
+import { createLanAccessRoutes } from '../routes/lan-access.js';
 import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
@@ -195,6 +207,7 @@ export interface ComposedGroupDeps {
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
+  localBrowser?: LocalBrowserService;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -225,7 +238,7 @@ export interface ComposedGroupDeps {
    * Document events (`/api/canvas/docs`). Always mounted; without this every
    * request answers that document events are not available yet.
    */
-  docChannel?: DocChannelHttp;
+  docChannel?: DocChannelHttp & { fileWrites?: Parameters<typeof createFileRoutes>[0] };
   /**
    * The agent registry first-run setup moves DorkBot's runtime through
    * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
@@ -307,10 +320,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
-    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule],
+    // A hub's link path is open before its code is checked, so it reads 4 KB.
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
+      if (auth) mountDesktopSignIn(early, auth);
       if (deps.connectorEventIngress) {
         mountConnectorSignedIngress(early, deps.connectorEventIngress);
       }
@@ -336,6 +351,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
   app.route('/api/rooms', roomRoutes);
+  app.route(
+    '/api/direct-chats',
+    createDirectChatRoutes(() => deps.mesh?.meshCore)
+  );
   // Spaces (rooms on another server) are an experiment, off by default
   // (DOR-2740): both groups refuse until a person turns `spaces.enabled` on,
   // except for the official space (spec `official-community-space` D5), which
@@ -344,7 +363,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/community-connections', createCommunityConnectionsRoutes());
   app.use('/api/communities/*', gateRemoteCommunities());
   app.route('/api/communities', createRemoteCommunitiesRoutes());
-  app.route('/api/files', fileRoutes);
+  app.route('/api/files', createFileRoutes(deps.docChannel?.fileWrites));
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);
@@ -355,6 +374,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // the Owner-only front-door settings, behind the same chain as every route.
   app.route('/api/tunnel', tunnelRoutes);
   app.route('/api/remote-access', createRemoteAccessRoutes());
+  app.route('/api/lan-access', createLanAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);
@@ -367,7 +387,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/feedback', feedbackRoutes);
   app.route(
     '/api/canvas/docs',
-    createCanvasDocEventRoutes(() => deps.docChannel)
+    createCanvasDocEventRoutes(
+      () => deps.docChannel,
+      () => deps.activity
+    )
   );
   // Diagnostic reads. ALWAYS mounted and read-only: an env gate would make them
   // unavailable in the one situation they exist for, because enabling one needs
@@ -381,6 +404,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.admin) app.route('/api/admin', createAdminRoutes(deps.admin));
   // Test-only surfaces, imported always (no vitest or SDK deps) but mounted only
   // in test mode, so none of their paths exist in production.
+  // The forced-limit seam for re-seating (DOR-3143), test runtime only.
+  if (env.DORKOS_TEST_RUNTIME) app.route('/api/test/account-world', createTestAccountWorldRoutes());
   if (env.DORKOS_TEST_RUNTIME || deps.testControl) {
     app.route('/api/test', createTestControlRoutes(deps.testControl));
   }
@@ -434,6 +459,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
+  // What the app's `/signed-in` page reads after any sign-in's callback.
+  app.route('/api/sign-in-landings', createSignInLandingRoutes());
   if (deps.commitments) {
     app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
     app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
@@ -459,22 +486,30 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       app.route('/api/relay/unclaimed-chats', createUnclaimedChatsRoutes(deps.unclaimedChats));
     }
   }
+  // A hub's owner chatting with their linked computers; the `/api` 404 elsewhere.
+  app.route('/api/hub/computers', createHubComputerRoutes());
+  // A computer redeeming its owner's link code; the `/api` 404 elsewhere.
+  app.route('/api/hub/link', createHubLinkRoutes());
+  // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
+  app.route('/api/session-relay', createSessionRelayRoutes());
+  // The loopback page an approvals passkey comes back to (B4c), at this computer only.
+  app.route('/', createRelayPasskeyPageRoutes());
+  // A person's own signed-in devices, and signing them out (DOR-2969).
+  app.route('/api/devices', createDevicesRoutes());
+  // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
+  app.route('/api/documents', createDocLinkRoutes());
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
+  if (deps.localBrowser)
+    app.route('/api/local-browser', createLocalBrowserRoutes(deps.localBrowser));
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));
   return app;
 }
-
-/** Where the client build is when nothing names it: beside this package, from source or dist. */
-const DEFAULT_CLIENT_DIST = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../client/dist'
-);
 
 /**
  * The server's routing, as `index.ts` serves it: every route group, the client
@@ -491,9 +526,7 @@ export function composeFrontDoor(
   admission: MainRequestAdmission,
   deps?: HonoApiDeps
 ): Hono<ApiEnv> {
-  const clientDist =
-    env.NODE_ENV === 'production' ? (env.CLIENT_DIST_PATH ?? DEFAULT_CLIENT_DIST) : undefined;
-  const app = createHonoApi({ admission, deps, clientDist });
+  const app = createHonoApi({ admission, deps, clientDist: clientDistPath() });
   if (env.DORKOS_TEST_RUNTIME) serveRouteCensus(app);
   return app;
 }

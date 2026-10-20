@@ -3,15 +3,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+import { readSpaceServer } from '../lib/space-server.mjs';
 
 const root = join(import.meta.dirname, '../..');
 const workflow = readFileSync(join(root, '.github/workflows/publish-community.yml'), 'utf8');
-const dockerfile = readFileSync(join(root, 'apps/community/Dockerfile'), 'utf8');
-const dockerignore = readFileSync(join(root, 'apps/community/Dockerfile.dockerignore'), 'utf8');
+/** Where the space server lives (ci/space-server.env, DOR-3007). */
+const { spaceDir } = readSpaceServer(root);
+/** The repository's Dockerfile, whose `space` target is the space image (step 7f). */
+const rootDockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
+const spaceStart = rootDockerfile.indexOf('FROM node:24-bookworm-slim AS space\n');
+/** The `space` stage alone: from its `FROM` to the next stage's. */
+const dockerfile = rootDockerfile.slice(
+  spaceStart,
+  rootDockerfile.indexOf('\nFROM ', spaceStart + 1) + 1 || undefined
+);
+const dockerignore = readFileSync(join(root, '.dockerignore'), 'utf8');
 const generator = readFileSync(
   join(root, 'scripts/generate-community-release-manifest.ts'),
   'utf8'
 );
+const migrationId = readFileSync(join(root, 'scripts/lib/community-migration-id.mjs'), 'utf8');
 const publisher = join(root, 'scripts/publish-community-release-assets.sh');
 
 describe('Community release workflow', () => {
@@ -141,17 +152,42 @@ exit 2
     );
   });
 
+  // DOR-3007: the space server's folder is read from ci/space-server.env, so moving it
+  // changes that file and not this workflow.
+  it('reads where the space server lives instead of naming its folder', () => {
+    const steps = workflow.slice(workflow.indexOf('    steps:\n'));
+    const read = steps.indexOf('- name: Read where the space server lives');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(steps.indexOf('- name: Build and push Community image'));
+    expect(steps).toContain(
+      `run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env\n`
+    );
+    expect(workflow).toContain('file: ./Dockerfile');
+    expect(workflow).toContain('target: space');
+    expect(workflow).toContain('--migrations "$SPACE_DIR/migrations"');
+    const code = workflow
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    expect(code).not.toContain('apps/space');
+  });
+
   it('keeps the runtime non-root and the Docker build context allow-listed', () => {
     expect(dockerfile).toMatch(/\nUSER node\n/);
-    expect(dockerignore.startsWith('**\n')).toBe(true);
+    const rules = dockerignore.split('\n').filter((line) => line && !line.startsWith('#'));
+    expect(rules[0]).toBe('**');
     expect(dockerignore).not.toContain('!.env');
     expect(dockerignore).not.toContain('!**/.env');
+    // A stray .env in an allow-listed folder never enters the build context.
+    expect(rules).toContain('**/.env*');
   });
 
   it('derives migration metadata from the tagged corpus instead of a frozen migration name', () => {
-    expect(generator).toContain(".filter((entry) => entry.endsWith('.sql'))");
-    expect(generator).toContain('.sort()');
-    expect(generator).toContain("migrationHash.update('\\0')");
+    // The hash itself lives in one function the CLI calls too; the space server's census pins it.
+    expect(generator).toContain('communityMigrationCompatibilityId(values.migrations!)');
+    expect(migrationId).toContain(".filter((entry) => entry.endsWith('.sql'))");
+    expect(migrationId).toContain('.sort()');
+    expect(migrationId).toContain("hash.update('\\0')");
     expect(generator).toContain('migrationCompatibilityId,');
     expect(generator).not.toMatch(/through-\d+/);
     expect(workflow).toContain('MINIMUM_FLYCTL_VERSION: 0.4.104');

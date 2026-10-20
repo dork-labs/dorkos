@@ -137,16 +137,17 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.panelTabs[].hide.agents',
   'ui.panelTabs[].hide.rooms',
   'ui.panelTabs[].hide.pages',
-  // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
-  // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. A wipe that lands both back on `null`
-  // simply puts the question again, which is the right outcome and costs one
-  // dialog.
-  'ui.fullPowerDecidedAt',
-  'ui.fullPowerChoice',
+  // When the person saw the "agents now work without asking" notice. It gates
+  // that notice and nothing else: no capability, no bound, nothing sent. A wipe
+  // that lands it back on `null` shows the notice once more.
+  'ui.trustNoticeSeenAt',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',
+  // Which apps that step shared, for the trust notice to name. It grants
+  // nothing: the sharing itself is the connection's own access level, and a
+  // wipe that empties the list only drops the notice's line.
+  'permissions.sharedAtUpgrade',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -279,6 +280,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // `PERMISSIVE_DEFAULTS` because a wipe carries them; this one rides on its
   // registry row, which a wipe does not carry, so there is nothing to lose.
   'runtimes.claudeCode.accounts[].onlyProjects',
+  // An account a person kept out of automatic moves (Re-seat P0). Absent reads
+  // as "may be picked", exactly how every account behaved before the flag
+  // existed, and it rides on its registry row, which a wipe does not carry.
+  'runtimes.claudeCode.accounts[].noAutoMove',
   // The extension copies a person said "Not now" to in the Activity inbox
   // (DOR-2517). Ships EMPTY, so every extension waiting to run is asked about;
   // an entry only stops the inbox asking again. It approves, runs and grants
@@ -290,6 +295,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // stricter, never looser.
   'extensions.trustedSources[].source',
   'extensions.trustedSources[].trustedAt',
+  // The rooms each mini app may read and reply in as the person (DOR-3017).
+  // Ships ABSENT, which means none: no mini app reaches any room until a
+  // person picks one. A wipe empties it, which is stricter, never looser.
+  'extensions.roomAccess',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,
@@ -329,17 +338,23 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
-  // No permission preset chosen: every action keeps exactly the behavior it had
-  // before permissions existed, which grants nothing new (Rooms stays Blocked),
-  // and the person's own defaults start empty (spec `agent-permissions`).
-  'permissions.preset': null,
+  // The person's own changes on top of the preset start empty: nothing is added
+  // to what the preset says (spec `agent-permissions`). The preset itself is
+  // argued in PERMISSIVE_DEFAULTS, and an Ask or Blocked entry a person added
+  // carries across a wipe (PROTECTIVE_CARRYOVERS).
   'permissions.defaults.areas': {},
   'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
+  // Devices on the same network stay out until a person lets them in (DOR-2930).
+  'server.lanAccess': false,
   'browser.enabled': false,
   // The computer experiment is off until a person enables it.
   'computers.enabled': false,
+  // Chatting from the web stays off until a person opts in (DOR-2946).
+  'sessionRelay.enabled': false,
+  // Docs stay off until a person tries them (DOR-2993).
+  'docs.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
   // No official space until a release or a person names one (spec
@@ -485,14 +500,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.doe.inference.credentialEndpoint': undefined,
 
   providers: {},
-  // No standing answer to "how much may a new session do without asking", so
-  // every runtime keeps its own default — and no shipped runtime defaults to a
-  // stop that stops asking (pinned across the whole set by
-  // `services/runtimes/__tests__/permission-semantics.test.ts`). `null` is
-  // therefore the protective value on a real axis: the permissive one is
-  // reachable here, it is `'autonomy'`, and it takes a person and a consent
-  // dialog to write (spec `trust-dial`, decision 6).
-  'runtimes.defaultTrustStop': null,
+  // One runtime's own stop. `null` adds nothing of its own: the runtime follows
+  // `runtimes.defaultTrustStop`, which is argued in PERMISSIVE_DEFAULTS. A person
+  // who set one runtime to Ask keeps it across a wipe (PROTECTIVE_CARRYOVERS).
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
@@ -599,7 +609,36 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'runtimes.claudeCode.persistentSession': {
     value: true,
     reason:
-      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (`runtimes.claudeCode.maxWarmProcesses` caps how many stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+  },
+  // The two once-per-install Trusted steps (DOR-2739). `null` means "not run
+  // yet", and running a step loosens a default, so the unset stamp is the
+  // permissive side and a set one is carried across a wipe.
+  'permissions.trustedStoresAppliedAt': {
+    value: null,
+    reason:
+      'ADR 261006-225605: the open mesh rule is applied once per install, and the stamp is what stops a second run. A wipe that dropped it would re-open a mesh the person closed in Team → Access on the next boot, so a set stamp carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'permissions.sharedAppsAppliedAt': {
+    value: null,
+    reason:
+      'ADR 261006-225605 and decision D1: each connected app nobody held is shared with every agent once, and named in the trust notice. The stamp is what stops a second run, which would share again an app the person had since chosen agents for, so a set stamp carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  // Trusted by default (DOR-2739). Both are one decision, argued once each.
+  'permissions.preset': {
+    value: 'trusted',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). Safety limits and Reach & secrets still ask, and the Careful preset turns asking back on everywhere at once; a Careful choice carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'runtimes.defaultTrustStop': {
+    value: 'autonomy',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). A new session of our own agents edits files and runs commands without asking; a stop a person set to Ask or Act carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'runtimes.claudeCode.maxWarmProcesses': {
+    value: null,
+    reason:
+      'Unset sizes the number of agents that may run at once to the machine: one per 2 GB of memory, at least 12 (the old fixed number) and at most 32 (DOR-3012). It is a resource bound, not a capability grant: nothing about what an agent may do changes, and every turn passes the same gates. What it relaxes is memory, on a machine that has it; a person who wants fewer sets a number.',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,

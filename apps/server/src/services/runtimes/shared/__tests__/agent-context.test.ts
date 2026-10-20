@@ -494,6 +494,44 @@ describe('buildAgentContextAppend <user_profile> integration', () => {
   });
 });
 
+describe('a teammate’s turn (DOR-2956)', () => {
+  beforeEach(() => {
+    vi.mocked(readManifest).mockResolvedValue(null);
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+    vi.mocked(configManager.getAll).mockReturnValue({
+      profile: {
+        roles: ['hiring'],
+        tools: [],
+        displayName: 'Dorian',
+        rolePromptDismissedAt: null,
+      },
+    } as ReturnType<typeof configManager.getAll>);
+  });
+
+  it('is told neither who the owner is nor where their files are, only the platform', async () => {
+    const cwd = '/Users/owner/agents/ana';
+    const append = await buildAgentContextAppend(testHome(cwd), cwd, {
+      memory: false,
+      teammate: true,
+    });
+    for (const half of [append.text, append.stable]) {
+      expect(half).not.toContain('<user_profile>');
+      expect(half).not.toContain('Dorian');
+      expect(half).not.toContain(cwd);
+      expect(half).not.toContain('Hostname:');
+      expect(half).toContain(`<env>\nPlatform: ${process.platform}\n</env>`);
+    }
+  });
+
+  it('leaves the owner’s own turn as it was', async () => {
+    const cwd = '/Users/owner/agents/ana';
+    const append = (await buildAgentContextAppend(testHome(cwd), cwd)).text;
+    expect(append).toContain('Name: Dorian');
+    expect(append).toContain(`Working directory: ${cwd}`);
+    expect(append).toContain('Hostname:');
+  });
+});
+
 describe('HEARTBEAT.md is never injected into an ordinary turn', () => {
   it('reads every convention file but HEARTBEAT.md, and carries none of its text', async () => {
     // Spec `heartbeats` §2: only a beat's prompt carries HEARTBEAT.md, so a
@@ -899,6 +937,24 @@ describe('<agent_memory>', () => {
     expect(begin).toBeGreaterThan(-1);
     expect(block.indexOf('the operator ships on Fridays')).toBeGreaterThan(begin);
     expect(block.indexOf('the operator ships on Fridays')).toBeLessThan(end);
+  });
+
+  // DOR-2955. Red when: a teammate's turn is shown the owner's notes, or the
+  // notes are read at all for it, or an ordinary turn loses them.
+  it('leaves the notes out, unread, for a teammate’s turn, and keeps them for the rest', async () => {
+    memoryReads({ status: 'present', content: NOTES, bytes: NOTES.length, truncated: false });
+
+    const teammate = await buildAgentContextAppend('/test', '/cwd', { memory: false });
+    expect(teammate.text).not.toContain('<agent_memory>');
+    expect(teammate.text).not.toContain('the operator ships on Fridays');
+    expect(teammate.memory).toBe('');
+    expect(vi.mocked(getMemoryProvider)().getSnapshot).not.toHaveBeenCalled();
+
+    const owner = await buildAgentContextAppend('/test', '/cwd');
+    expect(owner.text).toContain('the operator ships on Fridays');
+    // The digested half is the same either way: the fingerprint tells the two
+    // apart by the teammate block the launcher adds, not by the notes.
+    expect(teammate.stable).toBe(owner.stable);
   });
 
   // Red when: the notice stops appearing once a backend is benched, or appears

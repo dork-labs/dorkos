@@ -23,7 +23,8 @@ export interface AgentGalleryProps {
   /** A ready-made template was chosen. */
   onSelectTemplate: (template: SelectedTemplate) => void;
   /** Leave the creation fork to bring in an existing project. */
-  onImport: () => void;
+  /** Leave for the import dialog; the link is left out when absent (a hub). */
+  onImport?: () => void;
 }
 
 /** Distill a marketplace package into the naming step's template shape. */
@@ -185,18 +186,20 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
       </Collapsible>
 
       {/* Import lead-out — leaves the creation fork. */}
-      <div className="border-t pt-3">
-        <button
-          type="button"
-          onClick={onImport}
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-          data-testid="gallery-import-link"
-        >
-          <FolderInput className="size-4" />
-          Bring in an existing project folder
-          <span aria-hidden>→</span>
-        </button>
-      </div>
+      {onImport && (
+        <div className="border-t pt-3">
+          <button
+            type="button"
+            onClick={onImport}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
+            data-testid="gallery-import-link"
+          >
+            <FolderInput className="size-4" />
+            Bring in an existing project folder
+            <span aria-hidden>→</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

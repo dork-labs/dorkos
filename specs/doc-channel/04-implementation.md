@@ -221,3 +221,10 @@ Accepted tasks remain 1.1, 1.2, 2.2 and 2.3: 4/22 (18.2%). Nine tasks are in pro
 The fd2 delivery branch passed both independent whole-source reviews but Linux CI failed the 105-input warning test at 5,432 ms against its unchanged 5,000 ms limit. A separately reviewed fixture correction prepares three parameterized queries once per connection while reading fresh authority rows at every check. It preserves all original counts, assertions and timing limits and adds six authority-change controls. All 256 targeted tests across 27 files passed, as did server types, scoped lint and formatting. Local timing improvement is not evidence of Linux CI margin. The latest main documentation was merged normally; full verification, a new committed-head pair of independent reviews and actual CI remain required.
 
 Independent SDK, metrics and tree-lease reviews found additional gaps. Corrections and fresh review are active. The warning migration remains the exclusive schema allocation until actual merge and a named handoff. Full v1/v1.1/v2 acceptance and cleanup remain open.
+
+## Takeover by DorkOS — 2026-10-17
+
+Codex ran out of usage. DorkOS (Claude Code) owns the programme from here. The
+inventory of every Codex worktree, the saved `wip/*` branches, the decision on
+#2673 and the task-by-task state on main are in
+[06-takeover.md](06-takeover.md). Later sessions record their work there.

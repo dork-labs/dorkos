@@ -35,6 +35,7 @@ import type { TaskSchedulerService } from '../services/tasks/task-scheduler-serv
 import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
+import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
@@ -58,13 +59,14 @@ import { readQuery } from '../http/request-query.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
-import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
+import { withProposerNames } from '../services/tasks/task-provenance.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
+import { agentSchedulesArmWithoutAsking } from '../services/tasks/approvals/agent-trust.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import {
   scheduleAccountRefusal,
@@ -81,6 +83,8 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
+import { marksOf } from '../services/core/turn-power/turn-levels.js';
+import { hasMarks } from '../services/core/turn-power/turn-marks.js';
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504):
@@ -310,13 +314,20 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   /** One task, ready to send: run times attached, its proposer named, its project stamped. */
   async function present(task: Task): Promise<Task> {
-    const [withProject] = await withProjects([withRunTimes(await withProposerName(task))]);
-    return withProject as Task;
+    const [presented] = await presentAll([task]);
+    return presented as Task;
   }
 
-  /** {@link present} for a whole list, with one identity lookup per distinct agent. */
+  /**
+   * {@link present} for a whole list, with one identity lookup per distinct
+   * agent, and when each task last ran (one query for all of them, DOR-2914).
+   */
   async function presentAll(tasks: Task[]): Promise<Task[]> {
-    return withProjects((await withProposerNames(tasks)).map(withRunTimes));
+    const lastRuns = store.lastRunStarts();
+    const named = await withProposerNames(tasks);
+    return withProjects(
+      named.map((task) => ({ ...withRunTimes(task), lastRunAt: lastRuns.get(task.id) ?? null }))
+    );
   }
 
   // === Template endpoints ===
@@ -336,6 +347,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const trusted = clearsTheAgentBar(caller);
     const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
     if (operatorOnly) return c.json(operatorOnly, 403);
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal = namesCredits(body)
       ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
       : undefined;
@@ -346,16 +360,23 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // do the identical thing and used to do a shorter, wrong version of it — a row
     // with no SKILL.md behind it (DOR-1568). What is left here is what is genuinely
     // this door's: who is asking, what the activity feed is told, and the response.
+    // Read from the RESOLVED credential, never from the body: the caller's
+    // agent identity is set only for a caller that presented a live agent
+    // token. That is what makes the caller one of our agents, whose schedule a
+    // Trusted install arms at once; an unidentified caller's parks.
+    const agentIdentity = caller.agentIdentity;
     const outcome = await createScheduledTask(
       { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
       {
         input: body as CreateTaskInput,
         trusted,
-        // Stamped from the RESOLVED credential, never from the body:
-        // `getRequestAgentIdentity` answers only for a caller that presented a
-        // live token, so an unidentified one leaves this null and the approval
-        // card honestly says it does not know who asked.
-        proposal: { agentPath: caller.agentIdentity?.agentPath ?? null },
+        callerIsOurAgent: agentIdentity != null,
+        // An agent's HTTP call names no chat, so its turn is read through its
+        // agent: the marks of any marked turn of it running now (DOR-3036).
+        ...(agentIdentity ? { originMarks: marksOf(undefined, agentIdentity.agentPath) } : {}),
+        // An unidentified caller leaves this null, and the approval card
+        // honestly says it does not know who asked.
+        proposal: { agentPath: agentIdentity?.agentPath ?? null },
       }
     );
 
@@ -377,11 +398,15 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       // not refused — so the proposer is named rather than assumed (DOR-1829).
       ...readActivityActor(caller),
       category: 'tasks',
-      eventType: 'tasks.task_created',
+      // An agent's schedule armed without asking is recorded as exactly that,
+      // so the audit trail can answer "what did my agents set running?".
+      eventType: outcome.armedPayload ? 'schedule.armed_by_agent' : 'tasks.task_created',
       resourceType: 'schedule',
       resourceId: schedule.id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Created scheduled task ${schedule.displayName ?? schedule.name}`,
+      summary: outcome.armedPayload
+        ? `Scheduled task ${schedule.displayName ?? schedule.name}, which runs ${outcome.armedPayload.cadence}`
+        : `Created scheduled task ${schedule.displayName ?? schedule.name}`,
       linkPath: '/',
     });
 
@@ -417,6 +442,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!existing) {
       return c.json({ error: 'Scheduled task not found' }, 404);
     }
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -624,10 +652,21 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // away and the sweep's up to five minutes, and until then the agent's work
     // would run approved. A person's change that wrote no file (a package's
     // row-only timing, DOR-2302) re-approves in the same act; a person's
-    // file-backed edit was re-approved just above. The park is then picked up by
-    // the "entered `pending_approval`" edge below like any other.
+    // file-backed edit was re-approved just above. One of our agents on a
+    // Trusted install re-approves like a person, except on a schedule made
+    // from a file (ADR 261006-225605). The park is then picked up by the
+    // "entered `pending_approval`" edge below like any other.
     if (!rearms || !changesFile) {
-      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted: rearms });
+      store.approvals.settleApprovedWorkChange(updated.id, before, {
+        trusted: rearms,
+        armsAgentWork: !trusted && agentSchedulesArmWithoutAsking(caller.agentIdentity != null),
+      });
+      updated = store.getTask(updated.id) ?? updated;
+    }
+    // An agent's edit from a marked turn parks the schedule for a person and keeps the marks for
+    // its card, whatever it changed (DOR-3036). Picked up by the park edge below like any other.
+    const marks = caller.agentIdentity ? marksOf(undefined, caller.agentIdentity.agentPath) : {};
+    if (!trusted && hasMarks(marks) && store.approvals.markOrigin(updated.id, marks)) {
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -852,6 +891,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       );
     }
 
+    const wifiRefusal = wifiRunNowRefusal(caller, store.getTask(id) ?? undefined);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal =
       store.getTask(id)?.account === CREDITS_ACCOUNT_ID
         ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)

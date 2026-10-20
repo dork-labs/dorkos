@@ -134,7 +134,6 @@ export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { PaneResizeHandle } from './pane-resize-handle';
 export type { PaneResizeHandleProps } from './pane-resize-handle';
-export { HoverBorderGradient, type HoverBorderGradientProps } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export {
   IdentityAvatar,
@@ -387,12 +386,11 @@ export type { FeatureDisabledStateProps } from './FeatureDisabledState';
 export { LinkifiedText, containsUrl } from './linkified-text';
 export type { LinkifiedTextProps } from './linkified-text';
 export { LinkSafetyModal } from './link-safety-modal';
-export { MarkdownContent } from './markdown-content';
-export type { MarkdownContentProps } from './markdown-content';
+export { MarkdownContent, type MarkdownContentProps } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
 export type { MarkdownErrorBoundaryProps } from './markdown-error-boundary';
-export { MarkdownLink } from './markdown-link';
-export type { MarkdownLinkProps } from './markdown-link';
+export { MarkdownLink, type MarkdownLinkProps } from './markdown-link';
+export * from './image-lightbox';
 export { MentionPill, mentionPillVariants } from './mention-pill';
 export type { MentionPillProps } from './mention-pill';
 export {

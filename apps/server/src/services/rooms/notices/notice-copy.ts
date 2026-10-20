@@ -265,15 +265,39 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
  * must not claim a prompt is gone while the agent is still holding it, so the
  * clause became "it will wait, but not forever" — still a deadline, still only
  * yours to beat, and now true whenever it is read.
+ *
+ * **What changed with DOR-3113.** Later mentions of a parked agent used to fail
+ * one by one, each with its own "ran into a problem" line. They now wait behind
+ * the prompt, so the one line a park writes says where to answer (the agent's chat,
+ * which the app links, or Needs you) and that new messages wait too.
  */
 const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
   approval: (agentName) =>
-    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
+    `${agentName} is waiting for your approval before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
   question: (agentName) =>
-    `${agentName} has a question for you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
+    `${agentName} has a question for you before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
   elicitation: (agentName) =>
-    `${agentName} needs something from you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
+    `${agentName} needs something from you before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
 };
+
+/**
+ * The durable `notice` for a turn waiting for a free agent slot on this
+ * computer, rather than for a person (DOR-3012).
+ *
+ * An `agent_busy` line, not an `awaiting_approval` one: nobody has to do
+ * anything, the agent is occupied rather than stopped, and the room keeps
+ * showing it as working. It says what happens next and nothing else.
+ *
+ * @param agentName - Display name of the agent that is waiting.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildSlotWaitNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} will answer once another agent here finishes. All of them are busy.`,
+    notice: 'agent_busy',
+    subjectAuthorId,
+  };
+}
 
 /**
  * The durable `notice` a halt writes: somebody stopped everything running here.
@@ -362,30 +386,106 @@ const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> 
  *
  * @param agentName - Display name of the agent whose turn failed.
  * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param outOfUsageUntil - Set when the agent's account ran out of usage.
+ * @param refusal - Why the runtime refused the turn before it started, if it did.
+ * @param noOtherAccount - Set when no other account had usage to move the agent to.
  */
 export function buildTurnFailedNotice(
   agentName: string,
   subjectAuthorId: string,
-  outOfUsageUntil?: string | null
+  outOfUsageUntil?: string | null,
+  refusal?: string,
+  noOtherAccount?: boolean
 ): RoomEntryBody {
   // A usage limit is not a problem to go and look at: it says when it ends
   // (DOR-2823). `undefined` is an ordinary failure; `null` is a limit with no
-  // known reset.
+  // known reset. When the room tried to move the agent to another account and
+  // none had usage left, it says that too, and the time is the soonest any
+  // account is back. No account is named, so the line is safe in any room.
   if (outOfUsageUntil !== undefined) {
+    const until = outOfUsageUntil === null ? '' : ` until ${clockTime(outOfUsageUntil)}`;
+    const others = noOtherAccount === true ? ', and no other account has any left' : '';
     return {
-      text:
-        outOfUsageUntil === null
-          ? `${agentName} is out of usage, so it couldn't answer here.`
-          : `${agentName} is out of usage until ${clockTime(outOfUsageUntil)}, so it couldn't answer here.`,
+      text: `${agentName} is out of usage${until}${others}, so it couldn't answer here.`,
       notice: 'turn_failed',
       subjectAuthorId,
     };
   }
+  // A turn the runtime refused before the agent saw it says why, when the
+  // reason is one a person can understand without opening the chat (DOR-3012).
+  const refused = refusal !== undefined ? REFUSAL_LINES[refusal] : undefined;
   return {
-    text: `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
+    text:
+      refused?.(agentName) ??
+      `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
     notice: 'turn_failed',
     subjectAuthorId,
   };
+}
+
+/**
+ * The room's line for each refusal worth naming, keyed by `TurnRefusal`. One
+ * missing here keeps the general line, which points at the chat.
+ */
+const REFUSAL_LINES: Partial<Record<string, (agentName: string) => string>> = {
+  'warm-ceiling': (agentName) =>
+    `${agentName} couldn't start: every agent here stayed busy too long. Send it again.`,
+  'pending-interaction': (agentName) =>
+    `${agentName} is waiting on an answer in its chat, so it couldn't start here.`,
+  'crash-loop': (agentName) =>
+    `${agentName} keeps stopping, so it couldn't answer here. Open ${agentName}'s chat to see why.`,
+};
+
+/** Why a room seat moved to a fresh session, as its room line says it. */
+export type ReseatNoticeReason =
+  | { kind: 'limit'; from: string | null; to: string }
+  | { kind: 'nearly-out'; from: string | null; to: string }
+  | { kind: 'by-hand'; by: string; to: string }
+  | { kind: 'stranded' };
+
+/**
+ * The quiet `agent_reseated` line for a room seat that moved to a fresh
+ * session: onto another account because its own ran out or nearly did, moved
+ * there by somebody, or restarted because its earlier session expired.
+ *
+ * **No account names where outsiders can read it.** An account's name is the
+ * owner's own business; in a room with anyone from outside (a bridged chat, a
+ * Wi-Fi sign-in, an outside author) every move reads the same plain line.
+ *
+ * @param agentName - Display name of the agent whose seat moved.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param reason - Why it moved, with the account names when known.
+ * @param hideAccounts - The room has outsiders, so no account is named.
+ */
+export function buildAgentReseatedNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  reason: ReseatNoticeReason,
+  hideAccounts: boolean
+): RoomEntryBody {
+  const body = (text: string): RoomEntryBody => ({
+    text,
+    notice: 'agent_reseated',
+    subjectAuthorId,
+  });
+  if (reason.kind === 'stranded') {
+    return body(`${agentName} started a fresh chat here. Its earlier one had expired.`);
+  }
+  if (hideAccounts) return body(`${agentName} switched accounts to keep answering.`);
+  switch (reason.kind) {
+    case 'limit':
+      return body(
+        reason.from === null
+          ? `${agentName} ran out of usage, so it's continuing on ${reason.to}.`
+          : `${agentName} ran out of usage on ${reason.from}, so it's continuing on ${reason.to}.`
+      );
+    case 'nearly-out':
+      return body(
+        `${agentName} is continuing on ${reason.to}, because ${reason.from ?? 'its account'} is almost out of usage.`
+      );
+    case 'by-hand':
+      return body(`${reason.by} moved ${agentName} to ${reason.to}.`);
+  }
 }
 
 /**

@@ -597,6 +597,7 @@ export default defineConfig({
       command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client --output-logs=new-only`,
       url: `http://localhost:${VITE_PORT}`,
       name: 'Vite Client',
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
       timeout: 120_000,
       reuseExistingServer: REUSE_EXISTING_SERVER,
       stdout: 'pipe',
@@ -655,6 +656,7 @@ export default defineConfig({
       command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client --output-logs=new-only`,
       url: `http://localhost:${MOCK_VITE_PORT}`,
       name: 'Vite Client (test-mode)',
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
       // Same reasoning as the test-mode Express leg above: same budget as the
       // cockpit Vite leg, offset +1s so the two timeout VALUES stay distinct.
       timeout: 121_000,
@@ -819,6 +821,11 @@ export default defineConfig({
         // only under `DORKOS_TEST_RUNTIME`. On this leg they would neither find
         // that route nor be free.
         '**/workbench/session-canvas-sync.spec.ts',
+        '**/workbench/session-file-save-receipts.spec.ts',
+        '**/workbench/session-file-save-recovery.spec.ts',
+        // Declares document routes through `/api/test/doc-routes`, which exists
+        // only under `DORKOS_TEST_RUNTIME`, and drives a turn to open its document.
+        '**/workbench/session-doc-routes.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -969,6 +976,11 @@ export default defineConfig({
       // reasons: its rename leg drives turns, and its sync test opens a second
       // context.
       name: 'chromium-browser-driving',
+      // These six specs share the test-mode scenario store and tracked sessions.
+      // Their global reset must not erase another file's active conversation.
+      // CI already uses one worker; keep local runs isolated the same way.
+      workers: 1,
+      metadata: { fileSaveRecoveryHome: MOCK_DORK_HOME },
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -977,6 +989,9 @@ export default defineConfig({
         '**/workbench/browser-driving.spec.ts',
         '**/workbench/browser-recording.spec.ts',
         '**/workbench/session-canvas-sync.spec.ts',
+        '**/workbench/session-file-save-receipts.spec.ts',
+        '**/workbench/session-file-save-recovery.spec.ts',
+        '**/workbench/session-doc-routes.spec.ts',
       ],
     },
     {

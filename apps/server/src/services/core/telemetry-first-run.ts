@@ -22,10 +22,11 @@
  * @module services/core/telemetry-first-run
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import { hasTier1SendGate, type Tier1GateConfig } from '@dorkos/shared/telemetry-consent';
 
 /** The public payload documentation URL shown in the first-run notice. */
-export const TELEMETRY_PAYLOAD_DOC_URL = 'https://dorkos.ai/telemetry';
+export const TELEMETRY_PAYLOAD_DOC_URL = siteUrl('/telemetry');
 
 /** The outcome of evaluating the Tier 1 first-run gate at server boot. */
 export interface Tier1BootDecision {
@@ -86,8 +87,9 @@ export function formatFirstRunTelemetryNotice(): string {
     '  - a daily anonymous heartbeat (a random install id, the version, your OS and',
     '    chip type, which runtimes you have on, and rough counts)',
     '  - anonymous marketplace install counts',
-    '  - a few named feature-usage events, like app start and new chat (counts',
-    '    and coarse facts only)',
+    '  - a few named feature-usage events, like app start, new chat, finishing',
+    '    setup and a once-a-day check-in (counts and coarse facts only, plus the',
+    '    install tag from dorkos.ai if your install command carried one)',
     '',
     'That is all it would ever be. No prompts, no code, no file paths, no chat',
     'content, ever.',

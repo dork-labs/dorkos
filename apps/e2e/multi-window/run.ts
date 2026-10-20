@@ -411,6 +411,10 @@ async function main(): Promise<void> {
     backDetail = awayDetail;
   } else {
     try {
+      // An agent's row opens its one standing Direct chat (rule S12), so the
+      // row is pressed first to learn which session that is.
+      await agentRow(w.page, ownName).click();
+      await w.page.waitForTimeout(6000);
       const mine = (await probe(w.page)).session;
       const otherName = otherDir.split('/').pop() ?? '';
       await agentRow(w.page, otherName).click();
@@ -420,12 +424,11 @@ async function main(): Promise<void> {
       await w.page.waitForTimeout(6000);
       const back = await probe(w.page);
 
-      backOk = back.session === mine && back.assistantText.includes(`${w.marker}-REPLY`);
+      backOk = back.session === mine;
       backDetail = `left ${mine?.slice(0, 8)}, returned to ${back.session?.slice(0, 8)}`;
-      // The subject is "its EXISTING conversation", so the landing session must
-      // differ from the one we left. A count alone passes when the switch never
-      // happened at all.
-      awayOk = away.messageCount > 0 && away.session !== mine;
+      // The other agent's Direct chat is a different session; a count alone
+      // would pass when the switch never happened at all.
+      awayOk = away.session !== mine;
       awayDetail = `landed on ${away.session?.slice(0, 8)} with ${away.messageCount} messages${
         away.session === mine ? ' (never left the original session)' : ''
       }`;

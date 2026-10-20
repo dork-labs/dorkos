@@ -549,6 +549,13 @@ export const RemoteCredentialRevokeResponseSchema = z
  * A published discriminated union rather than an untyped string, so adding a
  * command kind later is a package release the two sides can agree on rather
  * than a field they disagree about.
+ *
+ * A build from before a kind was published cannot parse it, so it never
+ * acknowledges it and logs that it ignored it. The service sends a newer kind
+ * only to an instance whose reported version knows it: `viewer_open` and
+ * `hub_assignment_changed` reach the builds that published them, and
+ * `agent_computer_assignment_changed` reaches only an agent computer whose
+ * version knows it, by the same rule.
  */
 export const RemoteCommandSchema = z
   .discriminatedUnion('kind', [
@@ -620,6 +627,36 @@ export const RemoteCommandSchema = z
         seatId: IdSchema,
       })
       .describe('There is mail waiting for a seat.'),
+    z
+      .object({
+        kind: z.literal('viewer_open'),
+        id: IdSchema,
+        leaseToken: z.string().min(1),
+        expiresAt: TimestampSchema.describe(
+          'Dial before this. A command read after it is acknowledged `ignored`.'
+        ),
+      })
+      .describe(
+        'Somebody opened a chat of this computer`s on its hub: dial the hub address and key this computer pinned. Carries no address, on purpose.'
+      ),
+    z
+      .object({
+        kind: z.literal('hub_assignment_changed'),
+        id: IdSchema,
+        leaseToken: z.string().min(1),
+      })
+      .describe(
+        'For a hub only: read `GET /v1/hubs/self/assignment` again now, because its front-door proof was replaced or it ended. Carries nothing else, and no authority.'
+      ),
+    z
+      .object({
+        kind: z.literal('agent_computer_assignment_changed'),
+        id: IdSchema,
+        leaseToken: z.string().min(1),
+      })
+      .describe(
+        'For an agent computer only: read `GET /v1/agent-computers/self/assignment` again now, because its link code or its hub changed. Carries nothing else, and no authority. Sent only to a computer whose version knows it.'
+      ),
     z
       .object({
         kind: z.literal('keepalive'),

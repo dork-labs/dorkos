@@ -1,3 +1,4 @@
+import { documentFileSaveCanClose } from './doc-channel/writes/file-save-lifecycle/close-guard.js';
 /**
  * Persistence for every canvas — rows in, rows out, and no rule of its own
  * (specs `room-canvas` §1 and `canvas-agent-seat` §1.2).
@@ -399,15 +400,27 @@ export class CanvasDocumentStore {
    * @param scope - The table.
    * @returns Unpinned documents, oldest-active first.
    */
-  evictionCandidates(scope: string): CanvasDocumentRow[] {
-    return this.db
+  evictionCandidates(
+    scope: string,
+    options: { limit?: number; eligible?: (row: CanvasDocumentRow) => boolean } = {}
+  ): CanvasDocumentRow[] {
+    const selected: CanvasDocumentRow[] = [];
+    const limit = options.limit ?? Infinity;
+    if (limit <= 0) return selected;
+    const rows = this.db
       .select()
       .from(canvasDocuments)
       .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.pinned, false)))
       .orderBy(asc(canvasDocuments.lastActiveAt))
-      .all()
-      .map(project)
-      .filter((row): row is CanvasDocumentRow => row !== null);
+      .all();
+    for (const raw of rows) {
+      const row = project(raw);
+      if (!row || (options.eligible && !options.eligible(row))) continue;
+      if (!documentFileSaveCanClose(this.db, row.id)) continue;
+      selected.push(row);
+      if (selected.length >= limit) break;
+    }
+    return selected;
   }
 
   /**
@@ -496,6 +509,23 @@ export class CanvasDocumentStore {
       .where(like(canvasDocuments.scope, 'session:%'))
       .all()
       .map((row) => row.scope);
+  }
+
+  /** Retain blocked originals, returning only identities actually removed for truthful close frames. */
+  removeAvailableScope(scope: string): { id: string }[] {
+    return this.db.transaction((tx) => {
+      const rows = tx
+        .select({ id: canvasDocuments.id })
+        .from(canvasDocuments)
+        .where(eq(canvasDocuments.scope, scope))
+        .all();
+      const removed: { id: string }[] = [];
+      for (const row of rows) {
+        if (!documentFileSaveCanClose(tx, row.id)) continue;
+        if (this.remove(scope, row.id, tx)) removed.push(row);
+      }
+      return removed;
+    });
   }
 
   /**

@@ -36,12 +36,12 @@ const start = (sessionId: string, from: string) =>
     createdAt: new Date(Date.UTC(2026, 9, 10, 12, 0, clock++)).toISOString(),
   });
 
-const send = (from: string, to: string) =>
+const send = (from: string, to: string, fromAgentPath = '/agents/ana') =>
   store.insert({
     id: `m-${from}-${to}`,
     toSessionId: to,
     fromSessionId: from,
-    fromAgentPath: '/agents/ana',
+    fromAgentPath,
     fromAgentId: 'agent-ana',
     fromAgentName: 'Ana',
     fromChatTitle: null,
@@ -117,6 +117,48 @@ describe('mayReadChat', () => {
     expect(mayReadChat(store, as('lead'), 'spin-off')).toBe(true);
     expect(mayReadChat(store, as('lead'), 'grandchild')).toBe(true);
     expect(mayReadChat(store, as('grandchild'), 'lead')).toBe(false);
+  });
+});
+
+describe('mayReadChat — what the agent asked', () => {
+  const BO = '/agents/bo';
+
+  it('lets a chat read agent work it messaged, though nothing came back yet', () => {
+    send('beat', 'agent-work', BO);
+    expect(mayReadChat(store, as('beat'), 'agent-work')).toBe(true);
+  });
+
+  it('holds across the agent’s own chats: another chat of Bo’s reads it too', () => {
+    send('beat', 'agent-work', BO);
+    expect(mayReadChat(store, as('bo-next-chat'), 'agent-work')).toBe(true);
+  });
+
+  it('counts an answer sent to any chat of Bo’s that has itself sent messages', () => {
+    send('bo-dm', 'somewhere', BO);
+    send('agent-work', 'bo-dm');
+    expect(mayReadChat(store, as('beat'), 'agent-work')).toBe(true);
+  });
+
+  it('never opens a person’s own chat the agent messaged or heard from', () => {
+    send('beat', 'person-other', BO);
+    send('person-other', 'beat');
+    expect(mayReadChat(store, as('beat'), 'person-other')).toBe(false);
+    expect(mayReadChat(store, as('bo-next-chat'), 'person-other')).toBe(false);
+  });
+
+  it('gives nothing to another agent, and a stop opens nothing', () => {
+    send('beat', 'agent-work', BO);
+    expect(
+      mayReadChat(store, { sessionId: 'cy-chat', agentPath: '/agents/cy' }, 'agent-work')
+    ).toBe(false);
+    store.insert({
+      ...store.get('m-beat-agent-work')!,
+      id: 'stop-1',
+      toSessionId: 'stopped-work',
+      kind: 'stop',
+      nonce: 'stop0001',
+    });
+    expect(mayReadChat(store, as('beat'), 'stopped-work')).toBe(false);
   });
 });
 

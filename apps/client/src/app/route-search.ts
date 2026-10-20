@@ -138,6 +138,9 @@ export const connectionsSearchSchema = mergeDialogSearch(
     review: z.string().min(1).optional(),
     flow: z.string().min(1).optional(),
     request: z.string().min(1).optional(),
+    // Opens the app's "Who can use it?" on "Only agents you pick" (the trust
+    // notice's Choose agents). Anything else lands on the app's own answer.
+    who: z.literal('picked').optional().catch(undefined),
   })
 );
 export const activitySearchSchema = mergeDialogSearch(

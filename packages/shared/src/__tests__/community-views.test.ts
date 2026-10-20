@@ -4,6 +4,7 @@ import {
   RemoteCommunityEntrySchema,
   RemoteCommunityEventSchema,
   RemoteCommunityHistoryQuerySchema,
+  RemoteCommunityMembersResponseSchema,
   RemoteCommunityPostRequestSchema,
   RemoteCommunityRoomSchema,
 } from '../community-views.js';
@@ -184,5 +185,56 @@ describe('local remote-community view boundary', () => {
       false
     );
     expect(RemoteCommunityEventSchema.safeParse({ ...snapshot, stale: true }).success).toBe(false);
+  });
+});
+
+describe('remote roster rows and agent availability (DOR-2878)', () => {
+  const ref = 'community-ref';
+  const row = {
+    community: ref,
+    memberId: 'agent-1',
+    kind: 'agent' as const,
+    displayName: 'Scout',
+    handle: 'scout',
+    role: null,
+    ownerMemberId: 'person-1',
+    joinedAt: '2026-10-01T00:00:00.000Z',
+  };
+  const roster = (members: unknown[]) => ({
+    community: ref,
+    roomId: 'room-1',
+    members,
+    stale: false,
+  });
+
+  it('reads a row from a space without availability, unchanged', () => {
+    expect(RemoteCommunityMembersResponseSchema.parse(roster([row])).members[0]).toEqual(row);
+  });
+
+  it('reads an agent row that carries where it runs and whether it is there', () => {
+    const reported = {
+      ...row,
+      runsOn: 'agent-computer',
+      lastSeenAt: '2026-10-15T10:00:00.000Z',
+      availability: 'offline',
+    };
+    expect(RemoteCommunityMembersResponseSchema.parse(roster([reported])).members[0]).toEqual(
+      reported
+    );
+    // Never reported: the space says unknown, with nothing behind it.
+    expect(() =>
+      RemoteCommunityMembersResponseSchema.parse(
+        roster([{ ...row, runsOn: null, lastSeenAt: null, availability: 'unknown' }])
+      )
+    ).not.toThrow();
+  });
+
+  it('stays strict: an unknown field or state is refused', () => {
+    expect(() =>
+      RemoteCommunityMembersResponseSchema.parse(roster([{ ...row, extra: 1 }]))
+    ).toThrow();
+    expect(() =>
+      RemoteCommunityMembersResponseSchema.parse(roster([{ ...row, availability: 'away' }]))
+    ).toThrow();
   });
 });

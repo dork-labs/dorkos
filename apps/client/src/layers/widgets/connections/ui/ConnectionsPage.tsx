@@ -7,7 +7,7 @@ import {
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
 } from '@/layers/entities/connectors';
-import { useRelayEventStream, useToggleAdapter } from '@/layers/entities/relay';
+import { useToggleAdapter } from '@/layers/entities/relay';
 import {
   accountChangeError,
   AccountPanel,
@@ -33,6 +33,7 @@ import { useChatAppSetup } from './ChatAppSetup';
 /** The page's URL state: which panel, dialog or sign-in is open. */
 type ConnectionsSearch = {
   app?: string;
+  who?: 'picked';
   review?: string;
   flow?: string;
   request?: string;
@@ -99,7 +100,6 @@ export function ConnectionsPage() {
 
   const data = useAppList(deferredQuery, pendingSignIn);
   const { relay } = data;
-  useRelayEventStream(relay.enabled);
 
   const reconnect = useReconnectConnectorConnection();
   const resume = useResumeConnectorConnection();
@@ -194,7 +194,7 @@ export function ConnectionsPage() {
     }
   }, [search.app, data.yoursLoading, data.yoursRefreshing, data.yoursError, panelRow, setSearch]);
 
-  const closePanel = () => setSearch({ app: undefined });
+  const closePanel = () => setSearch({ app: undefined, who: undefined });
 
   return (
     <PageContainer width="reading">
@@ -240,7 +240,7 @@ export function ConnectionsPage() {
               return;
             }
             panelOpener.current = document.activeElement as HTMLElement | null;
-            setSearch({ app: row.id });
+            setSearch({ app: row.id, who: undefined });
           }}
           onRowAction={onRowAction}
           pendingRowId={pendingRowId}
@@ -262,6 +262,7 @@ export function ConnectionsPage() {
           <AccountPanel
             key={panelRow.id}
             connectionId={panelRow.id}
+            startWho={search.who}
             onSignInStarted={openSignIn}
             onEditExactActions={setAccessConnectionId}
             onAddAnother={(toolkit) => {

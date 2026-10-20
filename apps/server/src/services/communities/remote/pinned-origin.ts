@@ -170,7 +170,10 @@ export async function checkedAddress(
     : await Promise.race([
         resolve(host),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new PinnedOriginError('REMOTE_UNAVAILABLE')), 5_000);
+          timer = setTimeout(
+            () => reject(new PinnedOriginError('REMOTE_UNAVAILABLE')),
+            ADDRESS_LOOKUP_TIMEOUT_MS
+          );
         }),
       ]).finally(() => {
         if (timer) clearTimeout(timer);
@@ -193,8 +196,24 @@ export async function checkedAddress(
   };
 }
 
+/** How long looking up a space's address may take, before any request is opened. */
+export const ADDRESS_LOOKUP_TIMEOUT_MS = 5_000;
+
 /** The most of a refused stream's error body read for its code: 16 KB. */
 export const SSE_ERROR_BODY_MAX_BYTES = 16 * 1024;
+
+/**
+ * How long a stream may take to answer at all. Only the opening is bounded this way: a live
+ * stream stays open for as long as it carries anything, and it once ended every 30 seconds
+ * instead, losing what was posted while it reopened (DOR-2973).
+ */
+export const SSE_CONNECT_TIMEOUT_MS = 30_000;
+
+/**
+ * How long an open stream may go without a single byte before it is given up for dead. A space
+ * sends a comment every 15 seconds on a quiet stream, so three of them in a row went missing.
+ */
+export const SSE_IDLE_TIMEOUT_MS = 50_000;
 
 /** Read only the closed-enum error code from a Community error body; anything else is dropped. */
 function remoteErrorCode(content: Buffer): CommunityWireErrorCode | undefined {
@@ -326,13 +345,25 @@ export async function pinnedJson(
   }
 }
 
-/** Open one pinned SSE response without following redirects or re-resolving DNS. */
+/**
+ * Open one pinned SSE response without following redirects or re-resolving DNS. The stream must
+ * answer within {@link SSE_CONNECT_TIMEOUT_MS}, then stays open until the caller aborts, the
+ * remote ends it, or it carries nothing for {@link SSE_IDLE_TIMEOUT_MS}.
+ *
+ * @param origin - The pinned community origin.
+ * @param path - An `/api/v1/` path on that origin.
+ * @param authorization - The bearer credential.
+ * @param lastEventId - Where to resume, when known.
+ * @param signal - Ends the stream when aborted.
+ * @param timeouts - Shorter bounds, for tests.
+ */
 export async function* pinnedSse(
   origin: URL,
   path: string,
   authorization: string,
   lastEventId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeouts: { connectMs?: number; idleMs?: number } = {}
 ): AsyncGenerator<unknown> {
   const target = new URL(path, origin);
   if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
@@ -346,9 +377,18 @@ export async function* pinnedSse(
     origin.protocol === 'https:'
       ? new HttpsAgent({ keepAlive: false, lookup })
       : new HttpAgent({ keepAlive: false, lookup });
-  const boundedSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-    : AbortSignal.timeout(30_000);
+  // One timer, re-armed: first for the opening, then for each quiet spell once it is open.
+  const bounded = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (ms: number) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => bounded.abort(), ms);
+    // The socket keeps the process alive while the stream is open; the timer alone never should.
+    timer.unref?.();
+  };
+  arm(timeouts.connectMs ?? SSE_CONNECT_TIMEOUT_MS);
+  const idleMs = timeouts.idleMs ?? SSE_IDLE_TIMEOUT_MS;
+  const boundedSignal = signal ? AbortSignal.any([signal, bounded.signal]) : bounded.signal;
   let request: import('node:http').ClientRequest | undefined;
   let response: import('node:http').IncomingMessage | undefined;
   try {
@@ -389,6 +429,7 @@ export async function* pinnedSse(
             opened.on('error', () => reject(new PinnedHttpError(status)));
             return;
           }
+          arm(idleMs);
           resolve(opened);
         }
       );
@@ -397,6 +438,7 @@ export async function* pinnedSse(
     });
     let buffer = '';
     for await (const chunk of response) {
+      arm(idleMs);
       buffer += Buffer.from(chunk).toString('utf8');
       if (buffer.length > 64 * 1024) throw new PinnedOriginError('REMOTE_RESPONSE');
       for (;;) {
@@ -414,6 +456,7 @@ export async function* pinnedSse(
       }
     }
   } finally {
+    clearTimeout(timer);
     response?.destroy();
     request?.destroy();
     agent.destroy();

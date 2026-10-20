@@ -45,7 +45,10 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
 import { creditsAgentModelRefusal } from '../services/core/cloud/credits-model-gate.js';
-import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
+import {
+  refuseAgentExecutionWrites,
+  refuseAgentSelfFilesFromWifi,
+} from '../middleware/agent-execution-gate.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
@@ -77,6 +80,7 @@ import {
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { DisclosedEffectsSchema } from '../services/marketplace/preview/disclosed-effects.js';
 import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
+import { templateFromTrustedSource } from '../services/core/agent-templates/trusted-template-source.js';
 import { type MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
 import {
   DisclosureChangedError,
@@ -483,7 +487,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       }
       // A template is cloned into a staging folder and shown before it lands
       // (DOR-2325): a person is disclosed what it brings; anyone else gets a
-      // card. There is no ungated way to create from a template.
+      // card, unless it is a built-in template that brings nothing that runs
+      // on its own and the install is Trusted (spec `trusted-by-default-flip`
+      // §5.10). There is no ungated way to create from a template.
       let templateGate: TemplateGate | undefined;
       if (body?.template !== undefined) {
         const facts = honoRequestFacts(c);
@@ -498,6 +504,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
                 confirmationToken: decision.data.confirmationToken,
               }),
               ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+              trustedSource: await templateFromTrustedSource(body.template, identity),
             });
       }
       // `skipTemplateDownload` is the marketplace install's own switch: it skips
@@ -589,7 +596,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   // Update agent fields by path
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
-  router.patch('/current', refuseAgentExecutionWrites, async (c) => {
+  router.patch('/current', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, async (c) => {
     try {
       const rawPath = rawPathOf(c);
       if (!rawPath) {

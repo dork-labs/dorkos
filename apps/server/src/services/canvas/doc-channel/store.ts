@@ -1,3 +1,4 @@
+import { consumeOriginalFileSaveAppend } from './writes/document-file-save.js';
 /**
  * Synchronous persistence primitives for document channels.
  *
@@ -69,6 +70,16 @@ export function appendConvertedCheckboxEvent(
   return binding.append(consumeCheckboxReservationAppend(store, tx), tx);
 }
 
+/** Only an original verified file replacement can stage this reserved host event. */
+export function appendConvertedFileSaveEvent(
+  store: DocChannelStore,
+  tx: DbTransaction
+): DocEventRow {
+  const binding = storeBindings.get(store);
+  if (!binding) throw new Error('File save completion requires a genuine store');
+  return binding.append(consumeOriginalFileSaveAppend(store, tx), tx);
+}
+
 /** A stored channel, independent of the physical canvas document. */
 export type DocChannelRow = typeof canvasDocChannels.$inferSelect;
 /** One durable event, ordered within its document. */
@@ -84,25 +95,8 @@ export type DocIdentityIntentRow = typeof canvasDocIdentityIntents.$inferSelect;
 /** Recoverable filesystem operation evidence. */
 export type DocWriteIntentRow = typeof canvasDocWriteIntents.$inferSelect;
 
-/** A mutation addressed a channel that no longer accepts writes. */
-export class DocChannelClosedError extends Error {
-  readonly code = 'DOC_CHANNEL_CLOSED';
-  /** Build a safe channel closure refusal. */
-  constructor(readonly documentId: string) {
-    super('The document channel is closed or absent.');
-    this.name = 'DocChannelClosedError';
-  }
-}
-
-/** A revision compare-and-set did not match current state. */
-export class DocChannelStateConflictError extends Error {
-  readonly code = 'DOC_CHANNEL_STATE_CONFLICT';
-  /** Build a safe optimistic concurrency refusal. */
-  constructor() {
-    super('The document state revision changed.');
-    this.name = 'DocChannelStateConflictError';
-  }
-}
+import { DocChannelClosedError, DocChannelStateConflictError } from './storage/store-errors.js';
+export { DocChannelClosedError, DocChannelStateConflictError } from './storage/store-errors.js';
 
 /** Transaction-capable storage; payload-free observers verify rows after the actual commit. */
 export class DocChannelStore {

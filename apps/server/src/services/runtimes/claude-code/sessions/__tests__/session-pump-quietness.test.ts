@@ -40,6 +40,8 @@ interface Harness {
   gateChanges: number[];
   /** Hand a frame to the process and let the pump consume it. */
   emit: (message: ReturnType<typeof initMessage>) => Promise<void>;
+  /** The process dies mid-stream, as a crashed CLI does. */
+  crash: () => Promise<void>;
 }
 
 /**
@@ -73,6 +75,10 @@ async function warmPump(overrides: Partial<SessionPumpOptions> = {}): Promise<Ha
     gateChanges,
     emit: async (message) => {
       queries[queries.length - 1]!.emit(message);
+      await flush();
+    },
+    crash: async () => {
+      queries[queries.length - 1]!.failStream(new Error('CLI exited'));
       await flush();
     },
   };
@@ -249,6 +255,24 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
     const harness = await warmPump();
     await runTask(harness, 'local_bash');
     expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+});
+
+// FB-18. A turn's stream-end sweep spares the tasks this process still names;
+// a process that is gone names none, so its helpers are swept rather than kept.
+describe("liveTaskIds, what a turn's stream-end sweep spares", () => {
+  it('names the live tasks of a process that is up', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_agent');
+    expect(harness.pump.liveTaskIds()).toEqual(['task-1']);
+  });
+
+  it('names none once the process has crashed, though its last frame said otherwise', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_agent');
+    await harness.crash();
+    expect(harness.pump.holdsProcess).toBe(false);
+    expect(harness.pump.liveTaskIds()).toEqual([]);
   });
 });
 

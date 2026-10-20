@@ -99,6 +99,12 @@ export {
 } from './model/stream/session-stream-store';
 export type { SessionStreamState } from './model/stream/session-stream-store';
 export {
+  useHistoryWindowStore,
+  useHistoryWindow,
+  EMPTY_HISTORY_WINDOW,
+} from './model/stream/history-window-store';
+export type { HistoryWindowState } from './model/stream/history-window-store';
+export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
@@ -165,6 +171,21 @@ export type { SessionOriginData } from './model/query/use-sessions';
 export {
   setSessionRouteContext,
   getSessionRouteContext,
+  clearSessionRouteContext,
   useSessionRouteContext,
   type SessionRouteContext,
 } from './model/navigation/session-route-context';
+export {
+  markPendingSessionTarget,
+  clearPendingSessionTarget,
+  usePendingSessionTarget,
+} from './model/navigation/pending-session-target';
+export { findCachedSessionRow, findListHoldingSession } from './lib/cached-session-row';
+export {
+  markSessionListsReset,
+  noteSessionListsResetStamp,
+  resetSessionListResetMarker,
+} from './lib/session-list-reset';
+export type { PlacedSession } from './lib/cached-session-row';
+export { sessionDetailQueryOptions } from './api/session-detail-query';
+export type { SessionDetailQueryDeps } from './api/session-detail-query';

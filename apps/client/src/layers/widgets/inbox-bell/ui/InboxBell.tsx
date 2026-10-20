@@ -461,7 +461,7 @@ export function InboxBell() {
                   variants={allClearVariants}
                   initial="initial"
                   animate="animate"
-                  className="text-muted-foreground flex min-h-7 items-center gap-1.5 text-[13px]"
+                  className="text-muted-foreground text-control flex min-h-7 items-center gap-1.5"
                 >
                   <Check className="text-status-success size-3.5 shrink-0" aria-hidden />
                   All clear
@@ -507,7 +507,7 @@ export function InboxBell() {
                   </div>
                 </div>
                 <div className="mt-1">
-                  <InboxList lens={lens} inBell onOpened={() => setOpen(false)} />
+                  <InboxList lens={lens} inBell focusId={focusId} onOpened={() => setOpen(false)} />
                 </div>
               </div>
             </div>

@@ -550,6 +550,12 @@ describe('independent exact document route grants', () => {
     );
     expect(results[0].grantId).toBe(results[1].grantId);
     expect(db.select().from(canvasDocGrants).all()).toHaveLength(1);
+    // While the route is on, a retry hears that first (DOR-2665)...
+    expect(() => grant(request({ allowedTypes: ['task.toggled'] }), ticket.token)).toThrow(
+      'ROUTE_ALREADY_GRANTED'
+    );
+    // ...and once it is off, the spent token still cannot be reused.
+    service.revoke('doc-a', results[0].grantId, operator);
     expect(() => grant(request({ allowedTypes: ['task.toggled'] }), ticket.token)).toThrow(
       'APPROVAL_CONSUMED'
     );

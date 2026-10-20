@@ -16,6 +16,7 @@
 import {
   PERMISSION_AREAS,
   PERMISSION_AREA_IDS,
+  getPermissionArea,
   isFloorArea,
   resolvePermission,
   type AgentPermissions,
@@ -40,6 +41,7 @@ import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import {
   extensionDomainName,
+  type ActionConsent,
   type CapabilitySource,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
@@ -67,7 +69,10 @@ import {
   PermissionError,
   compact,
   isState,
+  keptOnPresetMove,
   ownState,
+  unchanged,
+  type PermissionPatch,
 } from './permission-values.js';
 import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
@@ -87,6 +92,8 @@ export interface PermissionActionInfo {
   toolName?: string;
   /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
   alwaysAsks?: true;
+  /** It runs someone else's code, so an area-level Allowed still asks. */
+  consent?: ActionConsent;
   /** The running extension it came from; absent on DorkOS's own actions (DOR-2685). */
   source?: CapabilitySource;
 }
@@ -154,31 +161,6 @@ export interface PermissionServiceDeps {
   activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
 }
 
-/** A per-key request: a state to set, or `null` to remove the change. */
-export type PermissionPatch = {
-  areas?: Record<string, PermissionState | null>;
-  actions?: Record<string, PermissionState | null>;
-  /** An agent's own Files & commands stop; `null` = back to the default. */
-  filesAndCommands?: PermissionStop | null;
-};
-
-/**
- * The patch with every action key dropped whose stored value is no longer the
- * expected one (see `setAgent`'s `expectActions`).
- */
-function unchanged(
-  stored: AgentPermissions,
-  patch: PermissionPatch,
-  expected: Record<string, PermissionState | null>
-): PermissionPatch {
-  const actions: Record<string, PermissionState | null> = {};
-  for (const [key, value] of Object.entries(patch.actions ?? {})) {
-    const current = (stored.actions as Record<string, unknown> | undefined)?.[key] ?? null;
-    if (!(key in expected) || current === expected[key]) actions[key] = value;
-  }
-  return { ...(patch.areas ? { areas: patch.areas } : {}), actions };
-}
-
 /** How far back the agent page looks for a change made outside DorkOS. */
 const OUTSIDE_HISTORY_DEPTH = 50;
 
@@ -236,7 +218,7 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          'Safety limits, Permissions, and Reach & secrets are never Allowed. Choose Ask or Blocked.'
+          'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.'
         );
       }
     }
@@ -257,7 +239,8 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(action.area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+          `"${action.title}" is in ${getPermissionArea(action.area)?.label ?? action.area}, ` +
+            'which is never Allowed. Choose Ask or Blocked.'
         );
       }
       if (state === 'allowed' && action.alwaysAsks) {
@@ -538,7 +521,9 @@ export class PermissionService {
 
   /**
    * Choose a preset (spec `agent-permissions` D5). Clears the changes on top of
-   * the old one, and moves the global Files & commands stop to the preset's
+   * the old one, except that moving into Careful from another preset keeps
+   * every area and action a person set to Blocked: Careful is the way back to being asked, and it must
+   * never loosen anything on the way (DOR-2739). It also moves the global Files & commands stop to the preset's
    * (Careful: Ask first, Balanced: Act, Full power: Full autonomy). Per-runtime
    * stops are left alone and show as changes. `applyToAgents` removes every
    * setting those agents have of their own, so they follow the new preset.
@@ -562,6 +547,8 @@ export class PermissionService {
       const config = this.deps.config.get();
       const stops = this.deps.config.trustStops();
       const changes: PermissionChange[] = [];
+      // Moving into Careful keeps what a person Blocked; every other change goes.
+      const kept = keptOnPresetMove(input.preset, config.preset, config.defaults);
       if (config.preset !== input.preset) {
         changes.push({
           target: { kind: 'default' },
@@ -572,6 +559,7 @@ export class PermissionService {
       }
       for (const [area, state] of Object.entries(config.defaults.areas)) {
         if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
+        if (area in kept.areas) continue;
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'area', area: area as PermissionAreaId },
@@ -581,7 +569,7 @@ export class PermissionService {
       }
       for (const [id, state] of Object.entries(config.defaults.actions)) {
         const area = actions.get(id)?.area;
-        if (!area) continue;
+        if (!area || id in kept.actions) continue;
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'action', action: id, area },
@@ -589,7 +577,7 @@ export class PermissionService {
           after: null,
         });
       }
-      if (presetStop !== null && stops.global !== presetStop) {
+      if (stops.global !== presetStop) {
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'files' },
@@ -605,16 +593,12 @@ export class PermissionService {
       };
       const moved =
         config.preset !== input.preset ||
-        Object.keys(config.defaults.areas).length > 0 ||
-        Object.keys(config.defaults.actions).length > 0;
+        Object.keys(config.defaults.areas).length > Object.keys(kept.areas).length ||
+        Object.keys(config.defaults.actions).length > Object.keys(kept.actions).length;
       if (moved) {
-        this.deps.config.set({
-          ...config,
-          preset: input.preset,
-          defaults: { areas: {}, actions: {} },
-        });
+        this.deps.config.set({ ...config, preset: input.preset, defaults: kept });
       }
-      if (presetStop !== null && stops.global !== presetStop) {
+      if (stops.global !== presetStop) {
         this.deps.config.setGlobalTrustStop(presetStop);
       }
       await cleared.write();
@@ -827,7 +811,7 @@ export class PermissionService {
     actionId: string,
     tier: CapabilityTier,
     agent?: AgentPermissions,
-    alwaysAsks?: true
+    action?: Pick<PermissionActionInfo, 'alwaysAsks' | 'consent'>
   ): ResolvedPermission {
     return resolvePermission({
       area,
@@ -835,7 +819,8 @@ export class PermissionService {
       tier,
       config,
       ...(agent ? { agent } : {}),
-      ...(alwaysAsks ? { alwaysAsks } : {}),
+      ...(action?.alwaysAsks ? { alwaysAsks: true } : {}),
+      ...(action?.consent ? { consent: action.consent } : {}),
     });
   }
 
@@ -867,14 +852,7 @@ export class PermissionService {
           actions: actions
             .filter((a) => a.area === id)
             .map((a): z.infer<typeof PermissionActionEntrySchema> => {
-              const actionResolved = this.resolveDefault(
-                config,
-                id,
-                a.id,
-                a.tier,
-                own,
-                a.alwaysAsks
-              );
+              const actionResolved = this.resolveDefault(config, id, a.id, a.tier, own, a);
               return withLastChange(
                 {
                   id: a.id,
@@ -970,14 +948,11 @@ export class PermissionService {
     // "Custom" is never stored: it is the default changes, plus the global stop
     // when it is not the one the preset sets (an unset stop included: an install
     // whose preset came from an upgrade, or whose stop was cleared, does not
-    // start where its preset says), plus each per-runtime stop that differs.
-    // Undecided installs have no preset stop, so their stops are not changes to
-    // anything.
+    // start where its preset says), plus each per-runtime stop that differs. An
+    // undecided install counts against Trusted, the table it resolves against.
     const stopChanges =
-      presetStop === null
-        ? 0
-        : (stops.global !== presetStop ? 1 : 0) +
-          runtimeStops.filter((entry) => entry.stop !== presetStop).length;
+      (stops.global !== presetStop ? 1 : 0) +
+      runtimeStops.filter((entry) => entry.stop !== presetStop).length;
     const presetLastChange = lastChanges.get('default:preset');
     return {
       preset: config.preset,

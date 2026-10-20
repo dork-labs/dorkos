@@ -60,7 +60,13 @@ import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
-import { initCapabilityTierGate, resetCapabilityTierGate } from '../../core/capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  initPermissionGate,
+  resetCapabilityTierGate,
+  resetPermissionGate,
+} from '../../core/capabilities/index.js';
+import type { PermissionConfigInput } from '@dorkos/shared/permissions';
 
 /**
  * A token provider over a fresh approval store, plus the two things the cockpit
@@ -396,6 +402,13 @@ describe('marketplace-mcp integration', () => {
   let denyPending: (reason?: string) => void;
   let sourceManager: MarketplaceSourceManager;
   let logger: Logger;
+  /**
+   * The install's permissions, read per call. By default a Careful install
+   * where a person allowed Tools & packages and set uninstall to Ask: the
+   * marketplace's own confirmation and the tier gate's card both still appear,
+   * which is what most scenarios here are about.
+   */
+  let permissions: PermissionConfigInput;
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'mcp-integration-dorkhome-'));
@@ -427,6 +440,11 @@ describe('marketplace-mcp integration', () => {
     // before its own confirmation flow — and one `grantPending()` decides
     // whichever of the two actually asked (spec `agent-trust` §3.2).
     initCapabilityTierGate({ approvals: tokenProvider.approvals });
+    permissions = {
+      preset: 'careful',
+      defaults: { areas: { packages: 'allowed' }, actions: { 'marketplace.uninstall': 'ask' } },
+    };
+    initPermissionGate({ readConfig: () => permissions });
 
     server = new McpServer({ name: 'dorkos-marketplace-test', version: '1.0.0' });
     registerMarketplaceTools(
@@ -463,6 +481,7 @@ describe('marketplace-mcp integration', () => {
 
   afterEach(async () => {
     resetCapabilityTierGate();
+    resetPermissionGate();
     vi.restoreAllMocks();
     await rm(dorkHome, { recursive: true, force: true });
     await rm(communityRoot, { recursive: true, force: true });
@@ -578,6 +597,40 @@ describe('marketplace-mcp integration', () => {
     expect(secondPayload.status).toBe('installed');
     expect(secondPayload.package.name).toBe('sentry-monitor');
     expect(installer.install).toHaveBeenCalledTimes(1);
+  });
+
+  it('install under Trusted still confirms: a package is code from strangers', async () => {
+    // ADR 261006-225605 keeps code from strangers gated. Trusted lets our own
+    // agents work without asking; it does not let a package land unseen.
+    permissions = { preset: 'trusted', defaults: { areas: {}, actions: {} } };
+    const result = await callTool(server, 'marketplace_install', {
+      name: 'sentry-monitor',
+      marketplace: 'community',
+    });
+    expect(parsePayload<{ status: string }>(result).status).toBe('requires_confirmation');
+    expect(installer.install).not.toHaveBeenCalled();
+  });
+
+  it('install under Careful asks, even with Tools & packages Allowed', async () => {
+    // The Careful default above: the area runs the call, the marketplace's own
+    // confirmation still shows which package is about to land.
+    const result = await callTool(server, 'marketplace_install', {
+      name: 'sentry-monitor',
+      marketplace: 'community',
+    });
+    expect(parsePayload<{ status: string }>(result).status).toBe('requires_confirmation');
+    expect(installer.install).not.toHaveBeenCalled();
+  });
+
+  it('uninstall under Trusted still asks a caller DorkOS cannot identify', async () => {
+    // Trusted by default is for our own agents (ADR 261006-225605). This
+    // server resolves no agent identity, so a destructive call keeps its card;
+    // an identified agent running it with no card is pinned in
+    // `mcp-tool-gate.test.ts`.
+    permissions = { preset: 'trusted', defaults: { areas: {}, actions: {} } };
+    const result = await callTool(server, 'marketplace_uninstall', { name: 'sentry-monitor' });
+    expect(parsePayload<{ status: string }>(result).status).toBe('approval_required');
+    expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 
   // ── Scenario 5 ───────────────────────────────────────────────────────────

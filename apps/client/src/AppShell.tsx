@@ -94,9 +94,7 @@ import {
   AppTabBar,
   APP_TAB_PANEL_ID,
   TabHistoryControls,
-  useAppTabsSync,
-  useAppTabShortcuts,
-  useTabHistoryShortcuts,
+  useAppTabsShell,
 } from '@/layers/features/app-tabs';
 import { CommandPaletteDialog, MessageSearchDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
@@ -112,11 +110,7 @@ import {
   useRightPanelShortcut,
   RIGHT_PANEL_GROUP_ID,
 } from '@/layers/features/right-panel';
-import {
-  useLegacyProfileLinkRedirect,
-  useProfileDockDeepLink,
-  useProfileShortcut,
-} from '@/layers/features/profile';
+import { useProfileRootLinks, useProfileShortcut } from '@/layers/features/profile';
 
 /**
  * How long a config read may hang before the shell calls the server unreachable.
@@ -279,18 +273,13 @@ export function AppShell() {
   useProfileShortcut();
   useControlCenterShortcut();
   // Mounted at the shell, not inside the panel: a link that opens the profile
-  // has to work when the profile is not already what you are looking at.
-  useLegacyProfileLinkRedirect();
-  useProfileDockDeepLink();
+  // has to work when the profile is not already what you are looking at, and a
+  // profile opened elsewhere never follows you into a chat (FB-60).
+  useProfileRootLinks();
   useRightPanelPersistence();
-  // In-window tabs (DOR-540). The sync hook is the single reconciliation point
-  // between the router's location and the tab set — every navigation, whatever
-  // started it, lands here. Both no-op outside the desktop shell, where the
-  // strip does not exist (DOR-568). Each tab's own Back/Forward keys and mouse
-  // buttons (DOR-2107) are desktop-only for the same reason.
-  useAppTabsSync();
-  useAppTabShortcuts();
-  useTabHistoryShortcuts();
+  // In-window tabs (DOR-540): location sync, the tab keys, Recently closed and
+  // restored-tab tidying. All no-op outside the desktop shell (DOR-568).
+  useAppTabsShell();
   useElectronNavigate();
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.

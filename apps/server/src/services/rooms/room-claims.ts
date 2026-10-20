@@ -366,7 +366,7 @@ export interface TriggerTarget {
    * turn must be held to the strictest of them, not to whoever wrote last.
    * Absent for a turn that answers one message, which is decided on that.
    */
-  answers?: readonly Pick<RoomEntry, 'id' | 'authorId'>[];
+  answers?: readonly (Pick<RoomEntry, 'id' | 'authorId'> & { sessionId?: string | null })[];
 }
 
 /**

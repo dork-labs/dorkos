@@ -53,12 +53,15 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
 import roomFileRoutes from './room-files.js';
 import roomCanvasRoutes from './room-canvas.js';
 import roomFollowRoutes from './room-follow.js';
+import roomReseatRoutes from './room-reseat.js';
 import { parseOrRefuse, roomRoute } from './room-route.js';
 
 const router = new Hono<ApiEnv>();
@@ -340,12 +343,17 @@ router.post('/:id/entries', (c) => {
   const body = parseOrRefuse(c, PostToRoomRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/entries', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
+    );
     return c.json(accepted(entry), 202);
   });
 });
@@ -495,13 +503,18 @@ router.post('/:id/threads', (c) => {
   const body = parseOrRefuse(c, PostThreadReplyRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/threads', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      replyTo: body.rootEntryId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        replyTo: body.rootEntryId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
+    );
     return c.json(accepted(entry), 202);
   });
 });
@@ -596,5 +609,6 @@ router.route('/', roomAttachmentRoutes);
 router.route('/', roomFileRoutes);
 router.route('/:id/canvas', roomCanvasRoutes);
 router.route('/:id/follow', roomFollowRoutes);
+router.route('/:id/members/:authorId', roomReseatRoutes);
 
 export default router;

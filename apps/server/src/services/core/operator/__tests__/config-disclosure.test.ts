@@ -92,7 +92,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
   const base = UserConfigSchema.parse({ version: 1 }) as unknown as Record<string, unknown>;
   return {
     ...base,
-    server: { port: 4242, cwd: '/Users/me/code', boundary: '/Users/me', open: true },
+    server: {
+      port: 4242,
+      cwd: '/Users/me/code',
+      boundary: '/Users/me',
+      open: true,
+      lanAccess: false,
+    },
     ui: {
       theme: 'dark',
       dismissedUpgradeVersions: ['0.55.0'],
@@ -149,8 +155,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
           hide: { agents: ['01OTHER'], rooms: ['01JHIDDEN'], pages: ['tasks'] },
         },
       ],
-      fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
-      fullPowerChoice: 'full',
+      trustNoticeSeenAt: '2026-10-07T11:15:00.000Z',
       communityNavigation: {
         version: 1,
         owners: [
@@ -231,7 +236,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         defaultAccount: '/Users/me/.claude2',
         accounts: [
           { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: '#12ab9f' },
-          { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
+          {
+            id: 'claude2',
+            path: '/Users/me/.claude2',
+            label: null,
+            color: null,
+            noAutoMove: true,
+          },
         ],
         defaultAccountColor: '#0d9488',
         dismissedFolders: ['/Users/me/.claude-old'],
@@ -239,6 +250,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         defaultEffort: 'high',
         defaultTrustStop: null,
         persistentSession: true,
+        maxWarmProcesses: 16,
       },
       doe: {
         enabled: true,
@@ -345,6 +357,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      // Which rooms a mini app may reply in as the person (DOR-3017).
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'mcp.apiKey',

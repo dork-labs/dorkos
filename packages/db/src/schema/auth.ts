@@ -54,9 +54,18 @@ export const session = sqliteTable(
       .notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    // The way the sign-in that made this session came in: 'local', 'wifi',
+    // 'tunnel', 'managed', 'network' or 'hub'. A session works only on that
+    // route (DOR-2969). Null for a session made before it was recorded, which
+    // works only on this computer.
+    route: text('route'),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    // A sign-in on a shared or public computer (A4, DOR-2936): the cookie ends
+    // with the browser, the session cannot outlive a working day, and the app
+    // signs it out when it sits idle.
+    publicComputer: integer('public_computer', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [index('session_userId_idx').on(table.userId)]
 );

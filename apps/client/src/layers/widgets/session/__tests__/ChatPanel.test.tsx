@@ -8,6 +8,12 @@ import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model'
 const mockUseIsMobile = vi.fn(() => true);
 // Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
 // bare render has no global stream behind it.
+// An ordinary chat: the Direct chat log (rule S12) is read for real in its own tests.
+vi.mock('../model/use-direct-chat-notes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../model/use-direct-chat-notes')>()),
+  useDirectChatLog: () => undefined,
+}));
+
 vi.mock('@/layers/entities/attention', () => ({
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
 }));
@@ -129,7 +135,11 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
-    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), getQueryData: vi.fn() })),
+    useQueryClient: vi.fn(() => ({
+      invalidateQueries: vi.fn(),
+      getQueryData: vi.fn(),
+      getQueriesData: vi.fn(() => []),
+    })),
     // The notification-preferences hook (the turn-finished cue, and the
     // permission card near the composer) writes through a mutation. The real
     // one reaches for a provider this file deliberately does not stand up.

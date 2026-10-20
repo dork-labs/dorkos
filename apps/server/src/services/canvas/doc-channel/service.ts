@@ -1,5 +1,9 @@
+import { readPreparedPhysicalDocument } from './readers/prepared-readers.js';
+import { docDocumentGeneration } from './identity/incarnation.js';
 /** Current-authorized document channel reads and durable event acceptance. */
 import {
+  CanvasDocIncarnationSchema,
+  type CanvasDocIncarnation,
   PageEventSchema,
   CanvasChannelGrantSchema,
   CanvasChannelReplayResponseSchema,
@@ -165,10 +169,21 @@ export class DocChannelService {
       approvedEventTypes: [],
       destinationLabel: 'Actions unavailable',
     };
+    let incarnation: CanvasDocIncarnation | undefined;
     const snapshot = replayDocChannel(
       this.channels,
       (tx) => {
         const identity = this.authorization.requireCurrent(documentId, actor, false, tx);
+        const physical = readPreparedPhysicalDocument(tx, identity.id);
+        const channel = this.channels.getChannel(identity.id, tx);
+        if (!physical || !channel) throw new DocChannelNotFoundError();
+        incarnation = CanvasDocIncarnationSchema.parse({
+          v: 1,
+          documentId: physical.id,
+          physicalOpenedAt: physical.openedAt,
+          channelCreatedAt: channel.createdAt,
+          generation: docDocumentGeneration(physical, channel),
+        });
         if (routingAvailable && this.events) {
           try {
             const routes = this.events.grants.getCurrentRoutes(documentId, undefined, actor, tx);
@@ -216,6 +231,9 @@ export class DocChannelService {
     );
     return CanvasChannelReplayResponseSchema.parse({
       ...snapshot,
+      incarnation,
+      // Every retained frame belongs to this same authenticated replay transaction's birth.
+      events: snapshot.events.map((frame) => ({ ...frame, incarnation })),
       routing,
       receipts: snapshot.receipts.map((row) => ({
         receipt: { id: row.id, status: 'recorded', docSeq: row.docSeq },

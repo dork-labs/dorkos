@@ -69,7 +69,7 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
         aria-expanded={open}
         aria-haspopup="listbox"
         className={cn(
-          'border-input ring-offset-background flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm transition-colors',
+          'border-input ring-offset-background flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-colors',
           'focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none',
           'hover:bg-accent/50'
         )}

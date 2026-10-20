@@ -15,11 +15,11 @@
  * suite covers memory BEHAVIOR; the TypeScript interface covers SHAPE (a
  * provider omitting a method fails compilation).
  *
- * **Capability-aware, never weakened.** The two gated methods branch on the
+ * **Capability-aware, never weakened.** The gated methods branch on the
  * provider's own declaration and both branches assert something real: a backend
  * with `search: false` must REFUSE `query` with the typed error, and a backend
  * with `search: true` must answer it. Neither is a skip. The probes are built as
- * a `Record<MemoryGatedCapability, …>`, so minting a third capability on the
+ * a `Record<MemoryGatedCapability, …>`, so minting another capability on the
  * port fails this file's typecheck until its refusal is asserted too — the
  * mechanism `MEMORY_GATED_CAPABILITIES` exists for.
  *
@@ -55,6 +55,8 @@ import {
   MemoryCapExceededError,
   MemoryHitsSchema,
   MemoryMatchError,
+  MemoryNoteError,
+  MemoryNoteListSchema,
   MemoryNoteShapeError,
   MemoryProviderInfoSchema,
   MemorySnapshotSchema,
@@ -191,6 +193,38 @@ export function memoryConformance(
         ).toBe(true);
         const miss = await provider.query(ref, { text: 'nothing here says this' });
         expect(miss.hits, 'a genuine miss is an empty hit list, not a refusal').toEqual([]);
+      },
+    },
+    notes: {
+      method: 'listNotes',
+      call: (provider, ref) => provider.listNotes(ref, {}),
+      assertSupported: async (provider, ref, result) => {
+        const empty = MemoryNoteListSchema.safeParse(result);
+        expect(
+          empty.success,
+          `malformed note list: ${empty.success ? '' : empty.error.message}`
+        ).toBe(true);
+        expect(empty.data!.notes, 'a scope with no notes lists none').toEqual([]);
+
+        await provider.write(ref, {
+          action: 'add',
+          note: 'release-steps',
+          description: 'How a release goes out',
+          text: OTHER_NOTE,
+        });
+        const listed = await provider.listNotes(ref, {});
+        expect(listed.status).toBe('ok');
+        expect(listed.total).toBe(1);
+        expect(listed.notes[0]).toMatchObject({
+          name: 'release-steps',
+          description: 'How a release goes out',
+        });
+        const read = await provider.readNote(ref, 'release-steps');
+        expect(read.status).toBe('present');
+        expect(read.content).toContain(OTHER_NOTE);
+        expect((await provider.readNote(ref, 'never-written')).status).toBe('absent');
+        // A note is the second level, never part of the capped memory.
+        expect(await readBack(provider, ref)).not.toContain(OTHER_NOTE);
       },
     },
     consolidate: {
@@ -449,6 +483,89 @@ export function memoryConformance(
       });
     });
 
+    // Registered as a visible skip on a backend without `notes`; the gate cases
+    // below assert its refusals instead.
+    describe.skipIf(!makeProvider().info.capabilities.notes)(
+      'notes files — the second level',
+      () => {
+        /** A provider and a fresh scope, for a backend that keeps notes. */
+        const arrangeNotes = arrange;
+
+        it('refuses to create a note without a description, and stores nothing', async () => {
+          const { provider, ref } = await arrangeNotes();
+          const write = provider.write(ref, { action: 'add', note: 'bare', text: NOTE });
+          await expect(write).rejects.toBeInstanceOf(MemoryNoteError);
+          await expect(write).rejects.toMatchObject({ kind: 'needs-description' });
+          expect((await provider.listNotes(ref, {})).total).toBe(0);
+        });
+
+        it('refuses to edit a note that does not exist', async () => {
+          const { provider, ref } = await arrangeNotes();
+          await expect(
+            provider.write(ref, { action: 'remove', note: 'ghost', oldText: NOTE })
+          ).rejects.toMatchObject({ kind: 'no-such-note' });
+        });
+
+        it('adds, replaces and forgets inside one note, leaving the others', async () => {
+          const { provider, ref } = await arrangeNotes();
+          await provider.write(ref, { action: 'add', note: 'a', description: 'A', text: NOTE });
+          await provider.write(ref, { action: 'add', note: 'a', text: OTHER_NOTE });
+          await provider.write(ref, { action: 'add', note: 'b', description: 'B', text: NOTE });
+          await provider.write(ref, {
+            action: 'replace',
+            note: 'a',
+            oldText: 'Fridays',
+            text: 'Thursdays',
+          });
+          await provider.forget(ref, { note: 'a', text: OTHER_NOTE });
+          const a = await provider.readNote(ref, 'a');
+          expect(a.content).toContain('the operator ships on Thursdays');
+          expect(a.content).not.toContain(OTHER_NOTE);
+          expect((await provider.readNote(ref, 'b')).content).toContain(NOTE);
+        });
+
+        it('lists newest first, filters by query, and pages with a cursor', async () => {
+          const { provider, ref } = await arrangeNotes();
+          for (const name of ['one', 'two', 'three']) {
+            await provider.write(ref, {
+              action: 'add',
+              note: name,
+              description: `About ${name}`,
+              text: NOTE,
+            });
+          }
+          const filtered = await provider.listNotes(ref, { query: 'about TWO' });
+          expect(filtered.notes.map((note) => note.name)).toEqual(['two']);
+          const first = await provider.listNotes(ref, { limit: 2 });
+          expect(first.total).toBe(3);
+          expect(first.notes).toHaveLength(2);
+          expect(first.nextCursor).toBeDefined();
+          const second = await provider.listNotes(ref, { limit: 2, cursor: first.nextCursor! });
+          expect(second.notes).toHaveLength(1);
+          expect(second.nextCursor).toBeUndefined();
+          const seen = [...first.notes, ...second.notes].map((note) => note.name).sort();
+          expect(seen).toEqual(['one', 'three', 'two']);
+          // Newest first: the note written last leads once it changes again.
+          await provider.write(ref, { action: 'add', note: 'one', text: OTHER_NOTE });
+          const order = (await provider.listNotes(ref, {})).notes.map((note) => note.updatedAt);
+          expect([...order].sort().reverse()).toEqual(order);
+        });
+
+        it('two refs never see each other’s notes', async () => {
+          const { provider, ref } = await arrangeNotes();
+          const other = await makeRef();
+          await provider.write(ref, {
+            action: 'add',
+            note: 'mine',
+            description: 'Mine',
+            text: NOTE,
+          });
+          expect((await provider.listNotes(other, {})).total).toBe(0);
+          expect((await provider.readNote(other, 'mine')).status).toBe('absent');
+        });
+      }
+    );
+
     describe('capability gates — required methods, typed refusals', () => {
       for (const capability of MEMORY_GATED_CAPABILITIES) {
         const probe = gatedProbes[capability];
@@ -474,6 +591,20 @@ export function memoryConformance(
           });
         });
       }
+
+      it("with 'notes' off, every note call refuses with the typed error", async () => {
+        const { provider, ref } = await arrange();
+        if (provider.info.capabilities.notes) return;
+        const calls: Array<Promise<unknown>> = [
+          provider.readNote(ref, 'any'),
+          provider.write(ref, { action: 'add', note: 'any', description: 'D', text: NOTE }),
+          provider.forget(ref, { note: 'any', text: NOTE }),
+        ];
+        for (const call of calls) {
+          await expect(call).rejects.toBeInstanceOf(MemoryUnsupportedError);
+          await expect(call).rejects.toMatchObject({ capability: 'notes' });
+        }
+      });
 
       it('a refusal from an off capability changes nothing', async () => {
         const { provider, ref } = await arrange();

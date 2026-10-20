@@ -19,6 +19,10 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../core/agent-identity/__tests__/agent-home-fixture.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -505,6 +509,29 @@ describe('a turn of its own that fails outside a beat', () => {
         vi.advanceTimersByTime(60_000);
       };
       fail('sess-bridged');
+      expect(woken).toEqual([]);
+      // DOR-3036: a teammate-marked hop refused before it ran (a Codex chat, say) is a marked
+      // turn's failure, never the agent's own to chase.
+      const codex = recordTurnLevels(
+        {
+          type: 'codex',
+          getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+          async *sendMessage() {
+            yield { type: 'done', data: {} } as StreamEvent;
+          },
+        } as unknown as AgentRuntime,
+        () => null
+      );
+      const marked = codex.sendMessage('sess-teammate-hop', 'hi', {
+        permissionCeiling: {
+          asks: 'always',
+          reach: 'read',
+          outsider: true,
+          teammate: [{ roomId: 'space', authorId: 'priya' }],
+        },
+      });
+      await expect(marked.next()).rejects.toThrow();
+      fail('sess-teammate-hop');
       expect(woken).toEqual([]);
       fail('sess-own');
       expect(woken).toEqual([ACME_AGENT_ID]);

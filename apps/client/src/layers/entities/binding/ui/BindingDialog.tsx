@@ -41,6 +41,7 @@ import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useConfig } from '@/layers/entities/config';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import { trustPosture } from '@dorkos/shared/permissions';
 import { BindingAdvancedSection, BINDING_RUNTIME } from './BindingAdvancedSection';
 import {
   buildPreviewSentence,
@@ -120,7 +121,7 @@ export function BindingDialog({
   // A NEW binding opens from the operator's own power level (spec
   // `full-power-defaults`, D6): its dial starts at the operator's configured
   // stop mapped to the binding runtime, and "agent can initiate" is pre-selected
-  // when the operator chose full power. Both are FORM pre-selections only — the
+  // on a Trusted install (`trustPosture`). Both are FORM pre-selections only — the
   // wire defaults (`'default'` mode, `canInitiate: false`) are untouched, so an
   // edited binding keeps its own stored values and nothing changes on the API.
   const { data: config } = useConfig();
@@ -140,7 +141,8 @@ export function BindingDialog({
               operatorStopForRuntime(config?.executionDefaults, BINDING_RUNTIME),
               bindingCaps?.permissionModes.values ?? []
             ),
-            defaultCanInitiate: config?.ui?.fullPowerChoice === 'full',
+            defaultCanInitiate:
+              config != null && trustPosture(config.permissions?.preset) === 'trusted',
           }
     )
   );

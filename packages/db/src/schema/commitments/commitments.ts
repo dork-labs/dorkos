@@ -43,6 +43,12 @@ export const commitments = sqliteTable(
     closedAt: text('closed_at'),
     /** A short note on how it ended or why it moved, or NULL. */
     note: text('note'),
+    /**
+     * The turn marks the promise was made under (DOR-3036, `specs/turn-marks`): JSON
+     * `{ outsider?: true, teammate?: [{ roomId, authorId }] }`, or NULL for an unmarked turn. The
+     * beat its due date wakes carries them on, since it reads the promise's words.
+     */
+    originMarks: text('origin_marks'),
   },
   (table) => [
     index('commitments_agent_state_idx').on(table.agentId, table.state),

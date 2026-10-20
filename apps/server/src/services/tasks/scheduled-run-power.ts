@@ -37,7 +37,7 @@
  * @module services/tasks/scheduled-run-power
  */
 import type { PermissionMode } from '@dorkos/shared/types';
-import type { PermissionStop, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { resolveUnattendedPermissionMode } from '../session/resolution/resolve-session-defaults.js';
@@ -103,19 +103,19 @@ export function capabilitiesForTaskRuntime(
  * @param opts.runtimes - The `runtimes` config section; defaults to the stored
  *   one, with the same pre-boot tolerance {@link resolveUnattendedDefaultStop}
  *   documents.
- * @param opts.agent - The task's agent, for its own Files & commands stop,
- *   which beats the server's (spec `agent-permissions` D16).
+ *
+ * An agent's own Files & commands stop is never read here (DOR-3107): a
+ * schedule runs at its own saved mode, so raising an agent to Full autonomy
+ * leaves its schedules where they were.
  * @returns The resolved mode, never `undefined`.
  */
 export function resolveScheduledRunPermissionMode(opts: {
   capabilities: RuntimeCapabilities | undefined;
   runtimes?: UserConfig['runtimes'];
-  agent?: { filesAndCommands?: PermissionStop };
 }): PermissionMode {
   const mode = resolveUnattendedPermissionMode({
     capabilities: opts.capabilities,
     ...(opts.runtimes !== undefined ? { runtimes: opts.runtimes } : {}),
-    ...(opts.agent ? { agent: opts.agent } : {}),
   });
   // The cast is the wire's legacy narrowing, not a claim about this id — the
   // same one `resolveTrustMode` documents: `PermissionMode` is a closed enum of

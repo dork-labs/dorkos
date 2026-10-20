@@ -21,6 +21,7 @@ import {
   Mail,
   MessageCircleQuestion,
   MessageSquare,
+  MonitorSmartphone,
   Puzzle,
   RotateCcw,
   ShieldQuestion,
@@ -43,6 +44,9 @@ const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
 /** The Settings tab that lists every extension, where one can be turned on (DOR-2517). */
 const EXTENSIONS_SETTINGS_TAB = 'extensions';
+
+/** The Settings tab that holds Chat from the web, where it can be paused (DOR-2946). */
+const ACCOUNT_SETTINGS_TAB = 'account';
 
 /**
  * Where a notification row navigates.
@@ -70,6 +74,8 @@ export interface NotificationLink {
 export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'ask.pending': ShieldQuestion,
   'schedule.parked': Clock,
+  // The same mark: it is the same thing, a schedule, live this time.
+  'schedule.armed_by_agent': Clock,
   // Reserved: a capability approval keeps its history in the `approvals` table,
   // so no row of this kind is ever stored today (DOR-1570). The entry exists
   // because this record is exhaustive over `NotificationKind` — which is what
@@ -96,7 +102,14 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'extension.decision': MessageCircleQuestion,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
+  'community.teammate-limit': CircleAlert,
+  'community.teammate-limits-reset': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
+  // An agent's high-risk action in a connected app, waiting or done.
+  'connector.destructive_pending': Hourglass,
+  'connector.destructive_executed': CheckCircle2,
+  // A browser this computer had never seen used chat from the web (DOR-2946).
+  'web.new_device': MonitorSmartphone,
 };
 
 /** How loudly a notification draws. */
@@ -302,15 +315,33 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
+  if (kind === 'web.new_device') {
+    // Where the owner pauses chat from the web if it wasn't them.
+    return { ...appRoutes.home(), search: { settings: ACCOUNT_SETTINGS_TAB } };
+  }
   if (kind === 'heartbeat.credits-offer') {
     // The offer's card is on every agent's Heartbeat page; the team is where
     // those agents are.
     return { ...appRoutes.team(), search: {} };
   }
-  if (kind === 'community.owner-replacement') {
+  if (kind === 'community.teammate-limits-reset') {
+    // Not about one space: the channels page, where each space's agents panel sets its limit.
+    return { ...appRoutes.channels(), search: {} };
+  }
+  if (kind === 'community.owner-replacement' || kind === 'community.teammate-limit') {
     // The subject is the owner's connection ref: the community's own page, where the banner
-    // says what is happening and opens the community to keep ownership.
+    // says what is happening and opens the community to keep ownership, and where the
+    // agents panel sets teammates' monthly limit (DOR-2956).
     return { ...appRoutes.channels(), search: { community: subject.id } };
+  }
+  if (kind === 'connector.destructive_pending' || kind === 'connector.destructive_executed') {
+    // A held action still waiting opens the Inbox on its own row, where Cancel
+    // is: the same place its phone push and desktop banner open. Once it ended,
+    // the chat the agent asked from.
+    if (notification.actions?.some((action) => action.id === 'cancel')) {
+      return { ...appRoutes.home(), search: { inbox: subject.id } };
+    }
+    return sessionId === undefined ? null : toSession({ session: sessionId });
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.

@@ -13,6 +13,7 @@
  * @module services/heartbeats/beat-launch
  */
 import type { MeshCore } from '@dorkos/mesh';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   dispatchSessionMessage,
@@ -39,8 +40,10 @@ export interface BeatLaunchRequest {
   runtime: string;
   /** The beat prompt. */
   content: string;
-  /** Called once when the turn ends. */
-  onSettled: (outcome: 'ok' | 'failed') => void;
+  /** The ceiling the beat carries when it reads words written under a turn mark (DOR-3036). */
+  permissionCeiling?: TurnPermissionCeiling;
+  /** Called once when the turn ends; `refusal` when it never reached the agent. */
+  onSettled: (outcome: 'ok' | 'failed', refusal?: string) => void;
 }
 
 /** The seams the runner reaches a chat through. */
@@ -84,6 +87,9 @@ export function createBeatTurnLauncher(meshCore: () => MeshCore | undefined): Be
         // A beat chat is in no room.
         roomSessionPlace: undefined,
         unattended: true,
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         countsTowardLaunchCap: true,
         onSettled: request.onSettled,
       });

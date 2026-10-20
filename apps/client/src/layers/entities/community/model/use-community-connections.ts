@@ -3,6 +3,7 @@ import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { useQuery } from '@tanstack/react-query';
 import type { ConfirmedCommunityAuthority } from '@/layers/shared/lib';
 import {
+  QUERY_TIMING,
   getCommunityConnectionGeneration,
   isCommunityAuthorityCurrent,
   subscribeCommunityConnectionGenerations,
@@ -83,6 +84,14 @@ export const communityKeys = {
     [...communityKeys.room(authority, ref, roomId), 'members'] as const,
   agents: (authority: CommunityContentAuthority, ref: string) =>
     [...communityKeys.content(authority, ref), 'agents'] as const,
+  dms: (authority: CommunityContentAuthority, ref: string) =>
+    [...communityKeys.content(authority, ref), 'dms'] as const,
+  agentDmEntries: (
+    authority: CommunityContentAuthority,
+    ref: string,
+    roomId: string,
+    localAgentId: string
+  ) => [...communityKeys.room(authority, ref, roomId), 'as-agent', localAgentId] as const,
 };
 
 /** Complete a protected read only while its captured owner generation remains current. */
@@ -165,6 +174,8 @@ export function useCommunityConnections(enabled = true) {
       : [...communityKeys.all, 'owner', 'unresolved', 'connections'],
     queryFn: () => withinCommunityAuthority(authority!, () => transport.listCommunityConnections()),
     enabled: enabled && authority !== null,
-    refetchInterval: 30_000,
+    // `community_connections_changed` (`useCommunityConnectionsSync`) re-reads
+    // this the moment it moves; the timer is only the safety net (DOR-2909).
+    refetchInterval: QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS,
   });
 }

@@ -24,8 +24,9 @@ export const revalidate = 3600;
 /**
  * One static page per controlled category. Prerendering the full closed
  * vocabulary (16 slugs) satisfies the Shapes program's "≥6 category SEO
- * routes" criterion and keeps every category crawlable even before the
- * registry backfill assigns packages to it.
+ * routes" criterion and keeps every category reachable even before the
+ * registry backfill assigns packages to it. The sitemap lists only the
+ * categories that hold packages (see `marketplaceSitemapEntries`).
  */
 export function generateStaticParams() {
   return MARKETPLACE_CATEGORIES.map((category) => ({ category }));

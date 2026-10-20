@@ -43,7 +43,7 @@ export default defineConfig([
       // existed. What every entry IS, is runtime or machine-local output —
       // written by a tool, not authored here.
       //
-      // The three `.dork/` entries are deliberately the subdirectories rather
+      // The named `.dork/` entries are deliberately the subdirectories rather
       // than `.dork/**`. Nothing lintable is tracked under `.dork/` today, and
       // naming the runtime dirs means that if something lintable ever is, it
       // gets linted instead of silently skipped.
@@ -52,6 +52,7 @@ export default defineConfig([
       '.dork/plugins/**',
       '.dork/flow/**',
       '.dork/visual-companion/**',
+      '.dork/local-browser/**',
       '.turbo/**',
       '.temp/**',
       '.worktrees/**',
@@ -77,14 +78,30 @@ export default defineConfig([
     languageOptions: { globals: globals.node },
   },
 
-  // ...except this one file, which runs in a page, not in Node. It is the
-  // client half of the visual-companion skill's preview server: it talks to
-  // `window`, `document` and `WebSocket` and never sees a `process`. Scoped to
-  // the single file rather than to the skill directory, so its Node-side
-  // sibling (`server.cjs`) keeps the Node environment above.
+  // ...except the files that run in a page, not in Node. They are the client
+  // half of the visual-companion skill's preview server (`boot.js` sets the
+  // theme before first paint, `helper.js` is the frame, `review.js` the review
+  // layer, `director.js` the prototype kit) and the example prototype's
+  // scripts: they talk to `window`, `document` and `WebSocket` and never see a
+  // `process`. Scoped to the files rather than to the skill directory, so the
+  // Node-side siblings (`server.cjs`, `vc.cjs`) keep the Node environment above.
   {
-    files: ['.agents/skills/visual-companion/scripts/helper.js'],
+    files: [
+      '.agents/skills/visual-companion/scripts/{boot,helper,review,director}.js',
+      '.agents/skills/visual-companion/examples/prototype/src/*.js',
+    ],
     languageOptions: { globals: globals.browser },
+  },
+
+  // The skill's tests (and its note cropper) are Node programs that hand
+  // callbacks to Playwright's `page.evaluate`, which run in the page. One file
+  // holds both, so it gets both environments.
+  {
+    files: [
+      '.agents/skills/visual-companion/tests/*.cjs',
+      '.agents/skills/visual-companion/scripts/crop.cjs',
+    ],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
   // `require()` is the only import form a .cjs file has. The shared base config

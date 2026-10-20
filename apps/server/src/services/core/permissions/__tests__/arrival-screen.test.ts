@@ -171,6 +171,7 @@ describe('narrowingReader', () => {
     const read = vi.fn(async () => ({ areas: { rooms: 'allowed' as const } }));
     const reader = narrowingReader(read, {
       arrivals: { isPending: () => false } as never,
+      personSet: { get: () => undefined },
       agentAt: () => undefined,
       context: () => {
         throw new Error('not needed');

@@ -1,0 +1,573 @@
+import { Hono, type Context, type Next } from 'hono';
+import { randomUUID } from 'node:crypto';
+import { hashPassword } from 'better-auth/crypto';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import { setCookie } from 'hono/cookie';
+import type { Pool } from 'pg';
+import {
+  CommunityWireBootstrapCompleteRequestSchema,
+  CommunityWireBootstrapCompleteResponseSchema,
+  CommunityWireBootstrapPreflightRequestSchema,
+  CommunityWireBootstrapPreflightResponseSchema,
+} from '@dorkos/shared/community-wire';
+import type { CommunityConfig } from './config.js';
+import { createCommunityAuth } from './auth.js';
+import { bootstrapGrant, transaction } from './data.js';
+import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
+import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
+import { securityHeaders } from './headers/security-headers.js';
+import { registerUserContentRoutes } from './user-content/routes.js';
+import { mintHandle } from './handles.js';
+import { registerChannelRoutes } from './routes/community/channels.js';
+import { registerEntryRoutes } from './routes/community/entries.js';
+import { registerEventRoutes } from './routes/community/events.js';
+import type { LiveHub } from './live/hub.js';
+import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
+import { registerMonitoringRoutes } from './live/monitoring.js';
+import { registerInviteRoutes } from './routes/community/invites.js';
+import { registerMemberRoutes } from './routes/community/members.js';
+import { registerModerationRoutes } from './routes/community/moderation/register.js';
+import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';
+import { registerPairingRoutes } from './routes/community/pairings.js';
+import { registerRedactionRoutes } from './routes/community/redactions.js';
+import { registerRemovalRoutes } from './routes/community/removals.js';
+import { registerAgentRoutes } from './routes/community/agents/enrollment.js';
+import { registerAgentAvailabilityRoutes } from './routes/community/agents/availability.js';
+import { registerSpaceInfoRoutes } from './routes/community/space-info.js';
+import { registerAttachmentRoutes } from './routes/community/attachments.js';
+import { registerExportRoutes } from './routes/community/exports.js';
+import { registerHostRoutes } from './routes/host/host.js';
+import { registerMembershipRoutes } from './routes/account/memberships.js';
+import { registerHostLimitRoutes } from './routes/host/host-limits.js';
+import { registerHostLegalHoldRoutes } from './routes/host/host-legal-hold.js';
+import { registerHostAccountClosureRoutes } from './routes/host/host-account-closures.js';
+import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
+import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
+import { registerShortNameRoutes } from './routes/host/short-names.js';
+import { callerAddress } from './caller-address.js';
+import { createAttemptLimiter } from './limits/attempt-limiter.js';
+import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
+import { registerHostKeyRoutes } from './routes/host/host-keys.js';
+import { registerHostTakedownRoutes } from './routes/host/host-takedowns.js';
+import { registerHostOwnerReplacementRoutes } from './routes/host/host-owner-replacements.js';
+import { registerOwnerReplacementLinkRoutes } from './routes/account/owner-replacements.js';
+import { registerOwnerReplacementRoutes } from './routes/community/owner-replacement.js';
+import type { NoticeComposers } from './mail/worker.js';
+import type { NoticeKind } from './mail/outbox.js';
+import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
+import { registerHostLinkRoutes } from './routes/host/host-links.js';
+import { registerAuthOptionsRoute } from './sign-in/auth-options.js';
+import {
+  forgetSignUpConfirmations,
+  registerSignUpConfirmationRoutes,
+  requireSignUpConfirmations,
+} from './sign-up/confirmations.js';
+import { registerImportRoutes } from './routes/host/imports.js';
+import { UploadSlots } from './imports/upload.js';
+import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
+import { createHostAuthority } from './host/authority.js';
+import { registerAdministrationRoutes } from './routes/community/administration.js';
+import {
+  registerAccountErasureRoutes,
+  registerOwnerErasureRoutes,
+} from './routes/account/erasures.js';
+import { createBlobStore, type BlobStore } from './storage/index.js';
+import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
+import { registerCommunityTestControlRoutes } from './routes/test-control.js';
+import { resolveCommunityContext } from './tenant-context.js';
+import { createAccountPasswordCheck, createPasswordConfirmation } from './password-confirmation.js';
+import {
+  accountHasPassword,
+  registerAccountPasswordRoutes,
+} from './routes/account/account-password.js';
+import { registerSignInLinkRoutes } from './routes/account/sign-in-link.js';
+import { withRequestStart } from './sign-in/request-start.js';
+import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
+import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
+import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
+import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
+import { createApiRequestGuard } from './limits/api-request-guard.js';
+
+/** Assemble the injectable HTTP app without reading environment variables. */
+export function createCommunityApp({
+  config,
+  pool,
+  hooks,
+  blobStore = createBlobStore(config),
+  noticeComposers = {},
+  live,
+}: {
+  config: CommunityConfig;
+  pool: Pool;
+  /**
+   * Live-stream fan-out. `createSpaceServer` passes one it started (pinned open, self-tested) and stops it
+   * on shutdown. Without one the app makes its own, which listens only while a stream is open
+   * and stops when `pool` ends (see {@link stopLiveWithPool}).
+   */
+  live?: LiveHub;
+  /**
+   * The mail composers the running mail worker has, by notice kind. A feature that must reach a
+   * person by mail refuses to start while its notice cannot be composed, so a queued notice is
+   * never one the worker would fail as unsupported. `createSpaceServer` passes the worker's own set.
+   */
+  noticeComposers?: NoticeComposers;
+  hooks?: {
+    afterSnapshotWatermark?: () => Promise<void>;
+    afterEntryAttachmentLookup?: () => Promise<void>;
+    invitePreviewPeer?: (c: Parameters<typeof getConnInfo>[0]) => string;
+    beforeBootstrapChannelCreate?: () => Promise<void>;
+    /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
+    now?: () => Date;
+    /** How long a JSON request body may take to arrive; tests shorten it. */
+    jsonBodyMs?: number;
+    /** How long a file or export upload may go without a byte; tests shorten it. */
+    uploadIdleMs?: number;
+    /** Free bytes in the temporary folder, as an upload's space check sees them. */
+    freeTempBytes?: () => Promise<number>;
+    /** Runs before `complete` hashes an import's parts; tests pause there. */
+    beforeCompleteHash?: (importId: string) => Promise<void>;
+    /** Runs inside a takedown after the community row is locked, before the actor recheck. */
+    afterTakedownCommunityLock?: () => Promise<void>;
+    /** Runs inside a takedown after its target is read for evidence, before it is removed. */
+    afterTakedownSnapshot?: () => Promise<void>;
+    /** Runs inside a takedown reversal after the community and takedown are locked. */
+    afterTakedownReverseLock?: () => Promise<void>;
+    /** Runs after a sign-in link's password checks out, before the link transaction. */
+    afterSignInLinkPasswordCheck?: () => Promise<void>;
+    /** Runs after a sign-in link commits, before its session is made. */
+    afterSignInLinked?: () => Promise<void>;
+    /** Runs as Better Auth is about to insert a session, after its checks passed. */
+    beforeSessionInsert?: (userId: string) => Promise<void>;
+  };
+  blobStore?: BlobStore;
+}) {
+  if (!live) {
+    live = createLiveHub(config);
+    stopLiveWithPool(live, pool);
+  }
+  // Every response, refusals and pages included, carries the security headers (DOR-2957).
+  const app = new Hono().use('*', securityHeaders()).onError(handleError);
+  // A notice is queued only where mail is set up and the worker can compose its kind.
+  const canSendNotice = (kind: NoticeKind) =>
+    config.mail !== null && noticeComposers[kind] !== undefined;
+  // Mailed reset, sign-in and confirmation links exist exactly when mail is on and the worker
+  // can compose all three; there is no separate switch.
+  const linksOn = emailLinksOn(config, noticeComposers);
+  const auth = createCommunityAuth(pool, config, {
+    now: hooks?.now,
+    canSendNotice,
+    emailLinksOn: linksOn,
+    beforeSessionInsert: hooks?.beforeSessionInsert,
+  });
+  const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
+  // Before every other route: the user-content address answers only its signed links (DOR-2957).
+  registerUserContentRoutes(app, { pool, config, blobStore, now: hooks?.now });
+  const { limitAttempts } = createAttemptLimiter();
+  // Password guesses keep their own map, keyed by account: a flood of made-up callers on the
+  // shared one above evicts its oldest keys, and must never evict a spent guess budget.
+  const passwordGuesses = createAttemptLimiter();
+  // Mailed links keep their own limits, apart from the shared map above (email-links/limiter.ts).
+  const emailLinkLimiter = new EmailLinkLimiter();
+  // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
+  const peer = (c: Parameters<typeof getConnInfo>[0]) =>
+    callerAddress(c, config.trustedProxyHeader);
+  // Every server-side password check spends from this one per-account budget (see its TSDoc).
+  const confirmPassword = createPasswordConfirmation({
+    auth,
+    ceiling: config.limits.reauthAttemptsPerMinute,
+    spend: passwordGuesses.limitAttempts,
+    refund: passwordGuesses.refundAttempt,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
+  });
+  const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
+  app.use('/api/*', createApiRequestGuard(config, jsonBodyMs));
+  app.use('/api/auth/sign-up/*', async (c, next) => {
+    limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
+    await next();
+  });
+  // Every mutating request records the database snapshot it began with, so a session or account
+  // row it writes after a clean-out of the account committed is refused (request-start.ts).
+  // Better Auth's own handler records it for its GET callbacks too (auth.ts).
+  const recordStart = async (c: Context, next: Next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return next();
+    await withRequestStart(pool, next);
+  };
+  for (const path of ['/api/v1/*', '/api/auth/*']) app.use(path, recordStart);
+  // Using a mailed link spends from a per-caller budget: tokens are 256-bit, so this caps load,
+  // not guessing.
+  const limitEmailLinkUse = (c: Context) =>
+    emailLinkLimiter.spend(`email-link-use:${callerLimitKey(peer(c))}`, {
+      perMinute: config.limits.emailLinkRequestsPerMinute * EMAIL_LINK_CAPS.useMultiplier,
+    });
+  app.use('/api/auth/email-link/*', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  // Better Auth's own reset link (`GET /reset-password/:token`) is off. `disabledPaths` matches
+  // exact paths only, so the token path is refused here, before Better Auth sees it.
+  app.all('/api/auth/reset-password/*', () => {
+    throw new ApiError(404, 'NOT_FOUND', 'Not found.');
+  });
+  app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
+
+  const now = hooks?.now ?? (() => new Date());
+  app.post('/api/v1/bootstrap/preflight', async (c) => {
+    limitAttempts(`bootstrap:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute);
+    const body = await readJson(c, CommunityWireBootstrapPreflightRequestSchema);
+    if (!equalSecret(body.secret, config.bootstrapSecret)) {
+      throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
+    }
+    const token = randomToken();
+    const expiry = new Date(Date.now() + 10 * 60_000);
+    await transaction(pool, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(77281503)');
+      const owner = await client.query(
+        // member-kind: owner-role
+        "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
+      );
+      const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
+      const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      // member-kind: whole-space
+      const members = await client.query('SELECT 1 FROM members LIMIT 1');
+      const users = await client.query('SELECT 1 FROM "user" LIMIT 1');
+      if (
+        owner.rowCount ||
+        communities.rowCount ||
+        operators.rowCount ||
+        members.rowCount ||
+        users.rowCount
+      ) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a server that already contains space state.'
+        );
+      }
+      await client.query(
+        `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+         VALUES($1,'first_install',NULL,$2)`,
+        [hashSecret(token), expiry]
+      );
+    });
+    setCookie(c, 'community_bootstrap', signValue(token, config.authSecret), {
+      httpOnly: true,
+      sameSite: 'Lax',
+      secure: config.publicUrl.startsWith('https:'),
+      path: '/',
+      maxAge: 600,
+    });
+    return json(c, CommunityWireBootstrapPreflightResponseSchema, {
+      granted: true,
+      expiresAt: expiry.toISOString(),
+    });
+  });
+
+  app.post('/api/v1/bootstrap/complete', async (c) => {
+    limitAttempts(`bootstrap:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute);
+    const body = await readJson(c, CommunityWireBootstrapCompleteRequestSchema);
+    if (!equalSecret(body.secret, config.bootstrapSecret)) {
+      throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
+    }
+    // The first owner creates an account here too, so the sign-up rules ask them the same thing.
+    requireSignUpConfirmations(c.req.raw.headers, config, now());
+    const passwordHash = await hashPassword(body.password);
+    const email = body.email.toLowerCase();
+    const result = await transaction(pool, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(77281503)');
+      const grantId = await bootstrapGrant(c, client, config);
+      const occupied = await client.query(
+        // member-kind: whole-space
+        `SELECT
+           EXISTS(SELECT 1 FROM "user") OR
+           EXISTS(SELECT 1 FROM communities) OR
+           EXISTS(SELECT 1 FROM host_operators) OR
+           EXISTS(SELECT 1 FROM members) AS occupied`
+      );
+      if (occupied.rows[0].occupied) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'First installation is unavailable on a server that already contains space state.'
+        );
+      }
+
+      const userId = randomUUID();
+      await client.query(
+        `INSERT INTO "user"(id,name,email,"emailVerified") VALUES($1,$2,$3,false)`,
+        [userId, body.accountName, email]
+      );
+      await client.query(
+        `INSERT INTO account(id,"accountId","providerId","userId",password)
+         VALUES($1,$2,'credential',$2,$3)`,
+        [randomUUID(), userId, passwordHash]
+      );
+      await client.query('INSERT INTO host_operators(user_id) VALUES($1)', [userId]);
+      const community = await client.query<{
+        id: string;
+        name: string;
+        description: null;
+        created_at: Date;
+      }>(
+        "INSERT INTO communities(name,lifecycle) VALUES($1,'pending_owner') RETURNING id,name,description,created_at",
+        [body.communityName]
+      );
+      const communityId = community.rows[0].id;
+      const handle = await mintHandle(client, communityId, body.accountName);
+      const member = await client.query<{ id: string }>(
+        // member-kind: person-write
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,$3,$4,'owner') RETURNING id`,
+        [communityId, userId, body.accountName, handle]
+      );
+      await client.query(
+        'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+        [communityId, handle, member.rows[0].id]
+      );
+      await hooks?.beforeBootstrapChannelCreate?.();
+      const channel = await client.query<{ id: string }>(
+        `INSERT INTO channels(community_id,name,visibility)
+         VALUES($1,$2,'public') RETURNING id`,
+        [communityId, body.channelName]
+      );
+      await client.query(
+        `INSERT INTO channel_members(community_id,channel_id,member_id)
+         VALUES($1,$2,$3)`,
+        [communityId, channel.rows[0].id, member.rows[0].id]
+      );
+      await client.query(
+        `UPDATE communities SET lifecycle='active',activated_at=now(),
+           lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+        [communityId]
+      );
+      await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [grantId]);
+      // The first owner's email is not confirmed yet either; mail them a link, as any sign-up.
+      if (linksOn)
+        await queueEmailConfirmation(client, { userId, email, authSecret: config.authSecret });
+      return {
+        community: {
+          id: communityId,
+          name: community.rows[0].name,
+          description: community.rows[0].description,
+          createdAt: community.rows[0].created_at.toISOString(),
+        },
+        memberId: member.rows[0].id,
+        channelId: channel.rows[0].id,
+      };
+    });
+    c.header('Cache-Control', 'no-store');
+    forgetSignUpConfirmations(c, config);
+    return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
+  });
+
+  const authority = createHostAuthority({
+    auth,
+    pool,
+    now,
+    limitKeyMiss: (c) =>
+      limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+  });
+  registerMonitoringRoutes(app, { pool, hub: live, authority, databaseUrl: config.databaseUrl });
+  registerHostLinkRoutes(app, { config });
+  registerSignUpConfirmationRoutes(app, { config, now });
+  const hostApi = new Hono();
+  registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
+  registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
+  registerMembershipRoutes(hostApi, { pool, auth });
+  registerHostLimitRoutes(hostApi, { pool, config, authority, now });
+  registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
+  registerHostLegalHoldRoutes(hostApi, { pool, authority, now });
+  registerHostErasureJournalRoutes(hostApi, { pool, config, authority });
+  registerShortNameRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    limitLookup: (c) => limitAttempts(`name-lookup:${peer(c)}`, config.limits.nameLookupsPerMinute),
+  });
+  registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
+  registerImportRoutes(hostApi, {
+    pool,
+    config,
+    blobStore,
+    authority,
+    now,
+    limitTokenMiss: (c) =>
+      limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+    uploadSlots: new UploadSlots(config.limits.importUploads),
+    // A refused part says when to try again: parts are many, and uploaders retry them.
+    partSlots: new UploadSlots(config.imports.partConcurrency, 5),
+    uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
+    freeTempBytes: hooks?.freeTempBytes,
+    partHooks: { beforeCompleteHash: hooks?.beforeCompleteHash },
+  });
+  registerHostTakedownRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hooks: {
+      afterCommunityLock: hooks?.afterTakedownCommunityLock,
+      afterSnapshot: hooks?.afterTakedownSnapshot,
+      afterReverseLock: hooks?.afterTakedownReverseLock,
+    },
+  });
+  registerHostOwnerReplacementRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    // Mail is set up and the worker can compose this kind of notice.
+    canSendNotice,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
+  });
+  registerOwnerReplacementLinkRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    limitAttempt: (c) =>
+      limitAttempts(`owner-replacement:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute),
+  });
+  registerHostAccountClosureRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
+  });
+  registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
+  registerAccountPasswordRoutes(hostApi, { pool, auth });
+  registerEmailLinkRequestRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    on: linksOn,
+    limiter: emailLinkLimiter,
+    peer,
+  });
+  hostApi.use('/email-links/peek', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  hostApi.use('/account/email-confirmation/confirm', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  registerEmailLinkUseRoutes(hostApi, { pool, auth, config, on: linksOn });
+  registerSignInLinkRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    checkPassword: createAccountPasswordCheck({
+      auth,
+      ceiling: config.limits.reauthAttemptsPerMinute,
+      spend: passwordGuesses.limitAttempts,
+      refund: passwordGuesses.refundAttempt,
+    }),
+    canSendNotice,
+    hooks: {
+      afterPasswordCheck: hooks?.afterSignInLinkPasswordCheck,
+      afterLinked: hooks?.afterSignInLinked,
+    },
+  });
+  app.route('/api/v1', hostApi);
+
+  const communityApi = new Hono();
+  communityApi.use('*', async (c, next) => {
+    // Host authority manages communities as containers and never reaches their content.
+    // Refuse a host API key here, before any tenant, credential, or unauthenticated route runs.
+    if (isHostApiKeyBearer(c.req.header('authorization'))) {
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Server API keys cannot reach space content.');
+    }
+    if (c.req.param('communityId')) {
+      await resolveCommunityContext(c, pool, {
+        allowPendingOwner: true,
+        allowSuspended: true,
+        allowDeletionPending: true,
+      });
+    }
+    await next();
+  });
+  registerSpaceInfoRoutes(communityApi, { pool });
+  registerAuthOptionsRoute(communityApi, { config, linksOn });
+
+  registerChannelRoutes(communityApi, { pool, auth });
+  registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
+  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate, pool);
+  registerEventRoutes(communityApi, { pool, auth, config, hub: live, hooks });
+  registerInviteRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    limitPreviewPeer: (c) => {
+      limitAttempts(
+        `invite-preview-peer:${hooks?.invitePreviewPeer?.(c) ?? peer(c)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      );
+    },
+    limitPreviewIdentity: (token) =>
+      limitAttempts(
+        `invite-preview-identity:${hashSecret(token)}`,
+        config.limits.invitePreviewAttemptsPerMinute
+      ),
+  });
+  registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
+  registerModerationRoutes(communityApi, { pool, auth, config });
+  registerOpenAdmissionRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    // A preflight needs no account, so it spends only its caller's budget: anyone could
+    // otherwise drain the host's. A join is signed in and spends both, so neither one address
+    // nor many can flood the host with joins.
+    limitPreflight: (c) =>
+      limitAttempts(`open-preflight:${peer(c)}`, config.limits.openJoinsPerMinute),
+    limitJoin: (c) => {
+      limitAttempts(`open-join:${peer(c)}`, config.limits.openJoinsPerMinute);
+      limitAttempts('open-join-host', config.limits.openJoinsPerHostPerMinute);
+    },
+  });
+  registerPairingRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    confirmPassword,
+    limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
+  });
+  registerAgentRoutes(communityApi, { pool, auth, config });
+  registerAgentAvailabilityRoutes(communityApi, { pool });
+  registerAttachmentRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    blobStore,
+    uploadIdleMs: hooks?.uploadIdleMs,
+  });
+  registerRemovalRoutes(communityApi, { pool, auth, config });
+  registerRedactionRoutes(communityApi, { pool, auth, config });
+  registerExportRoutes(communityApi, { pool, auth, config, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+    singleSignOn: config.oidc !== null,
+  });
+  registerOwnerErasureRoutes(communityApi, { pool, auth });
+  registerHistoryOriginRoute(communityApi, { pool, auth });
+  registerTakedownNoticeRoutes(communityApi, { pool, auth });
+  registerOwnerReplacementRoutes(communityApi, {
+    pool,
+    auth,
+    now,
+    objectionCooldownDays: config.ownerReplacement.objectionCooldownDays,
+  });
+  app.route('/api/v1', communityApi);
+  app.route('/api/v1/communities/:communityId', communityApi);
+  return app;
+}

@@ -3,7 +3,8 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { useMenuExtensionPages, useSlotContributions } from '@/layers/shared/model';
-import { extensionPageHref } from '@/layers/shared/lib';
+import { extensionPageHref, SETTINGS_TAB_DIRECTORY, settingsTabsFor } from '@/layers/shared/lib';
+import { useIsHub } from '@/layers/entities/config';
 // Deep, because the day boundary is off the `shared/lib` barrel on purpose —
 // see that barrel's note beside it.
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
@@ -13,12 +14,15 @@ import { roomIdsByOriginLabel, scopesOfSession } from './palette-scope';
 import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
 import { usePaletteCommandCenter, type PaletteContinueRow } from './use-palette-command-center';
 import { paletteRoomKeywords } from './palette-rooms';
-import { PALETTE_NEW_ACTION_IDS } from './palette-contributions';
+import { PALETTE_NEW_ACTION_IDS, settingsTabForAction } from './palette-contributions';
 import { useRemoteAccessPaletteItems } from './palette-remote-access';
 import { paletteSessionKeywords, type PaletteSessionItem } from './palette-sessions';
 import type { PaletteRecentEntry } from './palette-recent';
 import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+
+/** Quick actions that look through this computer's folders, which a hub has none of. */
+const HUB_HIDDEN_ACTIONS: ReadonlySet<string> = new Set(['discover', 'browse']);
 
 export interface FeatureItem {
   id: string;
@@ -144,6 +148,9 @@ function roomRanking(room: RoomSummary) {
   };
 }
 
+/** No rows, one shared value so a memo that reads it stays put. */
+const NO_ROWS: ReturnType<typeof useRemoteAccessPaletteItems> = [];
+
 /**
  * Assemble all content groups for the command palette.
  *
@@ -195,22 +202,35 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
     [menuPages]
   );
 
-  const features = useMemo(
-    () => allPaletteItems.filter((item) => item.category === 'feature'),
-    [allPaletteItems]
-  );
+  // On a hub, no row leads to a Settings tab that is not there.
+  const isHub = useIsHub();
+  const features = useMemo(() => {
+    const shown = new Set<string>(settingsTabsFor(isHub).map((tab) => tab.id));
+    const hidden = new Set<string>(
+      SETTINGS_TAB_DIRECTORY.map((tab) => tab.id).filter((id) => !shown.has(id))
+    );
+    return allPaletteItems.filter((item) => {
+      if (item.category !== 'feature') return false;
+      const tab = settingsTabForAction(item.action);
+      return tab === null || !hidden.has(tab);
+    });
+  }, [allPaletteItems, isHub]);
 
   // Remote access contributes rows that only make sense while it is in a
   // particular state, so they are derived per render rather than registered
   // once at startup — see `palette-remote-access.ts`.
-  const remoteAccessActions = useRemoteAccessPaletteItems();
+  // A hub has no remote access of its own to turn on or off.
+  const remoteAccessRows = useRemoteAccessPaletteItems();
+  const remoteAccessActions = isHub ? NO_ROWS : remoteAccessRows;
 
   const quickActions = useMemo(
     () => [
-      ...allPaletteItems.filter((item) => item.category === 'quick-action'),
+      ...allPaletteItems.filter(
+        (item) => item.category === 'quick-action' && !(isHub && HUB_HIDDEN_ACTIONS.has(item.id))
+      ),
       ...remoteAccessActions,
     ],
-    [allPaletteItems, remoteAccessActions]
+    [allPaletteItems, remoteAccessActions, isHub]
   );
 
   const newActions = useMemo(

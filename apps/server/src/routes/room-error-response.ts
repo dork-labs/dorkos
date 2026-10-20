@@ -1,3 +1,4 @@
+import { DocumentFileSaveCloseBlockedError } from '../services/canvas/doc-channel/writes/file-save-lifecycle/close-guard.js';
 /**
  * How a refusal from the rooms domain becomes an HTTP response
  * (spec `rooms`, ADR 260726-170125).
@@ -46,11 +47,16 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ROOM_ARCHIVED: 409,
   SYSTEM_ROOM: 403,
   OPERATOR_ONLY: 403,
+  PRIVATE_SPACE: 403,
   // A 403 even though the caller is the owner: the request named a room shape
   // this install does not allow, and there is no credential that would change
   // the answer. The remedy is in the message, not in who asks.
   OWNER_MUST_BE_PRESENT: 403,
   PEOPLE_ONLY: 403,
+  // Re-seat refusals: nothing is wrong with the request, the state is.
+  NO_ACCOUNT_LEFT: 409,
+  AGENT_WORKING: 409,
+  NOTHING_TO_MOVE: 409,
   // `post_to_room` is an MCP verb with no HTTP route, so this code reaches a
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.
@@ -95,6 +101,9 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
   TURN_WAS_STOPPED: 409,
+  // An MCP-only verb too. A 429: the request is well formed and would have
+  // been accepted a moment earlier, and the remedy is to say less.
+  TOO_MANY_POSTS_THIS_TURN: 429,
   // A 401 rather than a 403: the caller presented nothing this surface could
   // resolve, so a credential IS what would change the answer. It belongs to the
   // capability surfaces, where "nobody" is a real answer; the room routes reach
@@ -216,6 +225,8 @@ export function roomErrorReply(
   context: string,
   ownerAsking: () => boolean
 ): RoomErrorReply {
+  if (err instanceof DocumentFileSaveCloseBlockedError)
+    return { status: 409, body: { error: err.message, code: err.recoveryCode } };
   if (err instanceof RoomError) {
     // Worded before a status is chosen, so nothing can leave a half-written reply.
     return { status: STATUS_BY_CODE[err.code], body: roomRefusalFor(err, ownerAsking) };

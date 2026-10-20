@@ -63,11 +63,13 @@ describe('which areas a config patch reaches', () => {
     expect(operatorOnlyAreasForPatch({ rooms: { maxAgentDepth: 9 } })).toEqual(['safety']);
   });
 
-  it('puts a trust stop and a consent stamp in Permissions', () => {
+  it('puts a trust stop and the trust notice stamp in Permissions', () => {
     expect(operatorOnlyAreasForPatch({ runtimes: { defaultTrustStop: 'autonomy' } })).toEqual([
       'permissions',
     ]);
-    expect(operatorOnlyAreasForPatch({ ui: { fullPowerChoice: 'full' } })).toEqual(['permissions']);
+    expect(
+      operatorOnlyAreasForPatch({ ui: { trustNoticeSeenAt: '2026-10-07T11:15:00.000Z' } })
+    ).toEqual(['permissions']);
   });
 
   it('names every area a mixed patch reaches, each once', () => {
@@ -180,6 +182,16 @@ describe('an agent patching a guarded setting', () => {
     expect(written[0]).toMatchObject({ tunnel: { enabled: true } });
   });
 
+  it('raises a card for a trust stop on Trusted, where Permissions is Allowed (DOR-2739)', async () => {
+    // Trusted allows Permissions for our agents' own permission changes; a
+    // person's settings filed there still need the person, on a card.
+    preset = 'trusted';
+    const decision = await refusal({ patch: { runtimes: { codex: { defaultTrustStop: 'ask' } } } });
+    expect(decision?.outcome).toBe('approval_required');
+    expect(approvals.listPending()[0]).toMatchObject({ area: 'permissions', alwaysOffered: false });
+    expect(written).toEqual([]);
+  });
+
   it('asks about an everyday setting in DorkOS settings, where Always allow is offered', async () => {
     // DorkOS settings is Ask on every preset, so it asks, in its own area.
     const decision = await refusal({ patch: { ui: { theme: 'dark' } } });
@@ -234,13 +246,11 @@ describe('an agent patching a guarded setting', () => {
     expect(approvals.listPending()[0]).toMatchObject({ alwaysOffered: false });
   });
 
-  it('is Blocked on an undecided install, as the refusal before it was', async () => {
+  it('asks on an undecided install, which reads as Trusted: Reach & secrets is never Allowed', async () => {
     preset = null;
     const decision = await refusal(TUNNEL_PATCH);
-    expect(decision).toMatchObject({
-      outcome: 'denied',
-      payload: { reason: 'permission_blocked' },
-    });
+    expect(decision).toMatchObject({ outcome: 'approval_required' });
+    expect(approvals.listPending()[0]).toMatchObject({ area: 'reach', alwaysOffered: false });
     expect(written).toEqual([]);
   });
 });

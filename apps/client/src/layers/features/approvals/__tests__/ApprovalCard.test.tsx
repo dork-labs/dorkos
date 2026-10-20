@@ -628,3 +628,32 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
     expect(container.querySelector('[data-slot="approval-service-action"]')).toBeNull();
   });
 });
+
+describe('on Wi-Fi (DOR-2969)', () => {
+  const wifi = { getConfig: vi.fn().mockResolvedValue({ callerRoute: 'wifi' }) } as never;
+
+  it('offers Allow once and Deny, says where Always allow lives, and sends a one-time yes', async () => {
+    const { transport } = renderCard(
+      buildApproval({ alwaysOffered: true, suggestAlways: true }),
+      wifi
+    );
+    await screen.findByText('Always allow is only available at this computer.');
+    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
+    const once = screen.getByRole('button', { name: 'Allow once' });
+    expect(once).toHaveAttribute('data-variant', 'outline');
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+    await userEvent.click(once);
+    await waitFor(() => expect(transport.grantApproval).toHaveBeenCalled());
+    expect(vi.mocked(transport.grantApproval).mock.calls[0]![0]).not.toMatchObject({
+      answer: 'always',
+    });
+  });
+
+  it('keeps Always allow at this computer', async () => {
+    renderCard(buildApproval({ alwaysOffered: true }), {
+      getConfig: vi.fn().mockResolvedValue({ callerRoute: 'local' }),
+    } as never);
+    expect(await screen.findByRole('button', { name: 'Always allow' })).toBeInTheDocument();
+    expect(screen.queryByText('Always allow is only available at this computer.')).toBeNull();
+  });
+});

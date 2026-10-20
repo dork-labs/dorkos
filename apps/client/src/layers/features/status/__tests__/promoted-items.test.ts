@@ -70,6 +70,19 @@ describe('selectPromotedItems', () => {
     });
     expect(items.map((i) => i.key)).not.toContain('model');
   });
+
+  it('resolves snug against the density it is given, and full when none is', () => {
+    const ctx = restingContext({
+      runtime: { type: 'test-mode', isDefault: false, canSelect: false },
+    });
+    const runtimeAt = (density?: 'full' | 'identity') =>
+      selectPromotedItems({ ctx, pins: [], nodes: allNodes(), density }).find(
+        ({ key }) => key === 'runtime'
+      );
+    expect(runtimeAt()?.snug).toBe(false);
+    expect(runtimeAt('full')?.snug).toBe(false);
+    expect(runtimeAt('identity')?.snug).toBe(true);
+  });
 });
 
 describe('selectPromotedItems — pins', () => {

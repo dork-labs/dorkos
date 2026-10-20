@@ -45,12 +45,25 @@ function stubFetch(routes: Record<string, { status: number; body: unknown }>) {
   return fetchMock;
 }
 
+/**
+ * Read "now" as the day after the other-charges fixture's period ended. Usage
+ * keeps a charge period only while it is recent (`CHARGE_CURRENT_DAYS`), and
+ * the fixture's period is a fixed date, so on the real clock these tests
+ * started failing on their own about a month after it (time bomb, QA sweep
+ * 2026-10-18). Only `Date` is faked: the fetch stubs still resolve normally.
+ */
+function atOtherChargesFixtureTime(): void {
+  const [row] = usageWithOtherChargesFixture.otherCharges.rows;
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.parse(row!.periodEnd) + 24 * 60 * 60 * 1000 });
+}
+
 describe('the plan reads', () => {
   beforeEach(() => {
     config.cloud = { instanceToken: 'tok_test' };
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -118,6 +131,7 @@ describe('the plan reads', () => {
   });
 
   it('passes charges that are not inference through, and leaves them out when absent', async () => {
+    atOtherChargesFixtureTime();
     // The contract's parse drops any key it does not define, so this fails if
     // the server reads usage against a schema without the other-charges block.
     stubFetch({ '/v1/usage': { status: 200, body: usageWithOtherChargesFixture } });
@@ -130,6 +144,7 @@ describe('the plan reads', () => {
   });
 
   it('keeps the inference rows when the other-charges block is malformed', async () => {
+    atOtherChargesFixtureTime();
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     // One bad row must not turn the whole read into a failure and take the
     // credits breakdown down with it.

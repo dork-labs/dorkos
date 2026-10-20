@@ -42,6 +42,9 @@ export function hasStreamState(stream: SessionStreamState): boolean {
  * transport). Same shared filter, same narrow scope: user role only, first user
  * record only, exact fence envelope only (`@dorkos/shared/kickoff`).
  *
+ * The answer is shared and reused while its inputs are unchanged: treat it as
+ * read-only.
+ *
  * @param stream - The per-session durable-stream projection.
  * @param legacyMessages - The legacy send-path message list (transitional fallback).
  */
@@ -49,7 +52,22 @@ export function selectRenderedMessages(
   stream: SessionStreamState,
   legacyMessages: ChatMessage[]
 ): ChatMessage[] {
-  const projected = hasStreamState(stream)
+  const hydrated = hasStreamState(stream);
+  // Keyed by the array the answer is built from, so each session keeps its own
+  // last answer and a dropped history takes its entry with it.
+  const key = hydrated ? stream.messages : legacyMessages;
+  const last = lastProjection.get(key);
+  if (
+    last &&
+    last.hydrated === hydrated &&
+    last.inProgressTurn === stream.inProgressTurn &&
+    last.pendingInteractions === stream.pendingInteractions &&
+    last.optimisticUserMessage === stream.optimisticUserMessage &&
+    last.legacyMessages === legacyMessages
+  ) {
+    return last.result;
+  }
+  const projected = hydrated
     ? projectSessionMessages(
         stream.messages,
         stream.inProgressTurn,
@@ -57,5 +75,33 @@ export function selectRenderedMessages(
         stream.optimisticUserMessage
       )
     : legacyMessages;
-  return filterKickoffHistory(projected);
+  const result = filterKickoffHistory(projected);
+  lastProjection.set(key, {
+    hydrated,
+    inProgressTurn: stream.inProgressTurn,
+    pendingInteractions: stream.pendingInteractions,
+    optimisticUserMessage: stream.optimisticUserMessage,
+    legacyMessages,
+    result,
+  });
+  return result;
 }
+
+/** The inputs one answer of {@link selectRenderedMessages} was built from. */
+interface Projection {
+  hydrated: boolean;
+  inProgressTurn: SessionStreamState['inProgressTurn'];
+  pendingInteractions: SessionStreamState['pendingInteractions'];
+  optimisticUserMessage: SessionStreamState['optimisticUserMessage'];
+  legacyMessages: ChatMessage[];
+  result: ChatMessage[];
+}
+
+/**
+ * The last answer per source array (DOR-2895). The chat panel and the
+ * composer both ask for the same list on every event, and most events (status,
+ * usage, presence) change none of its inputs: both now get the same array back
+ * instead of each rebuilding a long chat, which also keeps every memo keyed on
+ * it from running again.
+ */
+const lastProjection = new WeakMap<object, Projection>();

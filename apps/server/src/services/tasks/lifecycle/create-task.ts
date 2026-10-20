@@ -26,7 +26,6 @@ import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
-import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -54,9 +53,15 @@ import type { TaskStore } from '../task-store.js';
 import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
+import {
+  announceScheduleArmed,
+  resolveScheduleArmedPayload,
+} from '../../notifications/emitters/schedule-armed.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
+import { agentSchedulesArmWithoutAsking } from '../approvals/agent-trust.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
+import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -93,11 +98,26 @@ export interface CreateScheduledTaskOptions {
    */
   input: CreateTaskInput;
   /**
-   * Whether the caller cleared the agent bar. A caller that did not is
-   * PROPOSING: the task parks at `pending_approval`, it must say why, and it
-   * cannot name its own permission mode.
+   * Whether the caller cleared the agent bar. A caller that did not is an
+   * agent (or someone the server cannot tell from one): it must say why, its
+   * schedule is clamped, and it parks at `pending_approval` unless
+   * {@link CreateScheduledTaskOptions.callerIsOurAgent} arms it.
    */
   trusted: boolean;
+  /**
+   * Whether the server identified an untrusted caller as one of this install's
+   * agents: an in-session tool call, or a verified agent token. On a Trusted
+   * install such a caller's schedule is armed at once and the person is told
+   * (`schedule.armed_by_agent`); everyone else's parks. Never read from the
+   * request body. Absent means no.
+   */
+  callerIsOurAgent?: boolean;
+  /**
+   * The marks of the turn that asked for it (DOR-3036), read from the caller's own turn record,
+   * never the body. A marked turn's schedule parks for a person whatever the trust preset, and
+   * keeps the marks for its approval card. Absent or empty means an unmarked turn.
+   */
+  originMarks?: TurnMarks;
   /** Who to credit the proposal to. Ignored for a trusted caller — nobody proposed it. */
   proposal?: TaskProposal;
 }
@@ -122,7 +142,10 @@ export interface CreateScheduledTaskSuccess {
   ok: true;
   /** The task as it now stands, file written and row synced. */
   task: Task;
-  /** Whether it is waiting for a person. True for every untrusted caller. */
+  /**
+   * Whether it is waiting for a person: an untrusted caller's schedule, unless
+   * one of our agents made it on a Trusted install.
+   */
   parked: boolean;
   /**
    * The parked schedule's notification payload, present exactly when
@@ -131,22 +154,30 @@ export interface CreateScheduledTaskSuccess {
    * the notification used, and the two cannot disagree about who asked.
    */
   parkPayload?: NotificationPayload<'schedule.parked'>;
+  /**
+   * The notification payload for a schedule one of our agents armed, present
+   * exactly when an untrusted caller's schedule did NOT park. Returned for the
+   * same reason as {@link CreateScheduledTaskSuccess.parkPayload}: the activity
+   * feed names the agent from the answer the notification used.
+   */
+  armedPayload?: NotificationPayload<'schedule.armed_by_agent'>;
 }
 
 /** The outcome of a create. */
 export type CreateScheduledTaskOutcome = CreateScheduledTaskSuccess | CreateScheduledTaskRefusal;
 
 /**
- * What a caller is told when its task must be approved but says nothing about why.
+ * What an agent caller is told when its task says nothing about why.
  *
- * One sentence for both doors. The person reading the approval card has only this
- * to go on, so a blank reason is the same non-answer as no reason at all — and it
- * is refused BEFORE anything is written, so a reasonless proposal never lands on
- * disk for a person to find with nothing to read.
+ * One sentence for both doors. The person reading the approval card, or the
+ * schedule an agent armed on a Trusted install, has only this to go on, so a
+ * blank reason is the same non-answer as no reason at all — and it is refused
+ * BEFORE anything is written, so a reasonless schedule never lands on disk for a
+ * person to find with nothing to read.
  */
 const MISSING_REASON_MESSAGE =
-  'A scheduled task that has to be approved needs a reason. Say why this schedule should exist, ' +
-  'in your own words — whoever approves it has only that to go on.';
+  'A scheduled task an agent makes needs a reason. Say why this schedule should exist, ' +
+  'in your own words — the person reading it has only that to go on.';
 
 /** What a caller is told when Mesh cannot say where an agent's files live. */
 const NO_MESH_MESSAGE = 'Cannot resolve agent — mesh not available';
@@ -204,20 +235,17 @@ function resolveTaskHome(
 async function resolveCreateRuntime(
   data: z.infer<typeof CreateTaskRequestSchema>,
   deps: TaskLifecycleDeps
-): Promise<{ runtime?: string; agent: { filesAndCommands?: PermissionStop } }> {
+): Promise<{ runtime?: string }> {
   const projectPath =
     data.target === 'global' || !deps.meshCore
       ? undefined
       : deps.meshCore.getProjectPath(data.target);
   const agentDefaults = await readAgentExecutionDefaults(projectPath ?? undefined);
-  // The target agent's own Files & commands stop rides along: it beats the
-  // server's when this schedule's power is resolved (spec `agent-permissions`
-  // D16).
-  const agent = agentDefaults.filesAndCommands
-    ? { filesAndCommands: agentDefaults.filesAndCommands }
-    : {};
+  // The agent's runtime only. Its own Files & commands stop never sets a
+  // schedule's power (DOR-3107): raising an agent to Full autonomy must not
+  // raise its schedules, so each one runs at its own saved mode.
   const runtime = data.runtime ?? agentDefaults.runtime;
-  return { ...(runtime ? { runtime } : {}), agent };
+  return runtime ? { runtime } : {};
 }
 
 /**
@@ -247,6 +275,13 @@ export async function createScheduledTask(
   }
   const data = parsed.data;
   const { trusted } = options;
+  // An untrusted caller parks unless it is one of our agents on a Trusted
+  // install (ADR 261006-225605). Read once, so the park and the reply agree.
+  // A marked turn's schedule always parks: words from outside the owner's circle must not come
+  // back later as a run nobody marked (DOR-3036).
+  const marked = !trusted && options.originMarks !== undefined && hasMarks(options.originMarks);
+  const parks =
+    !trusted && (marked || !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -271,7 +306,6 @@ export async function createScheduledTask(
     data.permissionMode ??
     resolveScheduledRunPermissionMode({
       capabilities: capabilitiesForTaskRuntime(target?.runtime),
-      agent: target?.agent ?? {},
     });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
@@ -284,9 +318,10 @@ export async function createScheduledTask(
     ? permissionMode
     : clampSchedulePermissionMode(permissionMode).mode;
 
-  // A task this caller cannot arm itself is a PROPOSAL, and a proposal has to make
-  // its own case (DOR-1394). Asked here rather than in the schema because it
-  // depends on WHO is asking.
+  // An agent's schedule has to make its own case (DOR-1394), whether it parks
+  // or is armed: the person reads the reason on the approval card, or on the
+  // schedule it made. Asked here rather than in the schema because it depends
+  // on WHO is asking.
   const proposedReason = data.reason?.trim();
   if (!trusted && !proposedReason) {
     return { ok: false, status: 400, error: MISSING_REASON_MESSAGE };
@@ -484,11 +519,16 @@ export async function createScheduledTask(
   // fact. It has to happen BEFORE the register below, or the task fires while it
   // is still waiting to be approved.
   let parkPayload: NotificationPayload<'schedule.parked'> | undefined;
-  if (!trusted) {
+  let armedPayload: NotificationPayload<'schedule.armed_by_agent'> | undefined;
+  if (parks) {
     deps.store.updateTask(schedule.id, { status: 'pending_approval' });
+  }
+  if (marked) deps.store.approvals.markOrigin(schedule.id, options.originMarks!);
+  if (!trusted) {
     // Stamped from what the SERVER resolved, never from the body: a caller that
     // could name its own agent path could credit its proposal to any agent the
-    // operator trusts.
+    // operator trusts. Stamped on an armed schedule too, so the row still names
+    // the agent and session that made it.
     deps.store.recordProposal(schedule.id, {
       reason: proposedReason ?? null,
       ...(options.proposal?.sessionId !== undefined && {
@@ -499,6 +539,14 @@ export async function createScheduledTask(
       }),
     });
     schedule = deps.store.getTask(schedule.id)!;
+  }
+  if (!trusted && !parks) {
+    // Armed without asking, so the person is told it exists and can pause it.
+    // An event, not a standing condition: nothing waits on them.
+    armedPayload = await resolveScheduleArmedPayload(schedule);
+    announceScheduleArmed(armedPayload);
+  }
+  if (parks) {
     // The arrival goes out and the escalation clock starts here (DOR-1387,
     // DOR-1570). Parked schedules have no observer seam, so the hook lands at
     // the write that parks one. `raiseStanding` both announces the arrival to
@@ -524,7 +572,8 @@ export async function createScheduledTask(
   return {
     ok: true,
     task: schedule,
-    parked: !trusted,
+    parked: parks,
     ...(parkPayload && { parkPayload }),
+    ...(armedPayload && { armedPayload }),
   };
 }

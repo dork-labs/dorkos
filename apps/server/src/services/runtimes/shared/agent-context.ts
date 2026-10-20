@@ -50,6 +50,7 @@ import { getMemoryProvider } from '../../memory/index.js';
 import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from './untrusted-fence.js';
+import { renderMemoryNotesLine } from '../../memory/notes-line.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
@@ -253,7 +254,7 @@ credentials or ask for a password or key. Your persona never shortens these rule
  */
 function buildSessionModelBlock(): string {
   return `<session_model>
-You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down. Only the operator, in a one-to-one chat with you and never in a room, sets your standing preferences. When they do that, or ask you in that chat to remember something, the turn is not finished until that tool call has run and returned — saying "got it" saves nothing, and if the note did not get saved, say so in the same reply. To recall something said in another room you belong to, use the DorkOS tool whose name ends in \`search_member_rooms\`; the tool whose name ends in \`list_member_rooms\` says which rooms those are. Neither reaches your other sessions — only rooms.
+You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory (\`.dork/MEMORY.md\`, plus the notes files in \`.dork/memory/\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down. That is your only memory: keep \`MEMORY.md\` to the key facts and short pointers, and put longer detail in a notes file (the same tool, given a note's name; the DorkOS tool whose name ends in \`memory_read\` lists and opens them). Only the operator, in a one-to-one chat with you and never in a room, sets your standing preferences. When they do that, or ask you in that chat to remember something, the turn is not finished until that tool call has run and returned — saying "got it" saves nothing, and if the note did not get saved, say so in the same reply. To recall something said in another room you belong to, use the DorkOS tool whose name ends in \`search_member_rooms\`; the tool whose name ends in \`list_member_rooms\` says which rooms those are. Neither reaches your other sessions — only rooms.
 </session_model>`;
 }
 
@@ -300,6 +301,7 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  *   `<agentPath>/.dork/MEMORY.md` itself; nothing here builds a path.
  */
 async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<string> {
+  const notesLine = await buildNotesLine(agentId, agentPath);
   let snapshot: MemorySnapshot;
   try {
     snapshot = await getMemoryProvider().getSnapshot({ agentId, agentPath });
@@ -310,7 +312,7 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
     // the cost of being wrong here is a thrown error on the way INTO a turn,
     // which would take the conversation down over a notes file.
     logger.warn('[Memory] Memory provider threw reading %s: %s', agentPath, String(err));
-    return '';
+    return notesOnlyBlock(notesLine);
   }
 
   if (snapshot.status === 'error') {
@@ -324,9 +326,9 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
       agentPath,
       snapshot.error
     );
-    return '';
+    return notesOnlyBlock(notesLine);
   }
-  if (snapshot.status === 'absent') return '';
+  if (snapshot.status === 'absent') return notesOnlyBlock(notesLine);
 
   // When the configured backend is benched, this content came from `builtin`
   // instead — same mechanism as the oversize warning: DorkOS-authored, about
@@ -352,8 +354,43 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
     MEMORY_TRUST_FRAMING,
     MEMORY_STALENESS_LINE,
     fence.text,
+    ...(notesLine ? [notesLine] : []),
     '</agent_memory>',
   ].join('\n');
+}
+
+/**
+ * The pointer to the agent's notes files, or `''`.
+ *
+ * Read on the way into a turn like the snapshot, so it may not throw: a notes
+ * folder that cannot be read, or a backend that keeps no notes, renders no line
+ * and logs, and the memory block above it is unaffected.
+ *
+ * @param agentId - The agent, for the log line.
+ * @param agentPath - The agent's registered home.
+ */
+async function buildNotesLine(agentId: string, agentPath: AgentHome): Promise<string> {
+  try {
+    const list = await getMemoryProvider().listNotes({ agentId, agentPath }, { limit: 3 });
+    if (list.status === 'error') {
+      logger.warn('[Memory] Could not list notes for agent %s: %s', agentId, list.error);
+    }
+    return renderMemoryNotesLine(list);
+  } catch {
+    // A backend without `notes` refuses; that is not a fault, and not worth a line.
+    return '';
+  }
+}
+
+/**
+ * The memory block when `MEMORY.md` has nothing to show but notes files exist:
+ * the pointer alone, with nothing fenced, so an agent that keeps only notes
+ * still knows they are there.
+ *
+ * @param notesLine - The rendered pointer, or `''` for no block at all.
+ */
+function notesOnlyBlock(notesLine: string): string {
+  return notesLine ? ['<agent_memory>', notesLine, '</agent_memory>'].join('\n') : '';
 }
 
 /**
@@ -438,6 +475,14 @@ async function buildEnvBlock(cwd: string): Promise<string> {
 }
 
 /**
+ * The `<env>` block of a teammate's turn (DOR-2956): the platform, so the agent still writes
+ * commands for the right system, and nothing that names the owner's folder, machine or setup.
+ */
+function buildTeammateEnvBlock(): string {
+  return `<env>\nPlatform: ${os.platform()}\n</env>`;
+}
+
+/**
  * Build the `<agent_browser>` notice: said only when the agent has an enabled
  * signed-in browser (spec `agent-browser-sessions`) whose saved session signs
  * in to nothing: the operator has saved no site yet (the browser starts signed
@@ -474,9 +519,13 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
  *
  * @param home - The agent's registered home — the only folder its manifest and
  *   convention files are read from (spec `agent-home-desk` I1).
+ * @param options - What to leave out; see {@link AgentContextOptions}.
  * @returns XML block string, or empty string if no manifest.
  */
-async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
+async function buildAgentBlock(
+  home: AgentHome,
+  options: AgentContextOptions = {}
+): Promise<AgentContextAppend> {
   const manifest = await readHomeManifest(home);
   if (!manifest) return EMPTY_APPEND;
 
@@ -540,7 +589,12 @@ async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
   blocks.push(buildWorkingRulesBlock());
 
   // --- Agent memory block (default ON) ---
-  const memory = conventions?.memory !== false ? await buildMemoryBlock(manifest.id, home) : '';
+  // Left out, unread, for a turn a teammate started (DOR-2955): the notes are the owner's
+  // conversations' memory, and a teammate's turn must not be shown them.
+  const memory =
+    options.memory !== false && conventions?.memory !== false
+      ? await buildMemoryBlock(manifest.id, home)
+      : '';
 
   // --- Everything after the memory block ---
   const tail: string[] = [];
@@ -595,6 +649,21 @@ export interface AgentContextAppend {
   readonly memory: string;
 }
 
+/** What a caller may leave out of the append. */
+export interface AgentContextOptions {
+  /**
+   * `false` to leave the `<agent_memory>` block out, without reading it: a turn a teammate
+   * started in a shared space (DOR-2955). Default on.
+   */
+  readonly memory?: boolean;
+  /**
+   * `true` for a turn a teammate in a shared space started (DOR-2956): the owner's `<user_profile>`
+   * block is left out, and the `<env>` block says the platform and nothing else, so the turn is
+   * told neither who the owner is nor where their files are.
+   */
+  readonly teammate?: boolean;
+}
+
 /** What every form of the append is when there is nothing to say. */
 const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
 
@@ -621,16 +690,18 @@ const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
  *   convention files — never from `cwd`, whose committed `.dork/` may be a
  *   stale branch's or another agent's (spec `agent-home-desk` I1, I2).
  * @param cwd - The session's working directory, for the `<env>` block.
+ * @param options - What to leave out; see {@link AgentContextOptions}.
  * @returns The joined blocks, or `''` when nothing could be built.
  */
 export async function buildAgentContextAppend(
   home: AgentHome | undefined,
-  cwd: string
+  cwd: string,
+  options: AgentContextOptions = {}
 ): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
-    home ? settle(buildAgentBlock(home), EMPTY_APPEND) : EMPTY_APPEND,
-    settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
-    settle(buildEnvBlock(cwd), ''),
+    home ? settle(buildAgentBlock(home, options), EMPTY_APPEND) : EMPTY_APPEND,
+    options.teammate ? '' : settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
+    options.teammate ? buildTeammateEnvBlock() : settle(buildEnvBlock(cwd), ''),
   ]);
 
   // A session with no agent (no home, no manifest, or a failed read) still gets

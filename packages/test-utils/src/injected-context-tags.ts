@@ -42,5 +42,6 @@ export const INJECTED_CONTEXT_TAGS = [
   'staged_context',
   'seed_context',
   'approval_verdict',
+  'direct_notes',
   'dork-kickoff',
 ];

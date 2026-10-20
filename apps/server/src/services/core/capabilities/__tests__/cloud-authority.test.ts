@@ -73,17 +73,33 @@ describe('mintCloudAuthority', () => {
     }
   });
 
-  it('covers exactly the published kinds minus the two that carry no authority', () => {
+  it('covers exactly the published kinds minus the five that carry no authority', () => {
     // A kind Cloud adds later turns this red, so carrying authority is a
     // decision somebody makes here rather than a default.
     const published = RemoteCommandSchema.options.map((option) => option.shape.kind.value).sort();
-    expect(published).toEqual([...CLOUD_AUTHORITY_VERBS, 'inbox_pending', 'keepalive'].sort());
+    expect(published).toEqual(
+      [
+        ...CLOUD_AUTHORITY_VERBS,
+        'agent_computer_assignment_changed',
+        'hub_assignment_changed',
+        'inbox_pending',
+        'keepalive',
+        'viewer_open',
+      ].sort()
+    );
   });
 
   it('refuses inbox_pending, keepalive and an enrol verb', () => {
     enrol();
     const inbox = { kind: 'inbox_pending', id: 'cmd_i', leaseToken: 'lt_i', seatId: 'seat_1' };
     expect(mintCloudAuthority(inbox, current)).toEqual({ ok: false, reason: 'not-authorizing' });
+    const viewer = {
+      kind: 'viewer_open',
+      id: 'cmd_v',
+      leaseToken: 'lt_v',
+      expiresAt: '2026-11-03T12:02:00Z',
+    };
+    expect(mintCloudAuthority(viewer, current)).toEqual({ ok: false, reason: 'not-authorizing' });
     expect(mintCloudAuthority(keepaliveFixture, current)).toEqual({
       ok: false,
       reason: 'not-authorizing',

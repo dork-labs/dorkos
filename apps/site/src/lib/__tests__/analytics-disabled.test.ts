@@ -26,7 +26,7 @@ vi.mock('posthog-js', () => ({
 
 import posthog from 'posthog-js';
 
-import { identifyAccount, resetIdentity } from '../analytics';
+import { identifyAccount, prepareInstallCopy, resetIdentity } from '../analytics';
 
 const mockPosthog = posthog as unknown as {
   identify: ReturnType<typeof vi.fn>;
@@ -39,5 +39,14 @@ describe('analytics helpers when disabled', () => {
     resetIdentity();
     expect(mockPosthog.identify).not.toHaveBeenCalled();
     expect(mockPosthog.reset).not.toHaveBeenCalled();
+  });
+});
+
+describe('prepareInstallCopy when disabled', () => {
+  it('copies the plain command and makes no posthog-js call', () => {
+    const copy = prepareInstallCopy('curl -fsSL https://dorkos.ai/install | bash', 'curl');
+    expect(copy.text).toBe('curl -fsSL https://dorkos.ai/install | bash');
+    copy.onCopied();
+    expect(mockPosthog.identify).not.toHaveBeenCalled();
   });
 });

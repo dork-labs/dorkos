@@ -1,7 +1,4 @@
-import { notifySessionLookupFailed } from '@/layers/entities/session';
-import { reportClientError } from '@/layers/shared/lib';
-import { useNow, useTransport } from '@/layers/shared/model';
-import { sessionLocationTarget } from '@/layers/shared/lib';
+import { useNow } from '@/layers/shared/model';
 /**
  * One Profile — the whole surface, for every identity on this install (spec
  * `profile-unification` §1.1).
@@ -19,7 +16,7 @@ import { Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { useRoomBoundSession } from '@/layers/entities/room';
+import { useOpenDirectChat, useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { useCommitments } from '@/layers/entities/commitment';
 import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
@@ -117,6 +114,7 @@ export function ProfileView({
   // `null` everywhere else, which is what leaves the docked home — and every
   // route that is not a room — resolving exactly as it always did.
   const resolveRoomSession = useRoomBoundSession();
+  const openDirectChat = useOpenDirectChat();
 
   const ctx: ProfileRowsContext = {
     relationship,
@@ -138,7 +136,6 @@ export function ProfileView({
   // Three ways to have no button, and they are all the same answer: don't draw
   // one. Nowhere to open a session (every person today — §8), your own profile,
   // and the profile docked in the very session the button would open.
-  const transport = useTransport();
   const target = messageTarget(member);
   const canOpenSession =
     target !== null && relationship !== 'self' && !inOwnSession && navigate !== null;
@@ -166,18 +163,11 @@ export function ProfileView({
       void navigate(toSession({ session: inRoom }));
       return;
     }
-    try {
-      const destination = await sessionLocationTarget(transport, target.projectPath);
-      const effectiveRuntimeId = member.agent?.effectiveRuntimeId;
-      void navigate(
-        effectiveRuntimeId
-          ? { ...destination, search: { ...destination.search, runtime: effectiveRuntimeId } }
-          : destination
-      );
-    } catch (error) {
-      reportClientError(transport, error);
-      notifySessionLookupFailed(target.projectPath);
-    }
+    // Everywhere else it is Talk: the agent's one standing Direct chat with
+    // you (rule S12, DOR-2997), never whichever chat happens to be newest.
+    // The agent's own runtime, for a chat made now (a computer-placed agent).
+    const runtime = member.agent?.effectiveRuntimeId;
+    await openDirectChat({ agentPath: target.projectPath }, runtime ? { runtime } : {});
   }
 
   // A page is only reachable when a row of THIS profile pushes it. The row

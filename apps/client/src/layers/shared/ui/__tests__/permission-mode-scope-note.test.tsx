@@ -79,7 +79,7 @@ describe('PermissionModeScopeNote', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'DorkOS still asks before deleting a schedule or removing an agent, for example.'
+        'DorkOS’s own actions, like deleting a schedule, follow your Permissions settings.'
       )
     ).toBeInTheDocument();
     expect(
@@ -89,14 +89,15 @@ describe('PermissionModeScopeNote', () => {
     ).toBeInTheDocument();
   });
 
-  it('names two destructive actions that really are cards, not a made-up example', () => {
-    // `tasks_delete` ("Delete a scheduled task") and `mesh_unregister` ("Remove
-    // an agent…") are the shipped destructive MCP tools in
-    // `services/core/mcp-tool-tiers.ts`. The old copy said "removing packages",
-    // which is real but the rarest of the class — so the example taught the
-    // wrong picture of what actually interrupts somebody.
+  it('points at the Permissions settings for whether deleting a schedule asks', () => {
+    // Under Careful a delete parks a card; under Trusted it runs and is recorded
+    // (ADR 261006-225605). The note must not promise either, so it names the
+    // common example and the settings that decide it.
     render(<PermissionModeScopeNote mode="bypassPermissions" />);
-    expect(screen.getByText(/deleting a schedule or removing an agent/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/like deleting a schedule, follow your Permissions/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/still asks/)).not.toBeInTheDocument();
   });
 
   it('names both places that stop the asking, and not a tab that is gone', () => {

@@ -29,7 +29,8 @@ import {
   type TierEnforcementDecision,
 } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { readCallerAuthority } from '../../lib/caller-authority.js';
+import { NEEDS_PERSON_AT_THIS_COMPUTER, readCallerAuthority } from '../../lib/caller-authority.js';
+import { isAtThisComputer } from '../../services/core/auth/gate-policy.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { readQuery } from '../../http/request-query.js';
@@ -271,8 +272,20 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     c: MarketplaceContext,
     action: MarketplaceSourceAction
   ): Response | undefined => {
-    if (resolveDecisionAuthority(readCallerAuthority(honoRequestFacts(c))).allowed) {
-      return undefined;
+    const facts = honoRequestFacts(c);
+    if (resolveDecisionAuthority(readCallerAuthority(facts)).allowed) {
+      // A person; package sources are a front-door setting, so they change only
+      // at this computer (DOR-2969). Locality alone, not the full front-door
+      // bar: `dorkos marketplace add` presents an API key from this computer,
+      // and that verb stays the operator's (pinned in `marketplace.test.ts`).
+      if (isAtThisComputer(facts)) return undefined;
+      return c.json(
+        {
+          error: 'Change where packages come from on the computer DorkOS runs on.',
+          code: NEEDS_PERSON_AT_THIS_COMPUTER,
+        },
+        403
+      );
     }
     return c.json(
       {

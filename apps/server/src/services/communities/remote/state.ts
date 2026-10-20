@@ -18,9 +18,10 @@ import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
 import { RemoteAnswerIn } from './wake/answer-in.js';
 import { AnswerInStore } from './wake/answer-in-store.js';
+import { TeammateSpend, type TeammateSpendNotices } from './wake/teammate-spend.js';
 import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
-import { RemoteCommunityAdapter } from './remote-community-adapter.js';
+import { RemoteDmCommunityAdapter } from './adapter/remote-dm-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxStore } from './community-outbox-store.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
@@ -32,6 +33,7 @@ import type {
 let store: RemoteConnectionStore | undefined;
 let officialSpace: OfficialSpace | undefined;
 let wakePolicy: RemoteWakePolicy | undefined;
+let teammateSpend: TeammateSpend | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
@@ -41,7 +43,7 @@ let deliveryRetry:
   ((input: CommunityOutboxRetryInput) => Promise<CommunityOutboxRetryResult>) | undefined;
 const deliveryListeners = new Set<(ownerAuthorId: string) => void>();
 let localAgentResolver: RemoteCommunityLocalAgentResolver | undefined;
-const adapters = new Map<string, RemoteCommunityAdapter>();
+const adapters = new Map<string, RemoteDmCommunityAdapter>();
 
 /** One trusted local Mesh agent resolved from the browser's manifest id. */
 export interface RemoteCommunityLocalAgent {
@@ -157,11 +159,52 @@ export function getRemoteWakePolicy(): RemoteWakePolicy {
       getOfficialSpace().isOfficialConnection(place)
         ? OFFICIAL_WAKE_AGENTS_FROM
         : DEFAULT_WAKE_AGENTS_FROM,
-    answerIn
+    answerIn,
+    getTeammateSpend()
   );
   void wakePolicy.reload();
   void answerIn.reload();
   return wakePolicy;
+}
+
+/** Who tells the owner about the teammate counter; set at startup by `wireTeammateSpend`. */
+const teammateSpendNotices: Required<TeammateSpendNotices> = {
+  reached: async () => {
+    throw new Error('Nobody is wired to tell the owner yet');
+  },
+  // Kept until someone can tell: the counter reads its file before startup wires the notices.
+  reset: () => {
+    teammateSpendResetUntold = true;
+  },
+};
+let teammateSpendResetUntold = false;
+
+/**
+ * Set who tells the owner a space reached its teammate limit, or that the limits were reset
+ * (DOR-2956). A reset that happened before this is told now.
+ *
+ * @param notices - The notifiers.
+ */
+export function setTeammateSpendNotices(notices: Required<TeammateSpendNotices>): void {
+  teammateSpendNotices.reached = notices.reached;
+  teammateSpendNotices.reset = notices.reset;
+  if (teammateSpendResetUntold) {
+    teammateSpendResetUntold = false;
+    notices.reset();
+  }
+}
+
+/**
+ * Each space's monthly limit on what teammates' turns may cost, and this month's spending
+ * (DOR-2956), read from its file on the first call.
+ */
+export function getTeammateSpend(): TeammateSpend {
+  if (teammateSpend) return teammateSpend;
+  teammateSpend = new TeammateSpend(resolveDorkHome(), getRemoteConnectionStore(), {
+    reached: (reached) => teammateSpendNotices.reached(reached),
+    reset: () => teammateSpendNotices.reset(),
+  });
+  return teammateSpend;
 }
 
 /** The production pairing service over the same protected connection store. */
@@ -338,11 +381,11 @@ export function getRemoteCommunityOriginIdempotencyKey(
 export function getRemoteCommunityAdapter(
   ref: CommunityRef,
   ownerAuthorId: string
-): RemoteCommunityAdapter {
+): RemoteDmCommunityAdapter {
   const key = `${ref}:${ownerAuthorId}`;
   let adapter = adapters.get(key);
   if (!adapter) {
-    adapter = new RemoteCommunityAdapter(
+    adapter = new RemoteDmCommunityAdapter(
       ref,
       ownerAuthorId,
       getRemoteConnectionStore(),

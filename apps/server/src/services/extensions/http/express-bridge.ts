@@ -39,8 +39,10 @@ import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import type { AgentIdentity } from '../../core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../../core/auth/session-gate.js';
-import { isManagedIngress } from '../../core/remote/ingress-mark.js';
+import { ingressOf } from '../../core/remote/ingress-mark.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
+import { logger } from '../../../lib/logger.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 /**
  * The facts of a request an extension's router is handling
@@ -58,7 +60,7 @@ export function expressRequestFacts(req: Request, res: ExpressResponse): Request
     peerAddress: req.socket?.remoteAddress,
     forwardedAddress: req.ip,
     connectionEncrypted: Boolean((req.socket as TLSSocket | undefined)?.encrypted),
-    managedIngress: isManagedIngress(req),
+    ingress: ingressOf(req),
     user: res.locals.user as RequestUser | undefined,
     agentIdentity: res.locals.agentIdentity as AgentIdentity | undefined,
   };
@@ -105,4 +107,21 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
       });
     });
   };
+}
+
+/**
+ * {@link bridgeExpressRouter}, except on a hub, which mounts no Express router
+ * (DOR-2937): a router writes straight to the socket, past the reply rules that
+ * keep a reply from running as a page (`reply-headers.ts`). Fetch handlers
+ * still answer there. Says so in the log when there was a route to mount.
+ *
+ * @param id - The extension's id, for the log line.
+ * @param router - The router its `register()` filled.
+ */
+export function bridgeExpressRouterHere(id: string, router: Router): ExtensionHttpHandler | null {
+  if (currentServerRole() !== 'hub') return bridgeExpressRouter(router);
+  if (router.stack.length > 0) {
+    logger.warn(`[Extensions] ${id}: Express routes are off on a hub; use a fetch handler`);
+  }
+  return null;
 }

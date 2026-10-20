@@ -334,8 +334,8 @@ describe('ChatList', () => {
     it('keeps automated chats in one closed group with a count', async () => {
       renderList([
         chat('a', 'Mine', { lastTouchedByYouAt: ago(1) }),
-        chat('t1', 'Daily digest', { origin: 'task' }),
-        chat('t2', 'Room turn', { origin: 'room' }),
+        chat('t1', 'Daily digest', { origin: 'task', updatedAt: ago(24) }),
+        chat('t2', 'Room turn', { origin: 'room', updatedAt: ago(25) }),
       ]);
       await findRow('Mine');
       const toggle = screen.getByRole('button', { name: /Automated/ });

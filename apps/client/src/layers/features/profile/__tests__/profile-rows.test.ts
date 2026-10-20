@@ -69,7 +69,9 @@ describe('you', () => {
   it('keeps your email visible and unopenable, with the reason attached', () => {
     const email = flat(build(SELF)).find((row) => row.id === 'email')!;
     expect(email.value).toBe('dorian@dorkos.ai');
-    expect(email.lockedReason).toContain('Settings');
+    expect(email.lockedReason).toContain('sign in');
+    // No setting changes the email, so the reason must not point at one (DOR-2964).
+    expect(email.lockedReason).not.toContain('Settings');
   });
 
   it('says what is missing rather than leaving a blank', () => {

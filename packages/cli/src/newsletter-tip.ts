@@ -1,11 +1,12 @@
 // packages/cli/src/newsletter-tip.ts
 
+import { siteUrl } from '@dorkos/shared/links';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { resolveDorkHome } from './lib/dork-home.js';
 
 /** URL the tip points at — the newsletter landing page (ADR 260707-025214). */
-const NEWSLETTER_URL = 'https://dorkos.ai/newsletter';
+const NEWSLETTER_URL = siteUrl('/newsletter');
 
 /** Env var that suppresses the tip entirely (for CI, scripts, or preference). */
 const SUPPRESS_ENV = 'DORKOS_NO_NEWSLETTER_TIP';

@@ -133,8 +133,12 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/operator/config-patch.ts':
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
-      'index.ts':
-        'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+      'startup/steps/telemetry-extensions-runtimes.ts':
+        'the first-run telemetry notice, at boot (logConfigWrite: "the first-run telemetry notice"). Moved out of index.ts unchanged',
+      'startup/steps/late-routes.ts':
+        'the profile route setter, behind the profile route (logConfigWrite: "the profile route"). Moved out of index.ts unchanged',
+      'startup/steps/search-relay-mesh.ts':
+        "the boot-time permission upgrade sweep's settings write (spec `agent-permissions` D13), merged onto the stored `permissions` section so a field the sweep does not know is kept. Moved out of index.ts unchanged",
       'startup/marketplace.ts':
         'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
@@ -143,6 +147,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
       'routes/remote-access.ts':
         '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
+      'services/core/lan-access/index.ts':
+        '`writeLanAccessSetting`, the one writer of `server.lanAccess` (DOR-2930), operator-only. Two callers: `POST /api/lan-access`, which runs the cookie bar, the trusted-caller bar, the environment bar and `canExpose` before writing `true` and no bar for `false` (it only narrows, as `/api/tunnel/stop`); and the controller, which only ever writes `false` when login is off. logConfigWrite: "Wi-Fi access"',
       'routes/runtimes-doe-setup.ts':
         'PUT /api/runtimes/doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup. Moved with its routes from services/runtimes/connect/doe-setup-router.ts when they left Express (DOR-2802); the bars run on the request facts the Hono chain resolved, the same ones the Express pair carried',
       'services/core/agent-creator.ts':
@@ -161,8 +167,14 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'records what a PERSON decided about a package hook — a yes from the approval card or from `dorkos harness sync --fix --allow-hooks`, a no from the card, and a revoke from `dorkos harness hooks --revoke`. Both leaves (`harness.approvedHooks`, `harness.refusedHooks`) are operator-only, and the approval route is the gate in front of the card (DOR-522, DOR-1849)',
       'services/harness/global-scope.ts':
         'records which agent tools a PERSON chose to share their all-projects packages with — written only by `dorkos harness global --enable` and `--disable`, two explicit verbs somebody types, and never by a read-only path or by the boot pass, which cannot ask and does not (DOR-1924). Both leaves (`harness.global.harnesses`, `harness.global.askedAt`) are operator-only and sit under the `reach` stake, because the list is what decides whether DorkOS puts a link in a home directory at all (logConfigWrite: "dorkos harness global --enable" / "dorkos harness global --disable")',
+      'services/extensions/extension-scaffold-approval.ts':
+        'approves the extension an agent just scaffolded with `create_extension`, and only under the Trusted posture (ADR 261006-225605 item 5): never an id the person dismissed, and path- and permission-bound, so a copy elsewhere or a widened manifest still waits. Moved out of extension-manager.ts (Hard Rule 9) (logConfigWrite: "approving an extension an agent created")',
+      'services/mesh/seed-open-mesh.ts':
+        'a boot step no request reaches: once per install it opens the mesh between our own agents and stamps `permissions.trustedStoresAppliedAt`, a bookkeeping leaf that grants nothing (spec `trusted-by-default-flip` §5.3)',
       'services/extensions/extension-manager.ts':
-        'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+        'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval and the rooms granted with it (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+      'services/extensions/rooms/extension-room-access.ts':
+        'one write into `extensions.roomAccess` (operator-only, DOR-3017): `setAllowedRooms`, reached only from `PUT /api/extensions/:id/room-access` in `routes/extensions-rooms.ts`, which runs `refusedNotAPerson` (the extensions person bar) before it, and only accepts rooms the caller is a member of (logConfigWrite: "choosing the rooms a mini app may use")',
     },
   },
   {
@@ -445,6 +457,16 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'approvals.deny(',
     allowed: {
       'routes/approvals.ts': 'the same route, guarded the same way — see the grant entry above',
+      'services/canvas/doc-channel/route-controls/controls.ts':
+        'a person allowing or turning off a document route from its controls (DOR-2665): the service will not run without a decision only route-controls/person-decision.ts mints, after the same agent, requester and cookie bars; it answers agent requests still waiting on that route, so those agents hear back',
+    },
+  },
+  {
+    what: "records a person's own YES already granted, with no card in between, which is a whole approval in one call",
+    call: 'approvals.recordOwnAnswer(',
+    allowed: {
+      'services/canvas/doc-channel/route-controls/controls.ts':
+        'a person allowing a document route from its controls (DOR-2665): the service will not run without a decision only route-controls/person-decision.ts mints, after the same agent, requester and cookie bars, and the yes is bound to the exact hash the person reviewed',
     },
   },
   {
@@ -615,8 +637,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/remote/remote-boot.ts':
         'the definition itself: it opens only when the boot rule says so and `canExpose()` allows it',
-      'index.ts':
-        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request",
+      'startup/steps/after-listen.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request. Moved out of index.ts unchanged",
     },
   },
   {
@@ -693,6 +715,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'routes/remote-access.ts':
         'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /withdraw` runs the cookie, trusted-caller and local-caller bars but never `canExpose`, so it works with login or Cloud down; `POST /close` runs no bar on purpose: it only narrows',
+      'routes/lan-access.ts':
+        'a person turning on "Let devices on my Wi-Fi in", which opens this computer to its network and writes `server.lanAccess` (DOR-2930). Gated like `routes/tunnel.ts`: the cookie bar under login, then this one, because `server.lanAccess` IS operator-only and this route writes it around the door that enforces that, then the environment bar and `canExpose`. Turning it off runs no bar: it only narrows',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },
@@ -806,8 +830,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/permissions/index.ts':
         'writes `permissions` and nothing else, behind the permission routes a person drives and with an audit event (spec `agent-permissions` D10)',
-      'index.ts':
-        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort",
+      'startup/steps/search-relay-mesh.ts':
+        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort. Moved out of index.ts unchanged",
+      'startup/steps/team-room-relay-adapters.ts':
+        "the boot-time carry of a Claude account the '0.87.0' config migration renamed (spec `claude-account-fleet` §6 R): `setAccount` writes `account` and nothing else. Moved out of index.ts unchanged, where it shared the entry above",
     },
   },
   {

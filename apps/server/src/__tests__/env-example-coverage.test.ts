@@ -64,6 +64,10 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_Q3_CANARY_MAP: 'read only by the q3 contention harness',
   DORKOS_MANAGED_REMOTE:
     'switches on DorkOS managed remote access (DOR-2086), which stays off until its live supplier acceptance passes; documenting it would offer a feature that does not work yet',
+  DORKOS_SERVER_ROLE:
+    'set only by DorkOS Cloud when it starts a hub (DOR-2934); a person running DorkOS on their own computer never sets it',
+  DORKOS_HUB_INSTANCE_KEY:
+    'a hub`s DorkOS Cloud key, set only by Cloud when it starts a hub (DOR-2935); a person running DorkOS never sets it',
 };
 
 /**

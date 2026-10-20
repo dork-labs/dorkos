@@ -118,7 +118,7 @@ function DirectedBadge({ count }: { count: number | undefined }) {
   return (
     <span
       data-slot="sidebar-model-directed-badge"
-      className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
+      className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
       aria-label={`${count ?? 0} unread`}
     >
       {count}

@@ -29,6 +29,7 @@
  * @module error-report
  */
 
+import { siteUrl } from './links.js';
 import type { ExceptionEvent, ExceptionEventProperties } from './telemetry-events.js';
 
 /** A single scrubbed stack frame — structural location only, never source or locals. */
@@ -419,7 +420,7 @@ export function buildErrorEvent(input: BuildErrorEventInput): ErrorEvent {
 }
 
 /** The DorkOS owned-ingest endpoint that both usage and `$exception` events POST to. */
-export const TELEMETRY_EVENTS_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
+export const TELEMETRY_EVENTS_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /**
  * Map the scrubbed {@link ErrorEvent} into the property bag of a PostHog-native

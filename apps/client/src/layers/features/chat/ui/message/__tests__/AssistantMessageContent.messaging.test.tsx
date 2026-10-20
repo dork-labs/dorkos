@@ -52,7 +52,8 @@ vi.mock('../MessageContext', () => ({
 }));
 // The person's preference that hides every finished tool call, switched ON.
 vi.mock('@/layers/shared/model', () => ({
-  useAppStore: () => ({ expandToolCalls: false, autoHideToolCalls: true }),
+  useAppStore: (select: (state: object) => unknown) =>
+    select({ expandToolCalls: false, autoHideToolCalls: true }),
 }));
 
 const readTool = (id: string) => ({

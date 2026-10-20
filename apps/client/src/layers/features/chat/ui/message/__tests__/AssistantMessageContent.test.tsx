@@ -118,7 +118,8 @@ vi.mock('../../../model/messaging/use-chat-activity', () => ({
 
 // Mock useAppStore
 vi.mock('@/layers/shared/model', () => ({
-  useAppStore: () => ({ expandToolCalls: false, autoHideToolCalls: false }),
+  useAppStore: (select: (state: object) => unknown) =>
+    select({ expandToolCalls: false, autoHideToolCalls: false }),
 }));
 
 function makeMessage(parts: ChatMessage['parts']): ChatMessage {

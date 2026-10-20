@@ -6,6 +6,9 @@ vi.mock('../../../lib/version.js', () => ({
   SERVER_VERSION: '1.0.0',
 }));
 
+const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
+vi.mock('../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
+
 import { getLatestVersion, resetCache } from '../update-checker.js';
 import * as versionModule from '../../../lib/version.js';
 
@@ -20,10 +23,17 @@ describe('update-checker', () => {
     resetCache();
     // Default to production mode
     vi.mocked(versionModule).IS_DEV_BUILD = false as never;
+    role.value = 'computer';
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('never asks the registry on a hub, which DorkOS Cloud upgrades instead', async () => {
+    role.value = 'hub';
+    expect(await getLatestVersion()).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('fetches and caches on first call', async () => {

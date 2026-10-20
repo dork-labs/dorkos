@@ -15,12 +15,12 @@ describe('two-Desktop step plan', () => {
     const all = [...REMOTE_RUN_STEPS, ...skipped];
     expect(new Set(all).size).toBe(all.length);
     expect([...all].sort()).toEqual([...ALL_STEPS].sort());
-    expect(ALL_STEPS).toHaveLength(30); // 1-29 with 15b
+    expect(ALL_STEPS).toHaveLength(34); // 1-29 with 15b, 20b, 22b, 22c and 23b
   });
 
   it('runs the remote journey the spec names and gives every skip a reason', () => {
     // Pins the run list to spec community-launch-acceptance task 1.2 (5-7 and 9-15b, 17-20, 22,
-    // 23, 25): step 8 is skipped because it needs the second community remote mode never starts.
+    // 23, 25), plus the availability checks 20b and 23b (DOR-2881): step 8 is skipped because it needs the second community remote mode never starts.
     expect(REMOTE_RUN_STEPS).toEqual([
       '5',
       '6',
@@ -37,8 +37,10 @@ describe('two-Desktop step plan', () => {
       '18',
       '19',
       '20',
+      '20b',
       '22',
       '23',
+      '23b',
       '25',
     ]);
     for (const reason of Object.values(REMOTE_SKIPPED_STEPS))
@@ -53,6 +55,8 @@ describe('two-Desktop step plan', () => {
   it('reads a step id from the start of its name only', () => {
     // Catches "15b" being read as "15", and unnumbered steps being counted.
     expect(stepIdOf('15b a reader scrolled up reopens at that row')).toBe('15b');
+    expect(stepIdOf('22c once teammates spend the limit')).toBe('22c');
+    expect(stepIdOf('23b the space stopped hearing from B’s agent')).toBe('23b');
     expect(stepIdOf('15 A switches back to the community')).toBe('15');
     expect(stepIdOf('1 (skipped)')).toBe('1');
     expect(stepIdOf('remote: B signs in on the live community')).toBeNull();

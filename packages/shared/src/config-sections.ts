@@ -1,10 +1,11 @@
 /**
- * Three top-level sections of `UserConfigSchema`, each a whole section on
- * purpose so conf writes it into every stored config by itself and none needs a
- * migration: whether this computer may sleep while agents work (`keepAwake`),
- * whether agents wake on their own (`heartbeats`), and how long the Activity
- * feed keeps its history (`activity`). Split out of `config-schema.ts` to keep
- * that file inside its line budget; plain Zod, no OpenAPI.
+ * Top-level sections of `UserConfigSchema`, split out of `config-schema.ts` to
+ * keep that file inside its line budget; plain Zod, no OpenAPI. Three are whole
+ * sections on purpose so conf writes each into every stored config by itself and
+ * none needs a migration: whether this computer may sleep while agents work
+ * (`keepAwake`), whether agents wake on their own (`heartbeats`), and how long
+ * the Activity feed keeps its history (`activity`). The fourth, `server`, is
+ * as old as the file, so a field added to it needs a migration.
  *
  * @module shared/config-sections
  */
@@ -72,3 +73,36 @@ export const ActivityConfigSchema = z
     retentionDays: z.number().int().min(1).max(3650).default(365),
   })
   .default(() => ({ retentionDays: 365 }));
+
+/**
+ * Where the server listens and what it opens on start (`server`). Every stored
+ * config already carries this section, so conf never adds a new member to it on
+ * its own: a field added here needs a migration that writes it.
+ */
+export const ServerConfigSchema = z
+  .object({
+    /**
+     * **Something else depends on this exact number, not just on there being
+     * a default.** `conf` materializes defaults to disk, so every
+     * `config.json` in the world already carries this value whether or not
+     * anyone chose it. `PREFERRED_SERVER_PORT` in
+     * `apps/desktop/src/main/server-port.ts` compares against it to tell a
+     * port a person pinned from the one the library wrote — a pinned port is
+     * claimed strictly, an unchosen one steps past a conflict. Move this
+     * without moving that and every install's written-out default reads as a
+     * deliberate pin, so the desktop app refuses to start instead of stepping
+     * past a busy port. `config-schema.test.ts` fails with that explanation
+     * if the two drift.
+     */
+    port: z.number().int().min(1024).max(65535).default(4242),
+    cwd: z.string().nullable().default(null),
+    boundary: z.string().nullable().default(null),
+    open: z.boolean().default(true),
+    /**
+     * Let devices on the same network open DorkOS (DOR-2930). Off by default,
+     * and only honoured while login is on; `DORKOS_HOST` in the environment
+     * overrules it. Read by `services/core/lan-access/`.
+     */
+    lanAccess: z.boolean().default(false),
+  })
+  .default(() => ({ port: 4242, cwd: null, boundary: null, open: true, lanAccess: false }));

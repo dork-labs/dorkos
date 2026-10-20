@@ -124,13 +124,11 @@
  *
  * @module server/services/rooms/room-trigger
  */
-import { wakeForBudgetRefusal, wakeForRefusedRoomTurn } from '../heartbeats/room-wakes.js';
 import { outsideAuditScope } from '../audit/audit-context.js';
-import { randomUUID } from 'node:crypto';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
   AuthorKind,
-  AuthorRef,
+  ReseatOptions,
   Room,
   RoomEntry,
   RoomHeldBehind,
@@ -139,30 +137,11 @@ import type {
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
-import { sameActivity } from './presence/same-activity.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { logError, logger } from '../../lib/logger.js';
+import { logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
-import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { ACTIVITY_FANOUT_THROTTLE_MS } from '../session/index.js';
+import { type RoutedEntry, type RoutingVerdict } from './response-gate/routing-rules.js';
 import {
-  selectTriggerTargets,
-  pickLead,
-  standDownFallbackSeat,
-  whyNobody,
-  type AddressingMember,
-  type TriggerReason,
-} from './addressing.js';
-import {
-  routeAmbient,
-  type RoutedEntry,
-  type RoutingVerdict,
-} from './response-gate/routing-rules.js';
-import { logRefusal } from '../observability/refusals.js';
-import {
-  DISPATCH_OUTCOMES,
-  PRESENCE_OUTCOMES,
   agentKey,
   claimBusyWith,
   claimedAgentPaths,
@@ -179,31 +158,25 @@ import {
   type HeldView,
   type TriggerTarget,
 } from './room-claims.js';
-import { toAuthorRef } from './author-registry.js';
-import { ceilingForEntries, isEntryAuthorExternal } from './limits/turn-ceiling.js';
-import { turnRefusalOf } from './turn-guards/paused-turn.js';
-import { isLiveAuthor } from './handles/author-handles.js';
-import {
-  evaluateCascade,
-  type CascadeDecision,
-  type CascadeRefusalReason,
-} from './cascade-guard.js';
-import {
-  agentPostWindow,
-  conversationFor,
-  engagementFor,
-  type EngagementWindow,
-} from './engagement.js';
+import { type CascadeDecision, type CascadeRefusalReason } from './cascade-guard.js';
 import { RoomCollector, type CollectedTrigger, type RoomCollection } from './room-collect.js';
-import { buildRoomContext, nameForAgents } from './room-context.js';
+import { nameForAgents } from './room-context.js';
 import { resolveRoomTurnPlace, type RoomTurnPlace } from './repo/room-turn-place.js';
 import { RoomNoticeLog, type CascadeStamp, type RoomTurnUnanswered } from './notices/notice-log.js';
-import { buildCascadeNotice } from './notices/notice-copy.js';
-import { usageLimitNow } from './notices/usage-limit.js';
 import { TurnReceipts } from './receipts/turn-receipts.js';
-import { roomLaunchStepFor } from './repo/room-launch-step.js';
 import type { RoomDispatchSummary, RoomTriggerDeps } from './service/room-trigger-deps.js';
 import { type LateRoomReply, type RoomTurnReply } from './room-turn-port.js';
+import { nothingDispatched, type TriggerCandidate } from './room-trigger/candidates.js';
+import * as candidates from './room-trigger/candidates.js';
+import * as batchRouting from './room-trigger/batch-routing.js';
+import * as claimCollected from './room-trigger/claim-collected.js';
+import * as runTurn from './room-trigger/run-turn.js';
+import * as delivery from './room-trigger/deliver.js';
+import * as aside from './room-trigger/aside.js';
+import * as claims from './room-trigger/claims.js';
+import * as holds from './room-trigger/holds.js';
+import * as halting from './room-trigger/halt.js';
+import * as reseating from './room-trigger/reseat.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -217,76 +190,6 @@ export type {
   RoomTurnResult,
   RoomTurnRunner,
 } from './room-turn-port.js';
-
-/**
- * One agent a message reached, as the guard left it — before anything asks
- * whether a turn can run for it.
- *
- * The line between this and {@link TriggerTarget} is the collect window (RP8):
- * everything here was decided about ONE MESSAGE, and everything a target
- * carries — a session, a dispatch id, a cursor, a budget reservation — belongs
- * to ONE TURN, which may answer several of these at once.
- */
-interface TriggerCandidate {
-  authorId: string;
-  agentPath: string;
-  displayName: string;
-  /**
-   * This agent as a room member sees it — the projection {@link dispatch}
-   * reports back to the poster.
-   *
-   * Built from the record `selectCandidates` already holds rather than looked up
-   * again: a candidate has survived the liveness check by the time one is made,
-   * so its row's own handle is the one that reaches it and `toAuthorRef` needs no
-   * override (`room-roster.ts` passes `null` precisely for the agents that do not
-   * get this far).
-   */
-  author: AuthorRef;
-  /** The depth the guard allowed this trigger at. */
-  depth: number;
-  /** Its open engaged window when this message landed, or `null`. */
-  engaged: EngagementWindow | null;
-  /** Why the matrix picked it — the response gate's only scoping input. */
-  reason: TriggerReason;
-}
-
-/**
- * The answer for a post that asked nothing of anybody — a notice, which never
- * addresses a member.
- *
- * A fresh object each call rather than one shared constant: the arrays reach a
- * response body, and a caller that appended to a shared empty one would be
- * making a claim about every other message this process ever wrote.
- *
- * @returns An empty summary — triggered nobody, skipped nobody.
- */
-function nothingDispatched(): RoomDispatchSummary {
-  return { triggered: [], skipped: [] };
-}
-
-/**
- * Append the agents that could not be reached at all to the guard's own
- * refusals, one row per agent.
- *
- * **The two sets are disjoint by construction, not by filtering**, and that is
- * worth stating because it is easy to add a branch that breaks it. An author can
- * genuinely arrive from both directions — named by the message AND selected as a
- * target — and {@link RoomTriggerDispatcher.selectCandidates} resolves it at the
- * only place it can: a member already in `gone` is passed over by the guard's
- * refusal branch entirely, so it is reported once, as `gone`, and the room writes
- * it one notice. A de-duplication pass here would be a second answer to a
- * question already settled, and one nothing could ever exercise.
- *
- * @param refused - What the cascade guard stopped, in the order it stopped it.
- * @param gone - Every author whose agent its directory no longer holds.
- * @returns One row per author, guard refusals first.
- */
-function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>): SkippedTrigger[] {
-  return [
-    ...refused,
-    ...[...gone].map((authorId): SkippedTrigger => ({ authorId, reason: 'gone' })),
-  ];
-}
 
 /**
  * How often a live claim re-states itself on the room's stream.
@@ -320,9 +223,15 @@ const PRESENCE_REPUBLISH_MS = ROOM_LIVE_BEAT_MS;
  *
  * Construction is deliberately cheap and side-effect free: an install with no
  * rooms in it pays for one object.
+ *
+ * **Most of its bodies live in `room-trigger/`**, one module per concern, each
+ * function taking this dispatcher as `self`; the method here delegates to it.
+ * That is why the state and helpers those modules reach carry no `private`:
+ * they are internal to this file and its sibling folder, not API, and nothing
+ * outside `room-trigger/` should call a member that is not documented here.
  */
 export class RoomTriggerDispatcher {
-  private readonly deps: RoomTriggerDeps;
+  readonly deps: RoomTriggerDeps;
 
   /**
    * Turns in flight, keyed `(room, agent)` — one apiece, which is the rule
@@ -333,7 +242,7 @@ export class RoomTriggerDispatcher {
    * the resulting lookup silently returned "no active turn" for every caller
    * while every test still passed.
    */
-  private readonly claimed = new Map<string, ActiveClaim>();
+  readonly claimed = new Map<string, ActiveClaim>();
 
   /**
    * Rooms waiting on an agent that is mid-turn in a DIFFERENT room, keyed
@@ -358,7 +267,7 @@ export class RoomTriggerDispatcher {
    * make untrue — see `.claude/rules/room-conduct.md` on why a room trigger is
    * never a durable queue row.
    */
-  private readonly held = new Map<string, HeldRecord>();
+  readonly held = new Map<string, HeldRecord>();
 
   /**
    * The turns a halt stopped, by dispatch id — the answers this room throws
@@ -383,7 +292,7 @@ export class RoomTriggerDispatcher {
    * {@link RoomTriggerDispatcher.deliverLate} is forgotten there instead,
    * because that delivery is still ahead of it.
    */
-  private readonly haltedTurns = new Set<string>();
+  readonly haltedTurns = new Set<string>();
 
   /**
    * Where Stop is still standing: `(room, agent)` keys whose last turn here was
@@ -428,7 +337,7 @@ export class RoomTriggerDispatcher {
    * second would mean holding the mark against the live turn as well, which is
    * the mute this refuses to be.
    */
-  private readonly stoppedHere = new Map<string, { roomId: string; authorId: string }>();
+  readonly stoppedHere = new Map<string, { roomId: string; authorId: string }>();
 
   /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
@@ -438,9 +347,9 @@ export class RoomTriggerDispatcher {
    * timer at all — the loop is started by the first claim and cleared by the
    * last release, rather than ticking over an empty map forever.
    */
-  private republishing: NodeJS.Timeout | null = null;
+  republishing: NodeJS.Timeout | null = null;
   /** The 👀 receipts standing and the busy launches waiting (DOR-2823). */
-  private readonly receipts: TurnReceipts;
+  readonly receipts: TurnReceipts;
 
   /**
    * What this room has already said about itself, and what it says next.
@@ -450,7 +359,7 @@ export class RoomTriggerDispatcher {
    * as the three sets it replaced were: the keys are room-scoped, so one object
    * for the process is one object, not a leak.
    */
-  private readonly notices: RoomNoticeLog;
+  readonly notices: RoomNoticeLog;
 
   /**
    * What each agent has been asked in each room and not yet answered (RP8).
@@ -462,7 +371,7 @@ export class RoomTriggerDispatcher {
    * moments and mean opposite things, and a collection is emphatically NOT a
    * claim: nothing is running for one.
    */
-  private readonly collector: RoomCollector;
+  readonly collector: RoomCollector;
 
   /**
    * In-flight work, so {@link RoomTriggerDispatcher.idle} can wait it out.
@@ -471,7 +380,7 @@ export class RoomTriggerDispatcher {
    * is work the room owes, and reporting it idle would let a test — or a
    * shutdown — measure a room that has not finished moving.
    */
-  private inFlight = 0;
+  inFlight = 0;
   private settled: Array<() => void> = [];
 
   constructor(deps: RoomTriggerDeps) {
@@ -563,12 +472,7 @@ export class RoomTriggerDispatcher {
    * @param arrivedAt - The message's one arrival reading, shared by every agent
    *   it reached.
    */
-  private collectOne(
-    room: Room,
-    entry: RoomEntry,
-    candidate: TriggerCandidate,
-    arrivedAt: number
-  ): void {
+  collectOne(room: Room, entry: RoomEntry, candidate: TriggerCandidate, arrivedAt: number): void {
     // Older waits first. A raised `rooms.maxConcurrentTurnsPerAgent` frees a
     // slot with no turn ending, and until the next republish beat nothing has
     // re-armed the messages already waiting for this agent — so a message sent
@@ -617,7 +521,7 @@ export class RoomTriggerDispatcher {
   }
 
   /** Drop one in-flight dispatch, waking `idle()` waiters when the last lands. */
-  private settleOne(): void {
+  settleOne(): void {
     this.inFlight -= 1;
     if (this.inFlight !== 0) return;
     const waiters = this.settled;
@@ -625,1122 +529,83 @@ export class RoomTriggerDispatcher {
     for (const resolve of waiters) resolve();
   }
 
-  /**
-   * Select this entry's targets, run each past the guard, and write a notice for
-   * every refusal.
-   *
-   * Evaluation happens for ALL targets before any of them is collected, so two
-   * agents addressed by the same message do not cancel each other out — they
-   * were both addressed by a message neither of them wrote.
-   *
-   * **Everything decided here is decided about THIS MESSAGE**, which is why it
-   * stays synchronous inside `RoomService.post` rather than moving into the
-   * collect window with the turn. Who a message addressed, whether the exchange
-   * it belongs to has gone around enough times, and whether a name it typed
-   * reached nobody are all facts about the message; answering them half a second
-   * later would let a room's roster change under a refusal, and would delay
-   * every notice a person is owed.
-   *
-   * **It reports its refusals as well as its choices**, which is what lets the
-   * 202 be honest (`PostToRoomResponse.skipped`). The set is exactly the one this
-   * pass decides — a guard refusal, or an agent whose directory no longer holds
-   * it — and it is assembled from the same two places that write the notices, so
-   * what this pass decides and what it says cannot disagree.
-   *
-   * That is a claim about THIS PASS and nothing later. A candidate returned here
-   * is judged again when its batch runs, and can be refused then; see
-   * {@link RoomDispatchSummary} for what the accept-time answer does and does not
-   * promise.
-   */
   private selectCandidates(
     room: Room,
     entry: RoomEntry,
     namedUnreachable: readonly string[]
   ): { candidates: TriggerCandidate[]; skipped: SkippedTrigger[] } {
-    const members = this.deps.store.listMembers(room.id);
-    const records = this.deps.authors.getMany(members.map((m) => m.authorId));
-    // ONCE PER ENTRY, not once per turn. The engaged window is per member, but
-    // its thread scope and its clock are shared by everyone this entry could
-    // trigger — and the answer has to be the same for addressing and for the
-    // context the turn is handed, or an agent gets told it is engaged by the
-    // very message that decided it was not.
-    const window = this.deps.engagedWindow();
-    const now = new Date();
-    const threadRootEntryId = entry.threadRootEntryId ?? null;
-    const engaged = new Map<string, EngagementWindow>();
-    const addressing: AddressingMember[] = [];
-    // The channel's LEAD — the agent that answers a person's message nobody
-    // else is answering (DOR-2823). Read from the room this dispatch already
-    // holds, so it costs no query.
-    const leadAuthorId = room.leadAuthorId ?? null;
-    // Who holds this room's FALLBACK SEAT: the lead of a system room, which is
-    // #team's default agent held on `always` (team-room-home spec D3.4), and
-    // `null` everywhere else. Only there does the seat's stand-down apply: in
-    // any other channel a person may set the lead to `always` themselves and
-    // mean it, and the lead's own rule (`pickLead`, below) needs no `always`.
-    const seatAuthorId = room.wellKnown ? leadAuthorId : null;
-    // Resolved once and read three times, because every rule below asks the
-    // same question about the same post: only a PERSON's message implicitly
-    // addresses anybody. An author row that has vanished reads as `system`,
-    // which is the conservative side of all of them.
-    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
-    // **A person's post follows the conversation, not the clock** (DOR-2823).
-    // One walk of the scope for the whole roster, because the answer — who
-    // this person is talking to — is the same for every member. An agent's post
-    // keeps the mention-anchored window below, at the old bound.
-    const followsConversation = authorKind === 'human' && room.kind === 'channel';
-    const conversation = followsConversation
-      ? conversationFor(this.deps, {
-          roomId: room.id,
-          threadRootEntryId,
-          isAgentMember: (id) => records.get(id)?.kind === 'agent',
-          joinsConversations: (id) => {
-            const mode = members.find((member) => member.authorId === id)?.responseMode;
-            return mode === 'engaged' || mode === 'always';
-          },
-          isPerson: (id) => records.get(id)?.kind === 'human',
-          window,
-          now,
-        })
-      : null;
-    // The mention-anchored window, for every post the conversation rule does
-    // not cover. An agent's post is weighed at the old bound. A person's post
-    // outside a channel keeps the configured one deliberately: there it only
-    // shapes what an engaged agent is told about its window, because a person's
-    // message in a direct message is addressed to everyone in it anyway.
-    const mentionWindow = authorKind === 'human' ? window : agentPostWindow(window);
-    for (const member of members) {
-      const record = records.get(member.authorId);
-      if (!record) continue;
-      // Only an agent that did not write this entry can be inside a window, so
-      // no other membership pays for the query.
-      //
-      // The seat is weighed even though its `always` mode ignores the flag: it
-      // READS the window to decide whether to stand down for a post that
-      // addressed somebody else. For an agent's post that is one bounded query
-      // for that one member; a person's post in a channel reads the
-      // conversation above instead, once for the whole roster.
-      const weighable = member.responseMode === 'engaged' || member.authorId === seatAuthorId;
-      const candidate = record.kind === 'agent' && weighable && member.authorId !== entry.authorId;
-      const open = !candidate
-        ? null
-        : followsConversation
-          ? conversation?.partners.includes(member.authorId)
-            ? conversation.window
-            : null
-          : engagementFor(this.deps, {
-              roomId: room.id,
-              threadRootEntryId,
-              authorId: member.authorId,
-              window: mentionWindow,
-              now,
-            });
-      // The CONTEXT map takes `engaged` members only, and deliberately: an
-      // agent's `roomContext.addressing` promises a window is `null` for every
-      // other mode (`room-context.ts`), because reporting one would describe a
-      // bound that mode does not apply. The fallback seat's window decides one
-      // filter below and is never told to the agent.
-      if (open && member.responseMode === 'engaged') engaged.set(member.authorId, open);
-      addressing.push({
-        authorId: member.authorId,
-        kind: record.kind,
-        responseMode: member.responseMode,
-        isEngaged: open !== null,
-      });
-    }
-
-    // The second rule, a no-op in a room with no seat: a post that named another
-    // agent is that agent's to answer, and a post an AGENT wrote is a
-    // conversation already underway — the seat catches neither. See
-    // `standDownFallbackSeat` for the two escapes.
-    const matrix = selectTriggerTargets({
-      roomKind: room.kind,
-      authorKind,
-      entry,
-      members: addressing,
-    });
-    const answered = standDownFallbackSeat({
-      entry,
-      authorKind,
-      seatAuthorId,
-      members: addressing,
-      selected: matrix,
-      conversationPartners: conversation?.partners ?? [],
-    });
-    // **A person's post nobody else is answering goes to the channel's lead**
-    // (DOR-2823), whatever the lead's mode. Only when the rules above picked
-    // nobody, so a conversation with another agent is never interrupted by it,
-    // and never for an agent's post: agents talking to each other stay quiet.
-    // Never in a channel connected to an outside chat: its one agent answers
-    // @mentions only there, and strangers' messages must not change that.
-    const lead =
-      answered.length === 0 && followsConversation && this.deps.bridgedFraming(room.id) === null
-        ? pickLead({ entry, leadAuthorId, members: addressing })
-        : null;
-    const selected = lead ? [lead] : answered;
-    if (selected.length === 0) {
-      // A person's post in a channel that reaches nobody is the failure
-      // DOR-2823 is about, so every one is logged with why. Never a member's
-      // name or a message body, only ids and the reason.
-      if (followsConversation) {
-        const reason = whyNobody({
-          entry,
-          members: addressing,
-          namedUnreachable,
-          partners: conversation?.partners ?? [],
-        });
-        logger.info('[rooms] nobody was picked to answer a person', {
-          roomId: room.id,
-          entryId: entry.id,
-          reason,
-        });
-        // No entry is written for it: a stored line would bump unread counts
-        // in channels where people talk among themselves. The app shows the
-        // "no agent is in this channel" hint above the composer instead.
-      }
-      // **The commonest shape of the ghost case comes through here**, and it is
-      // why this is not a bare `return`. A channel seeds agents at `engaged`, and
-      // a ghost claims no names — so `@ana are you there?` addresses nobody,
-      // selects nobody, and would leave the room silent in answer to the most
-      // direct question in it. No selection ran, so nothing can overlap: the set
-      // is exactly what the message named.
-      //
-      // A stand-down can empty the set too, and it writes NO notice — which is
-      // deliberate, and the same call this file already makes for the depth
-      // refusal against an agent's own un-provenanced post. A notice announces
-      // that something you asked for did not happen; the seat standing down is
-      // the opposite, an agent you did NOT address declining to spend a turn.
-      // The shape that empties the set is a post naming only an agent somebody
-      // silenced, and the room being quiet is precisely what silencing it asked
-      // for. Announcing it would also spray: nothing damps a line that could
-      // land on every message in a busy room.
-      this.reportGone(room, entry, new Set(namedUnreachable), namedUnreachable);
-      // A stand-down or an unaddressed post skipped nobody: those members were
-      // never asked, and listing them would turn "this message was not for you"
-      // into a refusal. Only the names that reached nobody are reported.
-      return { candidates: [], skipped: withGone([], new Set(namedUnreachable)) };
-    }
-
-    // **The whole of "limits off", for the guard half**, now asked of THIS
-    // room. `turnLimitsEnabled` is read HERE rather than inside
-    // `cascade-guard.ts`, which stays limit-agnostic and fully tested: a pure
-    // function that sometimes decides not to decide is a worse thing to reason
-    // about than a caller that decides not to ask. Unlimited means no
-    // provenance query, no verdict, and no notice — nothing was refused, so
-    // there is nothing to say. The stamped depth still advances, so an exchange
-    // that ran unlimited is still readable as a chain afterwards, and turning
-    // limits back on judges it normally.
-    const limits = this.cascadeLimitsFor(room.id);
-    const provenance = limits
-      ? {
-          root: entry.cascadeRoot,
-          depth: entry.cascadeDepth,
-          turnsByAuthor: this.deps.store.turnsByAuthorInCascade(room.id, entry.cascadeRoot),
-        }
-      : null;
-
-    const allowed: TriggerCandidate[] = [];
-    // The guard's refusals, in the order they were made. `gone` is folded in at
-    // the end, from the same set the notices are written from.
-    const refused: SkippedTrigger[] = [];
-    // Collected rather than reported inline, so a member that is BOTH a selected
-    // target and a name this message typed gets one notice, not two.
-    const gone = new Set<string>(namedUnreachable);
-    for (const { authorId, reason } of selected) {
-      const record = records.get(authorId);
-      const decision: CascadeDecision =
-        limits && provenance
-          ? evaluateCascade(authorId, provenance, limits)
-          : { allowed: true, depth: entry.cascadeDepth + 1 };
-      if (!decision.allowed) {
-        // Only announce a limit something actually hit. A `depth` refusal
-        // against an entry that is its OWN cascade root did not come from a
-        // back-and-forth — it comes from the ceiling `deriveCascade` synthesizes
-        // for an agent posting with no turn behind it. Announcing it said "Bo
-        // stopped replying here. This back-and-forth hit its automatic-reply
-        // limit" when Bo was never triggered, no exchange happened, and the
-        // suggested remedy does nothing. Five ordinary posts by one agent
-        // produced five such lines, one per room-mate, and the dedupe never
-        // engaged because each post is its own root.
-        //
-        // THIS SILENCE IS DELIBERATE, and it survived a second look during
-        // DOR-621 — which added notices to every other quiet path in this file.
-        // It reads like a hole in "a refusal is visible" and it is not, for
-        // three reasons worth having in front of you before you close it:
-        //
-        //   1. `deriveCascade` stamps such a post AT the ceiling
-        //      (`cascade-guard.ts`), not at depth 0. So this refusal fires at
-        //      EVERY `maxAgentDepth`, for every room-mate, on every post an
-        //      agent makes outside a turn. Copy that offers to raise a limit is
-        //      inert here: no limit was reached, and raising it changes nothing.
-        //   2. The `(room, cascade, agent)` damping key CANNOT repeat here,
-        //      because each such post is its own cascade root. Whatever notice
-        //      you add is written once per post per room-mate, forever. Closing
-        //      this needs a key that repeats — keyed on the room and the quiet
-        //      agent, re-armed the way `noticedBudget` re-arms — not this one.
-        //   3. A test pinned at `maxAgentDepth: 0` passes while the spraying
-        //      case is broken, because 0 is the one value that makes the shape
-        //      look sane. Any test here must use a realistic ceiling.
-        //
-        // The invariant is served differently: nothing was ever triggered, so
-        // there is no agent that went quiet on you. `room-silence.test.ts` pins
-        // BOTH sides of that narrowness — the silence here, and the two real
-        // refusals that must still speak (a repeat stop, and a chain that
-        // reaches the depth ceiling), so this cannot be widened into a spray or
-        // narrowed into a general hush without something going red.
-        //
-        // On the two terms below: `fromRealChain` is the load-bearing one, and
-        // the `repeat` term is a guard rather than a discriminator. Every
-        // reachable repeat refusal ALSO has `fromRealChain` true, because a
-        // cascade whose root is this entry contains only this entry (plus
-        // system notices), so the target's count in it is zero. Kept because
-        // that is a property of `deriveCascade` in another module, not of
-        // anything here, and it costs one comparison to not depend on it.
-        //
-        // **An agent the room already knows is GONE is left to `reportGone`,
-        // both here and on the wire.** It reads like a missing branch and it is
-        // the opposite: this member was named by a message and its directory no
-        // longer holds it, so `agent_gone` is about to be written — with the
-        // remedy, which is to register it again. Adding "this back-and-forth hit
-        // its automatic-reply limit" beside that is two lines about one member
-        // for one message, and the second one is advice that does nothing. The
-        // same reasoning decides the wire: `skipped` reports it once, as `gone`,
-        // which is both the deeper fact (an agent that is not there cannot
-        // answer whatever the guard thought) and the one the log agrees with.
-        //
-        // It is also what keeps `refused` and `gone` DISJOINT, which is the
-        // invariant the two `continue`s below rest on: a guard-refused author
-        // never reaches the liveness check, and a liveness-failed author was
-        // never guard-refused.
-        if (gone.has(authorId)) continue;
-        this.announceCascade(room, entry, authorId, record?.displayName, decision.reason);
-        // Reported to the POSTER even in the one case the room stays quiet
-        // about. The three reasons for that silence are all reasons not to write
-        // a durable line at every room-mate; none of them is a reason to leave
-        // the writer itself guessing about why its own message went unanswered,
-        // and this answer is private, unduplicated and impossible to spray.
-        refused.push({ authorId, reason: decision.reason });
-        // A local author's message to it went unanswered: its beat looks
-        // (spec `heartbeats` §3.3). A stranger's never wakes one.
-        wakeForRefusedRoomTurn(record, reason, entry, decision.reason, this.deps.authors);
-        continue;
-      }
-      // `naturalKey` is the agentPath — the only handle the turn machinery needs
-      // and the one thing that survives a mesh reconciler rebuild.
-      if (!record || record.kind !== 'agent') continue;
-      // A member whose directory no longer holds the agent it was added as
-      // cannot take a turn, and until now nothing SAID so: the trigger went to
-      // the runner, which failed somewhere inside on a path with no agent, and
-      // the room reported "ran into a problem — open its session to see what
-      // went wrong" about a session that does not exist. Refused here instead,
-      // in its own words, because the remedy is to register the agent again
-      // (ADR 260801-003051). The same test covers the subtler half: a DIFFERENT
-      // agent registered in that directory is not this member either, and its
-      // turns belong to its own author row.
-      if (!isLiveAuthor(record, this.deps.agents)) {
-        gone.add(authorId);
-        continue;
-      }
-      allowed.push({
-        authorId,
-        // `naturalKey` is the agentPath — the only handle the turn machinery
-        // needs and the one thing that survives a mesh reconciler rebuild.
-        agentPath: record.naturalKey,
-        displayName: record.displayName,
-        author: toAuthorRef(record),
-        depth: decision.depth,
-        engaged: engaged.get(authorId) ?? null,
-        reason,
-      });
-    }
-
-    this.reportGone(room, entry, gone, namedUnreachable);
-    // After the guard's own refusals, and from the SAME set the notices were
-    // written from — so a member that was both a selected target and a name this
-    // message typed is reported once, exactly as it is noticed once.
-    return { candidates: allowed, skipped: withGone(refused, gone) };
+    return candidates.selectCandidates(this, room, entry, namedUnreachable);
   }
 
-  /**
-   * Say that the guard stopped an agent — unless announcing it would describe an
-   * exchange that never happened.
-   *
-   * The whole of that exception is in the comment block at the call site in
-   * {@link RoomTriggerDispatcher.selectCandidates}: a `depth` refusal against an
-   * entry that is its OWN cascade root comes from the ceiling `deriveCascade`
-   * synthesizes for an agent posting with no turn behind it, so nothing was
-   * triggered, no limit was reached, and the notice would spray one line per
-   * room-mate per post with no damping key that can ever repeat.
-   *
-   * @param room - The room the message landed in.
-   * @param entry - The message the refusal is about.
-   * @param authorId - The agent that was stopped.
-   * @param displayName - Its name, or `undefined` when its row has vanished.
-   * @param reason - Which rule refused it.
-   */
-  private announceCascade(
+  announceCascade(
     room: Room,
     entry: RoomEntry,
     authorId: string,
     displayName: string | undefined,
     reason: CascadeRefusalReason
   ): void {
-    // On the two terms: `fromRealChain` is the load-bearing one, and the
-    // `repeat` term is a guard rather than a discriminator. Every reachable
-    // repeat refusal ALSO has `fromRealChain` true, because a cascade whose
-    // root is this entry contains only this entry (plus system notices), so the
-    // target's count in it is zero. Kept because that is a property of
-    // `deriveCascade` in another module, not of anything here, and it costs one
-    // comparison to not depend on it.
-    const fromRealChain = entry.cascadeRoot !== entry.id;
-    if (reason !== 'repeat' && !fromRealChain) return;
-    this.notices.announce(
-      room,
-      entry,
-      authorId,
-      buildCascadeNotice(displayName ?? 'An agent', authorId),
-      reason === 'repeat' ? 'cascade_repeat' : 'cascade_depth',
-      // Explicitly none. This target was refused before it could be given an id
-      // — and `selectCandidates` runs synchronously inside `RoomService.post`,
-      // which for an AGENT'S reply is inside that agent's own dispatch scope.
-      // Left to the ambient id, a refusal about Bo would be filed under Ana's
-      // dispatch.
-      null
-    );
+    return candidates.announceCascade(this, room, entry, authorId, displayName, reason);
   }
 
-  /**
-   * The cascade guard's two numbers for one room, or `null` when this room's
-   * limits are off.
-   *
-   * One reading of the ladder per call, which is the point: the three loose
-   * config readers this replaced were not independent — a person toggling
-   * `turnLimitsEnabled` between two of them would have assembled half a
-   * verdict. Resolved fresh every time, so a change binds the very next
-   * message.
-   *
-   * @param roomId - The room being judged.
-   */
-  private cascadeLimitsFor(
+  cascadeLimitsFor(
     roomId: string
   ): { maxAgentDepth: number; maxTurnsPerAgentPerCascade: number } | null {
-    const limits = this.deps.limitsFor(roomId);
-    if (!limits.turnLimitsEnabled) return null;
-    return {
-      maxAgentDepth: limits.maxAgentDepth,
-      maxTurnsPerAgentPerCascade: limits.maxTurnsPerAgentPerCascade,
-    };
+    return candidates.cascadeLimitsFor(this, roomId);
   }
 
-  /**
-   * Everything one turn is told about what is left to spend — the room's hourly
-   * headroom, the install's, and its remaining replies in this chain — with
-   * `null` standing for every one of those that nothing is counting.
-   *
-   * `null` rather than a large number, because this is what an agent reads in
-   * `room_context.budget` and decides how freely to answer against. With
-   * nothing counting, any number here is invented: a big one implies a ceiling
-   * that does not exist and a small one implies a squeeze that is not
-   * happening. "No limit" is the only true thing to say.
-   *
-   * **The three are no longer `null` together, and that is the per-room
-   * override showing through** (DOR-1429). A room with its own limits off on an
-   * install that still counts reports `{ room: null, global: 4998,
-   * repliesLeftInThisChain: null }` — the room's own two bounds are gone and
-   * the install's wallet is not, which is exactly what `resolveRoomLimits`
-   * decided. The two that ARE tied are the room's hourly headroom and its chain
-   * headroom: both are `null` precisely when this room's `turnLimitsEnabled` is
-   * false.
-   *
-   * **They are tied by both readings landing in one tick, not by a single
-   * read.** This resolves the ladder twice — once here, once inside
-   * {@link RoomTurnBudget.remaining} through `TurnBudgetLimits.perRoom` — and
-   * nothing between them can move: the ladder's two rungs are a synchronous
-   * `better-sqlite3` row read and a synchronous `conf` read, with no `await`
-   * between the two calls, so no toggle can land in the gap. If either rung ever
-   * becomes asynchronous, this is the pair that has to be resolved once and
-   * threaded, because half a verdict here is a turn told it has no chain budget
-   * while it still has a room budget.
-   *
-   * @param roomId - The room the turn is about to run in.
-   * @param depth - The depth the turn being assembled carries, or `'ceiling'`
-   *   for a turn that is nobody's reply and hands on no chain (an aside).
-   */
-  private headroomFor(
+  headroomFor(
     roomId: string,
     depth: number | 'ceiling'
   ): {
     budget: { room: number | null; global: number | null };
     repliesLeftInThisChain: number | null;
   } {
-    const limits = this.cascadeLimitsFor(roomId);
-    return {
-      budget: this.deps.budget.remaining(roomId),
-      repliesLeftInThisChain:
-        limits === null
-          ? null
-          : depth === 'ceiling'
-            ? 0
-            : Math.max(0, limits.maxAgentDepth - depth),
-    };
+    return candidates.headroomFor(this, roomId, depth);
   }
 
-  /**
-   * Run every collection whose window closed together: claim them all, then
-   * start their turns.
-   *
-   * **Two passes, and the reason is the same one the two-pass bind has.**
-   * `room_context.working` is read off the live claim map, so a turn assembled
-   * before its colleague had claimed would tell an agent the room was idle when
-   * a message it can see had just addressed somebody else too. Claiming
-   * everything first makes that structural rather than a matter of which timer
-   * fired first.
-   *
-   * @param batch - Every collection the collector just closed.
-   */
   private runCollected(batch: RoomCollection[]): void {
-    const started: Array<{ room: Room; entry: RoomEntry; target: TriggerTarget }> = [];
-    for (const collection of this.gateBatch(batch)) {
-      const claimed = this.claimCollected(collection);
-      if (claimed) started.push(claimed);
-    }
-    for (const { room, entry, target } of started) {
-      void this.runOne(room, entry, target).finally(() => this.settleOne());
-    }
+    return batchRouting.runCollected(this, batch);
   }
 
-  /**
-   * Drop the bursts an overhearing agent can be excused from, before anything
-   * costs money (spec `engaged-response-gate` §3).
-   *
-   * **The gate is the last thing before the claim tail and the first thing that
-   * could cost anything** — which in this release is nothing at all, because
-   * tier 1 is a pure function with no clock, no store read of its own and no
-   * model (`response-gate/routing-rules.ts`). Placing it here rather than inside
-   * {@link RoomTriggerDispatcher.claimCollected} is what makes every property
-   * below fall out for free rather than needing to be undone:
-   *
-   * | Not done | Because |
-   * | -------- | ------- |
-   * | Charged the budget | `budget.tryReserve` is downstream. Nothing is spent, so nothing needs refunding — which matters, since `tryReserve` has no counterpart and this file explicitly declines to invent one. |
-   * | Counted against a limit | Nothing is reserved, no reply is posted, and no dispatch id is minted — so `room_turn_spend` gains no row, `turnsByAuthorInCascade` is unmoved, and the turn-scoped repeat counter (DOR-1434) counts nothing. |
-   * | Moved the cursor | `setReadCursor` is downstream. The message stays behind this agent's cursor and reaches it as ambient background on whatever turn does run. |
-   * | Taken a claim | `holdClaim` is downstream, so no working indicator appears and vanishes with nothing to show for it. |
-   * | Said anything | No entry, no notice. Nobody asked, so there is no obligation to discharge (room-participation spec §10.2.2). |
-   *
-   * **Only a burst where EVERY message says `'window'` is eligible**, and that
-   * one line is invariant I-G3. One `mention` or `dm` anywhere in a gathered
-   * burst makes the whole burst addressed and it passes through untouched: an
-   * addressed message is going to run a turn regardless, and the overheard ones
-   * riding with it are context that turn is owed. Conservative in the only
-   * direction that is safe to be wrong in.
-   *
-   * The four skips before the rules are the cheap deterministic ones, and none
-   * of them is a verdict:
-   *
-   * - **Gate off** — this install said no.
-   * - **Not ambient** — see above.
-   * - **Busy** — {@link RoomTriggerDispatcher.claimCollected} is about to PARK
-   *   this burst, and parking is not a decision. Routing it to silence now would
-   *   spend a verdict on a question that gets asked again when the claim
-   *   releases, against a room that has moved on.
-   * - **Gone** — an archived room, or an agent no longer on the roster. The
-   *   claim tail settles those as `left`, in its own words.
-   *
-   * Every one of them is re-checked downstream. This is a pre-filter, never a
-   * replacement: `claimCollected` stays correct when called with a batch that
-   * was never gated, which is exactly what `responseGate: 'off'` produces.
-   *
-   * **The busy and gone branches are DEFENSIVE, and no test reaches them.** Say
-   * that plainly rather than leaving the next reader to infer coverage from the
-   * tests that surround them, because both are shadowed by machinery upstream:
-   *
-   * - A collection opened behind a live claim is parked at the `collectOne`
-   *   seam and given no deadline at all, so it is never swept and never arrives
-   *   here. Its one REACHABLE shape is a race — a window that opened while the
-   *   agent was free, and something claiming that agent (an aside turn, or a
-   *   burst in another room sharing its checkout) between the arming and the
-   *   sweep firing. That is the same race `claimCollected` re-asks for, and its
-   *   comment there says so.
-   * - A member that has left the room is never SELECTED, so no collection
-   *   exists to judge; and archiving through the service calls `abandonHolds`,
-   *   which drops every pending collection first.
-   *
-   * They stay because the cost is two comparisons and the failure they prevent
-   * is a refusal line about a conduct decision nobody made — which would be
-   * indistinguishable, in the ledger §14 tunes against, from a real mute. But
-   * they are not load-bearing, and deleting them would leave every test green.
-   *
-   * **Judging is guarded and accounting is not**, deliberately. The `try` below
-   * covers exactly the part that can have a bug in it — the rules, and the two
-   * store reads that feed them — and a throw there falls open to a turn. It does
-   * NOT cover `logRefusal` and `settleCollection`, because those run only after
-   * a verdict is in, and a wrapper around them would have to decide whether a
-   * half-finished accounting had already settled the collection. Every other
-   * refusal site in this file leaves the same pair unguarded, for the same
-   * reason: a logger that throws is a broken process, not a room outcome.
-   *
-   * @param batch - Everything the collector just closed.
-   * @returns The collections that still deserve a turn, in the order given.
-   */
-  private gateBatch(batch: RoomCollection[]): RoomCollection[] {
-    if (this.deps.responseGate() === 'off') return batch;
-    const survivors: RoomCollection[] = [];
-    // One roster read per ROOM per sweep, not per collection: a burst that
-    // reaches three agents in one channel asks the same question three times.
-    const agentsIn = new Map<string, ReadonlySet<string>>();
-    for (const collection of batch) {
-      let verdict: NonNullable<RoutingVerdict> | null = null;
-      try {
-        verdict = this.routeCollection(collection, agentsIn);
-      } catch (err) {
-        // **Fail OPEN, per collection** (spec `engaged-response-gate` §9, and the
-        // whole of invariant I-G6). Three things are true here and each one on
-        // its own would decide it:
-        //
-        // 1. The fallback of a cost optimisation is the status quo it optimises.
-        //    Running the turn is what shipped before this gate existed.
-        // 2. **A gate outage must never be indistinguishable from good
-        //    judgement.** Failing closed would take every agent in every room
-        //    quiet, and the room would look exactly like a room full of tactful
-        //    agents. That is the worst failure this domain can produce.
-        // 3. There is no net under this. `RoomCollector.sweep` calls us from a
-        //    `setTimeout` with nothing awaiting it, so an escaping throw reaches
-        //    `process.on('uncaughtException')` — and on the way out it strands
-        //    the hold this collection is between: `sweep` has already removed it
-        //    from its map and `settleCollection` has not run, so `triggersIdle`
-        //    never settles and the room wedges.
-        //
-        // PER COLLECTION, and that is the half a single wrapper around the loop
-        // would get wrong: one bad burst must not drop the others in the same
-        // sweep, and some of those others are ADDRESSED.
-        //
-        // Deliberately not a `logRefusal`: nothing was refused, the turn ran.
-        // Counting this as a mute would corrupt the one signal §14 says to tune
-        // against.
-        logger.warn('[rooms] the response gate could not judge a message, so the turn ran', {
-          roomId: collection.room.id,
-          authorId: collection.authorId,
-          entryId: collection.entries.at(-1)?.entry.id,
-          ...logError(err),
-        });
-      }
-      if (verdict === null) {
-        survivors.push(collection);
-        continue;
-      }
-      logRefusal('[rooms] an agent stayed out of a conversation it was not part of', {
-        reason: 'not_addressed_to_me',
-        visibility: 'chosen',
-        roomId: collection.room.id,
-        authorId: collection.authorId,
-        entryId: collection.entries.at(-1)?.entry.id,
-        // Explicitly none, and never the ambient one. No target has been given a
-        // dispatch id — one is minted in `claimCollected`, downstream of here —
-        // and this sweep may be running inside the scope of whichever agent's
-        // reply produced the message being excused. Left ambient, a line about
-        // Bo staying quiet would be filed under Ana's dispatch.
-        dispatchId: null,
-        detail: { tier: 1, rule: verdict.rule, entries: collection.entries.length },
-      });
-      this.settleCollection(collection, 'refused');
-    }
-    return survivors;
+  gateBatch(batch: RoomCollection[]): RoomCollection[] {
+    return batchRouting.gateBatch(this, batch);
   }
 
-  /**
-   * Tier 1's verdict on one collection, or `null` to let it through.
-   *
-   * Split out from {@link RoomTriggerDispatcher.gateBatch} so the loop reads as
-   * "decide, then account for the decision" — the accounting is three calls that
-   * must all happen together, and burying them under four early returns is how
-   * one of them gets missed.
-   *
-   * @param collection - The burst being weighed.
-   * @param agentsIn - Per-room agent rosters memoised for this sweep.
-   */
-  private routeCollection(
+  routeCollection(
     collection: RoomCollection,
     agentsIn: Map<string, ReadonlySet<string>>
   ): NonNullable<RoutingVerdict> | null {
-    const { room, authorId, agentPath } = collection;
-    if (!collection.entries.every((held) => held.reason === 'window')) return null;
-    if (this.busyWith(room.id, authorId, agentPath) !== null) return null;
-    if (room.archived || this.deps.store.getMember(room.id, authorId) === null) return null;
-
-    let agentMembers = agentsIn.get(room.id);
-    if (!agentMembers) {
-      const members = this.deps.store.listMembers(room.id);
-      const records = this.deps.authors.getMany(members.map((member) => member.authorId));
-      agentMembers = new Set(
-        members
-          .map((member) => member.authorId)
-          .filter((memberId) => records.get(memberId)?.kind === 'agent')
-      );
-      agentsIn.set(room.id, agentMembers);
-    }
-
-    // ONE registry read for the whole burst. Every message's author, not the
-    // roster's: a burst can carry a post by somebody who has since left, and a
-    // kind that resolved to `system` because the row was not asked for would
-    // read as "not an agent" and quietly stop two of the three rules firing.
-    const kinds = this.deps.authors.getMany(collection.entries.map((held) => held.entry.authorId));
-    return routeAmbient({
-      agentAuthorId: authorId,
-      agentMembers,
-      entries: collection.entries.map((held) =>
-        this.routedEntry(room.id, authorId, held.entry, kinds.get(held.entry.authorId)?.kind)
-      ),
-    });
+    return batchRouting.routeCollection(this, collection, agentsIn);
   }
 
-  /**
-   * One collected message in the flat shape the routing rules take.
-   *
-   * The `answersThisAgent` lookup is the only store read here, it is one indexed
-   * primary-key hit, and it is skipped entirely for the common case of a message
-   * that answers nothing. An entry that cannot be found reads as `false`, which
-   * is the conservative side: it can only stop a rule firing.
-   *
-   * @param roomId - The room.
-   * @param agentAuthorId - The agent being judged.
-   * @param entry - The committed message.
-   * @param authorKind - Its author's kind, already resolved by the caller;
-   *   `undefined` for a row that has vanished, which reads as `system` — the
-   *   conservative side, since only an `agent` author can reach R2 or R3.
-   */
-  private routedEntry(
+  routedEntry(
     roomId: string,
     agentAuthorId: string,
     entry: RoomEntry,
     authorKind: AuthorKind | undefined
   ): RoutedEntry {
-    const answersEntryId = entry.body.answersEntryId ?? null;
-    const answered =
-      answersEntryId === null ? null : this.deps.store.getEntryById(roomId, answersEntryId);
-    return {
-      entryId: entry.id,
-      authorId: entry.authorId,
-      authorKind: authorKind ?? 'system',
-      mentions: entry.mentions,
-      answersEntryId,
-      answersThisAgent: answered !== null && answered.authorId === agentAuthorId,
-      answeredEntryMentionsThisAgent:
-        answered !== null && answered.mentions.includes(agentAuthorId),
-    };
+    return batchRouting.routedEntry(this, roomId, agentAuthorId, entry, authorKind);
   }
 
-  /**
-   * Pick the newest message in a batch that the guard still allows, announcing
-   * every newer one it refuses on the way past.
-   *
-   * **The guard is asked PER MESSAGE, and asking it once for the batch was a
-   * real defect.** Its repeat rule counts a durable query, so a message collected
-   * while a turn was in flight could not be judged against that turn's own post;
-   * re-asking when the batch runs is what still terminates a two-agent
-   * ping-pong. But a batch is not one message, and a verdict taken from the
-   * newest entry alone is a verdict about the wrong thing: a person's direct
-   * question, parked while the agent worked, was DISCARDED because an agent's
-   * reply happened to join the batch behind it and the guard vetoed on that.
-   * The person's question — a fresh cascade root at depth 0, which every rule
-   * here allows — never ran, and nothing said so.
-   *
-   * So each message carries its own verdict, newest first, and the first one
-   * that survives is what the turn answers. Three consequences are load-bearing:
-   *
-   * - **An agent-authored message can never veto a human-authored one.** That is
-   *   the whole point of `deriveCascade`'s human carve-out: a person's message
-   *   mints its own root at depth 0, so it is judged on its own terms and keeps
-   *   them. The bug above was exactly this carve-out being lost by aggregation.
-   * - **A refused message is left UNREAD.** The cursor advances only to the
-   *   trigger, so anything above it is still in the next turn's ambient window
-   *   rather than silently consumed by a turn that never saw it.
-   * - **The refusal is visible**, damped per `(room, cascade, agent)` like every
-   *   other guard refusal — including the one deliberate silence
-   *   {@link RoomTriggerDispatcher.announceCascade} keeps, so a batch cannot
-   *   become a way to spray the line §5.1.1 removed.
-   *
-   * @param collection - The batch being judged.
-   * @returns The chosen message, its verdict and its index, or `null` when every
-   *   message was refused — in which case the notices are already written.
-   */
-  private chooseTrigger(
+  chooseTrigger(
     collection: RoomCollection
   ): { held: CollectedTrigger; decision: CascadeDecision; index: number } | null {
-    const { room, authorId, displayName } = collection;
-    // Limits off in THIS room: nothing to re-ask. The newest message is the
-    // trigger, and no notice is written because nothing was refused (see
-    // {@link RoomTriggerDispatcher.selectCandidates} for the whole of it).
-    const limits = this.cascadeLimitsFor(room.id);
-    if (!limits) {
-      const held = collection.entries.at(-1);
-      if (!held) return null;
-      return {
-        held,
-        decision: { allowed: true, depth: held.entry.cascadeDepth + 1 },
-        index: collection.entries.length - 1,
-      };
-    }
-    // One read per distinct cascade, not per message. A batch is usually one or
-    // two exchanges, so this is a couple of indexed queries however long it is.
-    const inCascade = new Map<string, ReadonlyMap<string, number>>();
-    const turnsByAuthor = (root: string): ReadonlyMap<string, number> => {
-      const known = inCascade.get(root);
-      if (known) return known;
-      const found = this.deps.store.turnsByAuthorInCascade(room.id, root);
-      inCascade.set(root, found);
-      return found;
-    };
-    for (let index = collection.entries.length - 1; index >= 0; index -= 1) {
-      const held = collection.entries[index];
-      const decision = evaluateCascade(
-        authorId,
-        {
-          root: held.entry.cascadeRoot,
-          depth: held.entry.cascadeDepth,
-          turnsByAuthor: turnsByAuthor(held.entry.cascadeRoot),
-        },
-        limits
-      );
-      if (decision.allowed) return { held, decision, index };
-      // Nothing here can double-announce: a message only reaches a collection
-      // after the guard ALLOWED it, so this is the first refusal it can earn.
-      this.announceCascade(room, held.entry, authorId, displayName, decision.reason);
-    }
-    return null;
+    return batchRouting.chooseTrigger(this, collection);
   }
 
-  /**
-   * Turn one agent's collected messages into one claimed turn: afford it, bind
-   * it, and claim it.
-   *
-   * Everything here is per TURN rather than per message, which is the half of
-   * RP8 that shows up on a bill. **One budget reservation covers the whole
-   * collected window** — three people talking at once cost one automatic turn,
-   * not three — and **one claim advances the cursor past all of it**, because
-   * the turn really is shown all of it: the last message is what it answers, and
-   * everything behind it rides the ambient window (spec §8.3).
-   *
-   * The trigger is the NEWEST message the guard still allows, and the earlier
-   * ones are context. Newest rather than oldest because the ambient window ends
-   * at the triggering entry's `seq`, so triggering on the first of a burst would
-   * put the rest above the ceiling and show the agent none of them. **Allowed
-   * rather than simply last** — see {@link RoomTriggerDispatcher.chooseTrigger}.
-   *
-   * @param collection - What this agent has been asked and not yet answered.
-   * @returns What to run, or `null` when nothing will — every such path has
-   *   already settled this collection's accounting or parked it.
-   */
-  private claimCollected(
+  claimCollected(
     collection: RoomCollection
   ): { room: Room; entry: RoomEntry; target: TriggerTarget } | null {
-    const { room, authorId, agentPath, displayName } = collection;
-    const newest = collection.entries.at(-1);
-    if (!newest) {
-      this.settleCollection(collection, 'refused');
-      return null;
-    }
-    // Asked AGAIN, not merely re-read: a window that opened while the agent was
-    // free can still close after something else claimed it — an aside turn, or
-    // a burst in another room reaching the same checkout.
-    const busyWith = this.busyWith(room.id, authorId, agentPath);
-    if (busyWith !== null) {
-      // Parked, not refused: this is the same steer `collectOne` makes, arrived
-      // at from the other direction. The credit stays with the collection —
-      // unless parking MERGED it into one already waiting, in which case two
-      // pending turns have become one and the surplus is settled here.
-      //
-      // **The hold is re-stated AFTER the park, against whatever is in the way
-      // now.** A batch re-armed by one claim's release frequently finds another
-      // room's claim already taken by the time it gets here, and the indicator
-      // has to point at that room rather than the one that just finished.
-      const merged = this.collector.park(collection);
-      if (busyWith.where === 'elsewhere') {
-        // The batch's OLDEST message keys a new hold, which is the same choice
-        // `collectOne` makes: an indicator is keyed `(room, author, entryId)`,
-        // so it has to be an id that does not move while the person keeps
-        // typing. An existing hold keeps its own — see `noteHold`.
-        this.noteHold(
-          room.id,
-          authorId,
-          agentPath,
-          collection.entries[0]?.entry.id ?? newest.entry.id,
-          busyWith
-        );
-      }
-      if (merged) this.settleOne();
-      return null;
-    }
-
-    // **Asked again at the last moment, like the ceilings above it.** A batch can
-    // wait here for the best part of an hour, and a room's roster is not frozen
-    // while it does: an agent removed from the room, or a room archived, must not
-    // buy a turn that then POSTS into a room it is no longer in. `abandonHolds`
-    // drops the wait at the moment either happens; this is the second gate, for
-    // anything that changes the roster without going through the service.
-    if (room.archived || this.deps.store.getMember(room.id, authorId) === null) {
-      logger.info('[rooms] a waiting message never ran: the agent is no longer in the room', {
-        roomId: room.id,
-        authorId,
-        archived: room.archived,
-      });
-      // **And the room says so** (DOR-786), through the same seam
-      // {@link RoomTriggerDispatcher.abandonHolds} uses — because this is the
-      // same event, reached from the other direction. That one runs inside the
-      // operator's own `removeMember` call and handles almost every real case;
-      // this is the second gate, for a roster that changed WITHOUT going through
-      // the service (a direct write, a reconciler), where there is no act at all
-      // for a reader to connect the silence to. One helper, so the two gates
-      // cannot drift into saying different things about one event.
-      //
-      // **THIS BRANCH IS DEFENSIVE, and no test reaches it** — said plainly for
-      // the reason `routeCollection`'s own TSDoc says the same thing about its
-      // busy and gone skips, rather than leaving the next reader to infer
-      // coverage from the tests around it. Removing a member through the service
-      // calls `abandonHolds`, which drops every pending collection before this
-      // gate is ever asked, and archiving does the same. What is left is a
-      // roster changed underneath the service, which nothing in the suite does.
-      // The `agent_left` tests therefore exercise the OTHER call site; this one
-      // exists so that a direct write cannot produce the silent drop DOR-786 is
-      // about, and deleting it would leave every test green.
-      //
-      // **Read fresh, not from `collection.room`.** The room destructured at the
-      // top of this method is the room as it stood when the message was POSTED,
-      // and a batch can wait here the best part of an hour — so the archive that
-      // matters may have happened during the wait. `reportLeft` promises to take
-      // the room as it stands NOW, because that is the value its archived check
-      // turns on, and handing it a stale one would have it attempt a notice the
-      // store then refuses.
-      this.reportLeft(this.deps.store.getRoom(room.id), collection);
-      this.settleCollection(collection, 'left');
-      return null;
-    }
-
-    const chosen = this.chooseTrigger(collection);
-    if (!chosen) {
-      // EVERY message in the batch was refused, so the batch is refused — and
-      // the refusals are already on the log, written by `chooseTrigger` under
-      // the same narrowness a single refusal has always had.
-      this.settleCollection(collection, 'refused');
-      return null;
-    }
-    const entry = chosen.held.entry;
-
-    const target: TriggerTarget = {
-      authorId,
-      agentPath,
-      displayName,
-      // The FRESH verdict's depth, not the one the guard reached when this
-      // message was collected. They agree today — depth is derived from the
-      // entry rather than from the store — and taking it from the decision that
-      // actually allowed this turn is what keeps them from drifting apart.
-      depth: chosen.decision.depth,
-      engaged: chosen.held.engaged,
-      ...(chosen.held.reason === 'conversation' || chosen.held.reason === 'lead'
-        ? { answerOwed: chosen.held.reason }
-        : {}),
-      reason: chosen.held.reason,
-      // ONE ID PER (turn, target), minted here rather than per entry. A message
-      // addressed to three agents is three dispatches sharing one `entryId`: the
-      // fan-out is recovered by the entry, and each agent's own chain — claim,
-      // turn, reply, relay hop — is recovered by its dispatch. Minting one id
-      // for the entry would put three interleaved turns on one filter and answer
-      // no question at all.
-      dispatchId: newDispatchId(),
-      // Replaced with the real binding once the budget has been charged; a turn
-      // that never becomes affordable never mints a session.
-      sessionId: '',
-      // Replaced with the real cursor at claim time, for the same reason.
-      lastReadSeq: 0,
-      // Only the messages this turn will actually be SHOWN. The window ends at
-      // the trigger's `seq`, so a refused message above it is not in `pending`
-      // and marking it would be a claim about a line nobody will read.
-      arrivedDuringPrevTurn: new Set(
-        collection.entries
-          .slice(0, chosen.index)
-          .filter((held) => held.arrivedDuringTurn)
-          .map((held) => held.entry.id)
-      ),
-      // Everything gathered behind the trigger, whenever it arrived — the rest
-      // of what this one turn is being asked (DOR-1231). Bounded the same way:
-      // above the chosen index is refused and unread, so marking it would be a
-      // claim about a line nobody will read.
-      gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
-      // Every message the turn answers, trigger included, so its power is
-      // decided by the strictest author in the burst (spec
-      // `trusted-by-default-flip` §4) rather than by whoever wrote last.
-      answers: collection.entries.slice(0, chosen.index + 1).map((held) => ({
-        id: held.entry.id,
-        authorId: held.entry.authorId,
-      })),
-    };
-
-    // The cascade guard allowed these on the merits, one message at a time. The
-    // budget is the second, blunter question — can this ROOM afford another
-    // automatic turn at all — and it is asked without reference to who wrote the
-    // entry, so a caller who reached depth 0 by claiming to be human still stops
-    // here. ONCE for the collection, because a collection is one turn.
-    //
-    // **Limits off means no reservation at all**, not a reservation against a
-    // huge number: an hour spent unlimited must not leave a room out of budget
-    // the moment somebody turns limits back on, and a counter nothing reads is
-    // a counter that lies. The budget owns that decision now, rather than a
-    // branch here reading a flag the budget would then read again — one seam,
-    // so an unlimited ROOM on a counting install is still charged against the
-    // install's wallet and cannot be made unlimited by a caller that forgot the
-    // second half of the rule (DOR-1429).
-    const afford = this.deps.budget.tryReserve(room.id);
-    if (!afford.allowed) {
-      // This one CAN be correlated: the target survived the guard and was
-      // given its id above, so the refusal belongs to a real dispatch that
-      // never ran.
-      this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
-      // Its beat looks instead, for a local author's message (spec `heartbeats` §3.3).
-      wakeForBudgetRefusal(agentPath, chosen.held.reason, entry, this.deps.authors);
-      this.settleCollection(collection, 'refused');
-      return null;
-    }
-    // Spending again means the window moved, so re-arm the notice: the next
-    // exhaustion is news, not a repeat. Only when something was actually
-    // charged — with nothing counting there is no window to have rolled.
-    if (afford.counted) this.notices.budgetRecovered(room.id);
-
-    // Bind the session BEFORE claiming it. Reading the binding inside `runOne`
-    // and writing it on completion left a window: two posts before the first
-    // reply both saw `null`, both minted a UUID, and the second lost the
-    // `onConflictDoNothing` race — leaving a real session with its own projector
-    // and `session_metadata` row bound to nothing, whose reply was produced from
-    // an empty context. `bindRoomSession` returns the WINNER, so claiming
-    // resolves the race to one session per (room, agent).
-    //
-    // The id minted here is a PLACEHOLDER on the first turn: the runtime names
-    // the session itself, mid-turn, and files the transcript under ITS name.
-    // What moves the binding onto that name is the projector's rekey — a
-    // listener registered by `room-session-convergence.ts` at boot, which fires
-    // the instant the id is known. The comparison in `runOne` is the FALLBACK,
-    // and it has to be: it reads a value `triggerTurn` resolves best-effort at
-    // first-event-or-5s, and turn 1 routinely loses that race and hands back
-    // this very placeholder (DOR-784).
-    //
-    // Wrapped, because it is the last thing here that can throw. It no longer
-    // runs inside `RoomService.post` — the collect window put a macrotask
-    // between the two — but the failure is the same one either way: a
-    // `SQLITE_BUSY` on a `room_sessions` insert must cost this turn and nothing
-    // else. Nothing to unwind, since no claim is held yet; the room's spend is
-    // already charged and is NOT refunded, because `tryReserve` has no
-    // counterpart and inventing one for a path that only fires under database
-    // contention would be more machinery than the fault is worth.
-    try {
-      target.sessionId = this.deps.store.bindRoomSession(
-        room.id,
-        authorId,
-        this.deps.store.getRoomSession(room.id, authorId) ?? randomUUID(),
-        new Date().toISOString()
-      );
-    } catch (err) {
-      // Visible, not silent (DOR-1206): a dropped trigger with no room entry is
-      // indistinguishable from a broken agent, and in a shared room the person
-      // who notices is not the person who configured it. `reportSilence` writes
-      // and damps the durable notice; the STACK stays here rather than there,
-      // and unlike `turn_failed` it has nowhere else to go — a bind that never
-      // happened mints no session, so there is no agent stream for a person to
-      // open and no `runOneInDispatch` catch to fall back on.
-      logger.warn('[rooms] could not bind a room session, so this agent was not triggered', {
-        roomId: room.id,
-        authorId,
-        entryId: entry.id,
-        dispatchId: target.dispatchId,
-        ...logError(err),
-      });
-      this.notices.reportSilence(room, entry, target, 'unavailable', target.dispatchId);
-      this.settleCollection(collection, 'refused');
-      return null;
-    }
-
-    // THE READ CURSOR ADVANCES HERE, AT THE CLAIM — not when the reply posts
-    // (room-participation spec §8.3). The turn is about to be shown everything
-    // between this cursor and this entry; a turn that then errors, times out or
-    // chooses to say nothing has still SEEN those messages, and replaying them
-    // on its next turn would show the agent the same conversation twice. It
-    // covers the WHOLE collected window for the same reason, because the whole
-    // window is what the turn is shown.
-    //
-    // Read then written in one synchronous pass, before anything awaits, so no
-    // other writer can land an entry between the two — and the value that was
-    // there rides the target to `buildRoomContext`, which is the only thing that
-    // still needs it.
-    target.lastReadSeq = this.deps.store.getMember(room.id, authorId)?.lastReadSeq ?? 0;
-    // Monotonic in the store, so a target answering an entry BELOW its cursor —
-    // a late turn on an old message — cannot walk it backwards.
-    this.deps.store.setReadCursor(room.id, authorId, entry.seq);
-    this.holdClaim({
-      roomId: room.id,
-      cascadeRoot: entry.cascadeRoot,
-      authorId,
-      agentPath,
-      entryId: entry.id,
-      dispatchId: target.dispatchId,
-      depth: target.depth,
-      // A real trigger, so a post this agent makes mid-turn inherits this
-      // exchange and the guard sees the whole chain.
-      aside: false,
-      spokeViaTool: false,
-      reactedViaTool: false,
-      claimedAt: new Date().toISOString(),
-      pastDeadline: false,
-      // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
-      // the room immediately, and a floor set at claim time would hold it back
-      // for up to one throttle window.
-      activityPublishedAt: 0,
-    });
-    return { room, entry, target };
+    return claimCollected.claimCollected(this, collection);
   }
 
-  /**
-   * Say, once per message per member, that a member's agent is gone.
-   *
-   * **Two ways to arrive here, one notice.** A member can be SELECTED as a
-   * target and turn out to be a ghost (an `always` member, or one a live
-   * room-mate's cascade reached), and a member can be NAMED by a person whose
-   * `@ana` reached nobody because releasing that name is exactly what the ghost
-   * mechanism does. The two overlap on the commonest shape of all — somebody
-   * typing at an `always` ghost — so they are unioned before anything is
-   * written rather than reported by two call sites that each look right alone.
-   *
-   * **Being named is a direct question, and direct questions are never damped.**
-   * A ghost owns no name, so ordinary chatter cannot match one and there is no
-   * spray path: a person gets back exactly as many lines as they wrote messages
-   * naming it. A ghost reached by SELECTION alone is damped like a busy agent,
-   * because that is a state and the most persistent one there is.
-   *
-   * @param room - The room the message landed in.
-   * @param entry - The message.
-   * @param gone - Every member whose agent is gone, from both routes.
-   * @param namedUnreachable - The subset this message actually typed a name for.
-   */
-  private reportGone(
+  reportGone(
     room: Room,
     entry: RoomEntry,
     gone: ReadonlySet<string>,
     namedUnreachable: readonly string[]
   ): void {
-    if (gone.size === 0) return;
-    const named = new Set(namedUnreachable);
-    const records = this.deps.authors.getMany([...gone]);
-    for (const authorId of gone) {
-      const displayName = records.get(authorId)?.displayName ?? 'An agent';
-      this.notices.reportSilence(
-        room,
-        entry,
-        { authorId, displayName },
-        'gone',
-        // Nothing was ever claimed for this member, so it has no dispatch of its
-        // own — and the ambient one belongs to whoever's reply triggered this.
-        // Same rule as the cascade and busy refusals above.
-        null,
-        { namedDirectly: named.has(authorId) }
-      );
-    }
+    return claimCollected.reportGone(this, room, entry, gone, namedUnreachable);
   }
 
   /**
@@ -1867,7 +732,7 @@ export class RoomTriggerDispatcher {
    * @param authorId - The agent taking it.
    * @param sessionId - The canonical session id.
    */
-  private noteSessionBound(roomId: string, authorId: string, sessionId: string): void {
+  noteSessionBound(roomId: string, authorId: string, sessionId: string): void {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim) claim.sessionId = sessionId;
   }
@@ -1918,7 +783,7 @@ export class RoomTriggerDispatcher {
    * @param authorId - The agent delivering it.
    * @returns `true` when this delivery has already been made by hand.
    */
-  private takeSpokeViaTool(roomId: string, authorId: string): boolean {
+  takeSpokeViaTool(roomId: string, authorId: string): boolean {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim?.spokeViaTool !== true) return false;
     claim.spokeViaTool = false;
@@ -1941,7 +806,7 @@ export class RoomTriggerDispatcher {
    * @param authorId - The agent delivering it.
    * @returns `true` when this turn put a reaction in front of the room.
    */
-  private takeReactedViaTool(roomId: string, authorId: string): boolean {
+  takeReactedViaTool(roomId: string, authorId: string): boolean {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim?.reactedViaTool !== true) return false;
     claim.reactedViaTool = false;
@@ -1963,495 +828,33 @@ export class RoomTriggerDispatcher {
    * @param entry - The entry being answered.
    * @param target - The agent answering it, carrying its own dispatch id.
    */
-  private runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
+  runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
     return runInDispatch({ dispatchId: target.dispatchId, origin: 'room', entryId: entry.id }, () =>
       this.runOneInDispatch(room, entry, target)
     );
   }
 
-  /** The body of {@link RoomTriggerDispatcher.runOne}, already inside its scope. */
-  private async runOneInDispatch(
-    room: Room,
-    entry: RoomEntry,
-    target: TriggerTarget
-  ): Promise<void> {
-    const key = agentKey(room.id, target.authorId);
-    recordDispatchStart({
-      dispatchId: target.dispatchId,
-      origin: 'room',
-      roomId: room.id,
-      sessionId: target.sessionId,
-    });
-    // What the release in the `finally` will report. Only the paths that reach a
-    // terminal here set it; a turn handed to `deliverLate` does not release from
-    // this frame at all, so its outcome is that method's to report.
-    let outcome: ClaimOutcome = 'quiet';
-    try {
-      // **Where this turn runs, decided before anything describes it.** Always
-      // the agent's home (spec `agent-home-desk` §5.1), with the room's folders
-      // granted when it has files of its own — and the files section measured
-      // against the copy it is granted. The context below names attachment
-      // paths relative to `cwd` and the runner puts the files there.
-      const place = await this.placeTurn(room.id, target.agentPath, target.displayName);
-      const { cwd } = place;
-      const files = place.files ?? undefined;
-      // Built before the request so the context and the projection plan it
-      // implies are one value, resolved once.
-      const turnContext = buildRoomContext(this.deps, {
-        room,
-        agentAuthorId: target.authorId,
-        // What this room's files hold for this agent, measured against the copy
-        // the line above granted. Absent for every room without files of its
-        // own, which renders nothing (spec §3.7).
-        files,
-        // The folder the turn below runs in, so a file the context names is
-        // named by a path that opens from where the agent stands (DOR-1266).
-        // The same value reaches the runner as `cwd` a few lines down.
-        cwd,
-        entry,
-        working: this.workingIn(room.id),
-        // The cursor as it stood before the claim moved it. The stored row has
-        // already advanced past this entry, so reading it here would describe
-        // an empty window every time (room-participation spec §8.3).
-        lastReadSeq: target.lastReadSeq,
-        // Both halves of what is left to spend, resolved together so they can
-        // never disagree about whether anything is counting.
-        ...this.headroomFor(room.id, target.depth),
-        engaged: target.engaged,
-        // A person is owed this agent's answer, though the message did not name
-        // it (DOR-2823): the block then never offers silence.
-        ...(target.answerOwed ? { answerOwed: target.answerOwed } : {}),
-        // Which of the messages in that window landed while this agent was
-        // already working (RP8). Without it a steered turn reads as a person
-        // repeating themselves, when what actually happened is that they carried
-        // on talking while the agent was busy.
-        arrivedDuringPrevTurn: target.arrivedDuringPrevTurn,
-        // And which of them this turn OWES AN ANSWER TO. The two sets answer
-        // different questions and only this one decides what the reply has to
-        // cover: without it a gathered burst rendered as unread background, and
-        // an agent handed three questions answered the newest and dropped the
-        // rest (DOR-1231).
-        gathered: target.gathered,
-      });
-      const result = await this.deps.runner.run({
-        room,
-        authorId: target.authorId,
-        agentPath: target.agentPath,
-        // The agent's home, the same value the context was built against —
-        // never resolved a second time — and the room's folders it may reach.
-        cwd,
-        additionalDirectories: place.additionalDirectories,
-        worktree: place.worktree,
-        ...roomLaunchStepFor(this.deps, room.id, target.authorId, target.agentPath, place),
-        sessionId: target.sessionId,
-        entry,
-        // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
-        // off the author's stored key, and read HERE because this is where the
-        // registry is.
-        //
-        // The missing-record case is spelled out rather than folded into a
-        // `?? ''` default, because `authorOrigin('')` answers `'local'` — an
-        // empty string does not start with the external prefix — and that is
-        // the permissive direction. An author this dispatcher cannot resolve is
-        // treated as external: losing the operator's power level for one turn
-        // costs a prompt, while reading an unknown author as local would hand
-        // it out on the strength of a failed lookup.
-        //
-        // Over EVERY message the turn answers: a gathered burst that mixes a
-        // stranger and a person is external if any author is.
-        externalAuthor: (target.answers ?? [entry]).some((answered) =>
-          isEntryAuthorExternal(this.deps.authors, answered.authorId)
-        ),
-        // And the turn itself is held to the strictest of its senders' levels,
-        // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
-        ...ceilingForEntries(this.deps.authors, target.answers ?? [entry]),
-        // The message, unchanged. A trigger asks the agent exactly what was
-        // said; only the welcome-back offer below asks something else.
-        prompt: entry.body.text,
-        // Derived HERE rather than in the runner, and after every target of this
-        // entry has been claimed: `working` is read off the live claim map, so a
-        // second agent addressed by the same message is already in it. Assembling
-        // it runs no model and takes no turn — silence has to stay free
-        // (`meta/agent-etiquette.md` E7).
-        roomContext: turnContext.context,
-        // The files that context refers to, carried to the runner so it can put
-        // them where the context says they are — never recomputed there, which
-        // is the point of returning them together (ADR 260807-233816).
-        attachmentProjection: turnContext.projection,
-        // Reported WHILE the turn is still running, which is what makes it
-        // worth reporting at all: a turn parked on a person produces nothing
-        // until that person acts, and on 2026-07-31 that state was invisible
-        // everywhere — no room entry, no log line — for up to forty-one minutes
-        // per agent (DOR-784). The claim stays held throughout, because the
-        // agent has not finished; this only adds the durable line that says why
-        // the indicator is not moving.
-        onWaiting: (waiting) =>
-          this.notices.reportWaiting(
-            room,
-            entry,
-            { authorId: target.authorId, displayName: target.displayName },
-            waiting
-          ),
-        // What the turn is doing, for the room's live lane (DOR-1351). Keyed on
-        // the claim rather than the frame, so a reading that arrives after this
-        // scope is gone reaches nothing rather than a stale object.
-        onActivity: (activity) => this.noteActivity(agentKey(room.id, target.authorId), activity),
-        // Onto the live claim, where a mid-turn `post_to_room` reads it: the
-        // session id stamps the entry with the turn that wrote it (spec
-        // `tool-only-room-replies` §D8).
-        onSessionBound: (id) => this.noteSessionBound(room.id, target.authorId, id),
-      });
-
-      // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the
-      // triggering entry on the assumption that the turn would be SHOWN what sits
-      // behind it — but `busy` is the runner declining before any model ran, so
-      // nothing was shown and nothing was read. Left forward, the whole backlog
-      // is permanently invisible, and the notice this outcome writes ("send it
-      // again when Ana is free") invites a message that would land ABOVE the
-      // advanced cursor and arrive with no context at all.
-      if (result.unanswered === 'busy') this.rewindClaimCursor(room, entry, target);
-
-      // The turn ran on a session; that session is the one this agent must
-      // resume here next time. It is not always the one the room asked with —
-      // Claude Code assigns its own id on the first turn and files the
-      // transcript under it — so the binding follows the runner's answer rather
-      // than the id minted before the turn. Written before anything is
-      // delivered: a post that throws must not cost the room its memory.
-      if (result.sessionId !== target.sessionId) {
-        this.deps.store.rebindRoomSession(room.id, target.authorId, result.sessionId);
-      }
-
-      // Armed BEFORE this dispatch settles, so `idle()` cannot report a room
-      // quiet while an answer is still on its way to it.
-      //
-      // **An either/or, and it has to be.** A late result is
-      // `{ text: null, late, unanswered: undefined }` — indistinguishable, to
-      // `deliver`, from a turn that ran and chose to say nothing. Delivering it
-      // anyway ran `deliver`'s recovery branch AT THE WAIT DEADLINE and cleared
-      // every damping key for an agent that had not answered a thing, so the
-      // next refusal for it wrote a second apology. The answer is delivered
-      // through `deliverLate` when it actually lands, which is the moment
-      // recovery is honest.
-      if (this.wasHalted(target.dispatchId)) {
-        // Stop reached this turn while it was running, so there is nothing left
-        // to deliver — `deliver` would drop the answer anyway, and this is the
-        // branch that also declines to WAIT for one. A halted turn that outran
-        // the room's patience would otherwise hold a room dispatch open for up
-        // to `rooms.lateReplyCeilingMinutes` to post nothing at the end of it.
-        outcome = 'halted';
-        // The runner's contract is resolve-or-reject, so a promise nobody reads
-        // is still a rejection somebody must catch — the room simply is not
-        // listening to this one any more. The turn itself keeps streaming into
-        // its own session, where a person can still read what it was saying.
-        result.late?.catch(() => undefined);
-      } else if (result.late) {
-        this.deliverLate({ room, entry, target, late: result.late });
-        // Marked only AFTER the release above is armed, and the order is the
-        // whole safety of it: the `finally` below reads this flag to decide
-        // whether the turn is still running, so a claim marked before
-        // `deliverLate` had attached its handlers would be held by a promise
-        // chain that never existed and released by nothing.
-        const claim = this.claimed.get(key);
-        if (claim) {
-          claim.pastDeadline = true;
-          // The deadline's only announcement. It is deliberately not a notice:
-          // a durable line about every slow turn is a second message about every
-          // slow turn, and the late answer already says how long it took
-          // (room-presence spec §18). Published once here; every republish from
-          // now on carries `working_late` because it reads the same flag.
-          this.publishPresence(claim, 'working_late');
-        }
-      } else {
-        outcome = this.deliver({ room, entry, target, reply: result });
-      }
-    } catch (err) {
-      outcome = 'failed';
-      // Same argument as the `busy` rewind above, over the other half of the
-      // same window. A throw out of `run` means the turn NEVER STARTED — the
-      // session would not open, the runtime was unreachable — so no model saw
-      // the backlog. A model that ran and then failed comes back as
-      // `unanswered: 'failed'` instead, and that one keeps the advance: it was
-      // shown the messages, and repeating them next turn is the duplicate RP3
-      // exists to stop.
-      //
-      // **That reading is a contract the runner owes this line**, not something
-      // observable from here: a throw raised AFTER the model streamed looks
-      // identical, and would replay the whole window to the next turn. It held
-      // by luck until a `persistSessionRuntime` await sat above the busy guard
-      // and turned a `SQLITE_BUSY` on one bookkeeping row into exactly that.
-      // `room-turn-runner.ts` now states the rule where it has to be kept —
-      // nothing after the model has spoken may throw past `run`.
-      this.rewindClaimCursor(room, entry, target);
-      // The failure detail belongs on the agent's own session stream, where the
-      // turn machinery already surfaces it — a room log is no place for a stack
-      // trace. But the FACT belongs here: a turn that threw and said nothing is
-      // indistinguishable from an agent that ignored you (DOR-621).
-      logger.warn('[rooms] triggered turn failed', {
-        roomId: room.id,
-        authorId: target.authorId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // **One throw out of `run` is not a failure at all, and the room has to
-      // say so differently** (DOR-1720). A session bound to a runtime this
-      // server is not running refuses every turn by design, and as a
-      // `turn_failed` that read as a broken agent, pointed at a session no turn
-      // had ever opened, and named neither the program nor a way back. The
-      // runner's refusal carries the runtime, which is exactly what the
-      // `runtime_gone` line is written out of.
-      // A paused agent is not a failure either: somebody chose it, and the
-      // room says so once per pause (spec `audit-trail` PR5).
-      const refused = turnRefusalOf(err);
-      // A turn that threw because somebody stopped it did what it was told. The
-      // `halted` notice is already on the log and is the whole story; an
-      // apology under it would be the room reporting the person's own control
-      // action back to them as a fault.
-      if (this.wasHalted(target.dispatchId)) outcome = 'halted';
-      else if (refused) {
-        // Named on the claim as well as in the room: `DISPATCH_OUTCOMES` files
-        // both as `refused` rather than `failed`, so an operator counting
-        // crashes in the debug buffer does not find a refusal among them.
-        outcome = refused.reason;
-        this.notices.reportSilence(room, entry, target, refused.reason, target.dispatchId, refused);
-      } else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
-    } finally {
-      // `runner.run()` resolving is the end of the WAIT, which is only the end
-      // of the TURN when the turn beat the deadline. A late turn is still
-      // running and must still read as working — to the guard, to a room-mate
-      // reading `room_context.working`, and to the person watching.
-      // {@link RoomTriggerDispatcher.deliverLate} releases it when the answer
-      // finally settles, whichever way it settles.
-      //
-      // Two reads of the same map entry asking two different questions, which is
-      // why they are not one condition: whether this turn is OVER (it is not, if
-      // it went late), and whether the claim under this key is still THIS turn's
-      // to release ({@link RoomTriggerDispatcher.releaseOwnClaim}).
-      if (this.claimed.get(key)?.pastDeadline !== true) {
-        this.releaseOwnClaim(key, target.dispatchId, outcome);
-      }
-      // **Unconditional, and safe even for a turn `deliverLate` still owes an
-      // answer.** A dispatch can only be MARKED while its claim is held, and a
-      // late turn's claim outlives this frame — so at this line a turn that
-      // went late is provably unmarked and this deletes nothing, while the halt
-      // that marks it later is followed by `deliverLate`'s own cleanup. A turn
-      // marked before it went late never reaches here at all: the halted branch
-      // above declines to arm the late delivery.
-      this.forgetHalt(target.dispatchId);
-    }
+  private runOneInDispatch(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
+    return runTurn.runOneInDispatch(this, room, entry, target);
   }
 
-  /**
-   * Put one turn's outcome into the room: what it chose to say, or why there is
-   * nothing.
-   *
-   * Only ever called with a SETTLED turn — never with the `{ text: null, late }`
-   * a runner returns at the wait deadline, which carries no outcome at all and
-   * whose recovery-clearing branch would then fire for an agent that has not
-   * answered anything (see {@link RoomTriggerDispatcher.runOne}).
-   *
-   * ## Nothing here posts the turn's text, and nothing ever will
-   *
-   * A turn speaks by calling `post_to_room` while it runs, or by reacting, or
-   * not at all (spec `tool-only-room-replies`, graduated by DOR-2099). What is
-   * left in `reply.text` when this runs is the agent's thinking, written back to
-   * its own session, and it belongs to whoever is reading that session. So this
-   * function reads MARKS rather than words, and its three terminals, in this
-   * order, are the whole design:
-   *
-   * 1. **The agent posted through the tool** → `'answered'`. Its words are
-   *    already in front of the reader, carrying their own timestamp — which is
-   *    also why a late answer gets no "how long it took" prefix here: the answer
-   *    landed when the agent posted it, and a note about the wait would be
-   *    attached to nothing.
-   * 2. **The agent reacted** → `'answered'`. A thumbs-up can BE the answer, so
-   *    the room shows something and nothing is owed (§D10). Only a reaction that
-   *    LANDED sets the mark.
-   * 3. **Neither** → `'quiet'`, plus one `agent_declined` line if a person
-   *    asked. That split is room-participation §10.2.2's and is not re-derived:
-   *    the obligation attaches to being asked, never to running a turn, so an
-   *    ambient turn writes nothing durable, ever.
-   *
-   * **Both marks are TAKEN, not read** — a claim outlives its answer under RP8's
-   * park-and-resume, and a standing mark would swallow the next delivery. See
-   * {@link RoomTriggerDispatcher.takeSpokeViaTool}.
-   *
-   * @param opts.reply - What the turn produced, from the runner.
-   * @param opts.late - Set on a late answer, for the log line that records one.
-   * @returns What happened, for the claim release to report.
-   */
-  private deliver(opts: {
+  deliver(opts: {
     room: Room;
     entry: RoomEntry;
     target: TriggerTarget;
     reply: RoomTurnReply;
     late?: { waitedMs: number };
   }): ClaimOutcome {
-    const { room, entry, target, reply } = opts;
-    // **A halted turn delivers nothing, and that includes its notices.** Stop
-    // already spoke for this turn — one `halted` line, written before the claims
-    // were dropped — and every other outcome here would speak over it: an answer
-    // makes the halt look like it did nothing, and a `turn_failed` line about an
-    // interrupt the person asked for is the room apologising for obeying.
-    // Checked ahead of `unanswered` for exactly that second reason, since a
-    // runtime that stops promptly ends its turn in an error.
-    //
-    // **It skips the RE-ARM below as well as the writes, and that is the right
-    // half of "nothing".** `notices.recovered` means "this agent answered here,
-    // so whatever was blocking it is over" — evidence a halted turn does not
-    // supply: nobody learned whether the agent is still busy, still failing or
-    // still gone, because the turn was cut off rather than finished. Re-arming
-    // on it would spend the next real refusal's one line on a question this
-    // turn never answered. The next turn that genuinely answers re-arms it.
-    if (this.wasHalted(target.dispatchId)) {
-      logger.info('[rooms] dropped a halted turn answer', {
-        roomId: room.id,
-        authorId: target.authorId,
-        entryId: entry.id,
-        dispatchId: target.dispatchId,
-        // Whether there was anything to drop, which is what tells a race the
-        // interrupt won from one it lost. Never the text: a room log line is no
-        // place for what an agent was in the middle of saying.
-        hadAnswer: (reply.text?.trim() ?? '') !== '',
-      });
-      return 'halted';
-    }
-    if (reply.unanswered === 'busy' && this.retryWhenFree(room, entry, target)) {
-      return reply.unanswered;
-    }
-    if (reply.unanswered) {
-      const gaveUp =
-        reply.unanswered === 'busy' && this.receipts.isRetrying(room.id, target.authorId, entry.id);
-      const limit =
-        reply.unanswered === 'failed'
-          ? usageLimitNow(
-              this.deps.usageLimitFor,
-              this.deps.store.getRoomSession(room.id, target.authorId) ?? target.sessionId
-            )
-          : null;
-      this.notices.reportSilence(
-        room,
-        entry,
-        target,
-        reply.unanswered,
-        target.dispatchId,
-        gaveUp ? { busyWith: 'gave-up' } : limit ? { outOfUsageUntil: limit.resetsAt } : {}
-      );
-    }
-    this.receipts.forgetRetry(room.id, target.authorId, entry.id);
-    if (reply.unanswered) return reply.unanswered;
-
-    // The turn ran and nothing refused it, so whatever was blocking this agent
-    // here is over. Recovery IS the re-arm: the next time it cannot answer, the
-    // room says so again — for every reason, because an answer landing is
-    // evidence against all of them at once.
-    //
-    // **A turn that DECLINED reaches this line too, and that is correct.** A
-    // quiet turn proves the agent is reachable, which is exactly what the busy /
-    // gone / unavailable keys damp on. It is why `agent_declined` re-arms on
-    // {@link RoomNoticeLog.answered} instead: a key this line cleared would be
-    // cleared by the very turn that set it.
-    this.notices.recovered(room.id, target.authorId);
-
-    if (this.takeSpokeViaTool(room.id, target.authorId)) {
-      // Taken as well, and discarded. Both marks live on the claim, and under
-      // park-and-resume a claim outlives its first answer (spec D1: marks are
-      // TAKEN, not read), so a reaction left standing here would count as the
-      // answer to that claim's next delivery. No test drives that second
-      // delivery today; this line is what keeps it honest when one does.
-      this.takeReactedViaTool(room.id, target.authorId);
-      if (opts.late !== undefined) {
-        logger.info('[rooms] a late turn had already posted its answer', {
-          roomId: room.id,
-          authorId: target.authorId,
-          entryId: entry.id,
-          waitedMs: opts.late.waitedMs,
-        });
-      }
-      return 'answered';
-    }
-    if (this.takeReactedViaTool(room.id, target.authorId)) return 'answered';
-    const displayName = this.deps.authors.getById(target.authorId)?.displayName ?? 'An agent';
-    this.notices.reportDeclined(
-      room,
-      entry,
-      { authorId: target.authorId, displayName },
-      target.dispatchId
-    );
-    return 'quiet';
+    return delivery.deliver(this, opts);
   }
 
-  /**
-   * Post an answer the room stopped waiting for, once it lands — and release
-   * the claim that has been saying, all along, that the agent is still on it.
-   *
-   * The turn was never cancelled, so it is still the agent's own to settle: if
-   * it posted through the tool while it ran, the answer is already in the room
-   * carrying its own timestamp, and if it posted nothing this is where the room
-   * says so. The claim on `(room, agent)` is still held when this runs (see
-   * {@link RoomTriggerDispatcher.runOne}'s `finally`), which is what makes the
-   * late window honest rather than a hole.
-   *
-   * **The release is in `finally`, and it is deliberately the last thing.** It
-   * has to run on both settlements — the answer landing and the delivery
-   * throwing — because a claim nothing clears is an agent that is "working"
-   * until the process restarts. And it has to run AFTER the durable write above,
-   * because the claim is the assertion that this agent owes the room something:
-   * dropping it before the post or the notice is on the log is a promise
-   * withdrawn a moment before it is kept. Now that the release also publishes
-   * `done`, that ordering is what a person sees — the answer lands, and then the
-   * indicator goes, never the other way round.
-   *
-   * @param opts.late - The runner's promise of the eventual outcome.
-   */
-  private deliverLate(opts: {
+  deliverLate(opts: {
     room: Room;
     entry: RoomEntry;
     target: TriggerTarget;
     late: Promise<LateRoomReply>;
   }): void {
-    const key = agentKey(opts.room.id, opts.target.authorId);
-    this.inFlight += 1;
-    let outcome: ClaimOutcome = 'quiet';
-    void opts.late
-      .then((reply) => {
-        outcome = this.deliver({
-          room: opts.room,
-          entry: opts.entry,
-          target: opts.target,
-          reply,
-          late: { waitedMs: reply.waitedMs },
-        });
-      })
-      .catch((err) => {
-        outcome = 'failed';
-        logger.warn('[rooms] a late answer never landed', {
-          roomId: opts.room.id,
-          authorId: opts.target.authorId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        // An infrastructure failure this deep into a turn used to leave a log
-        // line and nothing else: the room had shown the agent working for up to
-        // an hour and then simply stopped, with no answer and nothing on the log
-        // to explain either. It gets the same `turn_failed` notice every other
-        // failure gets — best-effort, and undamped like the rest of them,
-        // because an error that just happened is never a repeat of one that did.
-        this.notices.reportSilence(
-          opts.room,
-          opts.entry,
-          opts.target,
-          'failed',
-          opts.target.dispatchId
-        );
-      })
-      .finally(() => {
-        // Guarded like the in-frame release, and for a window that is WIDER
-        // here: this claim has been held across the whole late wait, so a halt
-        // and a fresh message have had minutes rather than milliseconds to hand
-        // the key to somebody else.
-        this.releaseOwnClaim(key, opts.target.dispatchId, outcome);
-        // The last delivery this turn had, so the halt mark ends here.
-        this.forgetHalt(opts.target.dispatchId);
-        this.settleOne();
-      });
+    return delivery.deliverLate(this, opts);
   }
 
   /**
@@ -2510,120 +913,16 @@ export class RoomTriggerDispatcher {
    * @param input.authorId - The agent being asked.
    * @param input.prompt - The question, as the model will see it.
    */
-  async askAside(input: {
+  askAside(input: {
     room: Room;
     entry: RoomEntry;
     authorId: string;
     prompt: string;
   }): Promise<void> {
-    const { room, entry, authorId } = input;
-    const record = this.deps.authors.getMany([authorId]).get(authorId);
-    // Only an agent takes a turn, and only a live one: a directory that no
-    // longer holds this agent has nothing to offer and no session to offer it
-    // on (ADR 260801-003051).
-    if (!record || record.kind !== 'agent') return;
-    if (!isLiveAuthor(record, this.deps.agents)) return;
-    // It posted its status line a moment ago, so this is all but guaranteed —
-    // and it costs one indexed read to not spend a model turn on the case where
-    // it left the room in between.
-    if (!this.deps.store.getMember(room.id, authorId)) return;
-    const agentPath = record.naturalKey;
-
-    const busyWith = this.busyWith(room.id, authorId, agentPath);
-    if (busyWith !== null) {
-      logger.debug('[rooms] skipped a welcome-back offer: the agent is already working', {
-        roomId: room.id,
-        authorId,
-        // The ceiling only — never the blocking claim, which carries an
-        // `agentPath`, and a filesystem path does not belong in a log context.
-        busyWith: busyWith.where,
-      });
-      return;
-    }
-    // Charged through the same seam `claimCollected` uses, which is what keeps
-    // an offer from being the one path that spends without counting: with every
-    // cap off the budget allows it and charges nothing, and there is then no
-    // window to re-arm.
-    const afford = this.deps.budget.tryReserve(room.id);
-    if (!afford.allowed) {
-      logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
-        roomId: room.id,
-        authorId,
-      });
-      return;
-    }
-    // **The re-arm, exactly as `claimCollected` does it, and it is not optional
-    // here.** Spending again means the hourly window moved, so the next
-    // exhaustion is news rather than a repeat. Without this line an offer
-    // silently consumes the freshly-rolled window and leaves the memory of the
-    // LAST refusal standing — so the next person to be refused is refused with
-    // no notice at all. An invisible refusal of a message somebody addressed is
-    // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
-    // asked for must not be the thing that causes it.
-    if (afford.counted) this.notices.budgetRecovered(room.id);
-
-    let sessionId: string;
-    try {
-      // The room's own session for this agent, exactly as a trigger binds it —
-      // an offer is part of the same conversation, not a thread of its own.
-      sessionId = this.deps.store.bindRoomSession(
-        room.id,
-        authorId,
-        this.deps.store.getRoomSession(room.id, authorId) ?? randomUUID(),
-        new Date().toISOString()
-      );
-    } catch (err) {
-      logger.warn('[rooms] could not bind a session for a welcome-back offer', {
-        roomId: room.id,
-        authorId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-
-    const dispatchId = newDispatchId();
-    const key = agentKey(room.id, authorId);
-    this.holdClaim({
-      roomId: room.id,
-      cascadeRoot: entry.cascadeRoot,
-      authorId,
-      agentPath,
-      entryId: entry.id,
-      dispatchId,
-      // AT the ceiling. Kept as defence in depth rather than as the thing
-      // standing between an aside and a cascade — `aside: true` below is that,
-      // and it is why nothing this turn writes can inherit a root either. Both
-      // fields are read: this one by the diagnostic claim view, that one by
-      // `deepestClaimOf`.
-      depth: this.deps.limitsFor(room.id).maxAgentDepth,
-      // Nothing in the room asked for this turn, so it has no cascade to hand
-      // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
-      aside: true,
-      spokeViaTool: false,
-      reactedViaTool: false,
-      claimedAt: new Date().toISOString(),
-      pastDeadline: false,
-      // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
-      // the room immediately, and a floor set at claim time would hold it back
-      // for up to one throttle window.
-      activityPublishedAt: 0,
-    });
-    return runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
-      this.runAsideInDispatch({
-        room,
-        entry,
-        authorId,
-        agentPath,
-        sessionId,
-        key,
-        dispatchId,
-        prompt: input.prompt,
-      })
-    );
+    return aside.askAside(this, input);
   }
 
-  /** The body of {@link RoomTriggerDispatcher.askAside}, already inside its scope. */
-  private async runAsideInDispatch(input: {
+  runAsideInDispatch(input: {
     room: Room;
     entry: RoomEntry;
     authorId: string;
@@ -2633,208 +932,15 @@ export class RoomTriggerDispatcher {
     dispatchId: string;
     prompt: string;
   }): Promise<void> {
-    const { room, entry, authorId, key } = input;
-    const displayName =
-      this.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
-    let outcome: ClaimOutcome = 'quiet';
-    recordDispatchStart({
-      dispatchId: input.dispatchId,
-      origin: 'room',
-      roomId: room.id,
-      sessionId: input.sessionId,
-    });
-    try {
-      // An aside turn is a real turn, so it is placed the same way an ordinary
-      // one is — see `runOneInDispatch`.
-      const place = await this.placeTurn(room.id, input.agentPath, displayName);
-      const { cwd } = place;
-      const files = place.files ?? undefined;
-      const turnContext = buildRoomContext(this.deps, {
-        room,
-        agentAuthorId: authorId,
-        cwd,
-        // An aside is granted the same copy an ordinary turn is, so it is told
-        // the same thing about the room's files.
-        files,
-        entry,
-        working: this.workingIn(room.id),
-        // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
-        // agent missed because it is answering the room; this is a narrow
-        // question about the agent's own work, and replaying the conversation
-        // into it would both invite an answer to somebody else's message and
-        // silently consume the window the next real trigger owes it
-        // (room-participation spec §8.3).
-        lastReadSeq: entry.seq,
-        // The hourly headroom, and NO chain: an offer is one line and the end of
-        // it, which is what `'ceiling'` says here and what the ceiling stamp
-        // above says to the guard. Asked through the same helper so that an
-        // install with limits off answers `null` here too, rather than telling
-        // an agent it has zero of something nothing is counting.
-        ...this.headroomFor(room.id, 'ceiling'),
-        engaged: null,
-        // The same word the claim above uses. Nothing asked for this turn, so
-        // the block names no "message you are answering": `entry` here is the
-        // greeter's own status post, and pointing the agent at it would point it
-        // at a line written about itself (DOR-1263).
-        aside: true,
-      });
-      const result = await this.deps.runner.run({
-        room,
-        authorId,
-        agentPath: input.agentPath,
-        cwd,
-        additionalDirectories: place.additionalDirectories,
-        worktree: place.worktree,
-        ...roomLaunchStepFor(this.deps, room.id, authorId, input.agentPath, place),
-        sessionId: input.sessionId,
-        entry,
-        // Never external: `entry` here is the greeter's own status post, written
-        // by this machine, and nobody off it can ask for an aside turn.
-        externalAuthor: false,
-        prompt: input.prompt,
-        roomContext: turnContext.context,
-        attachmentProjection: turnContext.projection,
-        onWaiting: (waiting) =>
-          this.notices.reportWaiting(room, entry, { authorId, displayName }, waiting),
-        // An aside turn holds a real claim, so it reports what it is doing like
-        // any other turn.
-        onActivity: (activity) => this.noteActivity(key, activity),
-        onSessionBound: (id) => this.noteSessionBound(room.id, authorId, id),
-      });
-      if (result.sessionId !== input.sessionId) {
-        this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
-      }
-      // **An offer somebody stopped is not made**, and this is asked BEFORE the
-      // late wait for the same reason `runOne` asks before arming `deliverLate`:
-      // an offer nobody will hear must not hold a claim, and an agent reading as
-      // working, for the up-to-an-hour the ceiling allows. The aside path is
-      // silent about every other refusal already, and this one has a durable
-      // line of its own — the room's `halted` notice, written when Stop was
-      // pressed.
-      if (this.wasHalted(input.dispatchId)) {
-        outcome = 'halted';
-        // Resolve-or-reject is the runner's contract; the room has simply
-        // stopped listening. Same treatment as `runOne`'s halted branch.
-        result.late?.catch(() => undefined);
-        return;
-      }
-      // **A slow turn is late, never lost** (`.claude/rules/room-conduct.md`).
-      // The room's wait bounds the WAIT; the turn keeps running, and
-      // `rooms.lateReplyCeilingMinutes` is what bounds how late "late" can be —
-      // so the answer is waited out here and posted when it lands, rather than
-      // dropped on the floor while the busy notice elsewhere promises the
-      // opposite. The claim is held throughout, because the agent really is
-      // still working in its own checkout, and released by the `finally` below
-      // once this has an answer to hand back.
-      const settled = result.late === undefined ? result : await this.awaitLate(result.late, key);
-      // Asked AGAIN, over the other window. The check above cannot see a Stop
-      // pressed DURING the wait, which is the longest window this method has —
-      // and the triggered path answers that same window from inside `deliver`,
-      // which an aside does not use because its answer goes back to the greeter
-      // rather than into the room.
-      if (this.wasHalted(input.dispatchId)) {
-        outcome = 'halted';
-        return;
-      }
-      if (settled.unanswered) {
-        outcome = settled.unanswered;
-        return;
-      }
-      // **The same three terminals `deliver` reads, minus the notice.** An offer
-      // that posted or reacted has put something in front of the person and
-      // releases as `'answered'`; one that did neither is `'quiet'` and says so
-      // to nobody, because nobody asked for this turn. Both marks are TAKEN, for
-      // the reason `deliver` takes them: the claim is still held here — the
-      // `finally` below is what releases it — and a mark left standing would
-      // discharge the next turn's obligation.
-      const spoke = this.takeSpokeViaTool(room.id, authorId);
-      const reacted = this.takeReactedViaTool(room.id, authorId);
-      outcome = spoke || reacted ? 'answered' : 'quiet';
-    } catch (err) {
-      outcome = 'failed';
-      logger.warn('[rooms] a welcome-back offer turn failed', {
-        roomId: room.id,
-        authorId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      // Always, and last. An aside turn releases into the offer the agent
-      // posted while it ran, or into the named exception every turn has — an
-      // agent that ran and chose to say nothing. Since the offer is now posted
-      // from inside the turn, the release genuinely comes after the durable
-      // write rather than a tick before it, which is what closes the one hole
-      // this path used to carry.
-      //
-      // Guarded by dispatch like both triggered releases: an aside waits out its
-      // own late answer, so a Stop and a fresh message can hand this key to a
-      // real turn while it is still waiting.
-      this.releaseOwnClaim(key, input.dispatchId, outcome);
-      // An aside waits out its own late answer inline, so this frame is always
-      // the turn's last one and the halt mark always ends here.
-      this.forgetHalt(input.dispatchId);
-    }
+    return aside.runAsideInDispatch(this, input);
   }
 
-  /**
-   * Wait out a turn the room stopped waiting for, saying so while it runs.
-   *
-   * The claim is NOT released here: the agent is still working in its own
-   * checkout, so both busy ceilings must keep seeing it and the room must keep
-   * showing it. What changes is only what the indicator says — `working_late`
-   * from this point, re-stated by the republish loop because it reads the same
-   * flag.
-   *
-   * Never rejects: `RoomTurnResult.late` is contractually resolve-or-reject and
-   * a rejection here is a turn that produced nothing, which is the same silence
-   * as an agent with nothing to offer.
-   *
-   * @param late - The runner's promise of the eventual outcome.
-   * @param key - The `(room, agent)` claim key, for the indicator.
-   * @returns What the turn finally produced.
-   */
-  private async awaitLate(late: Promise<LateRoomReply>, key: string): Promise<RoomTurnReply> {
-    const claim = this.claimed.get(key);
-    if (claim) {
-      claim.pastDeadline = true;
-      this.publishPresence(claim, 'working_late');
-    }
-    try {
-      return await late;
-    } catch (err) {
-      logger.warn('[rooms] a late welcome-back offer never landed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return { text: null, unanswered: 'failed' };
-    }
+  awaitLate(late: Promise<LateRoomReply>, key: string): Promise<RoomTurnReply> {
+    return runTurn.awaitLate(this, late, key);
   }
 
-  /**
-   * Undo the claim's cursor advance for a turn that never reached a model.
-   *
-   * The advance at claim time is deliberate and load-bearing: a turn that fails
-   * midway has still SEEN what it was shown, and replaying that would hand the
-   * agent the same conversation twice (room-participation spec §8.3). It buys
-   * that by assuming the turn is about to be shown something — and two paths
-   * reach a terminal before it is. The session was busy, or `run` threw on the
-   * way in. On both, no `room_context` ever reached a model, so the messages
-   * behind the cursor were never delivered to anybody and the room owes them to
-   * the next turn.
-   *
-   * **Compare-and-set, not an assignment.** It restores only if the stored value
-   * is still exactly the one this claim wrote. A second turn claimed for the
-   * same member in between has already moved it forward and is relying on it, so
-   * the predicate misses and this does nothing — which is the correct answer,
-   * because that turn WAS shown the window.
-   *
-   * @param room - The room the turn was refused in.
-   * @param entry - The entry it would have answered; the value the claim wrote.
-   * @param target - The refused target, carrying the cursor it had before.
-   */
-  private rewindClaimCursor(room: Room, entry: RoomEntry, target: TriggerTarget): void {
-    this.deps.store.rewindReadCursor(room.id, target.authorId, {
-      from: entry.seq,
-      to: target.lastReadSeq,
-    });
+  rewindClaimCursor(room: Room, entry: RoomEntry, target: TriggerTarget): void {
+    return runTurn.rewindClaimCursor(this, room, entry, target);
   }
 
   /**
@@ -2849,7 +955,7 @@ export class RoomTriggerDispatcher {
    * @param dispatchId - The turn being delivered.
    * @returns Whether a halt stopped it.
    */
-  private wasHalted(dispatchId: string): boolean {
+  wasHalted(dispatchId: string): boolean {
     return this.haltedTurns.has(dispatchId);
   }
 
@@ -2863,47 +969,17 @@ export class RoomTriggerDispatcher {
    *
    * @param dispatchId - The turn that has finished, however it finished.
    */
-  private forgetHalt(dispatchId: string): void {
+  forgetHalt(dispatchId: string): void {
     this.haltedTurns.delete(dispatchId);
   }
 
-  /**
-   * Say, in the log, that a Stop found no turn to stop (DOR-1425).
-   *
-   * Both halt scopes report through this one method so the sentence and its
-   * fields cannot drift. It is a LOG line and not a room notice on purpose: the
-   * `halted` line is already written, the claim is dropped either way, and a
-   * second line saying the machinery could not reach a process is plumbing
-   * aimed at whoever reads logs rather than at whoever pressed Stop.
-   *
-   * @param roomId - The room the stop was pressed in.
-   * @param claim - The turn it was aimed at.
-   * @param sessionId - The session the interrupt was sent to.
-   * @param receipt - What the runtime answered; its outcome picks the sentence.
-   */
-  private reportUnreachedStop(
+  reportUnreachedStop(
     roomId: string,
     claim: ActiveClaim,
     sessionId: string,
     receipt: InterruptReceipt
   ): void {
-    // Two different facts, and the boolean this replaced said the first about
-    // both: `not-running` is a stop that found nothing (most often a turn still
-    // booting), while `unconfirmed` / `failed` is a turn that IS there and did
-    // not stop.
-    const message =
-      receipt.outcome === 'not-running'
-        ? '[rooms] a stop found no turn to stop — it may still be starting'
-        : '[rooms] a stop was not confirmed — the agent may still be working';
-    logger.warn(message, {
-      roomId,
-      authorId: claim.authorId,
-      dispatchId: claim.dispatchId,
-      sessionId,
-      outcome: receipt.outcome,
-      ...(receipt.reason ? { reason: receipt.reason } : {}),
-      runtime: receipt.runtime,
-    });
+    return halting.reportUnreachedStop(this, roomId, claim, sessionId, receipt);
   }
 
   /**
@@ -2940,7 +1016,7 @@ export class RoomTriggerDispatcher {
    *
    * @param claim - The claim being taken, already fully resolved.
    */
-  private holdClaim(claim: ActiveClaim): void {
+  holdClaim(claim: ActiveClaim): void {
     // `dispatchId` is passed explicitly on both claim lines, and that is not
     // belt-and-braces: a claim is TAKEN synchronously inside `RoomService.post`,
     // before `runOne` enters the dispatch scope, and RELEASED from `halt()` on
@@ -2985,468 +1061,54 @@ export class RoomTriggerDispatcher {
     }
   }
 
-  /**
-   * Release the claim a turn is holding — **but only if it is still that turn's
-   * claim.**
-   *
-   * A claim key is `(room, agent)` and a turn is a DISPATCH, and the two part
-   * company exactly once: when something releases a claim early and the same
-   * agent is claimed again before the first turn's own terminal arrives. RP8's
-   * halt is that something. Stop drops the claim, the person types again, the
-   * next turn claims the same key — and then the stopped turn's runtime finally
-   * comes back and its `finally` releases a claim belonging to a turn that is
-   * still running. Measured: the room shows nobody working while an agent is
-   * mid-answer, the `(room, agent)` ceiling is gone, and a third message starts
-   * a SECOND concurrent turn in the same working tree — which is the contention
-   * DOR-500 measured and the ceiling exists to prevent.
-   *
-   * It also fixes what the log said. `releaseClaim` records the dispatch end
-   * against the CLAIM's dispatch id, so an unguarded release closed out the live
-   * turn's dispatch carrying the dead turn's outcome.
-   *
-   * The dead turn needs no release of its own: whatever released its claim early
-   * — the halt — already published `done` and recorded its dispatch end while it
-   * still held the key.
-   *
-   * @param key - The `(room, agent)` key this turn claimed.
-   * @param dispatchId - The turn asking to release, which must still be the
-   *   holder.
-   * @param outcome - What the turn produced, for the log. Never rendered.
-   */
-  private releaseOwnClaim(key: string, dispatchId: string, outcome: ClaimOutcome): void {
-    const held = this.claimed.get(key);
-    // Already released by whatever stopped this turn — the halt, and nothing
-    // else today. Releasing nothing has always been a no-op here.
-    if (held === undefined) return;
-    if (held.dispatchId !== dispatchId) {
-      logger.debug('[rooms] a finished turn left a newer turn holding the claim', {
-        roomId: held.roomId,
-        authorId: held.authorId,
-        finished: dispatchId,
-        holding: held.dispatchId,
-        outcome,
-      });
-      return;
-    }
-    this.releaseClaim(key, outcome);
+  releaseOwnClaim(key: string, dispatchId: string, outcome: ClaimOutcome): void {
+    return claims.releaseOwnClaim(this, key, dispatchId, outcome);
   }
 
-  /**
-   * Release a claim, and tell the room the agent is done.
-   *
-   * **Every terminal releases here and only here**, which is what makes the
-   * ordering rule structural rather than remembered: `deliver` and
-   * `reportSilence` have already returned by the time either `finally` calls
-   * this, so the durable entry that explains the release is on the stream before
-   * the indicator drops. A `done` published at each terminal instead would be
-   * four call sites, and the fifth — RP8's halt, which drops every pending claim
-   * — would have to remember to be the fifth.
-   *
-   * **Whether a turn may release is not asked here**, and deliberately: this
-   * takes a KEY, and the two turn `finally`s must ask about a DISPATCH. They go
-   * through {@link RoomTriggerDispatcher.releaseOwnClaim} for that. Halting is
-   * the one caller that releases by key alone, because it is stopping whatever
-   * holds the key rather than finishing a turn of its own.
-   *
-   * Releasing a key that is not held is a no-op rather than a throw, because
-   * this is reached on paths where the claim may already be gone. The map is the
-   * only record that an indicator is outstanding, so a `done` for a claim nobody
-   * holds would be an event about nothing.
-   *
-   * @param key - The `(room, agent)` key being released.
-   * @param outcome - What the turn produced, for the log. Never rendered.
-   */
-  private releaseClaim(key: string, outcome: ClaimOutcome): void {
-    const claim = this.claimed.get(key);
-    if (!claim) return;
-    logger.info('[rooms] an agent finished a room turn', {
-      roomId: claim.roomId,
-      authorId: claim.authorId,
-      entryId: claim.entryId,
-      dispatchId: claim.dispatchId,
-      heldMs: Math.max(0, Date.now() - Date.parse(claim.claimedAt)),
-      outcome,
-    });
-    // Every terminal reaches here — the ordinary one, a late answer settling,
-    // and a halt — so this is the one place a room dispatch can be closed out
-    // exactly once. Recorded beside the log line rather than at each terminal,
-    // for the reason the release itself is here.
-    recordDispatchEnd(claim.dispatchId, DISPATCH_OUTCOMES[outcome]);
-    // The turn is over, so whatever it was waiting for is over too. Cleared
-    // here rather than beside an outcome because a halted turn, a crashed turn
-    // and an answered one all end the wait equally, and only this line runs on
-    // all three.
-    this.notices.turnEnded(claim.roomId, claim.authorId);
-    // The turn that owned these messages is over, so their 👀 comes off: up to
-    // the message it answered, never one that arrived later and still waits.
-    this.receipts.clearUpTo(
-      key,
-      this.deps.store.getEntryById(claim.roomId, claim.entryId)?.seq ?? Number.POSITIVE_INFINITY
-    );
-    const before = this.workingCount(claim.roomId);
-    this.claimed.delete(key);
-    // Before the `done`, in the same block that stops the republish timer: an
-    // armed trailing publish for a claim nobody holds is a `working` frame
-    // landing AFTER the `done` that retired it, which is a lane that never
-    // clears. `halt` releases through this seam and inherits it.
-    this.disarmActivityFlush(claim);
-    // And the `done` itself carries no reading. A turn that has ended is not
-    // doing anything, which is what `RoomSignalEvent.activity` promises — and a
-    // halt reaches here without the runner ever having cleared.
-    claim.activity = undefined;
-    // **How the turn finished, on the lane that drops it** (spec
-    // `tool-only-room-replies` §D7). A working pill that appears and vanishes
-    // with nothing to show reads as a crash, and a turn that decides nothing
-    // needs saying is now an ordinary outcome rather than a rare one. Only the
-    // two outcomes a person can act on are said: `answered` and `silent`. Every
-    // other one — halted, busy, failed, gone — already has a durable line of its
-    // own explaining it, and a second, ephemeral statement beside it would be
-    // the room saying the same thing twice.
-    //
-    // **On every room turn**, since every room turn now speaks by calling the
-    // tool or not at all (spec §A2, D7). It was once published only for a turn
-    // that had resolved `'tool-only'`, so that a flag-off install stayed
-    // byte-identical to the release before the experiment; there is no flag and
-    // no other mode to be identical to.
-    //
-    // Past tense, and deliberately not durable: E16a exempts a mechanical
-    // presence signal from every speaking rule, and a restart forgetting this
-    // costs nothing because the fact was already over.
-    this.publishPresence(claim, 'done', PRESENCE_OUTCOMES[outcome]);
-    this.publishWorkingCount(claim.roomId, before);
-    if (this.republishing !== null && this.claimed.size === 0) {
-      clearInterval(this.republishing);
-      this.republishing = null;
-    }
-    // **The steer's other half, and it belongs exactly here** (RP8). Whatever
-    // this agent was asked while it was working has been held rather than
-    // refused, and this is the moment it can be answered. Hung off the one place
-    // every claim is released — the ordinary terminal, a late answer settling,
-    // and a halt all reach it — so there is no path that can forget to look. A
-    // halt has already dropped the room's collections by the time it gets here,
-    // which is why stopping a room does not answer the messages it was stopped
-    // over.
-    this.collector.resume(claim.roomId, claim.authorId);
-    // **And the cross-room half of it** (spec `room-hold-when-busy`). One agent
-    // is one working directory, so the rooms this agent was asked something in
-    // while it worked here have been waiting rather than being refused, and this
-    // is the moment they can run. Hung off the same one seam for the same reason:
-    // the ordinary terminal, a late answer settling, a failure and a halt all
-    // reach it, so a held message runs however the blocking turn ended.
-    this.resumeElsewhere(claim.agentPath);
+  releaseClaim(key: string, outcome: ClaimOutcome): void {
+    return claims.releaseClaim(this, key, outcome);
   }
 
-  /**
-   * Take in what a turn says it is doing, and decide whether the room hears it
-   * now.
-   *
-   * **A new reading is throttled; a CLEAR never is.** Exactly the shape the
-   * session projector uses for the same fact and for the same reason (its own
-   * doc at {@link ACTIVITY_FANOUT_THROTTLE_MS}): a busy turn starts tools
-   * several times a second, and every publish here is a frame on every open
-   * reader of this room plus a change to a store four client hooks are
-   * watching. Clearing is never delayed, because a verb that outlives its turn
-   * is the one thing this feature must not do.
-   *
-   * The trailing flush is what keeps the throttle honest: without it the LAST
-   * tool of a burst would wait for the ten-second republish, and the lane would
-   * name a tool the agent finished nine seconds ago.
-   *
-   * A repeat of the reading already published is dropped outright — the same
-   * tool on the same target is not a change, and republishing it would restart
-   * nothing and cost a frame.
-   *
-   * @param key - The `(room, agent)` claim key this turn is running under.
-   * @param activity - What the turn just started, or `null` to clear.
-   */
-  private noteActivity(key: string, activity: SessionActivity | null): void {
-    const claim = this.claimed.get(key);
-    // Released, halted, or never taken. A turn that outlives its claim says
-    // nothing: there is no indicator left for this to be about.
-    if (claim === undefined) return;
-
-    if (activity === null) {
-      if (claim.activity === undefined) return;
-      claim.activity = undefined;
-      this.disarmActivityFlush(claim);
-      this.publishActivityNow(claim);
-      return;
-    }
-
-    if (sameActivity(claim.activity, activity)) return;
-
-    claim.activity = activity;
-    const waited = Date.now() - claim.activityPublishedAt;
-    if (waited >= ACTIVITY_FANOUT_THROTTLE_MS) {
-      this.disarmActivityFlush(claim);
-      this.publishActivityNow(claim);
-      return;
-    }
-    if (claim.activityFlush !== undefined) return;
-    const flush = setTimeout(() => {
-      claim.activityFlush = undefined;
-      // Whatever the claim holds WHEN THIS FIRES, not what it held when the
-      // timer was armed: a burst of six tools inside one window should leave
-      // the sixth on screen, not the second. And if the burst ended where it
-      // started — A → B → A — the room is already showing the right thing, so
-      // the flush costs nothing.
-      if (sameActivity(claim.activity, claim.activityPublished)) return;
-      this.publishActivityNow(claim);
-    }, ACTIVITY_FANOUT_THROTTLE_MS - waited);
-    // A trailing repaint is not a reason for the process to stay alive, for the
-    // reason the republish interval is unref'd.
-    flush.unref?.();
-    claim.activityFlush = flush;
+  noteActivity(key: string, activity: SessionActivity | null): void {
+    return claims.noteActivity(this, key, activity);
   }
 
-  /**
-   * Put a claim's current reading on the room's stream, and remember that the
-   * room has now seen it.
-   *
-   * The one place an activity-DRIVEN publish happens — not the only frame that
-   * carries a reading, which is the distinction worth keeping straight: the
-   * claim frame, both `working_late` publishes, every republish and the `done`
-   * all carry `claim.activity` too, because {@link
-   * RoomTriggerDispatcher.publishPresence} spreads it unconditionally. This is
-   * the one that happens BECAUSE the reading changed, and it is what stamps the
-   * throttle's floor.
-   *
-   * @param claim - The claim whose reading is going out.
-   */
-  private publishActivityNow(claim: ActiveClaim): void {
-    this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-    claim.activityPublishedAt = Date.now();
+  publishActivityNow(claim: ActiveClaim): void {
+    return claims.publishActivityNow(this, claim);
   }
 
-  /**
-   * Forget a claim's armed trailing publish, if it has one.
-   *
-   * Called wherever a publish has just happened or the claim is going away — a
-   * timer holding a released claim is a publish for work that is over.
-   *
-   * @param claim - The claim whose flush is no longer wanted.
-   */
-  private disarmActivityFlush(claim: ActiveClaim): void {
-    if (claim.activityFlush === undefined) return;
-    clearTimeout(claim.activityFlush);
-    claim.activityFlush = undefined;
+  disarmActivityFlush(claim: ActiveClaim): void {
+    return claims.disarmActivityFlush(this, claim);
   }
 
-  /**
-   * Record that this room's message is waiting behind a turn somewhere else, and
-   * put that on the room's stream.
-   *
-   * **Idempotent, and the two fields it keeps are why.** An existing hold keeps
-   * its `since` — the lane counts up from when the person's message actually
-   * started waiting, not from the last time something re-checked — and its
-   * `entryId`, because the indicator is keyed on that and a moving id would open
-   * a second indicator every time the person typed again. Only `behindRoomId`
-   * is re-pointed, because the room in the way genuinely changes as claims come
-   * and go.
-   *
-   * @param roomId - The room whose message is waiting.
-   * @param authorId - The agent it is waiting for.
-   * @param agentPath - That agent's directory — the ceiling being waited on.
-   * @param entryId - The message to key a NEW hold on. Ignored when one exists.
-   * @param busy - What is in the way, from the live claim map.
-   */
-  private noteHold(
+  noteHold(
     roomId: string,
     authorId: string,
     agentPath: string,
     entryId: string,
     busy: ClaimBusy
   ): void {
-    const key = agentKey(roomId, authorId);
-    const open = this.held.get(key);
-    const record: HeldRecord =
-      open === undefined
-        ? {
-            roomId,
-            authorId,
-            agentPath,
-            entryId,
-            since: new Date().toISOString(),
-            behindRoomId: busy.blocking.roomId,
-          }
-        : { ...open, behindRoomId: busy.blocking.roomId };
-    this.held.set(key, record);
-    this.publishHold(record, 'held');
-    // A NEW wait changes what every other waiting room can say: `othersWaiting`
-    // is the only thing that decides whether "Answer here first" is offered, and
-    // it has just become true for all of them. Restated now rather than left to
-    // the ten-second republish, because a control that appears seconds after the
-    // fact reads as the room having thought about it.
-    if (open === undefined) this.restateSiblingHolds(record);
+    return holds.noteHold(this, roomId, authorId, agentPath, entryId, busy);
   }
 
-  /**
-   * Re-state every OTHER room waiting on the same agent.
-   *
-   * `heldBehind.othersWaiting` is a fact about the set of waits rather than about
-   * any one of them, so it goes stale in every other room the moment this one
-   * starts or stops waiting. The republish tick would fix it within ten seconds;
-   * a person watching would see "Answer here first" appear, or linger after it
-   * had stopped meaning anything, for that whole window.
-   *
-   * @param record - The hold that just opened or closed. Its own room is skipped
-   *   — it has either just been published or just been cleared.
-   */
-  private restateSiblingHolds(record: HeldRecord): void {
-    for (const other of this.held.values()) {
-      if (other.agentPath !== record.agentPath || other.roomId === record.roomId) continue;
-      this.publishHold(other, 'held');
-    }
+  restateSiblingHolds(record: HeldRecord): void {
+    return holds.restateSiblingHolds(this, record);
   }
 
-  /**
-   * Drop a hold and publish `done` for it.
-   *
-   * **Called from every path that ends a collection without taking a claim**, so
-   * "no hold is ever left standing" is structural rather than remembered — the
-   * same shape {@link RoomTriggerDispatcher.releaseClaim} gives claims. Releasing
-   * a key that holds nothing is a no-op, because most collections never had one.
-   *
-   * **It writes no notice, whatever the reason**, and each reason has a durable
-   * sibling written by the path that caused it: `started` is the turn itself,
-   * `halted` is the room-wide `halted` line, `refused` is the guard's or the
-   * budget's own notice, and `expired` is the one `agent_busy` line
-   * {@link RoomTriggerDispatcher.expireHolds} writes — there, because only there
-   * is the dropped collection in hand to write it about.
-   *
-   * @param key - The `(room, agent)` key whose hold is ending.
-   * @param reason - How it ended, for the log. Never rendered.
-   */
-  private releaseHold(key: string, reason: HoldEnd): void {
-    // Nothing will answer a hold that ends any way but starting, so its 👀 goes.
-    if (reason !== 'started') this.receipts.clearUpTo(key, Number.POSITIVE_INFINITY);
-    const record = this.held.get(key);
-    if (record === undefined) return;
-    this.held.delete(key);
-    logger.info('[rooms] a message that was waiting on a busy agent stopped waiting', {
-      roomId: record.roomId,
-      authorId: record.authorId,
-      entryId: record.entryId,
-      behindRoomId: record.behindRoomId,
-      heldMs: Math.max(0, Date.now() - Date.parse(record.since)),
-      reason,
-    });
-    this.publishHold(record, 'done');
-    // And the other side of it: one wait fewer can take "Answer here first" away
-    // from every room that is still waiting, which it should, because there may
-    // now be nothing to be answered ahead of.
-    this.restateSiblingHolds(record);
+  releaseHold(key: string, reason: HoldEnd): void {
+    return holds.releaseHold(this, key, reason);
   }
 
-  /**
-   * Re-arm every held collection for one agent, and re-point the ones that are
-   * still blocked.
-   *
-   * Two halves, and the second is what keeps the lane honest. Re-arming is the
-   * cross-room `resume`. Re-pointing is for the collections that will find
-   * ANOTHER claim in the way when they reach `claimCollected` a macrotask later:
-   * their indicator has to name the room that is in the way now, not the one
-   * that just finished. A hold with nothing left in its way is left alone — the
-   * turn it is waiting for is about to start, and `holdClaim` resolves it then.
-   *
-   * @param agentPath - The working directory whose claim just released.
-   * @param from - The clock reading to arm from, passed through to
-   *   {@link RoomCollector.resumeAgent}. Omitted means now.
-   */
-  private resumeElsewhere(agentPath: string, from?: number): void {
-    this.collector.resumeAgent(agentPath, from);
-    for (const record of this.held.values()) {
-      if (record.agentPath !== agentPath) continue;
-      const busy = this.busyWith(record.roomId, record.authorId, record.agentPath);
-      if (busy === null) continue;
-      record.behindRoomId = busy.blocking.roomId;
-      this.publishHold(record, 'held');
-    }
+  resumeElsewhere(agentPath: string, from?: number): void {
+    return holds.resumeElsewhere(this, agentPath, from);
   }
 
-  /**
-   * Re-arm the waits whose agent has room for another turn without any turn
-   * having ended — which only a raised `rooms.maxConcurrentTurnsPerAgent` does.
-   *
-   * A held collection is otherwise re-armed by a claim RELEASING
-   * ({@link RoomTriggerDispatcher.resumeElsewhere}), which is the only event
-   * that frees a slot while the limit stands still. Raising the limit in
-   * Settings frees one too, and without this the message that had been waiting
-   * longest would sit parked behind a turn it no longer needs to wait for —
-   * while a message sent a second later started at once. Riding the republish
-   * tick bounds that to one beat; the tick is running, because a hold cannot
-   * exist without a claim.
-   *
-   * Nothing is decided here: re-arming routes each collection back through
-   * `claimCollected`, which asks the ceiling again and re-parks any that still
-   * do not fit.
-   *
-   * Also called by {@link RoomTriggerDispatcher.collectOne} for the one agent a
-   * fresh message is for, which is what keeps the order first-come: without it,
-   * a message sent inside that beat would take the freed slot ahead of one that
-   * had been waiting.
-   *
-   * @param onlyPath - Consider only this agent's waits. Omitted on the beat,
-   *   which considers every agent's.
-   * @param from - The clock reading to arm the waits from. `collectOne` passes
-   *   the fresh message's `arrivedAt`, so the re-armed waits are due no later
-   *   than it and share its sweep, oldest first; a later reading could put
-   *   them one millisecond behind and let the fresh message take the slot.
-   */
-  private resumeFreedHolds(onlyPath?: string, from?: number): void {
-    const freed = new Set<string>();
-    for (const record of this.held.values()) {
-      if (onlyPath !== undefined && record.agentPath !== onlyPath) continue;
-      if (freed.has(record.agentPath)) continue;
-      if (this.busyWith(record.roomId, record.authorId, record.agentPath) === null) {
-        freed.add(record.agentPath);
-      }
-    }
-    for (const agentPath of freed) this.resumeElsewhere(agentPath, from);
+  resumeFreedHolds(onlyPath?: string, from?: number): void {
+    return holds.resumeFreedHolds(this, onlyPath, from);
   }
 
-  /**
-   * Give up on the holds that have waited longer than the room's late ceiling,
-   * and say so once each.
-   *
-   * **The bound exists to stop a chain, not to hurry anybody.** A blocks B and B
-   * blocks C is a wait with no natural end, and a lane that says "it will pick
-   * this up" for an hour has stopped being a promise and become furniture.
-   * `rooms.lateReplyCeilingMinutes` is reused rather than a new setting invented:
-   * it already means "when the room stops listening", which is this same fact at
-   * a different grain.
-   *
-   * The notice is written HERE rather than in `releaseHold`, because only here is
-   * the dropped collection in hand — a notice has to be about a message somebody
-   * actually sent, and the newest one in the batch is the one they are waiting on.
-   */
-  private expireHolds(): void {
-    const ceiling = this.deps.holdCeilingMs();
-    const now = Date.now();
-    for (const [key, record] of [...this.held]) {
-      if (now - Date.parse(record.since) < ceiling) continue;
-      // A list, because one key can hold both a cap-closed batch and the fresh
-      // collection behind it — see {@link RoomCollector.dropOne}. The NEWEST of
-      // them is what the notice is about, and every one of them owes a credit.
-      const dropped = this.collector.dropOne(record.roomId, record.authorId);
-      this.releaseHold(key, 'expired');
-      const last = dropped.at(-1);
-      // One credit back per collection, exactly as a halt returns them.
-      for (const _each of dropped) this.settleOne();
-      if (last === undefined) continue;
-      const newest = last.entries.at(-1);
-      const room = this.deps.store.getRoom(record.roomId);
-      if (newest === undefined || room === null) continue;
-      this.notices.reportSilence(
-        room,
-        newest.entry,
-        { authorId: last.authorId, displayName: last.displayName },
-        'busy',
-        // No dispatch of its own: no turn was ever started for this batch.
-        null,
-        { busyWith: 'held-too-long' }
-      );
-    }
+  expireHolds(): void {
+    return holds.expireHolds(this);
   }
 
   /**
@@ -3500,84 +1162,11 @@ export class RoomTriggerDispatcher {
    *   which is what archiving means.
    */
   abandonHolds(roomId: string, authorId?: string): void {
-    const dropped =
-      authorId === undefined
-        ? this.collector.drop(roomId)
-        : this.collector.dropOne(roomId, authorId);
-    // Read fresh rather than taken from `collection.room`, which is the room as
-    // it stood when the message was posted: the whole reason this method runs is
-    // that something about the room has just changed.
-    const room = this.deps.store.getRoom(roomId);
-    for (const collection of dropped) {
-      logger.info('[rooms] a waiting message was given up on: the agent is no longer in the room', {
-        roomId,
-        authorId: collection.authorId,
-        waiting: collection.entries.length,
-      });
-      this.reportLeft(room, collection);
-      this.settleCollection(collection, 'left');
-    }
-    // A hold with no collection behind it should not exist — but if one ever
-    // did, the indicator is the promise, so it goes either way.
-    for (const [key, record] of [...this.held]) {
-      if (record.roomId !== roomId) continue;
-      if (authorId !== undefined && record.authorId !== authorId) continue;
-      this.releaseHold(key, 'left');
-    }
-    // And the Stop mark goes too. It is otherwise cleared only by the next claim
-    // there ({@link RoomTriggerDispatcher.stoppedHere}), and a room that has been
-    // archived — or an agent taken off its roster — will never claim again, so
-    // without this the key would outlive everything it is about. Nothing is
-    // weakened by dropping it: the pair has no room to speak into any more, and
-    // an agent added back is being asked to take part again.
-    for (const [key, stopped] of [...this.stoppedHere]) {
-      if (stopped.roomId !== roomId) continue;
-      if (authorId !== undefined && stopped.authorId !== authorId) continue;
-      this.stoppedHere.delete(key);
-    }
+    return holds.abandonHolds(this, roomId, authorId);
   }
 
-  /**
-   * Say that a member left before the turn it was owed ever ran.
-   *
-   * The one place the two abandonment gates agree — {@link
-   * RoomTriggerDispatcher.abandonHolds}, which runs inside the operator's own
-   * roster write, and the last-moment re-check in `claimCollected` for a roster
-   * that changed without going through the service. One event, one sentence,
-   * whichever path notices it.
-   *
-   * **Silent for an archived room, and that is structural rather than a
-   * choice.** `postNotice` refuses one, because archiving promises the room stops
-   * gaining entries. Checked here rather than left to fail inside the writer, so
-   * the reason is written down where somebody looking for the missing line will
-   * find it.
-   *
-   * The notice is ABOUT the oldest message in the batch, which is the one the
-   * person has been waiting on longest and the id the hold was keyed to.
-   *
-   * @param room - The room as it stands NOW, or `null` if it has been deleted
-   *   out from under this call.
-   * @param collection - The batch that will never become a turn.
-   */
-  private reportLeft(room: Room | null, collection: RoomCollection): void {
-    if (room === null || room.archived) return;
-    const entry = collection.entries[0]?.entry;
-    if (entry === undefined) return;
-    this.notices.reportSilence(
-      room,
-      entry,
-      {
-        authorId: collection.authorId,
-        displayName:
-          this.deps.authors.getById(collection.authorId)?.displayName ?? collection.displayName,
-      },
-      'left',
-      // No dispatch id: this batch never reached the half of `claimCollected`
-      // that mints one. Left null rather than borrowed from the ambient scope,
-      // which would file a drop about this agent under whichever turn happened
-      // to be running when the roster changed.
-      null
-    );
+  reportLeft(room: Room | null, collection: RoomCollection): void {
+    return holds.reportLeft(this, room, collection);
   }
 
   /**
@@ -3594,244 +1183,40 @@ export class RoomTriggerDispatcher {
     return describeHolds(this.held);
   }
 
-  /**
-   * Put one hold's state on its room's ephemeral stream.
-   *
-   * `since` is the hold's own start on every publish, for the reason
-   * {@link RoomTriggerDispatcher.publishPresence} carries the claim's: an event
-   * that said "now" would reset the wait every ten seconds, and a client that
-   * connected mid-wait could never learn how long it has been.
-   *
-   * @param record - The hold this is about.
-   * @param state - `'held'` while it waits, `'done'` once it stops.
-   */
-  private publishHold(record: HeldRecord, state: 'held' | 'done'): void {
-    this.deps.publishPresence(record.roomId, record.authorId, {
-      state,
-      entryId: record.entryId,
-      since: record.since,
-      // Only on the `held` frame. A `done` clears an indicator by its key and
-      // says nothing else; carrying a room id on it would be a last disclosure
-      // for no reader's benefit.
-      ...(state === 'held' ? { heldBehind: this.heldBehind(record) } : {}),
-    });
+  publishHold(record: HeldRecord, state: 'held' | 'done'): void {
+    return holds.publishHold(this, record, state);
   }
 
-  /**
-   * What one hold is waiting behind, as the wire carries it.
-   *
-   * An id and two booleans, and no more: the reader may not be a member of the
-   * room in the way, so the name is resolved on the client against the rooms it
-   * can already see. `othersWaiting` is a boolean rather than a count because it
-   * exists only to decide whether "Answer here first" would change anything —
-   * a count would let a reader enumerate rooms it cannot see.
-   *
-   * `severalInTheWay` is the same shape for the same reason. Once an agent may
-   * work in more than one conversation at once (`rooms.maxConcurrentTurnsPerAgent`),
-   * the room named is only the turn that has run longest, and whichever of its
-   * turns finishes first can be the one that lets this message start — so the
-   * sentence must not promise the named one (DOR-2104).
-   *
-   * @param record - The hold being described.
-   */
-  private heldBehind(record: HeldRecord): RoomHeldBehind {
-    let othersWaiting = false;
-    for (const other of this.held.values()) {
-      if (other.agentPath !== record.agentPath || other.roomId === record.roomId) continue;
-      othersWaiting = true;
-      break;
-    }
-    let running = 0;
-    for (const claim of this.claimed.values()) {
-      if (claim.agentPath === record.agentPath) running += 1;
-    }
-    return { roomId: record.behindRoomId, othersWaiting, severalInTheWay: running > 1 };
+  heldBehind(record: HeldRecord): RoomHeldBehind {
+    return holds.heldBehind(this, record);
   }
 
-  /**
-   * End one collection's accounting AND its hold, in one call.
-   *
-   * **The seam that makes "no hold is ever forgotten" structural.**
-   * `claimCollected` gives up in four places and each one used to call
-   * `settleOne` alone; a fifth added later would have had to remember the hold.
-   * The same shape {@link RoomTriggerDispatcher.releaseClaim} uses for claims:
-   * one function, every terminal.
-   *
-   * @param collection - The batch that will not become a turn.
-   * @param reason - How it ended, for the log.
-   */
-  private settleCollection(collection: RoomCollection, reason: HoldEnd): void {
-    const key = agentKey(collection.room.id, collection.authorId);
-    const newest = collection.entries.at(-1)?.entry.seq;
-    if (newest !== undefined) this.receipts.clearUpTo(key, newest);
-    this.releaseHold(key, reason);
-    this.settleOne();
+  settleCollection(collection: RoomCollection, reason: HoldEnd): void {
+    return holds.settleCollection(this, collection, reason);
   }
 
-  /**
-   * Put a launch the runtime refused as busy back in line, instead of dropping
-   * it (DOR-2823). The agent was working in its own chat, or finishing work the
-   * runtime would not interrupt; neither is a reason to leave a person without
-   * an answer. Tried again on a backoff (`BUSY_RETRY_DELAYS_MS`), through
-   * the same collector a new message goes through, so a room archived or an
-   * agent removed in the meantime is handled the way it always is. The first
-   * retry writes the one notice that says so, and it is true.
-   *
-   * @param room - The room.
-   * @param entry - The message the refused turn would have answered.
-   * @param target - The refused turn.
-   * @returns `false` once every retry is spent, so the caller says the room
-   *   gave up.
-   */
-  private retryWhenFree(room: Room, entry: RoomEntry, target: TriggerTarget): boolean {
-    const next = this.receipts.scheduleRetry(room.id, target.authorId, entry.id, () =>
-      this.retryNow(room.id, entry.id, target)
-    );
-    if (next === null) return false;
-    if (next.attempt === 1) {
-      this.notices.reportSilence(room, entry, target, 'busy', target.dispatchId, {
-        busyWith: 'retrying',
-      });
-    }
-    logger.info('[rooms] a busy agent will be tried again', {
-      roomId: room.id,
-      authorId: target.authorId,
-      entryId: entry.id,
-      attempt: next.attempt,
-      inMs: next.inMs,
-    });
-    return true;
+  retryWhenFree(room: Room, entry: RoomEntry, target: TriggerTarget): boolean {
+    return holds.retryWhenFree(this, room, entry, target);
   }
 
-  /**
-   * Put one busy launch back through the collector, as it was first picked.
-   *
-   * @param roomId - The room.
-   * @param entryId - The message to answer.
-   * @param target - The turn that was refused.
-   */
-  private retryNow(roomId: string, entryId: string, target: TriggerTarget): void {
-    const room = this.deps.store.getRoom(roomId);
-    const entry = this.deps.store.getEntryById(roomId, entryId);
-    const record = this.deps.authors.getById(target.authorId);
-    const member = this.deps.store.listMembers(roomId).find((m) => m.authorId === target.authorId);
-    // Nothing to answer any more: the room or the agent is gone, or a turn the
-    // agent took since has already read this message.
-    if (!room || room.archived || !entry || !record || !member || member.lastReadSeq >= entry.seq) {
-      this.receipts.forgetRetry(roomId, target.authorId, entryId);
-      this.receipts.clear(roomId, target.authorId, entryId);
-      return;
-    }
-    this.collectOne(
-      room,
-      entry,
-      {
-        authorId: target.authorId,
-        agentPath: target.agentPath,
-        displayName: target.displayName,
-        author: toAuthorRef(record),
-        depth: target.depth,
-        engaged: target.engaged,
-        reason: target.reason ?? 'mention',
-      },
-      Date.now()
-    );
-    if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
-      this.receipts.mark(roomId, entry, target.authorId);
-    }
+  retryNow(roomId: string, entryId: string, target: TriggerTarget): void {
+    return holds.retryNow(this, roomId, entryId, target);
   }
 
-  /**
-   * Re-state every live claim and every live hold, on the interval.
-   *
-   * One event per claim, carrying the indicator's full identity —
-   * `(room, author, entryId)` — because that is what the client keys its store
-   * on (room-presence spec §3.2, §5.1). An agent holds at most one claim per
-   * room, so this is also one event per working agent per room.
-   *
-   * Holds ride the same tick, and must: the client expires an indicator it has
-   * not heard about for 30 s, so a hold that was not restated would blink off
-   * the lane while it was still true. The tick runs whenever any claim exists,
-   * and a hold cannot exist without one.
-   */
   private republishPresence(): void {
-    // Before the re-state, so nothing that has outlived the room's patience is
-    // announced one more time on its way out.
-    this.expireHolds();
-    this.resumeFreedHolds();
-    const rooms = new Set<string>();
-    for (const claim of this.claimed.values()) {
-      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
-      rooms.add(claim.roomId);
-    }
-    for (const record of this.held.values()) this.publishHold(record, 'held');
-    // One repaint per ROOM, not per claim: the sidebar draws a count, so two
-    // claims in one room are one dot and one event. The global stream has no
-    // replay, so this tick is the only way a reader who opened the cockpit
-    // mid-turn — or reconnected — learns that a room they do not have open is
-    // busy. Nothing is compared against a previous count here: the tick's job
-    // is to re-state, and a tick that suppressed an unchanged count would never
-    // reach the reader who missed the transition.
-    for (const roomId of rooms) {
-      this.deps.publishWorkingCount(roomId, this.workingCount(roomId));
-    }
+    return claims.republishPresence(this);
   }
 
-  /**
-   * Tell the fan-out a room's working count, but only when it actually moved.
-   *
-   * The count is over distinct AGENTS, so an agent taking a second claim in a
-   * room that already shows it as working changes nothing a reader can see, and
-   * an event for it would be a repaint of the identical dot. Transitions
-   * therefore publish on change only; the republish tick above publishes
-   * unconditionally, because those two are answering different questions —
-   * "something happened" versus "this is still true".
-   *
-   * @param roomId - The room whose count may have moved.
-   * @param before - The count taken before the claim map was mutated.
-   */
-  private publishWorkingCount(roomId: string, before: number): void {
-    const after = this.workingCount(roomId);
-    if (after !== before) this.deps.publishWorkingCount(roomId, after);
+  publishWorkingCount(roomId: string, before: number): void {
+    return claims.publishWorkingCount(this, roomId, before);
   }
 
-  /**
-   * Put one claim's state on its room's ephemeral stream.
-   *
-   * `since` is the claim's OWN start on every publish, including the republishes
-   * and the `done`. An event that carried "now" would make an indicator reset its
-   * age every ten seconds, and a client that connected mid-turn could never learn
-   * how long the work has been running.
-   *
-   * @param claim - The claim this is about.
-   * @param state - Where it is in its life.
-   */
-  private publishPresence(
+  publishPresence(
     claim: ActiveClaim,
     state: RoomPresenceState,
     outcome?: 'answered' | 'silent'
   ): void {
-    // Every frame carries the current reading, so every frame is one the room
-    // has now SEEN — including a republish or a `working_late` that lands
-    // between a trailing flush being armed and firing. Recording it here rather
-    // than only on the activity path is what stops that flush repeating a
-    // reading already on screen. It can never suppress a needed frame: this only
-    // ever equals what actually went out.
-    claim.activityPublished = claim.activity;
-    this.deps.publishPresence(claim.roomId, claim.authorId, {
-      state,
-      entryId: claim.entryId,
-      since: claim.claimedAt,
-      // Every publish is self-contained, exactly as `since` already is: the
-      // claim frame, the `working_late` frame, each ten-second republish and
-      // the `done` all carry whatever is current. A client that connects
-      // mid-turn therefore sees the verb on its first frame, with no separate
-      // activity event to miss.
-      ...(claim.activity ? { activity: claim.activity } : {}),
-      // Only ever on a `done` frame, and only for the two outcomes that have
-      // nothing durable to explain them — see {@link PRESENCE_OUTCOMES}.
-      ...(outcome ? { outcome } : {}),
-    });
+    return claims.publishPresence(this, claim, state, outcome);
   }
 
   /**
@@ -3961,7 +1346,7 @@ export class RoomTriggerDispatcher {
    * @returns What the room can truthfully say it is doing and the claim in the
    *   way, or `null` when it is doing nothing.
    */
-  private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
+  busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
     return claimBusyWith(
       this.claimed,
       roomId,
@@ -3994,11 +1379,7 @@ export class RoomTriggerDispatcher {
    * @param displayName - The label the room shows for this agent; the readable
    *   half of its copy's folder name and nothing else.
    */
-  private placeTurn(
-    roomId: string,
-    agentPath: string,
-    displayName: string
-  ): Promise<RoomTurnPlace> {
+  placeTurn(roomId: string, agentPath: string, displayName: string): Promise<RoomTurnPlace> {
     return resolveRoomTurnPlace(this.deps.worktrees?.(), roomId, agentPath, displayName);
   }
 
@@ -4038,98 +1419,8 @@ export class RoomTriggerDispatcher {
    * @returns How many in-flight turns were interrupted. `0` is a real answer: it
    *   says the room was already idle.
    */
-  async halt(room: Room): Promise<number> {
-    this.receipts.cancelRetries(room.id);
-    const claims = [...this.claimed.values()].filter((claim) => claim.roomId === room.id);
-    // **Marked before anything else, and before the first `await`.** A turn
-    // whose stream closes while this method is still delivering interrupts must
-    // find the mark already there, or it posts the answer Stop was pressed to
-    // prevent — the two-second race measured on 2026-08-15. Nothing after this
-    // line can be reached by a turn that started AFTER the halt, because a new
-    // turn is a new dispatch id (see {@link RoomTriggerDispatcher.haltedTurns}).
-    for (const claim of claims) {
-      this.haltedTurns.add(claim.dispatchId);
-      // And the same statement at the pair, for the half of a turn's voice the
-      // dispatch mark cannot reach: `post_to_room`
-      // ({@link RoomTriggerDispatcher.stoppedHere}). Marked here rather than in
-      // the release loop below for the same reason the dispatch mark is — before
-      // the first `await`, so a turn that is quicker than the interrupt cannot
-      // slip a post through the gap.
-      this.stoppedHere.set(agentKey(room.id, claim.authorId), {
-        roomId: room.id,
-        authorId: claim.authorId,
-      });
-    }
-    logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
-    // **The durable write comes first, and the whole invariant is in that
-    // order.** Releasing a claim publishes `done`, so a halt that stopped the
-    // turns before saying so would drop every working indicator in the room a
-    // beat ahead of the line explaining why — a room going quiet for no visible
-    // reason, which is the exact shape `.claude/rules/room-conduct.md` forbids.
-    //
-    // The room's own voice speaks whether or not anything was running: pressing
-    // Stop in an idle room is a question, and silence is not an answer to it.
-    // Damped per room and re-armed by the next claim, so pressing it twice is
-    // one line and not two. Best-effort like every other notice — a room
-    // archived between the button and this line must not leave the turns
-    // running — which is what routing it through the log rather than the writer
-    // buys.
-    this.notices.reportHalted(room, claims.length);
-    // **Before the claims, and that ordering is the whole of it.** Releasing a
-    // claim is what resumes a held collection, so dropping the buffers second
-    // would start, one macrotask later, exactly the turns the person pressed
-    // Stop to prevent — and a gathering window that nobody stopped would answer
-    // a halted room half a second after it went quiet. Nothing is lost that the
-    // room log does not still hold: a collection is a marker of what has not
-    // been read, and the next message a person sends collects afresh.
-    for (const dropped of this.collector.drop(room.id)) {
-      logger.info('[rooms] a halt dropped messages that were waiting for a turn', {
-        roomId: room.id,
-        authorId: dropped.authorId,
-        waiting: dropped.entries.length,
-      });
-      // Its held indicator goes with it, and the `halted` line written a few
-      // lines above is its durable sibling. Stopping THIS room drops what it was
-      // waiting for; stopping the room that was in the way is the opposite case
-      // and runs the wait, because the person stopped one conversation and not
-      // the other.
-      this.settleCollection(dropped, 'halted');
-    }
-    for (const claim of claims) {
-      try {
-        // The session lookup is INSIDE the try, and it is a database read: a
-        // `SQLITE_BUSY` escaping here would abandon the loop with every
-        // remaining claim marked and none of them released, so a room would show
-        // agents working for the life of the process and refuse each of them
-        // every message after.
-        const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);
-        if (sessionId !== null && sessionId !== undefined) {
-          const receipt = await this.deps.runner.interrupt({
-            sessionId,
-            agentPath: claim.agentPath,
-          });
-          // **The one place the room can say it could not reach an agent**
-          // (DOR-1425). The answer was thrown away here, so a stop that landed
-          // on nothing — a turn still booting, most often — logged exactly like
-          // one that stopped a turn. The claim goes either way; what changes is
-          // that an operator reading the log can tell the three apart.
-          if (receipt.outcome !== 'acked' && receipt.outcome !== 'closed') {
-            this.reportUnreachedStop(room.id, claim, sessionId, receipt);
-          }
-        }
-      } catch (err) {
-        // One agent that will not stop must not leave the others running, and
-        // its claim is dropped either way: a claim held for a turn nobody can
-        // interrupt is an indicator with nothing behind it.
-        logger.warn('[rooms] could not interrupt a turn while halting a room', {
-          roomId: room.id,
-          authorId: claim.authorId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-      this.releaseClaim(agentKey(room.id, claim.authorId), 'halted');
-    }
-    return claims.length;
+  halt(room: Room): Promise<number> {
+    return halting.halt(this, room);
   }
 
   /**
@@ -4193,100 +1484,25 @@ export class RoomTriggerDispatcher {
    *   delivering its interrupt yet had already stopped this same turn, which is
    *   one turn and is counted once.
    */
-  async haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
-    this.receipts.cancelRetries(room.id, authorId);
-    const key = agentKey(room.id, authorId);
-    const claim = this.claimed.get(key);
-    // Read BEFORE the mark, or it would always be true. A press that is still
-    // awaiting its interrupt leaves the claim in place, so a second press lands
-    // on the same dispatch — one turn, stopped once, and counted once. The mark
-    // cannot be stale: it is dropped at the turn's own terminal, and the next
-    // turn for this pair is a different dispatch.
-    const alreadyStopping = claim !== undefined && this.wasHalted(claim.dispatchId);
-    // **Marked first, before anything that can yield.** See point 1 above: a
-    // turn whose stream closes while this method is still delivering the
-    // interrupt must find the mark already there, or it posts the answer Stop
-    // was pressed to prevent.
-    if (claim !== undefined) {
-      this.haltedTurns.add(claim.dispatchId);
-      // The other half of this turn's voice, at the pair rather than at the
-      // dispatch, and scoped to this key like everything else here — stopping
-      // Ana never takes Bo's hand off the tool
-      // ({@link RoomTriggerDispatcher.stoppedHere}).
-      this.stoppedHere.set(key, { roomId: room.id, authorId });
-    }
-    logger.info('[rooms] an agent was stopped in a room', {
-      roomId: room.id,
-      authorId,
-      // What THIS press did, which is what a person reading two lines for one
-      // turn needs to tell them apart.
-      stopped: claim !== undefined && !alreadyStopping,
-      alreadyStopping,
-    });
+  haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
+    return halting.haltAgent(this, room, authorId, byAuthorId);
+  }
 
-    // Dropped before the notice only to KNOW what to say; nothing here can
-    // yield, so the durable-write-before-release ordering is untouched. Scoped
-    // to this agent, so what anybody else is waiting to answer is left alone.
-    const waiting = this.collector.dropOne(room.id, authorId);
-    for (const dropped of waiting) {
-      logger.info('[rooms] a stop dropped messages that were waiting for a turn', {
-        roomId: room.id,
-        authorId,
-        waiting: dropped.entries.length,
-      });
-      // Through the seam, so the held indicator goes with the collection rather
-      // than standing until the next republish tick with nothing durable under
-      // it. Stopping a HELD agent is the case this covers: nothing is running
-      // here to interrupt, and what the person stopped is this conversation
-      // waiting. The `halted` line written just below is its durable sibling —
-      // and the turn in the OTHER room is untouched, which is the whole
-      // difference between this and stopping the room that is in the way.
-      this.settleCollection(dropped, 'halted');
-    }
+  /** Move an agent's seat by hand. See {@link reseating.reseatByHand}. */
+  reseatByHand(
+    room: Room,
+    agent: { authorId: string; agentPath: string; displayName: string },
+    byAuthorId: string,
+    accountId: string | undefined
+  ): Promise<{ sessionId: string }> {
+    return reseating.reseatByHand(this, room, agent, byAuthorId, accountId);
+  }
 
-    this.notices.reportAgentHalted(room, {
-      byAuthorId,
-      subjectAuthorId: authorId,
-      outcome: claim !== undefined ? 'interrupted' : waiting.length > 0 ? 'unstarted' : 'idle',
-    });
-
-    if (claim === undefined) return 0;
-    // The earlier press owns the interrupt and the release; a second one here
-    // would interrupt a turn that is already being stopped and then release a
-    // key the first press is about to release itself.
-    if (alreadyStopping) return 0;
-
-    try {
-      // **The session lookup is inside the try, and that is the whole reason
-      // there is one line of nesting here.** It is a database read, and a
-      // `SQLITE_BUSY` escaping at this point would leave a marked, un-released
-      // claim: the room would show that agent working for the life of the
-      // process, and the `(room, agent)` ceiling would refuse it every message
-      // after. Whatever went wrong, the claim goes.
-      const sessionId = this.deps.store.getRoomSession(room.id, authorId);
-      if (sessionId !== null && sessionId !== undefined) {
-        const receipt = await this.deps.runner.interrupt({
-          sessionId,
-          agentPath: claim.agentPath,
-        });
-        // Same answer, same reading, at the narrower scope (DOR-1425).
-        if (receipt.outcome !== 'acked' && receipt.outcome !== 'closed') {
-          this.reportUnreachedStop(room.id, claim, sessionId, receipt);
-        }
-      }
-    } catch (err) {
-      // An agent that will not stop still loses its claim: a claim held for a
-      // turn nobody can interrupt is an indicator with nothing behind it.
-      logger.warn('[rooms] could not interrupt a turn while stopping an agent', {
-        roomId: room.id,
-        authorId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    // By KEY, not by dispatch: this is stopping whoever holds the claim rather
-    // than finishing a turn of its own, which is the one case room-conduct
-    // reserves `releaseClaim` for.
-    this.releaseClaim(key, 'halted');
-    return 1;
+  /** The accounts a seat may move to. See {@link reseating.reseatOptionsFor}. */
+  reseatOptions(
+    room: Room,
+    agent: { authorId: string; agentPath: string }
+  ): Promise<ReseatOptions> {
+    return reseating.reseatOptionsFor(this, room, agent);
   }
 }

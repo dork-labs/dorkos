@@ -1,7 +1,7 @@
 /**
  * Which journey steps a run takes, and why a remote run leaves some out.
  *
- * The local run takes every step, 1 to 29 with 15b. A remote run (a community
+ * The local run takes every step, 1 to 29 with 15b, 20b, 22b, 22c and 23b. A remote run (a community
  * the live gate made and is holding, see `config.ts`) takes only the steps
  * that make sense on one real community whose owner and member already exist,
  * and lists every other step in its receipt as `skipped: remote-mode` with the
@@ -33,9 +33,13 @@ export const ALL_STEPS = [
   '18',
   '19',
   '20',
+  '20b',
   '21',
   '22',
+  '22b',
+  '22c',
   '23',
+  '23b',
   '24',
   '25',
   '26',
@@ -64,8 +68,10 @@ export const REMOTE_RUN_STEPS: readonly StepId[] = [
   '18',
   '19',
   '20',
+  '20b',
   '22',
   '23',
+  '23b',
   '25',
 ];
 
@@ -85,6 +91,10 @@ export const REMOTE_SKIPPED_STEPS: Readonly<Partial<Record<StepId, string>>> = {
   '8': NEEDS_SECOND_COMMUNITY,
   '16': NEEDS_SECOND_COMMUNITY,
   '21': "Needs a private channel, which the gate's community does not have; DOR-2186 proved it locally.",
+  '22b':
+    'Needs direct messages, which the gate’s community may not run yet; DOR-2955 proved it locally.',
+  '22c':
+    'Sets a monthly limit on the owner’s computer that the gate’s run does not need; proved locally (DOR-2956).',
   '24': CHANGES_MEMBERSHIP,
   '26': CHANGES_MEMBERSHIP,
   '27': 'Needs to expire an invitation in the database, which a remote run cannot reach; DOR-2182 proved it locally.',
@@ -112,7 +122,7 @@ export function runsStep(mode: RunMode, id: StepId): boolean {
  * @param name - The step's name as the journey records it.
  */
 export function stepIdOf(name: string): StepId | null {
-  const id = /^(\d+b?)\s/.exec(name)?.[1];
+  const id = /^(\d+[a-z]?)\s/.exec(name)?.[1];
   return id && (ALL_STEPS as readonly string[]).includes(id) ? (id as StepId) : null;
 }
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  connectionAccessLevels,
   connectorAuthenticationFlows,
   connectorOperationRevisions,
   connectionOperationGrants,
@@ -27,6 +28,9 @@ import {
 import { ConnectorRegistry } from '../registry.js';
 import { ConnectorLifecycleService } from '../resources/lifecycle-service.js';
 import { FetchComposioHttpClient } from '../providers/composio-client.js';
+import { ConnectorReconciliationService } from '../reconciliation-service.js';
+import { TrustedConnectionSharing, type TrustedSharingConfig } from '../access/trusted-sharing.js';
+import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { ComposioConnectorProvider } from '../providers/composio.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -1027,5 +1031,141 @@ describe('ConnectorAuthenticationFlowService', () => {
         'This sign-in belongs to a different way of reaching the app. Start again from Connections.',
     });
     expect(db.select().from(connections).all()).toHaveLength(0);
+  });
+});
+
+describe('ConnectorAuthenticationFlowService sharing a new app on Trusted', () => {
+  let db: Db;
+  let registry: ConnectorRegistry;
+  let provider: RestartSafeProvider;
+  let preset: UserConfig['permissions']['preset'];
+  let sharing: TrustedConnectionSharing;
+  let service: ConnectorAuthenticationFlowService;
+
+  beforeEach(() => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    registry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    provider = new RestartSafeProvider({ instanceId: PROVIDER_ID, toolkitVersion: 'v1' });
+    vi.spyOn(provider, 'listOperationSchemas').mockImplementation(async (request) => ({
+      status: 'ok' as const,
+      page: {
+        operations: (
+          [
+            ['gmail.list', 'read'],
+            ['gmail.send', 'write'],
+            ['gmail.delete', 'destructive'],
+          ] as const
+        ).map(([slug, classification]) => ({
+          providerInstanceId: provider.instanceId,
+          toolkit: request.toolkit,
+          operationSlug: slug,
+          toolkitVersion: request.toolkitVersion,
+          schemaHash: `sha256:${slug}`,
+          capabilityClassification: classification,
+          retryPolicy: 'never' as const,
+          inputSchema: { type: 'object', additionalProperties: false },
+        })),
+        truncated: false,
+      },
+    }));
+    registry.register(provider, 'material-a');
+    preset = 'trusted';
+    const reconciliation = new ConnectorReconciliationService({
+      db,
+      registry,
+      bootEpoch: 'boot-a',
+      listAgents: () => [],
+      now: () => NOW,
+    });
+    sharing = new TrustedConnectionSharing({
+      db,
+      // A new connection reads the posture only; it writes no config.
+      config: {
+        get: ((key: 'permissions' | 'ui') =>
+          key === 'permissions'
+            ? { ...USER_CONFIG_DEFAULTS.permissions, preset }
+            : USER_CONFIG_DEFAULTS.ui) as TrustedSharingConfig['get'],
+        set: () => {},
+      },
+      reconciliation,
+      appVersion: 'test',
+      now: () => NOW,
+    });
+    service = new ConnectorAuthenticationFlowService({ db, registry, now: () => NOW, sharing });
+  });
+
+  /** Sign in, and wait for the catalog read the sign-in started. */
+  async function connect(started: Promise<{ flowId: string }>) {
+    const follow = vi.spyOn(sharing, 'follow');
+    const completed = await service.poll(OWNER, (await started).flowId);
+    await Promise.all(follow.mock.results.map((result) => result.value));
+    return { completed, follow };
+  }
+
+  const levels = () =>
+    db
+      .select()
+      .from(connectionAccessLevels)
+      .all()
+      .map((row) => `${row.subjectType}:${row.level}`);
+
+  const liveGrants = () =>
+    db
+      .select({ slug: connectorOperationRevisions.operationSlug })
+      .from(connectionOperationGrants)
+      .innerJoin(
+        connectorOperationRevisions,
+        eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+      )
+      .where(eq(connectionOperationGrants.subjectType, 'every_agent'))
+      .all()
+      .map((row) => row.slug)
+      .sort();
+
+  it('shares a new connection with every agent at Read and write, with the grants in place', async () => {
+    const { completed } = await connect(
+      service.start(OWNER, {
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        label: 'Work',
+        idempotencyKey: 'trusted-new',
+      })
+    );
+
+    expect(completed).toMatchObject({ state: 'connected' });
+    expect(levels()).toEqual(['every_agent:read-write']);
+    // Read and write never covers a destructive action.
+    expect(liveGrants()).toEqual(['gmail.list', 'gmail.send']);
+  });
+
+  it('shares nothing on a Careful install', async () => {
+    preset = 'careful';
+    const { follow } = await connect(
+      service.start(OWNER, {
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        label: 'Work',
+        idempotencyKey: 'careful-new',
+      })
+    );
+
+    expect(levels()).toEqual([]);
+    expect(liveGrants()).toEqual([]);
+    expect(follow).not.toHaveBeenCalled();
+  });
+
+  it('never rewrites who can use an app when it is signed in to again', async () => {
+    const existing = insertActiveConnection(db);
+    const { completed, follow } = await connect(
+      service.reconnect(OWNER, existing, 'trusted-reconnect')
+    );
+
+    expect(completed).toMatchObject({ state: 'connected', connectionId: existing });
+    expect(levels()).toEqual([]);
+    expect(follow).not.toHaveBeenCalled();
   });
 });

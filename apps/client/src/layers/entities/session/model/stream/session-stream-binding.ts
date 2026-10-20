@@ -15,8 +15,14 @@ import { streamManager } from '@/layers/shared/lib/transport';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
+import { useHistoryWindowStore } from './history-window-store';
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
+import {
+  markSessionListsReset,
+  markSessionListsStreamDown,
+  noteSessionListsResetStamp,
+} from '../../lib/session-list-reset';
 
 /**
  * Guards against re-installing listeners. The StreamManager singleton holds a
@@ -67,6 +73,10 @@ export function initSessionStreamBinding(): void {
   streamManager.setListeners({
     onSnapshot: (sessionId, snapshot) => {
       useSessionStreamStore.getState().applySnapshot(sessionId, snapshot);
+      // Where a long history's window starts, and how much sits before it (DOR-2889).
+      useHistoryWindowStore
+        .getState()
+        .noteSnapshot(sessionId, snapshot.messages[0]?.id ?? null, snapshot.earlierMessages ?? 0);
       useAppStore.getState().hydrateCanvasFromSnapshot(sessionId, snapshot.canvas);
     },
     onSessionEvent: (sessionId, event) => {
@@ -140,6 +150,26 @@ export function initSessionStreamBinding(): void {
   streamManager.subscribeEvent('account_usage', (data) => {
     const parsed = AccountUsageSchema.safeParse(data);
     if (parsed.success) useSessionStreamStore.getState().applyAccountUsage(parsed.data);
+  });
+
+  // A Claude account switch: remember when, so an agent click can tell a list
+  // cached before it (wrong account) from one a reconnect merely marked stale.
+  streamManager.subscribeEvent('session_list_invalidated', (data) => {
+    const stamp = (data as { changedAt?: unknown } | null)?.changedAt;
+    markSessionListsReset(typeof stamp === 'string' ? stamp : undefined);
+  });
+  // The live event is not replayed, so a stream that was down when the switch
+  // happened learns of it from the switch the server names on every connect.
+  streamManager.subscribeEvent('connected', (data) => {
+    const stamp = (data as { sessionListsResetAt?: unknown } | null)?.sessionListsResetAt;
+    noteSessionListsResetStamp(typeof stamp === 'string' ? stamp : null);
+  });
+  // Not connected means the switch event can be missed: a drop, and also the
+  // reopen after a hidden tab released the stream, which passes through
+  // `connecting` without ever reporting itself down. No cached list is trusted
+  // again until the next `connected` frame has named the last switch.
+  streamManager.subscribeListConnectionState((state) => {
+    if (state !== 'connected') markSessionListsStreamDown();
   });
 
   // Re-baseline statuses whenever the global stream ENTERS 'connected' — on

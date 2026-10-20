@@ -1,3 +1,4 @@
+import { siteUrl } from '@dorkos/shared/links';
 import { FieldCard, FieldCardContent, MoreDetails, SwitchSettingRow } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig, TelemetryPayloadDisclosure } from '@/layers/entities/config';
 
@@ -35,7 +36,7 @@ export function PrivacyTab() {
         <p className="text-muted-foreground text-xs">
           Nothing is shared unless a switch below is on.{' '}
           <a
-            href="https://dorkos.ai/telemetry"
+            href={siteUrl('/telemetry')}
             target="_blank"
             rel="noopener noreferrer"
             className="text-foreground underline underline-offset-2"
@@ -71,7 +72,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share anonymous feature-usage events"
-            description="Counts events like app start, to see which features get used."
+            description="Counts events like app start and finished setup, plus any install tag."
             checked={telemetry?.usage ?? false}
             onCheckedChange={(v) => setChannel('usage', v)}
             disabled={updateConfig.isPending}

@@ -1,0 +1,206 @@
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
+import { test, expect } from './csp.js';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { Pool } from 'pg';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { bootstrapFirstHost } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
+import {
+  startFakeIssuer,
+  type FakeIssuer,
+} from '../../server/src/services/spaces/__tests__/fake-oidc-issuer.js';
+
+// Single sign-on (task 6.2 of specs/community-host-operator-api) in a real browser: the button
+// with the host's label, a full redirect through an in-process fake issuer, joining with an
+// invitation, adding a password in Settings, the explicit-linking refusal in plain words, and
+// the single sign-on hint the DorkOS app adds for a space that runs on DorkOS.
+const { COMMUNITY_TEST_DATABASE_URL: adminUrl } = process.env;
+if (!adminUrl)
+  throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
+const dbName = `community_browser_oidc_${randomUUID().replaceAll('-', '')}`;
+const dbUrl = new URL(adminUrl);
+dbUrl.pathname = `/${dbName}`;
+const admin = new Pool({ connectionString: adminUrl });
+const LABEL = 'Example sign-in';
+let issuer: FakeIssuer;
+let pool: Pool;
+let server: ReturnType<typeof serve>;
+let baseUrl: string;
+let blobDir: string;
+let communityId: string;
+let ownerCookie: string;
+
+async function freePort() {
+  const socket = createServer();
+  await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
+  const address = socket.address();
+  if (!address || typeof address === 'string') throw new Error('No browser test port');
+  await new Promise<void>((resolve) => socket.close(() => resolve()));
+  return address.port;
+}
+
+function post(path: string, body: unknown, cookie = '') {
+  return fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { origin: baseUrl, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  });
+}
+
+test.beforeAll(async () => {
+  issuer = await startFakeIssuer();
+  await admin.query(`CREATE DATABASE ${dbName}`);
+  await migrate(dbUrl.toString());
+  pool = new Pool({ connectionString: dbUrl.toString() });
+  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-oidc-'));
+  const port = await freePort();
+  baseUrl = `http://127.0.0.1:${port}`;
+  const config = parseConfig({
+    COMMUNITY_DATABASE_URL: dbUrl.toString(),
+    COMMUNITY_AUTH_SECRET: 'a'.repeat(32),
+    COMMUNITY_INVITE_SECRET: 'b'.repeat(32),
+    COMMUNITY_BOOTSTRAP_SECRET: 'c'.repeat(32),
+    COMMUNITY_PUBLIC_URL: baseUrl,
+    COMMUNITY_STORAGE_PATH: blobDir,
+    COMMUNITY_OIDC_ISSUER_URL: issuer.issuer,
+    COMMUNITY_OIDC_CLIENT_ID: issuer.clientId,
+    COMMUNITY_OIDC_CLIENT_SECRET: issuer.clientSecret,
+    COMMUNITY_OIDC_LABEL: LABEL,
+  });
+  const app = createCommunityApp({ config, pool });
+  const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
+  app.use('/assets/*', serveStatic({ root: staticRoot }));
+  for (const path of ['/', '/c/:communityId', '/c/:communityId/*'])
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
+  server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const setup = await bootstrapFirstHost(post, {
+    secret: config.bootstrapSecret,
+    accountName: 'Host Operator',
+    email: 'operator@example.com',
+    password: 'password1234',
+    communityName: 'Single Place',
+    channelName: 'general',
+  });
+  communityId = setup.communityId;
+  ownerCookie = setup.cookie;
+});
+
+test.afterAll(async () => {
+  if (server) {
+    if ('closeAllConnections' in server) server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  await issuer?.close();
+  await pool?.end();
+  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+  await admin.end();
+  if (blobDir) await rm(blobDir, { recursive: true, force: true });
+});
+
+test.setTimeout(90_000);
+
+test('an invited person joins through single sign-on, then adds a password in Settings', async ({
+  page,
+}) => {
+  // Fails if the button is missing or unlabelled, the redirect round trip does not come back to
+  // the join, or an account made this way cannot add the password it needs for careful actions.
+  const issued = await post(
+    `/api/v1/communities/${communityId}/invites`,
+    { seats: 1 },
+    ownerCookie
+  );
+  expect(issued.status).toBe(201);
+  const { token } = (await issued.json()) as { token: string };
+  issuer.identity = {
+    sub: 'sso-person',
+    email: 'sso-person@example.com',
+    email_verified: true,
+    name: 'Sso Person',
+  };
+  await page.goto(`${baseUrl}/c/${communityId}/join#invite=${encodeURIComponent(token)}`);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: `Continue with ${LABEL}` }).click();
+  await expect(page.getByRole('heading', { name: 'You’re in Single Place.' })).toBeVisible();
+  expect(issuer.requests).toContain('GET /authorize');
+
+  await page.goto(`${baseUrl}/c/${communityId}/settings/account`);
+  const panel = page.getByRole('region', { name: 'Sign-in' });
+  await expect(panel).toContainText(`You sign in with ${LABEL}.`);
+  await panel.getByLabel('New password').fill('new-password-1234');
+  await panel.getByRole('button', { name: 'Add password' }).click();
+  await expect(panel.getByRole('status')).toHaveText(
+    'Password added. You can now sign in with your email and this password.'
+  );
+  await expect(panel).toContainText(`You sign in with a password and ${LABEL}.`);
+  await expect(panel.getByLabel('New password')).toHaveCount(0);
+});
+
+test('an invitation opened with the single sign-on hint leads with it, so joining makes no second account', async ({
+  page,
+}) => {
+  // Fails if a page the DorkOS app opens for a space that runs on DorkOS leads with a sign-up
+  // form, loses the hint on the way to the join page, or cannot finish joining from the lead.
+  const issued = await post(
+    `/api/v1/communities/${communityId}/invites`,
+    { seats: 1 },
+    ownerCookie
+  );
+  expect(issued.status).toBe(201);
+  const { token } = (await issued.json()) as { token: string };
+  issuer.identity = {
+    sub: 'sso-hinted-person',
+    email: 'sso-hinted@example.com',
+    email_verified: true,
+    name: 'Hinted Person',
+  };
+  await page.goto(
+    `${baseUrl}/c/${communityId}/join?sign-in=single-sign-on#invite=${encodeURIComponent(token)}`
+  );
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(
+    page.getByText(`Continue with ${LABEL}. You don’t need a separate account here.`)
+  ).toBeVisible();
+  await expect(page.getByLabel('Email')).toBeHidden();
+  await expect(page.getByRole('button', { name: `Continue with ${LABEL}` })).toHaveCount(1);
+  await page.getByRole('button', { name: `Continue with ${LABEL}` }).click();
+  await expect(page.getByRole('heading', { name: 'You’re in Single Place.' })).toBeVisible();
+  const { rows } = await pool.query<{ providerId: string }>(
+    `SELECT a."providerId" FROM account a JOIN "user" u ON u.id=a."userId" WHERE u.email=$1`,
+    ['sso-hinted@example.com']
+  );
+  expect(rows.map((row) => row.providerId)).toEqual(['oidc']);
+});
+
+test("an issuer identity that matches an existing account asks for that account's password, and links nothing yet", async ({
+  page,
+}) => {
+  // Fails if the page dead-ends, shows a raw code, or the account is linked without its password
+  // (the issuer is not trusted here, so DOR-2709 asks for the old password on the same page).
+  issuer.identity = {
+    sub: 'operator-lookalike',
+    email: 'operator@example.com',
+    email_verified: true,
+    name: 'Not the operator',
+  };
+  await page.goto(`${baseUrl}/c/${communityId}`);
+  await page.getByRole('button', { name: `Continue with ${LABEL}` }).click();
+  await expect(
+    page.getByRole('heading', { name: 'This email already has an account here.' })
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Link and sign in' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => location.search)).toBe('');
+  const { rows } = await pool.query<{ providerId: string }>(
+    `SELECT a."providerId" FROM account a JOIN "user" u ON u.id=a."userId" WHERE u.email=$1`,
+    ['operator@example.com']
+  );
+  expect(rows.map((row) => row.providerId)).toEqual(['credential']);
+});

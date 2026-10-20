@@ -21,6 +21,7 @@ import {
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { browserSettingRefusal } from '../config/browser-setting.js';
+import { hubSettingRefusal } from '../config/hub-settings.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
@@ -450,6 +451,8 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const patchObj = taken.patch;
   const browserRefusal = browserSettingRefusal('browser', patchObj.browser);
   if (browserRefusal) return { ok: false, error: browserRefusal };
+  const hubRefusal = hubSettingRefusal('auth', patchObj.auth);
+  if (hubRefusal) return { ok: false, error: hubRefusal };
   const colorRefusal = defaultAccountColorRefusal(patchObj);
   if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
   const rulesRefusal = accountRulesRefusal(patchObj);

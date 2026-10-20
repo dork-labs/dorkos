@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport, useAppStore } from '@/layers/shared/model';
+import { awayFromTheComputerSentence } from '@/layers/shared/lib';
 import { useModels } from '../query/use-models';
 import { useSessionDetail } from '../query/use-session-detail';
 import {
@@ -310,6 +311,10 @@ export function useSessionStatus(
         // flight, that value is still pending and must survive this rollback.
         console.error('[useSessionStatus] updateSession failed for session', sessionId, err);
         clearOverrides(sessionId, applied);
+        // Refused for where this device is, such as raising a mode from Wi-Fi
+        // (DOR-3037): by design, so said calmly rather than reverted in silence.
+        const away = awayFromTheComputerSentence(err);
+        if (away) toast(away);
       }
     },
     [

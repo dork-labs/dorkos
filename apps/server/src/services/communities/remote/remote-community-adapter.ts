@@ -53,7 +53,11 @@ import {
   CommunityWireReadCursorResponseSchema,
   CommunityWireRedactionPageSchema,
   CommunityWireThreadSummaryListSchema,
+  CommunityWireAgentAvailabilityReportResponseSchema,
+  type CommunityWireAgentAvailabilityReport,
+  type CommunityWireAgentAvailabilityReportResponse,
 } from '@dorkos/shared/community-wire';
+import type { RemoteCommunityMember } from '@dorkos/shared/community-views';
 import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/community-private-wire';
 import { randomUUID } from 'node:crypto';
 import {
@@ -72,8 +76,11 @@ import {
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { NativeMirrorEntry } from './mirror-store.js';
 import * as conduct from './adapter/remote-community-conduct.js';
+import { SpaceFeatures } from './availability/space-features.js';
 import {
+  agentMember,
   entry,
+  rosterMember,
   portableAttachment,
   rememberThreadReplySeq,
   room,
@@ -222,6 +229,14 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   private readonly rooms = new Map<string, CommunityRoom>();
   private readonly attachments = new Map<string, CommunityAttachment>();
   private readonly admittedAgents = new Map<string, CommunityMember>();
+  /**
+   * What this space understands beyond the version 1 contract (DOR-2878). Read without a
+   * credential, as the space serves it, so an old space's refusal can never ask to reconnect.
+   */
+  protected readonly features = new SpaceFeatures(async () => {
+    const target = await this.endpoint(COMMUNITY_API_V1_ROUTES.features);
+    return pinnedJson(target.origin, target.path, undefined, undefined, { method: 'GET' });
+  });
 
   /** Construct one adapter for one stored ref and one local owner. */
   constructor(
@@ -309,7 +324,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
   }
 
-  private async request(
+  protected async request(
     path: string,
     body?: unknown,
     context?: CommunityReadContext,
@@ -372,6 +387,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     this.rooms.clear();
     this.attachments.clear();
     this.admittedAgents.clear();
+    this.features.forget();
   }
 
   async listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]> {
@@ -495,8 +511,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     signal?: AbortSignal,
     context?: CommunityReadContext
   ): AsyncIterable<RemoteNativeRoomEvent> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roomId))
-      throw new CommunityRoomNotFoundError(this.community, roomId);
+    if (!communityUuid.test(roomId)) throw new CommunityRoomNotFoundError(this.community, roomId);
     const community = this.community;
     const endpoint = this.endpoint.bind(this);
     const credential = this.credential.bind(this);
@@ -864,14 +879,21 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
-  async listMembers(roomId: string, context?: CommunityReadContext): Promise<CommunityMember[]> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roomId))
-      return [];
+  /**
+   * A channel's roster. An agent's row carries whether it is there only when the space says it
+   * records availability; only then is the space asked for it (DOR-2878).
+   */
+  async listMembers(
+    roomId: string,
+    context?: CommunityReadContext
+  ): Promise<RemoteCommunityMember[]> {
+    if (!communityUuid.test(roomId)) return [];
+    const include = (await this.features.has('agentAvailability')) ? '?include=availability' : '';
     let data;
     try {
       data = CommunityWireMemberListResponseSchema.parse(
         await this.request(
-          `/api/v1/channels/${encodeURIComponent(roomId)}/members`,
+          `/api/v1/channels/${encodeURIComponent(roomId)}/members${include}`,
           undefined,
           context,
           'GET'
@@ -885,16 +907,33 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         return [];
       throw error;
     }
-    return data.members.map((item) => ({
-      community: this.community,
-      memberId: item.memberId,
-      kind: item.kind,
-      displayName: item.displayName,
-      handle: item.handle,
-      role: item.role,
-      ownerMemberId: item.ownerMemberId,
-      joinedAt: item.joinedAt,
-    }));
+    return data.members.map((item) => rosterMember(this.community, item));
+  }
+
+  /** Whether this space records agents' availability reports. Never throws. */
+  supportsAgentAvailability(): Promise<boolean> {
+    return this.features.has('agentAvailability');
+  }
+
+  /** Report this installation's agents as there. A 404 means the space stopped recording them. */
+  async reportAgentAvailability(
+    report: CommunityWireAgentAvailabilityReport,
+    signal?: AbortSignal
+  ): Promise<CommunityWireAgentAvailabilityReportResponse> {
+    try {
+      return CommunityWireAgentAvailabilityReportResponseSchema.parse(
+        await this.request(
+          COMMUNITY_API_V1_ROUTES.agentAvailability,
+          report,
+          undefined,
+          'POST',
+          signal
+        )
+      );
+    } catch (error) {
+      if (error instanceof PinnedHttpError && error.status === 404) this.features.forget();
+      throw error;
+    }
   }
 
   /** List active remotely enrolled agents visible through this owner's personal grant. */
@@ -904,16 +943,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     );
     return data.agents
       .filter((agent) => agent.active)
-      .map((agent) => ({
-        community: this.community,
-        memberId: agent.memberId,
-        kind: 'agent' as const,
-        displayName: agent.displayName,
-        handle: agent.handle,
-        role: null,
-        ownerMemberId: agent.ownerMemberId,
-        joinedAt: new Date().toISOString(),
-      }));
+      .map((agent) => agentMember(this.community, agent));
   }
 
   async addMember(
@@ -979,16 +1009,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       );
       const agent = agents.agents.find((item) => item.memberId === remoteMemberId);
       if (!agent || !agent.active) return null;
-      return {
-        community: this.community,
-        memberId: agent.memberId,
-        kind: 'agent',
-        displayName: agent.displayName,
-        handle: agent.handle,
-        role: null,
-        ownerMemberId: agent.ownerMemberId,
-        joinedAt: new Date().toISOString(),
-      };
+      return agentMember(this.community, agent);
     } catch (error) {
       if (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
         return null;
@@ -1020,16 +1041,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       remoteMemberId: data.agent.memberId,
       ownerAuthorId: this.ownerKey,
     });
-    const member: CommunityMember = {
-      community: this.community,
-      memberId: data.agent.memberId,
-      kind: 'agent',
-      displayName: data.agent.displayName,
-      handle: data.agent.handle,
-      role: null,
-      ownerMemberId: data.agent.ownerMemberId,
-      joinedAt: new Date().toISOString(),
-    };
+    const member = agentMember(this.community, data.agent);
     this.admittedAgents.set(input.agentId, member);
     return member;
   }
@@ -1087,16 +1099,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       remoteMemberId: data.agent.memberId,
       ownerAuthorId: this.ownerKey,
     });
-    const member: CommunityMember = {
-      community: this.community,
-      memberId: data.agent.memberId,
-      kind: 'agent',
-      displayName: data.agent.displayName,
-      handle: data.agent.handle,
-      role: null,
-      ownerMemberId: data.agent.ownerMemberId,
-      joinedAt: new Date().toISOString(),
-    };
+    const member = agentMember(this.community, data.agent);
     this.admittedAgents.set(input.agentId, member);
     return member;
   }

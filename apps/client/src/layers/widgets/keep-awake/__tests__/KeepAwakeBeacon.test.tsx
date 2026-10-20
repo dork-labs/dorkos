@@ -91,7 +91,7 @@ describe('KeepAwakeBeacon', () => {
     fireEvent.click(screen.getByTestId('keep-awake-beacon'));
 
     expect(screen.getByText('Keeping awake: 2 chats running')).toBeInTheDocument();
-    expect(screen.getByText(/A closed lid on battery/)).toBeInTheDocument();
+    expect(screen.getByText(/Closing the lid usually still sleeps/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sleep settings' }));
     expect(openSettings).toHaveBeenCalledWith('tools', 'sleep');

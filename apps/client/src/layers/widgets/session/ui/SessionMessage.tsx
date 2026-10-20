@@ -25,7 +25,7 @@
  *
  * @module widgets/session/ui/SessionMessage
  */
-import { useCallback, useId, useRef } from 'react';
+import { memo, useCallback, useId, useRef } from 'react';
 
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { feedArticleProps } from '@/layers/shared/model';
@@ -46,6 +46,11 @@ interface SessionMessageProps {
   /** Who this message is from — the identity the gutter renders. */
   author: MessageAuthor;
   sessionId: string;
+  /**
+   * The room under this chat when it is an agent's Direct chat (rule S12). A
+   * post from that room is from this chat, so its "in <room>" mark is dropped.
+   */
+  directRoomId?: string | null;
   isNew?: boolean;
   isStreaming?: boolean;
   /**
@@ -107,8 +112,45 @@ interface SessionMessageProps {
   feedPosition?: FeedPosition;
 }
 
-/** One message in a session transcript. */
-export function SessionMessage({
+/**
+ * Whether two sets of row props draw the same row (DOR-2895).
+ *
+ * Identity for everything except three small values the transcript rebuilds as
+ * fresh objects on every render (its grouping, author and feed position), which
+ * are compared by what they say. Handlers arrive stable from the transcript.
+ *
+ * @internal Exported for tests.
+ */
+export function sessionMessagePropsEqual(a: SessionMessageProps, b: SessionMessageProps): boolean {
+  for (const key of Object.keys({ ...a, ...b }) as (keyof SessionMessageProps)[]) {
+    if (key === 'grouping' || key === 'author' || key === 'feedPosition') continue;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return (
+    a.grouping.position === b.grouping.position &&
+    shallowEqual(a.author, b.author) &&
+    shallowEqual(a.feedPosition, b.feedPosition)
+  );
+}
+
+/** Same keys, same values, one level deep. */
+function shallowEqual<T extends object>(a: T | undefined, b: T | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a) as (keyof T)[];
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+/**
+ * One message in a session's transcript.
+ *
+ * Memoized: while a reply streams, only the rows whose props changed (the
+ * streaming one, as a rule) re-render, rather than every visible row
+ * re-parsing its markdown on every word (DOR-2895).
+ */
+export const SessionMessage = memo(SessionMessageRow, sessionMessagePropsEqual);
+
+function SessionMessageRow({
   message,
   grouping,
   author,
@@ -128,6 +170,7 @@ export function SessionMessage({
   textEffect,
   runtimeLabel,
   allowsDenyReason,
+  directRoomId,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -211,7 +254,7 @@ export function SessionMessage({
                   // wrap on a narrow screen rather than truncating to nothing.
                   className: 'flex-wrap gap-y-0.5',
                 }
-              : fromRoom
+              : fromRoom && fromRoom.roomId !== directRoomId
                 ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
                 : {})}
           />

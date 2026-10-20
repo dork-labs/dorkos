@@ -106,6 +106,13 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   // "return to DorkOS", copy that stopped existing in DOR-1004 — it was failing
   // on `main` before this change too.)
   await expect(popup.getByText(new RegExp(`signed in to ${SERVER_NAME}`, 'i'))).toBeVisible();
+  // The callback hands off to the app's own landing page, so the one-time
+  // `code` and `state` are gone from the address bar by the time anyone could
+  // copy it.
+  const landed = new URL(popup.url());
+  expect(landed.pathname).toBe('/signed-in');
+  expect(landed.searchParams.has('code')).toBe(false);
+  expect(landed.searchParams.has('state')).toBe(false);
   await popup.close();
 
   // Polling reaches connected; the card's status flips and the panel confirms it.

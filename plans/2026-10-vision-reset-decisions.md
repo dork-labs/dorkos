@@ -21,6 +21,8 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Considered and rejected:** giving every person and agent an always-on home server in the cloud. It would make a monthly fee the price of entry, which goes against ownership.
 
+**Refined 2026-10-15** (ADR `261015-042933`): an account may get its own DorkOS in the cloud, but only lazily, the first time the person opens the full app on the web. It sleeps when idle, runs no agents and costs little, so it is never the price of entry; local use stays free with no account.
+
 ## 3. A hard reset
 
 **Decided:** move now, as soon as possible, even if launch slips, rather than treat this as a north star for later. Older ADRs and positioning that disagree with the new direction are superseded, not patched. Merging the local server with the space server may take time; the first step is moving the local server from Express to Hono.
@@ -50,6 +52,8 @@ The research behind these decisions is in `research/20261006_*.md`.
 **Decided:** today's agents stay exactly as they are, working directly on the person's computer. New agents can have a Linux desktop of their own, the same locally and in the cloud, and can move between them. It is one account type with a "where it works" setting, behind an experimental flag. An older agent can be given a computer later.
 
 **Refined later:** there is no shared sign-in drive. DorkOS never holds or passes on a Claude login, so each agent computer signs in itself through the real `claude` program, and any vendor login shows up as a "Sign in" card in the app. Setup of a new computer is automatic from outside (research: `research/20261006_agent-computer-bootstrap-and-vendor-logins.md`). Shared project drives stay, so several agents can work on one codebase, each in its own worktree.
+
+**Changed 2026-10-15** (ADR `261015-042933`): cloud agent computers ship at launch and are the default for agents made on the web. The sealed computer on a Mac stays behind the flag.
 
 ## 8. One message system
 
@@ -100,9 +104,13 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Decided:** launch is the new story, on today's product, plus DorkOS Cloud with managed remote access (required), credits and accounts. Cloud computers are not built and are not needed for launch. The posting, notification and reaction caps come off before launch; the loop guards stay until their replacement is ready. The pricing page marks the hosted space and cloud agents with email as "coming soon", with no price change.
 
+**Changed 2026-10-15** (ADR `261015-042933`, spec `everything-is-a-space`): launch moves to late January 2027 (then to early February 2027, ADR `261015-125850`), and its scope grows to web sign-up with the full app on the web, team spaces on DorkOS Cloud, the full app for a teammate with no computer, cloud agent computers (OpenCode at launch) and Cloud's defaults for when credits run out. The Community Space keeps a soft launch on December 8, 2026.
+
 ## 17. The DorkOS Community Space, and no Discord
 
 **Decided:** the official DorkOS Community Space is the launch centerpiece. Every new account (people only) joins it; agents join when their owner adds them. It is the only space open at launch; every other space feature stays behind an experimental switch. It soft-launches with current users for about two weeks. The launch date is set once it is solid, expected mid to late November 2026.
+
+**Changed 2026-10-15** (ADR `261015-042933`): it soft-launches on December 8, 2026; team spaces on DorkOS Cloud open at the launch; someone who signs up through a team invite chooses whether to join it.
 
 ## 18. Decision models as first-line support
 
@@ -135,6 +143,8 @@ The research behind these decisions is in `research/20261006_*.md`.
 ## 24. Launch date and the first-run path
 
 **Decided:** launch is late November 2026, holding the cut line in `research/20261007_dorkos-runtime.md`. The card path is US-only at launch, so using your own AI key or sign-in is a launch item: everyone else still gets a working first run.
+
+**Changed 2026-10-12, then 2026-10-15** (ADR `261015-042933`): launch moved to December 8, then to late January 2027, then to early February 2027 (ADR `261015-125850`, the same day); December 8 stays as the Community Space soft launch.
 
 ## 25. How Doe is built
 

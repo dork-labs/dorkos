@@ -15,6 +15,9 @@
  * 2. `requireOperatorCookieUnderLogin` — with login on, only a browser session
  *    counts, never a per-user API key (DOR-474).
  *
+ * From Wi-Fi a write may lower permissions but never raise them, and an Undo is
+ * refused (DOR-3037, `wifi-raise-guard.ts`).
+ *
  * With login off the write is recorded as `local-trust` and labelled "Someone on
  * this computer", because DorkOS cannot tell the person at the keyboard from any
  * other program running as the same user. That is the same residual every
@@ -42,7 +45,17 @@ import {
   resolveDecisionAuthority,
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
+import { configManager } from '../services/core/config-manager.js';
+import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import {
+  agentPatchRaises,
+  defaultsPatchRaises,
+  presetRaises,
+  WIFI_UNDO_REFUSAL,
+  wifiRaiseRefusal,
+} from '../services/core/auth/sessions/wifi-raise-guard.js';
+import { resolveAnswererName } from '../services/identity/operator-profile.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import {
@@ -52,6 +65,14 @@ import {
   type PermissionService,
   type PermissionWriter,
 } from '../services/core/permissions/index.js';
+
+/**
+ * Whether the request came over Wi-Fi, where a write may lower permissions but
+ * never raise them (DOR-3037, `wifi-raise-guard.ts`).
+ */
+function fromWifi(c: Context<ApiEnv>): boolean {
+  return isFromWifi(honoRequestFacts(c));
+}
 
 /** The sentence every refused non-person caller reads. */
 const ONLY_A_PERSON = 'Only a person can change permissions. Agents can ask the person.';
@@ -105,8 +126,29 @@ export function writerForPosture(
 ): PermissionWriter {
   if (posture === 'local-trust') return personWriter('local-trust');
   const owner = readOwnerAccount();
-  const name = owner && user && owner.id === user.userId ? owner.name : (user?.userId ?? 'you');
+  const name =
+    owner && user && owner.id === user.userId ? ownerLabel(owner.id) : (user?.userId ?? 'you');
   return personWriter('signed-in-operator', { id: user?.userId ?? 'unknown', name });
+}
+
+/**
+ * What a permission's history calls the signed-in owner: the same name ladder
+ * the roster uses, then their email. An account made since DOR-2964 has an empty
+ * name, and an older one may carry its email as the name, so the raw column
+ * would print "You (signed in as )" or a name that is only an address.
+ *
+ * @param ownerId - The owner account's id.
+ */
+function ownerLabel(ownerId: string): string {
+  const account = getUserById(ownerId);
+  return (
+    resolveAnswererName({
+      account: () => account,
+      configDisplayName: () => configManager.get('profile')?.displayName ?? null,
+    }) ??
+    account?.email ??
+    'you'
+  );
 }
 
 /** Answer a service refusal, or rethrow anything else. */
@@ -163,6 +205,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     const body = SetPermissionPresetBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (fromWifi(c) && presetRaises(body.data.preset, body.data.applyToAgents)) {
+      return c.json(wifiRaiseRefusal(), 403);
+    }
     try {
       const changes = await permissions.setPreset(body.data, caller.writer);
       return c.json({ changes, permissions: await permissions.getOverview() });
@@ -176,6 +221,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     const body = PatchPermissionDefaultsBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (fromWifi(c) && defaultsPatchRaises(body.data, await permissions.getOverview())) {
+      return c.json(wifiRaiseRefusal(), 403);
+    }
     try {
       const changes = await permissions.setDefaults(body.data, caller.writer);
       return c.json({ changes, permissions: await permissions.getOverview() });
@@ -192,6 +240,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did: a plain Undo.
     const body = UndoPermissionChangeBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    // An Undo can put back a looser setting, and which way it goes is only
+    // known once it runs, so from Wi-Fi it is refused (DOR-3037).
+    if (fromWifi(c)) return c.json({ error: WIFI_UNDO_REFUSAL, code: NOT_FROM_WIFI }, 403);
     try {
       return c.json(await permissions.undo(c.req.param('eventId'), body.data, caller.writer));
     } catch (err) {
@@ -214,6 +265,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
     const id = c.req.param('id');
     try {
+      if (fromWifi(c) && agentPatchRaises(body.data, await permissions.getAgent(id))) {
+        return c.json(wifiRaiseRefusal(), 403);
+      }
       const changes = await permissions.setAgent(id, body.data, caller.writer);
       return c.json({ changes, permissions: await permissions.getAgent(id) });
     } catch (err) {

@@ -283,6 +283,9 @@ export function transcriptIdForChatMessage(
   return undefined;
 }
 
+/** Each stop's transcript line, kept as long as the stop itself. */
+const stopLines = new WeakMap<ChatStopNotice, ChatMessage>();
+
 /**
  * The transcript with a "Stopped by" line for each time another chat stopped
  * it, placed after the last message sent at or before the stop.
@@ -303,14 +306,23 @@ export function interleaveStopNotices(
   if (stops.length === 0) return messages as ChatMessage[];
   const out: ChatMessage[] = [];
   let next = 0;
-  const notice = (stop: ChatStopNotice): ChatMessage => ({
-    id: `chat-stop-${stop.id}`,
-    role: 'user',
-    content: '',
-    parts: [],
-    timestamp: stop.at,
-    _chatStop: stop,
-  });
+  const notice = (stop: ChatStopNotice): ChatMessage => {
+    // One line per stop, kept: a fresh object on every streamed word made the
+    // transcript's layout start over from the first stop (DOR-2912).
+    let line = stopLines.get(stop);
+    if (!line) {
+      line = {
+        id: `chat-stop-${stop.id}`,
+        role: 'user',
+        content: '',
+        parts: [],
+        timestamp: stop.at,
+        _chatStop: stop,
+      };
+      stopLines.set(stop, line);
+    }
+    return line;
+  };
   for (const message of messages) {
     const live = message.timestamp === '';
     const at = live ? Number.NaN : Date.parse(message.timestamp);

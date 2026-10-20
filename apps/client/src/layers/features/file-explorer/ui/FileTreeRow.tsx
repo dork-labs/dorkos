@@ -429,7 +429,7 @@ function RenameInput({
         if (e.key === 'Enter') commit();
         else if (e.key === 'Escape') onCancel();
       }}
-      className="border-border bg-background min-w-0 flex-1 rounded border px-1 py-0 text-sm outline-none"
+      className="border-border bg-background focus-ring min-w-0 flex-1 rounded border px-1 py-0 text-sm outline-none"
     />
   );
 }

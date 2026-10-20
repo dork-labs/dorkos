@@ -11,24 +11,25 @@ import type {
   CommunityReadContext,
 } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
+import { remoteRoomAccessOf, type RemoteNativeRoomEvent } from './remote-community-adapter.js';
 import {
-  remoteAuthorOf,
-  remoteOriginIdempotencyKeyOf,
-  remoteRoomAccessOf,
-  remoteSequenceOf,
-  type RemoteNativeRoomEvent,
-} from './remote-community-adapter.js';
+  classifyNativeFrames,
+  endsAccess,
+  restartsFresh,
+  type RemoteResumeCursor,
+} from './subscription/remote-room-frames.js';
+import { SUBSCRIPTION_RETRY_MS } from './subscription/reconnect-timing.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
-  type RemoteSubscriptionFrame,
 } from './remote-room-subscription-bridge.js';
 import type { MirrorRoomInput } from './mirror-store.js';
+import { agentRooms, type AgentRoomsAdapter } from './dms/dm-rooms.js';
 import { REDACTION_SYNC_INTERVAL_MS, type RemoteRedactionSync } from './remote-redaction-sync.js';
 
 /** A shared native adapter resolved for the exact community and local owner. */
-export interface RemoteRoomSubscriptionAdapter extends Pick<CommunityAdapter, 'listRooms'> {
+export interface RemoteRoomSubscriptionAdapter extends AgentRoomsAdapter {
   subscribeNativeRoom(
     roomId: string,
     sinceCursor?: CommunityEntry['cursor'],
@@ -132,6 +133,14 @@ export const READ_ONLY_RECHECK_MS = 5 * 60_000;
 export class RemoteRoomSubscriptionRuntime {
   private readonly running = new Map<string, RunningSubscription>();
   private readonly observations = new Map<string, MutableObservation>();
+  /**
+   * Where each subscription's last stream stopped, kept when the stream is torn down (say while
+   * the space cannot be reached), so the next one still resumes there (DOR-2976).
+   */
+  private readonly resumePoints = new Map<
+    string,
+    { cursor?: RemoteResumeCursor; wasActive: boolean }
+  >();
   private timer: ReturnType<typeof setInterval> | undefined;
   private releaseTimer: ReturnType<typeof setInterval> | undefined;
   private redactionTimer: ReturnType<typeof setInterval> | undefined;
@@ -151,7 +160,7 @@ export class RemoteRoomSubscriptionRuntime {
     }
     this.stopped = false;
     this.refresh();
-    this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? 5_000);
+    this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? SUBSCRIPTION_RETRY_MS);
     this.releaseTimer = setInterval(
       () => this.checkReleases(),
       this.deps.releaseCheckMs ?? READ_ONLY_RECHECK_MS
@@ -375,7 +384,11 @@ export class RemoteRoomSubscriptionRuntime {
           !access.effective.enrollAgent ||
           !access.effective.stream
         ) {
-          this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
+          // Nothing live runs while access is unproven. But a space this app cannot reach has not
+          // refused it: its copy stays open to the agents, so a reply in flight is queued, not
+          // refused, and the stream resumes once the space answers again (DOR-2976).
+          if (access?.state !== 'unverified')
+            this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
           continue;
         }
         const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
@@ -389,9 +402,7 @@ export class RemoteRoomSubscriptionRuntime {
           if (!authorId) continue;
           // Read as the enrolled agent, not as the owner. A single owner token
           // must never keep a stream open for an agent removed from the room.
-          for (const room of await adapter.listRooms({
-            actingMemberId: enrollment.remoteMemberId,
-          })) {
+          for (const room of await agentRooms(adapter, enrollment.remoteMemberId)) {
             if (!this.isJoinedRoom(room)) continue;
             const existing = rooms.get(room.roomId);
             const member = {
@@ -436,6 +447,7 @@ export class RemoteRoomSubscriptionRuntime {
             remoteRoomId: room.roomId,
             title: room.title,
             topic: room.topic,
+            ...(room.kind === 'dm' ? { kind: 'dm' as const } : {}),
             ownerAuthorId: connection.ownerAuthorId,
             accessors,
             authorizedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
@@ -457,8 +469,9 @@ export class RemoteRoomSubscriptionRuntime {
             });
           }
         }
-      } catch {
-        this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
+      } catch (error) {
+        if (endsAccess(error))
+          this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
       }
     }
 
@@ -492,7 +505,10 @@ export class RemoteRoomSubscriptionRuntime {
   }
 
   private async consume(desired: DesiredSubscription, abort: AbortController): Promise<void> {
-    let wasActiveBeforeDisconnect = false;
+    // Where the last stream stopped: a reconnect resumes there, so what was posted while the link
+    // was down arrives as missed messages that can still wake an agent (DOR-2976).
+    const point = this.resumePoints.get(desired.key) ?? { wasActive: false };
+    this.resumePoints.set(desired.key, point);
     try {
       while (!abort.signal.aborted && !this.stopped) {
         // A reconnect is a new authoritative replay boundary. Replacing the
@@ -500,19 +516,23 @@ export class RemoteRoomSubscriptionRuntime {
         // from treating the completed prior generation as this stream's ready
         // barrier.
         const observation = this.nextObservation(desired.room);
-        const reconnect = wasActiveBeforeDisconnect;
+        const reconnect = point.wasActive;
+        const since = reconnect ? point.cursor : undefined;
         let receivedSnapshot = false;
         try {
           await this.deps.bridge.consume(
             desired.room,
-            this.classifyFrames(
+            classifyNativeFrames(
               desired.adapter.subscribeNativeRoom(
                 desired.room.remoteRoomId,
-                undefined,
+                since,
                 abort.signal,
                 desired.context
               ),
               {
+                reached: (cursor) => {
+                  point.cursor = cursor;
+                },
                 snapshotComplete: () => {
                   receivedSnapshot = true;
                   observation.snapshotComplete = true;
@@ -538,79 +558,22 @@ export class RemoteRoomSubscriptionRuntime {
                   );
                 },
               },
-              { reconnect, wasActiveBeforeDisconnect }
+              { reconnect, resumed: since !== undefined, toLiveEntry: this.deps.toLiveEntry }
             )
           );
-        } catch {
-          this.deps.bridge.markStale(desired.room.communityRef, desired.room.ownerAuthorId);
+        } catch (error) {
+          if (restartsFresh(error)) point.cursor = undefined;
+          // Only a refusal turns the copy stale; a dropped link must not lock agents out of it.
+          if (endsAccess(error))
+            this.deps.bridge.markStale(desired.room.communityRef, desired.room.ownerAuthorId);
         }
-        if (receivedSnapshot) wasActiveBeforeDisconnect = true;
+        if (receivedSnapshot) point.wasActive = true;
         if (abort.signal.aborted || this.stopped) break;
-        await delay(this.deps.retryMs ?? 5_000, abort.signal);
+        await delay(this.deps.retryMs ?? SUBSCRIPTION_RETRY_MS, abort.signal);
       }
     } finally {
       const current = this.running.get(desired.key);
       if (current?.abort === abort) this.running.delete(desired.key);
-    }
-  }
-
-  private async *classifyFrames(
-    events: AsyncIterable<RemoteNativeRoomEvent>,
-    completion: {
-      snapshotComplete: () => void;
-      replayComplete: () => void;
-      accessEnded: () => void;
-    },
-    reconnect: { reconnect: boolean; wasActiveBeforeDisconnect: boolean }
-  ): AsyncGenerator<RemoteSubscriptionFrame> {
-    let sawSnapshot = false;
-    let watermark: number | undefined;
-    let replayComplete = false;
-    for await (const event of events) {
-      if (event.type === 'snapshot') {
-        sawSnapshot = true;
-        watermark = event.capturedSeq;
-        yield {
-          type: 'snapshot',
-          entries: event.entries.flatMap((entry) => {
-            const live = (this.deps.toLiveEntry ?? nativeLiveEntry)(entry);
-            return live ? [live] : [];
-          }),
-        };
-        // The bridge asks for the next frame only after synchronous cache import.
-        completion.snapshotComplete();
-        continue;
-      }
-      if (event.type === 'replay_complete') {
-        if (!sawSnapshot || event.capturedSeq !== watermark) return;
-        replayComplete = true;
-        yield { type: 'replay', entries: [] };
-        // The next pull occurs after all entries through the captured watermark are cached.
-        completion.replayComplete();
-        continue;
-      }
-      if (event.type === 'room_closed') {
-        // The Community ended this reader's access (`removed`): a revoked grant, a lost
-        // membership, a suspension, or a community being deleted. Ask the access route now rather
-        // than at the next reconcile, so a deletion is noticed at once and its copies purged
-        // (DOR-2334). The pairing service decides what the answer means; this only asks.
-        if (event.reason === 'access-revoked') completion.accessEnded();
-        continue;
-      }
-      if (event.type !== 'entry' || !sawSnapshot || watermark === undefined) continue;
-      const live = (this.deps.toLiveEntry ?? nativeLiveEntry)(event.entry);
-      if (!live) continue;
-      if (!replayComplete || live.remoteSeq <= watermark) {
-        yield { type: 'replay', entries: [live] };
-        continue;
-      }
-      yield {
-        type: 'live',
-        entry: live,
-        reconnect: reconnect.reconnect,
-        wasActiveBeforeDisconnect: reconnect.wasActiveBeforeDisconnect,
-        readOnly: false,
-      };
     }
   }
 
@@ -685,20 +648,6 @@ export class RemoteRoomSubscriptionRuntime {
 /** Build one remote cache address key without exposing it outside the server process. */
 function subscriptionKey(room: MirrorRoomInput): string {
   return `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
-}
-
-/** Recover native sequence and author metadata without widening the portable entry DTO. */
-function nativeLiveEntry(entry: CommunityEntry): RemoteLiveEntry | null {
-  const remoteSeq = remoteSequenceOf(entry);
-  const author = remoteAuthorOf(entry);
-  if (remoteSeq === undefined || !author) return null;
-  return {
-    entry,
-    remoteSeq,
-    author: { memberId: entry.authorId, displayName: author.displayName, kind: author.kind },
-    serverCreatedAt: entry.createdAt,
-    originIdempotencyKey: remoteOriginIdempotencyKeyOf(entry),
-  };
 }
 
 /** Await a bounded retry delay while letting shutdown or revocation abort immediately. */

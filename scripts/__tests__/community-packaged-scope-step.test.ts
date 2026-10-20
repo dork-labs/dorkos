@@ -23,15 +23,18 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { readSpaceServer } from '../lib/space-server.mjs';
 
 const root = join(import.meta.dirname, '../..');
 const workflow = readFileSync(join(root, '.github/workflows/test.yml'), 'utf8');
 const STEP = 'Decide whether this change can reach the packaged proof';
+/** Where the space server lives (ci/space-server.env, DOR-3007). */
+const { spaceDir } = readSpaceServer(root);
 
-/** The `community-packaged` job's text, up to the next top-level job. */
-function jobText(): string {
-  const start = workflow.indexOf('\n  community-packaged:\n');
-  expect(start, 'test.yml has no community-packaged job').toBeGreaterThan(-1);
+/** A test.yml job's text (default `community-packaged`), up to the next top-level job. */
+function jobText(name = 'community-packaged'): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  expect(start, `test.yml has no ${name} job`).toBeGreaterThan(-1);
   const rest = workflow.slice(start + 1);
   const next = rest.slice(1).search(/\n {2}[a-z][\w-]*:\n/);
   return next === -1 ? rest : rest.slice(0, next + 1);
@@ -116,6 +119,9 @@ function checkout({
       join(root, 'scripts/community-packaged-scope.sh'),
       join(repo, 'scripts/community-packaged-scope.sh')
     );
+    // The scope script reads where the space server lives from here (DOR-3007).
+    mkdirSync(join(repo, 'ci'), { recursive: true });
+    copyFileSync(join(root, 'ci/space-server.env'), join(repo, 'ci/space-server.env'));
   } else if (typeof scopeScript === 'string') {
     write(repo, 'scripts/community-packaged-scope.sh', scopeScript);
   }
@@ -156,7 +162,7 @@ function decide(repo: string, event: string): { code: number; run: string; log: 
 
 describe('community-packaged scope step', () => {
   it('runs the proof on a pull request that touches the community slice', () => {
-    const repo = checkout({ changes: ['apps/community/acceptance/driver.spec.ts'] });
+    const repo = checkout({ changes: [`${spaceDir}/acceptance/driver.spec.ts`] });
     expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
   });
 
@@ -172,7 +178,7 @@ describe('community-packaged scope step', () => {
     // the test-merge tree, but it is not this pull request's change.
     const repo = checkout({
       changes: ['docs/x.md'],
-      baseChanges: ['apps/community/src/landed-elsewhere.ts'],
+      baseChanges: [`${spaceDir}/src/landed-elsewhere.ts`],
     });
     expect(decide(repo, 'pull_request').run).toBe('false');
   });
@@ -200,7 +206,7 @@ describe('community-packaged scope step', () => {
   });
 
   it('matches a non-ASCII path as itself, not as a quoted escape', () => {
-    const repo = checkout({ changes: ['apps/community/src/browser/naïve-välkommen.tsx'] });
+    const repo = checkout({ changes: [`${spaceDir}/src/browser/naïve-välkommen.tsx`] });
     expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
   });
 
@@ -228,6 +234,31 @@ describe('community-packaged scope step', () => {
     // The job-level shape a required check depends on: no `if:`, no `paths:`.
     expect(jobText()).not.toMatch(/^ {4}if:/m);
     expect(workflow).not.toMatch(/^ {4}paths:/m);
+  });
+
+  // DOR-3007: the space server's folder comes from ci/space-server.env, so the move
+  // into apps/server changes that file and not this job.
+  it('reads where the space server lives before it runs the proof', () => {
+    const job = jobText();
+    const read = job.indexOf('      - name: Read where the space server lives\n');
+    expect(read).toBeGreaterThan(job.indexOf('actions/checkout@'));
+    expect(read).toBeLessThan(
+      job.indexOf('      - name: Build and test without public network access\n')
+    );
+    expect(stepText('Read where the space server lives')).not.toMatch(/^ {8}if:/m);
+    expect(stepText('Build and test without public network access')).toContain(
+      'run: bash "$SPACE_DIR/acceptance/run.sh"'
+    );
+    // Neither community job names the folder outside a comment: community-pg reads
+    // it the same way, for its evidence upload.
+    for (const name of ['community-packaged', 'community-pg']) {
+      const code = jobText(name)
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('#'))
+        .join('\n');
+      expect(code, name).not.toContain('apps/space');
+      expect(code, name).toContain('- name: Read where the space server lives');
+    }
   });
 
   it('checks out the base commit a pull request is diffed against', () => {

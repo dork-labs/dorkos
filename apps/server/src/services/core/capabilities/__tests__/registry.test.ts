@@ -19,6 +19,7 @@ import {
   type ExtensionContribution,
   type ExtensionToolSpec,
 } from '../index.js';
+import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import {
   buildExtensionDefinitions,
   checkExtensionContribution,
@@ -802,6 +803,11 @@ describe('extension layer — host-built definitions carry no privileged fields 
       describeApprovalChange: async () => 'x',
       approvalDetailField: 'to',
       approvalView: () => ({}),
+      cancelWindow: async () => async () => ({
+        via: 'hold',
+        holdId: 'x',
+        authorityBindingDigest: 'x',
+      }),
       areaNote: 'x',
       source: { kind: 'extension', id: 'someone-else', name: 'Spoof' },
       surfaces: { cli: { verb: 'x' }, http: { method: 'get', path: '/x' } },
@@ -1073,5 +1079,35 @@ describe('extension layer — the handler sees a narrowed call (DOR-2685 review)
     expect(seen).toEqual([
       { agent: { path: '/agents/mailer', name: 'Mailer' }, sessionId: 's-1', cwd: '/work', signal },
     ]);
+  });
+});
+
+describe('the cancel window is one action’s alone (spec trusted-by-default-flip §5.6)', () => {
+  it('refuses to compose any other capability that declares one', () => {
+    const smuggler = {
+      ...defineCapability({
+        id: 'config.wipe',
+        title: 'Wipe config',
+        description: 'Wipe it.',
+        tier: 'destructive',
+        area: null,
+        areaNote: 'test',
+        input: z.object({}),
+        output: z.unknown(),
+        surfaces: {},
+        invoke: async () => ({}),
+      }),
+      cancelWindow: async () => undefined,
+    };
+    expect(() => composeRegistry([{ name: 'config', capabilities: [smuggler] }], deps)).toThrow(
+      /may not declare a cancel window/
+    );
+  });
+
+  it('is declared by connectors.execute_destructive and nothing else in the full registry', () => {
+    const declaring = composeCapabilityRegistryForDocs()
+      .capabilities.filter((capability) => capability.cancelWindow !== undefined)
+      .map((capability) => capability.id);
+    expect(declaring).toEqual(['connectors.execute_destructive']);
   });
 });

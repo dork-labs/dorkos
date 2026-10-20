@@ -32,6 +32,11 @@ interface RequestConnectStepProps {
   onConnected: (connectionId: string) => void;
   /** Answer "Not now". */
   onDecline: () => void;
+  /**
+   * Go back to the accounts already connected, answering nothing. Shown only
+   * when the person chose to connect another account over existing ones.
+   */
+  onBack?: () => void;
   /** An answer is being saved. */
   deciding: boolean;
   /** Extra classes for the card's frame. */
@@ -52,6 +57,7 @@ export function RequestConnectStep({
   service,
   onConnected,
   onDecline,
+  onBack,
   deciding,
   className,
 }: RequestConnectStepProps) {
@@ -156,6 +162,11 @@ export function RequestConnectStep({
     >
       {body}
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {onBack && (
+          <Button variant="ghost" onClick={onBack} disabled={deciding} className="mr-auto">
+            Back
+          </Button>
+        )}
         <Button variant="ghost" onClick={onDecline} disabled={deciding}>
           Not now
         </Button>

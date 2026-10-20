@@ -35,6 +35,8 @@ import {
   effectiveTiming,
   effectiveWork,
 } from '../timing/effective-timing.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { markScheduleOrigin } from './marked-schedules.js';
 
 /**
  * What {@link TaskApprovals.rekeyMigratedFile} did with one migrated row.
@@ -119,10 +121,24 @@ export class TaskApprovals {
         approvedContentKey: effectiveContentKey(row),
         previousApprovalKey: null,
         followedAgentChanges: null,
+        // A person approved it, so it is theirs now: the marks it waited on are cleared (DOR-3036).
+        originMarks: null,
       })
       .where(eq(pulseSchedules.id, id))
       .run();
     this.notifyApproved(row.agentId);
+  }
+
+  /**
+   * Keep a marked turn's marks on a schedule it wrote, and park it for a person (DOR-3036,
+   * `marked-schedules.ts`). An unmarked turn changes nothing.
+   *
+   * @param id - The schedule.
+   * @param marks - The marks of the turn that created or edited it.
+   * @returns Whether it was marked, and so now waits for a person.
+   */
+  markOrigin(id: string, marks: TurnMarks): boolean {
+    return markScheduleOrigin(this.db, id, marks);
   }
 
   /**
@@ -153,14 +169,21 @@ export class TaskApprovals {
    * One transaction, so a read never sees half of an agent's schedules parked.
    * Never touches `enabled`.
    *
+   * On a Trusted install (`options.fileRowsOnly`, ADR 261006-225605) only the
+   * schedules discovery made from a file, a Shape or a package are re-asked:
+   * the edit may be one of our agents' own, and our agents' changes no longer
+   * wait for a person. Everything else just follows its agent.
+   *
    * @param agentId - The agent whose defaults changed.
    * @param changes - What changed, old → new, as seen.
+   * @param options - `fileRowsOnly` to leave every row not made from a file alone.
    * @returns The ids it parked, the ids it only took an approval from, and the
    *   ids whose record it only updated.
    */
   parkAgentFollowers(
     agentId: string,
-    changes: readonly FollowedAgentChange[]
+    changes: readonly FollowedAgentChange[],
+    options: { fileRowsOnly?: boolean } = {}
   ): { parked: string[]; withdrawn: string[]; updated: string[] } {
     return this.db.transaction((tx) => {
       const parked: string[] = [];
@@ -172,6 +195,7 @@ export class TaskApprovals {
         .where(eq(pulseSchedules.agentId, agentId))
         .all();
       for (const row of rows) {
+        if (options.fileRowsOnly === true && row.origin !== 'file') continue;
         // The fields this schedule takes from its agent.
         const followed = changes.filter((change) => row[change.field] === null);
         if (followed.length === 0) continue;
@@ -228,7 +252,14 @@ export class TaskApprovals {
    *   not approved by an edit. Routes only ask this for a change no file carried
    *   (a package's row-only timing, DOR-2302); a person's file-backed edit is
    *   re-approved by the route itself.
-   * - **An agent** gets an `active` schedule parked at once, with DorkOS's own
+   * - **One of our agents on a Trusted install** (`caller.armsAgentWork`,
+   *   ADR 261006-225605) is treated like a person on any schedule that did not
+   *   come from a file: the grant moves to the new work and an active schedule
+   *   stays active. A sync that parked it mid-request is undone, since the
+   *   schedule was active and approved before this request. A schedule
+   *   discovery made from a file, a Shape or a package (`origin: 'file'`) is
+   *   still somebody else's code, so it parks as below.
+   * - **Any other agent** gets an `active` schedule parked at once, with DorkOS's own
    *   sentence saying what it changed (`agentChangeReason`: the prompt, how it
    *   runs, or when), and keeps the approval it withdrew for the card
    *   (`previousApprovalKey`, DOR-2323). Left to
@@ -246,13 +277,15 @@ export class TaskApprovals {
    * @param id - The schedule whose approved work may just have changed.
    * @param before - What would have run before the update, and the status the
    *   schedule had then.
-   * @param caller - Whether the caller cleared the agent bar.
+   * @param caller - Whether the caller cleared the agent bar, and whether it is
+   *   one of our agents whose work arms without asking
+   *   (`agentSchedulesArmWithoutAsking`).
    * @returns What was done, so a caller can tell the agent or raise the park.
    */
   settleApprovedWorkChange(
     id: string,
     before: IncomingTaskContent & { status: string },
-    caller: { trusted: boolean }
+    caller: { trusted: boolean; armsAgentWork?: boolean }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return 'unchanged';
@@ -265,6 +298,34 @@ export class TaskApprovals {
       this.db
         .update(pulseSchedules)
         .set({ approvedContentKey: key, previousApprovalKey: null })
+        .where(eq(pulseSchedules.id, id))
+        .run();
+      return 'rekeyed';
+    }
+
+    if (caller.armsAgentWork === true && row.origin !== 'file') {
+      // The sync parks a row whose key changed and moves its grant aside, so a
+      // grant that covered the old work is in one of the two columns.
+      const parkedMidRequest =
+        before.status === 'active' &&
+        row.status === 'pending_approval' &&
+        row.approvedContentKey === null &&
+        row.previousApprovalKey === previousKey;
+      if (row.approvedContentKey !== previousKey && !parkedMidRequest) return 'unchanged';
+      this.db
+        .update(pulseSchedules)
+        .set({
+          approvedContentKey: key,
+          previousApprovalKey: null,
+          ...(parkedMidRequest
+            ? {
+                status: 'active' as const,
+                // The sync's sentence about a changed file, not anybody's case.
+                ...(row.reasonSource === 'dorkos' ? { reason: null, reasonSource: null } : {}),
+                updatedAt: new Date().toISOString(),
+              }
+            : {}),
+        })
         .where(eq(pulseSchedules.id, id))
         .run();
       return 'rekeyed';

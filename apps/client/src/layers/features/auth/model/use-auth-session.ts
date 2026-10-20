@@ -9,7 +9,7 @@
  *
  * @module features/auth/model/use-auth-session
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   clearBootCache,
@@ -101,22 +101,91 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
   return { run, isPending, error, reset: () => setError(null) };
 }
 
+/** The query parameter a failed DorkOS sign-in comes back with. */
+export const DORKOS_SIGN_IN_FAILED = 'dorkos-sign-in';
+
+/**
+ * The cookie that asks the server for a public-computer sign-in, read once at
+ * the end of the sign-in (`apps/server/src/services/core/hub/public-computer.ts`).
+ */
+const PUBLIC_COMPUTER_MARKER = '__Host-dorkos-public-computer';
+
+/** Ask the server for a public-computer sign-in, or stop asking. */
+function askForPublicComputer(ask: boolean): void {
+  document.cookie = ask
+    ? `${PUBLIC_COMPUTER_MARKER}=1; Path=/; Max-Age=600; Secure; SameSite=Lax`
+    : `${PUBLIC_COMPUTER_MARKER}=; Path=/; Max-Age=0; Secure; SameSite=Lax`;
+}
+
+/**
+ * Sign in with a DorkOS account, on a person's own DorkOS in the cloud: asks
+ * the server where to send the browser, then goes there. The DorkOS account
+ * page sends the person back to the page they were on, signed in, or with
+ * {@link DORKOS_SIGN_IN_FAILED} set when the sign-in was refused. On a shared
+ * or public computer the session ends with the browser and when idle.
+ */
+export function useContinueWithDorkOS(): AuthActionState<[publicComputer?: boolean]> {
+  const client = useAuthClient();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<AuthError | null>(null);
+
+  const run = useCallback(
+    async (publicComputer = false): Promise<AuthActionResult> => {
+      setIsPending(true);
+      setError(null);
+      askForPublicComputer(publicComputer);
+      const here = new URL(window.location.href);
+      here.searchParams.delete(DORKOS_SIGN_IN_FAILED);
+      here.searchParams.delete('error');
+      const back = `${here.pathname}${here.search}${here.hash}`;
+      const failed = new URL(back, window.location.origin);
+      failed.searchParams.set(DORKOS_SIGN_IN_FAILED, 'failed');
+      const { data, error: err } = await client.signIn.social({
+        provider: 'dorkos',
+        callbackURL: back,
+        errorCallbackURL: `${failed.pathname}${failed.search}`,
+      });
+      if (err || !data?.url) {
+        const refused = err ?? { message: 'No sign-in address came back.', status: 0 };
+        setIsPending(false);
+        setError(refused);
+        return { ok: false, error: refused };
+      }
+      window.location.assign(data.url);
+      return { ok: true };
+    },
+    [client]
+  );
+
+  return { run, isPending, error, reset: () => setError(null) };
+}
+
 /**
  * Create the owner account (first-run sign-up). On success clears the
  * auth-required signal and refetches session state.
  */
-export function useSignUp(): AuthActionState<[email: string, password: string, name: string]> {
+export function useSignUp(): AuthActionState<
+  [email: string, password: string, name: string, setupCode?: string]
+> {
   const client = useAuthClient();
   const queryClient = useQueryClient();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<AuthError | null>(null);
 
   const run = useCallback(
-    async (email: string, password: string, name: string): Promise<AuthActionResult> => {
+    async (
+      email: string,
+      password: string,
+      name: string,
+      setupCode?: string
+    ): Promise<AuthActionResult> => {
       setIsPending(true);
       setError(null);
       invalidateProtectedCommunityState(queryClient);
-      const { error: err } = await client.signUp.email({ email, password, name });
+      const { error: err } = await client.signUp.email(
+        { email, password, name },
+        setupCode ? { setupCode } : undefined
+      );
       setIsPending(false);
       if (err) {
         setError(err);
@@ -172,4 +241,72 @@ export function useSignOut(): AuthActionState<[]> {
 export function useCurrentUser(): AuthUser | null {
   const { data } = useAuthSession();
   return data?.user ?? null;
+}
+
+/** How long a public-computer session may sit idle before it is signed out. */
+export const PUBLIC_COMPUTER_IDLE_MS = 30 * 60 * 1000;
+
+/** What counts as someone using the page. */
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+
+/** Where every tab records when someone last used one of them. */
+const LAST_ACTIVITY_KEY = 'dorkos.publicComputer.lastActivity';
+
+/** How often a tab writes that it is in use, at most. */
+const ACTIVITY_WRITE_MS = 5_000;
+
+/** How long to wait before trying a sign-out that failed again. */
+const SIGN_OUT_RETRY_MS = 60_000;
+
+/** When someone last used any tab on this DorkOS, or `fallback` when unknown. */
+function lastActivity(fallback: number): number {
+  const stored = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY));
+  return Number.isFinite(stored) && stored > 0 ? Math.max(stored, fallback) : fallback;
+}
+
+/**
+ * Sign a public-computer session out after {@link PUBLIC_COMPUTER_IDLE_MS}
+ * with nobody using it, in any tab, then reload to the sign-in screen. Every
+ * tab records use in one shared place, so a tab nobody looks at never signs
+ * out the one in use. Does nothing for any other session. Mounted once, by the
+ * {@link AuthGuard}.
+ */
+export function usePublicComputerIdleSignOut(): void {
+  const { data } = useAuthSession();
+  const client = useAuthClient();
+  const publicComputer = data?.session.publicComputer === true;
+
+  useEffect(() => {
+    if (!publicComputer) return;
+    let timer: ReturnType<typeof setTimeout>;
+    let seen = Date.now();
+    let written = 0;
+    const record = () => {
+      seen = Date.now();
+      if (seen - written < ACTIVITY_WRITE_MS) return;
+      written = seen;
+      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(seen));
+    };
+    const check = () => {
+      const idleFor = Date.now() - lastActivity(seen);
+      if (idleFor < PUBLIC_COMPUTER_IDLE_MS) {
+        timer = setTimeout(check, PUBLIC_COMPUTER_IDLE_MS - idleFor);
+        return;
+      }
+      void client.signOut().then(
+        ({ error }) => {
+          if (error) timer = setTimeout(check, SIGN_OUT_RETRY_MS);
+          else window.location.reload();
+        },
+        () => (timer = setTimeout(check, SIGN_OUT_RETRY_MS))
+      );
+    };
+    record();
+    timer = setTimeout(check, PUBLIC_COMPUTER_IDLE_MS);
+    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, record, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, record);
+    };
+  }, [publicComputer, client]);
 }

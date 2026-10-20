@@ -146,9 +146,9 @@ export const SHOTS: readonly Shot[] = [
   // The other two stay changelog-only: no `/features` card binds them and no
   // docs page embeds them.
   //
-  // The one-time full-power consent door, the modal that asks the power
-  // question once.
-  { id: 'full-power-door', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
+  // The one-time trust notice, the modal that says agents now work without
+  // asking.
+  { id: 'trust-notice', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
   // Settings → Room limits: the four reply-limit dials behind the Control Center's
   // "Limit automatic replies" switch.
   { id: 'settings-rooms', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
@@ -225,8 +225,8 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  *   round-robin split would put them on different stacks and break the flow,
  *   so both ride shard 0 as a unit — the same single-stack rationale as the
  *   session-list shots above.
- * - `full-power-door` un-answers the stack's power decision so the one-time
- *   consent modal becomes eligible again — a global config flip every other shot
+ * - `trust-notice` marks the stack's trust notice unseen so the one-time
+ *   modal becomes eligible again — a global config flip every other shot
  *   in the same stack needs left settled, or the modal would focus-trap itself
  *   over their frames. It is the only remaining global-state flip, so it stays
  *   a shard-0 singleton, driven dead last of all and restored afterwards. Each
@@ -238,7 +238,7 @@ export const SHARD_0_PINNED_SHOTS: readonly string[] = [
   'mobile-sessions',
   'accounts-pending',
   'accounts-linked',
-  'full-power-door',
+  'trust-notice',
 ];
 
 /**

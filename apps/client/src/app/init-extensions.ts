@@ -5,9 +5,9 @@ import {
   Gauge,
   Globe,
   PanelRight,
+  Monitor,
   Puzzle,
   SquareTerminal,
-  User,
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
@@ -20,7 +20,7 @@ import {
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
-import { PROFILE_PANEL_ID } from '@/layers/features/profile';
+import { PROFILE_PANEL_ID, ProfileTabIcon } from '@/layers/features/profile';
 import { ROOM_PANEL_ID } from '@/layers/features/room-management';
 import { routeShowsRoom } from '@/layers/entities/room';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
@@ -169,7 +169,8 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   register('right-panel', {
     id: PROFILE_PANEL_ID,
     title: 'Profile',
-    icon: User,
+    // Whose profile it is, at a glance (FB-60).
+    icon: ProfileTabIcon,
     component: lazy(() =>
       import('@/layers/features/profile').then((m) => ({ default: m.ProfileDock }))
     ),
@@ -179,6 +180,18 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       return explicitAgentPath != null;
     },
     priority: 10,
+  });
+
+  register('right-panel', {
+    id: 'computer',
+    title: 'Computer',
+    icon: Monitor,
+    component: lazy(() =>
+      import('@/layers/features/agent-computer').then((m) => ({ default: m.ComputerPanelView }))
+    ),
+    visibleWhen: ({ pathname, explicitAgentPath }) =>
+      pathname === '/session' || explicitAgentPath != null,
+    priority: 16,
   });
 
   register('right-panel', {
@@ -234,7 +247,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
 
   register('right-panel', {
     id: 'browser',
-    title: 'Browser',
+    title: 'Page previews',
     icon: Globe,
     component: lazy(() =>
       import('@/layers/features/canvas').then((m) => ({ default: m.BrowserContent }))
@@ -243,6 +256,19 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       (pathname === '/session' || routeShowsRoom(pathname)) &&
       transport?.supportsWorkbenchServe === true,
     priority: 22,
+  });
+
+  register('right-panel', {
+    id: 'local-browser',
+    title: 'Browser',
+    icon: Globe,
+    component: lazy(() =>
+      import('@/layers/features/local-browser').then((m) => ({ default: m.LocalBrowserContent }))
+    ),
+    visibleWhen: ({ pathname, transport }) =>
+      (pathname === '/session' || routeShowsRoom(pathname)) &&
+      transport?.supportsWorkbenchServe === true,
+    priority: 23,
   });
 
   register('right-panel', {

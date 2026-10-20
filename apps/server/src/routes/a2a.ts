@@ -24,6 +24,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
 import { createA2aGateway } from '@dorkos/a2a-gateway';
 import type { ApiEnv } from '../http/api-chain.js';
+import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
 import { honoMcpAuth } from '../middleware/mcp-auth.js';
@@ -91,9 +92,14 @@ export function createA2aRoutes(deps: A2aRouteDeps): Hono<ApiEnv> {
   routes.get('/a2a/agents/:id/card', auth, cardLimiter, (c) =>
     gateway.agentCard(c.req.param('id'))
   );
-  routes.post('/a2a/agents/:id', auth, rpcLimiter, (c) =>
-    gateway.agentJsonRpc(c.req.param('id'), c.req.raw, rpcOptions(c))
-  );
-  routes.post('/a2a', auth, rpcLimiter, (c) => gateway.jsonRpc(c.req.raw, rpcOptions(c)));
+  // A `message/stream` answer ends when the sign-in that asked for it does (DOR-2969).
+  routes.post('/a2a/agents/:id', auth, rpcLimiter, (c) => {
+    closeResponseWithSignIn(c);
+    return gateway.agentJsonRpc(c.req.param('id'), c.req.raw, rpcOptions(c));
+  });
+  routes.post('/a2a', auth, rpcLimiter, (c) => {
+    closeResponseWithSignIn(c);
+    return gateway.jsonRpc(c.req.raw, rpcOptions(c));
+  });
   return routes;
 }

@@ -1,5 +1,4 @@
 import { createServer, type RequestListener } from 'node:http';
-import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startTestComposioFixture } from '../fixture.js';
 import {
@@ -10,6 +9,7 @@ import {
 import { maybeCreateComposioProvider } from '../../composio.js';
 import { mountConnectorSignedIngress } from '../../../events/signed-ingress.js';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
+import { compositionRootSource } from '../../../../../__tests__/composition-root.js';
 
 // The `/api` chain's host guard and session gate read the login setting: off,
 // as on a fresh install.
@@ -304,7 +304,7 @@ describe('offline Composio browser upstream', () => {
     ).toBe(200);
   });
   it('keeps production construction outside the dynamic fixture and closes it on startup failure', () => {
-    const source = readFileSync(new URL('../../../../../index.ts', import.meta.url), 'utf8');
+    const source = compositionRootSource();
     expect(source).toMatch(
       /if \(env\.DORKOS_TEST_RUNTIME\) \{\s*const \{ startTestComposioFixture \}/
     );

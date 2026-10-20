@@ -128,6 +128,12 @@ export class TaskReconciler {
   private shapes = new Map<string, string>();
   /** True while a tightened pass is running, so ticks cannot stack on a slow disk. */
   private sweeping = false;
+  /**
+   * The full pass in flight, if any. A pass on a large tree can outlast its
+   * five-minute tick, and two at once would only do the same writes twice
+   * (DOR-2899), so a second caller shares the running one.
+   */
+  private passing: Promise<{ upserted: number; orphaned: number }> | null = null;
 
   /**
    * Build a reconciler over a row cache, a scheduler and — optionally — a
@@ -186,11 +192,14 @@ export class TaskReconciler {
     if (this.interval) return;
     this.interval = setInterval(
       outsideAuditScope(() => {
+        // A tick that joins a pass still running leaves the check after it to
+        // the tick that started it, so the check runs once per pass.
+        const joined = this.passing !== null;
         this.reconcile()
           .catch((err) => {
             this.report('error', '[TaskReconciler] Reconciliation failed', err);
           })
-          .then(() => this.afterPeriodicPass?.())
+          .then(() => (joined ? undefined : this.afterPeriodicPass?.()))
           .catch((err) => {
             this.report('error', '[TaskReconciler] The check after a pass failed', err);
           });
@@ -444,7 +453,10 @@ export class TaskReconciler {
    * which is exactly how this ran broken for weeks.
    */
   async reconcile(): Promise<{ upserted: number; orphaned: number }> {
-    return this.reconcilePass(this.roots);
+    this.passing ??= this.reconcilePass(this.roots).finally(() => {
+      this.passing = null;
+    });
+    return this.passing;
   }
 
   /**
@@ -584,6 +596,7 @@ export class TaskReconciler {
         if (!this.identities.claim(discovered.def.filePath, root.dir, result.filePath)) continue;
         try {
           const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
+          const before = this.store.fileSync.getByFilePath(discovered.def.filePath);
           const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
             source: 'discovery',
             problem: discovered.problem,
@@ -593,9 +606,15 @@ export class TaskReconciler {
           });
           // Carry the repair through to the clock. This pass exists to catch
           // what the watcher missed, and what the watcher missed was never only
-          // the row.
-          this.registrar.syncTask(task.id);
-          upserted++;
+          // the row. A row the file left exactly as it was keeps its job unless
+          // the clock lost it (DOR-2899): re-registering every job every five
+          // minutes only churned the clock.
+          if (before === null || before.updatedAt !== task.updatedAt) {
+            this.registrar.syncTask(task.id);
+            upserted++;
+          } else {
+            this.registrar.repairTask(task.id);
+          }
           // A file that just stopped being a package's gets the switch the row
           // kept for it (DOR-2272). After the clock sync so a failed write does
           // not skip it; the row keeps its ownership until the file agrees, so a

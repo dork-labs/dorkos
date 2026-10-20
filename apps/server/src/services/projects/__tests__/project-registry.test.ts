@@ -8,7 +8,7 @@
  * store is the real SQLite table, so persistence is what a restart sees.
  */
 import { knownProjectRootsForExtensions } from '../extension-scan-roots.js';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +16,7 @@ import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { MARKETPLACE_STAGE_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 
 import { KnownProjectsStore } from '../known-projects-store.js';
+import { compositionRootSource } from '../../../__tests__/composition-root.js';
 import { parseOriginRepo } from '../origin-repo.js';
 import { assignProjectName, sanitizeNameSegment } from '../project-names.js';
 import {
@@ -464,7 +465,7 @@ describe("a person's lookups are capped", () => {
   });
 
   it('wires the account-rule roots into the registry at boot (index.ts)', () => {
-    const index = readFileSync(path.resolve(import.meta.dirname, '../../../index.ts'), 'utf8');
+    const index = compositionRootSource();
     expect(index).toMatch(/projectRegistry\.protectRoots\(\(\) =>\s*accountRuleRoots\(/);
   });
 
@@ -713,9 +714,9 @@ describe('boot order and naming', () => {
   });
 
   it('attaches the store before extensions start (index.ts boot order)', () => {
-    const index = readFileSync(path.resolve(import.meta.dirname, '../../../index.ts'), 'utf8');
+    const index = compositionRootSource();
     const attach = index.indexOf('projectRegistry.attachStore(');
-    const extensions = index.indexOf('extensionManager.initialize(');
+    const extensions = index.indexOf('extensionManager = await startExtensions(');
     expect(attach).toBeGreaterThan(-1);
     expect(extensions).toBeGreaterThan(-1);
     expect(attach).toBeLessThan(extensions);

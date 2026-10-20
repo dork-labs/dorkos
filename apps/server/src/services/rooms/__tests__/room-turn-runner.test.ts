@@ -309,6 +309,8 @@ interface TriggerCall {
   additionalDirectories?: unknown;
   /** The room marker handed to the runtime. */
   roomTurn?: Record<string, unknown>;
+  /** Whether nobody may be asked during THIS turn (a teammate's, DOR-2955). */
+  unattended?: boolean;
   /** The launch-time step, which the dispatcher runs. */
   prepareLaunch?: () => Promise<unknown>;
   /** What the room asked the dispatcher to do with a session already working. */
@@ -1213,6 +1215,25 @@ describe('createSessionRoomTurnRunner', () => {
       await rm(dorkHome, { recursive: true, force: true });
       await rm(agentPath, { recursive: true, force: true });
     }
+  });
+
+  it('grants a teammate’s turn no folder, whatever placement granted (DOR-2956)', async () => {
+    // Red when: the runner forwards placement's grants on a teammate's turn. Claude Code reads
+    // without asking inside every granted folder, so a grant is a read the tier never decided.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    const grants = [{ path: '/dork/rooms/r1/repo', access: 'read' as const }];
+
+    await createSessionRoomTurnRunner().run(
+      request({ agentPath: '/repo/ana', additionalDirectories: grants, teammate: true })
+    );
+
+    const call = triggered[triggered.length - 1]!;
+    expect(call).not.toHaveProperty('additionalDirectories');
+    expect(call.roomTurn).toMatchObject({ teammate: true });
   });
 
   it('grants nothing and names no copy for a room without files', async () => {
@@ -2714,10 +2735,11 @@ describe('what power a room turn runs at (DOR-1917)', () => {
   });
 
   it('sends no permission mode at all when no stop is configured', async () => {
-    // The shipped default, and the whole safety argument for this change: an
-    // install whose operator never answered the power door behaves byte for byte
-    // as it did — no mode on the turn, and no fourth argument on the row, so the
-    // runtime's own default still decides.
+    // With no stop at either tier, a room turn behaves byte for byte as it did
+    // — no mode on the turn, and no fourth argument on the row, so the
+    // runtime's own default still decides. (A fresh install ships the global
+    // stop at Full autonomy, ADR 261006-225605, so it is unset here.)
+    runtimesConfig = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: null };
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].newSessionPermissionMode).toBeUndefined();
@@ -2821,6 +2843,70 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].permissionCeiling).toBeUndefined();
+  });
+
+  // A space member who is not the owner (DOR-2955): nobody is asked, the
+  // DorkOS tools reach only this room, and only a runtime that honours both
+  // may run it at all.
+  describe('a teammate’s turn', () => {
+    const teammateCeiling = ['runtime-default', { asks: 'always', reach: 'read' }] as const;
+
+    it('is sent with nobody to ask and fenced to the room it answers', async () => {
+      const turn = request({
+        sessionId: 'room-session-with-a-row',
+        externalAuthor: true,
+        permissionCeiling: teammateCeiling,
+        teammate: true,
+      });
+
+      await createSessionRoomTurnRunner().run(turn);
+
+      expect(triggered[0].unattended).toBe(true);
+      expect(triggered[0].permissionCeiling).toEqual(teammateCeiling);
+      expect(triggered[0].roomTurn).toMatchObject({ roomId: turn.room.id, teammate: true });
+    });
+
+    it('marks nothing on a stranger’s or a person’s turn', async () => {
+      await createSessionRoomTurnRunner().run(
+        request({ externalAuthor: true, permissionCeiling: 'runtime-default' })
+      );
+      await createSessionRoomTurnRunner().run(request());
+
+      for (const call of triggered) {
+        expect(call.unattended).toBeUndefined();
+        expect(call.roomTurn).not.toHaveProperty('teammate');
+      }
+    });
+
+    // Review B1/B2: Claude Code runs a leading `/name` and reads `@path` before any
+    // tool gate. Anyone's words but a person here's are marked so it never does.
+    it('marks the words untrusted for anyone but a person here, bridged strangers included', async () => {
+      await createSessionRoomTurnRunner().run(
+        request({ externalAuthor: true, permissionCeiling: 'runtime-default' })
+      );
+      await createSessionRoomTurnRunner().run(
+        request({ permissionCeiling: { asks: 'when-risky', reach: 'edit' } })
+      );
+      await createSessionRoomTurnRunner().run(request());
+
+      expect(triggered.map((call) => call.roomTurn?.untrustedText)).toEqual([
+        true,
+        true,
+        undefined,
+      ]);
+    });
+
+    it.each(['codex', 'opencode'])('is refused on %s before anything starts', async (runtime) => {
+      agentManifest = { runtime };
+
+      await expect(
+        createSessionRoomTurnRunner().run(
+          request({ sessionId: null, externalAuthor: true, teammate: true })
+        )
+      ).rejects.toThrow(`cannot start a turn on ${runtime}`);
+      expect(triggered).toHaveLength(0);
+      expect(persistSessionRuntime).not.toHaveBeenCalled();
+    });
   });
 
   it('still carries the model and effort for that stranger’s turn', async () => {

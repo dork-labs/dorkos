@@ -11,7 +11,8 @@ import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { posterLevel } from '../../rooms/limits/own-circle.js';
 import {
   describeSessionFor,
   isSessionBusy,
@@ -41,7 +42,8 @@ import {
 } from '../session-state-projector.js';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
-import { ChatMessageService, setChatMessageService } from './chat-message-service.js';
+import { ChatMessageService } from './chat-message-service.js';
+import { setChatMessageService } from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack } from './chat-report-back.js';
@@ -142,14 +144,16 @@ export async function chatHistoryOf(sessionId: string): Promise<HistoryMessage[]
 
 /**
  * Every chat a chat may read (spec `spin-off-chats` §4): itself, the chat that
- * started it, the chats it started and theirs, and the chats that have sent it
- * a message. Sending a chat a message, or stopping it, does not make it
- * readable: send reaches further than read until roles exist.
+ * started it, the chats it started and theirs, and the chats its agent has
+ * exchanged chat messages with, from this chat or any other of its own. So a
+ * beat or a scheduled run can read the chat it asked a question, and the
+ * agent's next chat can read it too. Stopping a chat does not make it
+ * readable.
  *
  * Inside that, the reader rule still holds (spec `audit-trail` §3.4): a
  * person's own chat is read only under `canReadSession`'s one exception, when
- * that chat itself started the reader. A private chat that merely messaged the
- * reader, or one it reaches only as a descendant, is refused.
+ * that chat itself started the reader. A private chat the agent messaged, one
+ * that messaged it, or one it reaches only as a descendant, is refused.
  *
  * @param store - The chat-message store.
  * @param caller - The reading chat.
@@ -164,6 +168,7 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
   const related =
     involvedBy.startedReader ||
     store.sendersTo(caller.sessionId).has(target) ||
+    store.agentExchangedWith(caller.agentPath, target) ||
     (startedBy !== undefined && startedDescendant(startedBy, caller.sessionId, target));
   if (!related) return false;
   const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
@@ -254,7 +259,8 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     interruptTurn: interruptChatTurn,
     steerInto: steerChatTurn,
     canonicalId: canonicalChatId,
-    turnLevelOf: lastTurnLevelOf,
+    turnLevelOf: passedOnLevelOf,
+    ownLevelOf: posterLevel,
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);

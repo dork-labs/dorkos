@@ -31,14 +31,17 @@ import type {
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
-import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
+import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
+import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { launchRefusalReply, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -547,7 +550,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     if (outside) return c.json(outside, 403);
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
-    if (etag) {
+    // Only a whole read answers by ETag: the tag names the whole transcript.
+    if (etag && !historyWindow.isPartialHistoryQuery(readQuery(c))) {
       c.header('ETag', etag);
       if (c.req.header('if-none-match') === etag) {
         return c.body(null, 304);
@@ -562,12 +566,14 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // A message another chat sent carries its sender, stamped here from the
     // server's own record of the send (spec `spin-off-chats` §2), never read
     // from the text.
-    return c.json({
-      messages: stampHistory(
-        [...new Set([sessionId, internalSessionId])],
-        filterKickoffHistory(messages)
-      ),
-    });
+    // With `?since=` and that message found, only it and what follows go back
+    // (DOR-2890): the end-of-turn refresh keeps everything before it. With
+    // `?before=`, the page older than a message; with `?newest=1`, the newest
+    // window (DOR-2889).
+    const ids = [...new Set([sessionId, internalSessionId])];
+    const stamp: historyWindow.StampHistory = (slice) => stampHistory(ids, slice);
+    const read = historyWindow.answerHistory(filterKickoffHistory(messages), readQuery(c), stamp);
+    return read ? c.json(read) : c.json(historyWindow.UNKNOWN_CURSOR, 404);
   });
 
   // PATCH /api/sessions/:id - Update session settings
@@ -613,6 +619,9 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       const modeError = rejectUndeclaredPermissionMode(runtime, requestedMode);
       if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
     }
+    // From Wi-Fi a chat's mode may go down, never up (DOR-3037).
+    const raise = await wifiModeRaiseReply(c, runtime, sessionId, requestedMode);
+    if (raise) return raise;
     // Same authority argument as the mode gate directly above, applied to the
     // model: only the runtime can say whether the id it was handed is real, and it
     // is asked HERE so every caller passes the same door.
@@ -875,25 +884,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       roomSessionPlace: deps.roomSessionPlace,
       // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
       workspaceCaller: workspaceCallerOf(honoRequestFacts(c)),
+      // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
+      ...wifiTurnCeiling(honoRequestFacts(c)),
     });
-    if (isSessionLaunchRefusal(result)) {
-      // The account may not work in this project: the plain sentence, with the
-      // project and account it is about (spec `flow-multiproject` §8.3).
-      if (result.accountError) return c.json(result.accountError.toBody(), 409);
-      // A paused agent: the sentence, its code, and which agent, so the app can
-      // offer Resume right where the message failed (spec `audit-trail` PR5).
-      if (result.refused === 'AGENT_PAUSED') {
-        return c.json(
-          { error: result.message, code: result.refused, agentId: result.agentId },
-          409
-        );
-      }
-      // A request naming something that does not exist is the caller's mistake;
-      // a turn refused for WHERE it would stand is a conflict with the session.
-      const status =
-        result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN' ? 409 : 400;
-      return c.json(errorBody(result.message, result.refused), status);
-    }
+    if (isSessionLaunchRefusal(result)) return launchRefusalReply(c, result);
 
     // Accepted, so it counts as you writing here (spec `your-activity-first`
     // D4). A dispatch that answered `accepted: false` refused the message and

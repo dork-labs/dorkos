@@ -529,6 +529,18 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.dispatchedCommands.map((command) => command.arguments)).toEqual([sent]);
   });
 
+  it('drops a null on an optional field instead of refusing the call', async () => {
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, {
+        ...target,
+        arguments: { message: 'hello', label_ids: null },
+      })
+    ).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(provider.dispatchedCommands.map((command) => command.arguments)).toEqual([
+      { message: 'hello' },
+    ]);
+  });
+
   it('names the field an agent got wrong without echoing what it sent', async () => {
     const refusal = await authorization
       .prepare({
@@ -1049,6 +1061,77 @@ describe('ConnectorExecutionBroker', () => {
       },
     });
     expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+  });
+
+  describe('a destructive action held through its cancel window', () => {
+    /** Run the destructive target on a `hold` approval carrying `digest`. */
+    async function executeHeld(approval: {
+      via: 'hold';
+      holdId: string;
+      authorityBindingDigest: string;
+    }) {
+      const actor = principal();
+      const authorized = await authorization.prepare({
+        capabilityId: 'connectors.execute_destructive',
+        target: destructiveTarget,
+        principal: actor,
+      });
+      return broker.execute({
+        capabilityId: 'connectors.execute_destructive',
+        target: destructiveTarget,
+        principal: actor,
+        authorityBinding: authorized.authorityBinding,
+        approval,
+        surface: 'mcp',
+        signal: new AbortController().signal,
+      });
+    }
+
+    async function liveDigest(): Promise<string> {
+      const authorized = await authorization.prepare({
+        capabilityId: 'connectors.execute_destructive',
+        target: destructiveTarget,
+        principal: principal(),
+      });
+      return authorized.authorityBinding.approvalScope.digest;
+    }
+
+    it('runs on a hold bound to the exact authority it was held with', async () => {
+      await expect(
+        executeHeld({ via: 'hold', holdId: 'hold-a', authorityBindingDigest: await liveDigest() })
+      ).resolves.toMatchObject({ result: { status: 'success' } });
+      expect(provider.dispatchedCommands).toHaveLength(1);
+    });
+
+    it('refuses a hold held for a different authority before intent', async () => {
+      await expect(
+        executeHeld({
+          via: 'hold',
+          holdId: 'hold-a',
+          authorityBindingDigest: `${await liveDigest()}-other`,
+        })
+      ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH' } });
+      expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+      expect(provider.commands).toEqual([]);
+    });
+
+    it('refuses, at the final dispatch check, a hold whose binding no longer matches', async () => {
+      const approval = {
+        via: 'hold' as const,
+        holdId: 'hold-a',
+        authorityBindingDigest: await liveDigest(),
+      };
+      // The first check passes; the binding is then changed before dispatch, so
+      // only the second check (inside `authorizeDispatch`) can stop it.
+      provider.beforeDispatch = () => {
+        approval.authorityBindingDigest = 'digest-of-another-action';
+      };
+      await expect(executeHeld(approval)).resolves.toMatchObject({
+        result: { status: 'error', code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH' },
+      });
+      expect(provider.commands).toHaveLength(1);
+      expect(provider.dispatchedCommands).toEqual([]);
+    });
   });
 
   it('retries only a pinned idempotent operation and reuses one upstream key', async () => {

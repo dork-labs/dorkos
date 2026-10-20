@@ -126,6 +126,9 @@ export async function* mapMessageEvent(
         cacheCreationTokens: (usage.cache_creation_input_tokens as number | undefined) ?? 0,
       };
     }
+    if (typeof assistantBody?.model === 'string' && assistantBody.model !== '<synthetic>') {
+      session.lastRequestModel = assistantBody.model;
+    }
 
     // SDK 0.3.144+: assistant messages can carry a terminal `error` (e.g. the
     // selected model is unavailable). Surface the ones not already reported via

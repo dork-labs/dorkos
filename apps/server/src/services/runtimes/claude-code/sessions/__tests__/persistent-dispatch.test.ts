@@ -7,6 +7,7 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
+import { renderContextEntry } from '../../messaging/context-builder.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
@@ -159,15 +160,18 @@ vi.mock('../../../../core/agent-identity/index.js', async () => ({
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle
 // case a steer must survive without throwing (task 4.1 finding 2). Every other
-// SESSIONS value is preserved.
+// SESSIONS value is preserved, except that a full ceiling answers at once
+// rather than waiting for a slot (DOR-3012; that wait has its own suite).
+vi.mock('../slot-wait/warm-ceiling-size.js', () => ({ resolveMaxWarmSessions: () => 1 }));
 vi.mock('../../../../../config/constants.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../config/constants.js')>();
-  return { ...actual, SESSIONS: { ...actual.SESSIONS, MAX_WARM_SESSIONS: 1 } };
+  return { ...actual, SESSIONS: { ...actual.SESSIONS, WARM_SLOT_WAIT_MS: 0 } };
 });
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
+import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-started.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
@@ -409,6 +413,32 @@ describe('warmth is answered honestly', () => {
     expect(starts).toHaveLength(1);
     // The relaunch is the recovery, and it is the second process — not a third,
     // which is what a crash handled twice would produce.
+    expect(cli.launches).toBe(2);
+  });
+
+  // DOR-2994. A refusal ends in an `error` and `done`, never a throw, so it must
+  // say it never reached the agent: otherwise the turn settles `ok` and a chat
+  // message it carried is reported delivered.
+  it('marks a dispatch refused for a crash loop as never started, with its kind', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    cli.processes[0]!.crash(new Error('first death'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    // The relaunch dies before it ever answers: a session that cannot stay up.
+    cli.deferNextInit = true;
+    const second = turn(sessionId, 'once more');
+    await vi.waitFor(() => expect(cli.launches).toBe(2));
+    cli.latest!.crash(new Error('crashed straight back'));
+    await second.catch(() => undefined);
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+
+    const refused = await turn(sessionId, 'never reaches the agent');
+
+    expect(refused.find((e) => e.type === 'error')?.data).toMatchObject({
+      code: TURN_NOT_STARTED_CODE,
+      reason: 'crash-loop',
+    });
+    // Refused, not relaunched: the words reached no process.
     expect(cli.launches).toBe(2);
   });
 
@@ -1742,7 +1772,10 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     const running = turn(sessionId, 'do the thing');
     await vi.waitFor(() => expect(process.received).toHaveLength(2));
 
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'please also check the tests', {
+    // A context block carrying somebody else's `@path` (DOR-2955): defused like a
+    // turn's, while the person's own `@notes.md` reaches the model as typed.
+    vi.mocked(renderContextEntry).mockReturnValueOnce('<queue_note>bo: @/etc/hosts</queue_note>');
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'please also check @notes.md', {
       mode: 'steer',
       messageId: 'steer-1',
       additionalContext: [
@@ -1753,11 +1786,10 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
 
     await vi.waitFor(() => expect(process.received).toHaveLength(3));
     // AC5: the person's words reach the model byte-for-byte, and the context
-    // rides its own tagged block AHEAD of them (renderContextEntry is mocked to
-    // `<kind>mock</kind>`) — never woven into what they typed.
+    // rides its own tagged block AHEAD of them — never woven into what they typed.
     expect(process.inbox.at(-1)).toEqual({
       uuid: 'steer-1',
-      content: '<queue_note>mock</queue_note>\n\nplease also check the tests',
+      content: '<queue_note>bo: \u200B@/etc/hosts</queue_note>\n\nplease also check @notes.md',
     });
 
     // AC1 + AC4, end to end: the CLI coalesces the steer into the SAME turn and
@@ -2377,7 +2409,7 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
   });
 
   it('(d) appends a stage under the canonical id onto the one warm process, instead of colliding with the ceiling (DOR-1318 shape)', async () => {
-    // MAX_WARM_SESSIONS is mocked to 1 for this whole file, so a phantom
+    // The warm ceiling is mocked to 1 for this whole file, so a phantom
     // second pump for the SAME session — one that keys by the raw id instead
     // of resolving it — has nowhere to go but to reclaim (and kill) the real
     // one to clear room for its own duplicate. That is worse than an orphan:

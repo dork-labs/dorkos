@@ -2,8 +2,8 @@
  * The one-time "what should I call you?" card, for installs that finished
  * onboarding before the conversation asked it (DOR-677).
  *
- * The same shape and the same slot as `ProfilePromptCard`: DorkBot's mark, two
- * lines, the form, in the sidebar's bottom slot. Never a modal and never an
+ * The same shape and the same slot as `ProfilePromptCard`: DorkBot's mark on its
+ * own row, two lines under it, the form, in the sidebar's bottom slot. Never a modal and never an
  * interruption. Saving or "Don't ask again" each close it for good.
  *
  * **Presentational.** Whether it should be offered, and where it is in its
@@ -13,10 +13,10 @@
  * @module features/onboarding/ui/IdentityPromptCard
  */
 import { motion, useReducedMotion } from 'motion/react';
-import { DorkLogo } from '@dorkos/icons/logos';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { OperatorIdentityForm } from '@/layers/features/profile';
 import type { IdentityPromptApi } from '../model/use-identity-prompt';
+import { PromptCardHeader } from './PromptCardHeader';
 
 /** Props for {@link IdentityPromptCard}. */
 export interface IdentityPromptCardProps {
@@ -43,24 +43,15 @@ export function IdentityPromptCard({ prompt }: IdentityPromptCardProps) {
       data-testid="identity-prompt-card"
       className="bg-secondary/60 flex flex-col gap-3 rounded-lg border p-3"
     >
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 shrink-0">
-          <DorkLogo size={40} className="dark:hidden" />
-          <DorkLogo variant="white" size={40} className="hidden dark:block" />
-        </span>
-        <div className="flex flex-col gap-0.5">
-          <p className="text-sm leading-relaxed" role={saved ? 'status' : undefined}>
-            {saved
-              ? DORKBOT_ONBOARDING_LINES.identityCardSaved
-              : DORKBOT_ONBOARDING_LINES.identityCardPrompt[0]}
-          </p>
-          {!saved && (
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              {DORKBOT_ONBOARDING_LINES.identityCardPrompt[1]}
-            </p>
-          )}
-        </div>
-      </div>
+      <PromptCardHeader
+        title={
+          saved
+            ? DORKBOT_ONBOARDING_LINES.identityCardSaved
+            : DORKBOT_ONBOARDING_LINES.identityCardPrompt[0]
+        }
+        description={saved ? undefined : DORKBOT_ONBOARDING_LINES.identityCardPrompt[1]}
+        titleIsStatus={saved}
+      />
       {!saved && (
         <OperatorIdentityForm
           onSaved={prompt.markSaved}

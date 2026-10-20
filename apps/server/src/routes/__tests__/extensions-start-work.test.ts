@@ -10,7 +10,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 const state = vi.hoisted(() => ({ authEnabled: false }));
-const launches = vi.hoisted(() => [] as Array<{ sessionId: string; request: { cwd?: string } }>);
+const launches = vi.hoisted(
+  () => [] as Array<{ sessionId: string; request: { cwd?: string }; permissionCeiling?: unknown }>
+);
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -47,6 +49,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { ProjectInfo } from '@dorkos/extension-api/server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { SessionStartedByStore } from '../../services/session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../services/extensions/start-work.js';
@@ -118,6 +121,7 @@ beforeEach(() => {
       },
       {
         before: async (c, next) => {
+          if (c.req.header('x-test-via') === 'wifi') markIngress(c.env.incoming, 'wifi');
           if (signedInUser) c.set('user', signedInUser as never);
           await next();
         },
@@ -146,6 +150,26 @@ describe('POST /api/extensions/:id/start-work', () => {
       extensionId: 'hello',
       reason: BODY.reason,
     });
+  });
+
+  it('holds a chat an extension starts to the runtime default, from Wi-Fi and from here alike', async () => {
+    // A Wi-Fi sign-in is always a session cookie.
+    signedInUser = { userId: 'owner', credential: 'cookie' };
+    const wifi = await request(server)
+      .post('/api/extensions/hello/start-work')
+      .set('Origin', TRUSTED_ORIGIN)
+      .set('x-test-via', 'wifi')
+      .send(BODY);
+    expect(wifi.status).toBe(200);
+    expect(launches[0]!.permissionCeiling).toBe('runtime-default');
+
+    const here = await request(server)
+      .post('/api/extensions/hello/start-work')
+      .set('Origin', TRUSTED_ORIGIN)
+      .send(BODY);
+    expect(here.status).toBe(200);
+    // An extension-started chat is capped whoever asked for it (DOR-3036, #3085).
+    expect(launches[1]!.permissionCeiling).toBe('runtime-default');
   });
 
   it('refuses an agent-headed request and starts nothing', async () => {

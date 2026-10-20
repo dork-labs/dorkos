@@ -133,6 +133,8 @@ let mockPathname = '/';
  * nothing at all.
  */
 const mockRouterNavigate = vi.fn();
+/** Every `onBeforeNavigate` listener the sidebar subscribed, to fire by hand. */
+const beforeNavigateListeners = new Set<() => void>();
 /**
  * The panel's boot phase, settled by default so these cases are about what they
  * are named after rather than about the gate. One case turns it off, because
@@ -157,6 +159,10 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     navigate: mockRouterNavigate,
+    subscribe: (_event: 'onBeforeNavigate', listener: () => void) => {
+      beforeNavigateListeners.add(listener);
+      return () => beforeNavigateListeners.delete(listener);
+    },
     state: {
       get location() {
         return mockLocation;
@@ -302,6 +308,9 @@ const mockTransport = {
   // The schedule queue behind the fourth blockage. Empty unless a case parks one.
   listTasks: vi.fn(() => Promise.resolve(mockTasks())),
   listThreads: vi.fn(() => Promise.resolve(mockThreads())),
+  // An agent row's door: its Direct chat (rule S12), opened as a new chat would be.
+  openDirectChat: vi.fn(),
+  createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -484,6 +493,14 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // plain store with nothing to stub.
   useSessionRouteContext: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useSessionRouteContext,
+  // Real too, for the same reason: the row an agent click lights while its
+  // lookup is out (DOR-2891).
+  markPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .markPendingSessionTarget,
+  usePendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .usePendingSessionTarget,
+  clearPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .clearPendingSessionTarget,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
@@ -1382,19 +1399,53 @@ describe('DashboardSidebar', () => {
   // ── Behaviour that had to survive the rewrite ──
 
   describe('what the rewrite had to keep', () => {
-    it('opens an agent’s most recent conversation when its row is pressed (BC-34)', async () => {
+    it('opens an agent’s Direct chat when its row is pressed (BC-34, S12)', async () => {
+      // Not its newest chat: one standing chat per agent, so the place its row
+      // leads never moves.
       mockTransport.listSessions.mockResolvedValue({
         sessions: [{ id: 's9', cwd: '/projects/alpha', title: 'Ship it' }],
+      });
+      mockTransport.openDirectChat.mockResolvedValue({
+        sessionId: 'direct-alpha',
+        sessionIds: ['direct-alpha'],
+        roomId: 'dm-alpha',
+        agentPath: '/projects/alpha',
       });
       renderWithProviders(<DashboardSidebar />);
       await screen.findByText('alpha');
       fireEvent.click(agentRowButton('alpha'));
       await waitFor(() =>
-        expect(mockNavigate).toHaveBeenCalledWith({
-          to: '/session',
-          search: { dir: undefined, session: 's9' },
-        })
+        expect(mockNavigate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: '/session',
+            search: expect.objectContaining({ session: 'direct-alpha', draft: '1' }),
+          })
+        )
       );
+      expect(mockTransport.openDirectChat).toHaveBeenCalledWith({ agentPath: '/projects/alpha' });
+    });
+
+    it('lights the pressed agent at once, while its chat is still being looked up (DOR-2891)', async () => {
+      mockPathname = '/session';
+      mockLocation = { pathname: '/session', search: { session: 's1', dir: '/projects/alpha' } };
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page'));
+      // The server never answers: before, nothing on screen moved until it did.
+      mockTransport.openDirectChat.mockImplementation(() => new Promise(() => {}));
+      fireEvent.click(agentRowButton('beta'));
+      await waitFor(() => expect(agentRowButton('beta')).toHaveAttribute('aria-current', 'page'));
+      expect(agentRowButton('alpha')).not.toHaveAttribute('aria-current');
+      // Tint only: Today still holds the chat that is actually open.
+      expect(
+        within(todayZone()!)
+          .getAllByRole('button')
+          .some((row) => row.getAttribute('title')?.includes('alpha'))
+      ).toBe(true);
+      // Any navigation hands the answer back to the router, so a lookup that
+      // was overtaken cannot keep the row lit.
+      act(() => beforeNavigateListeners.forEach((listener) => listener()));
+      await waitFor(() => expect(agentRowButton('beta')).not.toHaveAttribute('aria-current'));
+      expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     });
 
     it('migrates legacy localStorage pins into server config, once', async () => {

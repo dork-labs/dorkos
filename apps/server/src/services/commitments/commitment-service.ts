@@ -41,6 +41,13 @@ import {
   type CommitmentPatch,
   type CommitmentStore,
 } from './commitment-store.js';
+import {
+  hasMarks,
+  mergeMarks,
+  NO_MARKS,
+  parseStoredMarks,
+  type TurnMarks,
+} from '../core/turn-power/turn-marks.js';
 
 /** How far in the past a new due date may be, for clock skew between devices. */
 export const COMMITMENT_DUE_SKEW_MS = 60 * 1000;
@@ -90,6 +97,11 @@ export interface NewCommitment {
   sourceSessionId?: string;
   /** The room message it was made in. */
   sourceRoomEntryId?: string;
+  /**
+   * The marks of the turn it was made in (DOR-3036), from that turn's own record. The beat its
+   * due date wakes reads the promise, so it carries them on.
+   */
+  originMarks?: TurnMarks;
 }
 
 /** A change to a commitment. */
@@ -268,6 +280,19 @@ export class CommitmentService {
   }
 
   /**
+   * Every mark an agent's open promises were made under (DOR-3036): what a beat that reads them
+   * carries. None when no open promise was made in a marked turn.
+   *
+   * @param agentId - The agent.
+   */
+  openMarks(agentId: string): TurnMarks {
+    return this.store
+      .list({ agentId, state: 'open' }, COMMITMENT_LIST_LIMIT)
+      .map((row) => parseStoredMarks(row.originMarks))
+      .reduce(mergeMarks, NO_MARKS);
+  }
+
+  /**
    * One commitment, or undefined.
    *
    * @param id - The commitment id.
@@ -302,6 +327,8 @@ export class CommitmentService {
       dueNotifiedAt: null,
       closedAt: null,
       note: null,
+      originMarks:
+        input.originMarks && hasMarks(input.originMarks) ? JSON.stringify(input.originMarks) : null,
     };
     this.store.insert(row);
     this.audit(row, 'commitment.created', 'create', [

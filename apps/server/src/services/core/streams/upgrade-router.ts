@@ -27,14 +27,22 @@ import {
   parseHostname,
   getTunnelHosts,
 } from '../../../lib/trusted-origins.js';
+import { getLanAccessHosts } from '../lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
-import { configManager } from '../config-manager.js';
 import { env } from '../../../env.js';
-import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
+import {
+  authorizeStreamUpgrade,
+  upgradeFacts,
+  type StreamUpgradeLocals,
+} from './stream-upgrade-auth.js';
+import { gateAccessFor } from '../auth/gate-policy.js';
 import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
+import { admitHubRequest, trackHubConnection } from '../hub/hub-serving.js';
+import { registerLiveConnection } from '../auth/sessions/live-connections.js';
+import { refuseUpgradeFromWifi } from '../auth/sessions/wifi-level.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -99,14 +107,22 @@ export interface UpgradeRoute {
    * exploit uses — was not. A route now states its posture as data, and
    * `__tests__/upgrade-router.test.ts` pins that `required` really refuses.
    *
-   * - `required` — must present a valid session cookie or per-user API key when
-   *   login is enabled, exactly as the session gate demands of a request. The
+   * - `required` — must present a valid session cookie or per-user API key
+   *   whenever the gate asks this request for one (`gateAccessFor`), exactly as
+   *   the session gate demands of a request. The
    *   durable streams.
    * - `bearer-of-id` — authorized by holding an unguessable id minted by an
    *   already-gated route, and `authorize` checks that id itself. The terminal
-   *   (ADR 260708-185521).
+   *   (ADR 260708-185521), and a hub's computer relay, whose bearer is the
+   *   relay secret the linking flow minted (`services/core/hub-relay/`).
    */
   readonly credential: 'required' | 'bearer-of-id';
+  /**
+   * The WebSocket server that completes this route's handshake, for a route
+   * whose socket needs its own limits (a smaller `maxPayload`, no
+   * compression). Must be `noServer`. Defaults to the router's shared one.
+   */
+  readonly webSocketServer?: WebSocketServer;
   /**
    * Authorize the claimed upgrade. Every credential check a route needs lives
    * here, because none of the chain's ran (see the module doc). Returning a
@@ -148,8 +164,8 @@ const UPGRADE_ORIGIN_POLICY: BrowserOriginPolicy = {
  */
 function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credential']): boolean {
   const headers = req.headers;
-  // The host pairing stands down ONLY for a credential-gated route with login
-  // on, where an origin-scoped auth cookie already turns a rebound origin away.
+  // The host pairing stands down ONLY for a credential-gated route whose gate
+  // asks this request for a credential, where an origin-scoped auth cookie already turns a rebound origin away.
   //
   // NOT for `DORKOS_ALLOW_INSECURE_BIND`, even though `hostGuard` stands down
   // for it. Both Docker targets set that flag, so honouring it here left the
@@ -162,7 +178,8 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
   // And not for a `bearer-of-id` route under login either: that route skips
   // `authorizeStreamUpgrade`, so the cookie the exemption reasons about is
   // never checked and cannot be doing the work the exemption assumes.
-  const hostCheckInert = credential === 'required' && configManager.get('auth')?.enabled === true;
+  const hostCheckInert =
+    credential === 'required' && gateAccessFor(upgradeFacts(req)) === 'credential';
 
   return isTrustedBrowserOrigin(
     {
@@ -172,6 +189,7 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
         hostname: parseHostname(headers.host),
         trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
         tunnelHosts: getTunnelHosts(),
+        lanHosts: getLanAccessHosts(),
       }),
       // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
       configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
@@ -232,9 +250,27 @@ export function attachUpgradeRouter(
       refuse(socket, 403, 'Forbidden');
       return;
     }
-    // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
-    // and is never read.
+    // A hub opens a stream only through its front door, and only while it
+    // serves (`services/core/hub/hub-serving.ts`).
+    const hubRefusal = admitHubRequest(req);
+    if (hubRefusal) {
+      refuse(
+        socket,
+        hubRefusal.status,
+        hubRefusal.status === 503 ? 'Service Unavailable' : 'Forbidden'
+      );
+      return;
+    }
+    trackHubConnection(socket);
+    // The terminal's socket, and anything else the Wi-Fi level refuses
+    // (`../auth/sessions/wifi-level.ts`): the same list the HTTP chain reads.
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (refuseUpgradeFromWifi(req, url.pathname)) {
+      refuse(socket, 403, 'Forbidden');
+      return;
+    }
+    // `url` above: `req.url` is origin-form (`/api/...`); the base only
+    // satisfies the parser and is never read.
     const claimed = routes
       .map((route) => ({ route, match: route.pattern.exec(url.pathname) }))
       .find((candidate): candidate is { route: UpgradeRoute; match: RegExpExecArray } =>
@@ -258,6 +294,8 @@ export function attachUpgradeRouter(
      */
     const deliver = claimed.route.credential === 'required' ? 'close-frame' : 'handshake';
 
+    /** The identity the credential gate resolved, for {@link closeOnSignOut}. */
+    let locals: StreamUpgradeLocals = {};
     void (async () => {
       /** Resolve the decision; every refusal path returns one rather than replying. */
       const decide = async (): Promise<UpgradeDecision> => {
@@ -272,9 +310,8 @@ export function attachUpgradeRouter(
 
         // The credential gate runs HERE rather than inside each route, so a new
         // route cannot forget it — see `UpgradeRoute.credential`.
-        let locals: StreamUpgradeLocals = {};
         if (claimed.route.credential === 'required') {
-          const auth = await authorizeStreamUpgrade(req.headers);
+          const auth = await authorizeStreamUpgrade(req);
           if (admission.isClosed) {
             return { ok: false, status: 503, message: 'Service Unavailable' };
           }
@@ -319,9 +356,10 @@ export function attachUpgradeRouter(
       // pausing the socket for the duration.
       if (socket.destroyed) return;
 
-      wss.handleUpgrade(req, socket, head, (ws) => {
+      (claimed.route.webSocketServer ?? wss).handleUpgrade(req, socket, head, (ws) => {
         if (decision.ok) {
           decision.open(ws);
+          closeOnSignOut(ws, locals);
           // Managed remote access counts it only now, past every check above.
           noteUpgradeAdmitted(req, ws);
           return;
@@ -330,4 +368,21 @@ export function attachUpgradeRouter(
       });
     })();
   });
+}
+
+/**
+ * Close a socket when the sign-in that opened it ends (DOR-2969), with the
+ * same `4401` a refused handshake gets, so the client stops and asks for a
+ * sign-in rather than retrying. Only a cookie session names a sign-in.
+ *
+ * @param ws - The open socket.
+ * @param locals - The identity the credential gate resolved.
+ */
+function closeOnSignOut(ws: WebSocket, locals: StreamUpgradeLocals): void {
+  const user = locals.user;
+  if (user?.credential !== 'cookie' || !user.sessionId) return;
+  const unregister = registerLiveConnection(user.sessionId, user.userId, () =>
+    ws.close(STREAM_CLOSE_CODE_BASE + 401, 'Signed out')
+  );
+  ws.once('close', unregister);
 }

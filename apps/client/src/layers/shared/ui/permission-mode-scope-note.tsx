@@ -36,7 +36,9 @@ export interface PermissionModeScopeNoteProps {
  *
  * Turning such a mode on reads as "stop asking me", and for the runtime's own
  * prompts that is exactly what it does. It does nothing to the approvals DorkOS
- * asks for on its own behalf — deleting a schedule still parks a card and waits.
+ * asks for on its own behalf: whether deleting a schedule asks is the
+ * Permissions page's answer (under Careful it parks a card and waits; under
+ * Trusted it runs and is recorded, ADR `261006-225605`).
  * Somebody who learns that from a card appearing after they thought they had
  * switched asking off has been misled by the product, even though every
  * individual screen was accurate.
@@ -53,8 +55,9 @@ export interface PermissionModeScopeNoteProps {
  *    actually pictures: editing files, running commands, working outside this
  *    project.
  * 2. **"Removing packages" is the rarest example of the class.** Deleting a
- *    schedule and removing an agent are what the destructive tier actually
- *    parks, so those are what it names.
+ *    schedule is the common one, so that is what it names. It no longer claims
+ *    the delete asks: under Trusted it does not, so the sentence points at the
+ *    Permissions settings that decide it.
  * 3. **"Change that in Settings, under Security" named neither the thing nor
  *    the place.** A pointer to a tab that is not there is worse than no
  *    pointer; the clause now names the card and the Permissions page.
@@ -125,7 +128,7 @@ export function PermissionModeScopeNote({
       className={cn('text-muted-foreground space-y-1 text-xs', className)}
     >
       <p>This covers editing files, running commands and working outside this project.</p>
-      <p>DorkOS still asks before deleting a schedule or removing an agent, for example.</p>
+      <p>DorkOS’s own actions, like deleting a schedule, follow your Permissions settings.</p>
       <p>To stop an ask, choose Always allow on its card, or in Settings under Permissions.</p>
     </div>
   );

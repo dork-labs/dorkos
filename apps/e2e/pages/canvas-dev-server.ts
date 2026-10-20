@@ -72,12 +72,12 @@ export async function reserveClosedPort(): Promise<number> {
 }
 
 /**
- * Open the embedded browser on `url`, the way a person does: open the right
- * panel, pick Browser, start a page if the tab is empty, then type the address.
+ * Open a served-page preview on `url`: open the right panel, pick Page previews,
+ * start a page if the tab is empty, then type the address.
  *
- * Browser rather than Canvas since the panel split into two views over one
- * document store (ADR 260911-200304): a page is a Browser-tab document, and the
- * Canvas tab no longer offers to open one.
+ * Page previews holds served-page documents (category `browser`) over the shared
+ * document store. Browser opens the separate local-browser feature; Canvas
+ * holds the other document types.
  *
  * **The empty state is conditional now, because the canvas is the SERVER's**
  * (spec `canvas-agent-seat` §1.5). A second window on the same conversation
@@ -119,7 +119,7 @@ export async function openInCanvasBrowser(
         : '/session'
   );
   await rightPanel.ensureTabStripOpen();
-  await rightPanel.browserTab.click();
+  await rightPanel.selectView('Page previews');
 
   // The empty state's web-page action opens a browser document; its address bar
   // is how any page after the first one is reached. `^Web page` is anchored so

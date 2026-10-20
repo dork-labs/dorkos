@@ -10,12 +10,19 @@ import '@testing-library/jest-dom/vitest';
 // ---------------------------------------------------------------------------
 
 const mockImportOpen = vi.fn();
+const mockCreateOpen = vi.fn();
 vi.mock('@/layers/shared/model', () => ({
   useImportProjectsStore: (selector?: (s: { open: () => void }) => unknown) => {
     const state = { open: mockImportOpen };
     return selector ? selector(state) : state;
   },
+  useAgentCreationStore: (selector?: (s: { open: () => void }) => unknown) => {
+    const state = { open: mockCreateOpen };
+    return selector ? selector(state) : state;
+  },
 }));
+const hub = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
 
 // ---------------------------------------------------------------------------
 // Browser API mocks
@@ -49,6 +56,8 @@ import { AgentGhostRows } from '../ui/AgentGhostRows';
 
 beforeEach(() => {
   mockImportOpen.mockReset();
+  mockCreateOpen.mockReset();
+  hub.value = false;
 });
 
 afterEach(cleanup);
@@ -79,5 +88,15 @@ describe('AgentGhostRows', () => {
     fireEvent.click(screen.getByRole('button', { name: /search for projects/i }));
 
     expect(mockImportOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('on a hub, offers to create an agent instead of searching for projects', () => {
+    hub.value = true;
+    render(<AgentGhostRows />);
+
+    expect(screen.queryByText('Bring in existing projects')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create agent' }));
+    expect(mockCreateOpen).toHaveBeenCalledTimes(1);
+    expect(mockImportOpen).not.toHaveBeenCalled();
   });
 });

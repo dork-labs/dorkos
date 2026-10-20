@@ -16,6 +16,25 @@
  * "this machine" names, which is why the rule lives here and not in either of
  * them.
  *
+ * ## One scan answers everyone who asks at once
+ *
+ * A fan-out reads every runtime's store once per agent folder, and on a busy
+ * machine that is seconds of work: 37 agents and a 13 GB Codex home took 15 s
+ * or more (measured 2026-10-13). Every open window re-asks for the Recent list
+ * whenever any chat changes, so the same question arrived every few seconds,
+ * each answer started its own scan, and a per-runtime timeout does not stop the
+ * work it gave up on. The scans stacked up until the whole server answered
+ * every request in seconds.
+ *
+ * So each question runs at most one scan at a time. A caller joins the running
+ * scan, or reuses a finished one for {@link AGENT_SESSION_FANOUT_FRESH_MS}, only
+ * when no session appeared or went away since that scan started
+ * ({@link noteAgentSessionListEvent}).
+ * A caller asking after a change waits for the running scan and then shares the
+ * ONE scan that follows it, so it never gets an answer from before the change
+ * and the scans never pile up. Each caller gets its own copy of every session,
+ * because the routes overlay settings onto the rows they are handed, in place.
+ *
  * ## One folder, several spellings (DOR-695)
  *
  * The membership rule compares two strings that reach it from different
@@ -87,6 +106,8 @@ let sources: AgentSessionSources = NO_EXTRA_SOURCES;
  */
 export function setAgentSessionSources(next: AgentSessionSources | null): void {
   sources = next ?? NO_EXTRA_SOURCES;
+  // A scan run against the old sources answers a different question.
+  questions.clear();
 }
 
 /**
@@ -95,6 +116,200 @@ export function setAgentSessionSources(next: AgentSessionSources | null): void {
  * concurrent {@link aggregateSessionList} calls at this width.
  */
 export const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
+
+/**
+ * How long a finished fan-out keeps answering callers who ask the same
+ * question. Short on purpose: it exists to absorb a burst of identical asks,
+ * not to serve old news. Every reader already treats this list as a summary
+ * the live session stream keeps current.
+ */
+export const AGENT_SESSION_FANOUT_FRESH_MS = 3_000;
+
+/** A fan-out's answer, before any caller copies it. */
+type FanOutResult = {
+  perPath: AgentSessions[];
+  warnings: SessionListWarning[];
+  /** When the scan began, so only updates it could have missed are laid over it. */
+  startedAt: number;
+};
+
+/** One scan, and the session generation it started under. */
+interface Scan {
+  generation: number;
+  result: Promise<FanOutResult>;
+}
+
+/** Everything known about one question: the scan running, the one queued behind it, the last answer. */
+interface Question {
+  running: Scan | null;
+  next: Promise<FanOutResult> | null;
+  done: (Scan & { at: number }) | null;
+}
+
+/** Questions by key. Pruned on every ask, so it holds only live or fresh ones. */
+const questions = new Map<string, Question>();
+
+/** Goes up whenever a session appears or goes away. */
+let generation = 0;
+
+/** Every session id the list has announced and not removed since. */
+const announcedIds = new Set<string>();
+
+/**
+ * The newest row the session list announced for each recently updated
+ * session, and when. Laid over an answer from a scan that started BEFORE the
+ * update, the only kind that can be missing it. A scan that started after
+ * reads the runtime's own truth, which wins.
+ */
+const recentRows = new Map<string, { session: Session; at: number }>();
+
+/**
+ * How long an announced row is kept for laying over older scans. Far longer
+ * than any scan runs; it only bounds memory.
+ */
+const RECENT_ROW_KEEP_MS = 5 * 60_000;
+
+/**
+ * Say that the set of sessions changed, so no caller from now on is handed a
+ * scan that started before it.
+ */
+export function markAgentSessionsChanged(): void {
+  generation += 1;
+}
+
+/**
+ * Hear one session-list event. A session appearing or going away starts a new
+ * generation; an update to a listed one is remembered and laid over every
+ * answer from a scan that predates it instead (see {@link withLatestRow}).
+ *
+ * Every chat a working agent writes to sends an update every few seconds, and
+ * when each one forced a fresh scan the Recent list was rescanned back to back
+ * for as long as any agent was working (DOR-2893). Laying the update over a
+ * scan that predates it gives the same rows without the scan.
+ *
+ * @param event - The event the broadcaster is about to send.
+ */
+export function noteAgentSessionListEvent(
+  event:
+    { type: 'session_upserted'; session: Session } | { type: 'session_removed'; sessionId: string }
+): void {
+  const now = Date.now();
+  for (const [id, row] of recentRows) {
+    if (now - row.at <= RECENT_ROW_KEEP_MS) break;
+    recentRows.delete(id);
+  }
+  if (event.type === 'session_upserted') {
+    const { id } = event.session;
+    recentRows.delete(id);
+    recentRows.set(id, { session: event.session, at: now });
+    if (announcedIds.has(id)) return;
+    announcedIds.add(id);
+  } else {
+    recentRows.delete(event.sessionId);
+    if (!announcedIds.delete(event.sessionId)) return;
+  }
+  markAgentSessionsChanged();
+}
+
+/**
+ * A caller's copy of one scanned session, with an update the list announced
+ * after the scan began laid over it. Only the fields an update changes are
+ * taken: the scan's own `cwd`, `runtime` and the rest stay as scanned.
+ *
+ * @param session - The row as the scan found it.
+ * @param startedAt - When the scan that found it began.
+ */
+function withLatestRow(session: Session, startedAt: number): Session {
+  const latest = recentRows.get(session.id);
+  if (!latest || latest.at < startedAt) return { ...session };
+  const { session: row } = latest;
+  if (Date.parse(row.updatedAt) < Date.parse(session.updatedAt)) return { ...session };
+  return {
+    ...session,
+    title: row.title,
+    updatedAt: row.updatedAt,
+    lastMessagePreview: row.lastMessagePreview,
+    permissionMode: row.permissionMode,
+    model: row.model,
+    contextTokens: row.contextTokens,
+  };
+}
+
+/** A stable id per runtime object, so two different runtimes of one type never share a scan. */
+const runtimeIds = new WeakMap<AgentRuntime, number>();
+let nextRuntimeId = 0;
+
+/**
+ * The question a fan-out answers: which runtimes, over which folders.
+ *
+ * @param runtimes - The runtimes asked.
+ * @param uniquePaths - The deduped agent folders.
+ */
+function questionKey(runtimes: AgentRuntime[], uniquePaths: string[]): string {
+  const ids = runtimes.map((runtime) => {
+    let id = runtimeIds.get(runtime);
+    if (id === undefined) {
+      id = nextRuntimeId++;
+      runtimeIds.set(runtime, id);
+    }
+    return id;
+  });
+  return `${ids.join(',')}\0${[...uniquePaths].sort().join('\0')}`;
+}
+
+/**
+ * Start a scan for `question` under the current generation.
+ *
+ * @param question - The question to scan for.
+ * @param runtimes - Runtimes to fan out across.
+ * @param uniquePaths - Deduped agent project directories.
+ */
+function startScan(
+  question: Question,
+  runtimes: AgentRuntime[],
+  uniquePaths: string[]
+): Promise<FanOutResult> {
+  const startedAt = Date.now();
+  const scan: Scan = {
+    generation,
+    result: scanAgentSessions(runtimes, uniquePaths).then((found) => ({ ...found, startedAt })),
+  };
+  question.running = scan;
+  scan.result.then(
+    () => {
+      question.done = { ...scan, at: Date.now() };
+      if (question.running === scan) question.running = null;
+    },
+    // A scan that threw is not kept: the next caller asks again.
+    () => {
+      if (question.running === scan) question.running = null;
+    }
+  );
+  return scan.result;
+}
+
+/**
+ * Drop every question with nothing running, nothing queued and no fresh answer.
+ *
+ * @param now - The current time.
+ */
+function pruneQuestions(now: number): void {
+  for (const [key, question] of questions) {
+    const fresh = question.done !== null && now - question.done.at < AGENT_SESSION_FANOUT_FRESH_MS;
+    if (!question.running && !question.next && !fresh) questions.delete(key);
+  }
+}
+
+/**
+ * Forget every shared scan.
+ *
+ * @internal Exported for tests that change a store between two fan-outs.
+ */
+export function resetAgentSessionFanoutCache(): void {
+  questions.clear();
+  announcedIds.clear();
+  recentRows.clear();
+}
 
 /** Map `items` through `fn` with at most `concurrency` in flight, preserving input order. */
 async function mapWithConcurrency<T, R>(
@@ -176,6 +391,9 @@ export interface AgentSessions {
  * what lets a caller say "some runs are missing" instead of quietly reporting a
  * smaller number (ADR-0310).
  *
+ * Callers asking the same question at once share one scan, and its answer is
+ * reused for {@link AGENT_SESSION_FANOUT_FRESH_MS} (see the module header).
+ *
  * @param opts - Fan-out inputs.
  * @param opts.runtimes - Runtimes to fan out across (already registry-resolved).
  * @param opts.agentPaths - Agent project directories to scan (deduped internally).
@@ -186,7 +404,64 @@ export async function fanOutAgentSessions(opts: {
 }): Promise<{ perPath: AgentSessions[]; warnings: SessionListWarning[] }> {
   const { runtimes, agentPaths } = opts;
   const uniquePaths = [...new Set(agentPaths)];
+  const key = questionKey(runtimes, uniquePaths);
+  const now = Date.now();
+  pruneQuestions(now);
 
+  let question = questions.get(key);
+  if (!question) {
+    question = { running: null, next: null, done: null };
+    questions.set(key, question);
+  }
+  const { running, done } = question;
+
+  let result: Promise<FanOutResult>;
+  if (done && done.generation === generation && now - done.at < AGENT_SESSION_FANOUT_FRESH_MS) {
+    result = done.result;
+  } else if (running && running.generation === generation) {
+    result = running.result;
+  } else if (running) {
+    // A session changed after the running scan started, so its answer may be
+    // missing it. Wait for it, then share one new scan with everyone else who
+    // asked meanwhile — never a second scan beside the first.
+    const owner = question;
+    owner.next ??= running.result
+      .then(
+        () => undefined,
+        () => undefined
+      )
+      .then(() => {
+        owner.next = null;
+        return startScan(owner, runtimes, uniquePaths);
+      });
+    result = owner.next;
+  } else if (question.next) {
+    // The running scan just settled and the queued one has not started yet.
+    result = question.next;
+  } else {
+    result = startScan(question, runtimes, uniquePaths);
+  }
+
+  const { perPath, warnings, startedAt } = await result;
+  return {
+    perPath: perPath.map(({ dir, members }) => ({
+      dir,
+      members: members.map((session) => withLatestRow(session, startedAt)),
+    })),
+    warnings: warnings.map((warning) => ({ ...warning })),
+  };
+}
+
+/**
+ * The scan itself, uncached: every agent folder, every runtime.
+ *
+ * @param runtimes - Runtimes to fan out across.
+ * @param uniquePaths - Deduped agent project directories.
+ */
+async function scanAgentSessions(
+  runtimes: AgentRuntime[],
+  uniquePaths: string[]
+): Promise<Omit<FanOutResult, 'startedAt'>> {
   const results = await mapWithConcurrency(
     uniquePaths,
     AGENT_SESSION_FANOUT_CONCURRENCY,

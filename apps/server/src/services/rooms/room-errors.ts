@@ -86,6 +86,12 @@ export type RoomErrorCode =
    * "you may not rename this one" is more useful than pretending it is gone.
    */
   | 'SYSTEM_ROOM'
+  /**
+   * A hub's space is private (spec A6): just its owner and the owner's agents.
+   * A person from a chat bridge stays in their own bridged chat and may not be
+   * added to any other room there.
+   */
+  | 'PRIVATE_SPACE'
   | 'OPERATOR_ONLY'
   /**
    * A membership change would have left two or more agents in a room the owner
@@ -110,6 +116,22 @@ export type RoomErrorCode =
    * emoji on a message (ADR 260814-195522, which reverses etiquette E16b).
    */
   | 'PEOPLE_ONLY'
+  /**
+   * A person asked to move an agent to another account (`rooms.reseat`) and no
+   * account it may use has usage left right now.
+   */
+  | 'NO_ACCOUNT_LEFT'
+  /**
+   * A person asked to move an agent to another account while it is answering
+   * here. Its running turn would bind the seat back to the old session, so the
+   * move waits until the turn is done.
+   */
+  | 'AGENT_WORKING'
+  /**
+   * A person asked to move an agent that has not answered in this room yet.
+   * There is no session to move; its first turn starts on its usual account.
+   */
+  | 'NOTHING_TO_MOVE'
   /**
    * `leave_room` was aimed at something that is not a channel (spec
    * `rooms-management-tools` §D9, DOR-1611).
@@ -250,6 +272,14 @@ export type RoomErrorCode =
    * mute, and Stop ends a turn rather than changing a setting.
    */
   | 'TURN_WAS_STOPPED'
+  /**
+   * A turn a stranger started has already posted as many messages as
+   * such a turn may (`OUTSIDER_TURN_LIMIT`, DOR-2739). Our own agents are not
+   * counted (ADR 261006-225605); this is the one count left, kept as an
+   * outsider protection so one message from someone outside the team cannot
+   * make a turn post without end into a room that goes straight back out.
+   */
+  | 'TOO_MANY_POSTS_THIS_TURN'
   /**
    * A rooms capability was called on a login-on install by a caller the surface
    * could name neither as an agent nor as a person

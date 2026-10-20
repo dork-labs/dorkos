@@ -8,14 +8,14 @@ import { useConfig } from '@/layers/entities/config';
 
 import { useMoments, MOMENT_PRIORITY, type MomentDescriptor } from '@/layers/widgets/moments';
 
-import { useTelemetryMomentDescriptor, useFullPowerMomentDescriptor } from '../model/use-moments';
+import { useTelemetryMomentDescriptor, useTrustNoticeMomentDescriptor } from '../model/use-moments';
 
-// The full-power descriptor's `render` mounts `FullPowerDoorMoment`, which reaches
-// for a router; these tests only exercise ELIGIBILITY (the returned descriptor,
-// never its render), so the feature is stubbed to keep the collector renderable
-// without a RouterProvider or a Transport.
-vi.mock('@/layers/features/full-power-door', () => ({
-  FullPowerDoorMoment: () => null,
+// These tests only exercise ELIGIBILITY (the returned descriptor, never its
+// render), so the notice body is stubbed to keep the collector renderable
+// without a Transport. The eligibility rule itself stays real.
+vi.mock('@/layers/features/trust-notice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/trust-notice')>()),
+  TrustNoticeMoment: () => null,
 }));
 
 vi.mock('@/layers/entities/config', async (importOriginal) => {
@@ -73,9 +73,9 @@ describe('useMoments', () => {
     // null cannot suppress an eligible peer.
     setTelemetry({ userHasDecided: true });
 
-    /** Stands in for the full-power door — the rail's next consumer. */
+    /** Stands in for any high-priority moment — the rail's next consumer. */
     function useDoorDescriptor(): MomentDescriptor | null {
-      return { id: 'full-power-door', priority: MOMENT_PRIORITY.high, render: () => null };
+      return { id: 'next-moment', priority: MOMENT_PRIORITY.high, render: () => null };
     }
 
     /** `useMoments` with exactly one line appended. */
@@ -87,20 +87,22 @@ describe('useMoments', () => {
 
     const { result } = renderHook(() => useExtendedMoments());
 
-    expect(result.current.map((m) => m.id)).toEqual(['full-power-door']);
+    expect(result.current.map((m) => m.id)).toEqual(['next-moment']);
   });
 });
 
 /**
- * Drive the config the full-power descriptor reads. `null` = config has not
- * loaded; otherwise onboarding defaults to finished and telemetry to decided, so
- * a test names only the field it is about.
+ * Drive the config the trust-notice descriptor reads. `null` = config has not
+ * loaded; otherwise onboarding defaults to finished, the preset to Trusted and
+ * telemetry to decided, so a test names only the field it is about.
  */
 function setConfig(
   cfg: {
     onboarding?: { completedAt?: string | null; dismissedAt?: string | null } | null;
-    fullPowerDecidedAt?: string | null;
+    trustNoticeSeenAt?: string | null;
+    preset?: string | null;
     telemetryDecided?: boolean;
+    callerRoute?: 'local' | 'wifi';
   } | null
 ) {
   vi.mocked(useConfig).mockReturnValue({
@@ -112,8 +114,10 @@ function setConfig(
               cfg.onboarding === undefined
                 ? { completedAt: '2026-08-01T10:00:00.000Z', dismissedAt: null }
                 : cfg.onboarding,
-            ui: { fullPowerDecidedAt: cfg.fullPowerDecidedAt ?? null },
+            ui: { trustNoticeSeenAt: cfg.trustNoticeSeenAt ?? null },
+            permissions: { preset: cfg.preset === undefined ? 'trusted' : cfg.preset },
             telemetry: { userHasDecided: cfg.telemetryDecided ?? true },
+            callerRoute: cfg.callerRoute,
           },
     isLoading: false,
     error: null,
@@ -121,68 +125,89 @@ function setConfig(
   } as unknown as ReturnType<typeof useConfig>);
 }
 
-describe('useFullPowerMomentDescriptor', () => {
+describe('useTrustNoticeMomentDescriptor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('offers the door when onboarding is over and the power question is unanswered', () => {
-    setConfig({ fullPowerDecidedAt: null });
+  it('offers the notice when onboarding is over, the install is Trusted and it is unseen', () => {
+    setConfig({ trustNoticeSeenAt: null });
 
-    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
-    expect(result.current?.id).toBe('full-power-door');
+    expect(result.current?.id).toBe('trust-notice');
     expect(result.current?.priority).toBe(MOMENT_PRIORITY.high);
   });
 
-  it('outranks the telemetry invitation — high beats low', () => {
-    expect(MOMENT_PRIORITY.high).toBeGreaterThan(MOMENT_PRIORITY.low);
+  it('offers it to an install that never chose a preset, which runs Trusted', () => {
+    setConfig({ preset: null });
+
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
+
+    expect(result.current?.id).toBe('trust-notice');
   });
 
-  it('is eligible when onboarding was deliberately dismissed rather than completed', () => {
+  it('is eligible when onboarding was dismissed rather than completed', () => {
     setConfig({ onboarding: { completedAt: null, dismissedAt: '2026-08-01T10:00:00.000Z' } });
 
-    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
-    expect(result.current?.id).toBe('full-power-door');
+    expect(result.current?.id).toBe('trust-notice');
   });
 
-  it('never offers the door once the power question has been answered', () => {
-    setConfig({ fullPowerDecidedAt: '2026-08-02T09:00:00.000Z' });
+  it('never offers it once seen', () => {
+    setConfig({ trustNoticeSeenAt: '2026-08-02T09:00:00.000Z' });
 
-    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
     expect(result.current).toBeNull();
   });
 
-  it('withholds the door while onboarding is neither finished nor dismissed', () => {
-    setConfig({ onboarding: { completedAt: null, dismissedAt: null }, fullPowerDecidedAt: null });
+  it('holds it on Wi-Fi, where agents still ask, and offers it from this computer', () => {
+    setConfig({ callerRoute: 'wifi' });
+    const { result, rerender } = renderHook(() => useTrustNoticeMomentDescriptor());
+    // Never offered on Wi-Fi, so nothing there can mark it seen.
+    expect(result.current).toBeNull();
 
-    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+    setConfig({ callerRoute: 'local' });
+    rerender();
+    expect(result.current?.id).toBe('trust-notice');
+  });
+
+  it('never offers it to a Careful install', () => {
+    setConfig({ preset: 'careful' });
+
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
     expect(result.current).toBeNull();
   });
 
-  it('withholds the door until config has loaded', () => {
+  it('withholds it while onboarding is neither finished nor dismissed', () => {
+    setConfig({ onboarding: { completedAt: null, dismissedAt: null } });
+
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
+
+    expect(result.current).toBeNull();
+  });
+
+  it('withholds it until config has loaded', () => {
     setConfig(null);
 
-    const { result } = renderHook(() => useFullPowerMomentDescriptor());
+    const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
     expect(result.current).toBeNull();
   });
 
   it('is collected above telemetry when both are eligible', () => {
-    // Onboarding over, power unanswered, telemetry undecided → both eligible.
-    setConfig({ fullPowerDecidedAt: null, telemetryDecided: false });
+    setConfig({ telemetryDecided: false });
 
     const { result } = renderHook(() => useMoments());
 
-    const ids = result.current.map((m) => m.id);
-    expect(ids).toContain('full-power-door');
-    expect(ids).toContain('telemetry-consent');
-    // Higher priority wins the one slot the host opens.
-    const door = result.current.find((m) => m.id === 'full-power-door');
+    const notice = result.current.find((m) => m.id === 'trust-notice');
     const telemetry = result.current.find((m) => m.id === 'telemetry-consent');
-    expect(door!.priority).toBeGreaterThan(telemetry!.priority);
+    expect(notice).toBeDefined();
+    expect(telemetry).toBeDefined();
+    // Higher priority wins the one slot the host opens.
+    expect(notice!.priority).toBeGreaterThan(telemetry!.priority);
   });
 });

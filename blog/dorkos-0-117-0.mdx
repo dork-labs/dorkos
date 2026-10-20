@@ -1,0 +1,54 @@
+---
+title: DorkOS 0.117.0
+description: Connected apps shared with every agent, a 60-second cancel window before irreversible actions, and fixes for Gmail, login and long chats.
+date: 2026-10-15
+author: DorkOS Team
+category: release
+tags: [release, trust, connections, fixes]
+---
+
+DorkOS 0.117.0 shares the apps you connect with every agent on Trusted, holds an agent's irreversible action in a connected app for 60 seconds so anyone can cancel it, and fixes Gmail sends, turning on login and long chats.
+
+## Highlights
+
+### Connected apps work for every agent
+
+On Trusted, an app you connect is shared with every agent right away, including agents you add later. Pick **Only agents you pick** in **Who can use it?** to narrow it.
+
+### A 60-second cancel window
+
+When an agent working on its own is about to do something in a connected app that can't be taken back, like sending or deleting an email, DorkOS holds it for 60 seconds. Anyone but that agent can cancel it from the Inbox.
+
+### Fixes you will notice
+
+Agents can send Gmail again without an attachment, turning on login with an existing owner asks for your password, and chats on one-million-token models show their real size.
+
+## All Changes
+
+### Added
+
+- On Trusted, when an agent working on its own takes an action in a connected app that can't be taken back, like deleting or sending an email, DorkOS holds it for 60 seconds first. Every open DorkOS window shows a notification in the Inbox with **Cancel**, and your phone gets one too if you turned phone alerts on. Clicking the alert opens the Inbox right on it (DOR-2739)
+- Anyone can cancel a waiting action, a person or another agent, except the agent that asked. A cancelled action never runs, and the agent is told who cancelled it. Stopping the chat cancels it too. If DorkOS restarts while it waits, it is dropped and never runs; if it restarts just as the action is sent, the notification says it may have run and which app to check (DOR-2739)
+- If nobody cancels, DorkOS checks once more that it still may run without asking, then runs it exactly as asked, on the same account, and a second notification says it ran. If the notification can't be shown or the action can't be recorded, you get an approval card instead. This is a cancel, not an undo. On Careful, in a chat that asks first, or when someone outside your team started the chat, you still get an approval card (DOR-2739)
+
+### Changed
+
+- On Trusted, an app you connect is shared with every agent right away, including agents you add later, at **Read and write**, or **Read** where that is all the app offers. Pick **Only agents you pick** in **Who can use it?** to narrow it. Deleting things still needs you to allow it one action at a time, and on Careful nobody can use a new app until you choose (DOR-2739)
+- The first time DorkOS starts on Trusted after this update, each connected app no agent could use yet is shared with every agent the same way, once. An app you had already given to some agents stays exactly as it was (DOR-2739)
+- The one-time "Agents now work without asking" note lists the apps it shared, each with **Choose agents**, which opens that app's **Who can use it?** so you can pick agents one by one. If you had already dismissed the note, it shows once more to name them (DOR-2739)
+
+### Fixed
+
+- Connecting a service that signs in with a key, such as PostHog or 1Password, failed with "isn't available right now", every time. It now asks for your key and connects. Monday could not be connected at all; it now signs in like other apps.
+- Spaces (experimental): in a channel with slow mode, the wait shown after a held post now starts at the time the space gave, not one second more.
+- Turn on **Require login** when this computer already has an owner, and DorkOS now asks for that owner's password instead of a create-account form that could only fail. A wrong password leaves login off, so you can't lock yourself out. Forgot it? The dialog shows the command that resets it (DOR-2964)
+- Stop showing your email as your name. New accounts no longer save the email as the name, and an older account whose name is just its email lets DorkOS ask what to call you (DOR-2964)
+- Stop pointing to Settings › Login & security to change your email. Nothing there changes it, so the Profile hint now says so (DOR-2964)
+- Keep a previous document’s save result from changing the document you open next.
+- Save the latest buffered draft when you close a document editor.
+- Fix Claude Code agents failing to update widgets they are allowed to change.
+- Keep overlapping editor saves from silently replacing a newer file version.
+- Agents can send email and save drafts through a connected Gmail account again when there is no attachment. Before, any action that could take a file was refused, even when no file was sent.
+- When an agent asks to use an app you already have an account for, its request card now lets you connect a different account too. Before, the card only offered your existing accounts, so an agent that needed its own mailbox could only be told "Not now".
+- Chats on a model with a one-million-token memory, like Opus 5.5 (1M) or Sonnet 5, showed a 200k limit. The context meter now shows the real size. Agents in those chats are no longer told their conversation is nearly full, or nudged to summarize it, at a fifth of the real limit.
+- When a message arrived in a chat while an approval was waiting, the "waiting on you" card could stay up after you answered. Its buttons did nothing and the message box stayed hidden until the agent finished. The card now clears as soon as you answer.

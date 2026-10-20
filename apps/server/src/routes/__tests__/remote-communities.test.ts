@@ -171,6 +171,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../community-connections.js', () => ({
   resolveCommunityOwner: () => fixture.currentOwner,
 }));
+const dmsStore = vi.hoisted(() => ({
+  get: vi.fn(async () => [] as string[]),
+  set: vi.fn(async () => undefined),
+}));
+vi.mock('../../services/communities/remote/dms/agent-dms-store.js', () => ({
+  getAgentDmsStore: () => dmsStore,
+}));
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: (_ref: string, owner: string) => {
     fixture.adapterOwners.push(owner);
@@ -281,6 +288,7 @@ import {
   PinnedOriginError,
 } from '../../services/communities/remote/pinned-origin.js';
 import { CommunityRoomNotFoundError } from '@dorkos/shared/community-adapter';
+import { SSE } from '../../config/constants.js';
 
 const testServer = listeningServer(
   honoGroupListener({ path: '/api/communities', routes: createRemoteCommunitiesRoutes() })
@@ -497,6 +505,7 @@ describe('qualified remote community writes and live projections', () => {
       'owner-a'
     );
     expect(fixture.adapter.revokeAgent).not.toHaveBeenCalled();
+    expect(dmsStore.set).toHaveBeenCalledWith(fixture.ref, 'owner-a', 'local-agent-a', false);
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
@@ -681,6 +690,51 @@ describe('qualified remote community writes and live projections', () => {
       expect(fixture.adapterOwners).toEqual(['owner-a', 'owner-b']);
     } finally {
       releaseEntry();
+      await reader.cancel();
+    }
+  });
+
+  // DOR-2973. Purpose: an open channel view gets a keepalive comment on the session streams'
+  // beat, so a quiet channel is not closed for idling. It fails if the route stops writing one.
+  it('keeps a quiet channel view alive with a comment on the heartbeat beat', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      (async function* () {
+        yield {
+          type: 'snapshot' as const,
+          room: fixture.room,
+          entries: [fixture.entry],
+          cursor: 'cursor-a',
+        };
+        await held;
+      })()
+    );
+    // Only the interval is faked, so the real socket underneath keeps working.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const address = testServer.address();
+    if (!address || typeof address === 'string') throw new Error('Local test server has no port');
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const readUntil = async (needle: string) => {
+      let text = '';
+      while (!text.includes(needle)) {
+        const part = await reader.read();
+        if (part.done) throw new Error(`Stream ended before ${needle}`);
+        text += decoder.decode(part.value);
+      }
+      return text;
+    };
+    try {
+      expect(await readUntil('"type":"snapshot"')).not.toContain(': keepalive');
+      vi.advanceTimersByTime(SSE.HEARTBEAT_INTERVAL_MS);
+      expect(await readUntil(': keepalive')).toContain(': keepalive\n\n');
+    } finally {
+      vi.useRealTimers();
+      release();
       await reader.cancel();
     }
   });
@@ -1052,7 +1106,10 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.body.agent).toMatchObject({
       localAgentId: 'mesh-manifest-a',
       remoteMemberId: 'remote-enrolled-a',
+      acceptsDms: false,
     });
+    // The space starts every enrollment with direct messages off (DOR-2955); so does this record.
+    expect(dmsStore.set).toHaveBeenCalledWith(fixture.ref, 'owner-a', 'mesh-manifest-a', false);
 
     const unknown = await request(testServer)
       .post(`/api/communities/${fixture.ref}/agents/opaque-local-author-a/enroll`)

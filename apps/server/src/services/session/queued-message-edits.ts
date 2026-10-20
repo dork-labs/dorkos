@@ -48,6 +48,12 @@ export interface QueuedMessageEdit {
   content?: string;
   /** Where to move it, relative to another message on the same queue. */
   move?: MoveTarget;
+  /**
+   * The new words came from somewhere DorkOS cannot vouch for (a Wi-Fi sign-in,
+   * DOR-3037), so the message's turn runs at the runtime's default level at
+   * most, whoever queued it first.
+   */
+  holdToDefault?: boolean;
 }
 
 /**
@@ -79,7 +85,11 @@ export function editQueuedMessage(
   // confirmed present. Committing the reword before checking the move would
   // answer 404 while silently changing what the message says (DOR-1178).
   let record = edit.move ? store.move(messageId, edit.move) : store.get(messageId);
-  if (record && edit.content !== undefined) record = store.updateContent(messageId, edit.content);
+  if (record && edit.content !== undefined) {
+    record = store.updateContent(messageId, edit.content, {
+      ...(edit.holdToDefault ? { holdToDefault: true } : {}),
+    });
+  }
   if (record) emitQueueUpdate(sessionId);
   return record ? toQueuedMessage(record) : undefined;
 }

@@ -1,3 +1,4 @@
+import { links } from '@dorkos/shared/links';
 import { z } from 'zod';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
@@ -240,6 +241,19 @@ export const serverEnvSchema = z.object({
   //   - the `/api` host guard (middleware/host-guard.ts)
   //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
+  // What this server is (ADR 261015-042933, DOR-2934): `computer` (the default,
+  // a person's own DorkOS) or `hub` (a person's own DorkOS in the cloud). Read
+  // by `lib/server-role.ts` and nowhere else. A hub runs no agents, keeps login
+  // on, takes its owner from provisioning, and refuses
+  // DORKOS_ALLOW_INSECURE_BIND (below the schema).
+  DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
+  // A hub's DorkOS Cloud instance key (DOR-2935), set by Cloud when it boots
+  // the hub image. Required on a hub and read only there, by the assignment
+  // sync (`services/core/hub/hub-assignment-runner.ts`); it is not this
+  // server's account link, so nothing else presents it. Never written to disk,
+  // and removed from `process.env` once read (below the schema), so no child
+  // process (a terminal, an agent, an MCP server) inherits it.
+  DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -369,7 +383,7 @@ export const serverEnvSchema = z.object({
   // production; override for local dev against the site (e.g.
   // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
   // cloud-link client.
-  DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
+  DORKOS_CLOUD_URL: z.string().default(links.site),
   // Origin of the cloud's `/v1` contract (credits, balance, usage, plan,
   // checkout). Unset, it follows a non-default DORKOS_CLOUD_URL, else the
   // cloud's own origin (`resolveCloudApiBaseUrl` in services/core/cloud/cloud-api-origin.ts).
@@ -396,7 +410,7 @@ export const serverEnvSchema = z.object({
   // checked is exactly the string the prompt gets.
   DORKOS_DOCS_BASE_URL: z
     .string()
-    .default('https://dorkos.ai')
+    .default(links.site)
     .transform((value, ctx) => {
       const normalized = parseDocsBaseUrl(value);
       if (normalized === null) {
@@ -421,7 +435,42 @@ export const serverEnvSchema = z.object({
   NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 
-const result = serverEnvSchema.safeParse(process.env);
+/**
+ * Where a hub's instance key waits once this file has read it, for the life of
+ * the process. The key is removed from `process.env` so no child process
+ * inherits it, but the published CLI evaluates this file twice (once in its
+ * own bundle, once in the server bundle it loads), and the second read has to
+ * find it.
+ */
+const HUB_KEY_SLOT = Symbol.for('dorkos.env.hubInstanceKey');
+const keptKeys = globalThis as typeof globalThis & { [HUB_KEY_SLOT]?: string };
+if (process.env.DORKOS_HUB_INSTANCE_KEY) {
+  keptKeys[HUB_KEY_SLOT] = process.env.DORKOS_HUB_INSTANCE_KEY;
+}
+
+const result = serverEnvSchema
+  .superRefine((parsed, ctx) => {
+    // A hub keeps login on and owns no network boundary of its own to vouch
+    // for, so the escape hatch that switches the locality checks off has no
+    // meaning there. Refuse to boot rather than quietly ignore it.
+    // A hub learns who it belongs to only through its instance key, so one
+    // without it could never serve anybody.
+    if (parsed.DORKOS_SERVER_ROLE === 'hub' && !parsed.DORKOS_HUB_INSTANCE_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DORKOS_HUB_INSTANCE_KEY'],
+        message: 'must be set when DORKOS_SERVER_ROLE is hub',
+      });
+    }
+    if (parsed.DORKOS_SERVER_ROLE === 'hub' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DORKOS_ALLOW_INSECURE_BIND'],
+        message: 'must not be set when DORKOS_SERVER_ROLE is hub',
+      });
+    }
+  })
+  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
@@ -431,7 +480,17 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// Read once, above; nothing a child process inherits may carry it.
+delete process.env.DORKOS_HUB_INSTANCE_KEY;
 export type ServerEnv = typeof env;
+
+/**
+ * `DORKOS_HOST` as the environment set it, or `null` when nothing did and the
+ * `localhost` default applies. Set, it decides where DorkOS listens, so the
+ * Wi-Fi access switch stands down and Settings says why (DOR-2930).
+ */
+export const hostFromEnvironment: string | null = process.env.DORKOS_HOST?.trim() || null;
 
 // The marketplace auto-approve environment variable was retired (DOR-501):
 // marketplace installs always need a person's approval now, and nothing reads

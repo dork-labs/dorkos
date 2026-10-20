@@ -25,7 +25,11 @@ import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  refuseFrontDoorChange,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 
 const router = new Hono<ApiEnv>();
@@ -93,6 +97,9 @@ router.post('/start', async (c) => {
     logger.warn('[Tunnel] Blocked start — an agent may not publish this machine');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
+  // The front-door bar (DOR-2969): only the owner, at this computer, publishes it.
+  const frontDoor = refuseFrontDoorChange(caller, 'remote access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
 
   // Return 409 if a tunnel is already open. Asked of the manager rather than of
   // `status.connected`, which goes false for as long as ngrok is reconnecting
@@ -104,12 +111,11 @@ router.post('/start', async (c) => {
   }
 
   // Exposure guard (task 1.3): never open a public tunnel without a real login.
-  // Allowed only when login is enabled AND an owner account exists. The
+  // Allowed only when an owner account exists: every request through the tunnel
+  // is another device, which always signs in as it (ADR 261015-125850). The
   // AUTH_REQUIRED_FOR_EXPOSURE code routes the client into owner-account creation.
   if (!canExpose()) {
-    logger.warn(
-      '[Tunnel] Blocked start — exposing DorkOS requires a login (login disabled or no owner account)'
-    );
+    logger.warn('[Tunnel] Blocked start — exposing DorkOS requires an owner account');
     return c.json(
       { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
       409

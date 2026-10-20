@@ -1,11 +1,11 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 import { createOwnerAuth } from '../auth-instance.js';
 import {
   runAuthEnable,
@@ -135,11 +135,84 @@ describe('auth-commands', () => {
       const owner = db.select().from(user).get();
       expect(owner?.email).toBe(OWNER_EMAIL);
       expect(owner?.role).toBe('owner');
+      // No name yet, so the app asks for one; the email is never stored as it (DOR-2964).
+      expect(owner?.name).toBe('');
 
       // Flag persisted to the real temp config.json.
       const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
       expect(persisted.auth.enabled).toBe(true);
       expect(logs.some((l) => l.includes('Restart'))).toBe(true);
+    });
+
+    it('ends only the sign-in its own sign-up made, through Better Auth', async () => {
+      const context = await auth.$context;
+      const deleteSession = vi.spyOn(context.internalAdapter, 'deleteSession');
+      const signUp = auth.api.signUpEmail.bind(auth.api);
+      let made: string | null | undefined;
+      const watched = {
+        ...auth,
+        api: {
+          ...auth.api,
+          signUpEmail: async (input: Parameters<OwnerAuth['api']['signUpEmail']>[0]) => {
+            const result = await signUp(input);
+            made = result.token;
+            return result;
+          },
+        },
+      } as OwnerAuth;
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth: watched,
+        db,
+        configStore: createFileConfigStore(tmpDir),
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      expect(made).toEqual(expect.any(String));
+      expect(deleteSession).toHaveBeenCalledOnce();
+      expect(deleteSession).toHaveBeenCalledWith(made);
+    });
+
+    it('still turns the password on when ending its sign-in fails, and says so', async () => {
+      const context = await auth.$context;
+      vi.spyOn(context.internalAdapter, 'deleteSession').mockRejectedValueOnce(
+        new Error('database is locked')
+      );
+      const configStore = createFileConfigStore(tmpDir);
+      const captured = captureIo();
+      const code = await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore,
+        prompt: throwingPrompt,
+        io: captured.io,
+      });
+      expect(code).toBe(0);
+      const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
+      expect(persisted.auth.enabled).toBe(true);
+      expect(captured.errors.join('\n')).toContain('database is locked');
+      expect(captured.errors.join('\n')).toContain('next time DorkOS starts');
+    });
+
+    it('keeps no sign-in of its own, so a first browser sign-in is the only one (DOR-3097)', async () => {
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: createFileConfigStore(tmpDir),
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      expect(db.select().from(session).all()).toEqual([]);
+
+      const signInApi = auth as unknown as {
+        api: {
+          signInEmail(input: { body: { email: string; password: string } }): Promise<unknown>;
+        };
+      };
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      expect(db.select().from(session).all()).toHaveLength(1);
     });
 
     it('resolves credentials from stdin when no flags are given (non-TTY)', async () => {
@@ -248,6 +321,66 @@ describe('auth-commands', () => {
       await expect(
         signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } })
       ).rejects.toBeDefined();
+    });
+
+    it('ends every sign-in made before the reset, and says what it cannot cut', async () => {
+      const store = createFileConfigStore(tmpDir);
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: store,
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      const signInApi = auth as unknown as {
+        api: {
+          signInEmail(input: { body: { email: string; password: string } }): Promise<unknown>;
+        };
+      };
+      // Two devices signed in with the old password.
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      expect(db.select().from(session).all().length).toBeGreaterThanOrEqual(2);
+
+      const { io, logs } = captureIo();
+      const code = await runAuthResetPassword({
+        options: { password: NEW_PASSWORD },
+        auth,
+        db,
+        prompt: throwingPrompt,
+        io,
+      });
+
+      expect(code).toBe(0);
+      expect(db.select().from(session).all()).toEqual([]);
+      const output = logs.join('\n');
+      expect(output).toMatch(/Signed out everywhere/);
+      expect(output).toMatch(/up to 5 minutes/);
+      expect(output).toMatch(/API keys keep working/);
+      expect(output).toMatch(/shell history/);
+    });
+
+    it('asks for the password without the shell-history note when --password is left off', async () => {
+      const store = createFileConfigStore(tmpDir);
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: store,
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      const { io, logs } = captureIo();
+      const code = await runAuthResetPassword({
+        options: {},
+        auth,
+        db,
+        prompt: { email: throwingPrompt.email, password: async () => NEW_PASSWORD },
+        io,
+      });
+      expect(code).toBe(0);
+      expect(logs.join('\n')).not.toMatch(/shell history/);
     });
 
     it('rejects a password shorter than the minimum length', async () => {

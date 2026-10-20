@@ -131,8 +131,8 @@ export const DefaultFilesAndCommandsSchema = z
   .object({
     /** `runtimes.defaultTrustStop`: where a new session starts for everyone. */
     stop: PermissionStopSchema.nullable(),
-    /** The stop the chosen preset sets; `null` while no preset is chosen. */
-    presetStop: PermissionStopSchema.nullable(),
+    /** The stop the preset sets (Trusted's while no preset is chosen). */
+    presetStop: PermissionStopSchema,
     /** Per-runtime stops that are set, which beat the global one for that runtime. */
     runtimes: z.array(z.object({ runtime: z.string(), stop: PermissionStopSchema })),
     /** Agents with a Files & commands stop of their own. */

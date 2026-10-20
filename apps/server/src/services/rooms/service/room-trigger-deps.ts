@@ -4,6 +4,7 @@
  *
  * @module server/services/rooms/service/room-trigger-deps
  */
+import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import type {
   AuthorRef,
   RoomAttachment,
@@ -25,6 +26,7 @@ import type { CollectWindow } from '../room-collect.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRunner } from '../room-turn-port.js';
+import type { RoomSeatMover } from '../reseat/seat-mover.js';
 
 /**
  * How a post gets written back into the room.
@@ -125,12 +127,34 @@ export interface RoomTriggerDeps {
   /** The operator's profile name — see `RoomContextDeps.operatorName`. */
   operatorName?(): string | null;
   /**
+   * The server's room seat mover (re-seat): moves a seat whose account ran out,
+   * or nearly did, to another account, and restarts a seat whose transcript
+   * expired. Read per turn, since it is built after the rooms graph. Absent or
+   * `null`: seats never move, exactly as before.
+   */
+  seatMover?(): RoomSeatMover | null;
+  /**
+   * Whether anyone from outside can read this room (a bridged chat, a Wi-Fi
+   * sign-in, an outside author), so a move's line names no account. Absent
+   * reads as yes.
+   */
+  roomHasOutsiders?(roomId: string): boolean;
+  /**
    * What a room's turn is told about the chat it projects, or `null` when
    * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
    * branches on it, because a bridged room's turns are decided by exactly the
    * machinery every other room's are (chats-as-channels §11.1).
    */
   bridgedFraming(roomId: string): BridgedRoomFraming | null;
+  /**
+   * Whether this room is a local copy of a channel in a shared space (DOR-2955). Every message
+   * in one that the space bridge did not vouch for as the owner's is a teammate's, whoever its
+   * author resolves to, or whether it resolves at all (`limits/space-teammates.ts`). Optional so
+   * a hand-built test dependency set still fits; absent answers no.
+   */
+  isSpaceRoom?(roomId: string): boolean;
+  /** The level a person set a poster agent to (DOR-3107); see `RoomServiceDeps.posterLevel`. */
+  posterLevel?(agentPath: string, sessionIds: readonly string[]): Promise<TurnPermissionBound>;
   /**
    * The stored forum-topic name for a batch of entries. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.

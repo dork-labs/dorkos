@@ -55,6 +55,14 @@ export type TurnOrigin =
    */
   | { readonly kind: 'interactive' }
   /**
+   * The owner sent this from their own DorkOS on the web, through the session
+   * relay (`services/core/session-relay/`): a viewer holds the chat's stream
+   * open through the relay, the way `interactive`'s person holds it open here.
+   * The relay is the owner, never an outsider, so the words are the owner's
+   * own typing.
+   */
+  | { readonly kind: 'session-relay' }
+  /**
    * A room turn — unattended, because a room triggers a turn into the dark.
    *
    * `externalAuthor` says whether the message that triggered it came from
@@ -137,12 +145,23 @@ export type TurnOrigin =
   /**
    * Another chat sent this one a message (`chat_send`, a spin-off's report,
    * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
-   * Like `agent-launch`, nobody chose a trust stop for it and nobody is
-   * watching: the row seeds no operator stop. Its turn is held to the sending
-   * chat's level by a ceiling the dispatcher reads at launch, so a message
-   * never carries more power than the chat that sent it.
+   * A chat it OPENS is born at the operator's configured stop, the same as a
+   * room turn by a local author, and every turn a message starts is held to
+   * the sending chat's level by a ceiling the dispatcher reads at launch. So a
+   * message runs at the stricter of the two, and never carries more power than
+   * the chat that sent it. Seeding nothing here used to mean the runtime's
+   * Default, which made that stricter of the two always Default: two Full
+   * autonomy agents talking held each other to asking, and every reply after
+   * the first kept it that way.
    */
-  | { readonly kind: 'chat-message' }
+  | {
+      readonly kind: 'chat-message';
+      /**
+       * The sending turn was marked (it read words DorkOS cannot vouch for),
+       * so the chat it opens inherits nothing (DOR-3107).
+       */
+      readonly marked?: true;
+    }
   /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
@@ -239,6 +258,15 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // one that may also claim a row their own settings change created.
     case 'interactive':
       return 'configured-stop';
+    // The owner on the web, with the chat's stream open through the relay. A
+    // new chat is born at the operator's configured stop, as one started here
+    // is, so the chat is the same chat when its owner comes back to this
+    // computer. What a relayed TURN may do is bounded separately: every one is
+    // held to the runtime's default by the relay (`RELAY_TURN_CEILING`), so it
+    // asks before anything that needs a person (spec `everything-is-a-space`
+    // B2, the operator's option 2).
+    case 'session-relay':
+      return 'configured-stop';
     // Nobody is watching a room turn either, and that is the reason it follows
     // the operator's level rather than the reason it may not (ADR
     // 260822-235802 as amended by 260908-170643, DOR-1917). On a NEW row only
@@ -260,6 +288,18 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // changed the settings of keeps what they chose.
     case 'heartbeat':
       return 'configured-stop-on-insert';
+    // A chat another chat's message opens (spec `spin-off-chats`). The
+    // dispatcher holds every message-started turn to its sender's level, so
+    // the operator's stop here is a ceiling's partner, never a grant on its
+    // own: the turn runs at the stricter of the two. On insert only, so an
+    // existing chat a person set keeps what they chose. A person who later
+    // types into it gets the same stop a chat of their own starts at.
+    //
+    // A message from a MARKED turn seeds nothing (DOR-3107, Security): the
+    // chat it opens never inherits the agent's own level from a turn a
+    // stranger's words reached.
+    case 'chat-message':
+      return origin.marked ? 'none' : 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule
@@ -287,10 +327,6 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // with nothing seeded, like a connector event's.
     //
     // The harness is not a surface anybody ships to.
-    // Another chat's message is the sending chat's work, held to its level by
-    // the launch ceiling; the operator's stop is a promise to a person, and the
-    // sender is not that person.
-    case 'chat-message':
     case 'extension-message':
     case 'schedule':
     case 'relay-binding':
@@ -354,6 +390,7 @@ const BINDING_SENDER_PREFIXES = ['relay.human.', 'relay.webhook.'] as const;
 export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 'participants' {
   switch (kind) {
     case 'interactive':
+    case 'session-relay':
     case 'relay-binding':
       return 'participants';
     case 'room':

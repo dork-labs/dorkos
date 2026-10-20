@@ -23,6 +23,11 @@ vi.mock('@/layers/entities/runtime', () => ({
     mockCapabilitiesForRuntime(runtimeType),
 }));
 
+// Which route this browser came in on: Wi-Fi caps what a turn sent from here
+// may do (DOR-3037).
+const onWifi = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useOnWifi: () => onWifi.value }));
+
 // ---------------------------------------------------------------------------
 // Mock the popover shell only — the dial inside it is the real component, so
 // these tests exercise the same stop resolution the app runs.
@@ -86,6 +91,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockCapabilitiesForRuntime.mockReturnValue(undefined);
+  onWifi.value = false;
 });
 
 // Import after mocks are set up
@@ -367,6 +373,77 @@ function stopLabels(): string[] {
 // ---------------------------------------------------------------------------
 
 describe('PermissionModeItem', () => {
+  describe('on Wi-Fi (DOR-3037)', () => {
+    const WITH_DEFAULT: RuntimeCapabilities = {
+      ...CLAUDE_CAPABILITIES,
+      permissionModes: { ...CLAUDE_CAPABILITIES.permissionModes, default: 'default' },
+    };
+
+    it('shows the runtime default, marked Wi-Fi, for a chat at Full autonomy', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
+      onWifi.value = true;
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
+      );
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
+        'Permissions: Default (Wi-Fi)'
+      );
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveTextContent('Default (Wi-Fi)');
+    });
+
+    it('says just the level at phone width, keeping Wi-Fi in its name', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
+      onWifi.value = true;
+      render(
+        <PermissionModeItem
+          mode="bypassPermissions"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          compact
+        />
+      );
+      const trigger = screen.getByTestId('permission-mode-trigger');
+      expect(trigger).not.toHaveTextContent('(Wi-Fi)');
+      expect(trigger).toHaveTextContent('Default');
+      expect(trigger).toHaveAccessibleName('Permissions: Default (Wi-Fi)');
+    });
+
+    it('shows the default for a chat in Auto too, by the server’s rule', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
+      onWifi.value = true;
+      render(
+        <PermissionModeItem
+          mode="auto"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          modelSupportsAutoMode
+        />
+      );
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
+        'Permissions: Default (Wi-Fi)'
+      );
+    });
+
+    it('leaves a chat already at or below the default as it is', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
+      onWifi.value = true;
+      render(<PermissionModeItem mode="plan" onChangeMode={vi.fn()} runtime="claude-code" />);
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
+        'Permissions: Plan'
+      );
+    });
+
+    it('shows the chat’s own level at this computer', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
+      );
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
+        'Permissions: Bypass permissions'
+      );
+    });
+  });
+
   // Choosing Ask first drops this item from the status line while its picker
   // is open. Unless it closes the picker as it goes, the caller still thinks the
   // picker is open and the "make it the default" offer has nowhere to appear.

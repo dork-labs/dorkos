@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { checkConnectorArguments, connectorValidationSchema } from '../connector-arguments.js';
+import {
+  checkConnectorArguments,
+  connectorValidationSchema,
+  withoutOptionalNulls,
+} from '../connector-arguments.js';
 
 /**
  * Composio's `GMAIL_FETCH_EMAILS` input schema, byte for byte as a live install
@@ -183,5 +187,44 @@ describe('checkConnectorArguments', () => {
     const check = checkConnectorArguments(GMAIL_FETCH_EMAILS, { ['k'.repeat(5_000)]: 1 });
     expect(check.ok).toBe(false);
     expect(check.ok ? '' : ((check as { problem?: string }).problem ?? '')).toHaveLength(200);
+  });
+});
+
+describe('withoutOptionalNulls', () => {
+  /** The shape of Composio's `GMAIL_SEND_EMAIL`: an optional file field beside required text. */
+  const SEND_EMAIL = {
+    type: 'object',
+    properties: {
+      recipient_email: { type: 'string' },
+      body: { type: 'string' },
+      note: { anyOf: [{ type: 'string' }, { type: 'null' }], default: null },
+      attachment: {
+        type: 'object',
+        file_uploadable: true,
+        properties: { name: { type: 'string' }, s3key: { type: 'string' } },
+      },
+    },
+    required: ['recipient_email', 'body'],
+  };
+
+  it('drops a null on an optional field, so the call then passes the check', () => {
+    const sent = { recipient_email: 'a@example.com', body: 'hi', attachment: null };
+    expect(checkConnectorArguments(SEND_EMAIL, sent).ok).toBe(false);
+
+    const cleaned = withoutOptionalNulls(SEND_EMAIL, sent);
+
+    expect(cleaned).toEqual({ recipient_email: 'a@example.com', body: 'hi' });
+    expect(checkConnectorArguments(SEND_EMAIL, cleaned)).toEqual({ ok: true });
+    expect(sent).toHaveProperty('attachment', null);
+  });
+
+  it('returns the very object when there is nothing to drop', () => {
+    const sent = { recipient_email: 'a@example.com', body: 'hi' };
+    expect(withoutOptionalNulls(SEND_EMAIL, sent)).toBe(sent);
+  });
+
+  it('keeps a null the schema accepts, a null on a required field and an undeclared key', () => {
+    const sent = { recipient_email: null, body: 'hi', note: null, stray: null };
+    expect(withoutOptionalNulls(SEND_EMAIL, sent)).toBe(sent);
   });
 });

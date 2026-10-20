@@ -34,7 +34,7 @@ export function TabIdentityIcon({ icon, className }: TabIdentityIconProps) {
           imageUrl={icon.face.imageUrl}
           fallback={icon.face.fallback}
           badge={null}
-          className={cn('size-4 shrink-0 text-[10px]', className)}
+          className={cn('text-3xs size-4 shrink-0', className)}
         />
       );
     case 'extension':

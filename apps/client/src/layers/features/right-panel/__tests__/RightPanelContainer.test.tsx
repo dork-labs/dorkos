@@ -2,9 +2,18 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { RightPanelContribution } from '@/layers/shared/model';
+import { useTerminalResourceChrome, type RightPanelContribution } from '@/layers/shared/model';
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
+  useSessionId: () => [null, vi.fn()],
+}));
+vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/local-browser', () => ({
+  useLocalBrowserState: () => ({ data: undefined }),
+}));
 
 // Spy on the imperative expand so tests can assert the open-floor argument
 // (DOR-388). Hoisted because the vi.mock factory below closes over it.
@@ -196,6 +205,7 @@ function makeContribution(
 
 describe('RightPanelContainer', () => {
   beforeEach(() => {
+    useTerminalResourceChrome.setState({ chrome: null });
     mockRightPanelOpen = false;
     mockActiveRightPanelTab = null;
     mockIsMobile = false;
@@ -206,6 +216,39 @@ describe('RightPanelContainer', () => {
     mockCurrentAgentId = null;
     mockSelectedCwd = null;
     mockExplicitAgentPath = null;
+  });
+
+  it('contains a retained terminal failure without replacing the active document view', () => {
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'canvas';
+    useTerminalResourceChrome.setState({
+      chrome: {
+        scope: ':null',
+        tabs: [{ id: 'shell', title: 'Shell 1' }],
+        activeId: 'shell',
+        activate: vi.fn(),
+        create: vi.fn(),
+        stop: vi.fn(),
+      },
+    });
+    mockContributions = [
+      makeContribution('canvas'),
+      makeContribution('terminal', {
+        component: () => {
+          throw new Error('retained shell failed');
+        },
+      }),
+    ];
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<RightPanelContainer pathname={mockPathname} />);
+      expect(screen.getByTestId('tab-content-canvas')).toBeVisible();
+      expect(
+        screen.getByText('This panel stopped working. Switch tabs to try again.')
+      ).not.toBeVisible();
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
@@ -329,7 +372,9 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer pathname={mockPathname} />);
 
     expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Canvas' })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add view' }), { key: 'Enter' });
+    expect(screen.getByRole('menuitem', { name: 'Canvas' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
   });
 
@@ -347,7 +392,9 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
-    expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add view' }), { key: 'Enter' });
+    expect(screen.getByRole('menuitem', { name: 'Terminal' })).toBeInTheDocument();
   });
 
   // DOR-364: the container threads the active agent id and selected working

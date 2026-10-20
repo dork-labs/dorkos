@@ -19,19 +19,30 @@ import {
   trigger,
   type Desktop,
 } from './desktop.js';
+import {
+  agentRow,
+  reportedAfter,
+  waitUntilAvailable,
+  watchWhileClosed,
+  type SilenceWatch,
+} from './availability.js';
+import { directMessageStep } from './steps-dms.js';
+import { teammateLimitStep } from './steps-teammate-limit.js';
 import { PRIVATE_CHANNEL, type Entry, type Room, type World } from './world.js';
 
 /**
- * Steps 20-23: each member enrolls their own local agent under the
- * Community's agent limit, a private channel admits only its members and
- * their agents, a mention is answered by the scripted test runtime (no model,
- * no spend), and a packaged app restarts mid-journey and resumes.
+ * Steps 20-23b (22b in `steps-dms.ts`, 22c in `steps-teammate-limit.ts`): each member enrolls their own local agent under the
+ * Community's agent limit and the other member's app shows it as available,
+ * a private channel admits only its members and their agents, a mention is
+ * answered by the scripted test runtime (no model, no spend), and a packaged
+ * app restarts mid-journey and resumes, its agent going unreported while it is
+ * closed.
  *
  * @module community-two-desktop/steps-agents
  */
 
 /**
- * Run steps 20-23.
+ * Run steps 20-23b.
  *
  * @param w - The journey so far.
  */
@@ -144,9 +155,10 @@ export async function agentSteps(w: World): Promise<void> {
   }
 
   // `name` is the local registry's name (what the picker offers); `display` is the
-  // name the Community shows once the agent is enrolled.
-  let aAgent: { id: string; name: string; display?: string } | undefined;
-  let bAgent: { id: string; name: string; display?: string } | undefined;
+  // name the Community shows once the agent is enrolled, and `memberId` its member id there.
+  type Agent = { id: string; name: string; display?: string; memberId?: string };
+  let aAgent: Agent | undefined;
+  let bAgent: Agent | undefined;
   // A local run caps each member at one agent (COMMUNITY_AGENTS_PER_OWNER=1) and
   // proves the cap. A held live community keeps its own limit, so a remote run
   // enrolls one agent each and leaves the cap alone.
@@ -187,6 +199,7 @@ export async function agentSteps(w: World): Promise<void> {
           )
           .toBeTruthy();
         agent.display = enrolled!.displayName;
+        agent.memberId = enrolled!.remoteMemberId;
         ctx.madeAgents.push({
           person: local === a ? 'a' : 'b',
           remoteMemberId: enrolled!.remoteMemberId,
@@ -212,7 +225,7 @@ export async function agentSteps(w: World): Promise<void> {
         await productCheck(
           'An agent past the limit is refused with a reason the person can act on',
           'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
-            '(apps/community/src/routes/community/agents.ts), but the DorkOS app answers POST ' +
+            '(apps/server/src/services/spaces/routes/community/agents/enrollment.ts), but the DorkOS app answers POST ' +
             '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Space unavailable." because fail() in ' +
             'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
             'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
@@ -225,7 +238,7 @@ export async function agentSteps(w: World): Promise<void> {
         Object.assign(evidence, {
           limitStatus: status,
           refusal,
-          limitShot: await shot(b.page, '20b-desktop-b-agent-limit-refused'),
+          limitShot: await shot(b.page, '20a-desktop-b-agent-limit-refused'),
         });
       }
       const bActive = (await enrollments(b, refB)).agents.filter((x) => x.active);
@@ -243,6 +256,34 @@ export async function agentSteps(w: World): Promise<void> {
       return evidence;
     }
   );
+
+  await step('20b B’s app shows A’s agent as available in the channel’s member list', async () => {
+    const evidence: Record<string, unknown> = {};
+    // A product contract: a miss (say, a space from before availability) is recorded and the run goes on.
+    await productCheck(
+      'Another member’s app shows an enrolled agent as Available',
+      'DOR-2877/DOR-2878: an app reports its enrolled agents to the space, and each member’s list shows ' +
+        '" · Available". Repro: enroll a local agent in a space channel from one app, then open the ' +
+        'channel’s Members panel in another member’s app: within a minute the agent’s row says Available.',
+      async () => {
+        // The space's answer first, through B's app: A's app reports within about 40 s of the enrollment.
+        const row = await waitUntilAvailable(b, refB, room.roomId, aAgent!.memberId!);
+        Object.assign(evidence, { lastSeenAt: row.lastSeenAt, runsOn: row.runsOn });
+        // Then the words B sees. The list refreshes on its own only once it holds availability.
+        const shown = b.page
+          .getByLabel('Channel members')
+          .locator('span', { hasText: `${aAgent!.display} · Agent` })
+          .first();
+        await expect(async () => {
+          await openAgents(b, refB, room.roomId);
+          await expect(shown).toContainText('· Available', { timeout: 5_000 });
+        }).toPass({ timeout: 30_000 });
+        evidence.shown = (await shown.innerText()).trim();
+      }
+    );
+    evidence.screenshot = await shot(b.page, '20b-desktop-b-sees-a-agent-available');
+    return evidence;
+  });
 
   if (!runs('21')) skip('21');
   else
@@ -355,6 +396,13 @@ export async function agentSteps(w: World): Promise<void> {
     };
   });
 
+  if (runs('22b')) await directMessageStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
+  else skip('22b');
+  if (runs('22c')) await teammateLimitStep(w, { bAgent: bAgent!, openAgents });
+  else skip('22c');
+
+  // What A's app saw while B's app was closed, or why it could not watch; step 23b judges it.
+  let closedWatch: SilenceWatch | Error | undefined;
   await step(
     '23 B’s app restarts mid-journey and resumes: connection, reading position, switcher state',
     async () => {
@@ -372,6 +420,12 @@ export async function agentSteps(w: World): Promise<void> {
       const beforeShot = await shot(b.page, '23a-desktop-b-before-restart');
       const originBefore = b.origin;
       await b.app.close();
+      // While B's app is closed, watch the space through A's app. A failed watch is step 23b's
+      // to report: B relaunches either way, so this step still proves the restart.
+      closedWatch = await watchWhileClosed(a, refA, room.roomId, {
+        silent: bAgent!.memberId!,
+        control: aAgent!.memberId!,
+      }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
       const relaunched = await launchDesktop(ctx.launch, 'person-b', true);
       // Same person, same home: the handle keeps pointing at B, now the relaunched app.
       Object.assign(b, relaunched);
@@ -405,7 +459,7 @@ export async function agentSteps(w: World): Promise<void> {
         timeout: 30_000,
       });
       await expect(feed(b).getByText(anchorText, { exact: true })).toBeInViewport();
-      const resumed = await shot(b.page, '23b-desktop-b-resumed-after-restart');
+      const resumed = await shot(b.page, '23a-desktop-b-resumed-after-restart');
       const after = `After restart from Desktop B ${stamp}`;
       await json(
         `${b.origin}/api/communities/${refB}/rooms/${room.roomId}/entries`,
@@ -426,6 +480,47 @@ export async function agentSteps(w: World): Promise<void> {
         beforeShot,
         resumed,
       };
+    }
+  );
+  await step(
+    '23b while B’s app was closed the space stopped hearing from B’s agent, and hears it again after the restart (an API check: showing Offline takes 6 minutes)',
+    async () => {
+      const evidence: Record<string, unknown> = {};
+      await productCheck(
+        'An app that quits stops reporting its agent, so the space can show it offline',
+        'DOR-2877/DOR-2878: the space reads an agent as offline 360 s after its app last reported it. Repro: ' +
+          'enroll an agent from one app, quit that app, and read GET /api/v1/channels/:id/members?include=availability ' +
+          'as another member: the agent’s lastSeenAt stops moving while other agents’ keeps moving, and once ' +
+          'the app is back it moves again.',
+        async () => {
+          if (!closedWatch || closedWatch instanceof Error)
+            throw closedWatch ?? new Error('step 23 did not watch the space');
+          const watch = closedWatch;
+          Object.assign(evidence, watch);
+          assert.equal(
+            watch.silentLastSeenAtAfter,
+            watch.silentLastSeenAt,
+            'no report for B’s agent while B’s app was closed'
+          );
+          assert(
+            reportedAfter(watch.controlLastSeenAt.after, watch.controlLastSeenAt.before),
+            'A’s agent, still running, was reported in the same window'
+          );
+          // The relaunched app reports again, so the silence came from the closed app, not a broken reporter.
+          await expect
+            .poll(
+              async () =>
+                reportedAfter(
+                  (evidence.reportedAgainAt =
+                    (await agentRow(a, refA, room.roomId, bAgent!.memberId!))?.lastSeenAt ?? null),
+                  watch.silentLastSeenAt
+                ),
+              { timeout: 60_000 }
+            )
+            .toBe(true);
+        }
+      );
+      return evidence;
     }
   );
 }

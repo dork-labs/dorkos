@@ -16,6 +16,7 @@
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/use-update-ready
  */
+import { links, siteUrl } from '@dorkos/shared/links';
 import { useCallback, useMemo } from 'react';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { isNewer, openExternalLink } from '@/layers/shared/lib';
@@ -31,12 +32,12 @@ import { useDesktopUpdater } from '@/layers/features/session-list';
  * answer than a Mac disk image.
  */
 const DOWNLOAD_URL_BY_PLATFORM: Partial<Record<NodeJS.Platform, string>> = {
-  darwin: 'https://dorkos.ai/download/mac',
-  win32: 'https://dorkos.ai/download/windows',
+  darwin: siteUrl('/download/mac'),
+  win32: siteUrl('/download/windows'),
 };
 
 /** The front door, for a desktop platform that has no dedicated download route. */
-const DOWNLOAD_FALLBACK_URL = 'https://dorkos.ai';
+const DOWNLOAD_FALLBACK_URL = links.site;
 
 /**
  * What is waiting, if anything.
@@ -97,7 +98,11 @@ export function useUpdateReady(): UpdateReadiness {
     [dismissed, updateConfig]
   );
 
+  const isHub = config?.serverRole === 'hub';
+
   return useMemo(() => {
+    // A hub is updated for its owner; there is no command for them to run.
+    if (isHub) return { kind: 'none' };
     // Desktop reflects the native updater: `npm update -g dorkos` updates the
     // CLI, not the running `.app`.
     if (isDesktop) {
@@ -118,5 +123,5 @@ export function useUpdateReady(): UpdateReadiness {
     if (!ready) return { kind: 'none' };
 
     return { kind: 'command', latestVersion, dismiss: () => dismiss(latestVersion) };
-  }, [isDesktop, desktopStatus, restart, latestVersion, version, dismissed, dismiss]);
+  }, [isHub, isDesktop, desktopStatus, restart, latestVersion, version, dismissed, dismiss]);
 }

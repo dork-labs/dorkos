@@ -41,7 +41,9 @@ const config: KnipConfig = {
   workspaces: {
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).
-      entry: ['src/layers/shared/ui/**/*.{ts,tsx}'],
+      // The space's own website (server-merge step 7e) is a second entry, built by
+      // vite.space.config.ts.
+      entry: ['src/layers/shared/ui/**/*.{ts,tsx}', 'src/space/main.tsx', 'vite.space.config.ts'],
       ignore: [
         // Per-app Zod env convention (AGENTS.md): present even before any VITE_* var exists.
         'src/env.ts',
@@ -67,13 +69,16 @@ const config: KnipConfig = {
       // Build- and bundle-time deps the Electron build needs but no source file
       // imports statically: the renderer (`@dorkos/client` + `tailwindcss`), the
       // native-module rebuild step (`@electron/rebuild`), and the bundled server
-      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`).
+      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`), and `hono`,
+      // which the extension compiler reads from disk to bundle into extensions
+      // (`apps/server/src/services/extensions/server-bundle/host-hono.ts`).
       ignoreDependencies: [
         '@dorkos/client',
         '@dorkos/db',
         '@dorkos/shared',
         '@electron/rebuild',
         'better-sqlite3',
+        'hono',
         'tailwindcss',
       ],
     },
@@ -87,6 +92,23 @@ const config: KnipConfig = {
       // importer by design — a spec that ran them would turn a benchmark into a
       // gate, which is the opposite of what they are for.
       entry: ['perf/*.ts'],
+    },
+    'apps/space': {
+      // The space's web pages live in apps/client (server-merge step 7e), but the space image
+      // builds them from this package's install, through a node_modules link in its Dockerfile.
+      ignoreDependencies: [
+        '@dork-labs/ui',
+        '@dorkos/icons',
+        '@tailwindcss/vite',
+        '@types/react',
+        '@types/react-dom',
+        '@vitejs/plugin-react',
+        'lucide-react',
+        'react',
+        'react-dom',
+        'tailwindcss',
+        'vite',
+      ],
     },
     'packages/cli': {
       // Bundled into the CLI through `@dorkos/server` (esbuild), or required by
@@ -105,6 +127,9 @@ const config: KnipConfig = {
         '@ngrok/ngrok',
         'conf',
         'express',
+        // Read from disk by the extension compiler, which bundles DorkOS's own
+        // copy into every extension's server half (`server-bundle/host-hono.ts`).
+        'hono',
         'uuid',
       ],
       // No `ignoreUnresolved: [/^\.\.\/server\//]` any more. The CLI still

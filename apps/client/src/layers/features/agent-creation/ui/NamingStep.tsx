@@ -34,8 +34,8 @@ export interface NamingStepProps {
   previewCapabilities: string[];
   /** Return to the gallery (or the arrival card). */
   onBack: () => void;
-  /** Hand off to import when the chosen folder already holds a project. */
-  onImportInstead: () => void;
+  /** Hand off to import when the chosen folder already holds a project; no link when absent (a hub). */
+  onImportInstead?: () => void;
   /** Create the agent. */
   onCreate: () => void;
   /** True while the create request is in flight. */
@@ -160,14 +160,16 @@ export function NamingStep({
               <p className="text-status-warning-fg text-xs font-medium">
                 This folder has a project
               </p>
-              <button
-                type="button"
-                className="text-primary text-xs hover:underline"
-                onClick={onImportInstead}
-                data-testid="import-instead-link"
-              >
-                Import it instead
-              </button>
+              {onImportInstead && (
+                <button
+                  type="button"
+                  className="text-primary text-xs hover:underline"
+                  onClick={onImportInstead}
+                  data-testid="import-instead-link"
+                >
+                  Import it instead
+                </button>
+              )}
             </div>
           )}
         </div>

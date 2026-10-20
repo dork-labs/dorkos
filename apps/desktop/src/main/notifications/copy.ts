@@ -176,6 +176,15 @@ export function notificationDeepLink(dto: NotificationDTO): string {
   // Settings → Extensions, where the extension's card can turn it on: the same
   // destination its inbox row and its arrival banner open.
   if (dto.kind === 'extension.approval') return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
+  // An agent's high-risk action in a connected app still waiting to run: the
+  // Inbox, on its own row, where Cancel is. The same place its phone push and
+  // its inbox row open (spec `trusted-by-default-flip` §5.6).
+  if (
+    dto.kind === 'connector.destructive_pending' &&
+    dto.actions?.some((action) => action.id === 'cancel')
+  ) {
+    return `/?inbox=${encodeURIComponent(dto.subject.id)}`;
+  }
 
   switch (dto.subject.type) {
     case 'session':

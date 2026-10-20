@@ -20,10 +20,10 @@ import { PROTECTIVE_CARRYOVERS } from '../../safe-defaults/protected-state.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
-  OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { OPERATOR_ONLY_STAKES } from '../operator-only-stakes.js';
 import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
@@ -95,12 +95,15 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
       'connectors.rawMcpServers[].url',
+      // Whether the Docs experiment is on (DOR-2993).
+      'docs.enabled',
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.approvedToRun',
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
@@ -152,6 +155,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.sharedAppsAppliedAt',
+      'permissions.sharedAtUpgrade',
+      'permissions.trustedStoresAppliedAt',
       'permissions.upgradeSweptVersion',
       // The record of WHO wrote the display name, not the name itself — which
       // stays agent-writable, because DorkBot saving "call me Dorian" is the
@@ -185,6 +191,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      // An account a person kept out of automatic moves (Re-seat P0).
+      'runtimes.claudeCode.accounts[].noAutoMove',
       // Where each account may work, and which accounts each project may use:
       // they bound where a credential is used (spec flow-multiproject §8).
       'runtimes.claudeCode.accounts[].onlyProjects',
@@ -196,6 +204,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // Which found account folders Settings stops offering: it curates the
       // roster, and its only writer is the dismiss route (claude-account-ui §7.4).
       'runtimes.claudeCode.dismissedFolders',
+      // How many agents may run at once: memory on this machine (DOR-3012).
+      'runtimes.claudeCode.maxWarmProcesses',
       // Not for the reason its neighbours are here: warm sessions are
       // safety-neutral and cost memory. It is the wipe floor — a person who
       // turned it off wanted the gigabyte back, and the Control Center's 'Warm
@@ -224,6 +234,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.opencode.provider',
       'scheduler.maxConcurrentRuns',
       'server.boundary',
+      // Opens DorkOS to every device on the same network (DOR-2930).
+      'server.lanAccess',
+      // Whether this computer may be reached from the web through its hub (DOR-2946).
+      'sessionRelay.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'telemetry.aiMetadata',
@@ -243,8 +257,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].ownerKey',
-      'ui.fullPowerChoice',
-      'ui.fullPowerDecidedAt',
+      'ui.trustNoticeSeenAt',
       // Three uploads.* leaves a person can tighten past the shipped default,
       // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
       'uploads.allowedTypes',
@@ -475,6 +488,16 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
     ).toEqual(['runtimes.claudeCode.accounts[].color', 'runtimes.claudeCode.accounts[].id']);
   });
 
+  it('refuses an agent clearing an account’s keep-out-of-automatic-moves flag (Re-seat P0)', () => {
+    // A person set it; clearing it would let a seat move onto an account the
+    // person reserved, so the flag alone, with nothing else on the row, is caught.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ noAutoMove: false }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].noAutoMove']);
+  });
+
   it('names only the element fields the patch actually writes', () => {
     expect(
       findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
@@ -502,6 +525,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.accounts[].path',
     ]);

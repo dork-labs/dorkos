@@ -49,6 +49,17 @@ export function setCloudV1Fetch(fetch: FetchLike | undefined): void {
 }
 
 /** Build one contract client, with the replacement `fetch` only when one is set. */
+/**
+ * A `/v1` client bound to `token`, at the configured origin. For a credential
+ * that is not this instance's account link: a hub's own key
+ * (`services/core/hub/hub-assignment-runner.ts`).
+ *
+ * @param token - The bearer token every call presents.
+ */
+export function createCloudV1ClientFor(token: string): CloudApiClient {
+  return buildClient(resolveCloudApiBaseUrl(), token);
+}
+
 function buildClient(baseUrl: string, token: string): CloudApiClient {
   return createCloudApiClient({ baseUrl, token, ...(v1Fetch && { fetch: v1Fetch }) });
 }
@@ -183,6 +194,11 @@ export interface CloudIdentity {
    * organization's — or `null` when the service names neither.
    */
   accountKey: string | null;
+  /**
+   * The issuer whose sign-ins carry the account's id as their subject, when
+   * the service names one. Absent otherwise.
+   */
+  issuer?: string;
 }
 
 /**
@@ -199,9 +215,11 @@ export async function resolveCloudIdentity(context: CloudV1Context): Promise<Clo
   }
   const id = session.instanceId;
   const key = session.account?.id ?? session.orgId ?? null;
+  const issuer = session.account?.issuer;
   return {
     instanceId: id && id.trim() !== '' ? id : null,
     accountKey: key && key.trim() !== '' ? key : null,
+    ...(issuer ? { issuer } : {}),
   };
 }
 

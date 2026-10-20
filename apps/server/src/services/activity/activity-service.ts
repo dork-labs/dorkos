@@ -106,28 +106,54 @@ export class ActivityService {
    */
   async emit(event: EmitEvent): Promise<void> {
     try {
-      const now = new Date().toISOString();
-      const row = {
-        id: ulid(),
-        occurredAt: event.occurredAt ?? now,
-        actorType: event.actorType,
-        actorId: event.actorId ?? null,
-        actorLabel: event.actorLabel,
-        category: event.category,
-        eventType: event.eventType,
-        resourceType: event.resourceType ?? null,
-        resourceId: event.resourceId ?? null,
-        resourceLabel: event.resourceLabel ?? null,
-        summary: event.summary,
-        linkPath: event.linkPath ?? null,
-        metadata: event.metadata ? JSON.stringify(event.metadata) : null,
-        createdAt: now,
-      };
-      await this.db.insert(activityEvents).values(row);
-      this.notify({ ...row, metadata: event.metadata ?? null });
+      await this.write(event);
     } catch (err) {
       logger.warn('[Activity] Failed to emit activity event', { err, event: event.eventType });
     }
+  }
+
+  /**
+   * Emit an event and say whether it was saved. Never throws.
+   *
+   * For a caller whose next step depends on the line existing, such as a held
+   * connected-app action that may run only once its record is durable
+   * (`connectors/execution/destructive-hold.ts`). {@link ActivityService.emit}
+   * swallows a failed write, which is right for a feed line and wrong there.
+   *
+   * @param event - Activity event fields to persist
+   * @returns Whether the row was written.
+   */
+  async tryEmit(event: EmitEvent): Promise<boolean> {
+    try {
+      await this.write(event);
+      return true;
+    } catch (err) {
+      logger.warn('[Activity] Failed to save an activity event', { err, event: event.eventType });
+      return false;
+    }
+  }
+
+  /** Insert one row, then tell the observers. Throws when the insert fails. */
+  private async write(event: EmitEvent): Promise<void> {
+    const now = new Date().toISOString();
+    const row = {
+      id: ulid(),
+      occurredAt: event.occurredAt ?? now,
+      actorType: event.actorType,
+      actorId: event.actorId ?? null,
+      actorLabel: event.actorLabel,
+      category: event.category,
+      eventType: event.eventType,
+      resourceType: event.resourceType ?? null,
+      resourceId: event.resourceId ?? null,
+      resourceLabel: event.resourceLabel ?? null,
+      summary: event.summary,
+      linkPath: event.linkPath ?? null,
+      metadata: event.metadata ? JSON.stringify(event.metadata) : null,
+      createdAt: now,
+    };
+    await this.db.insert(activityEvents).values(row);
+    this.notify({ ...row, metadata: event.metadata ?? null });
   }
 
   /**
@@ -192,6 +218,33 @@ export class ActivityService {
       items: items.map(toActivityItem),
       nextCursor: hasMore && items.length > 0 ? items[items.length - 1].occurredAt : null,
     };
+  }
+
+  /**
+   * Every event of these types since a moment, oldest first.
+   *
+   * For a boot step that must find what an earlier process started and never
+   * finished, such as a held connected-app action a restart dropped
+   * (`connectors/execution/destructive-hold.ts`). Not paged: callers ask for
+   * rare event types over a bounded window.
+   *
+   * @param eventTypes - The event types to read.
+   * @param since - ISO 8601 lower bound, exclusive.
+   * @returns The events, oldest first.
+   */
+  async listByEventTypes(eventTypes: readonly string[], since: string): Promise<ActivityItem[]> {
+    if (eventTypes.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(activityEvents)
+      .where(
+        and(
+          inArray(activityEvents.eventType, [...eventTypes]),
+          gt(activityEvents.occurredAt, since)
+        )
+      )
+      .orderBy(activityEvents.occurredAt);
+    return rows.map(toActivityItem);
   }
 
   /**

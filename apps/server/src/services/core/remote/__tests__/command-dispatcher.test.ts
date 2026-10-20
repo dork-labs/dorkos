@@ -125,6 +125,61 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
+  it('acknowledges viewer_open as ignored when no session relay dialer is wired', async () => {
+    const viewer: LeasedCommand = {
+      kind: 'viewer_open',
+      id: 'cmd_viewer',
+      leaseToken: 'lt_v',
+      expiresAt: '2026-11-03T12:02:00Z',
+    };
+    expect(await w.dispatcher.dispatch(viewer, w.link)).toBe('ignored');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
+  it('hands viewer_open to the session relay dialer, with only its expiry, and acks its answer', async () => {
+    const onViewerOpen = vi.fn().mockReturnValue('applied');
+    const dispatcher = new CommandDispatcher({
+      journal: w.journal,
+      tunnelManager: w.tunnel,
+      remoteCredentials: w.credentials,
+      readRemoteState,
+      updateRemoteState,
+      onSettled: () => undefined,
+      relayDialer: { onViewerOpen },
+    });
+    const viewer: LeasedCommand = {
+      kind: 'viewer_open',
+      id: 'cmd_viewer_2',
+      leaseToken: 'lt_v2',
+      expiresAt: '2026-11-03T12:02:00Z',
+    };
+    expect(await dispatcher.dispatch(viewer, w.link)).toBe('applied');
+    expect(onViewerOpen).toHaveBeenCalledWith('2026-11-03T12:02:00Z');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges hub_assignment_changed as a signal only: this build has no hub mode', async () => {
+    const changed: LeasedCommand = {
+      kind: 'hub_assignment_changed',
+      id: 'cmd_hub',
+      leaseToken: 'lt_h',
+    };
+    expect(await w.dispatcher.dispatch(changed, w.link)).toBe('ignored');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
+  it('journals agent_computer_assignment_changed and acknowledges it as a signal only', async () => {
+    const changed: LeasedCommand = {
+      kind: 'agent_computer_assignment_changed',
+      id: 'cmd_agent_computer',
+      leaseToken: 'lt_ac',
+    };
+    expect(await w.dispatcher.dispatch(changed, w.link)).toBe('ignored');
+    // The row the migration's verb check must accept.
+    expect(w.journal.read([changed.id])[0]).toMatchObject({ outcome: 'ignored' });
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
   it('records failed and still acknowledges when the effect throws', async () => {
     w.tunnel.startManaged.mockRejectedValueOnce(new Error('boom'));
     expect(await w.dispatcher.dispatch(open, w.link)).toBe('failed');

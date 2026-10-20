@@ -17,6 +17,10 @@
       "types": "./src/app-route-paths.ts",
       "default": "./dist/app-route-paths.js"
     },
+    "./connector-hold-schemas": {
+      "types": "./src/connector-hold-schemas.ts",
+      "default": "./dist/connector-hold-schemas.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
@@ -57,6 +61,14 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./sign-in-landing": {
+      "types": "./src/sign-in-landing.ts",
+      "default": "./dist/sign-in-landing.js"
+    },
+    "./transport-sign-in-landing": {
+      "types": "./src/transport-sign-in-landing.ts",
+      "default": "./dist/transport-sign-in-landing.js"
+    },
     "./transport-onboarding": {
       "types": "./src/transport-onboarding.ts",
       "default": "./dist/transport-onboarding.js"
@@ -72,6 +84,10 @@
     "./company": {
       "types": "./src/company.ts",
       "default": "./dist/company.js"
+    },
+    "./links": {
+      "types": "./src/links.ts",
+      "default": "./dist/links.js"
     },
     "./bounded-read": {
       "types": "./src/bounded-read.ts",
@@ -124,6 +140,10 @@
     "./telemetry-events": {
       "types": "./src/telemetry-events.ts",
       "default": "./dist/telemetry-events.js"
+    },
+    "./install-ref": {
+      "types": "./src/install-ref.ts",
+      "default": "./dist/install-ref.js"
     },
     "./extension-id": {
       "types": "./src/extension-id.ts",
@@ -228,6 +248,10 @@
     "./community-connections": {
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
+    },
+    "./community-teammates": {
+      "types": "./src/community-teammates.ts",
+      "default": "./dist/community-teammates.js"
     },
     "./community-release-manifest": {
       "types": "./src/community-release-manifest.ts",
@@ -361,6 +385,38 @@
       "types": "./src/stream-socket.ts",
       "default": "./dist/stream-socket.js"
     },
+    "./session-relay": {
+      "types": "./src/session-relay.ts",
+      "default": "./dist/session-relay.js"
+    },
+    "./doc-links": {
+      "types": "./src/doc-links.ts",
+      "default": "./dist/doc-links.js"
+    },
+    "./transport-doc-links": {
+      "types": "./src/transport-doc-links.ts",
+      "default": "./dist/transport-doc-links.js"
+    },
+    "./session-relay-link": {
+      "types": "./src/session-relay-link.ts",
+      "default": "./dist/session-relay-link.js"
+    },
+    "./session-relay-agent-computer": {
+      "types": "./src/session-relay-agent-computer.ts",
+      "default": "./dist/session-relay-agent-computer.js"
+    },
+    "./bounded-json": {
+      "types": "./src/bounded-json.ts",
+      "default": "./dist/bounded-json.js"
+    },
+    "./transport-hub": {
+      "types": "./src/transport-hub.ts",
+      "default": "./dist/transport-hub.js"
+    },
+    "./signed-in-devices": {
+      "types": "./src/signed-in-devices.ts",
+      "default": "./dist/signed-in-devices.js"
+    },
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"
@@ -473,6 +529,10 @@
       "types": "./src/community-views.ts",
       "default": "./dist/community-views.js"
     },
+    "./community-dm-views": {
+      "types": "./src/community-dm-views.ts",
+      "default": "./dist/community-dm-views.js"
+    },
     "./community-navigation": {
       "types": "./src/community-navigation.ts",
       "default": "./dist/community-navigation.js"
@@ -484,6 +544,10 @@
     "./canvas-channel-schemas": {
       "types": "./src/canvas-channel-schemas.ts",
       "default": "./dist/canvas-channel-schemas.js"
+    },
+    "./canvas-doc-routes": {
+      "types": "./src/canvas-doc-routes.ts",
+      "default": "./dist/canvas-doc-routes.js"
     },
     "./canvas-doc-frame-wire": {
       "types": "./src/canvas-doc-frame-wire.ts",
@@ -516,6 +580,22 @@
     "./transport-computers": {
       "types": "./src/transport-computers.ts",
       "default": "./dist/transport-computers.js"
+    },
+    "./local-browser": {
+      "types": "./src/local-browser.ts",
+      "default": "./dist/local-browser.js"
+    },
+    "./transport-local-browser": {
+      "types": "./src/transport-local-browser.ts",
+      "default": "./dist/transport-local-browser.js"
+    },
+    "./file-save/recovery": {
+      "types": "./src/file-save/recovery.ts",
+      "default": "./dist/file-save/recovery.js"
+    },
+    "./space-page": {
+      "types": "./src/space-page/index.ts",
+      "default": "./dist/space-page/index.js"
     }
   },
   "scripts": {

@@ -31,7 +31,7 @@ interface RingMeasure {
 
 /**
  * Wait until no CSS transition or animation is running, bounded so a stuck one fails the test
- * instead of hanging it (the same rule as apps/community/browser-tests/contrast.ts).
+ * instead of hanging it (the same rule as apps/space/browser-tests/contrast.ts).
  */
 async function settle(page: Page) {
   await page.waitForFunction(
@@ -43,7 +43,7 @@ async function settle(page: Page) {
 
 /**
  * Measure a control's focus ring from its computed colours. The canvas read-back and the
- * compositing are the ones apps/community/browser-tests/contrast.ts uses (DOR-2567); the ring
+ * compositing are the ones apps/space/browser-tests/contrast.ts uses (DOR-2567); the ring
  * lookup differs, because a ring with an offset is two box-shadow layers — the gap in the page
  * colour, then the ring spread past it — so the widest visible layer is the ring and the
  * next one in is the gap.

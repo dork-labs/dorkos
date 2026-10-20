@@ -35,6 +35,7 @@ import {
   contractSuite,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 
 /** No ngrok token reaches any server here, whatever this shell exports. */
@@ -893,25 +894,61 @@ const PROXIED_HOST = 'dorkos.contract.example';
 
 describe('contract: remote access, reached by a name that is not this computer', () => {
   let server: ComposedServer | undefined;
+  let cookie: Record<string, string>;
+  const OWNER = {
+    email: `owner-${randomUUID().slice(0, 8)}@dork.test`,
+    password: 'a-long-password-1',
+  };
   beforeAll(async () => {
     server = await bootComposedServer({ ...BASE_ENV, DORKOS_TRUSTED_HOSTS: PROXIED_HOST });
+    // An owner exists, and this computer still asks for no password: login is
+    // "off" in the old sense, yet another device must sign in as that owner.
+    const origin = { origin: server.baseUrl };
+    await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // Signed in there, since a sign-in works only where it was made (DOR-2969).
+    cookie = await signInAt(server.baseUrl, PROXIED_HOST, OWNER);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();
   }, 30_000);
 
   const remote = { host: PROXIED_HOST };
+  const signedInRemote = () => ({ ...cookie, ...remote, origin: `http://${PROXIED_HOST}` });
+  const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
   const NEEDS_THIS_COMPUTER = {
     error: 'Remote access can only be changed on the computer DorkOS runs on.',
     code: 'REMOTE_SETUP_NEEDS_THIS_COMPUTER',
   };
 
-  it('refuses every remote access change but the close', async () => {
+  it('asks another device with no session to sign in, with the this-computer password off', async () => {
+    // ADR 261015-125850 rule 3: other devices always need a person session.
+    for (const [method, path] of [
+      ['POST', '/api/remote-access/enrolment'],
+      ['POST', '/api/remote-access/mode'],
+      ['POST', '/api/remote-access/withdraw'],
+      ['POST', '/api/remote-access/close'],
+      ['GET', '/api/remote-access/report'],
+      ['GET', '/api/tunnel/status'],
+      ['GET', '/api/cloud/status'],
+      ['POST', '/api/tunnel/start'],
+      ['POST', '/api/tunnel/stop'],
+    ] as const) {
+      await check(server, {
+        method,
+        path,
+        headers: remote,
+        ...(method === 'POST' ? { body: { mode: 'off' } } : {}),
+        expect: { status: 401, headers: JSON_TYPE, schema: AUTH_REQUIRED },
+      });
+    }
+  });
+
+  it('refuses the owner signed in at another name every remote access change but the close', async () => {
     for (const action of ['enrolment', 'mode', 'withdraw']) {
       await check(server, {
         method: 'POST',
         path: `/api/remote-access/${action}`,
-        headers: remote,
+        headers: signedInRemote(),
         body: { mode: 'off' },
         expect: { status: 403, headers: JSON_TYPE, body: NEEDS_THIS_COMPUTER },
       });
@@ -919,37 +956,31 @@ describe('contract: remote access, reached by a name that is not this computer',
     await check(server, {
       method: 'POST',
       path: '/api/remote-access/close',
-      headers: remote,
+      headers: signedInRemote(),
       expect: { status: 200, schema: REPORT },
     });
   });
 
-  it('answers the reads, and the tunnel’s start and stop as on this computer', async () => {
+  it('answers the owner signed in at another name the reads, and the tunnel’s stop', async () => {
     await check(server, {
       path: '/api/remote-access/report',
-      headers: remote,
+      headers: signedInRemote(),
       expect: { status: 200, schema: REPORT },
     });
     await check(server, {
       path: '/api/tunnel/status',
-      headers: remote,
+      headers: signedInRemote(),
       expect: { status: 200, schema: TUNNEL_STATUS },
     });
     await check(server, {
       path: '/api/cloud/status',
-      headers: remote,
+      headers: signedInRemote(),
       expect: { status: 200, schema: UNLINKED_SUMMARY },
     });
     await check(server, {
       method: 'POST',
-      path: '/api/tunnel/start',
-      headers: remote,
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
-    });
-    await check(server, {
-      method: 'POST',
       path: '/api/tunnel/stop',
-      headers: remote,
+      headers: signedInRemote(),
       expect: { status: 200, body: { ok: true } },
     });
   });

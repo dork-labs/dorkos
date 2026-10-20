@@ -81,6 +81,41 @@ function roomsCapability(id: `${string}.${string}`, tier: 'observe' | 'act' | 'd
   });
 }
 
+/** A destructive Rooms probe that puts someone else's code where DorkOS runs it. */
+const THIRD_PARTY = defineCapability({
+  id: 'probe.install_code',
+  title: 'Probe installing code',
+  description: 'A probe capability that runs third-party code.',
+  tier: 'destructive',
+  area: 'rooms',
+  consent: 'third-party-code',
+  approvalDisplayFields: ['name'],
+  input: z.object({ name: z.string() }),
+  output: z.unknown(),
+  surfaces: {},
+  invoke: async () => {
+    ran.push('probe.install_code');
+    return { ok: true };
+  },
+});
+
+/** An `act` probe in the Permissions area, standing in for `permissions.change`. */
+const CHANGE_PERMISSION = defineCapability({
+  id: 'probe.change_permission',
+  title: 'Probe changing a permission',
+  description: 'A probe capability in the Permissions area.',
+  tier: 'act',
+  area: 'permissions',
+  approvalDisplayFields: ['name'],
+  input: z.object({ name: z.string() }),
+  output: z.unknown(),
+  surfaces: {},
+  invoke: async () => {
+    ran.push('probe.change_permission');
+    return { ok: true };
+  },
+});
+
 /** A capability with no area, whose tier alone decides. */
 const NO_AREA = defineCapability({
   id: 'probe.plain',
@@ -108,7 +143,9 @@ const DOMAINS = [
     capabilities: [
       roomsCapability('probe.read', 'observe'),
       roomsCapability('probe.destroy', 'destructive'),
+      THIRD_PARTY,
       NO_AREA,
+      CHANGE_PERMISSION,
     ],
   },
 ];
@@ -203,13 +240,10 @@ describe('the permission decision at the tier gate', () => {
       expect(await viaToolGate()).toBe('ran');
     });
 
-    it('keeps an undecided install as it was: create Blocked, merge runs', async () => {
+    it('resolves an undecided install as Trusted: create and merge both run', async () => {
       preset = null;
 
-      expect(await viaRegistry('rooms.create')).toMatchObject({
-        reason: 'permission_blocked',
-        approvable: true,
-      });
+      expect(await viaRegistry('rooms.create')).toBe('ran');
       expect(await viaRegistry('rooms.merge')).toBe('ran');
     });
   });
@@ -354,6 +388,17 @@ describe('the permission decision at the tier gate', () => {
     });
   });
 
+  describe('a card that could raise permissions (DOR-3037)', () => {
+    it('is marked when the call reaches the Permissions area, and not otherwise', async () => {
+      agent = { areas: { rooms: 'ask', permissions: 'ask' } };
+      preset = 'full';
+      const raising = (await viaRegistry('probe.change_permission')) as { approvalId: string };
+      const plain = (await viaRegistry('rooms.create')) as { approvalId: string };
+      expect(approvals.answerScope(raising.approvalId)?.raisesPermissions).toBe(true);
+      expect(approvals.answerScope(plain.approvalId)?.raisesPermissions).toBe(false);
+    });
+  });
+
   describe('Allowed', () => {
     it('runs', async () => {
       agent = { areas: { rooms: 'allowed' } };
@@ -361,9 +406,27 @@ describe('the permission decision at the tier gate', () => {
       expect(await viaToolGate()).toBe('ran');
     });
 
-    it('still asks for a destructive action allowed only at the area level', async () => {
+    it('runs a destructive action allowed at the area level, and says so in the audit', async () => {
+      // ADR 261006-225605: trusted by default, with every action recorded.
       agent = { areas: { rooms: 'allowed' } };
-      expect(await viaRegistry('probe.destroy')).toMatchObject({ status: 'approval_required' });
+      expect(await viaRegistry('probe.destroy')).toBe('ran');
+      expect(attempts.find((a) => a.decision.outcome === 'allowed')?.decision).toMatchObject({
+        outcome: 'allowed',
+        approval: { via: 'permission', source: 'agent-area' },
+      });
+    });
+
+    it("still asks for someone else's code allowed only at the area level", async () => {
+      agent = { areas: { rooms: 'allowed' } };
+      expect(await viaRegistry('probe.install_code')).toMatchObject({
+        status: 'approval_required',
+      });
+      expect(ran).toEqual([]);
+    });
+
+    it("runs someone else's code a person allowed at the action level", async () => {
+      agent = { actions: { 'probe.install_code': 'allowed' } };
+      expect(await viaRegistry('probe.install_code')).toBe('ran');
     });
 
     it('runs a destructive action allowed at the action level, and says so in the audit', async () => {
@@ -403,11 +466,12 @@ describe('the permission decision at the tier gate', () => {
 
     it('gives an unidentified caller the defaults, never an agent layer', async () => {
       agent = { areas: { rooms: 'allowed' } };
-      preset = null;
+      preset = 'careful';
 
       expect(await viaRegistry('rooms.create', null)).toMatchObject({
-        reason: 'permission_blocked',
+        status: 'approval_required',
       });
+      expect(ran).toEqual([]);
     });
   });
 
@@ -451,6 +515,27 @@ describe('the permission decision at the tier gate', () => {
       })!;
       await registry.invoke('rooms.create', INPUT, { trusted });
       expect(ran).toEqual(['rooms.create']);
+    });
+  });
+
+  describe('a caller DorkOS cannot identify, under Trusted (DOR-2739)', () => {
+    beforeEach(() => {
+      preset = 'trusted';
+    });
+
+    it('asks before it changes a permission, and our own agent runs it', async () => {
+      const asked = await viaRegistry('probe.change_permission', null);
+      expect(asked).not.toBe('ran');
+      expect(asked).toMatchObject({ status: 'approval_required' });
+      expect(ran).toEqual([]);
+      expect(await viaRegistry('probe.change_permission')).toBe('ran');
+    });
+
+    it('asks before a destructive action our own agent runs unasked', async () => {
+      expect(await viaRegistry('probe.destroy', null)).toMatchObject({
+        status: 'approval_required',
+      });
+      expect(await viaRegistry('probe.destroy')).toBe('ran');
     });
   });
 });

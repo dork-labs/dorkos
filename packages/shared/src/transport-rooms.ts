@@ -36,7 +36,11 @@ import type {
   CanvasEditingResponse,
   CanvasThreadResponse,
   CreateRoomRequest,
+  DirectChat,
+  OpenDirectChatRequest,
   HaltRoomResponse,
+  ReseatOptions,
+  ReseatSeatRequest,
   PromoteHoldResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
@@ -433,6 +437,30 @@ export interface RoomTransport {
    */
   haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse>;
   /**
+   * Where an agent's seat in this room could move: the account it runs on now
+   * and every Claude account it may move to, best first, each saying whether it
+   * can take the agent now (re-seat). Only a person may ask.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   */
+  getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions>;
+  /**
+   * Move an agent's seat in this room to another account, so it keeps
+   * answering there. Its next turn starts fresh on that account with a summary
+   * of where it was. Only a person may.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   * @param request - The account to move to; none for the best one.
+   * @returns The seat's new session.
+   */
+  reseatRoomAgent(
+    id: string,
+    authorId: string,
+    request: ReseatSeatRequest
+  ): Promise<{ sessionId: string }>;
+  /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.
    *
@@ -464,6 +492,20 @@ export interface RoomTransport {
    * @param id - The room to ask about.
    */
   listRoomSessions(id: string): Promise<RoomSessionsResponse>;
+  /**
+   * Open an agent's Direct chat, its standing 1:1 with the person (rule S12):
+   * by agent, or by a direct message holding only the person and one agent.
+   * Made the first time anything asks.
+   *
+   * @param req - The agent's Mesh id, or the room.
+   */
+  openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat>;
+  /**
+   * The Direct chat this session is, or `null` when it is not one.
+   *
+   * @param sessionId - The session on screen.
+   */
+  findDirectChat(sessionId: string): Promise<DirectChat | null>;
   /**
    * Put one emoji on one entry, or take it back.
    *

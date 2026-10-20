@@ -161,4 +161,59 @@ test.describe('PIP on a phone — 390×844 @smoke', () => {
     const panels = await rectOf(page.getByTestId('mobile-tab-panels'));
     expect(panels.bottom).toBeLessThanOrEqual(miniBox.top + 1);
   });
+  test('sheet controls are thumb sized and stay above a visual-only keyboard', async ({ page }) => {
+    await page.goto('/?pip=demo');
+    const sheet = page.locator('[data-slot="pip-sheet"]');
+    await expect(sheet).toBeVisible();
+    for (const name of ['Close', 'Minimize']) {
+      const box = await sheet.getByRole('button', { name, exact: true }).boundingBox();
+      expect(box?.height, `${name} must be thumb sized`).toBeGreaterThanOrEqual(44);
+      expect(box?.width, `${name} must be thumb sized`).toBeGreaterThanOrEqual(44);
+    }
+    // Simulate the browser contract: the software keyboard shrinks only the
+    // visual viewport. This does not claim to open a real OS keyboard in CI.
+    await page.evaluate(() => {
+      Object.defineProperty(window.visualViewport!, 'height', { value: 500, configurable: true });
+      window.visualViewport!.dispatchEvent(new Event('resize'));
+    });
+    await expect.poll(async () => (await rectOf(sheet)).top).toBeGreaterThanOrEqual(249);
+    await expect.poll(async () => (await rectOf(sheet)).top).toBeLessThanOrEqual(251);
+    const minimizeBox = await sheet
+      .getByRole('button', { name: 'Minimize', exact: true })
+      .boundingBox();
+    expect(minimizeBox!.y + minimizeBox!.height).toBeLessThanOrEqual(500);
+    const scrollBody = sheet.locator('[data-slot="pip-sheet-content"]');
+    await expect.poll(async () => (await rectOf(scrollBody)).bottom).toBeLessThanOrEqual(501);
+    // A tall embedded view must scroll its footer into the visible peek area.
+    await scrollBody.evaluate((element) => {
+      const tall = document.createElement('div');
+      tall.style.height = '1200px';
+      const footer = document.createElement('button');
+      footer.textContent = 'Fixture footer action';
+      footer.onclick = () => footer.setAttribute('data-activated', 'true');
+      element.append(tall, footer);
+    });
+    const footer = sheet.getByRole('button', { name: 'Fixture footer action', exact: true });
+    await footer.click();
+    await expect(footer).toHaveAttribute('data-activated', 'true');
+    const footerBox = await footer.boundingBox();
+    expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(500);
+
+    await page.evaluate(() => {
+      delete (window.visualViewport as unknown as { height?: number }).height;
+      window.visualViewport!.dispatchEvent(new Event('resize'));
+    });
+    await expect
+      .poll(async () => (await rectOf(sheet)).top)
+      .toBeGreaterThanOrEqual(PHONE.height / 2 - 1);
+    await expect
+      .poll(async () => (await rectOf(sheet)).top)
+      .toBeLessThanOrEqual(PHONE.height / 2 + 1);
+    await sheet.getByRole('button', { name: 'Minimize', exact: true }).click();
+    const close = await miniBar(page)
+      .getByRole('button', { name: 'Close', exact: true })
+      .boundingBox();
+    expect(close?.height).toBeGreaterThanOrEqual(44);
+    expect(close?.width).toBeGreaterThanOrEqual(44);
+  });
 });

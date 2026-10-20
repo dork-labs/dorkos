@@ -97,6 +97,28 @@ describe('RightPanelHeader', () => {
     mockActiveRightPanelTab = 'agent';
   });
 
+  it('offers no close control on a permanent tab, and keeps it on the others (FB-60)', () => {
+    const onCloseView = vi.fn();
+    const profile = { ...makeContribution('agent', { title: 'Profile' }), permanent: true };
+    const canvas = makeContribution('canvas', { title: 'Canvas' });
+    const { rerender } = render(
+      <TooltipProvider>
+        <RightPanelHeader contributions={[profile, canvas]} onCloseView={onCloseView} />
+      </TooltipProvider>
+    );
+    expect(screen.queryByRole('button', { name: 'Close Profile view' })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Profile' }), { key: 'Delete' });
+    expect(onCloseView).not.toHaveBeenCalled();
+
+    mockActiveRightPanelTab = 'canvas';
+    rerender(
+      <TooltipProvider>
+        <RightPanelHeader contributions={[profile, canvas]} onCloseView={onCloseView} />
+      </TooltipProvider>
+    );
+    expect(screen.getByRole('button', { name: 'Close Canvas view' })).toBeInTheDocument();
+  });
+
   it('renders one tab per contribution when there are 2+', () => {
     renderHeader([
       makeContribution('agent', { title: 'Profile' }),

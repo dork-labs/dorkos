@@ -82,7 +82,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
    - Messaging someone in a different space needs a space you share, or an invite they accept.
 9. **Local first, cloud optional.**
    - Running DorkOS locally is a one-person space. It is free forever, with no required account or fee, and you can leave the cloud at any time.
-   - A space is just a DorkOS server with a public web address. Local and hosted are the same program and the same app.
+   - A space is just a DorkOS server with a public web address. Local and hosted are the same program and the same app. (Refined 2026-10-15 by ADR `261015-042933`: everything is a space, and a server holds many, private ones included.)
    - Anything made locally can be pushed to another DorkOS: DorkOS Cloud, or one you host yourself. Pushing works like git remotes: publish a page, sync a doc, move an agent.
    - Only one place runs an agent at a time.
 10. **Publishing.** Free for everyone with a free account, within limits (size, storage, how long it stays up). Free pages are public and searchable. Private, link-only and members-only pages, and bigger limits, are an upgrade. Pages live on their own separate web address, with abuse controls.
@@ -135,6 +135,8 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
 - Cloud computers are not built, and they are not needed for launch.
 - Apart from the official community space, every space feature sits behind an experimental switch.
 - The rewrite takes about one to two weeks of doc, site and README work.
+
+**Changed 2026-10-15** (ADR `261015-042933`, spec `specs/everything-is-a-space/`): launch moves to late January 2027 (then to early February 2027, ADR `261015-125850`), with the Community Space soft launch kept on December 8, 2026. Cloud agent computers, web sign-up with the full app on the web, and team spaces on DorkOS Cloud are now launch scope; creating team spaces comes out from behind the experimental switch at the launch.
 
 ## Before launch: trust steps 1 to 3
 

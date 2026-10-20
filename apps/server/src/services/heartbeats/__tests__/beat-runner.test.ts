@@ -46,9 +46,10 @@ let store: HeartbeatStore;
 let changes: Change[];
 let heartbeatFile: HeartbeatFileRead;
 let runtime: FakeAgentRuntime;
-let launchResults: Array<BeatLaunchResult['status']>;
+let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start'>;
 let launches: string[];
 let launchRuntimes: string[];
+let launchCeilings: unknown[];
 let accepted: Array<{ raises: number }>;
 let failingRaises: number;
 let failingErrors: Array<string | undefined>;
@@ -77,10 +78,16 @@ function launcher(): BeatTurnLauncher {
     async launch(request) {
       launches.push(request.content);
       launchRuntimes.push(request.runtime);
+      launchCeilings.push(request.permissionCeiling);
       currentSession = request.sessionId;
       const status = launchResults.shift() ?? 'started';
       if (status === 'cap-full') return { status: 'cap-full' };
       if (status === 'refused') return { status: 'refused', message: 'no' };
+      // Started, then refused before the agent saw it (DOR-2994).
+      if (status === 'refused-at-start') {
+        queueMicrotask(() => request.onSettled('failed', 'warm-ceiling'));
+        return { status: 'started', sessionId: request.sessionId };
+      }
       void (async () => {
         let failed = false;
         try {
@@ -199,6 +206,7 @@ beforeEach(() => {
   launchResults = [];
   launches = [];
   launchRuntimes = [];
+  launchCeilings = [];
   accepted = [];
   failingRaises = 0;
   failingErrors = [];
@@ -225,6 +233,44 @@ afterEach(() => {
 async function settle(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
+
+// DOR-3036: the beat reads the agent's open promises, so one made in a marked turn marks the beat.
+describe('a beat that reads a promise made in a marked turn', () => {
+  it('carries the promise’s marks as its ceiling, and an unmarked agent’s beat carries none', async () => {
+    changes = [LOCAL_MESSAGE];
+    const marks = { outsider: true as const, teammate: [{ roomId: 'space', authorId: 'priya' }] };
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const marked = runner({ commitments: { list: () => [], openMarks: () => marks } });
+    const done = marked.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([
+      ['runtime-default', { asks: 'always', reach: 'read', teammate: marks.teammate }],
+    ]);
+  });
+
+  it('carries the marks of a gathered post a marked turn wrote', async () => {
+    const teammate = [{ roomId: 'space', authorId: 'priya' }];
+    changes = [{ ...LOCAL_MESSAGE, marks: { outsider: true, teammate } }];
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const done = runner().wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([
+      ['runtime-default', { asks: 'always', reach: 'read', teammate }],
+    ]);
+  });
+
+  it('runs without a ceiling when no open promise is marked', async () => {
+    changes = [LOCAL_MESSAGE];
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const plain = runner({ commitments: { list: () => [], openMarks: () => ({}) } });
+    const done = plain.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([undefined]);
+  });
+});
 
 describe('a quiet beat', () => {
   it('runs no model and writes one record row', async () => {
@@ -463,6 +509,22 @@ describe('failures and refusals', () => {
     expect(launches).toHaveLength(4);
     expect(beats().every((b) => b.outcome === 'refused')).toBe(true);
     expect(rows('heartbeat.beat').every((row) => row.outcome === 'refused')).toBe(true);
+    r.stop();
+  });
+
+  it('records a turn the runtime refused before the agent saw it as refused, never as the agent failing (DOR-2994)', async () => {
+    changes = [LOCAL_MESSAGE];
+    launchResults = ['refused-at-start', 'refused-at-start', 'refused-at-start'];
+    const r = runner();
+    await r.start();
+    for (let i = 0; i < 3; i += 1) {
+      await r.wake(juno.id, { wake: 'event:test' });
+      await settle();
+    }
+    expect(beats().length).toBeGreaterThan(0);
+    expect(beats().every((b) => b.outcome === 'refused')).toBe(true);
+    expect(store.getState(juno.id)?.consecutiveFailures ?? 0).toBe(0);
+    expect(failingRaises).toBe(0);
     r.stop();
   });
 });

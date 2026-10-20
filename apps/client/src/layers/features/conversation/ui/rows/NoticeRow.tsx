@@ -16,6 +16,7 @@
  */
 import {
   Archive,
+  ArrowLeftRight,
   CircleSlash,
   CircleStop,
   Gauge,
@@ -129,6 +130,9 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // An agent put the channel away. Cool: nothing is broken and nothing is lost —
   // archiving is a flag the person can undo.
   room_archived: { Icon: Archive },
+  // An agent's seat moved to another account or a fresh session and it kept
+  // going. Cool: nothing is broken and nobody needs to act.
+  agent_reseated: { Icon: ArrowLeftRight },
   // The conversation is pinned to a program that is not running here, so no
   // answer comes until somebody turns it back on or re-adds the agent. Warm,
   // and a plug rather than `agent_gone`'s missing-person mark: the agent is

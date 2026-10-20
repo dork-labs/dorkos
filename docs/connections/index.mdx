@@ -54,7 +54,9 @@ Read where the service will keep your login access. Add a label such as “work�
 
 ### Choose who can use it
 
-Once you're signed in, the same window asks **Who can use it?** Choose **Only agents I pick** and tick the agents you want, or **Every agent**, which includes agents you add later. Then pick **Read**, or **Read and write** where the app offers it (Gmail and Google Calendar today), and save. Before you save, the card tells you if an agent you unticked will lose access, or if every agent could send, change or delete things as you. This works the same for apps connected through your DorkOS account.
+Once you're signed in, the same window asks **Who can use it?** Choose **Only agents you pick** and tick the agents you want, or **Every agent**, which includes agents you add later. Then pick **Read**, or **Read and write** where the app offers it (Gmail and Google Calendar today), and save. Before you save, the card tells you if an agent you unticked will lose access, or if every agent could send, change or delete things as you. This works the same for apps connected through your DorkOS account.
+
+On **Trusted**, the default [permissions preset](/docs/guides/permissions#presets), a new app is already shared with **Every agent** when this question appears: at **Read and write**, or **Read** where that is all the app offers. Saving changes it; skipping keeps it shared. On **Careful**, nobody can use a new app until you choose. Signing in to an app again never changes who can use it.
 
 You can skip this and come back later: click the app's row in **Yours**, and the same question is at the top of its side panel. For exact actions, open **More** and choose **Exact actions per agent**. To stop sharing with every agent, open **More** and choose **Stop sharing with every agent**. OAuth scopes decide which service actions are available; your choice decides which of those actions an agent may run. Notification access is a separate choice. A level keeps its meaning as the app changes: agents on **Read** get the app's new ways to read, and lose an action that starts changing things, the next time DorkOS reads the app's actions (every 12 hours, right after DorkOS is updated, and whenever you open **Who can use it?**). This works the same for **Every agent**. Exact actions stay as you picked them, and a new or changed action stays off for them until you choose it.
 
@@ -63,6 +65,26 @@ You can skip this and come back later: click the app's row in **Yours**, and the
 </Steps>
 
 You can connect several accounts for one service: each account is its own row. To add another, open the app's side panel, open **More** and choose **Connect another** account (for Gmail, **Connect another Gmail account**). Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
+
+## High-risk actions wait 60 seconds
+
+Some actions can't be taken back, like deleting an email or sending one. On **Trusted**, when one of your agents takes such an action from a chat where it works on its own, DorkOS holds it for 60 seconds before it runs.
+
+While it waits, everyone is told. A notification appears in the Inbox (the bell) in every open DorkOS window, and on your phone if you turned on phone alerts. It says which agent, which action and which app, for example "Scout will run “Delete message” in Gmail". Clicking the phone or desktop alert opens the Inbox on that notification, where **Cancel** is.
+
+- **Cancel** stops it. The action never runs, and the agent is told who cancelled it.
+- Any other agent can cancel it too. The agent that asked can't cancel its own.
+- Stopping the chat cancels it.
+- When the minute is up, DorkOS checks again. If the action no longer qualifies to run without asking you (say you switched to **Careful**, or the agent was switched off), it doesn't run. You can still cancel while it checks.
+- If DorkOS restarts while it waits, the action is dropped and never runs. The notification says so.
+- If DorkOS restarts just as the action is being sent, it may have run. The notification says so and names the app to check.
+- If nobody cancels, it runs exactly as it was asked, on the same account, and a second notification says it ran.
+- If DorkOS can't show the notification or record the action, there is no wait: you get an approval card instead.
+- If DorkOS can't confirm the outcome, the second notification says it may have run and names the app to check.
+
+This is a cancel, not an undo. Once an action has run, DorkOS can't take it back.
+
+Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone outside your team started the chat (a Telegram or Slack message, say), and when the request doesn't come from an agent's chat.
 
 ## Agents can ask, but you decide
 

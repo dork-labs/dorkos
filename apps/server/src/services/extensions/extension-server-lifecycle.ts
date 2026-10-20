@@ -6,7 +6,9 @@
  * collaborator to {@link ExtensionManager} — never called directly by routes.
  *
  * Two runtimes, chosen by the manifest after the approval gate and the
- * compile: an in-process server half is `require()`d here (ADR 0213); one
+ * compile: an in-process server half is loaded here (ADR 0213), with the
+ * same injected `require` an isolated one gets, so the modules DorkOS
+ * provides resolve wherever the bundle sits on disk; one
  * that asks to run separately (`runtime: "subprocess"`, DOR-2686) runs in its
  * own child process (`isolation/`), with a router that forwards to it, and is
  * restarted on a backoff when it stops on its own. Nothing here ever ends a
@@ -16,12 +18,11 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { createRequire } from 'node:module';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyHandler } from './http/extension-proxy.js';
-import { bridgeExpressRouter } from './http/express-bridge.js';
+import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
@@ -49,11 +50,10 @@ import {
   type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
+import { loadInProcessBundle } from './server-bundle/load-in-process.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
-
-const require = createRequire(import.meta.url);
 
 /**
  * Everything the running instance of an extension was built from, as one
@@ -331,7 +331,7 @@ export class ExtensionServerLifecycle {
 
     // A person approves an extension once before its code may run in this process
     // (DOR-516). Checked before compiling and before any mount, and it covers the
-    // `dataProxy`-only branch below as well as the `require()` of a server entry:
+    // `dataProxy`-only branch below as well as the loading of a server entry:
     // a proxy hands extension-authored config the server's outbound reach and its
     // stored secrets, which is the same consent question one step quieter.
     if (!mayRunExtensionCode(record, configManager.get('extensions'))) {
@@ -416,7 +416,7 @@ export class ExtensionServerLifecycle {
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
-    // Write temp file for require()
+    // Written to disk, so stack traces and source maps name a real file.
     const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
     await fs.mkdir(tempDir, { recursive: true });
     const tempFile = path.join(tempDir, `${id}.js`);
@@ -424,16 +424,10 @@ export class ExtensionServerLifecycle {
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
 
-    try {
-      delete require.cache[require.resolve(tempFile)];
-    } catch {
-      // Not in cache yet
-    }
-
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
-      const registerFn = serverEntryRegister(require(tempFile));
+      const registerFn = serverEntryRegister(loadInProcessBundle(tempFile));
       if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
       }
@@ -486,7 +480,7 @@ export class ExtensionServerLifecycle {
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
-        bridgeExpressRouter(router),
+        bridgeExpressRouterHere(id, router),
         this.proxyFor(id, record),
         fetch && createFetchHandler(record.manifest.name, fetch)
       );

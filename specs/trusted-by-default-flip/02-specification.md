@@ -204,7 +204,7 @@ Cancel window for `connectors.execute_destructive`:
 
 ### 5.7 Config migration (PR4)
 
-Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.113.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
+Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.113.0`, PR4 takes `0.115.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
 
 1. **Careful intent** = `permissions.preset === 'careful'`, or `preset == null && ui.fullPowerChoice === 'supervised'`. Then: set `preset: 'careful'` if it was `null`, set `ui.trustNoticeSeenAt` to now, change nothing else.
 2. **Otherwise** (`null`, `'balanced'`, `'full'`, or a hand-written unknown):
@@ -246,11 +246,26 @@ Onboarding: `features/onboarding/ui/OnboardingPowerStep.tsx` renders the same co
 
 Control Center (`widgets/control-center`) shows the posture as "Trusted" or "Careful" with a link to Permissions.
 
+As built (PR4, 2026-10-13), where it differs from the above:
+
+- **Key `0.115.0`** (main took 0.112.0 to 0.114.0 while PR3 and PR4 were open).
+- **No onboarding statement.** Main's one-minute first run (DOR-2783) removed the power step, so `OnboardingPowerStep` is gone and a fresh install sees the notice once, on its second launch (the rail shows nothing in the launch the first run ends). The notice says "They edit files, run commands and schedule work on their own", not "use your connected apps", which is PR5.
+- **No agent DM mode over Relay** (§4.3/§4.4). `relay_send` was retired for `chat_send` (DOR-2790), which already holds a message to its sender's level.
+- **Installs and updates still confirm** under Trusted (§5.1's configured-source rule is dropped): the seeded sources are not owner-chosen, and a package is code from strangers. An uninstall runs on an area-level Allowed.
+- **Untrusted callers** (`resolve-permission.ts`): a caller with no agent identity, or a turn that read an outsider's words (`outsiderBoundOf`, so Codex and OpenCode over `/mcp` too), still asks for a destructive action and for any change in the Permissions area. This errs toward asking: a room turn with a stranger's message merely in view, or any Codex/OpenCode turn while one of that agent's outsider turns runs, asks too, and in a room turn nobody watches that card waits until it expires. Narrowing it to turns held to a stranger's ceiling is a follow-up.
+- **Person-only settings always ask**: an area a `config_patch` reaches beyond DorkOS settings (`areasForInput`) is resolved with `alwaysAsks`, and its card never offers Always allow, because Permissions is no longer a floor area.
+- **Open mesh on Trusted only** (§5.3): a closed mesh cannot tell "never opened" from "a person turned it off", so a Careful install is left as it is.
+- **Careful keeps Blocked**: moving INTO Careful from another preset keeps every install-wide area or action set to Blocked, so "Keep asking me" never loosens anything; choosing Careful again on a Careful install still clears everything (the reset).
+- **Recovery carries a `null` global stop as Ask** (`protected-state.ts`, `nullMeans`), so a Careful install with no stop of its own keeps asking after a wipe.
+- **Test-mode runtime and schedules**: its never-ask id (`always-allow`) cannot sit in a SKILL.md `schedule:` block, so the e2e and contract setups pin `runtimes.defaultTrustStop: null`; the browser suite does not run schedules at the Trusted stop (follow-up).
+
 ### 5.10 Agent-only caps and the unattended alarm come off (PR3)
 
 Operator scope addition, 2026-10-06 (DOR-2753 is cancelled and folded in here).
 
 As built (PR3): the per-turn post and canvas refusals, `ReactionBudget`, `NotifyBudget` (with the `RATE_LIMITED` relay outcome, the escalation `reserveNote` and the `notify_budget` refusal reason) are deleted; the `0.113.0` key (`dropAgentTurnCaps`) removes `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` from disk, and `tolerateRetiredRoomKeys` lets conf load a file that still has them. The frozen helpers that once seeded them (`seedRoomCanvasOps` under `0.79.0`, `retireToolOnlyReplies` under `0.81.0`) keep their text (the append-only guards hash them) and carry `@ts-expect-error` comments. The tool descriptions for `react_to_room_entry` and `relay_notify_user` no longer say "a limited number per hour". Full power is assumed for agents, tasks and schedules, so the alarm that says so and the caps that apply only to our own agents go.
+
+As built (follow-up to PR3, coordinator's option A, 2026-10-13): the caps were also the only bound on a turn a stranger started, so that one case keeps a count. A turn whose origin is an outsider's (`turnStartedByOutsider`: a Telegram or Slack binding, an outside sender, a connector event, a room turn an external author started) may post 3 messages into rooms (`TOO_MANY_POSTS_THIS_TURN`, 429) and send 3 notes (`TOO_MANY_NOTES_THIS_TURN`) per turn (`services/core/turn-power/outsider-output.ts`). Counted per turn (`turnSerialOf`, carried across a session rename), and only for a send that went out. Not the broader `outsiderBoundOf` mark, which also lands on our own agents' turns. A caller that names no session (Codex and OpenCode over `/mcp`, posting outside a room turn) is not counted; `POST /api/rooms/:id/entries` with an agent header is not counted either, as before. Our own agents' turns are never counted.
 
 Caps removed (each is a refusal that applies to our agents only; none protects against an outsider):
 

@@ -18,10 +18,11 @@ const webEnvSchema = z.object({
   VERCEL_URL: z.string().optional(),
   VERCEL_BRANCH_URL: z.string().optional(),
 
-  // Unset in every environment until the founder provisions a PostHog project
-  // (DOR-268). instrumentation-client.ts skips posthog.init() entirely when
-  // this is absent, so an unconfigured deploy makes zero PostHog network
-  // requests — the literal claim the /privacy and /cookies pages make.
+  // The site's public PostHog project key. Set in production since DOR-21; a
+  // local checkout or preview without it runs with analytics off.
+  // instrumentation-client.ts skips posthog.init() entirely when this is
+  // absent, so an unconfigured deploy makes zero PostHog network requests —
+  // the literal claim the /privacy and /cookies pages make.
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   // The PostHog ingest host, region-specific (`https://us.i.posthog.com` or
   // `https://eu.i.posthog.com`). Drives both the client SDK and the

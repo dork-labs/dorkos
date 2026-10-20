@@ -30,6 +30,32 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
+/**
+ * A browser session the session gate can verify. Since ADR 261015-125850 rule 3
+ * every request from another device needs a person session at the `/api`
+ * gate, whatever "Ask for a password on this computer too" says; a remote case
+ * presents one so it reaches the route, and the route's own "only on this
+ * computer" rule is what is under test.
+ */
+const PERSON_SESSION = 'dorkos-test-session=person';
+
+// Stood in at the gate's verifier step only: a request carrying the test
+// session is the owner's browser session; everything else is the real gate.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return {
+    ...actual,
+    decideSessionGate: async (...args: Parameters<typeof actual.decideSessionGate>) => {
+      const [, , facts, access] = args;
+      const cookie = facts.headers.cookie ?? '';
+      if (access !== 'refused' && cookie.includes(PERSON_SESSION)) {
+        return { allowed: true, user: { userId: 'user_owner', credential: 'cookie' } };
+      }
+      return actual.decideSessionGate(...args);
+    },
+  };
+});
+
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
@@ -106,10 +132,24 @@ describe('POST /api/runtimes/opencode/provision', () => {
 
     const res = await request(server)
       .post('/api/runtimes/opencode/provision')
-      .set('Host', TUNNEL_HOST);
+      .set('Host', TUNNEL_HOST)
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
+    expect(provisionOpenCode).not.toHaveBeenCalled();
+  });
+
+  it('refuses another device with no person session at the /api gate, before the route', async () => {
+    // Other devices always need a person session (ADR 261015-125850 rule 3),
+    // even with the this-computer password off, as it is here.
+    connectTunnel();
+
+    const res = await request(server)
+      .post('/api/runtimes/opencode/provision')
+      .set('Host', TUNNEL_HOST);
+
+    expect(res.status).toBe(401);
     expect(provisionOpenCode).not.toHaveBeenCalled();
   });
 
@@ -158,7 +198,8 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
     const res = await request(server)
       .post(path)
       .set('Host', TUNNEL_HOST)
-      .set('X-Forwarded-Host', 'localhost');
+      .set('X-Forwarded-Host', 'localhost')
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -169,21 +210,25 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
     const res = await request(server)
       .get('/api/runtimes/opencode/openrouter/oauth/callback?code=abc&state=xyz')
       .set('Host', TUNNEL_HOST)
-      .set('X-Forwarded-Host', 'localhost');
+      .set('X-Forwarded-Host', 'localhost')
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
   });
 
-  it('still admits a genuine loopback request with the same header present', async () => {
-    vi.mocked(provisionCodex).mockResolvedValue({ ok: true, binaryPath: '/dork/codex' });
-
+  it('refuses a loopback request carrying a forwarding header: a proxy, so another device', async () => {
+    // ADR 261015-125850 rule 1: a proxy on this host connects from loopback and
+    // can rewrite `Host` to localhost, so any forwarding header makes the
+    // request another device. `isLocalCaller` ignored the header and admitted
+    // this; the route now refuses it, signed in or not.
     const res = await request(server)
       .post('/api/runtimes/codex/provision')
       .set('Host', 'localhost:4242')
-      .set('X-Forwarded-Host', 'evil.example.com');
+      .set('X-Forwarded-Host', 'evil.example.com')
+      .set('Cookie', PERSON_SESSION);
 
-    expect(res.status).toBe(200);
-    expect(provisionCodex).toHaveBeenCalledOnce();
+    expect(res.status).toBe(403);
+    expect(provisionCodex).not.toHaveBeenCalled();
   });
 });
 
@@ -223,7 +268,8 @@ describe('TCP peer is required to be loopback', () => {
   ])('refuses a loopback Host from %s (%s) and never installs', async (peer) => {
     const res = await request(appWithPeer(peer))
       .post('/api/runtimes/codex/provision')
-      .set('Host', 'localhost');
+      .set('Host', 'localhost')
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -233,7 +279,8 @@ describe('TCP peer is required to be loopback', () => {
   it('refuses when the socket has no address at all', async () => {
     const res = await request(appWithPeer(undefined))
       .post('/api/runtimes/codex/provision')
-      .set('Host', 'localhost');
+      .set('Host', 'localhost')
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(provisionCodex).not.toHaveBeenCalled();
@@ -325,7 +372,8 @@ describe('POST /api/runtimes/codex/provision', () => {
 
     const res = await request(server)
       .post('/api/runtimes/codex/provision')
-      .set('Host', TUNNEL_HOST);
+      .set('Host', TUNNEL_HOST)
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -383,7 +431,8 @@ describe('POST /api/runtimes/claude-code/provision', () => {
 
     const res = await request(server)
       .post('/api/runtimes/claude-code/provision')
-      .set('Host', TUNNEL_HOST);
+      .set('Host', TUNNEL_HOST)
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -438,7 +487,8 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
 
     const res = await request(server)
       .post('/api/runtimes/opencode/ollama/provision')
-      .set('Host', TUNNEL_HOST);
+      .set('Host', TUNNEL_HOST)
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);

@@ -103,21 +103,19 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
+import type { ActionConsent, CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
   ApprovalServiceAction,
   ApprovalSubject,
 } from '@dorkos/shared/approval-schemas';
-import {
-  getPermissionArea,
-  type PermissionAreaId,
-  type PermissionSource,
-} from '@dorkos/shared/permissions';
+import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissions';
 
 import { isTrustedCaller } from './trusted-caller.js';
+import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
+  callRaisesPermissions,
   resolveCallPermission,
   type CallPermission,
 } from './permission-enforcement.js';
@@ -143,6 +141,13 @@ import {
   type ApprovalSubjectDeclaration,
 } from '../approvals/index.js';
 import { logger } from '../../../lib/logger.js';
+import {
+  APPROVAL_TOKEN_ARGUMENT,
+  APPROVAL_TOKEN_HEADER,
+  approvalMessage,
+  needsApprovalClause,
+  retryGuidance,
+} from './approval-wording.js';
 
 /** Where a retry carries its approval token, per surface. */
 export type ApprovalRetryChannel = 'mcp-argument' | 'http-header';
@@ -194,6 +199,11 @@ export interface GatedAction {
    * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
    */
   areasForInput?: (input: unknown) => readonly PermissionAreaId[];
+  /**
+   * What the action's consent is about. See `CapabilityDefinition.consent`;
+   * `permission-enforcement.ts` hands it to the resolver.
+   */
+  consent?: ActionConsent;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
   /**
@@ -223,11 +233,9 @@ export interface GatedAction {
   approvalSubject?: ApprovalSubjectDeclaration;
 }
 
-/** The MCP tool argument a retry passes its approval token in. */
-export const APPROVAL_TOKEN_ARGUMENT = 'approvalToken';
-
-/** The HTTP header a retry passes its approval token in. */
-export const APPROVAL_TOKEN_HEADER = 'x-dorkos-approval';
+/** Where a retry carries its token (`approval-wording.ts`), re-exported for every surface. */
+export { APPROVAL_TOKEN_ARGUMENT, APPROVAL_TOKEN_HEADER };
+export { splitApprovalToken } from './approval-wording.js';
 
 /**
  * Why a destructive call is not running yet, where the answer is "a BRAND-NEW
@@ -405,7 +413,13 @@ export type GrantedApproval =
    * The action's permission resolved to Allowed, so it ran without a card. The
    * source says which layer allowed it (spec `agent-permissions` D6).
    */
-  | { via: 'permission'; source: PermissionSource };
+  | { via: 'permission'; source: PermissionSource }
+  /**
+   * A connected-app action waited out its cancel window and nobody cancelled
+   * it (spec `trusted-by-default-flip` §5.6). Bound to the authority it was held
+   * with, so the broker refuses it for any other action or account.
+   */
+  | { via: 'hold'; holdId: string; authorityBindingDigest: string };
 
 /**
  * What the gate decided, discriminated by `outcome`.
@@ -419,7 +433,7 @@ export type TierEnforcementDecision =
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
 /**
- * A destructive call an action-level Allowed permission allowed without asking
+ * A destructive call an Allowed permission allowed without asking
  * anyone.
  *
  * The one `allowed` decision that reaches the audit hook. Every other allowed call
@@ -736,154 +750,6 @@ function requesterLabel(identity?: AgentIdentity): string | undefined {
   return renderRequesterLabel(identity.displayName || identity.agentPath);
 }
 
-/**
- * The sentence every gated caller gets, whatever surface it arrived on
- * (DOR-1570).
- *
- * "An approval card is waiting for them" used to be the whole instruction, and
- * a model reading it would dutifully stop — leaving a person who had been told
- * nothing to find the card themselves. DorkOS raises the bell, the desktop
- * banner and (after the escalation delay) the phone ping on its own; the one
- * thing only the agent can do is say out loud that it is waiting.
- */
-const SAY_SO_FIRST =
-  'Tell the person what you are asking to do and that it is waiting on their approval — say it in ' +
-  'your reply, do not just stop.';
-
-/**
- * The extra sentence for an agent inside a live DorkOS session, where it can
- * put the card in front of somebody instead of only describing it.
- *
- * Only ever added for an in-session caller. `control_ui` needs an attached
- * interactive session and is not registered on the sessionless external `/mcp`
- * server, so naming it there would be an instruction that can only fail. It is
- * also not auto-allowed, which is why this offers rather than promises.
- */
-const OPEN_THE_PANEL =
-  "If the approval is about a scheduled task, control_ui({ action: 'open_panel', panel: 'tasks' }) " +
-  'opens the Schedules panel for them.';
-
-/**
- * Retry instructions for the surface the call arrived on.
- *
- * @param channel - Where a retry carries its token.
- * @param interactive - Whether the caller is an in-session MCP server, and can
- *   therefore reach the UI tools.
- */
-function retryGuidance(
-  channel: ApprovalRetryChannel,
-  interactive: boolean
-): ApprovalRequiredPayload['retry'] {
-  const surface = interactive ? `${SAY_SO_FIRST} ${OPEN_THE_PANEL}` : SAY_SO_FIRST;
-  if (channel === 'mcp-argument') {
-    return {
-      channel,
-      field: APPROVAL_TOKEN_ARGUMENT,
-      instructions:
-        `${surface} An approval card is waiting for them in DorkOS. Once they have approved it, call this ` +
-        `tool again with exactly the same arguments plus "${APPROVAL_TOKEN_ARGUMENT}" set to the approvalToken above. ` +
-        `Changing any argument invalidates the approval, because an approval covers one exact action.`,
-    };
-  }
-  return {
-    channel,
-    field: APPROVAL_TOKEN_HEADER,
-    instructions:
-      `${surface} An approval card is waiting for them in DorkOS. Once they have approved it, send exactly the ` +
-      `same request again with the "${APPROVAL_TOKEN_HEADER}" header set to the approvalToken above ` +
-      `(with the CLI: dorkos call <id> --approval <token>). Changing the input invalidates the approval, ` +
-      `because an approval covers one exact action.`,
-  };
-}
-
-/**
- * A connected-app action in the destructive tier. The app's service puts
- * sending, forwarding and sharing in that class too, so these are only ever
- * called high risk: "cannot be undone" would not be true of them.
- */
-function isConnectedAppAction(capabilityId: string): boolean {
-  return capabilityId.startsWith('connectors.execute_');
-}
-
-/**
- * Why a call needs a person, by tier: a destructive call because it cannot be
- * undone (a connected-app action because it is high risk), an `act` call
- * because its permission is set to Ask.
- *
- * @param tier - The action's tier.
- * @param capabilityId - The action's capability id.
- */
-function needsApprovalClause(tier: CapabilityTier, capabilityId: string): string {
-  if (tier !== 'destructive') return 'is set to ask a person first';
-  return isConnectedAppAction(capabilityId) ? 'is high risk' : 'cannot be undone';
-}
-
-/** The plain sentence explaining why a gated call is waiting. */
-function approvalMessage(
-  reason: ApprovalRequiredReason,
-  title: string,
-  tier: CapabilityTier,
-  capabilityId: string,
-  blocked = false
-): string {
-  switch (reason) {
-    case 'no_approval':
-      if (blocked) {
-        return `"${title}" is blocked for this agent, so DorkOS has asked the person whether to allow it this time.`;
-      }
-      return tier === 'destructive'
-        ? `"${title}" ${needsApprovalClause(tier, capabilityId)}, so a person has to approve it first. DorkOS has asked them.`
-        : `"${title}" is set to ask a person first. DorkOS has asked them.`;
-    case 'awaiting_decision':
-      return `"${title}" is still waiting on a person. Present the same token again once they have answered.`;
-    case 'expired':
-      return `That approval ran out of time before it was used. DorkOS has asked again.`;
-    case 'already_used':
-      return `That approval was already used. Approvals work once, so DorkOS has asked again.`;
-    case 'wrong_action':
-      return `That approval was granted for a different action, so it cannot be used here. DorkOS has asked for this one.`;
-    case 'unknown_token':
-      return `DorkOS does not recognize that approval token. It has asked for a new approval.`;
-  }
-}
-
-/** The name an area goes by in a sentence, e.g. "Rooms". */
-function areaLabel(area: PermissionAreaId): string {
-  return getPermissionArea(area)?.label ?? area;
-}
-
-/**
- * What an agent that asked past Blocked is told when the rate limit stops it
- * (spec `agent-permissions` D8). Each refusal is final for now, so none of them
- * invites another try.
- */
-function blockedLimitMessage(limit: BlockedRequestLimit, area: PermissionAreaId): string {
-  switch (limit.limit) {
-    case 'pending':
-      // Not the first request's `awaiting_decision` payload, which spec D8
-      // describes: tokens are stored hashed, so the first token cannot be sent
-      // again. The approval id names the request instead, and the message says
-      // how the answer arrives (see the spec's D8 note of 2026-09-24).
-      return (
-        `You already asked the person about ${areaLabel(area)} (request ${limit.approvalId}) ` +
-        'and they have not answered yet. Do not ask again: wait for their answer. In a DorkOS ' +
-        'session, DorkOS tells you here when they decide. If they say yes, call ' +
-        '`request_permission` again with the same action and arguments, plus the approvalToken ' +
-        'your first request returned, and the action runs.'
-      );
-    case 'recently_denied':
-      return (
-        'The person said no to this in the last day. Do not ask again; tell them what you ' +
-        'could not do and why.'
-      );
-    case 'hourly_limit':
-      return (
-        'You have asked past blocked permissions too many times in the last hour. Stop asking; ' +
-        'tell the person what you need instead.'
-      );
-  }
-}
-
 /** The refusal reason each rate limit maps to. */
 const BLOCKED_LIMIT_REASON: Record<BlockedRequestLimit['limit'], TierDeniedReason> = {
   pending: 'request_pending',
@@ -1008,11 +874,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   }
 
   // Allowed runs. An `act` call is audited by the attribution observer on
-  // invoke, like any other allowed call. A `destructive` call can only resolve
-  // Allowed from an ACTION-level setting (the resolver turns an area-level
-  // Allowed on a destructive action into Ask), and it gets one Activity line
-  // saying no card was shown: a stretch in which DorkOS goes quiet must not also
-  // be one in which it goes blind.
+  // invoke, like any other allowed call. A `destructive` call resolves Allowed
+  // from an action-level setting, or from an area-level one when the action
+  // runs no third-party code (the resolver keeps an area-level Allowed at Ask
+  // for those, ADR `261006-225605`), and it gets one Activity line saying no
+  // card was shown: a stretch in which DorkOS goes quiet must not also be one
+  // in which it goes blind.
   if (permission?.state === 'allowed') {
     const approval: GrantedApproval = { via: 'permission', source: permission.source };
     if (tier === 'destructive') {
@@ -1157,6 +1024,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         // the same answer to "may this be allowed always?".
         area: permission?.area ?? null,
         ...(blockedAsk && blockedRequest ? { blockedRequest } : {}),
+        ...(callRaisesPermissions(action, input) ? { raisesPermissions: true } : {}),
         // Where to tell the answer, when the surface had a session at all. Not
         // read by any decision here — see the field's own docblock.
         ...(requestingSession ? { requestingSession } : {}),
@@ -1362,23 +1230,4 @@ export async function authorizeCapability(
     ...(options.change !== undefined ? { change: options.change } : {}),
     retryChannel: context.retryChannel ?? 'http-header',
   });
-}
-
-/**
- * Split a presented approval token out of a surface's raw arguments.
- *
- * The token travels alongside a capability's input, never inside it: the approval
- * binds to a hash of the input, so a token carried as an input field would change
- * the very hash it is being checked against. Destructive capabilities advertise
- * {@link APPROVAL_TOKEN_ARGUMENT} as an extra MCP argument, and this is where it
- * comes back off.
- *
- * @param args - Raw arguments from an MCP client.
- * @returns The token (when present) and the arguments with it removed.
- */
-export function splitApprovalToken(args: unknown): { approvalToken?: string; input: unknown } {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return { input: args };
-  const { [APPROVAL_TOKEN_ARGUMENT]: token, ...rest } = args as Record<string, unknown>;
-  if (typeof token !== 'string' || token.length === 0) return { input: rest };
-  return { approvalToken: token, input: rest };
 }

@@ -1,0 +1,927 @@
+import { Button, Input, Label, Notice, Separator } from '@dork-labs/ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { describeError, download, request } from '../api.js';
+import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
+import { SignOutButton } from './SignOut.js';
+import { HostLinksPanel } from './HostLinks.js';
+import { CommunityAddress } from './CommunityAddress.js';
+import { SignInMethodsPanel } from './SignInMethods.js';
+import { CommunityAdministration } from './CommunityAdministration.js';
+import { RemovedByHost } from '../takedowns/TakedownNotices.js';
+import { EraseMembershipPanel } from './Erasure.js';
+import { ExportPanel } from './ExportPanel.js';
+import { SpaceMembers } from './members/SpaceMembers.js';
+import { ReportQueue } from '../moderation/ReportQueue.js';
+import { ConductSettings } from '../moderation/ConductSettings.js';
+import { ChannelPanel } from '../moderation/ChannelPanel.js';
+import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
+import type { Agent, Channel, Member } from '../types.js';
+import { RosterDetail } from './members/RosterDetail.js';
+import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
+
+type Invite = {
+  id: string;
+  channelId: string | null;
+  createdAt: string;
+  expiresAt: string;
+  seats: number;
+  uses: number;
+  revoked: boolean;
+};
+type Grant = {
+  id: string;
+  memberId: string;
+  installName: string;
+  scopes: string[];
+  createdAt: string;
+};
+type Props = {
+  communityId: string;
+  communityName: string;
+  /** The full address members open this community at: its short one when it has one. */
+  communityAddress: string;
+  me: Member;
+  channels: Channel[];
+  selectedChannel: Channel | null;
+  onChanged: () => void;
+  onCurrentMemberChanged: () => Promise<Member>;
+  onLeft: () => void;
+  /** This browser's session ended; memberships and installations are untouched. */
+  onSignedOut: () => void;
+  readOnly?: boolean;
+  /** Read-only because the host holds the community, not because its owner archived it. */
+  held?: boolean;
+  /** The section a settings link asked for; ignored when this role or state cannot see it. */
+  initialSection?: CommunitySettingsSection | null;
+};
+
+/** What each settings tab says. The keys are wire names the DorkOS app links to, not copy. */
+const SECTION_LABELS: Record<CommunitySettingsSection, string> = {
+  community: 'Space',
+  members: 'Members',
+  agents: 'Agents',
+  account: 'Account',
+  settings: 'Settings',
+};
+
+/** Manage channel, member, agent and account actions for the current role. */
+export function Manage({
+  communityId,
+  communityName,
+  communityAddress,
+  me,
+  channels,
+  selectedChannel,
+  onChanged,
+  onCurrentMemberChanged,
+  onLeft,
+  onSignedOut,
+  readOnly = false,
+  held = false,
+  initialSection = null,
+}: Props) {
+  const moderator = me.role === 'owner' || me.role === 'admin';
+  const sections: readonly CommunitySettingsSection[] = readOnly
+    ? moderator
+      ? (['account', 'settings'] as const)
+      : (['account'] as const)
+    : moderator
+      ? (['community', 'members', 'agents', 'account', 'settings'] as const)
+      : (['community', 'members', 'agents', 'account'] as const);
+  const [tab, setTab] = useState<CommunitySettingsSection>(() =>
+    initialSection && sections.includes(initialSection)
+      ? initialSection
+      : readOnly
+        ? moderator
+          ? 'settings'
+          : 'account'
+        : 'community'
+  );
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [channelName, setChannelName] = useState('');
+  const [description, setDescription] = useState('');
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviteChannel, setInviteChannel] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const [admissionClosed, setAdmissionClosed] = useState(false);
+  const [directory, setDirectory] = useState<Member[]>([]);
+  const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
+  const [roster, setRoster] = useState<Member[]>([]);
+  const [selectedMember, setSelectedMember] = useState('');
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [grants, setGrants] = useState<Grant[]>([]);
+  const [successor, setSuccessor] = useState('');
+  const [password, setPassword] = useState('');
+  const [leaveName, setLeaveName] = useState('');
+  const [disconnectAllPassword, setDisconnectAllPassword] = useState('');
+  // Shown beside the password it is about, where a phone user is already looking.
+  const [disconnectAllError, setDisconnectAllError] = useState('');
+  // Disconnecting removes the focused row (or every row), so focus returns to the list heading.
+  const installationsHeading = useRef<HTMLHeadingElement>(null);
+  const refresh = useCallback(
+    async (currentModerator = moderator) => {
+      try {
+        const requests: Promise<unknown>[] = [
+          request<{ grants: Grant[] }>('/api/v1/me/grants').then((body) => setGrants(body.grants)),
+        ];
+        if (!readOnly)
+          requests.push(
+            request<{ agents: Agent[] }>('/api/v1/agents').then((body) => setAgents(body.agents))
+          );
+        if (currentModerator && !readOnly) {
+          requests.push(
+            request<{ invites: Invite[] }>('/api/v1/invites').then((body) =>
+              setInvites(body.invites)
+            )
+          );
+          requests.push(
+            request<{ members: Member[]; nextCursor: string | null }>(
+              '/api/v1/members?limit=50'
+            ).then((body) => {
+              setDirectory(body.members);
+              setDirectoryCursor(body.nextCursor);
+            })
+          );
+        }
+        if (selectedChannel?.joined && !readOnly)
+          requests.push(
+            request<{ members: Member[] }>(
+              `/api/v1/channels/${selectedChannel!.id}/members?include=availability`
+            ).then((body) => setRoster(body.members))
+          );
+        await Promise.all(requests);
+      } catch (cause) {
+        setError(describeError(cause));
+      }
+    },
+    [moderator, readOnly, selectedChannel?.id, selectedChannel?.joined]
+  );
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  // A failed read leaves the invite form in place; the server still refuses an invitation to
+  // a closed community with a plain reason.
+  const readAdmission = useCallback(
+    () =>
+      request<{ admissionPolicy: 'invite_only' | 'closed' | 'open' }>('/api/v1/settings')
+        .then((body) => {
+          const closed = body.admissionPolicy === 'closed';
+          setAdmissionClosed(closed);
+          // Closing revoked every invitation, including a link still shown from before.
+          if (closed) setInviteLink('');
+        })
+        .catch(() => undefined),
+    []
+  );
+  // Read on every visit to this tab: the owner may have just closed or reopened admission
+  // under Settings.
+  useEffect(() => {
+    if (moderator && !readOnly && tab === 'community') void readAdmission();
+  }, [moderator, readOnly, tab, readAdmission]);
+  async function perform(operation: () => Promise<unknown>, success: string) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await operation();
+      setMessage(success);
+      // Roles can change without a navigation, most visibly when ownership is
+      // transferred. Refresh the shell's identity before fetching panels so
+      // the old owner immediately sees the member controls they may use.
+      const current = await onCurrentMemberChanged();
+      await refresh(current.role === 'owner' || current.role === 'admin');
+      onChanged();
+    } catch (cause) {
+      // Transfer confirms a password; nothing else here can answer
+      // REAUTH_FAILED or RATE_LIMITED.
+      setError(describeReauthenticationError(cause, 'Nothing changed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function createChannel(event: React.FormEvent) {
+    event.preventDefault();
+    await perform(
+      () => request('/api/v1/channels', 'POST', { name: channelName, description, visibility }),
+      'Channel created.'
+    );
+    setChannelName('');
+    setDescription('');
+  }
+  async function createInvite() {
+    setBusy(true);
+    setError('');
+    try {
+      const body = await request<{ token: string }>('/api/v1/invites', 'POST', {
+        ...(inviteChannel ? { channelId: inviteChannel } : {}),
+      });
+      const link = `${location.origin}/c/${communityId}/join#invite=${encodeURIComponent(body.token)}`;
+      setInviteLink(link);
+      setMessage('Copy this link now. It will not appear in the invite list.');
+      await refresh();
+    } catch (cause) {
+      setError(describeError(cause));
+      // The community may have been closed since this panel last looked.
+      void readAdmission();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function moreMembers() {
+    if (!directoryCursor) return;
+    try {
+      const body = await request<{ members: Member[]; nextCursor: string | null }>(
+        `/api/v1/members?limit=50&cursor=${directoryCursor}`
+      );
+      setDirectory((old) => [...old, ...body.members]);
+      setDirectoryCursor(body.nextCursor);
+    } catch (cause) {
+      setError(describeError(cause));
+    }
+  }
+  async function leave() {
+    if (
+      !window.confirm(
+        `Leave ${communityName}? Your channels, installations and agents here stop working. Your account and your other spaces stay.`
+      )
+    )
+      return;
+    setBusy(true);
+    setError('');
+    try {
+      await request('/api/v1/me/leave', 'POST', { password, communityName: leaveName });
+      onLeft();
+    } catch (cause) {
+      setError(describeReauthenticationError(cause, 'You are still a member.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function disconnectInstallation(grant: Grant) {
+    if (
+      !window.confirm(
+        `Disconnect ${grant.installName}? It can no longer read or post in ${communityName} until it is connected again. You stay a member.`
+      )
+    )
+      return;
+    await perform(
+      () => request(`/api/v1/me/grants/${grant.id}`, 'DELETE'),
+      `${grant.installName} is disconnected. It can no longer read or post here until it is connected again.`
+    );
+    installationsHeading.current?.focus();
+  }
+  async function disconnectAllInstallations() {
+    if (
+      !window.confirm(
+        `Disconnect all ${grants.length} installations? They can no longer read or post in ${communityName} until they are connected again. You stay a member, and this browser stays signed in.`
+      )
+    )
+      return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    setDisconnectAllError('');
+    try {
+      await request('/api/v1/me/grants', 'DELETE', { password: disconnectAllPassword });
+      setDisconnectAllPassword('');
+      setMessage(
+        'All installations are disconnected. They can no longer read or post here until they are connected again.'
+      );
+      await refresh();
+      installationsHeading.current?.focus();
+    } catch (cause) {
+      setDisconnectAllError(describeReauthenticationError(cause, 'Nothing was disconnected.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="content-scroll">
+      <main className="settings">
+        <p className="eyebrow">Space settings</p>
+        <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
+        <p className="muted">
+          {held
+            ? 'The server admin has put this space on hold. History stays readable and the owner can still export it. Nothing else can change until the server admin releases the hold, but members can still leave.'
+            : readOnly
+              ? 'History and exports remain available. Restore this space before changing content or access.'
+              : 'Manage channels and access without leaving the space.'}
+        </p>
+        <nav className="row mb-6" aria-label="Settings sections">
+          {sections.map((item) => (
+            <Button
+              key={item}
+              variant={tab === item ? 'default' : 'outline'}
+              onClick={() => {
+                setTab(item);
+                setError('');
+                setMessage('');
+                setDisconnectAllError('');
+                void refresh();
+              }}
+            >
+              {SECTION_LABELS[item]}
+            </Button>
+          ))}
+        </nav>
+        {error && (
+          <Notice tone="error" className="mb-4" role="alert">
+            {error}
+          </Notice>
+        )}
+        {message && (
+          <Notice tone="success" className="mb-4" role="status">
+            {message}
+          </Notice>
+        )}
+        {tab === 'settings' && (
+          <CommunityAdministration
+            memberRole={me.role}
+            onChanged={onChanged}
+            onOpenPeople={() => setTab('members')}
+          />
+        )}
+        {tab === 'settings' && moderator && !readOnly && <ConductSettings role={me.role} />}
+        {tab === 'settings' && moderator && (
+          <RemovedByHost communityId={communityId} channels={channels} />
+        )}
+        {!readOnly && tab === 'community' && (
+          <div className="settings-grid">
+            <CommunityAddress address={communityAddress} />
+            {moderator && (
+              <>
+                <section className="panel">
+                  <h3>Create channel</h3>
+                  <form onSubmit={(event) => void createChannel(event)}>
+                    <div className="field">
+                      <Label htmlFor="channel-new-name">Name</Label>
+                      <Input
+                        id="channel-new-name"
+                        value={channelName}
+                        onChange={(event) => setChannelName(event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="field">
+                      <Label htmlFor="channel-description">Description</Label>
+                      <Input
+                        id="channel-description"
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <Label htmlFor="channel-visibility">Visibility</Label>
+                      <select
+                        id="channel-visibility"
+                        value={visibility}
+                        onChange={(event) =>
+                          setVisibility(event.target.value as 'public' | 'private')
+                        }
+                      >
+                        <option value="public">Public to members</option>
+                        <option value="private">Only invited members</option>
+                      </select>
+                    </div>
+                    <Button type="submit" variant="default" disabled={busy}>
+                      <Plus size={16} /> Create channel
+                    </Button>
+                  </form>
+                </section>
+                <section className="panel">
+                  <h3>Invite someone</h3>
+                  {admissionClosed ? (
+                    <Notice tone="info" className="mb-0">
+                      This space is closed to new members.{' '}
+                      {me.role === 'owner'
+                        ? 'You can reopen it in Settings, under Access.'
+                        : 'The owner can reopen it in Settings, under Access.'}
+                    </Notice>
+                  ) : (
+                    <>
+                      <p className="small muted">
+                        New links last seven days and admit one person unless changed by an admin.
+                      </p>
+                      <div className="field">
+                        <Label htmlFor="invite-channel">Channel</Label>
+                        <select
+                          id="invite-channel"
+                          value={inviteChannel}
+                          onChange={(event) => setInviteChannel(event.target.value)}
+                        >
+                          <option value="">Space access</option>
+                          {channels.map((channel) => (
+                            <option key={channel.id} value={channel.id}>
+                              #{channel.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button variant="default" disabled={busy} onClick={() => void createInvite()}>
+                        <UserPlus size={16} /> Create invite
+                      </Button>
+                    </>
+                  )}
+                  {inviteLink && (
+                    <div className="field mt-4">
+                      <Label htmlFor="invite-link">One-time invite link</Label>
+                      <Input
+                        id="invite-link"
+                        readOnly
+                        value={inviteLink}
+                        onFocus={(event) => event.target.select()}
+                      />
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => void navigator.clipboard.writeText(inviteLink)}
+                      >
+                        <Copy size={15} /> Copy link
+                      </Button>
+                    </div>
+                  )}
+                  {invites.length > 0 && (
+                    <>
+                      <Separator className="my-4" />
+                      <h4 className="small font-semibold">Recent invites</h4>
+                      {invites.map((invite) => (
+                        <div className="row small mt-2 justify-between" key={invite.id}>
+                          <span>
+                            {invite.revoked ? 'Revoked' : `${invite.uses}/${invite.seats} used`} ·{' '}
+                            {new Date(invite.expiresAt).toLocaleDateString()}
+                          </span>
+                          {!invite.revoked && (
+                            <Button
+                              variant="ghost"
+                              aria-label="Revoke invite"
+                              onClick={() =>
+                                void perform(
+                                  () => request(`/api/v1/invites/${invite.id}`, 'DELETE'),
+                                  'Invite revoked.'
+                                )
+                              }
+                            >
+                              <Trash2 size={15} />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </section>
+              </>
+            )}
+            {selectedChannel && (
+              <ChannelPanel
+                channel={selectedChannel}
+                communityName={communityName}
+                me={me}
+                busy={busy}
+                perform={perform}
+              />
+            )}
+          </div>
+        )}
+        {!readOnly && tab === 'members' && (
+          <div className="settings-grid">
+            <section className="panel">
+              <h3>Channel roster {selectedChannel ? `· #${selectedChannel.name}` : ''}</h3>
+              {!selectedChannel ? (
+                <p className="muted">Choose a channel first.</p>
+              ) : roster.length === 0 ? (
+                <p className="muted">No members in this channel yet.</p>
+              ) : (
+                roster.map((member) => (
+                  <div
+                    className="row justify-between border-b border-[var(--line)] py-2"
+                    key={member.memberId}
+                  >
+                    <div>
+                      <strong>{member.displayName}</strong> <RosterDetail member={member} />
+                    </div>
+                    {moderator && member.memberId !== me.memberId && (
+                      <Button
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() =>
+                          void perform(
+                            () =>
+                              member.kind === 'agent'
+                                ? request(
+                                    `/api/v1/channels/${selectedChannel!.id}/agents/${member.memberId}`,
+                                    'DELETE'
+                                  )
+                                : request(
+                                    `/api/v1/channels/${selectedChannel!.id}/members/${member.memberId}`,
+                                    'DELETE'
+                                  ),
+                            member.kind === 'agent'
+                              ? 'Agent removed from channel.'
+                              : 'Member removed from channel.'
+                          )
+                        }
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+              {moderator && (
+                <div className="mt-4">
+                  <div className="field">
+                    <Label htmlFor="add-member">Add member</Label>
+                    <select
+                      id="add-member"
+                      value={selectedMember}
+                      onChange={(event) => setSelectedMember(event.target.value)}
+                    >
+                      <option value="">Choose a member</option>
+                      {directory
+                        .filter(
+                          (member) => !roster.some((joined) => joined.memberId === member.memberId)
+                        )
+                        .map((member) => (
+                          <option key={member.memberId} value={member.memberId}>
+                            {member.displayName} (@{member.handle})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <Button
+                    variant="outline"
+                    disabled={!selectedMember || busy}
+                    onClick={() =>
+                      void perform(
+                        () =>
+                          request(`/api/v1/channels/${selectedChannel!.id}/members`, 'POST', {
+                            memberId: selectedMember,
+                          }),
+                        'Member added to channel.'
+                      )
+                    }
+                  >
+                    Add to channel
+                  </Button>
+                </div>
+              )}
+            </section>
+            {moderator && (
+              <SpaceMembers
+                me={me}
+                directory={directory}
+                hasMore={Boolean(directoryCursor)}
+                busy={busy}
+                perform={perform}
+                onMore={() => void moreMembers()}
+              />
+            )}
+            {moderator && <ReportQueue busy={busy} perform={perform} />}
+          </div>
+        )}
+        {!readOnly && tab === 'agents' && (
+          <div className="settings-grid">
+            <section className="panel">
+              <h3>Your agents</h3>
+              <p className="small muted">
+                Add agents from a connected local install. Their credentials stay there.
+              </p>
+              {agents.length === 0 ? (
+                <p className="muted">No agents connected yet.</p>
+              ) : (
+                agents.map((agent) => (
+                  <div
+                    className="row justify-between border-b border-[var(--line)] py-2"
+                    key={agent.memberId}
+                  >
+                    <div>
+                      <strong>{agent.displayName}</strong>
+                      <div className="small muted">@{agent.handle} · owned by you</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      aria-label={`Remove ${agent.displayName}`}
+                      onClick={() => {
+                        if (window.confirm(`Remove ${agent.displayName}?`))
+                          void perform(
+                            () => request(`/api/v1/agents/${agent.memberId}`, 'DELETE'),
+                            'Agent removed.'
+                          );
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                ))
+              )}
+              {selectedChannel && agents.length > 0 && (
+                <>
+                  <Separator className="my-4" />
+                  <div className="field">
+                    <Label htmlFor="add-agent">Add your agent to #{selectedChannel.name}</Label>
+                    <select
+                      id="add-agent"
+                      value={selectedAgent}
+                      onChange={(event) => setSelectedAgent(event.target.value)}
+                    >
+                      <option value="">Choose an agent</option>
+                      {agents
+                        .filter(
+                          (agent) => !roster.some((member) => member.memberId === agent.memberId)
+                        )
+                        .map((agent) => (
+                          <option key={agent.memberId} value={agent.memberId}>
+                            {agent.displayName}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <Button
+                    variant="outline"
+                    disabled={!selectedAgent || busy}
+                    onClick={() =>
+                      void perform(
+                        () =>
+                          request(`/api/v1/channels/${selectedChannel!.id}/agents`, 'POST', {
+                            agentId: selectedAgent,
+                          }),
+                        'Agent added to channel.'
+                      )
+                    }
+                  >
+                    Add agent
+                  </Button>
+                </>
+              )}
+            </section>
+            <section className="panel">
+              <h3>Agents in this channel</h3>
+              {roster.filter((member) => member.kind === 'agent').length === 0 ? (
+                <p className="muted">No agents here yet.</p>
+              ) : (
+                roster
+                  .filter((member) => member.kind === 'agent')
+                  .map((agent) => (
+                    <div
+                      key={agent.memberId}
+                      className="row justify-between border-b border-[var(--line)] py-2"
+                    >
+                      <div>
+                        <strong>{agent.displayName}</strong>
+                        <div className="small muted">
+                          Owned by{' '}
+                          {agent.ownerDisplayName ??
+                            directory.find((person) => person.memberId === agent.ownerMemberId)
+                              ?.displayName ??
+                            (agent.ownerMemberId === me.memberId ? 'you' : 'another member')}
+                        </div>
+                      </div>
+                      {selectedChannel && (moderator || agent.ownerMemberId === me.memberId) && (
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            void perform(
+                              () =>
+                                request(
+                                  `/api/v1/channels/${selectedChannel!.id}/agents/${agent.memberId}`,
+                                  'DELETE'
+                                ),
+                              'Agent removed from channel.'
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))
+              )}
+            </section>
+          </div>
+        )}
+        {tab === 'account' && (
+          <div className="settings-grid">
+            {!readOnly && (
+              <DisplayNamePanel me={me} onChanged={() => void onCurrentMemberChanged()} />
+            )}
+            <section className="panel" aria-labelledby="this-browser-title">
+              <h3 id="this-browser-title">This browser</h3>
+              <p className="small muted">
+                Signing out ends your sign-in on this browser only. You stay a member, and your
+                connected DorkOS installations keep working.
+              </p>
+              <SignOutButton onSignedOut={onSignedOut} />
+            </section>
+            <SignInMethodsPanel communityId={communityId} />
+            <HostLinksPanel communityId={communityId} />
+            <section className="panel" aria-labelledby="installations-title">
+              <h3 id="installations-title" ref={installationsHeading} tabIndex={-1}>
+                Connected installations
+              </h3>
+              <p className="small muted">
+                Each DorkOS installation you connect can act for you in {communityName}.
+                Disconnecting one does not end your membership.
+              </p>
+              {grants.length === 0 ? (
+                <p className="muted mb-0">
+                  No DorkOS installations are connected to your account here.
+                </p>
+              ) : (
+                <ul className="m-0 list-none p-0" aria-labelledby="installations-title">
+                  {grants.map((grant) => (
+                    <li
+                      key={grant.id}
+                      className="row justify-between border-b border-[var(--line)] py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <strong className="break-words">{grant.installName}</strong>
+                        <div className="small muted">
+                          {describeInstallAccess(grant.scopes)} · Connected{' '}
+                          {new Date(grant.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        className="shrink-0"
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Disconnect ${grant.installName}`}
+                        onClick={() => void disconnectInstallation(grant)}
+                      >
+                        <Unplug size={16} /> Disconnect
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {grants.length > 1 && (
+                <form
+                  className="mt-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void disconnectAllInstallations();
+                  }}
+                >
+                  <h4 className="small font-semibold">Disconnect all installations</h4>
+                  <p className="small muted" id="disconnect-all-scope">
+                    All {grants.length} stop reading and posting in {communityName} until they are
+                    connected again. You stay a member, and this browser stays signed in.
+                  </p>
+                  <div className="field">
+                    <Label htmlFor="disconnect-all-password">Confirm password</Label>
+                    <Input
+                      id="disconnect-all-password"
+                      type="password"
+                      autoComplete="current-password"
+                      aria-describedby={
+                        disconnectAllError
+                          ? 'disconnect-all-scope disconnect-all-error'
+                          : 'disconnect-all-scope'
+                      }
+                      aria-invalid={disconnectAllError ? true : undefined}
+                      value={disconnectAllPassword}
+                      onChange={(event) => setDisconnectAllPassword(event.target.value)}
+                    />
+                  </div>
+                  {disconnectAllError && (
+                    <Notice id="disconnect-all-error" tone="error" className="mb-3" role="alert">
+                      {disconnectAllError}
+                    </Notice>
+                  )}
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    disabled={busy || !disconnectAllPassword}
+                  >
+                    <Unplug size={16} /> Disconnect all installations
+                  </Button>
+                </form>
+              )}
+            </section>
+            <section className="panel">
+              <h3>Your data</h3>
+              <ExportPanel scope="personal" idPrefix="personal-export" />
+              {me.role === 'owner' && (
+                <>
+                  <Separator className="my-4" />
+                  <h3>Space export</h3>
+                  <p className="small muted">Includes the whole space. Confirm your password.</p>
+                  <ExportPanel scope="owner" idPrefix="owner-export" />
+                </>
+              )}
+            </section>
+            {/* A member may leave a held community too; an owner must transfer first, and a
+                hold allows no transfer, so the owner sees this section only when active. */}
+            {(!readOnly || (held && me.role !== 'owner')) && (
+              <section className="panel">
+                <h3>Leave space</h3>
+                {me.role === 'owner' ? (
+                  <p className="small muted">Transfer ownership before you leave.</p>
+                ) : (
+                  <>
+                    <p className="small muted mb-2" id="leave-scope-ends">
+                      <strong>Ends:</strong> your membership in {communityName}, its channels, and
+                      every installation and agent you connected here.
+                    </p>
+                    <p className="small muted" id="leave-scope-stays">
+                      <strong>Stays:</strong> your account, your other spaces, this browser’s
+                      sign-in, and your past messages. To remove your messages too, erase them here
+                      instead.
+                    </p>
+                    <div className="field">
+                      <Label htmlFor="leave-community-name">Enter {communityName}</Label>
+                      <Input
+                        id="leave-community-name"
+                        value={leaveName}
+                        onChange={(event) => setLeaveName(event.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <Label htmlFor="leave-password">Confirm password</Label>
+                      <Input
+                        id="leave-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+                    <Button
+                      variant="destructive"
+                      aria-describedby="leave-scope-ends leave-scope-stays"
+                      disabled={busy || !password || leaveName !== communityName}
+                      onClick={() => void leave()}
+                    >
+                      Leave space
+                    </Button>
+                  </>
+                )}
+                {me.role === 'owner' && (
+                  <>
+                    <div className="field">
+                      <Label htmlFor="successor">New owner</Label>
+                      <select
+                        id="successor"
+                        value={successor}
+                        onChange={(event) => setSuccessor(event.target.value)}
+                      >
+                        <option value="">Choose a member</option>
+                        {directory
+                          .filter((member) => member.memberId !== me.memberId)
+                          .map((member) => (
+                            <option key={member.memberId} value={member.memberId}>
+                              {member.displayName}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <Label htmlFor="transfer-password">Confirm password</Label>
+                      <Input
+                        id="transfer-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+                    <Button
+                      variant="destructive"
+                      disabled={!successor || !password || busy}
+                      onClick={() =>
+                        void perform(
+                          () =>
+                            request<{ lifecycleVersion: number }>('/api/v1/settings').then(
+                              (settings) =>
+                                request('/api/v1/owner/transfer', 'POST', {
+                                  successorMemberId: successor,
+                                  password,
+                                  lifecycleVersion: settings.lifecycleVersion,
+                                })
+                            ),
+                          'Ownership transferred.'
+                        )
+                      }
+                    >
+                      <KeyRound size={16} /> Transfer ownership
+                    </Button>
+                  </>
+                )}
+              </section>
+            )}
+            <EraseMembershipPanel
+              communityId={communityId}
+              communityName={communityName}
+              owner={me.role === 'owner'}
+            />
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

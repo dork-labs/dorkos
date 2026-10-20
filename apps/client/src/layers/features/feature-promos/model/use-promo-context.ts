@@ -62,5 +62,6 @@ export function usePromoContext(): PromoContext {
     daysSinceFirstUse,
     isDesktopApp: isDesktopShell(),
     remoteAccessConfigured,
+    isHub: config?.serverRole === 'hub',
   };
 }

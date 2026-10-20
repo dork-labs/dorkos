@@ -89,6 +89,94 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  # The hub image (DOR-2935): what DorkOS Cloud boots for a person's own
+  # DorkOS in the cloud (the `hub` target in the Dockerfile). Same release
+  # train and the same npm package as the runtime image, its own package.
+  # Cloud pins each hub to a digest and upgrades in waves, so there is no
+  # `latest` tag: the version, and the commit for tracing. Signed with a build
+  # attestation that is verified before the job passes.
+  build-and-push-hub:
+    runs-on: ubuntu-latest
+    # Same build and the same npm wait as build-and-push above.
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      HUB_IMAGE_NAME: dork-labs/dorkos-hub
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for npm package availability
+        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.HUB_IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+          flavor: |
+            latest=false
+
+      - name: Build and push the hub image
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: hub
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            INSTALL_MODE=npm
+            DORKOS_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=hub
+          cache-to: type=gha,mode=max,scope=hub
+
+      - name: Attest the image digest
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.HUB_IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify the attestation, and name the digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${HUB_IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+          gh attestation verify "oci://${image}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml" \
+            --source-ref "$GITHUB_REF"
+          echo "Hub image ${{ steps.version.outputs.version }}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+
   # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
   # stays the canonical registry; this job is a best-effort mirror purely for
   # discoverability on Docker Hub — nothing in the product depends on it.

@@ -8,6 +8,7 @@ import {
 } from './extension-plugin-guard.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { HOST_HONO_NAMESPACE, hostHono, hostHonoPlugin } from './server-bundle/host-hono.js';
 
 import { logger } from '../../lib/logger.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
@@ -239,6 +240,20 @@ function buildIoFailureError(
   };
 }
 
+/**
+ * A build's inputs without DorkOS's own `hono` files, which are not the
+ * extension's: the build key already names their version.
+ *
+ * @param inputs - The metafile's inputs.
+ */
+function withoutHostHono(
+  inputs: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!inputs) return inputs;
+  const prefix = `${HOST_HONO_NAMESPACE}:`;
+  return Object.fromEntries(Object.entries(inputs).filter(([key]) => !key.startsWith(prefix)));
+}
+
 /** The result of compiling one bundle: its code, or the error that stopped it. */
 type CompileResult =
   { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string };
@@ -258,6 +273,8 @@ interface BuildTarget {
   noun: string;
   /** Every esbuild option except the entry point and working directory. */
   options: Omit<BuildOptions, 'entryPoints' | 'absWorkingDir' | 'metafile'>;
+  /** Whether `hono` resolves to DorkOS's own copy, bundled inline (`server-bundle/host-hono.ts`). */
+  hostHono: boolean;
 }
 
 /** Browser ESM bundle the client `import()`s. */
@@ -278,11 +295,13 @@ const CLIENT_TARGET: BuildTarget = {
     // Allow JSX in .ts files — extensions commonly use JSX without .tsx rename
     loader: { '.ts': 'tsx' },
   },
+  hostHono: false,
 };
 
 /**
  * Node CJS bundle loaded with `require()`. Externals are provided by the host
- * process.
+ * process; `hono` is DorkOS's own copy, bundled inline, so the bundle stays
+ * one file an isolated child can run.
  */
 const SERVER_TARGET: BuildTarget = {
   subDir: 'server',
@@ -300,6 +319,7 @@ const SERVER_TARGET: BuildTarget = {
     logLevel: 'silent',
     loader: { '.ts': 'tsx' },
   },
+  hostHono: true,
 };
 
 /** Where one build's cache entries live, and the key for its configuration. */
@@ -384,7 +404,8 @@ export class ExtensionCompiler {
    * Compile a server-side extension entry point for Node.js.
    *
    * Uses CJS format for dynamic `require()` loading. Externals include express
-   * and extension-api packages (provided by the host process).
+   * and extension-api packages (provided by the host process); `hono` is
+   * bundled inline from DorkOS's own copy.
    *
    * @param record - Extension record with serverEntryPath
    * @returns Compiled code and hash on success, or error on failure
@@ -635,9 +656,11 @@ export class ExtensionCompiler {
       manifestPath: path.join(cacheDir, `${extId}.${shortHash(entryPath)}.manifest.json`),
       // A contained build refuses imports an uncontained one bundled, so the
       // two never share a cached result.
+      // So is a build against another `hono`: the bundle carries it inline.
       buildKey: computeBuildKey(esbuildVersion, cwd, {
         ...target.options,
         ...(containRoot ? { dorkosContainedTo: containRoot } : {}),
+        ...(target.hostHono ? { dorkosHono: hostHono()?.version ?? null } : {}),
       }),
       cwd,
       containRoot,
@@ -702,6 +725,8 @@ export class ExtensionCompiler {
         absWorkingDir: ctx.cwd,
         metafile: true,
         plugins: [
+          // First, so it claims `hono` before containment would refuse it.
+          ...(target.hostHono ? [hostHonoPlugin()] : []),
           ...(ctx.containRoot
             ? [containmentPlugin(ctx.containRoot, target.options.external ?? [])]
             : []),
@@ -709,7 +734,7 @@ export class ExtensionCompiler {
         ],
       });
       code = result.outputFiles?.[0]?.text ?? '';
-      inputs = result.metafile?.inputs;
+      inputs = withoutHostHono(result.metafile?.inputs);
     } catch (err) {
       return this.handleEsbuildError(ctx, run, err);
     }

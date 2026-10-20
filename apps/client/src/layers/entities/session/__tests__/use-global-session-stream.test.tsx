@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
@@ -37,7 +37,11 @@ vi.mock('../model/navigation/use-session-id', () => ({
 }));
 
 import { useAppStore } from '@/layers/shared/model';
-import { useGlobalSessionStream } from '../model/stream/use-global-session-stream';
+import {
+  RECENT_REFRESH_MIN_GAP_MS,
+  createThrottledRefresh,
+  useGlobalSessionStream,
+} from '../model/stream/use-global-session-stream';
 import { useRecentSessions } from '../model/query/use-recent-sessions';
 import { useSessions } from '../model/query/use-sessions';
 import { useSessionListStore } from '../model/stream/session-list-store';
@@ -98,6 +102,128 @@ describe('useGlobalSessionStream — recent-sessions invalidation', () => {
     });
 
     await waitFor(() => expect(transport.listRecentSessions).toHaveBeenCalledTimes(2));
+  });
+
+  it('asks once for a burst of changes, not once per change', async () => {
+    // Every Recent fetch makes the server read every agent's chats across every
+    // runtime. A streaming turn changes its chat several times a second, and
+    // when each change refetched, those reads stacked up until the whole app
+    // stalled (2026-10-13).
+    //
+    // Red when: each upsert refetches the cross-agent list again.
+    const transport = createMockTransport({
+      listRecentSessions: vi.fn().mockResolvedValue(envelope),
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () => ({ recent: useRecentSessions(), stream: useGlobalSessionStream() }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.recent.isSuccess).toBe(true));
+
+    // Spread out the way a streaming turn spreads them, so each fetch has
+    // settled before the next change lands.
+    for (let i = 0; i < 6; i++) {
+      act(() => {
+        useSessionListStore
+          .getState()
+          .upsertSession({ ...makeSession('a1'), updatedAt: `2026-03-01T00:00:${10 + i}.000Z` });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(transport.listRecentSessions).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useGlobalSessionStream — a change during a running fetch', () => {
+  beforeEach(() => {
+    useSessionListStore.setState({ sessions: {}, rekeys: {} });
+    vi.clearAllMocks();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('asks again when a change lands while a Recent fetch is still running', async () => {
+    // A slow server answer can be in flight when the throttle's trailing run
+    // fires. Red when that run joins the running fetch instead of asking again:
+    // the last change of a turn then never reaches Recent.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let release: (value: RecentSessionsResponse) => void = () => {};
+    const listRecentSessions = vi
+      .fn()
+      .mockResolvedValueOnce(envelope)
+      .mockImplementationOnce(
+        () =>
+          new Promise<RecentSessionsResponse>((resolve) => {
+            release = resolve;
+          })
+      )
+      .mockResolvedValue(envelope);
+    const transport = createMockTransport({ listRecentSessions });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () => ({ recent: useRecentSessions(), stream: useGlobalSessionStream() }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.recent.isSuccess).toBe(true));
+
+    act(() => {
+      useSessionListStore.getState().upsertSession(makeSession('a1'));
+    });
+    await waitFor(() => expect(listRecentSessions).toHaveBeenCalledTimes(2));
+    act(() => {
+      useSessionListStore
+        .getState()
+        .upsertSession({ ...makeSession('a1'), updatedAt: '2026-03-01T00:00:59.000Z' });
+    });
+
+    // The trailing run fires while the second fetch is still unanswered.
+    await act(async () => {
+      vi.advanceTimersByTime(RECENT_REFRESH_MIN_GAP_MS);
+    });
+    await waitFor(() => expect(listRecentSessions).toHaveBeenCalledTimes(3));
+    release(envelope);
+  });
+});
+
+describe('createThrottledRefresh', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('runs the first ask at once and folds the rest of the gap into one more run', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    const throttled = createThrottledRefresh(refresh, 1_000);
+
+    throttled.request();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 10; i++) throttled.request();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(5_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a pending run when disposed', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    const throttled = createThrottledRefresh(refresh, 1_000);
+    throttled.request();
+    throttled.request();
+    throttled.dispose();
+    vi.advanceTimersByTime(2_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
 

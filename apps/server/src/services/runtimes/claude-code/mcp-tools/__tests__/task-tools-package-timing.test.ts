@@ -21,7 +21,8 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools, TIMING_REAPPROVAL_NOTE } from '../task-tools.js';
+import { getTasksTools } from '../task-tools.js';
+import { TIMING_REAPPROVAL_NOTE } from '../task-tool-copy.js';
 import { raiseStanding } from '../../../../notifications/standing-events.js';
 
 vi.mock('../../../../notifications/standing-events.js', async (importOriginal) => ({

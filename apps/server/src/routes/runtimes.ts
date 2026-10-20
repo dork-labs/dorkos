@@ -72,25 +72,26 @@ import {
 } from '../services/core/operator/config-write-policy.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
-import {
-  isLocalCaller,
-  readCallerAuthority,
-  requireOperatorCookieUnderLogin,
-} from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { respondWithSignInLanding } from '../http/sign-in-landing-response.js';
+import type { SignInFailureReason } from '@dorkos/shared/sign-in-landing';
 import { readQuery } from '../http/request-query.js';
 import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
 import {
   refuseNonLocalProvisioning,
+  refuseCredentialChange,
   refuseNonLoopback,
   requestProtocol,
   streamSseAction,
 } from './runtimes-http.js';
 import { createDoeSetupRoutes } from './runtimes-doe-setup.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { withoutReferringPage } from '../services/core/auth/oauth-callback-arrival.js';
 
 const SecretBodySchema = z.object({ secret: z.string().min(1) });
 const OpenRouterKeyBodySchema = z.object({ key: z.string().min(1) });
@@ -222,7 +223,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * key (paste-key path). Returns only `{ ok }` (+ honest error) — never the key.
    */
   router.post('/opencode/openrouter/key', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const parsed = OpenRouterKeyBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
@@ -248,22 +249,21 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * (with a loopback callback embedding the state) plus the state to poll.
    */
   router.post('/opencode/openrouter/oauth/start', (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
-    const { state, challenge } = openRouterOAuthStore.start();
-    const host = honoRequestFacts(c).headers.host;
-    const callbackUrl = `${requestProtocol(c)}://${host}/api/runtimes/opencode/openrouter/oauth/callback?state=${state}`;
-    return c.json({ authorizeUrl: buildAuthorizeUrl(callbackUrl, challenge), state });
+    return c.json(startOpenRouterOAuth(openRouterCallbackBase(c)));
   });
 
   /**
    * GET /api/runtimes/opencode/openrouter/oauth/callback — the loopback landing the
    * browser is redirected to after authorization. Validates state, exchanges the
-   * code for a scoped key, stores it by reference, and renders a plain page telling
-   * the user to return to DorkOS. Loopback-only (the user's own browser hits it).
+   * code for a scoped key, stores it by reference, and sends the browser on to
+   * the app's sign-in landing page (`http/sign-in-landing-response.ts`).
+   * Loopback-only (the user's own browser hits it).
    */
   router.get('/opencode/openrouter/oauth/callback', async (c) => {
-    if (!isLocalCaller(honoRequestFacts(c))) {
+    // The provider's page is the Referer here; judge where the request came from.
+    if (!isAtThisComputer(withoutReferringPage(honoRequestFacts(c)))) {
       return c.body('Not available.', 403, { 'Content-Type': HTML_TYPE });
     }
     const query = readQuery(c);
@@ -271,11 +271,25 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     const code = typeof query.code === 'string' ? query.code : undefined;
     const error = typeof query.error === 'string' ? query.error : undefined;
     const result = await handleOpenRouterCallback({ state, code, error });
-    return c.body(
-      renderCallbackPage(result.status === 'connected', result.error),
-      result.status === 'connected' ? 200 : 400,
-      { 'Content-Type': HTML_TYPE }
-    );
+    const connected = result.status === 'connected';
+    // The page's Try again restarts this flow under the same state when the
+    // store still holds it, so the app polling that state sees the new attempt;
+    // it calls back to the same address this callback arrived on.
+    const callbackBase = openRouterCallbackBase(c);
+    return respondWithSignInLanding(c, {
+      service: 'openrouter',
+      serviceName: 'OpenRouter',
+      connected,
+      ...(connected ? {} : { reason: openRouterFailureReason({ state, code, error }, result) }),
+      ...(connected
+        ? {}
+        : {
+            retry: async () => ({
+              kind: 'authorize' as const,
+              authorizeUrl: startOpenRouterOAuth(callbackBase, state).authorizeUrl,
+            }),
+          }),
+    });
   });
 
   /**
@@ -431,7 +445,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * keyed by an arbitrary provider id.)
    */
   router.post('/opencode/provider/credential', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const parsed = ProviderCredentialBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
@@ -662,7 +676,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * secret. Loopback-only.
    */
   router.post('/:type/credential', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const type = c.req.param('type');
     const parsed = SecretBodySchema.safeParse(readJsonBody(c));
@@ -706,7 +720,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * against the known account roots, both before anything spawns.
    */
   router.post('/:type/login', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const type = c.req.param('type');
     if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type)) {
@@ -733,31 +747,47 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   return router;
 }
 
-/**
- * Escape HTML-special characters so an interpolated value can never inject markup
- * into the callback page. All current callers pass fixed strings, but this keeps
- * the same-origin page safe against reflected XSS if a future value is ever
- * user-derived.
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 /** The OAuth landing's type, as Express's `send` set it for a string body. */
 const HTML_TYPE = 'text/html; charset=utf-8';
 
-/** Minimal HTML for the OAuth callback landing (no secret, no external assets). */
-function renderCallbackPage(connected: boolean, error?: string): string {
-  const title = escapeHtml(connected ? 'Connected to OpenRouter' : 'Sign-in failed');
-  const body = escapeHtml(
-    connected
-      ? 'You can close this tab and return to DorkOS.'
-      : (error ?? 'Please return to DorkOS and try again.')
-  );
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: ui-sans-serif, system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a;"><h1 style="font-size: 1.25rem;">${title}</h1><p style="color: #555;">${body}</p></body></html>`;
+/**
+ * The address OpenRouter calls back on: this request's own scheme and host, so
+ * the browser comes back to the address it signed in from.
+ */
+function openRouterCallbackBase(c: Context<ApiEnv>): string {
+  return `${requestProtocol(c)}://${honoRequestFacts(c).headers.host}`;
+}
+
+/**
+ * Begin an OpenRouter OAuth-PKCE flow: mint a verifier and state (the verifier
+ * stays server-side) and build the authorize URL with a loopback callback
+ * embedding the state.
+ *
+ * @param callbackBase - The scheme and host OpenRouter should call back on.
+ * @param again - A flow to restart under its own state; a new one starts when
+ *   the store no longer holds it or it already connected.
+ */
+function startOpenRouterOAuth(
+  callbackBase: string,
+  again?: string
+): { authorizeUrl: string; state: string } {
+  const { state, challenge } =
+    (again ? openRouterOAuthStore.restart(again) : null) ?? openRouterOAuthStore.start();
+  const callbackUrl = `${callbackBase}/api/runtimes/opencode/openrouter/oauth/callback?state=${state}`;
+  return { authorizeUrl: buildAuthorizeUrl(callbackUrl, challenge), state };
+}
+
+/**
+ * Why an OpenRouter callback failed, as the landing page's reason code. No
+ * state, or one this server no longer holds (`handleOpenRouterCallback` says
+ * the link expired), is an expired link; no code, or an error from OpenRouter,
+ * is the person backing out; anything else is a failed exchange.
+ */
+function openRouterFailureReason(
+  args: { state?: string; code?: string; error?: string },
+  result: { error?: string }
+): SignInFailureReason {
+  if (!args.state || result.error?.includes('expired')) return 'expired';
+  if (args.error || !args.code) return 'cancelled';
+  return 'failed';
 }

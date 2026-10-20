@@ -156,9 +156,9 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * The rule is what keeps that safe under a real identity; it is not what should
  * be deciding it for no identity at all.
  *
- * **`list_my_permissions` is the ninth** (spec `agent-permissions` D9), and
- * **`accounts_usage` the tenth** (spec `claude-account-fleet` D2): see their
- * lines below.
+ * **`list_my_permissions` is the ninth** (spec `agent-permissions` D9),
+ * **`accounts_usage` the tenth** (spec `claude-account-fleet` D2), and
+ * `heartbeat_status` and `memory_read` follow: see their lines below.
  *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
@@ -192,10 +192,18 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // it is the operator's billing state and the folders their accounts live in,
   // which a tokenless health check has no need of.
   'accounts_usage',
+  // Where an agent in a room could move (re-seat): the owner's accounts, their
+  // usage and why each can or cannot take it. Billing state again, so guarded.
+  'reseat_room_agent_options',
   // What an agent did on its own: its beats, what it holds and its measures
   // (spec `heartbeats` §13). Counts and summaries only, but it is the shape of
   // somebody's work, which a tokenless health check has no need of.
   'heartbeat_status',
+  // An agent's own notes files (ADR 261017-153539): what it wrote down to
+  // carry between chats, which a tokenless caller has no business reading.
+  // It answers only for a caller with an agent identity anyway; this keeps a
+  // tokenless one from asking at all.
+  'memory_read',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([

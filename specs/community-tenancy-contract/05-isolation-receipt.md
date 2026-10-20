@@ -13,11 +13,11 @@ This receipt maps every row of the specification's **Adversarial verification ma
 
 The receipt is checked in two steps, and only the second one decides whether a proof counts.
 
-1. **Structure, on every unit run.** `apps/community/src/__tests__/tenancy-receipt.test.ts` reads the matrix straight out of `02-specification.md` and the 4.2 criteria straight out of `03-tasks.json`. It fails when a row or criterion has no entry here, an entry quotes text that is no longer in the spec, an entry has no proof, a proof names a file that does not exist or that no receipt runner executes (for example `*.s3.test.ts` or `acceptance/`), or the cited title is not declared in that file. This step reads source text only, so it is a fast pre-filter, not proof.
-2. **Execution, after the suites run.** `apps/community/scripts/tenancy-receipt.ts` checks each proof against the report its runner wrote, and fails unless the cited file and title appear there as passed. A test in a skipped block, behind a false condition, or commented out never appears as passed, so it fails this step. A title with `${…}` must match at least one reported test, and every test it matches must have passed.
-   - Real PostgreSQL proofs (`apps/community/src/**/*.integration.test.ts`): `test:pg` checks `vitest-pg-report.json` last.
-   - Browser proofs (`apps/community/browser-tests/*.spec.ts`): `test:browser` checks `browser-report.json` last.
-   - Unit proofs (`apps/community/src` and `apps/server/src`): `test:pg` also runs just those files with a JSON reporter and checks that report.
+1. **Structure, on every unit run.** `apps/server/src/services/spaces/__tests__/tenancy-receipt.test.ts` reads the matrix straight out of `02-specification.md` and the 4.2 criteria straight out of `03-tasks.json`. It fails when a row or criterion has no entry here, an entry quotes text that is no longer in the spec, an entry has no proof, a proof names a file that does not exist or that no receipt runner executes (for example `*.s3.test.ts` or `acceptance/`), or the cited title is not declared in that file. This step reads source text only, so it is a fast pre-filter, not proof.
+2. **Execution, after the suites run.** `apps/space/scripts/tenancy-receipt.ts` checks each proof against the report its runner wrote, and fails unless the cited file and title appear there as passed. A test in a skipped block, behind a false condition, or commented out never appears as passed, so it fails this step. A title with `${…}` must match at least one reported test, and every test it matches must have passed.
+   - Real PostgreSQL proofs (`apps/server/src/services/spaces/**/*.integration.test.ts`): `test:pg` checks `vitest-pg-report.json` last.
+   - Browser proofs (`apps/space/browser-tests/*.spec.ts`): `test:browser` checks `browser-report.json` last.
+   - Unit proofs (`apps/space/src` and `apps/server/src`): `test:pg` also runs just those files with a JSON reporter and checks that report.
 
 ## Adversarial verification matrix (task 4.1)
 
@@ -25,55 +25,55 @@ The receipt is checked in two steps, and only the second one decides whether a p
 
 > A session on an A path with a B object ID returns `404` and causes no write.
 
-- `apps/community/src/__tests__/administration.integration.test.ts` — rejects foreign objects on every id-taking community route, even for an owner of both
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
+- `apps/server/src/services/spaces/__tests__/administration.integration.test.ts` — rejects foreign objects on every id-taking community route, even for an owner of both
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 
 ### M2
 
 > A host session without membership cannot read A or B content.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — gives a host operator with no membership host metadata, but no content in either community
-- `apps/community/src/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — gives a host operator with no membership host metadata, but no content in either community
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
 
 ### M3
 
 > a host operator cannot issue or redeem an owner claim, membership, or content credential for active or suspended A; only pending-owner B accepts its one tenant-bound claim.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — gives a host operator with no membership host metadata, but no content in either community
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — settles racing owner claims per community while active tenants are busy and cannot be claimed
-- `apps/community/src/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
-- `apps/community/src/__tests__/administration.integration.test.ts` — creates a pending tenant idempotently and rotates its private owner claim
-- `apps/community/src/__tests__/owner-claim-locks.integration.test.ts` — serializes owner claim with concurrent ${mutation} in community-before-grant order
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — gives a host operator with no membership host metadata, but no content in either community
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — settles racing owner claims per community while active tenants are busy and cannot be claimed
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
+- `apps/server/src/services/spaces/__tests__/administration.integration.test.ts` — creates a pending tenant idempotently and rotates its private owner claim
+- `apps/server/src/services/spaces/__tests__/owner-claim-locks.integration.test.ts` — serializes owner claim with concurrent ${mutation} in community-before-grant order
 
 ### M4
 
 > Role and ownership changes in A do not change B.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — keeps role and ownership changes in A out of B, even when both tenants transfer at once
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — keeps role and ownership changes in A out of B, even when both tenants transfer at once
 
 ### M5
 
 > Leaving/removal in A preserves the account session and B membership, but immediately ends A streams and credentials.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — ends only A streams and credentials when a member is removed from A
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — removes the shared account from A while it keeps posting in B, without touching its host session
-- `apps/community/src/__tests__/admission.integration.test.ts` — removal wins a blocked post and closes the member stream without erasing history
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — ends only A streams and credentials when a member is removed from A
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — removes the shared account from A while it keeps posting in B, without touching its host session
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — removal wins a blocked post and closes the member stream without erasing history
 
 ### M6
 
 > Password recovery revokes the account’s sessions and all derived credentials across A and B, with per-community audit evidence.
 
-- `apps/community/src/__tests__/recovery.integration.test.ts` — recovers one host login and revokes derived access across every membership
-- `apps/community/src/__tests__/recovery.integration.test.ts` — rolls back a password change if access revocation fails
+- `apps/server/src/services/spaces/__tests__/recovery.integration.test.ts` — recovers one host login and revokes derived access across every membership
+- `apps/server/src/services/spaces/__tests__/recovery.integration.test.ts` — rolls back a password change if access revocation fails
 
 ### M7
 
 > A grants, agents, invites, pairings, cursors, idempotency keys, exports, and download IDs cannot be replayed in B.
 
-- `apps/community/src/__tests__/administration.integration.test.ts` — rejects foreign objects on every id-taking community route, even for an owner of both
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — lands pairing approvals, invite redemptions, and reused idempotency keys sent through both tenants only in their own tenant
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
-- `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
+- `apps/server/src/services/spaces/__tests__/administration.integration.test.ts` — rejects foreign objects on every id-taking community route, even for an owner of both
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — lands pairing approvals, invite redemptions, and reused idempotency keys sent through both tenants only in their own tenant
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
+- `apps/server/src/services/spaces/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
 
 ### M8
 
@@ -91,24 +91,24 @@ The receipt is checked in two steps, and only the second one decides whether a p
 
 > an A entry cannot mention a B human or agent, and an A export archive cannot contain a B channel, including through direct SQL writes and migrated array data; human and agent mention order survives migration.
 
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — refuses an A post that mentions a B person or a B agent, and writes nothing
-- `apps/community/src/__tests__/tenant-relations.integration.test.ts` — rejects unresolved export channels and cross-tenant updates without losing prior rows
-- `apps/community/src/__tests__/tenant-relations.integration.test.ts` — backfills ordered human, agent, duplicate, and export-channel relations
-- `apps/community/src/__tests__/tenant-relations.integration.test.ts` — rejects missing and human-agent-ambiguous mention targets during migration
-- `apps/community/src/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — refuses an A post that mentions a B person or a B agent, and writes nothing
+- `apps/server/src/services/spaces/__tests__/tenant-relations.integration.test.ts` — rejects unresolved export channels and cross-tenant updates without losing prior rows
+- `apps/server/src/services/spaces/__tests__/tenant-relations.integration.test.ts` — backfills ordered human, agent, duplicate, and export-channel relations
+- `apps/server/src/services/spaces/__tests__/tenant-relations.integration.test.ts` — rejects missing and human-agent-ambiguous mention targets during migration
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
 
 ### M10
 
 > concurrent requests cannot approve a pairing, redeem an invite, transfer ownership, or attach a cross-tenant relation after a tenant/credential recheck.
 
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — refuses a pairing approval whose member is removed after the request passed its membership check
-- `apps/community/src/__tests__/tenancy-isolation.integration.test.ts` — keeps role and ownership changes in A out of B, even when both tenants transfer at once
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
-- `apps/community/src/__tests__/admission.integration.test.ts` — admits exactly one contender for the final seat and leaves the other unadmitted
-- `apps/community/src/__tests__/admission.integration.test.ts` — does not deadlock owner transfer against a successor ejecting the owner’s agent
-- `apps/community/src/__tests__/admission.integration.test.ts` — checks an agent owner’s promoted role after a contended ejection
-- `apps/community/src/__tests__/foundation.integration.test.ts` — rejects a channel create if admin authority is removed while the insert waits
-- `apps/community/src/__tests__/foundation.integration.test.ts` — refuses a read cursor when membership is revoked before its channel lock
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — refuses a pairing approval whose member is removed after the request passed its membership check
+- `apps/server/src/services/spaces/__tests__/tenancy-isolation.integration.test.ts` — keeps role and ownership changes in A out of B, even when both tenants transfer at once
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — admits exactly one contender for the final seat and leaves the other unadmitted
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — does not deadlock owner transfer against a successor ejecting the owner’s agent
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — checks an agent owner’s promoted role after a contended ejection
+- `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — rejects a channel create if admin authority is removed while the insert waits
+- `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — refuses a read cursor when membership is revoked before its channel lock
 
 Scope: only pairing approval has a held-lock test that removes the member between the pre-check and the transaction (the first proof above). The other three parts rest on existing tests. Invite redemption relies on the admission test "admits exactly one contender for the final seat and leaves the other unadmitted". Ownership transfer relies on "does not deadlock owner transfer against a successor ejecting the owner’s agent" and the forced-overlap transfer test above. Cross-tenant relations rely on the foundation tests "rejects a channel create if admin authority is removed while the insert waits" and "refuses a read cursor when membership is revoked before its channel lock", plus the hostile requests in the concurrency burst.
 
@@ -116,9 +116,9 @@ Scope: only pairing approval has a held-lock test that removes the member betwee
 
 > community switching closes A SSE before B data enters cache; reconnect cursors cannot cross tenants.
 
-- `apps/community/browser-tests/switching.spec.ts` — switching from A to B ends the A event stream before any B request
-- `apps/community/src/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
-- `apps/community/src/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
+- `apps/space/browser-tests/switching.spec.ts` — switching from A to B ends the A event stream before any B request
+- `apps/server/src/services/spaces/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
+- `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 
 Scope: this row covers the Community host's own website switcher. The local DorkOS app's switcher and its cache are proven by DOR-2186. Those proofs run in the app's own suites (the client unit tests and the `chromium-connections` browser project), not in this receipt's runners, so they are listed here rather than above. The guard checks that each one names a real test:
 
@@ -131,19 +131,19 @@ Scope: this row covers the Community host's own website switcher. The local Dork
 
 > compatibility routes work with one community and fail closed immediately after the second community row is created, including while that row awaits its owner.
 
-- `apps/community/src/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
-- `apps/community/src/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
-- `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — runs install, chat, files, local pairing, agents, export, a second community, recovery, and every sweep with egress blocked
-- `apps/community/src/__tests__/administration.integration.test.ts` — rejects suspended public discovery on qualified and singleton routes
+- `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
+- `apps/server/src/services/spaces/__tests__/admission.integration.test.ts` — separates host operations from a pending community owner claim
+- `apps/server/src/services/spaces/__tests__/tenancy-egress.integration.test.ts` — runs install, chat, files, local pairing, agents, export, a second community, recovery, and every sweep with egress blocked
+- `apps/server/src/services/spaces/__tests__/administration.integration.test.ts` — rejects suspended public discovery on qualified and singleton routes
 
 ### M13
 
 > migration preserves all IDs, row counts, entry order, file checksums, membership, and the existing public origin.
 
-- `apps/community/src/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
-- `apps/community/src/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
-- `apps/community/src/__tests__/migrate.integration.test.ts` — upgrades a populated foundation database without changing human authors
-- `apps/community/src/__tests__/tenant-reconciliation.integration.test.ts` — adopts verified singleton references without changing their bytes or identifiers
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — upgrades a populated foundation database without changing human authors
+- `apps/server/src/services/spaces/__tests__/tenant-reconciliation.integration.test.ts` — adopts verified singleton references without changing their bytes or identifiers
 
 Scope: the public origin is deployment configuration (`COMMUNITY_PUBLIC_URL`), not a database value, so no migration reads or writes it; the upgraded host above serves its history at the same configured origin.
 
@@ -153,37 +153,37 @@ Scope: the public origin is deployment configuration (`COMMUNITY_PUBLIC_URL`), n
 
 > A zero-community database still completes first-install bootstrap after upgrade.
 
-- `apps/community/src/__tests__/first-host-bootstrap.integration.test.ts` — creates the first account, authority, tenant, membership, and channel atomically
-- `apps/community/src/__tests__/bootstrap.integration.test.ts` — issues a grant only for a truly empty host
-- `apps/community/src/__tests__/tenant-reconciliation.integration.test.ts` — marks a clean zero-community namespace ready without inventing ownership
+- `apps/server/src/services/spaces/__tests__/first-host-bootstrap.integration.test.ts` — creates the first account, authority, tenant, membership, and channel atomically
+- `apps/server/src/services/spaces/__tests__/bootstrap.integration.test.ts` — issues a grant only for a truly empty host
+- `apps/server/src/services/spaces/__tests__/tenant-reconciliation.integration.test.ts` — marks a clean zero-community namespace ready without inventing ownership
 
 ### U2
 
 > Before/after manifests for the populated fixture match stable IDs, counts, entry order, and file checksums.
 
-- `apps/community/src/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
-- `apps/community/src/__tests__/migrate.integration.test.ts` — upgrades a populated foundation database without changing human authors
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — expands a populated version-four database without changing files or cleanup work
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — upgrades a populated foundation database without changing human authors
 
 ### U3
 
 > Existing bookmarks and connections follow the documented one-community compatibility path.
 
-- `apps/community/src/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
-- `apps/community/src/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
+- `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
 - `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
-- `apps/community/src/browser/api.test.ts` — keeps the singleton compatibility API at the host root
+- `apps/client/src/space/api.test.ts` — keeps the singleton compatibility API at the host root
 
 ### U4
 
 > The service works with Cloud egress unavailable.
 
-- `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — refuses direct outbound TCP, DNS, and UDP, so the journey below cannot reach anything off the host
-- `apps/community/src/__tests__/tenancy-egress.integration.test.ts` — runs install, chat, files, local pairing, agents, export, a second community, recovery, and every sweep with egress blocked
+- `apps/server/src/services/spaces/__tests__/tenancy-egress.integration.test.ts` — refuses direct outbound TCP, DNS, and UDP, so the journey below cannot reach anything off the host
+- `apps/server/src/services/spaces/__tests__/tenancy-egress.integration.test.ts` — runs install, chat, files, local pairing, agents, export, a second community, recovery, and every sweep with egress blocked
 
 ### U5
 
 > Creating the second community row disables ambiguous routes immediately and irreversibly trips the downgrade guard.
 
-- `apps/community/src/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
-- `apps/community/src/__tests__/backout.integration.test.ts` — never reopens backout after a second community is removed
-- `apps/community/src/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
+- `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
+- `apps/server/src/services/spaces/__tests__/backout.integration.test.ts` — never reopens backout after a second community is removed
+- `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade

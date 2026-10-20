@@ -12,6 +12,7 @@
  *
  * @vitest-environment node
  */
+import { createTestDb } from '@dorkos/test-utils/db';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -128,7 +129,7 @@ async function signInFully(
   const started = await oauth.startSignin(TARGET, options);
   pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
   const cb = await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
-  expect(cb).toEqual({ connected: true, serverName: SERVER });
+  expect(cb).toMatchObject({ connected: true, serverName: SERVER });
   return started.flowId;
 }
 
@@ -207,8 +208,8 @@ describe('the connected port', () => {
       oauth.handleCallback({ state: started.flowId, code: AUTH_CODE }),
     ]);
 
-    expect(first).toEqual({ connected: true, serverName: SERVER });
-    expect(second).toEqual({ connected: true, serverName: SERVER });
+    expect(first).toMatchObject({ connected: true, serverName: SERVER });
+    expect(second).toMatchObject({ connected: true, serverName: SERVER });
     expect(connected).toHaveLength(1);
   });
 
@@ -271,9 +272,9 @@ describe('the connected port', () => {
     const started = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
     pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
 
-    await expect(oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })).resolves.toEqual(
-      { connected: true, serverName: SERVER }
-    );
+    await expect(
+      oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })
+    ).resolves.toMatchObject({ connected: true, serverName: SERVER });
     expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
   });
 });
@@ -335,6 +336,22 @@ describe('resumeAfterMcpSignin', () => {
     vi.doUnmock('../../session/index.js');
     vi.doUnmock('../../../lib/logger.js');
     vi.resetModules();
+  });
+
+  it('holds the nudge to the runtime default when the chat’s latest turn was held (DOR-3037)', async () => {
+    const { resumeAfterMcpSignin, dispatchMessage } = await loadWithMocks({ accepted: true });
+    const hold = await import('../../core/turn-power/continuation-hold.js');
+    hold.setContinuationHoldDb(createTestDb());
+    try {
+      hold.noteTurnHold(SESSION_ID, true);
+      await resumeAfterMcpSignin(EVENT);
+      expect(dispatchMessage.mock.calls[0][0].permissionCeiling).toBe('runtime-default');
+      hold.noteTurnHold(SESSION_ID, false);
+      await resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' });
+      expect(dispatchMessage.mock.calls[1][0].permissionCeiling).toBeUndefined();
+    } finally {
+      hold.setContinuationHoldDb(undefined);
+    }
   });
 
   it('settles the session’s card into a receipt, then resumes the agent', async () => {

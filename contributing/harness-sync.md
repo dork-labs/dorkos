@@ -234,7 +234,7 @@ A third, **P9c** in `native-reachable.property.test.ts`, closes the loop from th
 
 A person who runs `/plugin install` in Claude Code gets a plugin only Claude Code can see. `dorkos harness sync` now says so, in a block headed **Installed in Claude Code only** (SRC-08, J-07, and the user half of HK-14).
 
-**None of it is in `@dorkos/harness`, and that is the design rather than an accident.** Three module docs in `inventory/` forbid this package from reading a home directory by name, for the reason `inventory/hooks.ts` states: a source inventory of a repository that reached into somebody's home would report one machine's private hooks as if they were the project's. So the read is a server module, `apps/server/src/services/harness/claude-enabled-plugins.ts`, and the block is assembled in `packages/cli/src/harness-sync-command.ts` **beside** `formatDropList`'s output, never inside it.
+**None of it is in `@dorkos/harness`, and that is the design rather than an accident.** Three module docs in `inventory/` forbid this package from reading a home directory by name, for the reason `inventory/hooks.ts` states: a source inventory of a repository that reached into somebody's home would report one machine's private hooks as if they were the project's. So the read is a server module, `apps/server/src/services/harness/claude-enabled-plugins.ts`, and the block is assembled in `packages/cli/src/harness-sync-claude-only.ts` and printed by `harness-sync-command.ts` **beside** `formatDropList`'s output, never inside it.
 
 Four things about that read are load-bearing:
 

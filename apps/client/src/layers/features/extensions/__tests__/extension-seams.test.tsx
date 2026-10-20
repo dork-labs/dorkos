@@ -290,23 +290,28 @@ describe('registerStatusBarItem (§6.6)', () => {
         slot
       );
       const promoted = selectPromotedItems({
-        // Two things louder than a quiet extension item, one quieter than an
-        // urgent one: a lost connection and bypassed permissions.
+        // A context window filling up (70%): louder than a quiet extension
+        // item, quieter than an urgent one. Bypassed permissions are on the
+        // line too, but the chip is held below the widest tier (DOR-3037), so
+        // it takes its slot without contesting one.
         ctx: {
           ...quietContext(evaluated.promotion),
-          connectionState: 'reconnecting',
+          contextPercent: 70,
           permissionMode: 'bypassPermissions',
         },
         pins: [],
-        nodes: { extensions: 'x', model: 'm', connection: 'c', permission: 'p' },
+        nodes: { extensions: 'x', model: 'm', context: 'c', permission: 'p' },
       });
-      // At the narrowest width only two right-cluster slots are left.
-      return applyStatusBudget(promoted, resolveStatusBudget(300)).items.map((item) => item.key);
+      // At the narrowest width only two right-cluster slots are left, and the
+      // held chip has one of them.
+      return applyStatusBudget(promoted, resolveStatusBudget(300))
+        .items.map(({ key }) => key)
+        .sort();
     };
 
-    expect(keptAtNarrowestWidth()).toEqual(['extensions', 'connection']);
+    expect(keptAtNarrowestWidth()).toEqual(['extensions', 'permission']);
     urgent = false;
-    expect(keptAtNarrowestWidth()).toEqual(['permission', 'connection']);
+    expect(keptAtNarrowestWidth()).toEqual(['context', 'permission']);
   });
 });
 

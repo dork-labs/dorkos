@@ -19,9 +19,9 @@ import { appRoutes } from '@/layers/shared/lib';
  *
  * @module features/dashboard-sidebar/ui/SidebarChrome
  */
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
+import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -48,6 +48,9 @@ import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { hasUnread, useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
+  markPendingSessionTarget,
+  clearPendingSessionTarget,
+  usePendingSessionTarget,
   notifySessionLookupFailed,
   resolveSessionForCwd,
   useStartNewSession,
@@ -184,6 +187,12 @@ export interface SidebarChromeValue {
    * needs and reaches nothing else.
    */
   homeRoomId: string | null;
+  /**
+   * The agent a click is heading to while its chat is looked up, or `null`.
+   * Tint only, for the same reason as `homeRoomId`: the anchor, the rollup and
+   * Today keep following what is actually open (DOR-2891).
+   */
+  pendingAgentPath: string | null;
   /** Open whatever a row points at, and remember that it was opened (BC-16). */
   openTarget: (target: SidebarTarget) => void;
   /** Start a session, optionally scoped to one agent's directory. */
@@ -269,8 +278,8 @@ interface SidebarChromeProps {
 export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const navigate = useNavigate();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const startNewSession = useStartNewSession();
   const { open: openProfile } = useProfileDeepLink();
   const memberIdByPath = useMeshMemberIds();
@@ -372,46 +381,54 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // answered by that record, and it has to survive walking away to
       // Marketplace or Team — which the router's `?dir` does not.
       if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
-      navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
+      return navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
     },
     [navigate]
   );
 
   const openAgent = useCallback(
     (agentPath: string) => {
-      // Clicking an agent resumes its most recent conversation (BC-34). The
-      // lookup goes through the shared resolver rather than this tab's cache:
-      // the roster lists every agent, but only the one this window has opened
-      // has a cached session list, so a cache read alone would send you to an
-      // empty chat for every other one (DOR-928). It is asynchronous while every
-      // row around it is not, so it guards against being overtaken — by another
-      // agent click, and by any of the app's other navigations, which it
-      // notices through the router's own location.
+      // Clicking an agent opens its Direct chat (rule S12, DOR-2997): one
+      // standing chat per agent, where its messages to you land, rather than
+      // its newest chat, which would keep moving. Its work chats stay one click
+      // away in its chat switcher. Asynchronous while every row around it is
+      // not, so it guards against being overtaken — by another agent click,
+      // and by any of the app's other navigations.
       const isStillWanted = beginSessionNavigation(() => router.state.location);
-      void resolveSessionForCwd({ queryClient, transport }, agentPath)
-        .then(async (resolved) => {
+      // The row shows the click landed while the lookup is out (DOR-2891).
+      const clearPending = markPendingSessionTarget(agentPath);
+      useInteractionStore.getState().recordOpened('agent', agentPath);
+      void transport
+        .openDirectChat({ agentPath })
+        .then(async (chat) => {
           if (!isStillWanted()) return;
-          if (resolved === null) {
-            notifySessionLookupFailed(agentPath);
+          // A Direct chat made just now has no transcript yet, so it opens the
+          // way a new chat does; the session route drops the draft flag again
+          // for one that already exists.
+          const target = await newSessionTarget(transport, {
+            session: chat.sessionId,
+            dir: agentPath,
+          });
+          if (isStillWanted()) await navigate(target);
+        })
+        .catch(async (error: unknown) => {
+          // Only the owner has Direct chats; anyone else still gets the
+          // agent's latest chat with them, as before.
+          if ((error as { status?: number }).status === 403) {
+            const resolved = await resolveSessionForCwd({ queryClient, transport }, agentPath);
+            if (!resolved || !isStillWanted()) return;
+            if (!resolved.isNew) return void (await openSession(resolved.sessionId, agentPath));
+            await navigate(
+              await newSessionTarget(transport, { session: resolved.sessionId, dir: agentPath })
+            );
             return;
           }
-          if (resolved.isNew) {
-            const target = await newSessionTarget(transport, {
-              session: resolved.sessionId,
-              dir: agentPath,
-            });
-            if (isStillWanted()) void navigate(target);
-          } else openSession(resolved.sessionId, agentPath);
-        })
-        .catch((error: unknown) => {
-          // The resolver handles its own failures, so a throw here is a defect
-          // in this callback — otherwise an unhandled rejection and a click that
-          // died in silence.
           reportClientError(transport, error);
           if (isStillWanted()) notifySessionLookupFailed(agentPath);
-        });
+        })
+        .finally(clearPending);
     },
-    [openSession, queryClient, router, transport]
+    [navigate, openSession, queryClient, router, transport]
   );
 
   // DorkBot, found the only way the client can: `isSystem` is the flag on the
@@ -426,7 +443,8 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       switch (suggestionId) {
         case 'suggestion:agents-found':
           // Straight into the review-and-join dialog, which already holds the
-          // scan this suggestion is counting.
+          // scan this suggestion is counting. Never shown on a hub: only that
+          // dialog scans, and it never opens there.
           useImportProjectsStore.getState().open();
           return;
         case 'suggestion:add-agent':
@@ -459,12 +477,17 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   // documents: this must not become a second opinion about what is "active".
   const onHome = useRouterState({ select: (state) => state.location.pathname === '/' });
   const homeRoomId = onHome ? teamRoomId : null;
+  // An agent click still finding out which chat to open lights its row at once.
+  // Any navigation, that click's own included, hands the answer back to the
+  // router's location, so a lookup that was overtaken cannot keep a row lit.
+  const pendingAgentPath = usePendingSessionTarget();
+  useEffect(() => router.subscribe('onBeforeNavigate', clearPendingSessionTarget), [router]);
 
   const openTarget = useCallback(
     (target: SidebarTarget) => {
       switch (target.kind) {
         case 'session':
-          openSession(target.sessionId, target.cwd);
+          void openSession(target.sessionId, target.cwd);
           return;
         case 'agent':
           openAgent(target.path);
@@ -590,6 +613,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       bootSettled,
       activeTarget,
       homeRoomId,
+      pendingAgentPath,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
       viewProfileFor,
@@ -621,6 +645,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       bootSettled,
       activeTarget,
       homeRoomId,
+      pendingAgentPath,
       openTarget,
       startNewSession,
       viewProfileFor,

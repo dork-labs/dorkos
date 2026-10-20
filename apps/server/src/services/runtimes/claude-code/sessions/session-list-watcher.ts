@@ -12,8 +12,10 @@
  * account it belongs to. Emission is on lifecycle transitions only — nothing is
  * emitted unless a session actually appeared, changed or went away.
  *
- * The watch targets each projects ROOT directory with `depth: 1` and filters to
- * `.jsonl` files in the handler. It must NOT pass a glob to `chokidar.watch`:
+ * The watch targets each projects ROOT directory, through `transcripts/session-tree-watch.ts`:
+ * one recursive native watch on macOS and Windows, which holds no descriptor
+ * per transcript (DOR-2907), and chokidar at `depth: 1` elsewhere. Either way
+ * the handler filters to `.jsonl` files one level down. It must NOT pass a glob to `chokidar.watch`:
  * chokidar v4 removed glob support, so a `{dir}/*.jsonl` pattern watches a
  * literal path that never exists and silently never fires (a real production
  * bug this module shipped with). Watching the root also picks up slug
@@ -23,7 +25,7 @@
  * rescan of that dir, which is how the first session in a brand-new project
  * reaches the list without waiting for a per-file event.
  *
- * CHOKIDAR IS THE FAST PATH, NOT THE SOURCE OF TRUTH. `chokidar.watch()`
+ * THE WATCH IS THE FAST PATH, NOT THE SOURCE OF TRUTH. Under chokidar, `chokidar.watch()`
  * returns before it has attached anything: it scans the root first and only
  * then calls `fs.watch` on it (`handler.js` `_handleDir` — the read is awaited,
  * the watch comes after). Anything created inside that window is invisible
@@ -43,10 +45,16 @@
  * nothing changed. Emission stays transition-only; the sweep is a source of
  * rescans, never of events.
  *
- * Rescans are debounced PER SLUG DIRECTORY ({@link SESSION_LIST_DEBOUNCE_MS})
- * so a streaming turn's JSONL append burst collapses into one re-scan of just
- * that project, and the resulting `session_upserted` is suppressed when the
- * session's projected metadata is byte-for-byte unchanged.
+ * Rescans are coalesced PER SLUG DIRECTORY: the first event waits
+ * {@link SESSION_LIST_DEBOUNCE_MS}, so a burst collapses into one re-scan of
+ * just that project, and a transcript that keeps CHANGING re-scans its project
+ * at most once per {@link SESSION_LIST_MIN_RESCAN_GAP_MS}. A working agent
+ * appends to its transcript many times a second for minutes on end; with a
+ * debounce alone every pause in that stream was a re-scan, a re-read of the
+ * changed transcript and an upsert broadcast (DOR-2893). A transcript appearing
+ * or going away, or a project folder doing so, skips the gap. The resulting
+ * `session_upserted` is suppressed when the session's projected metadata is
+ * byte-for-byte unchanged.
  *
  * `session_status` events are NOT emitted here — per-session status flows over
  * `subscribeSession`/the projector. The session-list broadcaster fans this
@@ -54,20 +62,23 @@
  *
  * @module services/runtimes/claude-code/sessions/session-list-watcher
  */
-import chokidar, { type FSWatcher } from 'chokidar';
 import { readdir, stat } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import type { TranscriptReader } from './transcript-reader.js';
-import { WATCHER } from '../../../../config/constants.js';
+import {
+  defaultTreeWatcher,
+  type TreeWatch,
+  type TreeWatcher,
+} from './transcripts/session-tree-watch.js';
 import { logger } from '../../../../lib/logger.js';
 
 /**
  * Debounce window for each slug directory's re-scan (ms). One streaming turn
  * fsync-appends to a JSONL many times a second; this collapses that burst into a
  * single re-scan. Deliberately a touch longer than the per-session
- * {@link WATCHER.DEBOUNCE_MS} because a list re-scan is heavier than a tail read.
+ * `WATCHER.DEBOUNCE_MS` because a list re-scan is heavier than a tail read.
  */
 export const SESSION_LIST_DEBOUNCE_MS = 250;
 
@@ -83,6 +94,22 @@ export const SESSION_LIST_DEBOUNCE_MS = 250;
  * milliseconds even for someone with hundreds of projects.
  */
 export const SESSION_LIST_RECONCILE_MS = 5_000;
+
+/**
+ * Every this many reconcile sweeps (so once a minute), the sweep also checks
+ * each listed transcript's modification time against the row it was listed
+ * with. An append moves no directory's mtime, so a dropped change event used to
+ * leave a row stale until the session changed again; this bounds it to a
+ * minute, whichever watch is in use (DOR-2907).
+ */
+export const SESSION_LIST_APPEND_SWEEP_EVERY = 12;
+
+/**
+ * The least time between two re-scans of one slug directory while its
+ * transcripts only change (ms). A session being written to updates its row in
+ * the list at most this often; one appearing or going away is not held back.
+ */
+export const SESSION_LIST_MIN_RESCAN_GAP_MS = 3_000;
 
 /**
  * Compare two sessions on the fields that matter to the sidebar/global view.
@@ -157,7 +184,7 @@ async function dirMtime(dirPath: string): Promise<number | undefined> {
  * anywhere under any of the roots. Runs until the consumer stops iterating (e.g.
  * the broadcaster stops), at which point every watcher is closed in `return()`.
  *
- * One chokidar watcher per root, each capturing its OWN root for the
+ * One watch per root, each capturing its OWN root for the
  * child-of-root guards in its handlers: a single shared capture would compare a
  * second account's file events against the first account's root and drop them as
  * "not a slug dir". The queue, the debounce timers and the last-known inventory
@@ -169,10 +196,13 @@ async function dirMtime(dirPath: string): Promise<number | undefined> {
  *   account. Defaults to {@link TranscriptReader.getProjectsRootSet};
  *   injectable for tests. An empty array watches nothing and yields nothing,
  *   which is the correct answer on a machine with no Claude account (spec §9).
+ * @param watchTree - How a root is watched; see `transcripts/session-tree-watch.ts`.
+ *   Defaults to the platform's choice; tests pass chokidar to drive it by hand.
  */
 export function watchSessionList(
   transcriptReader: TranscriptReader,
-  projectsRoots: string[] = transcriptReader.getProjectsRootSet()
+  projectsRoots: string[] = transcriptReader.getProjectsRootSet(),
+  watchTree: TreeWatcher = defaultTreeWatcher()
 ): AsyncIterableIterator<SessionListEvent> {
   // Last-known inventory per slug directory, keyed by ABSOLUTE path so the same
   // project under two accounts is two independent entries. Diffing is scoped per
@@ -192,7 +222,11 @@ export function watchSessionList(
   // blocked on an empty queue). `closed` short-circuits delivery after `return()`.
   const queue: SessionListEvent[] = [];
   let waiter: ((result: IteratorResult<SessionListEvent>) => void) | null = null;
-  const debounceTimers = new Map<string, NodeJS.Timeout>();
+  // The pending re-scan per slug dir and when it fires, and when each dir was
+  // last re-scanned, for the gap between re-scans of a changing transcript. On
+  // the monotonic clock, so a wall-clock step back cannot stretch the gap.
+  const debounceTimers = new Map<string, { timer: NodeJS.Timeout; dueAt: number }>();
+  const lastRescanAt = new Map<string, number>();
   let sweepTimer: NodeJS.Timeout | undefined;
   let closed = false;
 
@@ -227,34 +261,47 @@ export function watchSessionList(
     }
   };
 
-  /** Debounce per slug dir: a burst in one project re-scans only that project. */
-  const scheduleRescan = (transcriptsDir: string): void => {
-    const existing = debounceTimers.get(transcriptsDir);
-    if (existing) clearTimeout(existing);
-    debounceTimers.set(
-      transcriptsDir,
-      setTimeout(() => {
-        debounceTimers.delete(transcriptsDir);
-        void rescanDir(transcriptsDir);
-      }, SESSION_LIST_DEBOUNCE_MS)
-    );
+  /**
+   * Coalesce per slug dir: a burst in one project re-scans only that project,
+   * once. A pending re-scan absorbs every event until it runs, and is only ever
+   * brought forward, never pushed back, so a stream of writes cannot starve it.
+   *
+   * @param transcriptsDir - The slug dir to re-scan.
+   * @param urgent - A transcript or the dir itself appeared or went away, so
+   *   the gap between re-scans of a changing transcript does not apply.
+   */
+  const scheduleRescan = (transcriptsDir: string, urgent = true): void => {
+    const now = performance.now();
+    const gapEnds =
+      (lastRescanAt.get(transcriptsDir) ?? -Infinity) + SESSION_LIST_MIN_RESCAN_GAP_MS;
+    const dueAt = Math.max(now + SESSION_LIST_DEBOUNCE_MS, urgent ? 0 : gapEnds);
+    const pending = debounceTimers.get(transcriptsDir);
+    if (pending) {
+      if (pending.dueAt <= dueAt) return;
+      clearTimeout(pending.timer);
+    }
+    const timer = setTimeout(() => {
+      debounceTimers.delete(transcriptsDir);
+      lastRescanAt.set(transcriptsDir, performance.now());
+      void rescanDir(transcriptsDir);
+    }, dueAt - now);
+    debounceTimers.set(transcriptsDir, { timer, dueAt });
   };
 
   /**
    * Re-derive one root's slug dirs from disk and rescan the ones that moved.
    *
-   * This is the half of the watcher that does not believe chokidar (module
+   * This is the half of the watcher that does not believe the watch (module
    * doc). It reads the root once and stats each child; a dir whose mtime moved
    * since the previous sweep has gained or lost a transcript, and a dir the
-   * sweep has never seen is one chokidar never reported. Both get the same
-   * debounced rescan a chokidar event would have triggered, so an unchanged
+   * sweep has never seen is one the watch never reported. Both get the same
+   * debounced rescan a watch event would have triggered, so an unchanged
    * tree costs one `readdir` plus one `stat` per project and emits nothing.
    *
    * Appends to an existing transcript deliberately do NOT move a directory's
-   * mtime and so do not show up here — the per-file watch chokidar attached
-   * when it first saw the file carries those, and a sweep that re-listed every
-   * project on every turn would be a poll of the whole tree rather than a
-   * backstop.
+   * mtime and so do not show up here — the watch carries those, and
+   * {@link sweepAppends} catches the ones it dropped once a minute, rather than
+   * this sweep re-listing every project every five seconds.
    */
   const sweepRoot = async (projectsRoot: string): Promise<void> => {
     let names: string[];
@@ -303,13 +350,44 @@ export function watchSessionList(
    * self-rescheduling timeout rather than an interval: a sweep of a large tree
    * on a busy machine can outlast the gap, and sweeps must not overlap.
    */
+  /**
+   * Re-scan each project of this root holding a transcript that changed after
+   * the row listing it was read. One `stat` per listed session; a project
+   * re-scans once however many of its transcripts moved.
+   */
+  const sweepAppends = async (projectsRoot: string): Promise<void> => {
+    for (const [dir, sessions] of known) {
+      if (closed) return;
+      if (dirname(dir) !== projectsRoot) continue;
+      for (const session of sessions.values()) {
+        let modified: string;
+        try {
+          // The same reading the row was made from (`stat.mtime.toISOString()`
+          // in the transcript reader): the raw mtime carries a fraction of a
+          // millisecond that the ISO string rounds.
+          modified = (await stat(join(dir, `${session.id}.jsonl`))).mtime.toISOString();
+        } catch {
+          continue; // Gone: the directory sweep reports removals.
+        }
+        if (modified !== session.updatedAt) {
+          scheduleRescan(dir, false);
+          break;
+        }
+      }
+    }
+  };
+
+  let sweepsRun = 0;
   const scheduleSweep = (): void => {
     if (closed || projectsRoots.length === 0) return;
     sweepTimer = setTimeout(() => {
       void (async () => {
+        sweepsRun += 1;
+        const appendsToo = sweepsRun % SESSION_LIST_APPEND_SWEEP_EVERY === 0;
         for (const projectsRoot of projectsRoots) {
           if (closed) return;
           await sweepRoot(projectsRoot);
+          if (appendsToo) await sweepAppends(projectsRoot);
         }
         scheduleSweep();
       })();
@@ -321,16 +399,19 @@ export function watchSessionList(
    * below closes over THIS root, which is what keeps N accounts from
    * misattributing each other's events.
    */
-  const watchRoot = (projectsRoot: string): FSWatcher => {
-    /** Route a chokidar file event to its slug dir's debounced re-scan. */
-    const onFileEvent = (filePath: string): void => {
+  const watchRoot = (projectsRoot: string): TreeWatch => {
+    /**
+     * Route a transcript event to its slug dir's re-scan; a change in place
+     * waits out the gap between re-scans, an appearance or removal does not.
+     */
+    const onFileEvent = (filePath: string, urgent: boolean): void => {
       if (!filePath.endsWith('.jsonl')) return;
       const transcriptsDir = dirname(filePath);
       // Transcripts live one level down ({root}/{slug}/{id}.jsonl); a stray
       // .jsonl directly in the root is not a session and must not trigger a
       // re-scan of the root itself as if it were a slug dir.
       if (transcriptsDir === projectsRoot) return;
-      scheduleRescan(transcriptsDir);
+      scheduleRescan(transcriptsDir, urgent);
     };
 
     /** Route a slug dir appearing/disappearing to its debounced re-scan. */
@@ -350,25 +431,10 @@ export function watchSessionList(
 
     // Asking for the watch here does NOT mean it is armed here: chokidar scans
     // the root before it calls `fs.watch` on it, and everything created in
-    // between is invisible to it forever (module doc). The reconcile sweep, not
-    // the ordering of these lines, is what covers that window. NO glob (see
-    // module doc); depth 1 = the root's slug dirs and the JSONL files directly
-    // inside them.
-    const watcher: FSWatcher = chokidar.watch(projectsRoot, {
-      persistent: true,
-      ignoreInitial: true, // initial inventory delivered by the scan below
-      depth: 1,
-      awaitWriteFinish: {
-        stabilityThreshold: WATCHER.STABILITY_THRESHOLD_MS,
-        pollInterval: WATCHER.POLL_INTERVAL_MS,
-      },
-    });
-    watcher.on('add', onFileEvent);
-    watcher.on('change', onFileEvent);
-    watcher.on('unlink', onFileEvent);
-    watcher.on('addDir', onDirEvent);
-    watcher.on('unlinkDir', onDirEvent);
-
+    // between is invisible to it forever (module doc), and a native watch on a
+    // root that does not exist yet arms only on a later try. The reconcile
+    // sweep, not the ordering of these lines, is what covers those windows.
+    //
     // A dead root watcher means this account's session list silently stops
     // tracking new, changed and removed sessions — everything downstream (the
     // sidebar, the global view) freezes on stale data with no other signal.
@@ -387,23 +453,33 @@ export function watchSessionList(
     // fixes. The Set lives in this per-root closure, so one account's latch
     // cannot silence another account's.
     const seenCodes = new Set<string>();
-    watcher.on('error', (err) => {
-      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
-      if (seenCodes.has(code)) return;
-      seenCodes.add(code);
-      // Logged as an explicit object, never the bare Error: the NDJSON reporter
-      // spreads what it is given, and `message`/`stack` are non-enumerable on
-      // an Error, so they would vanish (DOR-832).
-      logger.error(
-        `[watcher-error] session-list-watcher — further ${code} errors from this watcher are suppressed`,
-        {
-          projectsRoot,
-          code,
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-          suppressingFurtherErrors: true,
-        }
-      );
+    const watch = watchTree(projectsRoot, {
+      file: onFileEvent,
+      dir: onDirEvent,
+      // The platform said something changed without naming it: check every
+      // project this root holds, as a change rather than an arrival.
+      unknown: () => {
+        for (const dir of known.keys())
+          if (dirname(dir) === projectsRoot) scheduleRescan(dir, false);
+      },
+      error: (err) => {
+        const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+        if (seenCodes.has(code)) return;
+        seenCodes.add(code);
+        // Logged as an explicit object, never the bare Error: the NDJSON reporter
+        // spreads what it is given, and `message`/`stack` are non-enumerable on
+        // an Error, so they would vanish (DOR-832).
+        logger.error(
+          `[watcher-error] session-list-watcher — further ${code} errors from this watcher are suppressed`,
+          {
+            projectsRoot,
+            code,
+            message: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            suppressingFurtherErrors: true,
+          }
+        );
+      },
     });
 
     // Initial fleet-wide inventory for this account — emit every on-disk session
@@ -436,7 +512,7 @@ export function watchSessionList(
       }
     })();
 
-    return watcher;
+    return watch;
   };
 
   const watchers = projectsRoots.map(watchRoot);
@@ -445,7 +521,7 @@ export function watchSessionList(
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    for (const timer of debounceTimers.values()) clearTimeout(timer);
+    for (const { timer } of debounceTimers.values()) clearTimeout(timer);
     debounceTimers.clear();
     if (sweepTimer) clearTimeout(sweepTimer);
     sweepTimer = undefined;

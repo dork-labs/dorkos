@@ -33,6 +33,8 @@ const readFileContent = vi.fn();
 
 const DOC_ID = 'doc-md';
 
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -48,10 +50,22 @@ vi.mock('@/layers/shared/model', () => {
 // deterministic and off the real transport. `save` records what the autosave
 // debounce flushes.
 const mockFileSave = {
+  recovery: {
+    identity: {},
+    supported: false,
+    current: () => false,
+    discover: async () => ({ status: 'idle' }),
+    recover: async () => ({ status: 'idle' }),
+    inspectCurrent: async () => ({ status: 'idle' }),
+  },
   status: 'idle' as 'idle' | 'saving' | 'saved' | 'error' | 'conflict',
   conflict: null as { currentHash: string; currentContent: string } | null,
   canSave: true,
   save: vi.fn(),
+  prepareFinalSave: (content: string) => ({
+    cancel: vi.fn(),
+    flush: () => mockFileSave.save(content),
+  }),
   overwrite: vi.fn(),
   adoptDisk: vi.fn(),
   getConfirmedBase: vi.fn(),

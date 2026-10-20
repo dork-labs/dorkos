@@ -1,8 +1,9 @@
 import { motion } from 'motion/react';
-import { ScanSearch } from 'lucide-react';
+import { Plus, ScanSearch } from 'lucide-react';
 import { Button } from '@/layers/shared/ui/button';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
-import { useImportProjectsStore } from '@/layers/shared/model';
+import { useAgentCreationStore, useImportProjectsStore } from '@/layers/shared/model';
+import { useIsHub } from '@/layers/entities/config';
 
 const ghostContainerVariants = {
   animate: {
@@ -35,9 +36,15 @@ function GhostRow() {
   );
 }
 
-/** Mode A empty state — three dashed ghost rows with a centered CTA overlay. */
+/**
+ * Mode A empty state — three dashed ghost rows with a centered CTA overlay. On
+ * a hub, which holds none of the person's projects, the CTA creates an agent
+ * instead of searching for projects.
+ */
 export function AgentGhostRows() {
   const openImport = useImportProjectsStore((s) => s.open);
+  const openCreate = useAgentCreationStore((s) => s.open);
+  const isHub = useIsHub();
 
   return (
     <div className="relative w-full max-w-2xl px-4">
@@ -55,11 +62,23 @@ export function AgentGhostRows() {
 
       {/* Centered overlay CTA */}
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-        <p className="text-lg font-semibold">Bring in existing projects</p>
-        <Button size="sm" className="gap-1.5" onClick={openImport}>
-          <ScanSearch className="size-3.5" />
-          Search for projects
-        </Button>
+        {isHub ? (
+          <>
+            <p className="text-lg font-semibold">No agents yet</p>
+            <Button size="sm" className="gap-1.5" onClick={() => openCreate()}>
+              <Plus className="size-3.5" />
+              Create agent
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-lg font-semibold">Bring in existing projects</p>
+            <Button size="sm" className="gap-1.5" onClick={openImport}>
+              <ScanSearch className="size-3.5" />
+              Search for projects
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

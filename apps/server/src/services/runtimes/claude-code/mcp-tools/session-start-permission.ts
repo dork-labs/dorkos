@@ -11,22 +11,33 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-start-permission
  */
-import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  PermissionModeDescriptor,
+  PermissionStop,
+} from '@dorkos/shared/agent-runtime';
 import {
   actsWithoutAsking,
   isNoLooserThan,
   isSilentReadOnly,
+  resolveStopMode,
 } from '@dorkos/shared/permission-semantics';
 import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import {
+  readAgentExecutionDefaults,
+  resolveUnattendedDefaultStop,
+} from '../../../session/resolution/resolve-session-defaults.js';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
- * The ceiling for a caller that has no chat (the external `/mcp` server): Claude
- * Code's `acceptEdits`. There is no chat level to inherit, so it keeps the limit
- * every caller had before chats could pass on their own.
+ * The ceiling for a caller that has no chat (the external `/mcp` server) and no
+ * Files & commands stop to go by: Claude Code's `acceptEdits`. There is no chat
+ * level to inherit, so it keeps the limit every caller had before chats could
+ * pass on their own. A registered agent with a stop is held to that stop
+ * instead (spec `trusted-by-default-flip` §5.2).
  */
 const NO_CHAT_CEILING_MODE = 'acceptEdits';
 
@@ -153,6 +164,31 @@ interface Ceiling {
   inChat: boolean;
   /** Whether the calling chat never asks: set to, or running at, "Never ask". */
   neverAsks: boolean;
+  /**
+   * Whether the level is the chat's LIVE mode, read at call time, rather than
+   * its stored row or a fallback. Only a live Full is passed on unnamed.
+   */
+  live: boolean;
+}
+
+/**
+ * What decides how far an unmarked start may go (DOR-3147, Security's scope),
+ * read by the caller from server-bound state.
+ */
+export interface StartLevelFacts {
+  /**
+   * What a person set for the calling agent's Files & commands, else the
+   * configured default; `null` when neither names one, `'unknown'` when it
+   * cannot be read. An unmarked start never goes above it, and an unknown one
+   * passes no Full on unnamed.
+   */
+  personSetStop: PermissionStop | null | 'unknown';
+  /**
+   * Whether Full may be passed on unnamed at all: false for an agent held as
+   * it is, and for a call that raises an approval card, whose card shows only
+   * the arguments sent.
+   */
+  fullUnnamedAllowed: boolean;
 }
 
 /** The modes a registered runtime declares, or an empty list. */
@@ -193,14 +229,20 @@ async function storedModeOf(sessionId: string | null): Promise<string | null> {
  * 2. In a chat with no live mode: its stored settings row.
  * 3. Neither, or an id its runtime does not declare: that runtime's declared
  *    default, and {@link FLOOR} when even that cannot be found. Fails closed.
- * 4. No chat at all: {@link NO_CHAT_CEILING_MODE}.
+ * 4. No chat at all: the calling agent's own Files & commands stop, as the new
+ *    chat's runtime declares it; {@link NO_CHAT_CEILING_MODE} when it has none
+ *    or that runtime declares no mode at it.
  */
-async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
+async function ceilingOf(
+  chat: CallingChat | null,
+  noChat: { stop: PermissionStop | null; runtimeType: string }
+): Promise<Ceiling> {
   if (!chat) {
-    const found = declaredModes(NO_CHAT_CEILING_RUNTIME).values.find(
-      (m) => m.id === NO_CHAT_CEILING_MODE
-    );
-    const base = { callerMode: null, exact: false, inChat: false, neverAsks: false };
+    const ownStop = resolveStopMode(noChat.stop, declaredModes(noChat.runtimeType).values);
+    const found = ownStop
+      ? declaredModes(noChat.runtimeType).values.find((m) => m.id === ownStop)
+      : declaredModes(NO_CHAT_CEILING_RUNTIME).values.find((m) => m.id === NO_CHAT_CEILING_MODE);
+    const base = { callerMode: null, exact: false, inChat: false, neverAsks: false, live: false };
     return found
       ? { ...base, level: found, label: found.label, inheritId: null }
       : { ...base, level: FLOOR, label: FLOOR_LABEL, inheritId: null };
@@ -217,6 +259,7 @@ async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
       exact: true,
       inChat: true,
       neverAsks: chat.neverAsks === true || isPersonOnlyMode(own.id),
+      live: chat.permissionMode !== null,
     };
   }
   const fallback = modes.values.find((m) => m.id === modes.default);
@@ -225,6 +268,7 @@ async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
     exact: false,
     inChat: true,
     neverAsks: chat.neverAsks === true || isPersonOnlyMode(id ?? undefined),
+    live: false,
   };
   return fallback
     ? { ...base, level: fallback, label: fallback.label, inheritId: fallback.id }
@@ -336,29 +380,138 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
 }
 
 /**
+ * A ceiling held to the new chat's runtime default as well, for a start whose
+ * turn is marked (DOR-3107, Dorian 2026-10-19 15:07, Security 15:10): the chat
+ * it opens is born capped, as one a marked turn's chat message opens is, since
+ * its first turn's ceiling alone would leave every later turn at the caller's
+ * level. The stricter of the two: a caller already at or below the default
+ * keeps its own level, and a caller set to never ask still starts only chats
+ * that cannot ask.
+ *
+ * @param ceiling - The caller's own ceiling.
+ * @param runtimeType - The runtime the new chat runs on.
+ */
+function cappedForMarkedStart(ceiling: Ceiling, runtimeType: string): Ceiling {
+  const modes = declaredModes(runtimeType);
+  const fallback = modes.values.find((m) => m.id === modes.default);
+  const level = fallback ?? FLOOR;
+  if (isNoLooserThan(level, ceiling.level)) return ceiling;
+  return {
+    ...ceiling,
+    level,
+    label: fallback?.label ?? FLOOR_LABEL,
+    inheritId: fallback?.id ?? null,
+    exact: false,
+  };
+}
+
+/**
+ * A ceiling held to what a person set for the calling agent as well (DOR-3147,
+ * Security's condition 1): an unmarked start never goes above it. The stricter
+ * of the two, resolved on the new chat's runtime; a caller already at or below
+ * it keeps its own level.
+ *
+ * @param ceiling - The caller's own ceiling.
+ * @param stop - What a person set, else the configured default.
+ * @param runtimeType - The runtime the new chat runs on.
+ */
+function cappedAtPersonSet(ceiling: Ceiling, stop: PermissionStop, runtimeType: string): Ceiling {
+  const modes = declaredModes(runtimeType);
+  const id = resolveStopMode(stop, modes.values);
+  const found = id ? modes.values.find((m) => m.id === id) : undefined;
+  const level = found ?? FLOOR;
+  if (isNoLooserThan(level, ceiling.level)) return ceiling;
+  return {
+    ...ceiling,
+    level,
+    label: found?.label ?? FLOOR_LABEL,
+    inheritId: found?.id ?? null,
+    exact: false,
+  };
+}
+
+/**
+ * The ceiling a caller with no chat (the external `/mcp` server) is held to:
+ * the agent the token names, at its own Files & commands stop (spec
+ * `trusted-by-default-flip` §5.2). Only a registered agent reaches here: a plain
+ * key, a per-user key or an unidentified caller is refused before it.
+ *
+ * @param chat - The calling chat, or null for a caller with none.
+ * @param runtime - The runtime the new chat runs on, for its config section.
+ * @param agentPath - The calling agent's folder.
+ * @returns The agent's resolved stop, or `null` in a chat, whose own level is
+ *   the ceiling.
+ */
+export async function chatlessCallerStop(
+  chat: CallingChat | null,
+  runtime: Pick<AgentRuntime, 'getCapabilities'>,
+  agentPath: string | undefined
+): Promise<PermissionStop | null> {
+  if (chat) return null;
+  return resolveUnattendedDefaultStop({
+    configSection: runtime.getCapabilities().settings.configSection,
+    agent: await readAgentExecutionDefaults(agentPath),
+  });
+}
+
+/**
  * Everything `session_start` decides about the level, in one call: the ceiling,
  * the grant against the target runtime's declared modes, and the rule that Full
- * autonomy is only ever granted when asked for by name. Nothing is written here; a refusal
- * leaves nothing behind.
+ * autonomy is granted unnamed only to a chat that is itself at Full (DOR-3147).
+ * Nothing is written here; a refusal leaves nothing behind.
+ *
+ * Inherited Full (Security's scope, 2026-10-20) needs every one of: a chat whose
+ * LIVE level is Full, an unmarked turn, a caller in a chat (only the in-session
+ * resolver names one, for a registered agent), a person-set level that is known
+ * and not below Full, and a call that raises no approval card. Anything else
+ * keeps `NAME_FULL_AUTONOMY`.
  *
  * @param requested - The mode the tool was asked for, if any.
  * @param chat - The calling chat, or null for a caller with none.
  * @param runtimeType - The runtime the new chat runs on.
+ * @param callerStop - With no chat, the calling agent's own resolved Files &
+ *   commands stop (its own, then the runtime's, then the global one), which
+ *   is its ceiling; `null` keeps {@link NO_CHAT_CEILING_MODE}. Ignored in a
+ *   chat, whose own level is the ceiling.
+ * @param marked - Whether the starting turn carries a mark: the new chat is
+ *   then also held to its runtime's default ({@link cappedForMarkedStart}).
+ * @param facts - What a person set and whether Full may pass on unnamed
+ *   ({@link StartLevelFacts}). Absent, nothing passes Full on unnamed.
  */
 export async function resolveStartPermission(
   requested: string | undefined,
   chat: CallingChat | null,
-  runtimeType: string
+  runtimeType: string,
+  callerStop: PermissionStop | null = null,
+  marked = false,
+  facts?: StartLevelFacts
 ): Promise<
   { ok: true; permission: SessionStartPermission } | { ok: false; error: string; code: string }
 > {
-  const ceiling = await ceilingOf(chat);
+  const own = await ceilingOf(chat, { stop: callerStop, runtimeType });
+  const personSet = facts ? facts.personSetStop : 'unknown';
+  const ceiling = marked
+    ? cappedForMarkedStart(own, runtimeType)
+    : personSet !== 'unknown' && personSet !== null
+      ? cappedAtPersonSet(own, personSet, runtimeType)
+      : own;
   const grant = grantMode(requested, ceiling, runtimeType);
   if (!grant.ok) return grant;
-  // Full autonomy is never granted silently. An approval card shows only the
-  // arguments a call sent, so an inherited Full autonomy would be invisible to
-  // the person approving it: that level has to be asked for by name.
-  if (requested === undefined && actsWithoutAsking(grant.mode)) {
+  // Full autonomy is granted unnamed only to an unmarked chat that is itself at
+  // Full right now (DOR-3147): making it name the level only pushed agents to
+  // start their chats lower, where every room turn they woke asked again.
+  // Anything else still has to ask for it by name, so the person approving a
+  // card can see it: a caller with no chat, a marked turn, a level that was a
+  // stored row or a fallback, an unknown person-set level, a held agent, or a
+  // call that raises a card. A person-set cap makes the ceiling inexact too.
+  const inheritsOwnFull =
+    !marked &&
+    ceiling.inChat &&
+    ceiling.exact &&
+    ceiling.live &&
+    personSet !== 'unknown' &&
+    facts?.fullUnnamedAllowed === true;
+  if (requested === undefined && actsWithoutAsking(grant.mode) && !inheritsOwnFull) {
     return {
       ok: false,
       error:

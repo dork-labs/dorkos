@@ -1233,7 +1233,7 @@ describe('contract: tokens, stored photos and saved uploads', () => {
     }
   });
 
-  it('pins that a saved upload is not served back: its folder is a dotfile path', async () => {
+  it('serves a saved upload back, as a download when it could open as a page (DOR-2990)', async () => {
     const res = await call(base, 'POST', `/api/uploads?cwd=${q(CWD)}`, {
       headers: MULTIPART,
       body: multipart([{ field: 'files', filename: 'back.txt', type: 'text/plain', content: 'b' }]),
@@ -1241,10 +1241,13 @@ describe('contract: tokens, stored photos and saved uploads', () => {
     expect(res.status).toBe(200);
     const [saved] = (JSON.parse(res.text) as { uploads: Array<{ filename: string }> }).uploads;
     const get = await call(base, 'GET', `/api/uploads/${q(saved!.filename)}?cwd=${q(CWD)}`);
-    expect(get.status).toBe(404);
-    expect(JSON.parse(get.text)).toEqual({ error: 'File not found' });
+    expect(get.status).toBe(200);
+    expect(get.text).toBe('b');
+    expect(get.headers['content-type']).toBe('application/octet-stream');
+    expect(get.headers['content-disposition']).toBe('attachment');
+    expect(get.headers['x-content-type-options']).toBe('nosniff');
     const head = await call(base, 'HEAD', `/api/uploads/${q(saved!.filename)}?cwd=${q(CWD)}`);
-    expect(head.status).toBe(404);
+    expect(head.status).toBe(200);
     expect(head.text).toBe('');
   });
 

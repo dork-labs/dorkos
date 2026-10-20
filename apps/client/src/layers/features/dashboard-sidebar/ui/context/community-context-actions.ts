@@ -29,6 +29,7 @@
  *
  * @module features/dashboard-sidebar/ui/context/community-context-actions
  */
+import { docsUrl } from '@dorkos/shared/links';
 import {
   ArrowDown,
   ArrowUp,
@@ -49,7 +50,7 @@ import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-con
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 
 /** Where "Run your own space server" leads: the docs page for running one. */
-export const COMMUNITY_DEPLOY_GUIDE_URL = 'https://dorkos.ai/docs/self-hosting/space-server';
+export const COMMUNITY_DEPLOY_GUIDE_URL = docsUrl('/self-hosting/space-server');
 
 /**
  * The servers on which the person may be offered "Create a space": each

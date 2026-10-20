@@ -1,0 +1,359 @@
+import type { Hono } from 'hono';
+import type { Pool } from 'pg';
+import {
+  CommunityWireChannelAutoJoinResponseSchema,
+  CommunityWireChannelCreateRequestSchema,
+  CommunityWireChannelListResponseSchema,
+  CommunityWireChannelMemberRequestSchema,
+  CommunityWireChannelMembersQuerySchema,
+  CommunityWireChannelResponseSchema,
+  CommunityWireChannelUpdateRequestSchema,
+  CommunityWireMemberListResponseSchema,
+  CommunityWireMemberResponseSchema,
+  CommunityWireMemberRoleUpdateRequestSchema,
+  type CommunityWireChannel,
+} from '@dorkos/shared/community-wire';
+import type { CommunityAuth } from '../../auth.js';
+import {
+  assertPrincipalCurrent,
+  lockChannel,
+  lockPrincipalAuthority,
+  requireLiveRole,
+  requireMember,
+  requirePrincipal,
+  transaction,
+  type Member,
+  type Principal,
+} from '../../data.js';
+import { channelRoster } from '../../content/roster.js';
+import { ApiError, json, readJson } from '../../http.js';
+import { notifyLive } from '../../live/notices.js';
+import { refuseDirectMessage, registerDirectMessageRoutes } from './agents/direct-messages.js';
+
+interface ChannelRow {
+  id: string;
+  name: string;
+  description: string | null;
+  visibility: 'public' | 'private';
+  archived: boolean;
+  created_at: Date;
+  joined: boolean;
+  unread_count: string;
+}
+
+function project(row: ChannelRow): CommunityWireChannel {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    visibility: row.visibility,
+    archived: row.archived,
+    createdAt: row.created_at.toISOString(),
+    joined: row.joined,
+    unreadCount: Number(row.unread_count),
+  };
+}
+
+/** A private channel is never joined on arrival: only the people it names may read it. */
+function refusePrivateAutoJoin(visibility: string, autoJoin: boolean | undefined): void {
+  if (autoJoin && visibility !== 'public')
+    throw new ApiError(409, 'STATE_CONFLICT', 'Only public channels can be joined on arrival.');
+}
+
+async function channelProjection(pool: Pool, id: string, member: Member | Principal) {
+  const agent = 'kind' in member && member.kind === 'agent';
+  const result = await pool.query<ChannelRow>(
+    // member-kind: no-members-table
+    `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
+      EXISTS(SELECT 1 FROM ${agent ? 'agent_channel_members' : 'channel_members'} cm WHERE cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$2) AS joined,
+      GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
+     FROM channels c LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$2
+     WHERE c.id=$1 AND c.community_id=$3`,
+    [id, member.id, member.community_id]
+  );
+  const row = result.rows[0];
+  if (!row || (agent && !row.joined) || (row.visibility === 'private' && !row.joined)) {
+    throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
+  }
+  return project(row);
+}
+
+/** Register channel discovery, membership and moderator routes, and direct messages'. */
+export function registerChannelRoutes(
+  app: Hono,
+  { pool, auth }: { pool: Pool; auth: CommunityAuth }
+) {
+  // Direct messages are channels of their own kind (DOR-2955); their routes sit with these.
+  registerDirectMessageRoutes(app, { pool, auth });
+  app.get('/channels', async (c) => {
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    const agent = member.kind === 'agent';
+    const result = await pool.query<ChannelRow>(
+      // member-kind: no-members-table
+      `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
+        (cm.${agent ? 'agent_id' : 'member_id'} IS NOT NULL) AS joined,
+        GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
+       FROM channels c
+       LEFT JOIN ${agent ? 'agent_channel_members' : 'channel_members'} cm ON cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$1
+       LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$1
+       WHERE c.community_id=$2 AND c.kind='channel'
+         AND ${agent ? 'cm.agent_id IS NOT NULL' : "(c.visibility='public' OR cm.member_id IS NOT NULL)"}
+       ORDER BY c.created_at,c.id`,
+      [member.id, member.community_id]
+    );
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
+    return json(c, CommunityWireChannelListResponseSchema, { channels: result.rows.map(project) });
+  });
+
+  // Before `/channels/:id`, which would otherwise take `auto-join` for a channel id.
+  app.get('/channels/auto-join', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const rows = await transaction(pool, async (client) => {
+      await requireLiveRole(client, member, ['owner', 'admin'], { allowHeld: true });
+      return client.query<{ id: string }>(
+        'SELECT id FROM channels WHERE community_id=$1 AND auto_join ORDER BY created_at,id',
+        [member.community_id]
+      );
+    });
+    return json(c, CommunityWireChannelAutoJoinResponseSchema, {
+      channelIds: rows.rows.map((row) => row.id),
+    });
+  });
+
+  app.post('/channels', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireChannelCreateRequestSchema);
+    refusePrivateAutoJoin(body.visibility ?? 'public', body.autoJoin);
+    const id = await transaction(pool, async (client) => {
+      const row = await client.query<{ id: string }>(
+        `INSERT INTO channels(community_id,name,description,visibility,auto_join)
+         VALUES($1,$2,$3,$4,$5) RETURNING id`,
+        [
+          member.community_id,
+          body.name,
+          body.description ?? null,
+          body.visibility ?? 'public',
+          body.autoJoin ?? false,
+        ]
+      );
+      // A concurrent demotion may complete while INSERT waits; this check is inside the transaction.
+      await requireLiveRole(client, member, ['owner', 'admin']);
+      await client.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+        [member.community_id, row.rows[0].id, member.id]
+      );
+      return row.rows[0].id;
+    });
+    const channel = await channelProjection(pool, id, member);
+    return json(c, CommunityWireChannelResponseSchema, { channel }, 201);
+  });
+
+  app.get('/channels/:id', async (c) => {
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    const channel = await channelProjection(pool, c.req.param('id'), member);
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel,
+    });
+  });
+
+  app.patch('/channels/:id', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireChannelUpdateRequestSchema);
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), member);
+      await requireLiveRole(client, member, ['owner', 'admin']);
+      refuseDirectMessage(channel);
+      refusePrivateAutoJoin(channel.visibility, body.autoJoin);
+      await client.query(
+        `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
+           archived=COALESCE($5,archived),auto_join=COALESCE($6,auto_join),
+           slow_mode_seconds=COALESCE($7,slow_mode_seconds),epoch=epoch+1 WHERE id=$1`,
+        [
+          c.req.param('id'),
+          body.name ?? null,
+          'description' in body,
+          body.description ?? null,
+          body.archived ?? null,
+          body.autoJoin ?? null,
+          body.slowModeSeconds ?? null,
+        ]
+      );
+      if (body.slowModeSeconds !== undefined)
+        await client.query(
+          `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,next_state,changed_fields)
+           VALUES($1,$2,'channel.slow_mode',$3,$4,ARRAY['slow_mode_seconds'])`,
+          [member.community_id, member.id, c.req.param('id'), String(body.slowModeSeconds)]
+        );
+      // Archiving and the epoch change both end the channel's open streams.
+      await notifyLive(client, { k: 'channel', c: member.community_id, ch: c.req.param('id') });
+    });
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel: await channelProjection(pool, c.req.param('id'), member),
+    });
+  });
+
+  app.post('/channels/:id/join', async (c) => {
+    const member = await requirePrincipal(c, auth, pool, 'post');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents cannot join channels themselves.');
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), member);
+      refuseDirectMessage(channel);
+      await lockPrincipalAuthority(client, member, 'post');
+      await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
+      if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
+      if (channel.visibility === 'private' && !channel.joined)
+        throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
+      await client.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [member.community_id, channel.id, member.id]
+      );
+    });
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel: await channelProjection(pool, c.req.param('id'), member),
+    });
+  });
+
+  app.post('/channels/:id/leave', async (c) => {
+    const member = await requirePrincipal(c, auth, pool, 'post');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents cannot leave channels themselves.');
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), member);
+      refuseDirectMessage(channel);
+      await lockPrincipalAuthority(client, member, 'post');
+      await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
+      await client.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        channel.id,
+        member.id,
+      ]);
+      await notifyLive(client, { k: 'member', c: member.community_id, m: member.id });
+    });
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel: await channelProjection(pool, c.req.param('id'), member),
+    });
+  });
+
+  app.get('/channels/:id/members', async (c) => {
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    // Only a caller that asks gets agents' availability: an installed app parses this list
+    // strictly and would refuse the new fields (DOR-2877).
+    const { include } = CommunityWireChannelMembersQuerySchema.parse(c.req.query());
+    const channel = await channelProjection(pool, c.req.param('id'), member);
+    if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
+    const rows = await channelRoster(pool, channel.id, member.community_id);
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
+    return json(c, CommunityWireMemberListResponseSchema, {
+      members: rows.map((row) => ({
+        memberId: row.id,
+        kind: row.kind,
+        displayName: row.display_name,
+        handle: row.handle,
+        role: row.role,
+        ownerMemberId: row.owner_member_id,
+        ownerDisplayName: row.owner_display_name,
+        joinedAt: row.joined_at.toISOString(),
+        ...(include.has('availability') && row.kind === 'agent'
+          ? {
+              runsOn: row.runs_on,
+              lastSeenAt: row.last_seen_at?.toISOString() ?? null,
+              availability: row.availability ?? 'unknown',
+            }
+          : {}),
+      })),
+    });
+  });
+
+  app.post('/channels/:id/members', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireChannelMemberRequestSchema);
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), actor);
+      await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
+      if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
+      const target = await client.query(
+        "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
+        [body.memberId, actor.community_id]
+      );
+      if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+      await client.query(
+        'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [actor.community_id, channel.id, body.memberId]
+      );
+    });
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel: await channelProjection(pool, c.req.param('id'), actor),
+    });
+  });
+
+  app.delete('/channels/:id/members/:memberId', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), actor);
+      const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
+      const target = await client.query<{ role: Member['role'] }>(
+        "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
+        [c.req.param('memberId'), actor.community_id]
+      );
+      if (!target.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+      if (
+        target.rows[0].role === 'owner' ||
+        (target.rows[0].role === 'admin' && actorRole !== 'owner')
+      ) {
+        throw new ApiError(403, 'FORBIDDEN', 'This member cannot be removed by your role.');
+      }
+      await client.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        channel.id,
+        c.req.param('memberId'),
+      ]);
+      await notifyLive(client, {
+        k: 'member',
+        c: actor.community_id,
+        m: c.req.param('memberId'),
+      });
+    });
+    return json(c, CommunityWireChannelResponseSchema, {
+      channel: await channelProjection(pool, c.req.param('id'), actor),
+    });
+  });
+
+  app.patch('/members/:id/role', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const body = await readJson(c, CommunityWireMemberRoleUpdateRequestSchema);
+    const member = await transaction(pool, async (client) => {
+      await requireLiveRole(client, actor, ['owner']);
+      const result = await client.query<{
+        id: string;
+        display_name: string;
+        handle: string;
+        role: Member['role'];
+        joined_at: Date;
+      }>(
+        `UPDATE members SET role=$1
+         WHERE id=$2 AND community_id=$3 AND kind='person' AND active AND role<>'owner'
+         RETURNING id,display_name,handle,role,created_at AS joined_at`,
+        [body.role, c.req.param('id'), actor.community_id]
+      );
+      if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [actor.community_id, actor.id, 'member.role', result.rows[0].id]
+      );
+      return result.rows[0];
+    });
+    return json(c, CommunityWireMemberResponseSchema, {
+      member: {
+        memberId: member.id,
+        kind: 'human',
+        displayName: member.display_name,
+        handle: member.handle,
+        role: member.role,
+        ownerMemberId: null,
+        joinedAt: member.joined_at.toISOString(),
+      },
+    });
+  });
+}

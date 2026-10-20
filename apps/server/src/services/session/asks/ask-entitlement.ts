@@ -93,6 +93,11 @@ export type AskEntitlement =
  *   caller, unchanged.
  * - **`program` → `see`.** Refused at the answer routes since DOR-474; it
  *   already reads the same detail one route over.
+ * - **`relayed` → `see`.** The owner's own DorkOS on the web shows a chat's
+ *   pending questions and approvals so the page can draw them. Whether a
+ *   relayed answer counts is the relay's request server's decision (an
+ *   approval needs a passkey proof, spec `everything-is-a-space` B4), never
+ *   this entitlement's.
  * - **`bridged` → `answer`** only when the Ask is room-bound, the allowlist it
  *   is checked against belongs to the platform this person clicked from, AND
  *   that allowlist names them. Otherwise `none`: absence is not consent, a
@@ -112,6 +117,7 @@ export function askEntitlement(principal: CallerPrincipal, subject: AskSubject):
     case 'operator':
       return 'answer';
     case 'program':
+    case 'relayed':
       return 'see';
     case 'bridged':
       if (subject.roomId === undefined) return 'none';

@@ -27,10 +27,9 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     await expect(rightPanel.attentionHeading).toBeVisible();
     await expect(rightPanel.activityHeading).toBeVisible();
 
-    // Single visible contribution → the header names it (Pulse) instead of a
-    // blank close-only bar, and shows no tab strip.
+    // A single view still has an accessible tab and the + menu.
     await expect(rightPanel.singleTabTitle).toBeVisible();
-    await expect(rightPanel.header.getByRole('tablist')).toHaveCount(0);
+    await expect(rightPanel.header.getByRole('tab')).toHaveCount(1);
   });
 
   test('opens on Home to the room, with Pulse one press away', async ({ rightPanel }) => {
@@ -43,9 +42,9 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     await rightPanel.open();
 
     await expect(rightPanel.roomTab).toHaveAttribute('aria-selected', 'true');
-    await expect(rightPanel.pulseTab).toHaveAttribute('aria-selected', 'false');
+    await expect(rightPanel.pulseTab).toHaveCount(0);
 
-    await rightPanel.pulseTab.click();
+    await rightPanel.selectView('Pulse');
     await expect(rightPanel.pulsePanel).toBeVisible();
     // Not "Needs attention": Home's own pinned triage header is that same
     // list, on screen beside this panel on desktop, so PulseAttentionSection
@@ -65,8 +64,8 @@ test.describe('Pulse — right inspector panel @smoke', () => {
 
     await expect(rightPanel.profileTab).toBeVisible();
     await expect(rightPanel.profileTab).toHaveAttribute('aria-selected', 'true');
-    // Pulse is still a reachable tab, just not the active one here.
-    await expect(rightPanel.pulseTab).toHaveAttribute('aria-selected', 'false');
+    // Pulse stays reachable through the + menu without occupying a default tab.
+    await expect(rightPanel.pulseTab).toHaveCount(0);
   });
 
   test('the attention badge is honest — hidden when nothing needs the operator', async ({
@@ -94,7 +93,7 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     // hidden section. This still does what an operator does: opens the panel,
     // then asks for Pulse.
     await rightPanel.open();
-    await rightPanel.pulseTab.click();
+    await rightPanel.selectView('Pulse');
     await expect(rightPanel.pulsePanel).toBeVisible();
     await expect(rightPanel.badge).toHaveCount(0);
   });

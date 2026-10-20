@@ -31,6 +31,7 @@ export * from './fake-memory-provider.js';
 export * from './memory-conformance.js';
 export * from './mock-factories.js';
 export * from './mock-heartbeat-transport.js';
+export * from './mock-hub-transport.js';
 export * from './mock-remote-access.js';
 export * from './runtime-conformance.js';
 export * from './runtime-conformance-session-list.js';

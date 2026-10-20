@@ -38,7 +38,9 @@ failure: an operator configures an agent in a direct session, adds it to a
 channel, asks about the setup conversation, and the agent knows nothing — an
 agent in 3 channels + 2 DMs + 1 direct session holds six disjoint runtime
 transcripts and DorkOS ships zero memory infrastructure (the SDK's own
-auto-memory is deliberately suppressed, ADR-0273 A2). The gap is DOR-632; the
+auto-memory was meant to be suppressed by ADR-0273 A2; it was only moved into
+the first message, and is switched off on agent turns since ADR 261017-153539,
+which also adds notes files to this memory). The gap is DOR-632; the
 litepaper's name for the eventual capability is Wing (vision, unshipped —
 nothing ships under that name here).
 

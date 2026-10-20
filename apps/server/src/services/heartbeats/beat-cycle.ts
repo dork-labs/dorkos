@@ -46,6 +46,12 @@ import { recordBeat } from './record.js';
 import { standingKey, triageByRules } from './triage-rules.js';
 import { decideBeat, type BeatTriagePort } from './triage/beat-triage.js';
 import type { BeatAgent, BeatOutboxPort, BeatWake, FinishedBeat } from './beat-runner.js';
+import {
+  ceilingCarrying,
+  mergeMarks,
+  NO_MARKS,
+  type TurnMarks,
+} from '../core/turn-power/turn-marks.js';
 
 /** The longest a failing gatherer holds `gathered_through` back. */
 export const GATHER_HOLD_MAX_MS = 24 * 60 * 60_000;
@@ -62,7 +68,11 @@ export interface BeatCycleDeps {
   /** Every gatherer this server runs. */
   gatherers: GathererRegistry;
   /** Open commitments, for the prompt. */
-  commitments: { list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[] };
+  commitments: {
+    list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[];
+    /** The marks the agent's open promises were made under (DOR-3036); absent reads none. */
+    openMarks?(agentId: string): TurnMarks;
+  };
   /** How a beat turn starts. */
   launcher: BeatTurnLauncher;
   /** Where raises go. */
@@ -326,17 +336,29 @@ export async function runTurn(
     kind: ctx.kind,
   });
   track.chatSessionId = chat.sessionId;
-  let settle: (outcome: 'ok' | 'failed') => void = () => undefined;
-  const settled = new Promise<'ok' | 'failed'>((resolve) => {
-    settle = resolve;
+  type Settled = [outcome: 'ok' | 'failed', refusal?: string];
+  let settle: (...result: Settled) => void = () => undefined;
+  const settled = new Promise<Settled>((resolve) => {
+    settle = (...result) => resolve(result);
   });
+  // The beat reads the agent's open promises, so one made in a marked turn marks the beat too
+  // (DOR-3036): a stranger's words, or a teammate's, do not come back as the agent's own.
+  // So does any gathered change a marked turn wrote (another agent's post a teammate's chain
+  // reached): the beat then runs as a marked turn, tier and limit included.
+  const carried = ceilingCarrying(
+    ctx.changes.reduce(
+      (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
+      deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
+    )
+  );
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
     messageId,
     agentPath: agent.projectPath,
     runtime: agent.runtime,
     content,
-    onSettled: (outcome) => settle(outcome),
+    ...(carried !== undefined ? { permissionCeiling: carried } : {}),
+    onSettled: (outcome, refusal) => settle(outcome, refusal),
   });
   if (launched.status !== 'started') return refused(deps, ctx, track, launched);
   const sessionId = launched.sessionId;
@@ -348,13 +370,17 @@ export async function runTurn(
         () => false
       )
     : Promise.resolve(true);
-  const outcome = await settled;
+  const [outcome, refusal] = await settled;
   const turn = settleBeatTurn(chat.sessionId);
   track.settled = true;
   if (!(await renamed)) {
     // A runtime whose transcript exists only once the turn wrote it.
     void deps.launcher.rename(agent, sessionId, chat.title).catch(() => undefined);
   }
+  // Refused before the agent saw the beat (DOR-2994): it could not start,
+  // which is not the agent failing.
+  if (refusal !== undefined)
+    return refused(deps, ctx, track, { status: 'refused', message: refusal });
   return afterTurn(deps, ctx, sessionId, outcome, turn);
 }
 

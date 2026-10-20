@@ -24,7 +24,12 @@ import {
   initApprovalSubjectResolvers,
   resetApprovalSubjectResolvers,
 } from '../approvals/approval-subject.js';
-import { initCapabilityTierGate, resetCapabilityTierGate } from '../capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  resetPermissionGate,
+} from '../capabilities/index.js';
+import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../mcp-tool-gate.js';
 
 /** The id from the operator's screenshot, kept so the fixture names the report. */
@@ -51,10 +56,13 @@ describe('an approval card names the agent it would remove', () => {
     ran = 0;
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
+    // A person set it to Ask: under Trusted a delete runs, recorded, with no card.
+    askFor('mesh_unregister');
   });
 
   afterEach(() => {
     resetCapabilityTierGate();
+    resetPermissionGate();
     resetApprovalSubjectResolvers();
   });
 

@@ -33,6 +33,7 @@
  *
  * @module services/core/ai-metadata-reporter
  */
+import { siteUrl } from '@dorkos/shared/links';
 import { randomUUID } from 'crypto';
 
 import { AiGenerationEventSchema, type AiGenerationEvent } from '@dorkos/shared/telemetry-events';
@@ -43,7 +44,7 @@ import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where AI-metadata batches are delivered (the shared owned ingest). */
-export const AI_METADATA_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
+export const AI_METADATA_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Default gap between automatic flushes (60s), matching the usage reporter. */
 export const AI_METADATA_FLUSH_INTERVAL_MS = 60_000;

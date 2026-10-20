@@ -42,7 +42,7 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
   {
     code: 'awaiting_approval',
     label: 'awaiting_approval — warm, because it is waiting on YOU',
-    text: "Kai is waiting for you to approve something before it can carry on. Open Kai's chat to answer. It will wait, but not forever.",
+    text: "Kai is waiting for your approval before it can answer. Open Kai's chat or Needs you to answer. New messages for Kai wait with it. It will wait, but not forever.",
   },
   {
     code: 'runtime_gone',

@@ -809,6 +809,30 @@ describe('ConnectDialog when a connection can’t start (DOR-2713)', () => {
     expect(within(refusal).getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 
+  it('says the sign-in setup has a problem, without a retry, when it needs a fix', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const refused = {
+      ...base,
+      state: 'failed' as const,
+      reason: 'This app’s sign-in setup in DorkOS has a problem.',
+      failureCode: 'setup_needs_fix' as const,
+      completedAt: '2026-09-06T00:00:01.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(refused);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(refused);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const refusal = await screen.findByTestId('connect-refusal');
+    expect(refusal).toHaveTextContent('Gmail can’t be connected right now');
+    expect(refusal).toHaveTextContent('Use Send feedback to report it.');
+    expect(refusal).not.toHaveTextContent('isn’t available');
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(within(refusal).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
   it('offers to link the account again when this computer has to be linked first', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

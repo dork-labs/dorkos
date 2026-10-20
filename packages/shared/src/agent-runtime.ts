@@ -125,11 +125,35 @@ export interface TurnPermissionLevel {
    * True when the turn this level was recorded from read words from outside
    * the owner's circle: a stranger's message, one DorkOS cannot vouch for, or
    * another agent's that carried such words on (spec `trusted-by-default-flip`
-   * §4.7). Not a power axis: no mode is admitted or refused by it. It rides the
+   * §4.7). Not a power axis: no mode is admitted or refused by it, though the
+   * permission gate reads it so a destructive action or a permission change in
+   * such a turn still asks (DOR-2739). That errs toward asking: a room turn
+   * with a stranger's message merely in view asks too. It rides the
    * level so every hop that already carries a level carries it too, and a note
    * the turn saves to memory says so.
    */
   readonly outsider?: true;
+  /**
+   * The teammates whose words started the chain this turn is part of, one per
+   * space room and member (DOR-3036, `specs/turn-marks`): a space member who
+   * is not the owner wrote a message a turn answered, and everything that
+   * turn caused carries it on. Not a power axis of its own: a turn carrying it
+   * is held to the teammate tier and counted against each space's monthly
+   * limit. Present (even empty) means marked.
+   */
+  readonly teammate?: readonly TeammateOrigin[];
+}
+
+/**
+ * Where a teammate's mark began: the local copy of the space room the
+ * teammate wrote in, which names the space connection whose monthly limit the
+ * marked turns count against, and the teammate's author id there.
+ */
+export interface TeammateOrigin {
+  /** The local room id of the space room the teammate wrote in. */
+  readonly roomId: string;
+  /** The teammate's author id in that room. */
+  readonly authorId: string;
 }
 
 /**
@@ -1073,6 +1097,22 @@ export interface MessageOpts extends SessionSettings {
      * on says so (spec `trusted-by-default-flip` §4.7).
      */
     outsiderInView?: true;
+    /**
+     * True when a space member who is not this install's owner started the
+     * turn: a teammate (DOR-2955). A runtime that honours it lets the turn's
+     * DorkOS tools reach only {@link roomId}, and refuses the rest; the same
+     * turn is also sent `unattended` and a read-only `permissionCeiling`.
+     * Assigned with the rest of this marker, on every send.
+     */
+    teammate?: true;
+    /**
+     * True when a message this turn answers was written by anyone but a person
+     * on this machine: a stranger in a bridged chat, a space member, another
+     * agent (DOR-2955). The words then reach the model as words only: a
+     * runtime that honours it never runs them as a command and never expands a
+     * file reference in them.
+     */
+    untrustedText?: true;
   };
   /**
    * The home of the agent this turn is dispatched AS, when a server path names
@@ -1145,6 +1185,15 @@ export interface MessageOpts extends SessionSettings {
    * its own ignores it.
    */
   unattended?: boolean;
+  /**
+   * True when THIS turn carries a teammate's mark (DOR-3036): a teammate in a
+   * shared space started the chain it is part of, however many agents it came
+   * through. Set by the registry's turn-mark seam, never by a caller. A runtime
+   * that honours it holds the turn to the teammate tier: its DorkOS tools reach
+   * only `roomTurn.roomId` when it answers a room and no room otherwise, and it
+   * reads no files, notes or the owner's profile. Assigned on every send.
+   */
+  teammate?: true;
   /**
    * The loosest level THIS turn may run at, whatever the session is set to
    * (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
@@ -1822,6 +1871,20 @@ export interface AgentRuntime {
   isHelperWorking?(sessionId: string): boolean;
 
   /**
+   * The ids of the background tasks (helpers, shells) a session's process
+   * still names as live after its turn ended. A turn's stream-end sweep
+   * spares these instead of calling them lost, so a helper that outlives the
+   * reply keeps its row (FB-18). The ids are the ones `subagent_update`
+   * carries as `taskId`.
+   *
+   * Optional, and empty when the process ended with its turn: a runtime with
+   * no process that outlives a turn omits it, and every child is swept.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  liveHelperIds?(sessionId: string): string[];
+
+  /**
    * The person chose Switch now on a message held for background work (spec
    * `warm-process-lifecycle` D2a, DOR-2065): the next send may restart the
    * agent even though its work is still running, ending that work.
@@ -1911,8 +1974,16 @@ export interface AgentRuntime {
   /** Get metadata for a single session, or null if not found. */
   getSession(projectDir: string, sessionId: string): Promise<Session | null>;
 
-  /** Read native session metadata by id without a caller-supplied directory. Never creates a session. */
-  findSession?(sessionId: string): Promise<Session | null>;
+  /**
+   * Read native session metadata by id without a caller-supplied directory.
+   * Never creates a session.
+   *
+   * @param sessionId - The runtime's own session id.
+   * @param options - `cwdHint` is a directory the caller believes the session
+   *   ran in. A runtime may search it first; the answer must still be the
+   *   directory the session records, never the hint itself.
+   */
+  findSession?(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null>;
 
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;

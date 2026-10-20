@@ -10,6 +10,10 @@
  *   project's allow list.
  * - `PUT /api/runtimes/claude-code/accounts/:id/only-projects` — keep one
  *   account (Main is `default`) to a list of projects, or free it.
+ * - `PUT /api/runtimes/claude-code/accounts/:id/no-auto-move` — keep room
+ *   agents off one registered account when DorkOS moves them on its own, or
+ *   let them back (Re-seat P0). Recorded as a permission-history line with an
+ *   Undo, the way the upgrade that sets it is (`kept-from-auto-moves.ts`).
  * - `POST /api/runtimes/claude-code/project-accounts/without-credits` — keep
  *   DorkOS credits out of the project a session's folder is in: the "Don't use
  *   credits in this project" answer on a refused credits turn (ADR
@@ -34,8 +38,10 @@ import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { KEPT_FROM_AUTO_MOVES } from '@dorkos/shared/permissions';
 import {
   AccountEligibilityQuerySchema,
+  NoAutoMoveSchema,
   OnlyProjectsRequestSchema,
   ProjectAccountsRequestSchema,
   ProjectWithoutCreditsRequestSchema,
@@ -44,11 +50,15 @@ import {
   type ProjectRef,
 } from '@dorkos/shared/project-schemas';
 import { BoundaryError, validateBoundary } from '../lib/boundary.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
+import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
+import { recordPermissionChange } from '../services/core/permissions/index.js';
+import { configAutoMoveFlagPort } from '../services/core/permissions/kept-from-auto-moves.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import {
   accountDisplayName,
@@ -60,6 +70,7 @@ import {
   judgeEligibility,
 } from '../services/core/usage/account-eligibility.js';
 import {
+  writeNoAutoMove,
   writeOnlyProjects,
   writeProjectAccounts,
 } from '../services/core/usage/account-eligibility-writes.js';
@@ -75,6 +86,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { writerForPosture } from './permissions.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
 const ACCOUNT_RULES_BAR: PersonBarCopy = {
@@ -88,6 +100,20 @@ const ACCOUNT_RULES_BAR: PersonBarCopy = {
   agent:
     'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
     'only a person makes. Ask them to change it in Settings → Runtimes.',
+};
+
+/** What the person bar says when anything but a person flips an account's automatic-move switch. */
+const NO_AUTO_MOVE_BAR: PersonBarCopy = {
+  error: 'Only a person can choose whether agents move here automatically.',
+  code: 'operator_only_config',
+  subject: 'whether agents move to each Claude account automatically',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Whether agents move to an account automatically is something a person sets in their ` +
+    `own copy of the app, not something another site can change for them.`,
+  agent:
+    'DorkOS changed nothing. Whether agents move to a Claude account automatically is a ' +
+    'decision only a person makes. Ask them to change it in Settings → Runtimes.',
 };
 
 /** The refusal for a folder outside the directory boundary. */
@@ -209,8 +235,12 @@ function knownAccountIds(): Set<string> {
  * The person bar's 403 (or the cookie bar's) for anything but a person, or
  * `undefined` when a person is asking.
  */
-function refuseIfNotAPerson(c: Context<ApiEnv>, caller: RequestFacts): Response | undefined {
-  const refusal = assessPerson(caller, ACCOUNT_RULES_BAR);
+function refuseIfNotAPerson(
+  c: Context<ApiEnv>,
+  caller: RequestFacts,
+  copy: PersonBarCopy = ACCOUNT_RULES_BAR
+): Response | undefined {
+  const refusal = assessPerson(caller, copy);
   return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
 }
 
@@ -462,6 +492,67 @@ export function mountAccountEligibilityRoutes(
     } catch (err) {
       logger.error('[Runtimes] could not save an account project list', { err: String(err) });
       return c.json({ error: 'Could not save which projects this account may use.' }, 500);
+    }
+  });
+
+  router.put('/claude-code/accounts/:id/no-auto-move', async (c) => {
+    const caller = honoRequestFacts(c);
+    const refused = refuseIfNotAPerson(c, caller, NO_AUTO_MOVE_BAR);
+    if (refused) return refused;
+    const parsed = NoAutoMoveSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'Send `noAutoMove` as true or false.', details: z.treeifyError(parsed.error) },
+        400
+      );
+    }
+    const accountId = c.req.param('id');
+    const unknownAccount = {
+      error: `There is no Claude account named "${accountId}".`,
+      code: 'unknown_account',
+    };
+    // Only a registered row carries the flag: Main with no row of its own is
+    // not one, so it answers like an account that does not exist.
+    const before = configAutoMoveFlagPort(configManager).flagOf(accountId);
+    if (before === 'gone') return c.json(unknownAccount, 404);
+    try {
+      const { noAutoMove } = parsed.data;
+      const stored = configManager.get('runtimes');
+      if (!writeNoAutoMove(configManager, accountId, noAutoMove)) {
+        return c.json(unknownAccount, 404);
+      }
+      logConfigWrite('the no-auto-move route', 'runtimes', stored, configManager.get('runtimes'));
+      const after = noAutoMove ? KEPT_FROM_AUTO_MOVES : null;
+      if (after !== before) {
+        // The person bar passed, so this is a person: the history names them
+        // the way every permission write does, and its Undo flips the flag back.
+        const authority = resolveDecisionAuthority(readCallerAuthority(caller));
+        await recordPermissionChange(activity, {
+          changes: [
+            {
+              target: { kind: 'default' },
+              key: {
+                kind: 'account',
+                accountId,
+                accountName: accountDisplayName(configManager, accountId),
+              },
+              before,
+              after,
+            },
+          ],
+          surface: 'settings',
+          writer: writerForPosture(
+            authority.allowed ? authority.posture : 'local-trust',
+            caller.user
+          ),
+        });
+      }
+      return c.json({ noAutoMove });
+    } catch (err) {
+      logger.error('[Runtimes] could not save an account automatic-move flag', {
+        err: String(err),
+      });
+      return c.json({ error: 'Could not save whether agents move to this account.' }, 500);
     }
   });
 }

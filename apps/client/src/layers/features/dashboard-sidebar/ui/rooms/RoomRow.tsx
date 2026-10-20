@@ -453,7 +453,7 @@ export const RoomRow = memo(function RoomRow({
             )}
             {unread && !quiet && (
               <span
-                className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
+                className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
                 // The room is NOT named again here. This label joins the row's own
                 // name to make it, so repeating the room turned every unread row
                 // into "#general 3 unread in #general" — the same name twice, which

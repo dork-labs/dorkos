@@ -23,7 +23,11 @@ import {
   type PublishRoomViewResponse,
   type RoomSignalView,
   type CreateRoomRequest,
+  type DirectChat,
+  type OpenDirectChatRequest,
   type HaltRoomResponse,
+  type ReseatOptions,
+  type ReseatSeatRequest,
   type PromoteHoldResponse,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
@@ -403,6 +407,27 @@ export function createRoomMethods(baseUrl: string) {
       );
     },
 
+    /** Where an agent's seat here could move (re-seat). */
+    getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions> {
+      return fetchJSON<ReseatOptions>(
+        baseUrl,
+        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat-options`
+      );
+    },
+
+    /** Move an agent's seat here to another account (re-seat). */
+    reseatRoomAgent(
+      id: string,
+      authorId: string,
+      request: ReseatSeatRequest
+    ): Promise<{ sessionId: string }> {
+      return fetchJSON<{ sessionId: string }>(
+        baseUrl,
+        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat`,
+        { method: 'POST', body: JSON.stringify(request) }
+      );
+    },
+
     /**
      * Ask for this room to be the next one that agent answers. Reorders; the
      * turn in the way is untouched.
@@ -421,6 +446,31 @@ export function createRoomMethods(baseUrl: string) {
      */
     listRoomSessions(id: string): Promise<RoomSessionsResponse> {
       return fetchJSON<RoomSessionsResponse>(baseUrl, `/rooms/${id}/sessions`);
+    },
+
+    /** Open an agent's Direct chat (rule S12), made on first need. */
+    openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat> {
+      return fetchJSON<DirectChat>(baseUrl, '/direct-chats', {
+        method: 'POST',
+        body: JSON.stringify(req),
+      });
+    },
+
+    /**
+     * The Direct chat this session is, or `null`: a 404 is an ordinary answer,
+     * and so is a 403 — only the owner has Direct chats.
+     */
+    async findDirectChat(sessionId: string): Promise<DirectChat | null> {
+      try {
+        return await fetchJSON<DirectChat>(
+          baseUrl,
+          `/direct-chats/by-session/${encodeURIComponent(sessionId)}`
+        );
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 404 || status === 403) return null;
+        throw err;
+      }
     },
 
     /**

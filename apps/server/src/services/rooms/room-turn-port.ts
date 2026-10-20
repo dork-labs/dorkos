@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/room-turn-port
  */
+import type { TurnFailure } from './turn-guards/turn-waits.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -68,6 +69,22 @@ export class RoomTurnRuntimeGoneError extends Error {
   }
 }
 
+/**
+ * A moved seat's one-shot launch, as the dispatch takes it: each field only
+ * when set, so an absent one is never sent as `undefined`.
+ *
+ * @param request - The turn.
+ */
+export function seatLaunchOf(request: Pick<RoomTurnRequest, 'accountHint' | 'seedContext'>): {
+  accountHint?: string;
+  seedContext?: string;
+} {
+  return {
+    ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
+    ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
+  };
+}
+
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {
   /** The room the answer will be posted into. */
@@ -109,6 +126,14 @@ export interface RoomTurnRequest {
   prepareLaunch?: (sessionId: string) => Promise<{ files?: RoomContextFiles }>;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
+  /**
+   * The account a seat just moved to (re-seat) starts on: a launch hint, which
+   * the runtime honours only for a session with no transcript yet, so the
+   * agent's "Runs on" is never changed. Set once, on the moved seat's first turn.
+   */
+  accountHint?: string;
+  /** What a moved seat's first turn is told about the session it replaces. */
+  seedContext?: string;
   /** The entry that triggered this turn. */
   entry: RoomEntry;
   /**
@@ -150,6 +175,14 @@ export interface RoomTurnRequest {
    * Never written to the conversation's stored settings.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /**
+   * Set when a message this turn answers is a TEAMMATE's: a space member who is
+   * not this install's owner (DOR-2955, `limits/space-teammates.ts`). The runner
+   * then sends the turn with nobody to ask, fences its DorkOS tools to this room,
+   * and refuses it on a runtime that cannot hold it to both
+   * (`limits/teammate-turn.ts`). The read-only half rides `permissionCeiling`.
+   */
+  teammate?: true;
   /**
    * The words the turn is triggered with — what reaches the model as the visible
    * user message, byte for byte.
@@ -235,8 +268,12 @@ export interface RoomTurnRequest {
 
 /** One reason a turn has stopped and can make no progress without a person. */
 export interface RoomTurnWaiting {
-  /** What sort of answer the turn is parked on; picks the room's words. */
-  kind: WaitingKind;
+  /**
+   * What sort of answer the turn is parked on; picks the room's words. `slot`
+   * is the one that is not a person: every agent on this computer is busy, and
+   * the turn starts when one finishes (DOR-3012).
+   */
+  kind: WaitingKind | 'slot';
   /**
    * The tool an approval is about, when the prompt names one. **For the log
    * only** — see `buildWaitingNotice` on why it is not in the room's copy.
@@ -260,6 +297,12 @@ export interface RoomTurnReply {
   text: string | null;
   /** Set when the room got no answer for a reason a member should see. */
   unanswered?: RoomTurnUnanswered;
+  /**
+   * Why a `failed` turn failed: the runtime's refusal when it never started
+   * (so the room's notice can name it), and a detail for the log either way
+   * (DOR-3012).
+   */
+  failure?: TurnFailure;
 }
 
 /** An answer that arrived after the room stopped waiting for it. */

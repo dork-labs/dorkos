@@ -27,6 +27,7 @@ import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
+import { connectedFramePayload } from '../services/session/catalog/session-list-reset.js';
 
 /**
  * Adapt a Node response to the fan-out's {@link FanOutClient} port.
@@ -89,7 +90,7 @@ router.get('/', (c) => {
 
     try {
       // The connect preamble: `connected`, then the fleet's current lifecycles.
-      client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+      client.send(encodeBroadcast('connected', connectedFramePayload()));
       sendSessionStatusSnapshot(client, principal);
       if (!signal.aborted) {
         await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));

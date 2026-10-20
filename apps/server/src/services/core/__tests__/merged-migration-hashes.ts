@@ -3,8 +3,8 @@
  *
  * One line per key in `CONFIG_MIGRATIONS`, holding the hash of everything that
  * key reaches — its slice of the table plus the source of every top-level
- * function and constant it reaches, transitively, across `config-manager.ts` and
- * `packages/shared/src/config-schema.ts`. How the hash is computed, and what it
+ * function and constant it reaches, transitively, across `config-manager.ts`,
+ * the files of `config-migrations/` and `packages/shared/src/config-schema.ts`. How the hash is computed, and what it
  * deliberately does not cover, is in `migration-append-only.ts`. The check runs
  * against the real files in `config-manager.test.ts`.
  *
@@ -37,7 +37,8 @@
  *
  * They were taken on 2026-08-15 from the file as it then stood. For every key at
  * or below `0.59.0` that is also the content the newest release carries:
- * `migration-safety.ts` reads `config-manager.ts` as of the NEWEST `v*` tag
+ * `migration-safety.ts` reads `config-manager.ts` (and, since the table moved,
+ * `config-migrations/`) as of the NEWEST `v*` tag
  * (`v0.59.0`) and requires every key present there to be byte-identical, and it
  * passes. Note what that does and does not say — it compares against one tag,
  * not against the release each key first shipped in, so it proves the bodies
@@ -170,4 +171,9 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.112.0': '9b25a4fc6a4d7e97',
   '0.113.0': 'f2e1a3d90e9b13c2',
   '0.114.0': 'a672ee4363778105',
+  '0.115.0': '5d18782f3c42da3b',
+  '0.116.0': 'afa8f0d26ee78823',
+  '0.120.0': '433081f657bb7311',
+  '0.123.0': '297ee7664012f265',
+  '0.124.1': '6b4605cc2f8ec6d9',
 };

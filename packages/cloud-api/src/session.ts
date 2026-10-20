@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
+import { HttpsUrlSchema, IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
 
 /**
  * The scopes a bearer token can carry.
@@ -37,6 +37,13 @@ export const AccountSchema = z
     displayName: z.string().describe('The name to show for this account.'),
     avatarUrl: z.string().url().optional().describe("A URL for the account's avatar image."),
     createdAt: TimestampSchema,
+    // A malformed issuer reads as absent rather than failing the whole
+    // session: credits and remote access read this answer too.
+    issuer: HttpsUrlSchema.optional()
+      .catch(undefined)
+      .describe(
+        'The issuer whose sign-ins carry this account`s `id` as their subject, the same value a hub assignment names. Absent from services that do not say; a reader compares it exactly when present.'
+      ),
   })
   .describe('The person behind a token or cookie.');
 

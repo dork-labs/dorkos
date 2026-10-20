@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
+  CHOOSABLE_PERMISSION_PRESETS,
   PERMISSION_ACTION_ID_PATTERN,
   PERMISSION_AREA_IDS,
   PERMISSION_PRESETS,
@@ -22,7 +23,13 @@ import {
 
 extendZodWithOpenApiOnce();
 
-export { PERMISSION_STATES, PERMISSION_AREA_IDS, PERMISSION_PRESETS, PERMISSION_ACTION_ID_PATTERN };
+export {
+  PERMISSION_STATES,
+  PERMISSION_AREA_IDS,
+  PERMISSION_PRESETS,
+  CHOOSABLE_PERMISSION_PRESETS,
+  PERMISSION_ACTION_ID_PATTERN,
+};
 
 /** One of {@link PERMISSION_STATES}. */
 export const PermissionStateSchema = z.enum(PERMISSION_STATES).openapi('PermissionState');
@@ -94,7 +101,6 @@ export const PERMISSION_SOURCES = [
   'default-action',
   'default-area',
   'preset',
-  'unchanged',
   'floor',
   'inactive',
   /** A stored Allowed on an action whose card shows what changes, kept at Ask. */
@@ -149,10 +155,11 @@ export type PermissionSurface = z.infer<typeof PermissionSurfaceSchema>;
  * How sure DorkOS is about who made a change. `local-trust` means login was off,
  * so the change came from "someone on this computer", never a confirmed "you".
  * `outside` means the agent's settings file changed without DorkOS writing it,
- * so nobody can be named at all.
+ * so nobody can be named at all. `agent` means an agent made the change itself,
+ * because its Permissions area let it, with no card.
  */
 export const PermissionAttributionSchema = z
-  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'upgrade', 'outside'])
+  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'agent', 'upgrade', 'outside'])
   .openapi('PermissionAttribution');
 
 /** How sure DorkOS is about who made a permission change. */
@@ -178,6 +185,25 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
     kind: z.literal('files'),
     /** The runtime whose own stop changed; absent for the global one. */
     runtime: z.string().optional(),
+  }),
+  /**
+   * One chat's Files & commands mode, as its runtime names it (`before` and
+   * `after` are mode ids). Recorded under the chat's agent; only the one-time
+   * raise of existing chats writes it (DOR-3107), and its Undo sets each chat back.
+   */
+  z.object({ kind: z.literal('chat'), sessionId: z.string() }),
+  /**
+   * Whether one Claude account is kept out of automatic moves (its
+   * `noAutoMove` flag): `before` and `after` are `'on'` (kept out) or `null`
+   * (may be picked). Recorded for everyone, by the upgrade that keeps an
+   * account out and by the Settings switch (`PUT /api/runtimes/claude-code/
+   * accounts/:id/no-auto-move`); its Undo flips the flag back.
+   */
+  z.object({
+    kind: z.literal('account'),
+    accountId: z.string(),
+    /** What the person calls the account, for the history's sentence. */
+    accountName: z.string(),
   }),
 ]);
 
@@ -328,3 +354,37 @@ export const ALWAYS_SUGGESTION_THRESHOLD = 3;
 
 /** The window the one-time Allows are counted in: seven days. */
 export const ALWAYS_SUGGESTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** How Claude Code's chat modes read in the history; other runtimes' ids read as named. */
+const CHAT_MODE_WORD: Record<string, string> = {
+  default: 'Ask first',
+  plan: 'Plan',
+  acceptEdits: 'Act',
+  auto: 'Auto',
+  dontAsk: 'Never ask',
+  bypassPermissions: 'Full autonomy',
+};
+
+/**
+ * A chat's mode id as the permission history says it: "Ask first", "Full autonomy".
+ *
+ * @param modeId - The mode id a `chat` change recorded, or `null` for the runtime's own default.
+ */
+export function chatModeWord(modeId: string | null): string {
+  if (modeId === null) return 'the default';
+  return CHAT_MODE_WORD[modeId] ?? modeId;
+}
+
+/** The value an `account` change records for an account kept out of automatic moves. */
+export const KEPT_FROM_AUTO_MOVES = 'on';
+
+/**
+ * An `account` change's value as the permission history says it.
+ *
+ * @param value - `'on'` for kept out of automatic moves, `null` for not.
+ */
+export function autoMoveWord(value: string | null): string {
+  return value === KEPT_FROM_AUTO_MOVES
+    ? 'Move agents here automatically turned off'
+    : 'Move agents here automatically turned on';
+}

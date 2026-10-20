@@ -79,7 +79,7 @@
  * @module services/notifications/escalation-service
  */
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
-import type { NotificationChannel } from '@dorkos/shared/notification-schemas';
+import type { NotificationChannel, WebPushPayload } from '@dorkos/shared/notification-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
 import { logger } from '../../lib/logger.js';
 import {
@@ -179,10 +179,23 @@ export interface EscalationServiceDeps {
   now?: () => number;
 }
 
+/** Chat-leg failures a person can fix, so worth a warning when they happen. */
+const RELAY_MISSES_WORTH_A_WARNING: ReadonlySet<string> = new Set([
+  'INITIATE_NOT_ALLOWED',
+  'NOT_OPTED_IN',
+  'NO_ACTIVE_SESSIONS',
+  'SEND_FAILED',
+]);
+
+/** How often the same chat-leg failure is warned about. */
+const RELAY_MISS_WARN_EVERY_MS = 6 * 60 * 60 * 1000;
+
 /** The escalation ladder. */
 export class EscalationService {
   /** Live timers by subject key. Single digits in practice. */
   private readonly armed = new Map<string, ReturnType<typeof setTimeout>>();
+  /** When each reason a chat leg could not be sent was last warned about. */
+  private readonly relayMissWarnedAt = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly deps: EscalationServiceDeps) {
@@ -370,6 +383,21 @@ export class EscalationService {
         this.recordEscalation(subjectKey, relayLedgerChannel(relay), relayDetail(relay));
       }
 
+      // A chat connection that exists but cannot carry the ping is worth a
+      // warning even when the push reached a device (DOR-3114): a disconnected
+      // Telegram, or "Agent can start conversations" off, failed every ping
+      // in silence. At most once per reason every few hours.
+      if (relay && !relay.ok && RELAY_MISSES_WORTH_A_WARNING.has(relay.reason)) {
+        const last = this.relayMissWarnedAt.get(relay.reason) ?? 0;
+        if (this.now() - last >= RELAY_MISS_WARN_EVERY_MS) {
+          this.relayMissWarnedAt.set(relay.reason, this.now());
+          logger.warn('[Escalation] A chat connection could not carry a ping', {
+            subjectKey,
+            relay,
+          });
+        }
+      }
+
       if (push.delivered === 0 && !relay?.ok) {
         // Worth saying out loud: the operator asked to be reached and nothing
         // could reach them. Not an error — a stock install with no devices and
@@ -426,6 +454,30 @@ export class EscalationService {
       },
       relayDeps
     );
+  }
+
+  /**
+   * Push to every subscribed browser now, without waiting for the ladder.
+   *
+   * For the one thing that cannot wait the escalation delay: an agent's
+   * irreversible action in a connected app runs sixty seconds after it is
+   * held (spec `trusted-by-default-flip` §5.6), sooner than any delay a person
+   * can choose, so a push that waited would only ever arrive after the fact.
+   * A person who set phone pings to `never` still gets none. The delivery is
+   * written to the ledger under the payload's `notificationId`.
+   *
+   * @param payload - What the push says. Never argument values or transcript.
+   */
+  async pushNow(payload: WebPushPayload): Promise<void> {
+    if (this.delayMs() === null) return;
+    const push = await this.deps.push.sendToAll(payload);
+    if (push.delivered > 0) {
+      this.deps.store.recordDelivery({
+        subjectKey: payload.notificationId,
+        channel: 'web_push',
+        detail: { delivered: push.delivered },
+      });
+    }
   }
 
   /** The configured delay in milliseconds, or `null` when the answer is `never`. */
@@ -584,6 +636,21 @@ export function armEscalation<K extends StandingNotificationKind>(
   } catch (err) {
     logger.warn('[Escalation] Could not start the clock on a blocking condition', { err, kind });
   }
+}
+
+/**
+ * Push to every subscribed browser now, from anywhere. See
+ * {@link EscalationService.pushNow}. Never throws, and a no-op before boot has
+ * wired a service.
+ *
+ * @param payload - What the push says.
+ */
+export function pushNow(payload: WebPushPayload): void {
+  const service = current;
+  if (!service) return;
+  service.pushNow(payload).catch((err: unknown) => {
+    logger.warn('[Escalation] Could not push a notification', { err });
+  });
 }
 
 /**

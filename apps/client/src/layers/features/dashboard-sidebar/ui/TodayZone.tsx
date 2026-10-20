@@ -179,7 +179,7 @@ export function CatchUpButton({ count, onCatchUp }: CatchUpButtonProps) {
         className={cn(
           'text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-ring',
           // A thumb's target, the same 44px the rows under it are (P4 AC-4).
-          'flex w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium',
+          'text-control flex w-full items-center gap-2 rounded-md px-2 font-medium',
           PRESS_ROW,
           TOUCH_TARGET_MIN_H
         )}

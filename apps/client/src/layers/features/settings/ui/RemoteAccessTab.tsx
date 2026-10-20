@@ -1,6 +1,8 @@
 import { useTunnelMachine } from '../model/use-tunnel-machine';
 import { useTunnelActions } from '../model/use-tunnel-actions';
+import { Separator } from '@/layers/shared/ui';
 import { TunnelPanel } from './TunnelPanel';
+import { LanAccessSection } from './lan-access/LanAccessSection';
 
 /**
  * Remote Access as a settings tab — reach this DorkOS from your phone or any
@@ -29,5 +31,13 @@ export function RemoteAccessTab() {
   // saying what remote access is, and the dialog's own status dot went with the
   // dialog. A line here would be the third phrasing of the same idea on one
   // screen.
-  return <TunnelPanel machine={machine} actions={actions} />;
+  // Wi-Fi access sits under it: another way in, for devices on the same
+  // network, that needs no tunnel (DOR-2930).
+  return (
+    <div className="space-y-4">
+      <TunnelPanel machine={machine} actions={actions} />
+      <Separator />
+      <LanAccessSection />
+    </div>
+  );
 }

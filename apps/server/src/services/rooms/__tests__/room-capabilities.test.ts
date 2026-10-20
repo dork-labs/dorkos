@@ -161,7 +161,7 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the seventeen tools on both MCP servers, with the tiers and the area each is in', () => {
+    it('advertises its tools, with the servers, tiers and area each is in', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
@@ -346,6 +346,25 @@ describe('the rooms capability domain', () => {
           servers: ['in-session', 'external'],
           readOnly: false,
         },
+        // Re-seat (Security Must 5): people only for now, so on the external
+        // server alone. An agent's own tool list carries neither until Dorian
+        // allows agents to move their own seat.
+        {
+          id: 'rooms.reseat_options',
+          tool: 'reseat_room_agent_options',
+          tier: 'observe',
+          area: null,
+          servers: ['external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.reseat',
+          tool: 'reseat_room_agent',
+          tier: 'act',
+          area: 'rooms',
+          servers: ['external'],
+          readOnly: false,
+        },
       ]);
     });
 
@@ -386,6 +405,7 @@ describe('the rooms capability domain', () => {
         'leave_room',
         'merge_to_room_main',
         'remove_room_members',
+        'reseat_room_agent',
         'update_room',
       ]);
 
@@ -1205,10 +1225,10 @@ describe('the rooms MANAGEMENT verbs', () => {
     grantHeld = true;
     resetPermissionGate();
     // The real gate, over sources this file can move — the same seam boot wires
-    // to the config and the agent's manifest. No preset chosen (Unchanged), so
-    // Rooms is Blocked unless the agent's own setting allows it.
+    // to the config and the agent's manifest. A person set Rooms to Blocked, so
+    // it is Blocked unless the agent's own setting allows it.
     initPermissionGate({
-      readConfig: () => ({ preset: null, defaults: { areas: {}, actions: {} } }),
+      readConfig: () => ({ preset: null, defaults: { areas: { rooms: 'blocked' }, actions: {} } }),
       readAgentPermissions: async () => (grantHeld ? { areas: { rooms: 'allowed' } } : undefined),
     });
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });

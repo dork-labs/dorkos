@@ -112,6 +112,22 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
         'the same honesty rule.',
     },
   ],
+  'canvas-doc-route-controls.ts': [
+    {
+      contains: 'PERMISSION_ANSWERED_EVENT',
+      reason:
+        'The same answer line `approvals.ts` writes, for a person allowing or turning off a ' +
+        'document route. Its actor comes from the same permission writer (`writerForPosture`), ' +
+        'after `decideAsPerson` has refused every caller naming itself an agent or holding an ' +
+        'approval token, so it can only be a person, named by the same honesty rule.',
+    },
+    {
+      contains: 'DOC_ROUTE_TURNED_OFF_EVENT',
+      reason:
+        'The turn-off line beside it: the same person bars, the same permission writer, ' +
+        'the same honesty rule.',
+    },
+  ],
   'relay-delivery-receipts.ts': [
     {
       contains: "'relay.message_delivered'",

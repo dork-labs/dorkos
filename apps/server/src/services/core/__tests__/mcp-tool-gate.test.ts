@@ -103,6 +103,8 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../capabilities/tier-enforcement.js';
+import { resetPermissionGate } from '../capabilities/permission-enforcement.js';
+import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { ApprovalService } from '../approvals/index.js';
 import { eventFanOut } from '../event-fan-out.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
@@ -605,7 +607,9 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         mesh_register:
           'registers the calling agent in the local mesh; discovery data, no effect off this machine.',
         memory_write:
-          "ONLY under a resolved agent identity (DOR-632), and the argument is its own rather than the room verbs' — a tier is not an auto-allow. Three things together: it is JAILED to the caller's own file, because there is no path parameter, no agent parameter and nothing else to name — the target is `<agentPath>/.dork/MEMORY.md` for the identity this session presented, so an agent cannot reach another agent's memory even by trying, and the card would be asking about a scope of exactly one file the operator already owns. It has NO EXECUTION SEMANTICS: nothing runs, sends, spends or leaves the machine, and the worst outcome is a wrong line in a small markdown file the operator can open, edit, or have the agent `remove` from inside. And its BLAST RADIUS is bounded by mechanism rather than by anyone watching: the file is capped at 8,000 characters and a write past it is refused rather than trimmed, everything in it is injected fenced and framed as data, and every note carries a handler-written provenance suffix, so a poisoned entry names the room that poisoned it. The reason it must not raise a card is the room verbs' reason: the turn that most needs to save something is a room turn, where nobody is positioned to answer, and an agent that parked on a card to write a note would have learned the thing and then failed to keep it. WITHOUT an identity the handler answers `no-agent` and writes nothing anywhere; the gate still asks rather than inferring harmlessness from another layer's refusal.",
+          "ONLY under a resolved agent identity (DOR-632), and the argument is its own rather than the room verbs' — a tier is not an auto-allow. Three things together: it is JAILED to the caller's own file, because there is no path parameter, no agent parameter and nothing else to name — the target is `<agentPath>/.dork/MEMORY.md`, or a notes file under `<agentPath>/.dork/memory/` whose name the jail whitelists, for the identity this session presented, so an agent cannot reach another agent's memory even by trying, and the card would be asking about a scope the operator already owns. It has NO EXECUTION SEMANTICS: nothing runs, sends, spends or leaves the machine, and the worst outcome is a wrong line in a small markdown file the operator can open, edit, or have the agent `remove` from inside. And its BLAST RADIUS is bounded by mechanism rather than by anyone watching: the file is capped at 8,000 characters and a write past it is refused rather than trimmed, everything in it is injected fenced and framed as data, and every note carries a handler-written provenance suffix, so a poisoned entry names the room that poisoned it. The reason it must not raise a card is the room verbs' reason: the turn that most needs to save something is a room turn, where nobody is positioned to answer, and an agent that parked on a card to write a note would have learned the thing and then failed to keep it. WITHOUT an identity the handler answers `no-agent` and writes nothing anywhere; the gate still asks rather than inferring harmlessness from another layer's refusal.",
+        memory_read:
+          "ONLY under a resolved agent identity (ADR 261017-153539), for `memory_write`'s reasons and one more: it only READS, and only the caller's own notes files under `<agentPath>/.dork/memory/`, resolved from the identity, never from an argument. What it returns is fenced and framed as data, like the memory block. A card would sit between an agent and its own notes on the very turn it needs them. WITHOUT an identity the handler answers `no-agent` and reads nothing.",
         compact_my_session:
           "DOR-2732, and NOT identity-scoped, because nothing in it depends on who is calling: its only target is the session the call arrived from, read off the verified turn — there is no session parameter, so it cannot reach another conversation even by trying. It never runs mid-turn (the dispatcher starts it after the asking turn ends, behind any open approval), at most once an hour per session, and the chat shows a line saying the agent asked, so nothing happens out of sight. The owner's say is the DorkOS permission the gate resolves on every call (`session.compact`, the Own chat area, Blocked per agent on its Permissions page); a session card on top would be a second ask for one question, raised on the turn with the least room left to spend on one.",
         control_ui:
@@ -749,11 +753,14 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           readOwnerAccount: () => null,
         }),
       });
+      // A person set both to Ask: under Trusted a delete runs, recorded, with no card.
+      askFor('tasks_delete', 'mesh_unregister');
     });
 
     afterEach(() => {
       resetCapabilityTierGate();
       resetAuditTrail();
+      resetPermissionGate();
       vi.restoreAllMocks();
     });
 
@@ -897,6 +904,31 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           // The arguments themselves are never recorded: only what the tool
           // declares as its subject becomes the target.
           expect(rows[0]!.change).toBeNull();
+        });
+
+        it(`${server} ${name}: runs under Trusted with no card, and says so in Activity`, async () => {
+          // ADR 261006-225605: an area-level Allowed runs a destructive action
+          // that carries no third-party code. One Activity line records that no
+          // card was shown.
+          const attempts: unknown[] = [];
+          initCapabilityTierGate({ approvals, onAttempt: (attempt) => attempts.push(attempt) });
+          askFor();
+          const result = await toolsFor(AGENT).get(name)!.call(DESTRUCTIVE_INPUT[name]);
+          expect(sideEffects()).toEqual([Object.values(DESTRUCTIVE_INPUT[name])[0]]);
+          expect(payloadOf(result).status).not.toBe('approval_required');
+          expect(approvals.listPending()).toEqual([]);
+          expect(attempts).toEqual([
+            expect.objectContaining({
+              decision: {
+                outcome: 'allowed',
+                approval: { via: 'permission', source: 'preset' },
+              },
+            }),
+          ]);
+          // Recorded as the agent, with no approval to link to.
+          expect(gateAuditRows()).toMatchObject([
+            { action: `mcp.${name}`, outcome: 'ok', actorKind: 'agent' },
+          ]);
         });
 
         it(`${server} ${name}: refuses an agent whose access was turned off`, async () => {

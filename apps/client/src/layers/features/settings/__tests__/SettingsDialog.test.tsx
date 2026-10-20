@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -259,6 +259,18 @@ describe('SettingsDialog', () => {
     // that merged local login with the DorkOS account is gone again (DOR-2628).
     expect(screen.queryByRole('tab', { name: /^advanced$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^access$/i })).toBeNull();
+  });
+
+  it('drops the tabs that cannot apply on a hub, once the server says it is one', async () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(createSettingsTransport({ serverRole: 'hub' } as never)),
+    });
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^runtimes/i })).toBeNull());
+    expect(screen.queryByRole('tab', { name: /^dorkos account$/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /remote access/i })).toBeNull();
+    // The rest stay.
+    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeDefined();
   });
 
   // The staging area for flags that ship OFF (DOR-1304). Reachable by click and

@@ -31,6 +31,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     agentId: 'agent-1',
     proposedBy: 'An agent',
   },
+  'schedule.armed_by_agent': {
+    taskId: 'task-1',
+    taskName: 'Nightly digest',
+    agentId: 'agent-1',
+    armedBy: 'Ana',
+    cadence: 'every day at 9:00 AM',
+  },
   'approval.pending': {
     approvalId: '01J000000000000000000001',
     capabilityId: 'tasks_delete',
@@ -150,13 +157,41 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     claimable: false,
     claimableAfter: '2026-10-04T10:00:00.000Z',
   },
+  'community.teammate-limit': {
+    ref: 'remote_owner_a',
+    communityLabel: 'Night shift',
+    limitUsd: 20,
+    month: '2026-10',
+  },
+  'community.teammate-limits-reset': {},
   'heartbeat.credits-offer': {},
+  'connector.destructive_pending': {
+    holdId: 'hold-1',
+    agentId: 'agent-1',
+    agentName: 'Scout',
+    sessionId: 'sess-1',
+    actionName: 'Delete message',
+    serviceName: 'Gmail',
+  },
+  'connector.destructive_executed': {
+    holdId: 'hold-1',
+    agentId: 'agent-1',
+    agentName: 'Scout',
+    sessionId: 'sess-1',
+    actionName: 'Delete message',
+    serviceName: 'Gmail',
+    outcome: 'success',
+  },
+  'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
 const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'ask.pending': 'blocking',
   'schedule.parked': 'blocking',
+  // Live already and nothing waits on the person: told, with Pause, never paged
+  // (spec trusted-by-default-flip §5.4).
+  'schedule.armed_by_agent': 'notable',
   'approval.pending': 'blocking',
   'session.error': 'blocking',
   'turn.completed': 'notable',
@@ -182,8 +217,17 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Nothing is stuck and the wait is at least a week: it badges the bell and never reaches a
   // phone (DOR-2543).
   'community.owner-replacement': 'notable',
+  // Teammates' posts wake nobody until next month or a higher limit; nothing is broken (DOR-2956).
+  'community.teammate-limit': 'notable',
+  'community.teammate-limits-reset': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
+  // Everyone sees it before it runs, but nothing waits on a person: never
+  // paged by the ladder; its own push goes out at once (spec §5.6).
+  'connector.destructive_pending': 'notable',
+  // News: it ran (spec trusted-by-default-flip §5.6).
+  'connector.destructive_executed': 'quiet',
+  'web.new_device': 'notable',
 };
 
 /**
@@ -266,6 +310,10 @@ describe('notification registry', () => {
       'approval.pending',
       'ask.pending',
       'community.owner-replacement',
+      'community.teammate-limit',
+      'community.teammate-limits-reset',
+      'connector.destructive_executed',
+      'connector.destructive_pending',
       'credits.refused',
       'dead-letter.created',
       'dm.received',
@@ -275,11 +323,13 @@ describe('notification registry', () => {
       'mention.received',
       'report.daily',
       'run.completed',
+      'schedule.armed_by_agent',
       'schedule.parked',
       'session.error',
       'signin.required',
       'turn.completed',
       'update.installed',
+      'web.new_device',
     ]);
 
     const reserved = NOTIFICATION_KINDS.filter((k) => !WIRED_NOTIFICATION_KINDS.includes(k));

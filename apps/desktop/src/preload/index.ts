@@ -7,6 +7,7 @@ import type { UpdateStatus } from '../main/auto-updater';
 import type { AdminActionResult } from '../main/admin';
 import type { CaptureAppViewResult } from '../main/capture';
 import type { HeartbeatReport } from '../main/renderer-health';
+import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
 
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -58,6 +59,16 @@ const FOCUS_CHANGE_CHANNEL = 'window:focus-changed';
 
 /** IPC channel this renderer asks its window's focus state on (mirrors `GET_FOCUS_STATE_CHANNEL` in main/window-focus/index.ts). */
 const GET_FOCUS_STATE_CHANNEL = 'get-focus-state';
+
+/** Tab-session channels (mirror the `TAB_SESSION_*` constants in main/tab-session/index.ts). */
+const TAB_SESSION_INITIAL_CHANNEL = 'tab-session:initial';
+const TAB_SESSION_SAVE_CHANNEL = 'tab-session:save';
+const TAB_SESSION_CLOSED_CHANNEL = 'tab-session:closed';
+const TAB_SESSION_REOPEN_CHANNEL = 'tab-session:reopen';
+const TAB_SESSION_RECENT_CHANNEL = 'tab-session:recently-closed';
+const TAB_SESSION_RECENT_CHANGED_CHANNEL = 'tab-session:recently-closed-changed';
+const TAB_SESSION_GET_STARTUP_CHANNEL = 'tab-session:get-startup';
+const TAB_SESSION_SET_STARTUP_CHANNEL = 'tab-session:set-startup';
 
 /**
  * How many live `onCloseTab` subscriptions this renderer holds.
@@ -186,6 +197,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SHELL_LOG_EXCERPT_CHANNEL),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
+  /**
+   * This window's remembered tabs and Recently closed, kept by the main process
+   * across quits, restarts and crashes (`main/tab-session/`).
+   */
+  tabSession: {
+    /**
+     * This window's tabs as last saved, or `null` for a new window. Synchronous
+     * on purpose: the tab store is built before first paint and must not render
+     * a strip it then has to replace.
+     */
+    getInitial: (): WindowTabs | null => ipcRenderer.sendSync(TAB_SESSION_INITIAL_CHANNEL),
+    /** Save this window's whole tab list. Called on every change; the disk write is debounced. */
+    save: (tabs: WindowTabs): void => ipcRenderer.send(TAB_SESSION_SAVE_CHANNEL, tabs),
+    /** File tabs the person closed under Recently closed, in strip order. */
+    recordClosed: (closed: Array<Pick<ClosedTab, 'tab' | 'index'>>): void =>
+      ipcRenderer.send(TAB_SESSION_CLOSED_CHANNEL, closed),
+    /**
+     * Take the entry `key` names (default the newest) out of Recently closed,
+     * or `null` when it is no longer there.
+     */
+    reopen: (key?: { tabId: string; closedAt: number }): Promise<ClosedTab | null> =>
+      ipcRenderer.invoke(TAB_SESSION_REOPEN_CHANNEL, key),
+    /** Recently closed as it stands, newest first. */
+    getRecentlyClosed: (): Promise<ClosedTab[]> => ipcRenderer.invoke(TAB_SESSION_RECENT_CHANNEL),
+    /** Subscribe to Recently closed changing, in any window. Returns an unsubscribe. */
+    onRecentlyClosedChange: (cb: (list: ClosedTab[]) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, list: ClosedTab[]): void => cb(list);
+      ipcRenderer.on(TAB_SESSION_RECENT_CHANGED_CHANNEL, listener);
+      return () => ipcRenderer.removeListener(TAB_SESSION_RECENT_CHANGED_CHANNEL, listener);
+    },
+    /** What DorkOS opens to after a normal quit. */
+    getStartupMode: (): Promise<StartupMode | null> =>
+      ipcRenderer.invoke(TAB_SESSION_GET_STARTUP_CHANNEL),
+    /** Change what DorkOS opens to after a normal quit. Resolves to the saved value. */
+    setStartupMode: (mode: StartupMode): Promise<StartupMode | null> =>
+      ipcRenderer.invoke(TAB_SESSION_SET_STARTUP_CHANNEL, mode),
+  },
+  localBrowser: {
+    setBounds: (bounds: {
+      connectionId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+    }): Promise<void> => ipcRenderer.invoke('local-browser:set-bounds', bounds),
+  },
   /**
    * Open a URL in the system browser.
    *

@@ -3,7 +3,11 @@
  *
  * @module memory/constants
  */
-import { CONVENTION_DIR, CONVENTION_FILES } from '@dorkos/shared/convention-files';
+import {
+  CONVENTION_DIR,
+  CONVENTION_FILES,
+  MEMORY_NOTES_DIR,
+} from '@dorkos/shared/convention-files';
 
 /**
  * How much memory one agent may keep, in characters (~2K tokens).
@@ -16,7 +20,7 @@ import { CONVENTION_DIR, CONVENTION_FILES } from '@dorkos/shared/convention-file
  * re-exported here so the engine reads its own limit from its own module rather
  * than reaching across the package for it in five files.
  */
-export { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
+export { MEMORY_MAX_CHARS, MEMORY_NOTE_MAX_CHARS } from '@dorkos/shared/convention-files';
 
 /**
  * The directory inside an agent's own folder that holds its DorkOS files.
@@ -31,3 +35,6 @@ export const MEMORY_DIR_NAME = CONVENTION_DIR;
 
 /** The memory file itself, beside `agent.json`, `SOUL.md` and `NOPE.md`. */
 export const MEMORY_FILE_NAME = CONVENTION_FILES.memory;
+
+/** The folder of notes files beside `MEMORY.md`: `<agentPath>/.dork/memory/`. */
+export const MEMORY_NOTES_DIR_NAME = MEMORY_NOTES_DIR;

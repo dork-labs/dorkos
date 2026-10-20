@@ -164,6 +164,7 @@ describe('Database Migrations', () => {
       'canvas_doc_channels',
       'canvas_doc_deliveries',
       'canvas_doc_events',
+      'canvas_doc_file_save_intents',
       'canvas_doc_grants',
       'canvas_doc_identity_intents',
       'canvas_doc_write_intents',

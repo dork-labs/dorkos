@@ -1,14 +1,14 @@
 /**
- * Session gate — the single request gate that runs when local login is enabled
- * (accounts-and-auth P1, task 1.2).
+ * Session gate — the single request gate for `/api/*` and `/mcp`.
  *
- * When `config.auth.enabled` is `true`, every request to `/api/*` or `/mcp` must
- * present either (a) a valid Better Auth session cookie or (b) a valid per-user
- * API key as `Authorization: Bearer <key>`. When `auth.enabled` is `false` the
- * gate is a zero-overhead pass-through (the flag is read per request, so toggling
- * it needs no restart).
+ * A request that needs a credential ({@link gateAccessFor}: another device
+ * always, this computer when "Ask for a password on this computer too" is on)
+ * must present either (a) a valid Better Auth session cookie or (b) a valid
+ * per-user API key as `Authorization: Bearer <key>`. A person at this computer
+ * with that setting off passes with nothing. Read per request, so changing the
+ * setting needs no restart.
  *
- * ## Exemptions (always reach their handler, even when enabled)
+ * ## Exemptions (always reach their handler)
  *
  * - **Non-API paths** — static SPA assets and `index.html`, so the login screen
  *   can render (only `/api/*` and `/mcp` paths are gated).
@@ -23,6 +23,18 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **`/api/hub/link`, on a hub only, and only that exact path** — a computer
+ *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
+ *   step B3). The computer never signs in to the hub; the code is its
+ *   credential. A trailing slash or any sibling under `/api/hub/` stays gated.
+ * - **`/api/session-relay/passkeys/finish`, on a computer only, and only that
+ *   exact path** — a new approvals passkey posted by the loopback return page
+ *   (`routes/session-relay-passkeys.ts`, B4c). The system browser that page
+ *   opens in may not be signed in here. The route requires instead a direct
+ *   loopback caller with no forwarding header, an `Origin` that is exactly the
+ *   return page's, a JSON body, and the single-use enrol statement `/start`
+ *   issued after the owner's password; that statement is the capability.
+ *   Every other passkey route stays gated.
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -31,13 +43,25 @@
  * @module services/core/auth/session-gate
  */
 import { fromNodeHeaders } from 'better-auth/node';
-import { configManager } from '../config-manager.js';
 import { logger } from '../../../lib/logger.js';
 // `getAuth` is a hoisted accessor called at request time, so this back-import to
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { isSessionGatedPath } from './gated-paths.js';
+import { gateAccessFor, type GateAccess } from './gate-policy.js';
+import { currentServerRole } from '../../../lib/server-role.js';
+import { publicComputerSessionExpired } from '../hub/public-computer.js';
+import {
+  RELAY_LINK_PATH,
+  SESSION_RELAY_PASSKEY_FINISH_PATH,
+} from '@dorkos/shared/session-relay-link';
+import {
+  requestSessionRoute,
+  sessionWorksOn,
+  type SessionRoute,
+} from './sessions/session-route.js';
+import { inRestartWindow, sessionRecentlyEnded } from './sessions/live-connections.js';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -58,6 +82,13 @@ export interface RequestUser {
   credential: 'cookie' | 'api-key';
   /** Stable Better Auth API-key record id, present only for an API-key credential. */
   credentialId?: string;
+  /** The Better Auth session id, present only for a cookie credential. */
+  readonly sessionId?: string;
+  /**
+   * The route the session was made on, which is the route this request came
+   * in on (`./sessions/session-route.ts`). Present only for a cookie credential.
+   */
+  readonly route?: SessionRoute;
 }
 
 /**
@@ -103,7 +134,7 @@ function isGatedHealthPath(path: string): boolean {
 
 /**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
- * sign-in is reachable) and the health probe.
+ * sign-in is reachable), the health probe, and on a hub the link path.
  */
 function isExemptPath(path: string): boolean {
   if (isGatedHealthPath(path)) return false;
@@ -112,7 +143,11 @@ function isExemptPath(path: string): boolean {
     path === '/api/health' ||
     path.startsWith('/api/health/') ||
     // Signed-token-authorized embedded-browser content (see the module doc).
-    path.startsWith('/api/workbench/serve/')
+    path.startsWith('/api/workbench/serve/') ||
+    // A computer redeeming a link code, on a hub only (see the module doc).
+    (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
+    // A new approvals passkey coming back to this computer (see the module doc).
+    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub')
   );
 }
 
@@ -145,6 +180,12 @@ export interface VerifyRequestAuthOptions {
   bearerIsNotAnApiKey?: boolean;
   /** Bypass this deployment's cookie cache for a fresh database observation. */
   sessionFreshness?: 'server-store';
+  /**
+   * Skip the session-cookie leg, so only a valid bearer key can prove an
+   * identity. `/mcp` and A2A set it on the Wi-Fi route (DOR-2969): a Wi-Fi
+   * sign-in is never an agent tool's credential there.
+   */
+  ignoreSessionCookie?: boolean;
 }
 
 /**
@@ -161,27 +202,32 @@ export interface VerifyRequestAuthOptions {
  * middleware, and the WebSocket upgrade gate so there is exactly one
  * credential-verification path.
  *
- * It takes only the HEADERS rather than a framework's request, because the third
- * caller has no request: a WebSocket upgrade arrives on the HTTP server's
+ * A session cookie counts only on the route its sign-in was made on
+ * (`./sessions/session-route.ts`, DOR-2969): a cookie replayed on another route, or one
+ * from before routes were recorded anywhere but this computer, verifies as
+ * nobody, so the caller gets the ordinary `401` and signs in again there. That
+ * is why it reads the peer and the listener as well as the headers.
+ *
+ * It takes a request's facts rather than a framework's request, because the
+ * third caller has no request: a WebSocket upgrade arrives on the HTTP server's
  * `upgrade` event as a bare `IncomingMessage`, having bypassed every piece of
- * middleware including the session gate. Headers are all this ever read, so
- * narrowing the parameter is what lets the upgrade path reuse this instead of
- * growing a second, drifting copy of the credential check.
+ * middleware including the session gate. Narrowing the parameter is what lets
+ * the upgrade path reuse this instead of growing a second, drifting copy of the
+ * credential check.
  *
  * Each returning path names the credential it verified, because a caller holding
  * a per-user API key is not the same principal as a person in a browser session
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
- * @param req - Anything carrying the request's headers — a request's facts
- *   (`honoRequestFacts`), or the raw `IncomingMessage`
- *   of a WebSocket upgrade.
+ * @param req - The request's headers, TCP peer and listener: a request's facts
+ *   (`honoRequestFacts`), or `upgradeFacts` of a WebSocket upgrade.
  * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
  *   already knows what the request's bearer is.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
 export async function verifyRequestAuth(
-  req: Pick<RequestFacts, 'headers'>,
+  req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
   options: VerifyRequestAuthOptions = {}
 ): Promise<RequestUser | null> {
   const auth = getAuth();
@@ -190,20 +236,9 @@ export async function verifyRequestAuth(
   if (!auth) return null;
 
   // 1. Session cookie — verified against the cookie cache / DB.
-  try {
-    const result = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-      ...(options.sessionFreshness === 'server-store'
-        ? { query: { disableCookieCache: true, disableRefresh: true } }
-        : {}),
-    });
-    if (result?.user?.id) {
-      return { userId: result.user.id, credential: 'cookie' };
-    }
-  } catch (error) {
-    logger.debug('[Auth] Session cookie verification failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+  if (!options.ignoreSessionCookie) {
+    const user = await verifySessionCookie(auth, req, options);
+    if (user) return user;
   }
 
   // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
@@ -235,35 +270,48 @@ export async function verifyRequestAuth(
 /** The body of the session gate's `401`. */
 export const AUTH_REQUIRED_BODY = { error: 'Unauthorized', code: 'AUTH_REQUIRED' } as const;
 
+/**
+ * The session gate's `401`, saying how to sign in: on a hub, with a DorkOS
+ * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords.
+ * Elsewhere the app's own sign-in form.
+ */
+export function authRequiredBody(): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' } {
+  return currentServerRole() === 'hub'
+    ? { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' }
+    : AUTH_REQUIRED_BODY;
+}
+
 /** What the session gate decided about one request. */
 export type SessionGateDecision =
   /** Let it through. `user` is set when the gate proved who is calling. */
   | { allowed: true; user?: RequestUser }
-  /** Answer `401` with {@link AUTH_REQUIRED_BODY}. */
+  /** Answer `401` with {@link authRequiredBody}. */
   | { allowed: false };
 
 /**
  * Decide whether a request may pass the session gate, and who it is.
  *
  * The chain (`http/api-chain.ts`) asks it for every request, `/mcp` among
- * them. When login is disabled it decides nothing and costs nothing. Writes bypass the signed
- * cookie cache and check the current server session without renewing it;
- * GET/HEAD/OPTIONS keep cached session reads.
+ * them. What a request needs comes from where it came from
+ * ({@link gateAccessFor}, ADR 261015-125850): a person at this computer passes
+ * with nothing unless "Ask for a password on this computer too" is on; another
+ * device always needs a session cookie or a per-user key; a relayed caller is
+ * never admitted here. Writes bypass the signed cookie cache and check the
+ * current server session without renewing it; GET/HEAD/OPTIONS keep cached
+ * session reads.
  *
  * @param method - The request method.
  * @param path - The path the chain's router matches, without the query string.
- * @param request - The request's facts, for its headers.
+ * @param request - The request's facts: headers, TCP peer and ingress.
+ * @param access - What the request needs; computed from `request` when omitted.
  * @returns The decision.
  */
 export async function decideSessionGate(
   method: string,
   path: string,
-  request: Pick<RequestFacts, 'headers'>
+  request: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
+  access: GateAccess = gateAccessFor(request)
 ): Promise<SessionGateDecision> {
-  // Zero-overhead pass-through when login is disabled. Read per request so the
-  // flag can flip at runtime (enable-login flow) without a server restart.
-  if (!configManager.get('auth')?.enabled) return { allowed: true };
-
   // Normalize case before the gate checks. The router matches case-sensitively
   // today, but the server ran on Express for years, where `/API/sessions`
   // reached the same handler as `/api/sessions`; a gate that trusts the router's
@@ -276,6 +324,9 @@ export async function decideSessionGate(
   // always reachable.
   if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
 
+  if (access === 'open') return { allowed: true };
+  if (access === 'refused') return { allowed: false };
+
   // A signed cache may outlive a revoked session. Writes must observe the current
   // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
   const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
@@ -284,4 +335,54 @@ export async function decideSessionGate(
     readOnly ? {} : { sessionFreshness: 'server-store' }
   );
   return user ? { allowed: true, user } : { allowed: false };
+}
+
+/**
+ * The session-cookie leg of {@link verifyRequestAuth}: the signed-in person,
+ * or `null` when no session works for this request on its route.
+ */
+async function verifySessionCookie(
+  auth: NonNullable<ReturnType<typeof getAuth>>,
+  req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
+  options: VerifyRequestAuthOptions
+): Promise<RequestUser | null> {
+  try {
+    const result = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      // Just after a restart, nothing remembers which sign-ins ended before it,
+      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
+      ...(options.sessionFreshness === 'server-store'
+        ? { query: { disableCookieCache: true, disableRefresh: true } }
+        : inRestartWindow()
+          ? { query: { disableCookieCache: true } }
+          : {}),
+    });
+    // A public-computer sign-in never outlives its day, whatever its expiry
+    // says (`public-computer.ts`).
+    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
+      // Only on the route it was made on; anywhere else it is no session. A
+      // session that just ended is no session either, though its cached
+      // snapshot still vouches for it (`./sessions/live-connections.ts`).
+      const route = requestSessionRoute(req);
+      if (
+        route !== null &&
+        result.session &&
+        sessionWorksOn(result.session, route) &&
+        !sessionRecentlyEnded(result.session.id)
+      ) {
+        return {
+          userId: result.user.id,
+          credential: 'cookie',
+          sessionId: result.session.id,
+          route,
+        };
+      }
+    }
+  } catch (error) {
+    logger.debug('[Auth] Session cookie verification failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return null;
 }

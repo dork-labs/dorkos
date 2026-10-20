@@ -148,9 +148,11 @@ export function AgentRequestCard({
   // swapping the question out then would unmount the save that answers the
   // request.
   const [accessShown, setAccessShown] = useState(false);
-  // The owner chose to connect the app again because the kept account's way
-  // is down: the connect step shows even though that account still exists.
-  const [connectingAgain, setConnectingAgain] = useState(false);
+  // The owner chose to connect a new account of the app: the kept account's
+  // way is down, or the agent needs an account other than the ones already
+  // connected (its own mailbox, say). The connect step shows even though an
+  // account exists, until the new sign-in lands.
+  const [connectingNew, setConnectingNew] = useState(false);
   // The account Allow saved access on, while the person picks the updates a
   // request asked to hear about. The answer waits for that choice.
   const [updatesFor, setUpdatesFor] = useState<string | null>(null);
@@ -312,7 +314,7 @@ export function AgentRequestCard({
   const usable = offerableAccounts(all, request.serviceSlug);
   const showAccess = accessShown || Boolean(signedInId) || usable.length > 0;
 
-  if (!showAccess && (connected.length === 0 || connectingAgain)) {
+  if (!signedInId && (connectingNew || (!showAccess && connected.length === 0))) {
     return (
       <div className={cn('space-y-2', frameClass)}>
         <RequestConnectStep
@@ -321,6 +323,7 @@ export function AgentRequestCard({
           service={service}
           onConnected={setSignedInId}
           onDecline={decline}
+          {...(connected.length > 0 ? { onBack: () => setConnectingNew(false) } : {})}
           deciding={resolve.isPending}
         />
         {declineFailure}
@@ -340,7 +343,7 @@ export function AgentRequestCard({
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
-          onConnectAgain={() => setConnectingAgain(true)}
+          onConnectAgain={() => setConnectingNew(true)}
         />
         {declineFailure}
       </div>
@@ -362,6 +365,20 @@ export function AgentRequestCard({
           onSkip={decline}
           onAllowed={allowed}
         />
+        {/* The agent may need an account that isn't connected yet, so the
+            existing ones are never the only answer besides "Not now". Hidden
+            once this card signed one in (that account is the answer) and
+            once Allow is answering. */}
+        {!signedInId && !allowedId && (
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto px-0"
+            onClick={() => setConnectingNew(true)}
+          >
+            Connect another {serviceName} account
+          </Button>
+        )}
         {declineFailure}
       </div>
     </AccessStepMount>

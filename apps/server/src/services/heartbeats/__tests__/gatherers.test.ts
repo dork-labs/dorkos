@@ -28,6 +28,8 @@ import {
 } from '../gatherers/index.js';
 import { standingKey, triageByRules } from '../triage-rules.js';
 import { AuditLog } from '../../audit/audit-log.js';
+import { eq } from 'drizzle-orm';
+import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 
 const NOW = new Date('2026-10-12T10:00:00Z');
 const SINCE = '2026-10-12T09:00:00.000Z';
@@ -117,6 +119,15 @@ describe('addressed', () => {
     expect(JSON.stringify(changes)).not.toContain('SECRET-BODY-TEXT');
   });
 
+  it('never counts a post written from Wi-Fi, read from its row after a restart (DOR-3037)', async () => {
+    room('r-dm', 'dm', 'Dorian', ['a-juno', 'h-dorian']);
+    const held = post('r-dm', 'h-dorian', '2026-10-12T09:10:00Z');
+    db.update(roomEntries).set({ heldToDefault: true }).where(eq(roomEntries.id, held)).run();
+    const plain = post('r-dm', 'h-dorian', '2026-10-12T09:20:00Z');
+    const changes = await createAddressedGatherer(db)(ctx());
+    expect(changes.map((c) => c.key)).toEqual([`room-entry:${plain}`]);
+  });
+
   it("never counts a stranger's message, even naming the agent", async () => {
     room('r-bridged', 'channel', 'telegram', ['a-juno', 'x-stranger']);
     post('r-bridged', 'x-stranger', '2026-10-12T09:10:00Z', ['a-juno']);
@@ -129,6 +140,34 @@ describe('addressed', () => {
     expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
     post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
     expect(await createAddressedGatherer(db)(ctx())).toHaveLength(1);
+  });
+
+  // DOR-3036: a beat that reads a marked post carries its marks.
+  it('carries the marks another agent’s post was written under, from memory or its row', async () => {
+    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
+    const inMemory = post('r-general', 'a-otto', '2026-10-12T09:10:00Z', ['a-juno']);
+    noteEntryLevel(inMemory, {
+      asks: 'always',
+      reach: 'read',
+      outsider: true,
+      teammate: [{ roomId: 'space', authorId: 'priya' }],
+    });
+    const onRow = post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
+    db.update(roomEntries)
+      .set({ turnMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(roomEntries.id, onRow))
+      .run();
+    const plain = post('r-general', 'h-dorian', '2026-10-12T09:12:00Z', ['a-juno']);
+
+    const byKey = new Map(
+      (await createAddressedGatherer(db)(ctx())).map((change) => [change.key, change.marks])
+    );
+    expect(byKey.get(`room-entry:${inMemory}`)).toEqual({
+      outsider: true,
+      teammate: [{ roomId: 'space', authorId: 'priya' }],
+    });
+    expect(byKey.get(`room-entry:${onRow}`)).toEqual({ outsider: true });
+    expect(byKey.get(`room-entry:${plain}`)).toBeUndefined();
   });
 
   it('keeps the newest messages on a busy day', async () => {
@@ -236,6 +275,68 @@ describe('health', () => {
     expect(own).toEqual([]);
     const elsewhere = await createHealthGatherer(db)(ctx());
     expect(elsewhere.map((c) => c.signal)).toEqual(['self-refused']);
+  });
+
+  /** Record one failed runtime tool call by Juno, in her live chat. */
+  function toolFailure(summary: string, error?: string, at = '2026-10-12T09:30:00.000Z'): void {
+    new AuditLog(db).record({
+      at,
+      actor: { kind: 'agent', accountId: 'agent-juno', name: 'Juno' },
+      source: { surface: 'runtime-tool', runtime: 'claude-code', sessionId: 'live-chat' },
+      action: 'runtime.tool_used',
+      operation: 'execute',
+      outcome: 'failed',
+      ...(error ? { error } : {}),
+      summary,
+    } as never);
+  }
+
+  it('reads an everyday tool failure in a chat as information, so triage stays quiet', async () => {
+    toolFailure('Tried Bash (in a helper): grep -rn nothing-here src', 'Exit code 1');
+    toolFailure('Tried Bash: pnpm foo --help');
+    const changes = await createHealthGatherer(db)(ctx());
+    expect(changes.map((c) => c.signal)).toEqual(['info', 'info']);
+    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('quiet');
+  });
+
+  it('wakes on the same tool call failing again and again, helper or not', async () => {
+    toolFailure('Tried Bash: pnpm build', undefined, '2026-10-12T09:10:00.000Z');
+    toolFailure('Tried Bash (in a helper): pnpm build', undefined, '2026-10-12T09:20:00.000Z');
+    toolFailure('Tried Bash: pnpm build', undefined, '2026-10-12T09:30:00.000Z');
+    toolFailure('Tried Bash: pnpm lint', undefined, '2026-10-12T09:40:00.000Z');
+    const changes = await createHealthGatherer(db)(ctx());
+    expect(changes.map((c) => c.signal)).toEqual([
+      'self-refused',
+      'self-refused',
+      'self-refused',
+      'info',
+    ]);
+    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('undecided');
+  });
+
+  it('wakes on a full disk from any tool, and on access denied only to a file-writing tool', async () => {
+    toolFailure('Tried Bash: npm install', 'ENOSPC: no space left on device, write');
+    toolFailure('Tried Write: notes.md', "EACCES: permission denied, open 'notes.md'");
+    toolFailure('Tried Bash: find / -name x', 'find: /private: Permission denied');
+    const signals = (await createHealthGatherer(db)(ctx())).map((c) => c.signal);
+    expect(signals.sort()).toEqual(['info', 'self-refused', 'self-refused']);
+  });
+
+  it('keeps a refusal in view behind a burst of harmless tool failures', async () => {
+    new AuditLog(db).record({
+      at: '2026-10-12T09:05:00.000Z',
+      actor: { kind: 'agent', accountId: 'agent-juno', name: 'Juno' },
+      source: { surface: 'mcp' },
+      action: 'connectors.execute',
+      operation: 'execute',
+      outcome: 'refused',
+      summary: 'Refused.',
+    } as never);
+    for (let i = 0; i < 30; i += 1) toolFailure(`Tried Bash: grep -rn term-${i} src`);
+    const changes = await createHealthGatherer(db)(ctx());
+    expect(changes).toHaveLength(20);
+    expect(changes[0]!.signal).toBe('self-refused');
+    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('undecided');
   });
 });
 

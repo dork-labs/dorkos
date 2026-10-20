@@ -158,7 +158,7 @@ Task tool:
     and classify each hunk.
 
     Scope:
-    - git diff $(git describe --tags --abbrev=0)..HEAD -- packages/shared/src/config-schema.ts apps/server/src/services/core/config-manager.ts
+    - git diff $(git describe --tags --abbrev=0)..HEAD -- packages/shared/src/config-schema.ts apps/server/src/services/core/config-manager.ts apps/server/src/services/core/config-migrations/
 
     Classification rules per hunk:
     - added_with_default: new field with a .default(...) — usually no migration

@@ -35,10 +35,12 @@ This is the right default for a tool on your own laptop, and it is also the reas
 
 Reaching DorkOS from your phone or another machine means exposing it, either by starting a tunnel or by binding to a public network interface. That flips DorkOS from "single-user local tool" to "networked service," so DorkOS requires a real login before it will do it.
 
+DorkOS decides each request by where it came from. A request from this computer is you, already signed in. A request from any other device always needs a sign-in, whatever "Ask for a password on this computer too" says: through your tunnel, over Wi-Fi, through a reverse proxy, or to a public address. A proxy's forwarding headers, or a page on another site named in `Origin` or `Referer`, make a request count as another device.
+
 <Callout type="warn">
-  Exposing DorkOS **requires an owner account**. Starting a tunnel with login off routes you into
-  creating one first. Binding to a non-loopback host with no login configured refuses to start. This
-  is enforced in code, not a suggestion.
+  Exposing DorkOS **requires an owner account**: someone for those other devices to sign in as.
+  Starting a tunnel without one routes you into creating it first. Binding to a non-loopback host
+  without one refuses to start. This is enforced in code, not a suggestion.
 </Callout>
 
 Once exposed:
@@ -49,9 +51,11 @@ Once exposed:
 
 <Callout type="info">
   One deliberate escape hatch: a container that owns its own network boundary can set
-  `DORKOS_ALLOW_INSECURE_BIND=true` to bind publicly without login. It is off by default and logs a
-  loud warning. Do not set it on a real machine. Copying a container's environment onto bare metal
-  is the mistake to avoid, because it turns off the exposure guard.
+  `DORKOS_ALLOW_INSECURE_BIND=true` to bind publicly without login. Until an owner account exists,
+  that container stays open to anyone who reaches its port, for one more release; once the owner
+  exists, every browser visit needs a password. It is off by default and logs a loud warning. Do not
+  set it on a real machine. Copying a container's environment onto bare metal is the mistake to
+  avoid, because it turns off the exposure guard.
 </Callout>
 
 See [Securing your instance](/docs/self-hosting/securing-your-instance) for the how-to.
@@ -60,9 +64,9 @@ See [Securing your instance](/docs/self-hosting/securing-your-instance) for the 
 
 DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. **It is closed by default, on localhost too.** What you send to open it depends on whether you have turned on login:
 
-- **Login off (the default).** Anything that changes something on your machine — installing a package, creating an agent, running extension code — needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
-- **Login on.** The login gate covers `/mcp` like the rest of the API, so every call needs a sign-in or a per-user API key, and the local token steps aside.
-- **Exposing the server** does not loosen either rule; it adds the exposure guard on top. The server refuses to bind to a public address without a login. Two things get past that guard, and both are worth knowing: the official Docker image opts out of it on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path it never sees, because it only inspects the address DorkOS itself binds to.
+- **On this computer, with login off (the default).** Anything that changes something on your machine — installing a package, creating an agent, running extension code — needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
+- **Login on, or from another device.** The login gate covers `/mcp` like the rest of the API, so every call needs a sign-in or a per-user API key, and the local token steps aside. A call from another device never gets the local token or the no-token checks, whatever "Ask for a password on this computer too" says.
+- **Exposing the server** does not loosen either rule; it adds the exposure guard on top. The server refuses to bind to a public address without an owner account. Two things get past that guard, and both are worth knowing: the official Docker image opts out of it on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path it never sees, because it only inspects the address DorkOS itself binds to. The request gate still catches that proxy: its forwarding headers make every request through it another device, which needs a sign-in. The one gap left is named here on purpose. A proxy on this computer that sends no forwarding headers and points `Host` at `localhost` or `127.0.0.1` (nginx's default for `proxy_pass http://127.0.0.1:4242`) makes its traffic look like this computer. A browser still gives itself away when it changes something, because it names the page it is on. A script or command-line client names no page, so through such a proxy it gets everything this computer gets. For the same reason, a sign-in made on this computer also works through that proxy, because DorkOS cannot tell the two apart. Make your proxy send `X-Forwarded-For` (the configs in [Reverse proxy](/docs/self-hosting/reverse-proxy) do), or turn on "Ask for a password on this computer too".
 
 <Callout type="warn">
   **The honest limit of the local token.** While login is off, any program running on your computer
@@ -90,17 +94,17 @@ Agents message each other in chats you can open, and reach you and outside syste
 
 ## What stops an agent operating DorkOS itself
 
-Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels, and the label decides what happens:
+Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels:
 
-| Label            | What happens                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| Read only        | Runs. Nothing to undo.                                                                   |
-| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked. |
-| Cannot be undone | Does not run. It returns a pending approval, and waits for somebody to answer.           |
+| Label            | What happens                                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read only        | Runs. Nothing to undo.                                                                                                                                                                                |
+| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked.                                                                                                              |
+| Cannot be undone | On a **Trusted** install (the default) most of these run too, recorded the same way. Three never do: they return a pending approval and wait for somebody to answer, on Trusted and on Careful alike. |
 
-Six actions carry the last label today: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. Changing what an agent runs on can be changed back, and carries the label anyway because every schedule that follows the agent runs differently from then on. Running a package from a folder lets whatever is in that folder run, edits included, without another review. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
+Six actions carry the "Cannot be undone" label: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The last three always wait, whatever preset you are on, because each brings in code nobody has reviewed or moves an agent the way every one of its scheduled runs would also move. The first three no longer stop to ask on Trusted: they run and land in your activity feed, named to the agent that did them. Creating a new package in your personal marketplace waits too, and so does installing or updating one, because a package is code from outside your team. A package's own hooks and any global plugins it carries ask separately as well. On a **Careful** install, every action above waits for your yes, the way DorkOS always used to work.
 
-The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these five. A new tool with no declared label fails the server build rather than running unlabelled.
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at the ones that always ask. A new tool with no declared label fails the server build rather than running unlabelled.
 
 There is a third, much smaller tool server, for Codex chats, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 
@@ -208,7 +212,7 @@ If you believe you have found a vulnerability, please report it privately. See [
 
 <Cards>
   <Card title="Securing your instance" href="/docs/self-hosting/securing-your-instance">
-    Turn on login, expose safely, and issue API keys
+    Create the owner account, expose safely, and issue API keys
   </Card>
   <Card title="Reverse proxy" href="/docs/self-hosting/reverse-proxy">
     Put DorkOS behind nginx or Caddy

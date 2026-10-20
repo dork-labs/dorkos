@@ -6,7 +6,7 @@
  * to somebody else's server, over a different transport, with a different
  * identity model, a different room primitive, no sequence, and no write path. It
  * is here because an interface with one implementation is a fake abstraction: the
- * point is to find out, before `apps/community` sets the contract in concrete,
+ * point is to find out, before `apps/space` sets the contract in concrete,
  * whether the port absorbs a genuinely foreign backend through capability flags —
  * or only by weakening something for everyone.
  *

@@ -1,11 +1,11 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest';
-import fs from 'node:fs';
 import ts from 'typescript';
+import { compositionRootSource } from '../../../__tests__/composition-root.js';
 
 const source = ts.createSourceFile(
   'index.ts',
-  fs.readFileSync(new URL('../../../index.ts', import.meta.url), 'utf8'),
+  compositionRootSource(),
   ts.ScriptTarget.Latest,
   true
 );

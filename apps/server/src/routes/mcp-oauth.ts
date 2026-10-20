@@ -5,23 +5,24 @@
  * This is the `redirect_uri` the operator's browser lands on after authorizing a
  * managed MCP server. It is **loopback-only** (the user's own browser hits it),
  * hands the `state`/`code` to {@link AgentMcpOAuthService.handleCallback}, and
- * renders a plain "return to DorkOS" page carrying no secret and no external
- * asset. The token exchange and storage happen entirely inside the service; this
- * route is only the browser's landing spot.
+ * sends the browser on to the app's sign-in landing page
+ * (`http/sign-in-landing-response.ts`), which says which server it was, takes
+ * the person back to the conversation that asked, and offers Try again. The
+ * token exchange and storage happen entirely inside the service; this route is
+ * only the browser's landing spot.
  *
  * @module routes/mcp-oauth
  */
 import { Hono } from 'hono';
+import type { SignInRetryResult } from '@dorkos/shared/sign-in-landing';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
-import { getLocalCockpitOrigin } from '../lib/trusted-origins.js';
-import { isLocalCaller } from '../lib/caller-authority.js';
+import type { StartedFlow } from '../services/mesh/agent-mcp-oauth-flow-store.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-
-/** HTTP status for a completed callback vs. any failure (used for the rendered page). */
-const OK = 200;
-const BAD_REQUEST = 400;
+import { respondWithSignInLanding } from '../http/sign-in-landing-response.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { withoutReferringPage } from '../services/core/auth/oauth-callback-arrival.js';
 
 /**
  * The page's type, spelled as Express's `res.send` spelled it for a string
@@ -29,77 +30,31 @@ const BAD_REQUEST = 400;
  */
 const HTML = { 'Content-Type': 'text/html; charset=utf-8' };
 
-/** Escape the small set of HTML metacharacters so a query value can't inject markup. */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/** What a completed callback shows the operator. */
-interface CallbackPageContent {
-  /** The `<title>`, and the heading when there is no server to name. */
-  title: string;
-  /** The heading — names the server on success, so the tab says what just happened. */
-  heading: string;
-  /** The one sentence under the heading. */
-  body: string;
-  /** The link back into the cockpit, present only on success. */
-  cockpitOrigin?: string;
-}
-
 /**
- * The copy for a landing, in the operator's terms rather than the protocol's.
+ * Start the same sign-in a landing page is about again: the same agent and
+ * server, the same conversation to resume once it lands, and the same flow id.
  *
- * There is deliberately no close button and no `window.close()`: a tab a person
- * opened themselves cannot be closed by script, so the button would do nothing
- * and the page would be lying about what it offers. It says "you can close this
- * tab" and leaves the closing to them, next to a real link back.
+ * The server URL is the one the flow recorded, not a fresh read of the agent's
+ * settings. A token is bound to its URL, so if the server was edited in the
+ * meantime the token is dropped the first time it is read for the new URL.
  *
- * @param connected - Whether the exchange completed.
- * @param serverName - The server signed into, when the flow was still known.
- * @param error - The failure reason, when it failed.
+ * @param oauth - The managed-MCP OAuth engine.
+ * @param flow - The flow the callback finished.
  */
-function callbackPageContent(
-  connected: boolean,
-  serverName?: string,
-  error?: string
-): CallbackPageContent {
-  if (!connected) {
-    return {
-      title: 'Sign-in failed',
-      heading: 'Sign-in failed',
-      body: error ?? 'Please return to DorkOS and try again.',
-    };
-  }
-  return {
-    title: 'Signed in',
-    heading: serverName ? `You’re signed in to ${serverName}.` : 'You’re signed in.',
-    body: 'DorkOS has what it needs. You can close this tab — your agent is picking up where it left off.',
-    cockpitOrigin: getLocalCockpitOrigin(),
+function retryFor(oauth: AgentMcpOAuthService, flow: StartedFlow) {
+  return async (): Promise<SignInRetryResult> => {
+    const started = await oauth.startSignin(
+      { agentId: flow.agentId, serverName: flow.serverName, serverUrl: flow.serverUrl },
+      {
+        ...(flow.originSessionId ? { originSessionId: flow.originSessionId } : {}),
+        ...(flow.originCwd ? { originCwd: flow.originCwd } : {}),
+        // The same flow id, so a card or panel still polling it sees this attempt.
+        restartFlowId: flow.flowId,
+      }
+    );
+    if (started.alreadyConnected || !started.authorizeUrl) return { kind: 'connected' };
+    return { kind: 'authorize', authorizeUrl: started.authorizeUrl };
   };
-}
-
-/**
- * Minimal HTML for the callback landing (no secret, no external assets).
- *
- * Every interpolated value goes through {@link escapeHtml}, the server name
- * included: it is operator-supplied text from the manifest, so it is untrusted
- * input to this page even though the operator typed it themselves.
- *
- * @param connected - Whether the exchange completed.
- * @param serverName - The server signed into, when known.
- * @param error - The failure reason, when it failed.
- */
-function renderCallbackPage(connected: boolean, serverName?: string, error?: string): string {
-  const { title, heading, body, cockpitOrigin } = callbackPageContent(connected, serverName, error);
-  const link = cockpitOrigin
-    ? `<p><a href="${escapeHtml(cockpitOrigin)}" style="color: #2563eb;">Back to DorkOS</a></p>`
-    : '';
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: ui-sans-serif, system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a;"><h1 style="font-size: 1.25rem;">${escapeHtml(heading)}</h1><p style="color: #555;">${escapeHtml(body)}</p>${link}</body></html>`;
 }
 
 /**
@@ -112,7 +67,8 @@ export function createMcpOAuthRoutes(oauth: AgentMcpOAuthService): Hono<ApiEnv> 
   const router = new Hono<ApiEnv>();
 
   router.get('/callback', async (c) => {
-    if (!isLocalCaller(honoRequestFacts(c))) {
+    // The provider's page is the Referer here; judge where the request came from.
+    if (!isAtThisComputer(withoutReferringPage(honoRequestFacts(c)))) {
       return c.body('Not available.', 403, HTML);
     }
     // A repeated key is an array, and reads as absent, as it did on Express.
@@ -121,11 +77,17 @@ export function createMcpOAuthRoutes(oauth: AgentMcpOAuthService): Hono<ApiEnv> 
     const code = typeof query.code === 'string' ? query.code : undefined;
     const error = typeof query.error === 'string' ? query.error : undefined;
     const result = await oauth.handleCallback({ state, code, error });
-    return c.body(
-      renderCallbackPage(result.connected, result.serverName, result.error),
-      result.connected ? OK : BAD_REQUEST,
-      HTML
-    );
+    const flow = result.flow;
+    return respondWithSignInLanding(c, {
+      service: 'mcp',
+      // Empty when the flow was already gone: the page then names no service.
+      serviceName: result.serverName ?? '',
+      connected: result.connected,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(flow ? { agentId: flow.agentId } : {}),
+      ...(flow?.originSessionId ? { originSessionId: flow.originSessionId } : {}),
+      ...(flow && !result.connected ? { retry: retryFor(oauth, flow) } : {}),
+    });
   });
 
   return router;

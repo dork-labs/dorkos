@@ -260,7 +260,7 @@ describe('AgentComputerPanel', () => {
     await screen.findByText('You have control');
     transport.getComputerFrame.mockImplementation(() => new Promise(() => {}));
     rerender(<ComputerViewer generation={5} onClose={onClose} />);
-    await screen.findByText('Watching');
+    await screen.findByText('Connecting…');
     expect(screen.queryByAltText('Live computer desktop')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Type on computer' })).not.toBeInTheDocument();
     expect(transport.releaseComputerControl).toHaveBeenCalledWith('lease');

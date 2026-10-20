@@ -98,6 +98,12 @@ mockups/running-figure-v3.html
 # static rule here would not swallow authored .claude/commands/<ns>/ dirs.)
 .dork/plugins/
 .agents/skills/*__*
+# The visual companion's generated CSS (scripts/vc build); built on first use.
+.agents/skills/visual-companion/scripts/assets/
+# ...and what its tools write: the example prototype's build (build-proto.cjs),
+# and screenshots or note crops if a run ever lands them beside the skill.
+.agents/skills/visual-companion/examples/prototype/index.html
+.agents/skills/visual-companion/**/shots/
 .claude/skills/*__*
 .claude/settings.local.json
 .codex/hooks.json
@@ -137,3 +143,6 @@ scripts/.flake-fixture-*/
 # `ESLint` constructed with `ignore: false`.
 apps/client/src/layers/entities/__dag-fixture-*__/
 apps/client/src/layers/*/__slice-fixture-*__/
+
+# Isolated local browser proof bundles and installed-package receipts.
+.dork/local-browser/

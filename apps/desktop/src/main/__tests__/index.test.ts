@@ -20,10 +20,16 @@ vi.mock('../window-manager', async (importOriginal) => ({
   makeRendererUrlAccessor: vi.fn(() => () => undefined),
 }));
 vi.mock('../window-state', () => ({ watchDisplayChanges: vi.fn() }));
+// The page bridge owns a real HTTP server and Electron session. Its transport
+// and packaged proofs cover those; this suite isolates root boot orchestration.
+vi.mock('../local-browser', () => ({
+  startLocalBrowserBridge: vi.fn(async () => ({ close: vi.fn(async () => undefined) })),
+}));
 vi.mock('../server-process', () => ({
   startServer: vi.fn(async () => 4242),
   stopServer: vi.fn(async () => undefined),
   getServerPort: vi.fn(() => 4242),
+  signInWindowSession: vi.fn(async () => 'signed-in'),
 }));
 vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
@@ -951,6 +957,8 @@ describe('server start failure', () => {
 
     const serverProcess = await import('../server-process');
     vi.mocked(serverProcess.startServer).mockRejectedValueOnce(new Error('utility process exited'));
+    const { startLocalBrowserBridge } = await import('../local-browser');
+    vi.mocked(startLocalBrowserBridge).mockClear();
 
     const windowManager = await import('../window-manager');
     vi.mocked(windowManager.createWindow).mockClear();
@@ -976,6 +984,15 @@ describe('server start failure', () => {
     // a value rather than agreeing with itself.
     expect(describeLogLocation()).toBe(LOG_DIRECTORY);
     expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(startLocalBrowserBridge).toHaveBeenCalledTimes(1);
+    const bridge = await vi.mocked(startLocalBrowserBridge).mock.results[0].value;
+    expect(bridge.close).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(bridge.close).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(serverProcess.startServer).mock.invocationCallOrder.at(-1)!
+    );
+    expect(vi.mocked(bridge.close).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(app.quit).mock.invocationCallOrder[0]
+    );
     // No window, no menu/updater setup — the app must not proceed past the
     // failed server start into a half-initialized, windowless state.
     expect(windowManager.createWindow).not.toHaveBeenCalled();

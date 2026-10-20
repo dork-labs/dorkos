@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { Transport, TerminalHandle } from '@dorkos/shared/transport';
 import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
-import { cn } from '@/layers/shared/lib';
+import { awayFromTheComputerSentence, cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 interface TerminalInstanceProps {
@@ -204,7 +204,11 @@ export function TerminalInstance({
         // narrow window is left to the server's idle TTL (bounded, unavoidable
         // without idempotency keys on create).
         if (cancelled) return;
-        if (isTerminalLimitError(err)) {
+        const away = awayFromTheComputerSentence(err);
+        if (away) {
+          // Refused by design on this device (Wi-Fi): said plainly, not as an error.
+          term.write(`\r\n\x1b[2m${away}\x1b[0m\r\n`);
+        } else if (isTerminalLimitError(err)) {
           // The live-terminal cap (429, TERMINAL_LIMIT) is an expected
           // operational state, not a fault — show human copy in-panel and keep
           // the (empty) tab so the message stays visible; the user closes it.

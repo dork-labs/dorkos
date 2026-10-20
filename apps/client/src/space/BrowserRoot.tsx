@@ -1,0 +1,61 @@
+import { COMMUNITY_HOST_ADMIN_PATH } from '@dorkos/shared/community-wire';
+import { CommunityApp } from './CommunityApp.js';
+import { CommunityChooser } from './components/CommunityChooser.js';
+import { DeletionRecovery } from './components/DeletionRecovery.js';
+import { HostAdministration } from './components/host/HostAdministration.js';
+import { OwnerClaim } from './components/OwnerClaim.js';
+import { Pairing } from './components/Pairing.js';
+import { OWNER_CLAIM_PATH } from './owner-claim.js';
+import { KeepOwnership } from './owner-replacement/KeepOwnership.js';
+import { OwnerReplacementClaim } from './owner-replacement/OwnerReplacementClaim.js';
+import { KEEP_OWNERSHIP_PATH, OWNER_REPLACEMENT_CLAIM_PATH } from './owner-replacement/links.js';
+import { ShortNameRoute } from './components/ShortNameRoute.js';
+import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
+import { parseShortNamePath } from '@dorkos/shared/space-page';
+import { SignInLinkedNotice } from './sign-up/SignInLinkedNotice.js';
+import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
+import { ResetPassword } from './email-links/ResetPassword.js';
+import { EmailSignIn } from './email-links/EmailSignIn.js';
+import { ConfirmEmail } from './email-links/ConfirmEmail.js';
+
+const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_PATH_SHORT_NAMES);
+
+/**
+ * Select the browser surface from an exact root or tenant-qualified path, with the one-time
+ * notice a trusted sign-in leaves when it linked to an account already here.
+ */
+export function BrowserRoot({
+  pathname = window.location.pathname,
+  search = window.location.search,
+}: {
+  pathname?: string;
+  search?: string;
+}) {
+  return (
+    <>
+      <SignInLinkedNotice />
+      <Surface pathname={pathname} search={search} />
+    </>
+  );
+}
+
+/** The page this path names. */
+function Surface({ pathname, search }: { pathname: string; search: string }) {
+  const pairing = pathname === '/pairing' || /^\/c\/[^/]+\/pairing$/.test(pathname);
+  if (pairing) return <Pairing search={search} />;
+  if (pathname === COMMUNITY_HOST_ADMIN_PATH) return <HostAdministration />;
+  if (pathname === OWNER_CLAIM_PATH) return <OwnerClaim />;
+  if (pathname === KEEP_OWNERSHIP_PATH) return <KeepOwnership />;
+  if (pathname === OWNER_REPLACEMENT_CLAIM_PATH) return <OwnerReplacementClaim />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.password_reset) return <ResetPassword />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.sign_in) return <EmailSignIn />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.email_confirmation) return <ConfirmEmail />;
+  const deletion = /^\/c\/([^/]+)\/deletion$/u.exec(pathname);
+  if (deletion) return <DeletionRecovery communityId={deletion[1]} />;
+  if (pathname === '/') return <CommunityChooser signedOut={() => <CommunityApp />} />;
+  // `/<name>[/...]`: a community's short address, for any name the grammar allows that no page
+  // of this app already owns. The server reads the path the same way.
+  const named = parseShortNamePath(pathname, RESERVED_SHORT_NAMES);
+  if (named) return <ShortNameRoute name={named.name} rest={named.rest} />;
+  return <CommunityApp />;
+}

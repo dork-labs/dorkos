@@ -126,6 +126,17 @@ describe('the gate the live stream asks', () => {
     expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(true);
   });
 
+  it('knows the owner’s own account from everyone else in the space (DOR-2955)', async () => {
+    const policy = new RemoteWakePolicy(store);
+    expect(policy.isOwnerPost(REF, OWNER, OWNER_MEMBER)).toBe(false);
+    await policy.reload();
+
+    expect(policy.isOwnerPost(REF, OWNER, OWNER_MEMBER)).toBe(true);
+    expect(policy.isOwnerPost(REF, OWNER, 'remote-stranger')).toBe(false);
+    expect(policy.isOwnerPost(REF, 'someone-else', OWNER_MEMBER)).toBe(false);
+    expect(policy.isOwnerPost('remote_other' as CommunityRef, OWNER, OWNER_MEMBER)).toBe(false);
+  });
+
   it('wakes nobody for a connection it does not know', async () => {
     const policy = new RemoteWakePolicy(store);
     await policy.reload();

@@ -30,12 +30,10 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
 import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 
-const INDEX_PATH = fileURLToPath(new URL('../index.ts', import.meta.url));
+import { COMPOSITION_ROOT_PATH as INDEX_PATH, compositionRootSource } from './composition-root.js';
 
 /**
  * Drop comments, so the scan sees only what the server actually mints.
@@ -67,7 +65,7 @@ function stripComments(source: string): string {
 
 describe('dial URLs minted by the composition root', () => {
   it('never hardcodes a loopback literal', async () => {
-    const source = stripComments(await readFile(INDEX_PATH, 'utf8'));
+    const source = stripComments(compositionRootSource());
     const offenders = [...source.matchAll(/https?:\/\/(?:127\.0\.0\.1|\[?::1\]?)(?=[:/'"`])/g)].map(
       (match) => match[0]
     );
@@ -84,7 +82,7 @@ describe('dial URLs minted by the composition root', () => {
     // §5): `control_ui` is a `ui` capability on the loopback `dorkos` server,
     // which the connector listener already mints its own URL for. A line that
     // came back would be a second copy of a tool that has one.
-    const source = stripComments(await readFile(INDEX_PATH, 'utf8'));
+    const source = stripComments(compositionRootSource());
     expect(source).not.toContain('mcpUiUrl');
     expect(source).not.toContain('/codex-ui-mcp');
   });
@@ -92,7 +90,7 @@ describe('dial URLs minted by the composition root', () => {
   it('still mints something for every site that used to, so nothing was fixed by deletion', async () => {
     // The guard on the guard. The check above is satisfied by an `index.ts` that
     // mints no URLs at all, which is the shape a careless "fix" takes.
-    const source = stripComments(await readFile(INDEX_PATH, 'utf8'));
+    const source = stripComments(compositionRootSource());
     // Two today: the local origin and the connector callback base. It was three
     // until the codex `dorkos_ui` bridge was retired with the stub it dialled.
     // Stated as a floor rather than an exact count so adding a mint site is not

@@ -107,7 +107,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
 
     registerTask = vi.fn<SchedulerRegistrationTarget['registerTask']>(() => true);
     unregisterTask = vi.fn<SchedulerRegistrationTarget['unregisterTask']>();
-    scheduler = { isStarted: true, registerTask, unregisterTask };
+    scheduler = { isStarted: true, registerTask, unregisterTask, hasJob: () => false };
 
     const meshCore = {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
@@ -398,7 +398,12 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       taskStore: store,
       registrar: new TaskRegistrar({
         store,
-        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+        scheduler: {
+          isStarted: true,
+          registerTask: vi.fn(() => true),
+          unregisterTask: vi.fn(),
+          hasJob: () => false,
+        },
       }),
       meshCore: undefined,
       dorkHome,
@@ -490,7 +495,12 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
       taskStore: store,
       registrar: new TaskRegistrar({
         store,
-        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+        scheduler: {
+          isStarted: true,
+          registerTask: vi.fn(() => true),
+          unregisterTask: vi.fn(),
+          hasJob: () => false,
+        },
       }),
       meshCore: undefined,
       dorkHome,
@@ -565,7 +575,7 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
 
     registerTask = vi.fn<SchedulerRegistrationTarget['registerTask']>(() => true);
     unregisterTask = vi.fn<SchedulerRegistrationTarget['unregisterTask']>();
-    scheduler = { isStarted: true, registerTask, unregisterTask };
+    scheduler = { isStarted: true, registerTask, unregisterTask, hasJob: () => false };
 
     const meshCore = {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
@@ -747,7 +757,12 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
       taskStore: store,
       registrar: new TaskRegistrar({
         store,
-        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+        scheduler: {
+          isStarted: true,
+          registerTask: vi.fn(() => true),
+          unregisterTask: vi.fn(),
+          hasJob: () => false,
+        },
       }),
       meshCore: {
         getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),

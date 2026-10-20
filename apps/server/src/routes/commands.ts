@@ -46,7 +46,11 @@ router.get('/', async (c) => {
     } else if (sessionId) {
       runtime = await runtimeRegistry.resolveForSession(sessionId);
     } else {
-      // cold discovery: no session context (onboarding, first-run)
+      // cold discovery: no session context (onboarding, first-run). A server
+      // with no runtime registered (a hub) has no commands to offer.
+      if (!runtimeRegistry.has(runtimeRegistry.getDefaultType())) {
+        return c.json({ commands: [], lastScanned: new Date().toISOString() });
+      }
       runtime = runtimeRegistry.getDefault();
     }
     const commands = await runtime.getCommands(refresh, validatedCwd);

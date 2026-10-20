@@ -323,6 +323,52 @@ describe('an ID-only external session without DorkOS metadata', () => {
     expect(fakeRuntime.getSession).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
     expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
   });
+
+  it('passes a named directory to the native lookup as the first place to look', async () => {
+    // DOR-2892: the hint lets the runtime skip a walk of every project folder.
+    // An empty `?cwd=` names nothing, so it is not passed.
+    await request(server).get(`/api/sessions/${SESSION_ID}/messages`).query({ cwd: LIVE_CWD });
+    await request(server).get(`/api/sessions/${SESSION_ID}/messages`).query({ cwd: '' });
+    const { findSession } = fakeRuntime as unknown as { findSession: ReturnType<typeof vi.fn> };
+    expect(findSession).toHaveBeenNthCalledWith(1, SESSION_ID, { cwdHint: LIVE_CWD });
+    expect(findSession).toHaveBeenNthCalledWith(2, SESSION_ID, undefined);
+  });
+
+  it('answers only the tail a `since` names, and the whole history otherwise (DOR-2890)', async () => {
+    fakeRuntime.getMessageHistory.mockResolvedValue(
+      ['m1', 'm2', 'm3'].map((id) => ({ id, role: 'assistant', content: id }))
+    );
+    const tail = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .query({ since: 'm2' });
+    expect(tail.body).toEqual({
+      messages: [expect.objectContaining({ id: 'm2' }), expect.objectContaining({ id: 'm3' })],
+      tail: true,
+    });
+    const unknown = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .query({ since: 'gone' });
+    expect(unknown.body.tail).toBeUndefined();
+    expect(unknown.body.messages).toHaveLength(3);
+  });
+
+  it('never answers a tail from the whole transcript’s ETag (DOR-2890)', async () => {
+    fakeRuntime.getMessageHistory.mockResolvedValue(
+      ['m1', 'm2'].map((id) => ({ id, role: 'assistant', content: id }))
+    );
+    fakeRuntime.getSessionETag = vi.fn().mockResolvedValue('"whole-v1"');
+    const tail = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .query({ since: 'm2' })
+      .set('If-None-Match', '"whole-v1"');
+    expect(tail.status).toBe(200);
+    expect(tail.headers.etag).toBeUndefined();
+    expect(tail.body).toMatchObject({ tail: true });
+    const whole = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .set('If-None-Match', '"whole-v1"');
+    expect(whole.status).toBe(304);
+  });
 });
 
 describe('an ID-only link after the live binding is gone', () => {

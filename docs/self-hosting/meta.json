@@ -5,6 +5,7 @@
     "docker",
     "tunnel-setup",
     "space-server",
+    "space-server-setup",
     "reverse-proxy",
     "securing-your-instance",
     "threat-model",

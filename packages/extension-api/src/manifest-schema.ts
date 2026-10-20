@@ -22,6 +22,12 @@ import { runEntryProblem } from './run-allowlist.js';
 const ExtensionCapabilitiesSchema = z.object({
   /** Event kinds or categories this extension is allowed to subscribe to. */
   events: z.array(z.enum(EXTENSION_EVENT_DECLARATIONS)).optional(),
+  /**
+   * Asks to read and reply in room threads (`api.rooms`, DOR-3017). Settings
+   * → Extensions then offers the person a choice of rooms; it reaches none
+   * until they pick one.
+   */
+  rooms: z.boolean().optional(),
 });
 
 /** Declares a secret an extension needs (e.g., an API key). */

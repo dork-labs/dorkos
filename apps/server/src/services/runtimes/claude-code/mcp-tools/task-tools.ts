@@ -24,6 +24,25 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 import {
+  PARKED_SCHEDULE_NOTE,
+  ARMED_SCHEDULE_NOTE,
+  REAPPROVAL_NOTE,
+  TIMING_REAPPROVAL_NOTE,
+  RESET_TIMING_DESCRIPTION,
+  PARKED_SCHEDULE_SURFACE_HINT,
+  TARGET_DESCRIPTION,
+  REFUSED_AGENT_ID_DESCRIPTION,
+  REFUSED_UPDATE_TARGET_DESCRIPTION,
+  STICKY_DESCRIPTION,
+  RUNTIME_DESCRIPTION,
+  MODEL_DESCRIPTION,
+  EFFORT_DESCRIPTION,
+  ACCOUNT_DESCRIPTION,
+  REASON_DESCRIPTION,
+  REFUSED_PERMISSION_MODE_DESCRIPTION,
+  REFUSED_STATUS_DESCRIPTION,
+} from './task-tool-copy.js';
+import {
   clampSchedulePermissionMode,
   taskWorkOf,
 } from '../../../tasks/schedule-permission-clamp.js';
@@ -36,6 +55,7 @@ import {
   refuseUnknownTaskUpdateFields,
 } from '../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
+import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../tasks/task-file-update.js';
@@ -54,6 +74,8 @@ import {
   scheduleRunFolder,
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -79,86 +101,10 @@ export type TaskProvenanceResolver = () => {
 };
 
 /**
- * What `tasks_create` tells an agent once the schedule is parked.
- *
- * The old wording said only that the status was `pending_approval`, which is
- * true and useless: a model reads it, reports "created the schedule", and ends
- * the turn — leaving a person who was never told anything to discover the
- * approval on their own. That is the failure this text exists to fix
- * (DOR-1570): the operator had to ASK an agent to open the Tasks panel before
- * they found out something was waiting on them.
- *
- * So it asks for the one thing only the agent can do, which is say so out loud.
- * DorkOS does the rest — the bell, the desktop banner, and the phone ping after
- * the escalation delay all fire on their own.
+ * The marks of the turn making a task call, for a surface that cannot name the calling session
+ * (the external `/mcp` server, DOR-3036). The in-session server reads them from its session.
  */
-export const PARKED_SCHEDULE_NOTE =
-  'This schedule will NOT run until the person approves it. Tell them so in your reply — ' +
-  'name the scheduled task and say it is waiting on them. Do not end the turn as if the work ' +
-  'were done.';
-
-/**
- * What `tasks_update` tells an agent whose edit to what an approved schedule
- * does has stopped it (DOR-1625 review, DOR-2313).
- *
- * A person's approval is keyed on the schedule's CONTENT — the prompt, the
- * cron and, since DOR-2307, the timezone (`scheduleContentKey`) — so changing
- * any of them means nobody has read this piece of work. DorkOS parks the
- * schedule in the same call (`TaskApprovals.settleApprovedWorkChange`), so the
- * schedule this tool hands back already says `pending_approval`. An agent that
- * read only the status could still report "updated the schedule" and end the
- * turn, leaving a person to discover a stopped schedule on their own, so the
- * reply says what the edit cost. Re-issuing the approval here instead is not an
- * option: only a caller that cleared the agent bar may do that.
- *
- * Worded like {@link PARKED_SCHEDULE_NOTE}, and for the same reason: DorkOS
- * raises the approval on its own, and the one thing only the agent can do is
- * say so out loud. {@link TIMING_REAPPROVAL_NOTE} is its sibling for a change
- * to when the schedule runs alone.
- */
-export const REAPPROVAL_NOTE =
-  'This changed what an approved schedule does, so the person has to approve it again. DorkOS ' +
-  'has already stopped it and put it in front of them — your change is saved, it just will not ' +
-  'run until they say yes. Tell them so in your reply: name the scheduled task and say it is ' +
-  'waiting on them. Do not end the turn as if the work were done.';
-
-/**
- * What `tasks_update` tells an agent whose change to WHEN an approved schedule
- * runs has stopped it (DOR-2302, DOR-2313).
- *
- * A sibling of {@link REAPPROVAL_NOTE} rather than a reuse, because the agent
- * repeats it to a person and it should name what changed.
- */
-export const TIMING_REAPPROVAL_NOTE =
-  'This changed when an approved schedule runs, so the person has to approve it again. DorkOS ' +
-  'has already stopped it and put it in front of them — your change is saved, it just will not ' +
-  'run until they say yes. Tell them so in your reply: name the scheduled task and say it is ' +
-  'waiting on them. Do not end the turn as if the work were done.';
-
-/**
- * The description `tasks_update` gives the `resetTiming` argument (DOR-2302).
- *
- * Agent-writable like `cron`, and approved like `cron`: going back to the
- * package's timing changes when the work runs, so a person approves it again.
- */
-export const RESET_TIMING_DESCRIPTION =
-  "Send true to put a schedule that came with an installed package back on the package's own " +
-  'timing, undoing a cron or timezone set here. Send it on its own, not together with cron or ' +
-  'timezone. If it changes when an approved schedule runs, the person has to approve it again.';
-
-/**
- * The extra sentence for an agent that is in a live DorkOS session, where it can
- * put the approval in front of the person rather than only describing it.
- *
- * Only ever appended when a session actually resolved. `control_ui` needs an
- * attached interactive session and does not exist on the sessionless external
- * `/mcp` server, so telling an agent there to call it would be an instruction
- * that can only fail. It is also not auto-allowed, so this is worded as
- * something to offer, never as something that will happen.
- */
-export const PARKED_SCHEDULE_SURFACE_HINT =
-  'If it helps them decide, you can open the Schedules panel for them with ' +
-  "control_ui({ action: 'open_panel', panel: 'tasks' }).";
+export type CallerMarksResolver = () => TurnMarks;
 
 /**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
@@ -186,104 +132,6 @@ const DURATION_ARG = z
   .regex(TASK_DURATION_PATTERN)
   .optional();
 
-/**
- * The description `tasks_create` gives the `target` argument.
- *
- * Required, and that is the fix rather than an inconvenience (DOR-1568). The tool
- * never asked where a task should live, so it wrote no file and set no owner: the
- * row landed with `filePath: ''` and `agentId: null`, the reconciler skipped it
- * because there was nothing on disk to reconcile, and its runs happened in
- * whatever directory the server itself was started in. There is no safe default
- * to fall back on — `global` would quietly file an agent's own work where it does
- * not belong — so the caller says, or nothing is created.
- */
-export const TARGET_DESCRIPTION =
-  'Where this scheduled task lives. Give your own agent id to file it under yourself — it then ' +
-  'runs in your folder, with your files — or "global" for a scheduled task that belongs to no ' +
-  'agent and runs in the DorkOS data folder. Required: DorkOS will not guess, because a scheduled ' +
-  'task filed in the wrong place runs against the wrong files.';
-
-/**
- * The description both tools give the `agentId` argument, which neither accepts.
- *
- * Declared for the reason {@link REFUSED_PERMISSION_MODE_DESCRIPTION} is declared:
- * an argument the schema does not name is STRIPPED by the SDK before the handler
- * runs, so the agent that reached for it is told its call worked. It is the field
- * an agent actually reaches for when it wants a task to be its own — the reported
- * failure was exactly that — so it is worth answering rather than swallowing.
- */
-export const REFUSED_AGENT_ID_DESCRIPTION =
-  'Not a field on a scheduled task write. Use `target` on `tasks_create` to say which agent a ' +
-  'scheduled task belongs to. Send this and DorkOS refuses the whole call and changes nothing.';
-
-/**
- * The description `tasks_update` gives the `target` argument, which it refuses.
- *
- * Same mechanism as {@link REFUSED_AGENT_ID_DESCRIPTION}: an update cannot move a
- * task between agents, because the task IS a file in one agent's folder, and a
- * silent strip told callers otherwise.
- */
-export const REFUSED_UPDATE_TARGET_DESCRIPTION =
-  'Not something an update can change. A scheduled task is filed under one agent when it is ' +
-  'created and stays there. Send this and DorkOS refuses the whole call and changes nothing — ' +
-  'to move a scheduled task, delete it and create it again with the target you want.';
-
-/**
- * The description both tools give the `sticky` argument (DOR-1571).
- *
- * Agent-writable: it chooses a run's behavior, not its power. Off (the default)
- * is the isolated-per-run behavior; on makes every run resume one lasting session
- * so the agent keeps context across runs.
- */
-export const STICKY_DESCRIPTION =
-  'Whether every run picks up the SAME session instead of starting fresh. Off by default: each ' +
-  'run is its own conversation and remembers nothing from last time. Turn it on for a task that ' +
-  'should build on the run before it — "since I last ran, here is what changed".';
-
-/**
- * The description both tools give the `runtime` argument (DOR-1615).
- *
- * Agent-writable: it chooses WHICH backend does the work, not how much power the
- * run has — and a caller that can already write the `prompt` can do far more
- * than pick a runtime. Omitting it is the ordinary case and the better default.
- */
-export const RUNTIME_DESCRIPTION =
-  'Which agent runtime the scheduled task runs on — "claude-code", "codex" or "opencode". ' +
-  "Leave it out and it runs on whatever the task's agent runs on, which is almost always " +
-  'what you want. A runtime that is not turned on here fails the run rather than quietly ' +
-  'running somewhere else.';
-
-/**
- * The description both tools give the `model` argument (DOR-1347).
- *
- * Deliberately unvalidated at write, exactly as an agent's own manifest model
- * is: the catalog is remote, a runtime can be disconnected while somebody edits,
- * and a name nothing offers is reported when the run happens.
- */
-export const MODEL_DESCRIPTION =
-  'Which model the scheduled task runs on, written the way the chosen runtime names it ' +
-  '("sonnet", "gpt-5.5", "anthropic/claude-sonnet-4-5"). Leave it out to use the agent\'s own ' +
-  "model, then this DorkOS's default. A name the runtime does not offer is reported when the " +
-  'task runs, not now.';
-
-/** The description both tools give the `effort` argument — how hard the model thinks. */
-export const EFFORT_DESCRIPTION =
-  "How hard the model thinks during each run. Leave it out to use the agent's own setting, " +
-  "then this DorkOS's default. A runtime that has no such setting ignores it.";
-
-/**
- * The description both tools give the `account` argument — which Claude account
- * (and so whose subscription) a run starts on (DOR-2384).
- */
-export const ACCOUNT_DESCRIPTION =
-  'Which Claude account the scheduled task runs on, by its id in DorkOS. Leave it out to use ' +
-  "the agent's own account, then the default. Only Claude Code runs use it. A schedule that " +
-  'keeps one conversation stays on the account its conversation started on.';
-
-/** The description `tasks_create` gives the `reason` argument. */
-export const REASON_DESCRIPTION =
-  'Why this schedule should exist, in your own words — the operator reads this to decide.';
-
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
   if (!deps.taskStore) {
@@ -291,52 +139,6 @@ function requireTasks(deps: McpToolDeps) {
   }
   return null;
 }
-
-/**
- * The description both servers give the `permissionMode` argument (DOR-504).
- *
- * The argument stays ADVERTISED on purpose, and it is worth being explicit about
- * why, because deleting it looks tidier and is worse. The MCP SDK parses a call
- * against the advertised schema before the handler runs, so an argument this
- * schema does not declare is STRIPPED on the way in — the agent's other fields
- * would land, its `permissionMode` would evaporate, and it would be told the
- * whole call succeeded. That is the silent partial write this guard exists to
- * prevent. Declaring the argument is what lets the handler see it and refuse the
- * call whole, naming the field.
- *
- * So the field no longer lies about what it does: it says it is refused, and it
- * is refused, on both tools and both servers.
- */
-export const REFUSED_PERMISSION_MODE_DESCRIPTION =
-  'Not yours to set. A scheduled task runs later with nobody watching, so the person chooses ' +
-  'how much it may do without asking. Send this and DorkOS refuses the whole call and changes ' +
-  'nothing — leave it out, and ask the person to set it on the task in DorkOS.';
-
-/**
- * The description both servers give the `status` argument (DOR-504).
- *
- * Declared for exactly the reason {@link REFUSED_PERMISSION_MODE_DESCRIPTION} is,
- * and it was missed on the first pass: `status` was operator-only in the policy
- * but absent from this tool's schema, so the SDK stripped it and the call
- * reported SUCCESS with the rest of the fields applied. Nothing could reach the
- * store either way, so it was never an escalation — but "we refuse the call
- * whole" has to be true of every operator-only field, or the sentence is not
- * worth anything on the ones where it matters.
- *
- * On BOTH tools, including `tasks_create`, where `status` is not a meaningful
- * argument at all (the store hardcodes it, then the handler parks it). Declaring
- * it there anyway is not padding: the seeded `scheduling-tasks` skill tells agents
- * DorkOS refuses the whole call for either field on either tool, and a field that
- * is silently stripped instead makes that sentence false. The alternative was to
- * narrow the sentence to one tool-and-field pairing, which is a rule nobody will
- * hold in their head. The text below reads for both, and at create time it is the
- * best moment to say a new task waits for approval.
- */
-export const REFUSED_STATUS_DESCRIPTION =
-  'Not yours to set. Moving a task to `active` IS the person approving it, and a task you ' +
-  'create waits at `pending_approval` until they do. Send this and DorkOS refuses the whole ' +
-  'call and changes nothing — tell the person the task is waiting, and let them approve it in ' +
-  'DorkOS. To turn an already-approved task on or off, use `enabled` instead.';
 
 /**
  * Refuse a task write that reaches for a field only a person may set, or return
@@ -385,7 +187,18 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
 }
 
 /**
- * Create a new scheduled job — always parked at `pending_approval`.
+ * Whether the calling turn read words DorkOS cannot vouch for, from the turn's
+ * own marks (`marksOf`, DOR-3036): its schedule writes then park for a person.
+ *
+ * @param provenance - The calling session and agent, as the server resolved them.
+ */
+function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
+  return hasMarks(marksOf(provenance.sessionId, provenance.agentPath));
+}
+
+/**
+ * Create a new scheduled job — armed at once for one of our agents on a Trusted
+ * install, parked at `pending_approval` otherwise.
  *
  * ## What this used to do, and why it was worse than a bug
  *
@@ -400,12 +213,16 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
  * All of it now goes through {@link createScheduledTask}, the same seam
  * `POST /api/tasks` uses, so there is one create sequence in the codebase and it
  * is the file-first one (DOR-1568). The caller is an agent by construction, so it
- * is always the untrusted branch: the task parks, it must say why, and it cannot
- * name its own permission mode.
+ * is always the untrusted branch: it must say why and it cannot name its own
+ * permission mode. On the in-session server (`resolveProvenance` present) the
+ * caller is one of our agents, so on a Trusted install the task is armed and the
+ * person told; on the sessionless external `/mcp` server the caller cannot be
+ * told from an outsider, so the task parks (ADR 261006-225605).
  */
 export function createCreateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     name: string;
@@ -492,6 +309,14 @@ export function createCreateScheduleHandler(
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
         trusted: false,
+        // Only the in-session server knows its caller is one of our agents. A
+        // turn that read words DorkOS cannot vouch for (a stranger's, or a
+        // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
+        // schedule it makes parks for a person instead of arming at its own
+        // level.
+        callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
+        // The marks of the turn making the call, from its own record (DOR-3036).
+        originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
         proposal: {
           sessionId: provenance.sessionId ?? null,
           agentPath: provenance.agentPath ?? null,
@@ -523,19 +348,26 @@ export function createCreateScheduleHandler(
     // external `/mcp` server carries no session, so the name falls back to "An
     // agent" there and no `actorId` is attached.
     const task = outcome.task;
+    const armed = outcome.armedPayload;
     deps.activityService?.emit({
       actorType: 'agent',
-      actorLabel: outcome.parkPayload?.proposedBy ?? 'An agent',
+      actorLabel: armed?.armedBy ?? outcome.parkPayload?.proposedBy ?? 'An agent',
       ...(provenance.agentPath ? { actorId: provenance.agentPath } : {}),
       category: 'tasks',
-      eventType: 'tasks.task_created',
+      // Armed without asking is recorded as exactly that, so the audit trail can
+      // answer "what did my agents set running?" (ADR 261006-225605).
+      eventType: armed ? 'schedule.armed_by_agent' : 'tasks.task_created',
       resourceType: 'schedule',
       resourceId: task.id,
       resourceLabel: task.displayName ?? task.name,
-      summary: `Proposed scheduled task ${task.displayName ?? task.name}, which needs your approval before it runs`,
+      summary: armed
+        ? `Scheduled task ${task.displayName ?? task.name}, which runs ${armed.cadence}`
+        : `Proposed scheduled task ${task.displayName ?? task.name}, which needs your approval before it runs`,
       linkPath: '/',
       metadata: { status: task.status },
     });
+
+    if (armed) return jsonContent({ schedule: task, note: ARMED_SCHEDULE_NOTE });
 
     return jsonContent({
       schedule: task,
@@ -563,7 +395,8 @@ export function createCreateScheduleHandler(
  */
 export function createUpdateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     id: string;
@@ -776,11 +609,26 @@ export function createUpdateScheduleHandler(
     // not, exactly as the REST route does for an agent (DOR-2313). Left to the
     // sync, the agent's new work would run approved until the watcher or the
     // sweep caught up.
-    const settled = deps.taskStore!.approvals.settleApprovedWorkChange(
+    // One of our agents on a Trusted install keeps an approved schedule live
+    // through its own edit, except on a schedule made from a file (ADR
+    // 261006-225605); only the in-session server knows the caller is ours.
+    let settled = deps.taskStore!.approvals.settleApprovedWorkChange(
       updated.id,
       { ...taskWorkOf(existing), status: existing.status },
-      { trusted: false }
+      {
+        trusted: false,
+        armsAgentWork: agentSchedulesArmWithoutAsking(
+          resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
+        ),
+      }
     );
+    // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
+    // for its card (DOR-3036).
+    const caller = resolveProvenance?.() ?? {};
+    const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
+    if (hasMarks(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
+      if (existing.status !== 'pending_approval') settled = 'parked';
+    }
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -890,7 +738,11 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
  *   proposing. Omitted by the sessionless external `/mcp` registration, where a
  *   proposal genuinely has no session behind it and provenance stays null.
  */
-export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
+export function getTasksTools(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
+) {
   return [
     tool(
       'tasks_list',
@@ -900,7 +752,9 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_create',
-      'Propose a new scheduled task. It is created with pending_approval status and never runs until the person approves it.',
+      'Create a scheduled task. It is live at once and the person is told, unless DorkOS asks ' +
+        'them first: then it waits at pending_approval and never runs until they approve it. ' +
+        'The schedule returned says which.',
       {
         name: z.string().describe('Name for the scheduled task'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
@@ -919,13 +773,14 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createCreateScheduleHandler(deps, resolveProvenance)
+      createCreateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_update',
       'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
-        'prompt, the cron or the timezone of a task the person already approved means they have to approve it ' +
-        'again, and it stops running until they do. A task that came with an installed package ' +
+        'prompt, the cron or the timezone of an approved task can stop it until the person ' +
+        'approves it again: always for a task that came from a file or a package, and for any ' +
+        'task when DorkOS asks them first. The reply says so with needsReapproval. A task that came with an installed package ' +
         'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
         "the package is not edited — and resetTiming puts it back on the package's own timing.",
       {
@@ -958,7 +813,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createUpdateScheduleHandler(deps, resolveProvenance)
+      createUpdateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_delete',

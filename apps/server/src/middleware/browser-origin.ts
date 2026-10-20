@@ -16,6 +16,7 @@
 import type { RequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { type BrowserOriginFacts, getTunnelHosts, parseHostname } from '../lib/trusted-origins.js';
+import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from './host-guard.js';
 
 /** What {@link resolveBrowserOriginFacts} cannot read off the request itself. */
@@ -65,6 +66,7 @@ export function resolveBrowserOriginFacts(
       hostname: parseHostname(headers.host),
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
       tunnelHosts: getTunnelHosts(),
+      lanHosts: getLanAccessHosts(),
     }),
     // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
     configuredOrigins: process.env.DORKOS_CORS_ORIGIN,

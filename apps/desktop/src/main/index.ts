@@ -1,8 +1,11 @@
+import { startLocalBrowserBridge } from './local-browser';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
-import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
+import { createWindow, isOwnOrigin, isWebLink, makeRendererUrlAccessor } from './window-manager';
+import { claimWindowsToRestore, setupTabSession } from './tab-session';
 import { watchDisplayChanges } from './window-state';
-import { startServer, stopServer, getServerPort } from './server-process';
+import { startServer, stopServer, getServerPort, signInWindowSession } from './server-process';
+import { WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
 import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
@@ -47,6 +50,7 @@ import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 const DEEP_LINK_PROTOCOL = 'dorkos';
 
 let mainWindow: BrowserWindow | null = null;
+let localBrowserBridge: Awaited<ReturnType<typeof startLocalBrowserBridge>> | undefined;
 
 /**
  * The app's own origin, re-read on every use. The port comes from the
@@ -63,8 +67,14 @@ const getRendererUrl = makeRendererUrlAccessor(getServerPort);
  * from touching a destroyed BrowserWindow.
  */
 function createTrackedWindow(): void {
-  const options = { getRendererUrl, role: 'primary' as const };
+  // The remembered windows, by the rules in tab-session/restore-plan.ts: the
+  // primary takes the first, and any others open beside it.
+  const [primaryTabs = null, ...otherWindows] = claimWindowsToRestore();
+  const options = { getRendererUrl, role: 'primary' as const, restoredTabs: primaryTabs };
   mainWindow = createWindow(options);
+  for (const restoredTabs of otherWindows) {
+    createWindow({ getRendererUrl, role: 'secondary', restoredTabs });
+  }
   // Watch it from the moment it exists: a window that never paints is the one
   // failure nothing else in the shell can see (renderer-health/).
   attachRendererSupervisor(mainWindow, options);
@@ -256,7 +266,11 @@ if (!gotTheLock) {
   armQuitGuard({
     countActiveAgents: getActiveAgentCount,
     getWindow: getMainWindow,
-    shutdown: stopServer,
+    shutdown: async () => {
+      await stopServer();
+      await localBrowserBridge?.close();
+      localBrowserBridge = undefined;
+    },
     consumeUpdateRestart,
     recordUpdateInstallIntent,
   });
@@ -264,6 +278,12 @@ if (!gotTheLock) {
   // Register IPC handlers for the preload bridge.
   // These must be registered before the window is created.
   setupCloseTab();
+
+  // Every window's tabs, kept across quits, restarts and crashes. Before any
+  // window: each renderer asks for its tabs as its first act (tab-session/).
+  setupTabSession({
+    isOwnSender: (event) => isOwnOrigin(event.sender.getURL(), getRendererUrl()),
+  });
 
   // Renderer supervision's process-wide half: the heartbeat channel, the
   // recovery page's actions, and crash logging for windows the ladder does not
@@ -399,8 +419,16 @@ if (!gotTheLock) {
     try {
       // The accessor lets the supervisor anchor its crash dialog to whichever
       // window is current, the same way setupAutoUpdater does.
+      localBrowserBridge = await startLocalBrowserBridge(getRendererUrl, getMainWindow);
       await startServer(getMainWindow);
+      // Before any window loads: the person at their own Mac never types a
+      // password (F3). Never throws; a failure leaves the sign-in screen.
+      // Again twice a day, so a window left open keeps a live session.
+      await signInWindowSession();
+      setInterval(() => void signInWindowSession(), WINDOW_SIGN_IN_REFRESH_MS);
     } catch (err) {
+      await localBrowserBridge?.close();
+      localBrowserBridge = undefined;
       dialog.showErrorBox("DorkOS couldn't start", startupFailureMessage(err));
       app.quit();
       return;

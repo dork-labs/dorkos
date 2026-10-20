@@ -89,7 +89,8 @@
  * reaches `auth.enabled` — no better, no worse.
  *
  * What this field DOES buy, in the default posture: an agent that identifies
- * itself cannot approve its own extension, through any surface — `config_patch`
+ * itself cannot write an approval, through any surface (the one approval DorkOS
+ * writes for it is below) — `config_patch`
  * refuses `operator-only` paths unconditionally, `PATCH /api/config` refuses a
  * caller carrying agent identity, and `POST /api/extensions/:id/approve` refuses
  * it on the same bar. Turning on Require login closes the header residual, since
@@ -107,6 +108,24 @@
  * Adding this field to `REQUIRES_LOGIN_CONFIG_PATHS` was considered and rejected:
  * that list forbids a write while login is OFF, which in the shipped default would
  * mean nobody could ever approve anything.
+ *
+ * ## The one approval DorkOS writes itself: an extension our agent creates
+ *
+ * DOR-516's rule that an agent-scaffolded bundle must not approve itself is
+ * retired for `create_extension` by ADR 261006-225605 (item 5): our agents are
+ * trusted by default. On a Trusted install, `ExtensionManager.createExtension`
+ * approves the folder it has just scaffolded, through the same three fields a
+ * person's approval writes. The agent still cannot write those fields: DorkOS
+ * does, once, for a folder the scaffolder created and that no other copy held
+ * (`extension-scaffolder.ts` refuses a name spoken for in either root).
+ *
+ * Everything else about the approval stays as narrow as a person's. It names
+ * this folder and the permission set the manifest declares now, so a
+ * marketplace or hand-copied extension with the same id at another path, and a
+ * later version that asks for more, still wait for a person. On Careful, or for
+ * an id the person said "Not now" to, nothing is approved and the copy waits.
+ * The external `/mcp` door never approves, since its caller cannot be told from
+ * an outsider. `extensions.trustedSources` stays Owner-only.
  *
  * ## Core extensions are exempt, by origin — which is a PATH, not an id
  *

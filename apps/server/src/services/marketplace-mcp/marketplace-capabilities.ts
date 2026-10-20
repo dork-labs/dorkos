@@ -29,7 +29,13 @@
  */
 import { z } from 'zod';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import { trustPosture } from '@dorkos/shared/permissions';
+
+import {
+  defineCapability,
+  permissionGateSources,
+  type CapabilityDomain,
+} from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -76,25 +82,54 @@ function requireMarketplaceDeps(deps: CapabilityDeps): MarketplaceMcpDeps {
 
 /**
  * Translate a capability invocation context into what a marketplace handler needs
- * from it: who asked, and whether the tier gate already got a person's yes for
- * this exact call.
+ * from it: who asked, and whether the call may run without the marketplace's
+ * own confirmation.
  *
  * @param context - The context the registry handed this handler.
+ * @param runsWhenTrusted - The action is an uninstall, which runs on an
+ *   area-level Allowed under Trusted. An install or update brings someone
+ *   else's code in, so it keeps the marketplace's confirmation (trust never
+ *   extends to code from strangers).
  * @returns The handler-facing caller context.
  */
-function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmationContext {
+function callerContext(
+  context: CapabilityHandlerContext,
+  runsWhenTrusted = false
+): MarketplaceConfirmationContext {
   const requestedBy = context.identity
     ? context.identity.displayName || context.identity.agentPath
     : undefined;
+  const preApproved =
+    Boolean(context.trusted) ||
+    personAlreadySaidYes(context.approval) ||
+    (runsWhenTrusted && allowedUnderTrusted(context.approval));
   return {
     ...(requestedBy ? { requestedBy } : {}),
-    // Three different proofs that this person has already said yes, and the
-    // handler must not ask again for any: an approval the tier gate spent on
+    // Four reasons the handler must not ask: an approval the tier gate spent on
     // this exact call, a caller that proved it may DECIDE approvals (for whom
-    // the confirmation this flow would go and fetch is its own), or an Allowed
-    // the person set on this one action (an Always allow).
-    ...(context.trusted || personAlreadySaidYes(context.approval) ? { preApproved: true } : {}),
+    // the confirmation this flow would go and fetch is its own), an Allowed the
+    // person set on this one action (an Always allow), or, for an uninstall,
+    // an Allowed area under Trusted.
+    ...(preApproved ? { preApproved: true } : {}),
   };
+}
+
+/**
+ * Whether the gate let this call through on an Allowed area on a Trusted
+ * install (ADR `261006-225605`). Used for an uninstall only: removing a
+ * package brings no one else's code in, so it runs and is recorded with no
+ * confirmation. An install or update still confirms, because what a package
+ * carries is code from strangers. A config that cannot be read is not Trusted.
+ *
+ * @param approval - What the gate concluded, when the call was gated.
+ */
+function allowedUnderTrusted(approval: CapabilityHandlerContext['approval']): boolean {
+  if (approval?.via !== 'permission') return false;
+  try {
+    return trustPosture(permissionGateSources().readConfig().preset) === 'trusted';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -102,15 +137,18 @@ function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmati
  *
  * An area-level Allowed is not one: a preset or an area default says "this kind
  * of work may run", and the marketplace's own confirmation is how a person sees
- * which package is about to land (spec `agent-permissions` D5, where the
- * undecided install keeps that confirmation). Only an approval spent on this
- * call, or an Allowed set on this one action, stands in for it.
+ * which package is about to land. Only an approval spent on this call, or an
+ * Allowed set on this one action, stands in for it. (Under Trusted an install,
+ * update or uninstall runs on the area-level Allowed anyway: see
+ * {@link allowedUnderTrusted}.)
  *
  * @param approval - What the gate concluded, when the call was gated.
  */
 function personAlreadySaidYes(approval: CapabilityHandlerContext['approval']): boolean {
   if (!approval) return false;
   if (approval.via === 'approval') return true;
+  // A cancel window is only ever a connected-app action's, never a package's.
+  if (approval.via !== 'permission') return false;
   return approval.source === 'agent-action' || approval.source === 'default-action';
 }
 
@@ -256,9 +294,11 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.install',
       title: 'Install package',
       description:
-        'Install a package from a configured marketplace. Requires user confirmation. ' +
-        'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
-        'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
+        'Install a package from a configured marketplace. When your permissions allow it, it ' +
+        'installs at once; otherwise it needs user confirmation: the first call returns ' +
+        'status:requires_confirmation with a token, and after the user approves in DorkOS you ' +
+        're-call with confirmationToken to complete the install. A package that brings hooks or ' +
+        'global plugins still asks the user before those run.',
       tier: 'act',
       area: 'packages',
       approvalDisplayFields: ['name', 'marketplace', 'projectPath'],
@@ -287,7 +327,7 @@ export const marketplaceDomain: CapabilityDomain = {
         '(installPath, scope, agentPath). Nothing changes. ' +
         'Narrow it with names (every copy of those packages) and/or installPaths (exact copies, as a check reported them). ' +
         'Pass apply:true to reinstall every selected package that has a newer version, each where it is installed. ' +
-        'Requires user confirmation: the first apply call checks, then returns status:requires_confirmation with a token ' +
+        'When your permissions allow it, apply installs at once. Otherwise it needs user confirmation: the first apply call checks, then returns status:requires_confirmation with a token ' +
         'and the updates it would make (versions, and every command, scheduled job, server, monitor and skill tool the new versions bring). ' +
         'After the user approves in DorkOS, re-call with the same arguments plus confirmationToken. If a new version changed ' +
         'in between, it asks again. Too many updates for one approval are refused: apply fewer, by installPaths. ' +
@@ -315,7 +355,8 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.uninstall',
       title: 'Uninstall package',
       description:
-        'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
+        'Uninstall a previously installed marketplace package. Asks the user first unless your ' +
+        'permissions allow it. ' +
         'By default, keeps the files you and your agents added or changed; purge:true removes them. ' +
         'Uninstalling an agent package removes the agent from the team (rooms, schedules, sign-ins, access), ' +
         'and reinstalling does not restore that.',
@@ -337,7 +378,10 @@ export const marketplaceDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createUninstallHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+          await createUninstallHandler(requireMarketplaceDeps(deps))(
+            input,
+            callerContext(context, true)
+          )
         ),
     }),
     defineCapability({

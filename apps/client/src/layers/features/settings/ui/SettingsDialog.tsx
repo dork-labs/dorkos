@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   Palette,
   Settings2,
@@ -18,9 +19,10 @@ import {
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { useIsHub } from '@/layers/entities/config';
 import {
   SETTINGS_ADVANCED_GROUP,
-  SETTINGS_TAB_DIRECTORY,
+  settingsTabsFor,
   STORAGE_KEYS,
   type BuiltInSettingsTab,
 } from '@/layers/shared/lib';
@@ -88,17 +90,23 @@ const SETTINGS_TAB_PARTS: Record<BuiltInSettingsTab, SettingsTabParts> = {
 
 /**
  * The Settings tabs, in sidebar order: You, Agents, This computer, then
- * Advanced folded at the bottom (DOR-2629).
+ * Advanced folded at the bottom (DOR-2629). On a hub, without the ones that
+ * cannot apply there (`settingsTabsFor`).
  */
-const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = SETTINGS_TAB_DIRECTORY.map((entry) => ({
-  id: entry.id,
-  label: entry.label,
-  group: entry.group,
-  ...SETTINGS_TAB_PARTS[entry.id],
-}));
+function settingsTabs(isHub: boolean): TabbedDialogTab<SettingsTab>[] {
+  return settingsTabsFor(isHub).map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    group: entry.group,
+    ...SETTINGS_TAB_PARTS[entry.id],
+  }));
+}
 
-interface SettingsDialogProps {
+/** Props of the Settings dialog. */
+export interface SettingsDialogProps {
+  /** Whether the dialog is open. */
   open: boolean;
+  /** Called when the dialog asks to open or close. */
   onOpenChange: (open: boolean) => void;
 }
 
@@ -114,6 +122,8 @@ interface SettingsDialogProps {
  */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
+  const isHub = useIsHub();
+  const tabs = useMemo(() => settingsTabs(isHub), [isHub]);
 
   return (
     <TabbedDialog
@@ -123,7 +133,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description="Application settings"
       defaultTab="appearance"
       initialTab={urlTab}
-      tabs={SETTINGS_TABS}
+      tabs={tabs}
       extensionSlot="settings.tabs"
       maximized
       foldedGroup={ADVANCED_FOLD}

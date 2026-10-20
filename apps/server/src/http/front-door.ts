@@ -27,6 +27,12 @@
  * WebSocket upgrades never pass through here: Node emits `upgrade` on the
  * server, not as a request, and `attachUpgradeRouter` claims it there.
  *
+ * Two things it adds: a request that names this computer on the network while
+ * Wi-Fi access is open has its sign-in cookies adapted to plain `http`, on the
+ * way in and out, upgrades included (`adaptLanCookies`, DOR-2930); and a
+ * server built for a marked listener (Wi-Fi) marks what it takes from another
+ * machine, so the request classifier knows the route (`createFrontDoorServer`).
+ *
  * @module http/front-door
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -40,6 +46,12 @@ import {
 import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-server';
 import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
+import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
+import { markIngress, type IngressKind } from '../services/core/remote/ingress-mark.js';
+import { isLoopbackPeer } from '../lib/trusted-origins.js';
+import { admitHubRequest, trackHubConnection } from '../services/core/hub/hub-serving.js';
+import { adaptHubCookies } from '../services/core/hub/hub-cookies.js';
+import { AUTH_COOKIES_SECURE } from '../services/core/auth/cookie-security.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -76,6 +88,17 @@ export function frontDoorListener(app: Hono<ApiEnv>): RequestListener {
     // Host names ignore case, but the adapter refuses a `Host` in capitals.
     const host = incoming.headers.host;
     if (host) incoming.headers.host = host.toLowerCase();
+    // A hub admits only what came through its front door, and removes the
+    // proof before anything else reads the request (`services/core/hub/hub-serving.ts`).
+    const refusal = admitHubRequest(incoming);
+    if (refusal) {
+      outgoing.writeHead(refusal.status, { 'content-type': 'application/json' });
+      outgoing.end(JSON.stringify(refusal.body));
+      return;
+    }
+    trackHubConnection(incoming.socket);
+    adaptHubCookies(incoming, outgoing, AUTH_COOKIES_SECURE);
+    adaptLanCookies(incoming, outgoing);
     return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
   };
 }
@@ -119,13 +142,52 @@ function unreadableRequest(incoming: IncomingMessage): Request {
   } as RequestInit);
 }
 
+/** Options for {@link createFrontDoorServer}. */
+export interface FrontDoorServerOptions {
+  /**
+   * Mark every request and upgrade this server takes from another machine as
+   * having come through this listener (`services/core/remote/ingress-mark.ts`).
+   * The main listener marks nothing; the Wi-Fi listener marks `wifi`.
+   *
+   * A loopback peer is never marked. The Wi-Fi listener binds every interface,
+   * while the main one binds `localhost`, which macOS resolves to `::1` alone,
+   * so a client dialing `127.0.0.1` (the desktop shell, a browser tab at
+   * `127.0.0.1`) lands on the Wi-Fi listener. It is still this computer.
+   */
+  ingress?: IngressKind;
+}
+
 /**
  * Create the Node HTTP server for the server's Hono app. It does not listen
  * yet; the caller decides the port and host, as `startMainListener` does.
  *
  * @param app - The app every request enters.
+ * @param options - See {@link FrontDoorServerOptions}.
  * @returns A Node `http.Server` the upgrade router can attach to.
  */
-export function createFrontDoorServer(app: Hono<ApiEnv>): Server {
-  return createServer(frontDoorListener(app));
+export function createFrontDoorServer(
+  app: Hono<ApiEnv>,
+  options: FrontDoorServerOptions = {}
+): Server {
+  const { ingress } = options;
+  const listener = frontDoorListener(app);
+  const mark = (req: IncomingMessage) => {
+    if (ingress && !isLoopbackPeer(req.socket.remoteAddress)) markIngress(req, ingress);
+  };
+  const server = createServer(
+    ingress
+      ? (req, res) => {
+          mark(req);
+          return listener(req, res);
+        }
+      : listener
+  );
+  // First in line, so the upgrade router sees the mark and authorizes with the
+  // cookie names the auth stack set (see `adaptLanCookies`).
+  server.prependListener('upgrade', (req: IncomingMessage) => {
+    mark(req);
+    adaptHubCookies(req, undefined, AUTH_COOKIES_SECURE);
+    adaptLanCookies(req);
+  });
+  return server;
 }

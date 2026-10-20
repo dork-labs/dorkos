@@ -110,6 +110,10 @@ const STATE_MARK = 'a state mark, not a focus ring: keyboard focus draws its own
 
 /** Files still allowed an at-rest part-strength ring, with how many and why. */
 const ALLOWED: Record<string, { count: number; reason: string }> = {
+  'layers/features/app-tabs/ui/AppTabItem.tsx': {
+    count: 1,
+    reason: `${STATE_MARK}: the active tab's edge under Increase contrast`,
+  },
   'layers/features/ask/ui/AskCard.tsx': {
     count: 1,
     reason: `${STATE_MARK}: the question being answered now`,
@@ -167,9 +171,12 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
 /** Every non-test, non-playground source file under `src/`. */
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
-  for (const name of readdirSync(dir)) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const name = entry.name;
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) {
+    // Follow links exactly as statSync did, including its refusal of dangling links.
+    const directory = entry.isSymbolicLink() ? statSync(path).isDirectory() : entry.isDirectory();
+    if (directory) {
       if (name === '__tests__' || name === 'dev' || name === 'node_modules') continue;
       out.push(...sourceFiles(path));
     } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
@@ -223,7 +230,7 @@ function faintRings(text: string): { focus: string[]; atRest: string[] } {
  * @param source - The file's text.
  * @param fileName - Its name; the extension picks TS or TSX parsing.
  */
-function scan(source: string, fileName = 'probe.tsx'): { focus: string[]; atRest: string[] } {
+function scanAst(source: string, fileName = 'probe.tsx'): { focus: string[]; atRest: string[] } {
   const file = ts.createSourceFile(
     fileName,
     source,
@@ -249,6 +256,25 @@ function scan(source: string, fileName = 'probe.tsx'): { focus: string[]; atRest
   };
   visit(file);
   return found;
+}
+
+/**
+ * A decoded string cannot contain either utility prefix when these raw markers
+ * are all absent. Escapes and entities always retain the full AST path, even
+ * when TypeScript currently leaves their spelling unchanged.
+ */
+function mayContainFaintRing(source: string): boolean {
+  return (
+    source.includes('ring-') ||
+    source.includes('outline-') ||
+    source.includes('\\') ||
+    source.includes('&')
+  );
+}
+
+/** Skip only provably irrelevant raw source; every candidate uses the original AST scanner. */
+function scan(source: string, fileName = 'probe.tsx'): { focus: string[]; atRest: string[] } {
+  return mayContainFaintRing(source) ? scanAst(source, fileName) : { focus: [], atRest: [] };
 }
 
 /** Every file's part-strength rings, keyed by its path under `src/`. */
@@ -368,6 +394,67 @@ describe('faint focus rings', () => {
       'focus-visible:ring-ring/50',
     ]);
   });
+
+  it.each([
+    {
+      name: 'ordinary unrelated source',
+      source: 'const label = "Nothing to style here";',
+      parse: false,
+      expected: { focus: [], atRest: [] },
+    },
+    {
+      name: 'a Unicode escape hiding the ring prefix',
+      source: 'const c = "focus-visible:r\\u0069ng-r\\u0069ng/50";',
+      parse: true,
+      expected: { focus: ['focus-visible:ring-ring/50'], atRest: [] },
+    },
+    {
+      name: 'hex escapes hiding the outline prefix',
+      source: 'const c = "focus-visible:o\\x75tline-r\\x69ng/40";',
+      parse: true,
+      expected: { focus: ['focus-visible:outline-ring/40'], atRest: [] },
+    },
+    {
+      name: 'escaped template head and tail text',
+      source:
+        'const c = `focus-visible:r\\u0069ng-r\\u0069ng/50 ${value} o\\u0075tline-r\\u0069ng/40`;',
+      parse: true,
+      expected: { focus: ['focus-visible:ring-ring/50'], atRest: ['outline-ring/40'] },
+    },
+    {
+      name: 'JSX attribute entities even without a literal utility prefix',
+      source: 'const c = <div className="focus-visible:r&#105;ng-r&#105;ng/50" />;',
+      parse: true,
+      expected: null,
+    },
+    {
+      name: 'JSX text entities even without a literal utility prefix',
+      source: 'const c = <div>focus-visible:r&#105;ng-r&#105;ng/50</div>;',
+      parse: true,
+      expected: null,
+    },
+    {
+      name: 'a comment naming a replaced ring',
+      source: '// focus-visible:ring-ring/50\nconst c = "solid";',
+      parse: true,
+      expected: { focus: [], atRest: [] },
+    },
+    {
+      name: 'ordinary string and JSX classes retain their original classification',
+      source:
+        'const c = "ring-ring/50"; const view = <div className="focus-visible:outline-ring/40" />;',
+      parse: true,
+      expected: { focus: ['focus-visible:outline-ring/40'], atRest: ['ring-ring/50'] },
+    },
+  ])(
+    'the conservative fast path preserves the AST oracle for $name',
+    ({ source, parse, expected }) => {
+      expect(mayContainFaintRing(source)).toBe(parse);
+      const oracle = scanAst(source);
+      expect(scan(source)).toEqual(oracle);
+      if (expected !== null) expect(oracle).toEqual(expected);
+    }
+  );
 
   it('the list fails on a faint focus ring, an unlisted file, an inflated entry and a stale one', () => {
     expect(problems({ 'a.tsx': { focus: ['focus:ring-ring/50'], atRest: [] } }, {})).toEqual([

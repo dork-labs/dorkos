@@ -23,6 +23,8 @@ import {
   clearInteractionTimer,
   elicitationParkedNotice,
   elicitationTimeoutNotice,
+  ASK_KIND_ON_THE_WIRE,
+  NOBODY_TO_ASK_REASON,
   nobodyToAsk,
   notifyInteractionCancelled,
   questionParkedNotice,
@@ -48,6 +50,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
+import { MEMORY_TOOL_NAMES } from '../../../memory/tool-names.js';
 import {
   ceilingOn,
   gatePermissionMode,
@@ -196,9 +199,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'mesh_status',
     'mesh_query_topology',
     'get_agent',
-    // The agent's own memory. Always loaded and auto-allowed on identity, for
-    // the argument stated in full under IDENTITY_SCOPED_TOOLS below.
-    'memory_write',
+    // The agent's own memory, both tools. Always loaded and auto-allowed on
+    // identity, for the argument stated in full under IDENTITY_SCOPED_TOOLS below.
+    ...MEMORY_TOOL_NAMES,
     // Asking for its OWN conversation to be summarized (DOR-2732). It reaches
     // nothing but the calling session, runs only after the turn ends, at most
     // once an hour, and the owner's say is the DorkOS permission the gate
@@ -437,7 +440,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'archive_room',
     'request_permission',
     'relay_notify_user',
-    'memory_write',
+    ...MEMORY_TOOL_NAMES,
   ].map(inSessionToolName)
 );
 
@@ -499,29 +502,6 @@ function isAutoAllowedCall(
   if (!parsed.success) return false;
   return UI_COMMAND_REACH[parsed.data.action] === 'client-only';
 }
-
-/**
- * What each kind of unanswerable ask is called in its own record. Constant
- * strings, for the reason {@link NO_APPROVAL_SURFACE_DENIAL} gives.
- */
-const NOBODY_TO_ASK_REASON = {
-  approval: 'nobody was available to approve this tool',
-  question: 'nobody was available to answer this question',
-  elicitation: 'nobody was available to answer this request',
-} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
-
-/**
- * How each kind of refused ask is named on the wire.
- *
- * `approval` becomes `tool` because that is what it is to the person reading
- * the run: the agent reached for a tool and was not allowed to use it. The
- * internal word describes the PROMPT; the wire word describes what was lost.
- */
-const ASK_KIND_ON_THE_WIRE = {
-  approval: 'tool',
-  question: 'question',
-  elicitation: 'elicitation',
-} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
 
 /**
  * Refuse an ask that reached a session with nobody to answer it, and leave a

@@ -10,9 +10,12 @@ import type {
   CommunityAttachment,
   CommunityCursor,
   CommunityEntry,
+  CommunityMember,
   CommunityRef,
   CommunityRoom,
 } from '@dorkos/shared/community-adapter';
+import type { CommunityWireAgent, CommunityWireMember } from '@dorkos/shared/community-wire';
+import type { RemoteCommunityMember } from '@dorkos/shared/community-views';
 
 const remoteSequences = new WeakMap<CommunityEntry, number>();
 const remoteAuthorMetadata = new WeakMap<
@@ -177,5 +180,54 @@ export function portableAttachment(value: {
     contentType: value.contentType,
     byteSize: value.byteSize,
     checksum: value.checksum,
+  };
+}
+
+/**
+ * Project one enrolled agent onto the portable member shape. An agent is in no room yet when it
+ * is enrolled, so it has no role, and `joinedAt` is when this app read it.
+ *
+ * @param community - The local connection ref.
+ * @param agent - The agent as the Community answered it.
+ */
+export function agentMember(
+  community: CommunityRef,
+  agent: Pick<CommunityWireAgent, 'memberId' | 'displayName' | 'handle' | 'ownerMemberId'>
+): CommunityMember {
+  return {
+    community,
+    memberId: agent.memberId,
+    kind: 'agent',
+    displayName: agent.displayName,
+    handle: agent.handle,
+    role: null,
+    ownerMemberId: agent.ownerMemberId,
+    joinedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Project one channel roster row. An agent's availability is kept only when the space sent it,
+ * which it does only when asked (DOR-2878), so a row from an older space has none.
+ *
+ * @param community - The local connection ref.
+ * @param item - The row as the Community answered it.
+ */
+export function rosterMember(
+  community: CommunityRef,
+  item: CommunityWireMember
+): RemoteCommunityMember {
+  return {
+    community,
+    memberId: item.memberId,
+    kind: item.kind,
+    displayName: item.displayName,
+    handle: item.handle,
+    role: item.role,
+    ownerMemberId: item.ownerMemberId,
+    joinedAt: item.joinedAt,
+    ...(item.availability
+      ? { availability: item.availability, lastSeenAt: item.lastSeenAt, runsOn: item.runsOn }
+      : {}),
   };
 }

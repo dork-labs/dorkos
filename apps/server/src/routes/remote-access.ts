@@ -13,8 +13,10 @@
  *    per-user API key is not a person;
  * 2. the trusted-caller bar (`trustedCaller`): an agent, or a caller holding an
  *    approval token, is refused in every posture;
- * 3. the local-caller bar (`isLocalCaller`): a phone over a tunnel, managed
+ * 3. the local-caller bar (`isAtThisComputer`): a phone over a tunnel, managed
  *    access itself, or another device on the network is refused;
+ * 3b. the front-door bar (`refuseFrontDoorChange`, DOR-2969): at this computer,
+ *    only the install's owner using the app, never an API key;
  * 4. for anything managed, a real login (`canExpose`), answered with the same
  *    `AUTH_REQUIRED_FOR_EXPOSURE` the person's own tunnel uses, so the client
  *    routes the person into creating an owner account.
@@ -42,8 +44,8 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
+  refuseFrontDoorChange,
   requireOperatorCookieUnderLogin,
-  isLocalCaller,
   readCallerAuthority,
 } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
@@ -65,6 +67,7 @@ import {
   type ManagedRemoteCoordinator,
 } from '../services/core/remote/managed-remote-coordinator.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /** Refusal code for a remote access action from anywhere but this computer. */
 export const REMOTE_SETUP_NEEDS_THIS_COMPUTER = 'REMOTE_SETUP_NEEDS_THIS_COMPUTER';
@@ -109,7 +112,7 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
     logger.warn('[RemoteAccess] Refused a remote access action from an agent');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
-  if (!isLocalCaller(caller)) {
+  if (!isAtThisComputer(caller)) {
     return c.json(
       {
         error: 'Remote access can only be changed on the computer DorkOS runs on.',
@@ -118,6 +121,9 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
       403
     );
   }
+  // The front-door bar: the install's owner, using the app, never a key.
+  const frontDoor = refuseFrontDoorChange(caller, 'remote access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   return undefined;
 }
 

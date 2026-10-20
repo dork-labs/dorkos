@@ -11,7 +11,7 @@
  * @module commands/auth-commands
  */
 import { parseArgs } from 'node:util';
-import { user, eq, type Db } from '@dorkos/db';
+import { user, session, eq, type Db } from '@dorkos/db';
 import type { ConfigStore } from '../config-commands.js';
 
 /**
@@ -25,7 +25,7 @@ export interface OwnerAuth {
   api: {
     signUpEmail(input: {
       body: { name: string; email: string; password: string };
-    }): Promise<unknown>;
+    }): Promise<{ token?: string | null }>;
   };
   $context: Promise<{
     password: {
@@ -35,6 +35,7 @@ export interface OwnerAuth {
     internalAdapter: {
       findAccounts(userId: string): Promise<Array<{ providerId: string }>>;
       updatePassword(userId: string, hashedPassword: string): Promise<void>;
+      deleteSession(token: string): Promise<void>;
       createAccount(account: {
         userId: string;
         providerId: string;
@@ -180,7 +181,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * `dorkos auth enable`: create the owner account, then require login.
+ * `dorkos auth enable`: create the owner account, then turn on "Ask for a
+ * password on this computer too". Other devices always sign in as the owner.
  *
  * Registration is owner-only: if any user already exists this fails fast
  * without prompting and without writing config. On success it creates the owner
@@ -213,27 +215,47 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
     return 1;
   }
 
+  let signUpToken: string | null | undefined;
   try {
-    // `name` is required by Better Auth; the owner can be renamed later, so the
-    // email doubles as the initial display name.
-    await auth.api.signUpEmail({ body: { name: email, email, password } });
+    // Better Auth requires `name` but accepts an empty one. It stays empty so
+    // the app asks what to call the owner; an email sent here showed up as
+    // their name everywhere (DOR-2964).
+    ({ token: signUpToken } = await auth.api.signUpEmail({
+      body: { name: '', email, password },
+    }));
   } catch (err) {
     io.error(`Could not create the owner account: ${errorMessage(err)}`);
     return 1;
   }
 
   // Only flip the flag after the account exists — a failed sign-up must leave
-  // config untouched.
+  // config untouched. And before anything else can fail: with the account
+  // made and the flag unset, a re-run refuses (an owner exists) and the
+  // password would never be asked for.
   configStore.setDot('auth.enabled', true);
 
+  // Sign-up also signs in, and nothing here ever uses that sign-in: kept, it
+  // shows in Signed-in devices as a device nobody holds (DOR-3097). Only that
+  // one ends, through Better Auth, so its own delete hooks run. Best effort:
+  // the server sweeps a leftover one on start.
+  if (signUpToken) {
+    try {
+      await (await auth.$context).internalAdapter.deleteSession(signUpToken);
+    } catch (err) {
+      io.error(`Could not end the sign-in made during setup: ${errorMessage(err)}`);
+      io.error('It ends the next time DorkOS starts.');
+    }
+  }
+
   io.log(`Owner account created for ${email}.`);
-  io.log('Login is now required for this instance.');
+  io.log('This computer now asks for a password too. Other devices always do.');
   io.log('Restart any running DorkOS server for the change to take effect.');
   return 0;
 }
 
 /**
- * `dorkos auth reset-password`: set a new password on the owner account.
+ * `dorkos auth reset-password`: set a new password on the owner account and
+ * end every sign-in made with the old one.
  *
  * Works with no running server and no SMTP: it hashes the new password with the
  * same scrypt configuration the server uses and writes it directly to the
@@ -251,6 +273,11 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     return 1;
   }
 
+  if (options.password !== undefined) {
+    io.log(
+      'Note: --password leaves the new password in your shell history. Leave it off to be asked.'
+    );
+  }
   const password = options.password ?? (await prompt.password({ confirm: true }));
   if (!password) {
     io.error('A password is required.');
@@ -280,7 +307,18 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     });
   }
 
+  // A reset is what someone does after a password leaks, so every sign-in
+  // made with the old one ends here, on every browser and device (DOR-2968).
+  const signedOut = db.delete(session).where(eq(session.userId, owner.id)).run().changes;
+
   io.log(`Password reset for ${owner.email}.`);
-  io.log('You can now sign in with the new password.');
+  io.log(
+    `Signed out everywhere (${signedOut} ${signedOut === 1 ? 'sign-in' : 'sign-ins'} ended). ` +
+      'Sign in again with the new password.'
+  );
+  io.log('A running DorkOS closes their open chat streams and terminals within a minute.');
+  io.log('What this cannot cut off yet:');
+  io.log('  - a window already open may keep working for up to 5 minutes;');
+  io.log('  - API keys keep working. Revoke them in Settings > Login & security.');
   return 0;
 }

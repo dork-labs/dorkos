@@ -18,6 +18,10 @@ const { redirect, remote, local, navigate, sentTo, spaces, address } = vi.hoiste
     thread?: string;
   },
 }));
+// A one-agent DM's redirect to its Direct chat has its own tests
+// (`use-direct-chat-redirect.test.tsx`); every room here is drawn.
+vi.mock('../model/use-direct-chat-redirect', () => ({ useDirectChatRedirect: () => 'show' }));
+
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => address,
@@ -33,6 +37,10 @@ vi.mock('../ui/RemoteCommunitySurface', () => ({
     remote(props);
     return <p>Remote channel</p>;
   },
+}));
+// Whether the address names a direct message is `remote-dms.test.tsx`'s; here it is a channel.
+vi.mock('../ui/dms/RemoteDmRoom', () => ({
+  RemoteDmRoom: ({ children }: { children: () => React.ReactNode }) => children(),
 }));
 vi.mock('../ui/RoomSurface', () => ({
   RoomSurface: (props: unknown) => {

@@ -8,9 +8,16 @@ import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
+import { createDb, runMigrations, user, apikey, session, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
-import { createAuth, toNodeHandler, isBetterAuthBaseUrlAdvisory } from '../index.js';
+import {
+  createAuth,
+  initAuth,
+  readOwnerEmail,
+  toNodeHandler,
+  isBetterAuthBaseUrlAdvisory,
+  SESSION_LIFETIME_SECONDS,
+} from '../index.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { logger } from '../../../../lib/logger.js';
@@ -89,6 +96,44 @@ describe('Better Auth — local identity core (integration)', () => {
     expect(rows[0].email).toBe(OWNER_EMAIL);
   });
 
+  // The codes below are what the app routes on (DOR-2964). Better Auth's
+  // duplicate-email check runs BEFORE the registration hook, so the owner's own
+  // email never reaches REGISTRATION_CLOSED — the app has to know both answers
+  // mean "an owner exists", and a wrong password must read as one.
+  it('answers the owner’s own email as a duplicate, and any other as registration closed', async () => {
+    const duplicate = await request(fixtureServer)
+      .post('/api/auth/sign-up/email')
+      .set('Origin', ORIGIN)
+      .send({ email: OWNER_EMAIL, password: 'another-strong-password', name: '' });
+    expect(duplicate.status).toBe(422);
+    expect(duplicate.body.code).toBe('USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL');
+
+    const closed = await request(fixtureServer)
+      .post('/api/auth/sign-up/email')
+      .set('Origin', ORIGIN)
+      .send({ email: SECOND_EMAIL, password: 'another-strong-password', name: '' });
+    expect(closed.status).toBe(403);
+    expect(closed.body.code).toBe('REGISTRATION_CLOSED');
+    expect(db.select().from(user).all()).toHaveLength(1);
+  });
+
+  it('reads the owner’s email for the config DTO once an owner exists', () => {
+    initAuth(db, tmpDir);
+    expect(readOwnerEmail()).toBe(OWNER_EMAIL);
+  });
+
+  it('refuses a wrong password with INVALID_EMAIL_OR_PASSWORD and no session', async () => {
+    const res = await request(fixtureServer)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .send({ email: OWNER_EMAIL, password: 'not-the-password' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('INVALID_EMAIL_OR_PASSWORD');
+    const cookies = (res.headers['set-cookie'] as unknown as string[] | undefined) ?? [];
+    expect(cookies.join(';')).not.toMatch(/session_token=[^;]/);
+  });
+
   it('returns a session cookie on sign-in', async () => {
     const res = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
@@ -99,6 +144,25 @@ describe('Better Auth — local identity core (integration)', () => {
     const cookies = res.headers['set-cookie'] as unknown as string[] | undefined;
     expect(cookies).toBeDefined();
     expect(cookies?.join(';')).toMatch(/session_token/);
+  });
+
+  it('makes a sign-in last 30 days (DOR-2968)', async () => {
+    const before = Date.now();
+    await request(fixtureServer)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+
+    const newest = db
+      .select()
+      .from(session)
+      .all()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+    const lifetimeMs = newest.expiresAt.getTime() - before;
+    const thirtyDaysMs = SESSION_LIFETIME_SECONDS * 1000;
+    expect(SESSION_LIFETIME_SECONDS).toBe(30 * 24 * 60 * 60);
+    expect(lifetimeMs).toBeGreaterThan(thirtyDaysMs - 60_000);
+    expect(lifetimeMs).toBeLessThanOrEqual(thirtyDaysMs + 60_000);
   });
 
   it('round-trips the session cookie via get-session', async () => {
@@ -270,6 +334,24 @@ describe('Better Auth — local identity core (integration)', () => {
 
       expect(await firstRejection(plaintext)).toBeNull();
     });
+  });
+
+  it('accepts an empty name, so sign-up never has to store the email as one (DOR-2964)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-noname-'));
+    try {
+      const freshDb = createDb(path.join(dir, 'auth-test.db'));
+      runMigrations(freshDb);
+      const res = await request(fixtureTarget.mount(buildApp(freshDb, dir)))
+        .post('/api/auth/sign-up/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: '' });
+
+      expect(res.status).toBe(200);
+      expect(freshDb.select().from(user).get()?.name).toBe('');
+    } finally {
+      fixtureTarget.mount(app);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   describe('isBetterAuthBaseUrlAdvisory', () => {

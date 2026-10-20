@@ -109,6 +109,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   previousApprovalKey: text('previous_approval_key'),
   /**
+   * The turn marks of the turn that created or last edited this schedule (DOR-3036,
+   * `specs/turn-marks`): JSON `{ outsider?: true, teammate?: [{ roomId, authorId, name?, room? }] }`,
+   * or NULL. A marked schedule parks for a person, whatever the trust preset, and its approval
+   * card names each mark and where it came from. A person's approval clears it.
+   */
+  originMarks: text('origin_marks'),
+  /**
    * The agent's runtime, model or effort that changed outside DorkOS since this
    * schedule was approved, while the schedule follows the agent for that part
    * (DOR-2337): JSON `[{ field, from, to }]`, `from` being the value when the

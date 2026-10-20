@@ -16,6 +16,7 @@ import {
   FolderGit2,
   Hash,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   ListTodo,
   MessageCircle,
@@ -253,6 +254,8 @@ export const ROUTE_IDENTITY: Record<string, RouteIdentity> = {
   '/marketplace/sources': { primary: 'Marketplace', secondary: 'Sources', Icon: Store },
   // A chat is named after its agent once that resolves; this is the floor.
   '/session': { primary: 'Chat', Icon: MessageSquare },
+  // The page a sign-in's browser tab lands on (DOR-2985); rarely a tab, but named.
+  '/signed-in': { primary: 'Signed in', Icon: KeyRound },
   '/tasks': { primary: 'Schedules', Icon: ListTodo },
   '/workspaces': { primary: 'Workspaces', Icon: FolderGit2 },
 };

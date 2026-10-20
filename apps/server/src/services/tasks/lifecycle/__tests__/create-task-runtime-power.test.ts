@@ -30,6 +30,10 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore } from '../../task-store.js';
 import { createScheduledTask } from '../create-task.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../../core/capabilities/permission-enforcement.js';
 
 /** The stored `runtimes` block these cases resolve against. */
 const state = vi.hoisted(() => ({ runtimes: undefined as UserConfig['runtimes'] | undefined }));
@@ -173,5 +177,27 @@ describe('the trust stop is read in the runtime the schedule will RUN on', () =>
     const outcome = await create({ ...BASE, target: 'pinned-agent', permissionMode: 'default' });
 
     expect(outcome.ok && outcome.task.permissionMode).toBe('default');
+  });
+});
+
+// DOR-3107 (PM): each schedule runs at its own saved mode. An agent raised to
+// Full autonomy does not raise a schedule created for it, nor any it has.
+describe("an agent's own Files & commands stop", () => {
+  afterEach(() => resetPermissionGate());
+
+  it('never sets the mode of a schedule created for it', async () => {
+    state.runtimes = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'ask' };
+    await pinAgentTo('claude-code');
+    const before = await create({ ...BASE, name: 'before', target: 'pinned-agent' });
+
+    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'autonomy' }) });
+    const after = await create({ ...BASE, name: 'after', target: 'pinned-agent' });
+
+    expect(after.ok && after.task.permissionMode).not.toBe('bypassPermissions');
+    expect(after.ok && after.task.permissionMode).toBe(before.ok && before.task.permissionMode);
+    // And the schedule made before the raise keeps its own saved mode.
+    expect(before.ok && store.getTask(before.task.id)?.permissionMode).toBe(
+      before.ok && before.task.permissionMode
+    );
   });
 });

@@ -46,9 +46,9 @@ Manage it from **Settings → Advanced → Tools → Connect other apps to DorkO
 
 ### Authentication
 
-How you authenticate depends on whether you've turned on login.
+How you authenticate depends on whether you've turned on login, and on where your client runs. A client on another device (through your tunnel, over Wi-Fi or through a proxy) always needs a per-user API key; the local token and the no-token checks below are for clients on this computer.
 
-**Login off (the default).** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
+**Login off (the default), on this computer.** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
 
 ```bash
 # Read-only: no token needed
@@ -111,7 +111,7 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 69 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent heartbeats, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 70 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent heartbeats, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                              |
 | ------------------- | ----- | ------------------------------------------------------------------------------------- |
@@ -124,7 +124,7 @@ Connecting gives a client DorkOS's full external tool surface: 69 tools in total
 | Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`   |
 | Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`               |
 | Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`       |
-| Memory              | 1     | `memory_write`                                                                        |
+| Memory              | 2     | `memory_write`, `memory_read`                                                         |
 | Commitments         | 3     | `commitment_add`, `commitment_update`, `commitments_list`                             |
 | Heartbeats          | 1     | `heartbeat_status`                                                                    |
 | Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                      |
@@ -132,9 +132,9 @@ Connecting gives a client DorkOS's full external tool surface: 69 tools in total
 | Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                   |
 | Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link` |
 
-The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 32 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 33 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
-Being off the registry does not mean running unasked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
+Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 The tools agents use to message each other's chats (`chat_send`, `chat_read`, `chat_stop`) are not on this server. Each one acts as the chat that calls it, and a client connected from outside has no chat to act as.
 
@@ -143,13 +143,15 @@ Inside a DorkOS session, Claude Code is also told which tier a tool sits at and 
 <Callout type="info">
   The 10 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 55. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
-  and `marketplace_update` with `apply: true` each return a pending approval with a token instead of
-  doing the work; a person decides it in the DorkOS UI, and the client retries with the token.
+  with the other 55. On a **Trusted** install, `marketplace_install`, `marketplace_uninstall`, and
+  `marketplace_update` with `apply: true` run straight through from a source you have already
+  configured, recorded rather than approved; on **Careful**, each returns a pending approval with a
+  token instead, and a person decides it in the DorkOS UI before the client retries with the token.
   Without `apply`, `marketplace_update` only says which packages have a newer version.
-  `marketplace_uninstall` is `destructive`-tier, so the registry's own approval gate stops it as
-  well. `marketplace_link`, which runs a package from a folder on your computer, is
-  `destructive`-tier with no setting that can approve it ahead of time: every call waits for you.
+  `marketplace_create_package` always returns a pending approval, on either preset, since it puts
+  new code on your machine for the first time. `marketplace_link`, which runs a package from a
+  folder on your computer, is `destructive`-tier with no setting that can approve it ahead of time:
+  every call waits for you.
 </Callout>
 
 Every tool's full name, description, and input schema is visible from any connected MCP client's tool list. This table is a map of the territory, not the source of truth.
@@ -244,3 +246,30 @@ The app's HTML itself is never trusted from the tool-call text the model sees. D
     Full interactive API documentation, including the MCP App resource endpoint.
   </Card>
 </Cards>
+
+## Document tools inside a runtime turn
+
+A DorkOS-hosted Claude Code turn supplies its verified, live runtime identity to
+`configure_doc_channel`, `approve_doc_route`, `revoke_doc_route`,
+`canvas_patch_state` and `canvas_send`. Codex and OpenCode use the authenticated internal runtime MCP
+listener for the same five operations. A tool argument cannot choose the agent,
+session, installation or permissions.
+
+An agent may configure its own document route and approve its own route where
+the existing document policy permits it. It may patch state or send a downstream
+event only on a document it may write, including a room canvas while it is a
+current room member. Other targets still require their existing exact approval;
+this identity projection grants no new route, operator permission or file-write
+approval. Missing or retired turn authority and lost membership are refused. The recorded opener may also call
+`revoke_doc_route` to stop its own route; another member cannot revoke a
+different opener’s grant.
+
+Room app acknowledgments remain unavailable in this delivery. A room-scoped
+`canvas_send` with type `app.ack` returns
+`ROOM_APP_ACK_RESPONDER_UNAVAILABLE` (409 at the document service); it does not
+record an acknowledgment or mark inputs handled. Membership and a successful
+state patch do not prove which active room turn was admitted to respond to an
+app event. Until that correlation is installed and verified, consumers must keep
+those inputs unacknowledged rather than report them handled or automatically
+repeat the effect. Ordinary downstream sends and state patches do not settle
+app inputs or start a new turn.

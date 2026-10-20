@@ -25,6 +25,7 @@ import {
   hasRenderableUsage,
   accountChipPromotion,
   isUsageAbsorbed,
+  isPhoneDensity,
   ConnectionItem,
   SubagentsItem,
   type ActiveSubagent,
@@ -225,6 +226,9 @@ export function buildStatusItemNodes(
         // this chip read "Claude Code · Opus" right next to the model item's
         // own "Opus" — the model name rendered twice in the composer.
         compact
+        // At phone width the icon alone (Test Mode's flask), so the agent's name
+        // keeps the room; the name stays in the tooltip.
+        iconOnly={isPhoneDensity(input.density)}
       />
     );
   }

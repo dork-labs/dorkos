@@ -34,11 +34,16 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { PermissionPreset } from '@dorkos/shared/permissions';
 
 import { marketplaceDomain } from '../marketplace-capabilities.js';
 import { trustedCaller } from '../../core/capabilities/trusted-caller.js';
-import type { CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+  type CapabilityHandlerContext,
+} from '../../core/capabilities/index.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type {
@@ -162,5 +167,43 @@ describe('callerContext turns a proof of consent into preApproved', () => {
     const result = await invokeWith({ trusted: marker! });
 
     expect(result).toEqual({ asked: false, ran: true });
+  });
+});
+
+describe('an area-level Allowed, by trust posture (ADR 261006-225605)', () => {
+  /** The gate let the call through on the preset's area-level Allowed. */
+  const AREA_ALLOWED: CapabilityHandlerContext = {
+    approval: { via: 'permission', source: 'preset' },
+  };
+
+  /** Wire the install's preset, the one fact the posture is read from. */
+  function onPreset(preset: PermissionPreset | null): void {
+    initPermissionGate({ readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }) });
+  }
+
+  afterEach(() => resetPermissionGate());
+
+  it('runs with no confirmation under Trusted', async () => {
+    onPreset('trusted');
+    expect(await invokeWith(AREA_ALLOWED)).toEqual({ asked: false, ran: true });
+  });
+
+  it('runs with no confirmation on an install that never chose, which is Trusted', async () => {
+    onPreset(null);
+    expect(await invokeWith(AREA_ALLOWED)).toEqual({ asked: false, ran: true });
+  });
+
+  it('still asks under Careful', async () => {
+    onPreset('careful');
+    expect(await invokeWith(AREA_ALLOWED)).toEqual({ asked: true, ran: false });
+  });
+
+  it('still asks when the config cannot be read', async () => {
+    initPermissionGate({
+      readConfig: () => {
+        throw new Error('EIO');
+      },
+    });
+    expect(await invokeWith(AREA_ALLOWED)).toEqual({ asked: true, ran: false });
   });
 });

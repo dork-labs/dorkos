@@ -12,6 +12,10 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 // the fallback. This stands in for any viewer that throws — a stale lazy chunk,
 // a WebGL failure, a bad file.
 const jsonControl = { throws: true };
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('../ui/CanvasJsonContent', () => ({
   CanvasJsonContent: () => {
     if (jsonControl.throws) throw new Error('json viewer boom');
@@ -66,6 +70,7 @@ vi.mock('@/layers/shared/model', async () => {
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    useUnifiedPanelChrome: () => false,
     documentsInView: (docs: MockDoc[], view: string) =>
       docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,

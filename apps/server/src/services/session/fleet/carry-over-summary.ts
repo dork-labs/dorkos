@@ -85,6 +85,12 @@ export interface CarryOverSummaryInput extends TranscriptFacts {
   gitDiffStat?: string;
   /** The previous transcript's absolute path, when known. */
   transcriptPath: string | null;
+  /**
+   * Why the previous session stopped: its account ran out (`limit`, the
+   * default), or it was moved to another account before that (`moved`: a room
+   * seat moved ahead of its limit, or by a person).
+   */
+  stoppedBecause?: 'limit' | 'moved';
 }
 
 /** Cut a string to `max` characters, marking the cut. */
@@ -165,11 +171,18 @@ function windowWords(window: string): string {
 }
 
 function render(input: CarryOverSummaryInput, recent: SummaryMessage[], withDiff: boolean): string {
+  const moved = input.stoppedBecause === 'moved';
   const lines: string[] = [
-    'This session continues work from another session, which stopped because its Claude account ran out of usage. Here is where it stopped.',
+    moved
+      ? 'This session continues work from another session, which was moved to another Claude account. Here is where it stopped.'
+      : 'This session continues work from another session, which stopped because its Claude account ran out of usage. Here is where it stopped.',
     '',
     `Previous session: ${input.sessionId}, on ${input.accountLabel}.`,
-    `It hit ${windowWords(input.window)}${input.resetsAt ? `, which resets at ${input.resetsAt}` : ''}.`,
+    ...(moved
+      ? []
+      : [
+          `It hit ${windowWords(input.window)}${input.resetsAt ? `, which resets at ${input.resetsAt}` : ''}.`,
+        ]),
     `Folder: ${input.cwd}`,
   ];
   if (input.gitBranch) lines.push(`Git branch: ${input.gitBranch}`);
@@ -271,7 +284,13 @@ export function claudeTranscriptPath(
 export async function gatherCarryOverSummary(
   base: Pick<
     CarryOverSummaryInput,
-    'sessionId' | 'accountLabel' | 'window' | 'resetsAt' | 'cwd' | 'transcriptPath'
+    | 'sessionId'
+    | 'accountLabel'
+    | 'window'
+    | 'resetsAt'
+    | 'cwd'
+    | 'transcriptPath'
+    | 'stoppedBecause'
   >,
   deps: SummaryDeps
 ): Promise<string> {

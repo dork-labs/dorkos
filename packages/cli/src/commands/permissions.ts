@@ -22,8 +22,8 @@
  */
 import { parseArgs } from 'node:util';
 import {
+  CHOOSABLE_PERMISSION_PRESETS,
   PERMISSION_AREA_IDS,
-  PERMISSION_PRESETS,
   PERMISSION_STATES,
   PermissionStopSchema,
   countAgentsFollowing,
@@ -39,6 +39,7 @@ import {
   type PermissionsResponse,
   type PermissionState,
 } from '@dorkos/shared/permissions';
+import { skipRow, type UndoRowLabels } from './permission-undo-rows.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
@@ -50,14 +51,14 @@ See and change what your agents may do without asking you first.
 
 Subcommands:
   list                              Show the preset, every area and who differs
-  set --preset <preset>             Choose a preset: careful, balanced or full
+  set --preset <preset>             Choose a preset: trusted or careful
   set <area|action> <state>         Change one area or action for every agent
   reset <area|action>               Put an area or action back to the preset
   history [--agent <agent>]         Show recent permission changes, with their ids
   undo <id> [--force]               Undo one change from the history
 
-States: blocked, ask, allowed. Safety limits, Permissions and Reach & secrets
-are never allowed: they can only be blocked or ask.
+States: blocked, ask, allowed. Safety limits and Reach & secrets are never
+allowed: they can only be blocked or ask.
 
 Options:
       --limit <n>   How many history rows to show (default 50, max 100)
@@ -66,7 +67,7 @@ Options:
 
 Examples:
   dorkos permissions
-  dorkos permissions set --preset balanced
+  dorkos permissions set --preset careful
   dorkos permissions set rooms ask
   dorkos permissions set tasks_delete blocked
   dorkos permissions reset rooms
@@ -100,6 +101,7 @@ const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+  trusted: 'Trusted',
 };
 
 /** A Files & commands stop as a person reads it (the app's words). */
@@ -126,9 +128,8 @@ function sourceText(source: PermissionSource, preset: PermissionPreset | null): 
     case 'default-action':
       return 'Changed from your preset';
     case 'preset':
-      return preset ? `From ${PRESET_LABEL[preset]}` : 'From your preset';
-    case 'unchanged':
-      return 'Not chosen yet, so it works as it did before';
+      // An install that never chose resolves as Trusted.
+      return `From ${PRESET_LABEL[preset ?? 'trusted']}`;
     case 'floor':
       return 'Never Allowed';
     case 'inactive':
@@ -270,10 +271,9 @@ function agentsDiffering(overview: PermissionsResponse): number {
   ]).size;
 }
 
-/** "Full power, 2 changes" / "Not chosen yet". */
+/** "Careful, 2 changes"; an install that never chose reads as Trusted. */
 function presetLine(overview: PermissionsResponse): string {
-  if (!overview.preset) return 'Not chosen yet, so everything works as it did before';
-  const label = PRESET_LABEL[overview.preset];
+  const label = PRESET_LABEL[overview.preset ?? 'trusted'];
   if (overview.changeCount === 0) return label;
   return `${label}, ${overview.changeCount} change${overview.changeCount === 1 ? '' : 's'}`;
 }
@@ -350,7 +350,7 @@ function reportDefaultWrite(
 async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<number> {
   const usage = reset
     ? 'Usage: dorkos permissions reset <area|action>'
-    : 'Usage: dorkos permissions set <area|action> <state> | set --preset <careful|balanced|full>';
+    : 'Usage: dorkos permissions set <area|action> <state> | set --preset <trusted|careful>';
   const { values, positionals } = parseArgs({
     args: rawArgs,
     options: {
@@ -364,8 +364,10 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
 
   if (!reset && typeof values.preset === 'string') {
     const preset = values.preset;
-    if (!(PERMISSION_PRESETS as readonly string[]).includes(preset)) {
-      throw new Error(`'${preset}' is not a preset. Use one of: ${PERMISSION_PRESETS.join(', ')}.`);
+    if (!(CHOOSABLE_PERMISSION_PRESETS as readonly string[]).includes(preset)) {
+      throw new Error(
+        `'${preset}' is not a preset. Use one of: ${CHOOSABLE_PERMISSION_PRESETS.join(', ')}.`
+      );
     }
     try {
       const result = await apiCall<{ changes: unknown[]; permissions: PermissionsResponse }>(
@@ -490,37 +492,8 @@ function defaultKeyOf(
   return area ? { kind: 'action', action: target.id, area: area.id } : undefined;
 }
 
-/**
- * A recorded value as the undo report says it, read by what the key is: `ask`
- * is the state Ask for an area and the stop Ask first for Files & commands.
- */
-function valueText(value: string | null, key: PermissionUndoSkip['change']['key']): string {
-  if (value === null) return 'not set';
-  const labels: Record<string, string> =
-    key.kind === 'files' ? STOP_LABEL : key.kind === 'preset' ? PRESET_LABEL : STATE_LABEL;
-  return labels[value] ?? value;
-}
-
-/** One skipped or conflicting change, as a table row. */
-function skipRow(skip: PermissionUndoSkip): string[] {
-  const { change } = skip;
-  const who = change.target.kind === 'agent' ? change.target.agentName : 'Everyone';
-  const what =
-    change.key.kind === 'area'
-      ? change.key.area
-      : change.key.kind === 'action'
-        ? change.key.action
-        : change.key.kind === 'files'
-          ? `files${change.key.runtime ? ` (${change.key.runtime})` : ''}`
-          : 'preset';
-  const why =
-    skip.reason === 'changed-since'
-      ? `changed since: now ${valueText(skip.current, change.key)}`
-      : skip.reason === 'floor'
-        ? 'would set something that always asks to Allowed'
-        : 'no longer exists';
-  return [who, what, valueText(change.before, change.key), why];
-}
+/** The words the undo report reads values with. */
+const UNDO_LABELS: UndoRowLabels = { stop: STOP_LABEL, preset: PRESET_LABEL, state: STATE_LABEL };
 
 /**
  * Implements `dorkos permissions undo <id> [--force]`.
@@ -560,7 +533,12 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     );
     if (result.skipped.length > 0) {
       console.log('Left alone:');
-      console.log(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], result.skipped.map(skipRow)));
+      console.log(
+        renderTable(
+          ['FOR', 'SETTING', 'WOULD SET', 'WHY'],
+          result.skipped.map((skip) => skipRow(skip, UNDO_LABELS))
+        )
+      );
     }
     return 0;
   } catch (err) {
@@ -568,7 +546,12 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
       const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
       if (conflicts.length > 0) {
-        console.error(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], conflicts.map(skipRow)));
+        console.error(
+          renderTable(
+            ['FOR', 'SETTING', 'WOULD SET', 'WHY'],
+            conflicts.map((skip) => skipRow(skip, UNDO_LABELS))
+          )
+        );
       }
       console.error(`Run \`dorkos permissions undo ${eventId} --force\` to set it back anyway.`);
     }

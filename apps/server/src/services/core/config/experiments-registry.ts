@@ -105,6 +105,25 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     costNote: 'Early and still changing. Your own channels work either way.',
     graduationIssue: 'DOR-2735',
   },
+  {
+    // The computer's half of the session relay (spec `everything-is-a-space`
+    // step B3): with it off, the routes 404, the section hides and nothing dials.
+    path: 'sessionRelay.enabled',
+    title: 'Chat from the web',
+    description: 'Chat with the agents on this computer from your own DorkOS in the cloud.',
+    costNote: 'Early. Needs your own DorkOS in the cloud.',
+    graduationIssue: 'DOR-2946',
+  },
+  {
+    // Every Docs feature reads this one leaf (DOR-2981 to DOR-2984): with it
+    // off, `/api/documents` answers 404 and the canvas editor gets no Docs props.
+    path: 'docs.enabled',
+    title: 'Docs',
+    // Grows with each Docs piece that lands: embeds, comments, live editing.
+    description: 'Write markdown docs with your agents, and link them with [[.',
+    costNote: 'Early and still changing. Links find docs in the same folder tree.',
+    graduationIssue: 'DOR-2993',
+  },
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract

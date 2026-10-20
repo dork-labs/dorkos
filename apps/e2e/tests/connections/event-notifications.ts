@@ -636,6 +636,13 @@ async function connectComposioGmail(
   const result = (await completed.json()) as { state: string; connectionId?: string };
   expect(result.state).toBe('connected');
   expect(result.connectionId).toBeTruthy();
+  // On Trusted a new app starts shared with every agent (spec
+  // `trusted-by-default-flip` §5.6). These tests start from an app nobody can
+  // use yet, so stop that sharing first, the way a person would.
+  const unshare = await request.delete(
+    `${apiUrl}/api/connectors/connections/${result.connectionId}/every-agent`
+  );
+  expect(unshare.ok(), await unshare.text()).toBe(true);
   return result.connectionId!;
 }
 

@@ -23,7 +23,7 @@ export { AskReceiptLine } from './ui/AskReceiptLine';
 // The three prompts the transcript renders inline. They moved here from
 // `features/chat/ui/tools/` with the rest of the family; the session's message
 // renderer composes them, which is UI composition across features.
-export { ApprovalPrompt } from './ui/ApprovalPrompt';
+export { ApprovalPrompt, WIFI_ALWAYS_ALLOW_LINE } from './ui/ApprovalPrompt';
 export type { ApprovalPromptHandle } from './ui/ApprovalPrompt';
 export { QuestionPrompt } from './ui/QuestionPrompt';
 export type { QuestionPromptHandle } from './ui/QuestionPrompt';

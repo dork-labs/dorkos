@@ -156,7 +156,19 @@ describe('config default verdicts cover the whole schema', () => {
     // below is what settled it: a leaf a wipe must not silently re-enable is by
     // this file's own rule not a preference. If a later change makes that
     // reading wrong, move the entry rather than raising this again.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(16);
+    //
+    // Raised 16 -> 18 for `permissions.preset` and `runtimes.defaultTrustStop`
+    // (DOR-2739, ADR 261006-225605). Not a quiet raise either: trusted by
+    // default is a decision the ADR argues in full, both entries carry its
+    // reason, and both have a carryover rule, so a Careful install never loses
+    // its answer to a wipe.
+    //
+    // Raised 18 -> 20 for the two once-per-install stamps,
+    // `permissions.trustedStoresAppliedAt` and `permissions.sharedAppsAppliedAt`
+    // (DOR-2739). Each `null` re-arms a step that loosens a default (opens the
+    // mesh, shares apps with every agent), so neither is bookkeeping a wipe
+    // may drop; both carry a reason and a carryover rule.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(20);
   });
 });
 
@@ -185,6 +197,8 @@ const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
     'Lower is not more protective here: a shorter window with the same request count allows MORE traffic, not less. The count (`maxPerWindow`) is the bound that carries.',
   'rooms.replyWaitMinutes':
     'How long a room waits before carrying on without an answer. Neither direction is more protective: the turn runs either way, and the answer is posted late rather than dropped, so a shorter wait costs nothing and a longer one spends nothing.',
+  'runtimes.claudeCode.maxWarmProcesses':
+    'Unset sizes it to the machine, so there is no default number for a lowered one to be below. It bounds memory, not what an agent may do, and a full ceiling queues turns rather than refusing them (DOR-3012).',
   'rooms.lateReplyCeilingMinutes':
     'When a room stops listening to a turn that never closes. Bounds a subscription, not a spend, so lower is tidier rather than safer. The `maxAutomaticTurns*` caps are the bounds that carry.',
 };

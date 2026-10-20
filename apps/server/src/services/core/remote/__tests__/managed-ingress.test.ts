@@ -12,9 +12,9 @@ import type { Duplex } from 'node:stream';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
-import { isLocalCaller } from '../../../../lib/caller-authority.js';
+import { isAtThisComputer } from '../../auth/gate-policy.js';
 import { createManagedIngress, type ManagedIngress } from '../managed-ingress.js';
-import { isManagedIngress } from '../ingress-mark.js';
+import { ingressOf, isManagedIngress } from '../ingress-mark.js';
 
 const PROOF = { header: 'x-dorkos-edge', secret: 's'.repeat(48) };
 const HOST = 'abc.remote.example';
@@ -69,10 +69,10 @@ beforeEach(async () => {
   });
   app.get('/whoami', (req, res) => {
     res.json({
-      local: isLocalCaller({
+      local: isAtThisComputer({
         headers: req.headers,
         peerAddress: req.socket.remoteAddress,
-        managedIngress: isManagedIngress(req),
+        ingress: ingressOf(req),
       }),
       marked: isManagedIngress(req),
     });

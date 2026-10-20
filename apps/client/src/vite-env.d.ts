@@ -62,8 +62,68 @@ declare global {
    */
   type DesktopCaptureResult = { ok: true; dataUrl: string } | { ok: false; message: string };
 
+  /** One remembered tab, as the desktop shell keeps it (`AppTab` in the tab store). */
+  interface DesktopSavedTab {
+    id: string;
+    href: string;
+    history: string[];
+    cursor: number;
+    pinned?: boolean;
+    lastViewedAt?: number;
+  }
+
+  /** One window's remembered tabs. */
+  interface DesktopWindowTabs {
+    tabs: DesktopSavedTab[];
+    activeTabId: string | null;
+  }
+
+  /** A tab in Recently closed: the tab, where it sat, and when it closed. */
+  interface DesktopClosedTab {
+    tab: DesktopSavedTab;
+    index: number;
+    closedAt: number;
+  }
+
+  /** What DorkOS opens to after a normal quit. */
+  type DesktopStartupMode = 'reopen' | 'fresh';
+
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
+    /**
+     * This window's remembered tabs and Recently closed, kept by the desktop
+     * main process across quits, restarts and crashes. The preload
+     * (`apps/desktop/src/preload/index.ts`) is the authoritative version.
+     */
+    tabSession?: {
+      /** This window's tabs as last saved, or `null` for a new window. Synchronous. */
+      getInitial(): DesktopWindowTabs | null;
+      /** Save this window's whole tab list. */
+      save(tabs: DesktopWindowTabs): void;
+      /** File tabs the person closed under Recently closed, in strip order. */
+      recordClosed(closed: Array<{ tab: DesktopSavedTab; index: number }>): void;
+      /** Take the entry `key` names (default the newest) out of Recently closed. */
+      reopen(key?: { tabId: string; closedAt: number }): Promise<DesktopClosedTab | null>;
+      /** Recently closed, newest first. */
+      getRecentlyClosed(): Promise<DesktopClosedTab[]>;
+      /** Subscribe to Recently closed changing, in any window. */
+      onRecentlyClosedChange(cb: (list: DesktopClosedTab[]) => void): () => void;
+      /** What DorkOS opens to after a normal quit. */
+      getStartupMode(): Promise<DesktopStartupMode | null>;
+      /** Change what DorkOS opens to after a normal quit. */
+      setStartupMode(mode: DesktopStartupMode): Promise<DesktopStartupMode | null>;
+    };
+    /** Position the scoped native browser guest; hiding keeps its live page and sign-ins. */
+    localBrowser?: {
+      setBounds(input: {
+        connectionId: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        visible: boolean;
+      }): Promise<void>;
+    };
     /**
      * Get the port the Express server is listening on, or `null` when it is
      * not serving — during startup, after a crash, between restarts. Mirrors

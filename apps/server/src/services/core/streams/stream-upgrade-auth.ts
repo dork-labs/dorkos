@@ -9,10 +9,12 @@
  *
  * It reproduces that chain's two outcomes exactly, and nothing else:
  *
- * 1. **The gate.** When `config.auth.enabled` is `true`, a caller must present a
- *    valid session cookie or a per-user API key, verified through the same
- *    {@link verifyRequestAuth} the HTTP gate and the MCP middleware use. When
- *    login is off it is a pass-through, as the gate is. None of the session
+ * 1. **The gate.** The same per-request answer the HTTP gate reads
+ *    (`gateAccessFor`): when the request needs a credential, a caller must
+ *    present a valid session cookie or a per-user API key, verified through the
+ *    same {@link verifyRequestAuth} the HTTP gate and the MCP middleware use; a
+ *    person at this computer that does not ask passes, as at the gate; a
+ *    relayed caller is refused. None of the session
  *    gate's exemptions apply here: they cover sign-in, the health probe and the
  *    signed-token workbench routes, none of which is a durable stream.
  * 2. **The attribution.** `X-DorkOS-Agent` is resolved the same additive way the
@@ -36,8 +38,9 @@
  *
  * @module services/core/streams/stream-upgrade-auth
  */
-import type { IncomingHttpHeaders } from 'node:http';
-import { configManager } from '../config-manager.js';
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
+import { gateAccessFor } from '../auth/gate-policy.js';
+import { ingressOf } from '../remote/ingress-mark.js';
 import { verifyRequestAuth, type RequestUser } from '../auth/session-gate.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
@@ -49,7 +52,7 @@ import type { UpgradeDecision } from './upgrade-router.js';
  * `user`, the agent-identity step's `agentIdentity`), resolved for an upgrade.
  */
 export interface StreamUpgradeLocals {
-  /** Present only when login is enabled and a credential verified. */
+  /** Present only when the gate asked for a credential and one verified. */
   user?: RequestUser;
   /** Present only when a valid `X-DorkOS-Agent` token was offered. */
   agentIdentity?: AgentIdentity;
@@ -77,18 +80,38 @@ export interface AuthorizedStreamUpgrade {
 }
 
 /**
- * Run the durable-stream credential gate over an upgrade's headers.
+ * An upgrade's facts as the gate policy reads them: its raw headers, its TCP
+ * peer and the listener that admitted it.
  *
- * @param headers - The upgrade request's headers.
+ * @param req - The upgrade request.
+ */
+export function upgradeFacts(
+  req: Pick<IncomingMessage, 'headers' | 'socket'>
+): Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'> {
+  return {
+    headers: req.headers,
+    peerAddress: req.socket.remoteAddress,
+    ingress: ingressOf(req as IncomingMessage),
+  };
+}
+
+/**
+ * Run the durable-stream credential gate over an upgrade.
+ *
+ * @param req - The upgrade request: headers, socket and its ingress mark.
  * @returns The resolved identity, or a `401` refusal for the router to write.
  */
 export async function authorizeStreamUpgrade(
-  headers: IncomingHttpHeaders
+  req: Pick<IncomingMessage, 'headers' | 'socket'>
 ): Promise<AuthorizedStreamUpgrade | Extract<UpgradeDecision, { ok: false }>> {
   const locals: StreamUpgradeLocals = {};
+  const { headers } = req;
 
-  if (configManager.get('auth')?.enabled) {
-    const user = await verifyRequestAuth({ headers });
+  const facts = upgradeFacts(req);
+  const access = gateAccessFor(facts);
+  if (access === 'refused') return { ok: false, status: 401, message: 'Unauthorized' };
+  if (access === 'credential') {
+    const user = await verifyRequestAuth(facts);
     if (!user) return { ok: false, status: 401, message: 'Unauthorized' };
     locals.user = user;
   }

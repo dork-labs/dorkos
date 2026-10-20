@@ -82,6 +82,15 @@ export {
 } from './page-badge.js';
 export type { ExtensionPageBadge, PageBadgeStatus } from './page-badge.js';
 export { StartWorkError } from './start-work.js';
+export { RoomAccessError, ROOM_THREAD_REPLY_MAX_CHARS } from './room-threads.js';
+export type {
+  ExtensionRoomsApi,
+  RoomAccessErrorCode,
+  RoomRef,
+  RoomThread,
+  RoomThreadAuthor,
+  RoomThreadEntry,
+} from './room-threads.js';
 export {
   EXTENSION_EVENT_KINDS,
   EXTENSION_EVENT_CATEGORIES,

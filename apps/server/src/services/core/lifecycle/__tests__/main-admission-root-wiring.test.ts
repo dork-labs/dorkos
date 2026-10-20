@@ -9,6 +9,7 @@ import { WorkspaceReconciler } from '../../../workspace/workspace-reconciler.js'
 import { WorkspaceReconcilerLifecycle } from '../../../workspace/workspace-reconciler-lifecycle.js';
 import { WorkspaceService } from '../../../workspace/workspace-service.js';
 import type { WorkspaceStore } from '../../../workspace/workspace-store.js';
+import { compositionRootSource } from '../../../../__tests__/composition-root.js';
 
 const source = ts.createSourceFile(
   'index.ts',
@@ -158,8 +159,20 @@ describe('main admission root adoption', () => {
       ) as ts.CallExpression[];
     expect(upgradeCalls).toHaveLength(1);
     named(upgradeCalls[0].arguments[2], 'mainRequestAdmission');
-    // No unguarded competing main-listen call may survive outside the factory.
-    const listeners = walk(rootFunction('start'))
+    // No unguarded competing main-listen call may survive outside the factory,
+    // in `start()` or in any startup step it runs (`startup/steps/`), read as
+    // one composed text in boot order.
+    const composed = ts.createSourceFile(
+      'index.ts',
+      compositionRootSource(),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    const composedStart = composed.statements
+      .filter(ts.isFunctionDeclaration)
+      .find((node) => node.name?.text === 'start');
+    if (!composedStart?.body) throw new Error('Missing composed start()');
+    const listeners = walk(composedStart)
       .filter(ts.isCallExpression)
       .filter(
         (node) =>
@@ -168,8 +181,9 @@ describe('main admission root adoption', () => {
             ts.isIdentifier(node.expression.expression) &&
             node.expression.expression.text === 'app' &&
             node.expression.name.text === 'listen')
-      );
-    expect(listeners).toEqual([factory.body]);
+      )
+      .map((node) => node.getText(composed));
+    expect(listeners).toEqual([factory.body.getText(source)]);
   });
 
   it('closes admission then immediately invokes workspace disposal in both cleanup entries', () => {
@@ -229,7 +243,11 @@ describe('main admission root adoption', () => {
     const docDeliveryDrain = new Promise<void>((resolve) => {
       releaseDocDelivery = resolve;
     });
-    const stopDocDelivery = vi.fn(() => docDeliveryDrain);
+    const browserClose = vi.fn(async () => undefined);
+    const stopDocDelivery = vi.fn(() => {
+      expect(browserClose).toHaveBeenCalledOnce();
+      return docDeliveryDrain;
+    });
     const laterCleanup = vi.fn(() => {
       throw stopAfterPrefix;
     });
@@ -240,6 +258,7 @@ describe('main admission root adoption', () => {
     const cleanup = runInNewContext(compiled, {
       mainRequestAdmission: admission,
       workspaceReconcilerLifecycle: owner,
+      localBrowserHost: { close: browserClose },
       stopDocDelivery,
       logger: { info: laterCleanup },
       docNotificationCleanup,
@@ -247,6 +266,7 @@ describe('main admission root adoption', () => {
     try {
       const completion = cleanup();
       expect(admission.isClosed).toBe(true);
+      expect(browserClose).not.toHaveBeenCalled();
       expect(stopDocDelivery).not.toHaveBeenCalled();
       expect(docNotificationCleanup).not.toHaveBeenCalled();
       expect(() => reconciler.start()).toThrow(/disposed/i);

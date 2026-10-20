@@ -60,6 +60,8 @@ SCOPE_PATTERNS=(
   '^\.github/workflows/test\.yml$'
   '^\.github/workflows/credential-free-build\.yml$'
   '^\.github/dependabot\.yml$'
+  '^\.github/workflows/publish-community\.yml$'
+  '^ci/space-server\.env$'
 )
 
 pattern=$(

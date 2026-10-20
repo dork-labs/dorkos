@@ -131,9 +131,11 @@ function mountPaths() {
   // Every file that mounts routes: the composition root and the startup
   // modules split out of it (DOR-2821), and the Hono app with its groups, the
   // signed connector webhook among them.
-  const startupModules = readdirSync(new URL('../startup/', import.meta.url))
-    .filter((name) => name.endsWith('.ts'))
-    .map((name) => `../startup/${name}`);
+  const startupModules = ['../startup/', '../startup/steps/'].flatMap((dir) =>
+    readdirSync(new URL(dir, import.meta.url))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => `${dir}${name}`)
+  );
   for (const filename of [
     '../index.ts',
     ...startupModules,
@@ -291,7 +293,27 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
     expect(mounts).toContain('/api/heartbeats/triage-credits');
     expect(mounts).toContain('/api/terminal');
-    expect(mounts).toHaveLength(71);
+    // 71 -> 72: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
+    expect(mounts).toContain('/api/lan-access');
+    // 72 -> 73: the scoped local browser routes (DOR-2929).
+    expect(mounts).toContain('/api/local-browser');
+    // 73 -> 74: a hub's routes for its owner's linked computers (DOR-2944).
+    expect(mounts).toContain('/api/hub/computers');
+    // 74 -> 75: a computer redeeming its owner's link code on a hub (DOR-2946).
+    expect(mounts).toContain('/api/hub/link');
+    // 75 -> 76: a computer's own switch for chatting from the web (DOR-2946).
+    expect(mounts).toContain('/api/session-relay');
+    // 76 -> 77: the sign-in landing page's record and Try again (DOR-2985).
+    expect(mounts).toContain('/api/sign-in-landings');
+    // 77 -> 78: the docs in a space, for wiki links (DOR-2982).
+    expect(mounts).toContain('/api/documents');
+    // 78 -> 79: each agent's Direct chat (rule S12, DOR-2997).
+    expect(mounts).toContain('/api/direct-chats');
+    // 79 -> 80: a person's own signed-in devices (DOR-2969).
+    expect(mounts).toContain('/api/devices');
+    // 80 -> 81: the forced-limit seam for re-seating, test runtime only (DOR-3143).
+    expect(mounts).toContain('/api/test/account-world');
+    expect(mounts).toHaveLength(81);
     const byHand = [
       '/',
       '/x/fixture',

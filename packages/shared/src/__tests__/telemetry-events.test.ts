@@ -352,3 +352,66 @@ describe('telemetry event registry', () => {
     });
   });
 });
+
+describe('install funnel events (DOR-2862)', () => {
+  const envelope = {
+    distinctId: VALID_DISTINCT_ID,
+    timestamp: VALID_TIMESTAMP,
+    dorkosVersion: '0.47.0',
+  };
+
+  it('registers first_run_completed and instance_active', () => {
+    expect(TELEMETRY_EVENT_NAMES).toContain('first_run_completed');
+    expect(TELEMETRY_EVENT_NAMES).toContain('instance_active');
+  });
+
+  it('accepts first_run_completed with an install ref, and with none', () => {
+    for (const properties of [
+      { installRef: 'k3j4mnb8x2qa', utmSource: 'hn', utmCampaign: 'launch' },
+      { installRef: 'k3j4mnb8x2qa' },
+      {},
+    ]) {
+      expect(
+        TelemetryEventSchema.safeParse({ event: 'first_run_completed', properties, ...envelope })
+          .success
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    { installRef: 'someone@example.com' },
+    { installRef: 'k3j4mnb8x2qa', utmSource: 'has space' },
+    { installRef: 'k3j4mnb8x2qa', hostname: 'kais-macbook' },
+  ])('rejects first_run_completed carrying %j', (properties) => {
+    expect(
+      TelemetryEventSchema.safeParse({ event: 'first_run_completed', properties, ...envelope })
+        .success
+    ).toBe(false);
+  });
+
+  it('accepts instance_active only with no properties at all', () => {
+    expect(
+      TelemetryEventSchema.safeParse({ event: 'instance_active', properties: {}, ...envelope })
+        .success
+    ).toBe(true);
+    expect(
+      TelemetryEventSchema.safeParse({
+        event: 'instance_active',
+        properties: { os: 'darwin-arm64' },
+        ...envelope,
+      }).success
+    ).toBe(false);
+  });
+
+  it('accepts both as caller input', () => {
+    expect(
+      TelemetryEventInputSchema.safeParse({ event: 'instance_active', properties: {} }).success
+    ).toBe(true);
+    expect(
+      TelemetryEventInputSchema.safeParse({
+        event: 'first_run_completed',
+        properties: { installRef: 'k3j4mnb8x2qa' },
+      }).success
+    ).toBe(true);
+  });
+});

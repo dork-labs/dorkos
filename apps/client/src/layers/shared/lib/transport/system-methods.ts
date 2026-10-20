@@ -31,7 +31,7 @@ import type {
 import type {
   UploadFile,
   McpConfigResponse,
-  WriteFileResult,
+  Transport,
   RuntimeProvisionProgress,
   RuntimeProvisionResult,
   ClientErrorReport,
@@ -62,6 +62,7 @@ import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/me
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
+import { writeFileOverHttp } from './file-write-method';
 
 /**
  * POST an SSE-streaming action and fold its frames into a single terminal result.
@@ -290,60 +291,7 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    async writeFile(
-      cwd: string,
-      filePath: string,
-      content: string,
-      options?: { expectedHash?: string; expectedContent?: string }
-    ): Promise<WriteFileResult> {
-      // Raw fetch (not fetchJSON) so the 409 body — the current on-disk bytes —
-      // survives; fetchJSON discards response bodies on non-OK.
-      const res = await fetch(`${baseUrl}/files/content`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          cwd,
-          path: filePath,
-          content,
-          expectedHash: options?.expectedHash,
-          expectedContent: options?.expectedContent,
-        }),
-      });
-      if (res.status === 409) {
-        const data = await res.json().catch(() => ({}));
-        return {
-          ok: false,
-          conflict: { currentHash: data.currentHash, currentContent: data.currentContent },
-        };
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: res.statusText }));
-        const err = new Error(data.error || `HTTP ${res.status}`) as Error & {
-          code?: string;
-          status?: number;
-        };
-        err.code = data.code;
-        err.status = res.status;
-        throw err;
-      }
-      const data: unknown = await res.json();
-      if (
-        typeof data !== 'object' ||
-        data === null ||
-        Array.isArray(data) ||
-        !('ok' in data) ||
-        data.ok !== true ||
-        !('hash' in data) ||
-        typeof data.hash !== 'string' ||
-        data.hash.length === 0 ||
-        !('effect' in data) ||
-        (data.effect !== 'changed' && data.effect !== 'no_op')
-      ) {
-        throw new Error('Invalid file save response');
-      }
-      return { ok: true, hash: data.hash, effect: data.effect };
-    },
+    writeFile: (...args: Parameters<Transport['writeFile']>) => writeFileOverHttp(baseUrl, ...args),
 
     getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {
       const qs = buildQueryString({ dir: cwd });

@@ -12,14 +12,12 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
-import { buildAgentContextAppend } from '../../shared/agent-context.js';
+import { buildAgentContextAppend, type AgentContextOptions } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
-import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
-import { formatSeedContext } from '../../shared/seed-context-block.js';
-import { formatStagedContext } from '../../shared/staged-context-block.js';
+import { formatProseContext } from '../../shared/prose/prose-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
 import { WORKBENCH } from '../../../../config/constants.js';
@@ -299,7 +297,7 @@ DorkOS Tasks lets you create and manage scheduled agent runs.
 
 Available tools:
   ${T}tasks_list() -- list all configured schedules
-  ${T}tasks_create(name, cron, prompt, ...) -- create a new schedule (enters pending_approval)
+  ${T}tasks_create(name, cron, prompt, ...) -- create a new schedule (live at once, or pending_approval when DorkOS asks first)
   ${T}tasks_update(id, ...) -- modify schedule settings
   ${T}tasks_delete(id) -- remove a schedule
   ${T}tasks_get_run_history(scheduleId) -- view past run results
@@ -651,13 +649,14 @@ export interface SystemPromptAppend {
  *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
  *   and the same input `mcp-tools/index.ts` decides exposure with — so the
  *   prompt's "already in your tool list" is true whenever it says so
- *   (DOR-1337 / F8). Callers must not compute it themselves.
+ *   (DOR-1337 / F8). Callers must not compute it themselves. `memory: false`
+ *   leaves the agent's notes out, for a teammate's turn (DOR-2955).
  */
 export async function buildSystemPromptAppend(
   home: AgentHome | undefined,
   cwd: string,
   toolConfig?: ToolDocGates,
-  options: { agentSession?: boolean; blockedAreaLines?: string } = {}
+  options: { agentSession?: boolean; blockedAreaLines?: string } & AgentContextOptions = {}
 ): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
@@ -690,7 +689,7 @@ export async function buildSystemPromptAppend(
 
   // Runtime-neutral identity + env (async: reads files, but content is stable
   // between agent config changes)
-  const agentContext = await buildAgentContextAppend(home, cwd);
+  const agentContext = await buildAgentContextAppend(home, cwd, options);
 
   // 1. Static tool documentation — fully cacheable, never changes.
   //    The naming rule comes first, because every block after it is written in
@@ -745,11 +744,6 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       return wrapTag(tag, JSON.stringify(entry.data, null, 2));
     case 'queue_note':
       return `<${tag}>composed while the agent was responding to the previous message</${tag}>`;
-    case 'staged_context':
-      // Shared with Codex and OpenCode for the same reason as `seed_context`:
-      // the body is a person's prose and carries a defused-tag security seam, so
-      // it is written once and reads identically on every runtime.
-      return wrapTag(tag, formatStagedContext(entry.data));
     case 'env':
       return wrapTag(tag, formatEnv(entry.data));
     case 'relay_context':
@@ -763,20 +757,14 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // posting tool in the tool-only closing directive, and this runtime spells
       // it differently from OpenCode (DOR-1292).
       return wrapTag(tag, formatRoomContext(entry.data, { toolPrefix: IN_SESSION_TOOL_PREFIX }));
-    case 'seed_context':
-      // Shared for the same reason, one step milder: the body carries the
-      // sentence that tells the reader the person cannot see this block, and
-      // that sentence must read identically on every runtime.
-      return wrapTag(tag, formatSeedContext(entry.data));
     case 'accounts_access':
       return wrapTag(tag, formatAccountsAccess(entry.data, 'claude-code'));
+    case 'staged_context':
+    case 'seed_context':
     case 'approval_verdict':
-      // Shared for the strongest version of the room_context reason: this block
-      // reports a SECURITY decision, and one written three times is one that
-      // says "DorkOS decided this" on one runtime and dumps JSON on the other
-      // two — which is exactly what the default arm in the Codex and OpenCode
-      // renderers would have done.
-      return wrapTag(tag, formatApprovalVerdict(entry.data));
+    case 'direct_notes':
+      // Prose with a security seam, written once for every runtime.
+      return wrapTag(tag, formatProseContext(entry));
     case 'context_warning':
       // Shared so the note names tools each runtime can actually call.
       return wrapTag(tag, formatContextWarning(entry.data, 'claude-code'));

@@ -52,20 +52,36 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 | `text-foreground`        | `0 0% 9%`    | Body text                                                                        |
 | `text-muted-foreground`  | `0 0% 32%`   | Labels, metadata                                                                 |
 | `text-status-warning-fg` | `38 92% 28%` | Warning text: 4.68:1 or better on the page, cards, the sidebar and its zone tint |
+| `text-brand-text`        | `24 90% 29%` | Orange text: 4.66:1 or better, its own `bg-brand/15` badge tint included         |
 | `border-border`          | `0 0% 83%`   | Card borders, inputs                                                             |
 
 ### Dark Mode
 
-| Tailwind class           | HSL value    | Usage                    |
-| ------------------------ | ------------ | ------------------------ |
-| `bg-background`          | `0 0% 4%`    | Page background          |
-| `bg-muted`               | `0 0% 9%`    | Subtle backgrounds       |
-| `bg-secondary`           | `0 0% 14%`   | User message tint        |
-| `bg-card`                | `0 0% 4%`    | Elevated cards, popovers |
-| `text-foreground`        | `0 0% 87%`   | Body text                |
-| `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata         |
-| `text-status-warning-fg` | `38 92% 50%` | Warning text             |
-| `border-border`          | `0 0% 25%`   | Card borders, inputs     |
+| Tailwind class           | HSL value    | Usage                                                |
+| ------------------------ | ------------ | ---------------------------------------------------- |
+| `bg-background`          | `0 0% 4%`    | Page background                                      |
+| `bg-muted`               | `0 0% 9%`    | Subtle backgrounds                                   |
+| `bg-secondary`           | `0 0% 14%`   | User message tint                                    |
+| `bg-card`                | `0 0% 4%`    | Cards, popovers (height comes from elevation, below) |
+| `text-foreground`        | `0 0% 87%`   | Body text                                            |
+| `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata                                     |
+| `text-status-warning-fg` | `38 92% 50%` | Warning text                                         |
+| `text-brand-text`        | `24 88% 60%` | Orange text                                          |
+| `border-border`          | `0 0% 25%`   | Card borders, inputs                                 |
+
+### Elevation in dark mode: height is light
+
+A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` tokens (in `apps/client/src/index.css`) show height with light. Each step has the same four layers, in the same order, so hover transitions interpolate:
+
+1. **Top-edge highlight:** `inset 0 1px 0` white, 8 → 12 → 16 → 20%. Light catches the upper lip. It isn't a rule, and it curves with the radius.
+2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
+   3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
+
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers, switches and outline buttons use `shadow-xs`, because they should read as recessed, not raised.
+
+**Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
+
+**Tints climb with the surface.** Inside anything at `shadow-md` or above in dark mode, `muted` and `accent` step up with it (13/16% → 16/19% → 19/22%), so a menu's hover or selected row is always a step above its lifted surface rather than a hole in it. They are computed from the `--elevation-lift-*` tokens (muted is 8% plus the lift, accent 3% above muted), so changing a lift moves its tints with it.
 
 ### Brand Accent
 
@@ -74,10 +90,9 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 **Where brand orange appears:**
 
 - Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
-- `HoverBorderGradient` — the onboarding CTA, the first branded moment users see
 - `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
 - Sidebar active tab indicator — subtle brand presence in navigation
-- Assistant message links and inline code — via `--ring`
+- Assistant message links and inline code — via `--brand-text`
 
 **Where gray stays:**
 
@@ -85,6 +100,8 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
 - All structural surfaces — backgrounds, cards, borders, muted
+
+**Orange text is `text-brand-text`.** The brand fill reads only 3.7:1 as text on the light page; `--brand-text` clears 4.5:1 on every ground it sits on (`__tests__/brand-text-contrast.test.ts`). Plain `brand` stays for fills, rings, icons and large type.
 
 **Usage rule:** Orange means interaction or action. If you're adding it to a static, structural element — stop. The brand lives in moments of engagement, not in decoration. Like a single red chair in a white room.
 
@@ -109,12 +126,17 @@ Users can override font family via Settings → Appearance. The app store (`setF
 
 Base values at desktop (no mobile scaling applied). Actual rendered sizes multiply by `--_st` on mobile (default 1.25x). Users can apply a further `--user-font-scale` via Settings → Appearance.
 
-| Token       | Base size | Usage                                     |
-| ----------- | --------- | ----------------------------------------- |
-| `text-xs`   | 12px      | Timestamps, tool status                   |
-| `text-sm`   | 14px      | Message body text, code, metadata, labels |
-| `text-base` | 16px      | (unused in chat UI)                       |
-| `text-lg`   | 18px      | In-message headings (h3+)                 |
+| Token          | Base size | Usage                                       |
+| -------------- | --------- | ------------------------------------------- |
+| `text-3xs`     | 10px      | Count badges, avatar initials               |
+| `text-2xs`     | 11px      | Section labels, secondary metadata          |
+| `text-xs`      | 12px      | Timestamps, tool status                     |
+| `text-control` | 13px      | Control-surface labels: sidebar rows, menus |
+| `text-sm`      | 14px      | Message body text, code, metadata, labels   |
+| `text-base`    | 16px      | (unused in chat UI)                         |
+| `text-lg`      | 18px      | In-message headings (h3+)                   |
+
+Literal sizes (`text-[13px]`) ignore the user's font size; use tokens. `text-control` sets no line height, so it keeps the one its surroundings give it.
 
 ### Weights
 
@@ -139,7 +161,7 @@ The scale below is a **content**-surface scale. Control surfaces — sidebars, t
 |             | Content surface                                    | Control surface                                    |
 | ----------- | -------------------------------------------------- | -------------------------------------------------- |
 | Examples    | Message area, settings panels, cards, empty states | Sidebar, status strip, command palette, table rows |
-| Body text   | `text-sm` / `text-base`                            | 13px label, `text-2xs` (11px) metadata             |
+| Body text   | `text-sm` / `text-base`                            | `text-control` (13px) label, `text-2xs` metadata   |
 | Row height  | —                                                  | 28–32px (`h-7` / `h-8`)                            |
 | Inset       | 16px and up (`p-4`, `p-6`)                         | **16px total**, panel edge to first glyph          |
 | Panel width | —                                                  | 240–280px (the DorkOS sidebar is 272px)            |
@@ -1100,8 +1122,7 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 #### Mobile Sizing (Apple HIG)
 
 - `min-h-[44px]` touch targets
-- `text-[17px]` labels (iOS body)
-- `text-[13px]` descriptions (iOS footnote)
+- 17px labels (iOS body) and 13px descriptions (iOS footnote), scaled by `--user-font-scale` only: a `text-*` token would add the phone's 1.25x a second time
 - Right-aligned `Check` icon for selected item
 - `border-b border-border` separators between items
 

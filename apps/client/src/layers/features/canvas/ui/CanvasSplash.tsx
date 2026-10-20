@@ -1,3 +1,4 @@
+import { links } from '@dorkos/shared/links';
 import { useId, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { FileText, Braces, Globe, Sparkles } from 'lucide-react';
@@ -67,7 +68,7 @@ const SPLASH: Record<CanvasView, SplashCopy> = {
         description: 'Open a page, then type any address',
         action: (): UiCanvasContent => ({
           type: 'url',
-          url: 'https://dorkos.ai',
+          url: links.site,
           title: 'Web Page',
         }),
       },

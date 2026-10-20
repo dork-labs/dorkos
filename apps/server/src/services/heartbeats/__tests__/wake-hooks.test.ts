@@ -11,6 +11,7 @@ import { noteBeatRoomPost } from '../event-wakes.js';
 import { systemClock } from '../beat-scheduler.js';
 import { resetBeatTurns } from '../beat-turns.js';
 import { shouldWakeForRefusal, wakeForRefusedRoomTurn } from '../room-wakes.js';
+import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 import type { BeatWake } from '../beat-runner.js';
 import { ConnectorRegistry } from '../../connectors/registry.js';
 import { noteRelayTurnStart } from '../../session/origin/turn-origin.js';
@@ -94,6 +95,28 @@ describe('a refused room turn', () => {
         AUTHORS
       )
     ).toBe(true);
+  });
+
+  // DOR-3036: a beat would read the post as the agent's own, unmarked. Fails closed.
+  it('never wakes for an agent’s post a teammate’s chain or a stranger’s words wrote', () => {
+    const level = { asks: 'always', reach: 'read' } as const;
+    noteEntryLevel('marked-teammate', {
+      ...level,
+      outsider: true,
+      teammate: [{ roomId: 'space', authorId: 'priya' }],
+    });
+    noteEntryLevel('marked-outsider', { ...level, outsider: true });
+    noteEntryLevel('unmarked', level);
+    const fromOtto = (id: string) => entry({ id, authorId: 'a-otto', sessionId: 'otto-chat' });
+    expect(
+      shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-teammate'), 'repeat', AUTHORS)
+    ).toBe(false);
+    expect(
+      shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-outsider'), 'repeat', AUTHORS)
+    ).toBe(false);
+    expect(shouldWakeForRefusal(JUNO, 'mention', fromOtto('unmarked'), 'repeat', AUTHORS)).toBe(
+      true
+    );
   });
 
   it('never wakes for a post the outbox made, even one that borrowed a room turn’s session', () => {

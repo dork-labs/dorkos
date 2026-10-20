@@ -90,11 +90,13 @@ describe('"N changes" counts the stops that differ from the preset', () => {
     expect((await world.service.getOverview()).changeCount).toBe(0);
   });
 
-  it('counts no stop as a change on an undecided install, which has no preset stop', async () => {
-    const world = createPermissionWorld({ preset: null, trustStop: 'autonomy' });
-    const overview = await world.service.getOverview();
+  it('counts an undecided install against Trusted, the table it resolves against', async () => {
+    const atTrusted = createPermissionWorld({ preset: null, trustStop: 'autonomy' });
+    const overview = await atTrusted.service.getOverview();
     expect(overview.changeCount).toBe(0);
-    expect(overview.filesAndCommands.presetStop).toBeNull();
+    expect(overview.filesAndCommands.presetStop).toBe('autonomy');
+    const asking = createPermissionWorld({ preset: null, trustStop: 'ask' });
+    expect((await asking.service.getOverview()).changeCount).toBe(1);
   });
 });
 

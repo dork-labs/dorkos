@@ -38,6 +38,53 @@ function invalidateRecentSessions(queryClient: QueryClient): void {
 }
 
 /**
+ * The least time between two refreshes of the Recent list driven by the live
+ * stream.
+ *
+ * Every refresh makes the server read every agent's chats across every runtime,
+ * which takes seconds on a machine with many agents and a large history. A
+ * streaming turn changes its chat several times a second, so refreshing on each
+ * change kept the server permanently busy and made the whole app slow
+ * (2026-10-13). The rows the stream carries are already patched into the
+ * per-agent lists at once; only this cross-agent summary waits.
+ */
+export const RECENT_REFRESH_MIN_GAP_MS = 5_000;
+
+/**
+ * Run `refresh` at most once per `gapMs`: the first ask runs at once, and any
+ * asks inside the gap fold into one more run when it ends.
+ *
+ * @param refresh - What to run.
+ * @param gapMs - The least time between two runs.
+ * @returns `request` to ask for a run, and `dispose` to drop a pending one.
+ * @internal Exported for testing.
+ */
+export function createThrottledRefresh(
+  refresh: () => void,
+  gapMs: number = RECENT_REFRESH_MIN_GAP_MS
+): { request: () => void; dispose: () => void } {
+  let lastRun = -Infinity;
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  const run = () => {
+    pending = null;
+    lastRun = Date.now();
+    refresh();
+  };
+  return {
+    request() {
+      if (pending !== null) return;
+      const wait = lastRun + gapMs - Date.now();
+      if (wait <= 0) run();
+      else pending = setTimeout(run, wait);
+    },
+    dispose() {
+      if (pending !== null) clearTimeout(pending);
+      pending = null;
+    },
+  };
+}
+
+/**
  * Invalidate the machine-wide week count behind the Activity tab's summary line
  * (DOR-1039). A prefix key invalidates every window width.
  *
@@ -185,11 +232,13 @@ export function useGlobalSessionStream(): void {
     // a hard refresh, and would not self-heal for one-shot `session_removed`).
     let prev: Record<string, Session> = {};
     let prevRekeys: Record<string, string> = {};
+    const recentRefresh = createThrottledRefresh(() => invalidateRecentSessions(queryClient));
     const unsubscribe = useSessionListStore.subscribe((state) => {
       if (state.sessions !== prev) {
         reconcileSessionsCache(queryClient, state.sessions, prev);
-        // Keep the cross-agent Recent section (DOR-329) live on lifecycle events.
-        invalidateRecentSessions(queryClient);
+        // Keep the cross-agent Recent section (DOR-329) live on lifecycle
+        // events, at most once per gap (see RECENT_REFRESH_MIN_GAP_MS).
+        recentRefresh.request();
         // The week count moves only when a session appears or disappears.
         if (sessionIdsChanged(state.sessions, prev)) invalidateSessionDailyCounts(queryClient);
         prev = state.sessions;
@@ -230,6 +279,7 @@ export function useGlobalSessionStream(): void {
     return () => {
       unsubscribe();
       unsubscribeInvalidated();
+      recentRefresh.dispose();
     };
   }, [queryClient]);
 }

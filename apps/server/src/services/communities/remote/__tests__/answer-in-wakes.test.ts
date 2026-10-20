@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it } from 'vitest';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { RemoteConnectionStore } from '../connection-store.js';
 import {
@@ -29,6 +30,18 @@ import {
 import { AnswerInBudget, answerInChannelName, RemoteAnswerIn } from '../wake/answer-in.js';
 import { AnswerInStore } from '../wake/answer-in-store.js';
 import { RemoteWakePolicy, type RemoteWakeGate } from '../wake/wake-policy.js';
+
+/** A teammate's turn: a stranger's ceiling and read access, both at once (DOR-2955). */
+/** A teammate's ceiling: the runtime default and read access, which carries their mark (DOR-3036). */
+const TEAMMATE_CEILING = [
+  'runtime-default',
+  {
+    ...READ_ONLY_LEVEL,
+    teammate: [
+      expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) }),
+    ],
+  },
+];
 
 const REF = 'remote_official' as CommunityRef;
 const OTHER = 'remote_other' as CommunityRef;
@@ -75,6 +88,7 @@ function officialGate(
 ): RemoteWakeGate {
   return {
     wakes: (_ref, _owner, memberId) => memberId === OWNER_MEMBER,
+    isOwnerPost: (_ref, _owner, memberId) => memberId === OWNER_MEMBER,
     answersIn: (ref, _owner, channel) =>
       ref === REF && answerIn.includes(answerInChannelName(channel)),
     takeAnswerInWake: (ref, owner, channel, author) =>
@@ -111,6 +125,8 @@ function space(gate: RemoteWakeGate, communityRef: CommunityRef = REF) {
     (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
     () => NOW
   );
+  // Every agent here runs where a teammate's turn can be held (DOR-2955).
+  bridge.useTeammateRuntimes(() => true);
   bridge.useWakeGate(gate);
   const room = (remoteRoomId: string, title: string, accessors = [agent.id]) => {
     const input = {
@@ -145,7 +161,7 @@ describe('a channel the owner answers in', () => {
     expect(harness.runner.turns).toHaveLength(1);
     const turn = harness.runner.turns[0]!;
     expect(turn.externalAuthor).toBe(true);
-    expect(turn.permissionCeiling).toBe('runtime-default');
+    expect(turn.permissionCeiling).toEqual(TEAMMATE_CEILING);
     expect(permissionSeedForOrigin({ kind: 'room', externalAuthor: turn.externalAuthor! })).toBe(
       'none'
     );

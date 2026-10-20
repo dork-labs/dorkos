@@ -111,6 +111,7 @@ export const CONFIG_DISCLOSURE = {
   'server.cwd': 'expose',
   'server.boundary': 'expose',
   'server.open': 'expose',
+  'server.lanAccess': 'expose',
 
   'tunnel.enabled': 'expose',
   // The public hostname this instance answers on; `GET /api/config` already
@@ -199,11 +200,9 @@ export const CONFIG_DISCLOSURE = {
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
-  // The power-door answer: a date and the word `'full'` or `'supervised'` name
-  // nothing and unlock nothing on being read. An agent that knows the operator chose supervised
-  // learns something genuinely useful — that it should expect to be asked.
-  'ui.fullPowerDecidedAt': 'expose',
-  'ui.fullPowerChoice': 'expose',
+  // When the person saw the "agents now work without asking" notice: a date
+  // that names nothing and unlocks nothing on being read.
+  'ui.trustNoticeSeenAt': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an
@@ -227,6 +226,11 @@ export const CONFIG_DISCLOSURE = {
 
   'browser.enabled': 'expose',
   'computers.enabled': 'expose',
+  // Whether chatting from the web is on (DOR-2946): a plain boolean. The hub's
+  // address and the relay secret live in the relay's own file, never in config.
+  'sessionRelay.enabled': 'expose',
+  // Whether the Docs experiment is on (DOR-2993): a plain boolean.
+  'docs.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a
@@ -370,6 +374,10 @@ export const CONFIG_DISCLOSURE = {
   // code this machine runs without asking.
   'extensions.trustedSources[].source': 'withhold',
   'extensions.trustedSources[].trustedAt': 'withhold',
+  // The rooms each mini app may read and reply in as the person (DOR-3017). A
+  // person's own decision no agent task reads: a mini app refused a room says
+  // so in a sentence, which is all an agent can act on.
+  'extensions.roomAccess': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -456,6 +464,10 @@ export const CONFIG_DISCLOSURE = {
   // nothing an agent needs. A launch it asks for that the rules refuse is
   // answered with a sentence naming the project, which is all it can act on.
   'runtimes.claudeCode.accounts[].onlyProjects': 'withhold',
+  // Whether a person kept an account out of automatic moves (Re-seat P0). A
+  // boolean preference that names no folder and no secret; an agent knowing
+  // its seat will not move there on its own is harmless.
+  'runtimes.claudeCode.accounts[].noAutoMove': 'expose',
   'runtimes.claudeCode.defaultAccountOnlyProjects': 'withhold',
   'runtimes.claudeCode.projectAccounts': 'withhold',
   // The execution defaults a new session on each runtime starts with. A model id
@@ -471,6 +483,9 @@ export const CONFIG_DISCLOSURE = {
   // work runs on this machine, names no credential and no person, and an agent
   // that can see it can say why a session behaves the way it does.
   'runtimes.claudeCode.persistentSession': 'expose',
+  // How many agents may run at once here (DOR-3012). A number about this
+  // machine, naming no credential and no person.
+  'runtimes.claudeCode.maxWarmProcesses': 'expose',
   'runtimes.opencode.defaultModel': 'expose',
   'runtimes.codex.defaultModel': 'expose',
   'runtimes.codex.defaultEffort': 'expose',
@@ -512,6 +527,13 @@ export const CONFIG_DISCLOSURE = {
   // Machine bookkeeping: which server version the permission upgrade sweep last
   // ran for.
   'permissions.upgradeSweptVersion': 'expose',
+  // Machine bookkeeping: when the Trusted defaults outside config.json were
+  // applied, once per install.
+  'permissions.trustedStoresAppliedAt': 'expose',
+  // Machine bookkeeping: the connection ids that step shared with every agent.
+  'permissions.sharedAtUpgrade': 'expose',
+  // Machine bookkeeping: when that step ran, once per install.
+  'permissions.sharedAppsAppliedAt': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

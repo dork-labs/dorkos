@@ -59,7 +59,16 @@ vi.mock('../../../lib/boundary.js', () => ({
 }));
 
 vi.mock('../../core/config-manager.js', () => ({
-  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+  // Careful, so an agent's schedule parks: the parked status is what this file
+  // pins. Trusted arming is covered in `create-task-trust.test.ts`.
+  configManager: {
+    get: (key: string) =>
+      key === 'auth'
+        ? { enabled: false }
+        : key === 'permissions'
+          ? { preset: 'careful' }
+          : undefined,
+  },
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({

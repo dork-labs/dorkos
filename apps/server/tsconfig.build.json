@@ -13,5 +13,11 @@
   // `declaration: true` (from the shared base) even though it never emits: turning
   // it off there would silence declaration-emit diagnostics like TS2742 for
   // production source in the check program while `build` still reported them.
-  "exclude": ["node_modules", "dist", "src/core-extensions/**", "src/**/__tests__/**"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/core-extensions/**",
+    "src/services/spaces/**",
+    "src/**/__tests__/**"
+  ]
 }

@@ -19,7 +19,7 @@
  * 4. **Paths** — `/a2a` and `/.well-known/agent*` are not offered over managed
  *    access (DOR-2085 decides when they are).
  * 5. **Mark** — the request is marked as managed (`ingress-mark.ts`), and
- *    `isLocalCaller` reads that mark, so it can never mistake a managed request
+ *    `isAtThisComputer` reads that mark, so it can never mistake a managed request
  *    for a person at this machine, even though its TCP peer is loopback.
  *
  * WebSocket upgrades take the same checks and are then handed to the main
@@ -42,7 +42,7 @@ import {
   type EdgeProofState,
 } from './edge-proof.js';
 import { isSessionGatedPath } from '../auth/gated-paths.js';
-import { markManagedIngress, noteGateAdmitted } from './ingress-mark.js';
+import { markIngress, noteGateAdmitted } from './ingress-mark.js';
 
 /** What the ingress hands admitted traffic to. */
 export interface ManagedIngressOptions {
@@ -254,7 +254,7 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       res.end(JSON.stringify({ error: refusal.message }));
       return;
     }
-    markManagedIngress(req);
+    markIngress(req, 'managed');
     // A page or asset never reaches the session gate, so it counts once the
     // edge checks above admitted it; the gate counts the API and MCP ones.
     if (!isSessionGatedPath(req.url ?? '/')) noteGateAdmitted(req, res);
@@ -274,7 +274,7 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       socket.destroy();
       return;
     }
-    markManagedIngress(req);
+    markIngress(req, 'managed');
     upgraded.add(socket);
     socket.once('close', () => upgraded.delete(socket));
     options.forwardUpgrade(req, socket, head);

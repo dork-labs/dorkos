@@ -88,8 +88,12 @@ default upgrade;
 </Tabs>
 
 <Callout type="warn">
-  **Running a proxy with login off?** Name your domain, or every API call comes back `403
-  Forbidden`. DorkOS answers only to addresses it trusts, and your proxy passes its own address
+  **Every visit through your proxy needs a sign-in.** A proxy adds forwarding headers, and DorkOS
+  counts a request that carries them as another device, never as this computer. So create your
+  owner account on the computer itself before you open the proxy (`dorkos auth enable`).
+
+  **Running a proxy with "Ask for a password on this computer too" off?** Name your domain too, or every API call comes back
+  `403 Forbidden`. DorkOS answers only to addresses it trusts, and your proxy passes its own address
   through. Add it:
 
 ```bash
@@ -103,6 +107,16 @@ rather than by your sign-in, so it always checks the address — with login on a
 works and the terminal will not open.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
+</Callout>
+
+<Callout type="warn">
+  **Make your proxy send forwarding headers.** A proxy on the same computer that sends none of
+  `X-Forwarded-For`, `Forwarded`, `X-Real-IP`, `Via` or `X-Forwarded-Host`, and points `Host` at
+  `localhost` or `127.0.0.1` (nginx's default), makes its traffic look like this computer. A browser
+  is still caught when it changes something, because it names its page, but a script or command-line
+  client is not. Keep `proxy_set_header X-Forwarded-For` (or your proxy's equivalent), or turn on
+  "Ask for a password on this computer too". See the [threat
+  model](/docs/self-hosting/threat-model).
 </Callout>
 
 <Callout type="info">

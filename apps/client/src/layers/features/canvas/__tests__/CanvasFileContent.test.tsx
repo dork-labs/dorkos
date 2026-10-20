@@ -35,6 +35,8 @@ const mockResolvedTheme = { value: 'light' as 'light' | 'dark' };
 /** Document id passed to the viewer under test. */
 const DOC_ID = 'doc-1';
 
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -48,10 +50,22 @@ vi.mock('@/layers/shared/model', () => {
 // The save hook is unit-tested separately; control it here to drive the
 // edit→save→409 flow deterministically (and off the real crypto/transport).
 const mockFileSave = {
+  recovery: {
+    identity: {},
+    supported: false,
+    current: () => false,
+    discover: async () => ({ status: 'idle' }),
+    recover: async () => ({ status: 'idle' }),
+    inspectCurrent: async () => ({ status: 'idle' }),
+  },
   status: 'idle' as 'idle' | 'saving' | 'saved' | 'error' | 'conflict',
   conflict: null as { currentHash: string; currentContent: string } | null,
   canSave: true,
   save: vi.fn(),
+  prepareFinalSave: (content: string) => ({
+    cancel: vi.fn(),
+    flush: () => mockFileSave.save(content),
+  }),
   overwrite: vi.fn(),
   adoptDisk: vi.fn(),
   getConfirmedBase: vi.fn(),

@@ -220,10 +220,14 @@ export class AccessControl {
    */
   addRule(rule: RelayAccessRule): void {
     this.assertWritable('add a rule');
+    // Already there exactly as asked: nothing to write. Mesh re-asserts every
+    // agent's default rules on every reconcile pass, and each needless write
+    // also fired this file's own watcher into a reload (DOR-2900).
+    const same = (r: RelayAccessRule) =>
+      r.from === rule.from && r.to === rule.to && r.priority === rule.priority;
+    if (this.rules.some((r) => same(r) && r.action === rule.action)) return;
     // Remove any exact duplicate (same from + to + priority)
-    this.rules = this.rules.filter(
-      (r) => !(r.from === rule.from && r.to === rule.to && r.priority === rule.priority)
-    );
+    this.rules = this.rules.filter((r) => !same(r));
     this.rules.push(rule);
     this.rules.sort(byPriorityDesc);
     this.persistRules();
