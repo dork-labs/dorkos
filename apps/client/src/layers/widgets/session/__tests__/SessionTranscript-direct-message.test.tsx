@@ -120,7 +120,7 @@ describe('SessionTranscript as a direct message', () => {
     expect(authorNames()).toEqual(['You', 'Claude Code']);
   });
 
-  it('names a time on every message, even one that carries none of its own', () => {
+  it('never invents a time for history: a row without one shows none', () => {
     const untimed = MESSAGES.map((message) => ({ ...message, timestamp: '' }));
     renderWithTransport(
       <SessionTranscript
@@ -131,9 +131,31 @@ describe('SessionTranscript as a direct message', () => {
       readState.transport
     );
 
-    const times = document.querySelectorAll('[data-slot="message-author"] time');
-    expect(times).toHaveLength(2);
-    for (const time of times) expect(time.getAttribute('datetime')).toMatch(/^\d{4}-/);
+    expect(document.querySelectorAll('[data-slot="message-author"] time')).toHaveLength(0);
+  });
+
+  it('names a live message by when it arrived, and drops that once history replaces it', () => {
+    const live: ChatMessage[] = [
+      { ...MESSAGES[0]!, id: '__optimistic_user__', timestamp: '', _streaming: true },
+      { ...MESSAGES[1]!, id: '__in_progress_turn__', timestamp: '', _streaming: true },
+    ];
+    const surface = { agent: SCOUT, humanName: 'Dorian', settled: true };
+    const view = renderWithTransport(
+      <SessionTranscript sessionId="scout-direct" messages={live} directMessage={surface} />,
+      readState.transport
+    );
+    const times = () =>
+      Array.from(document.querySelectorAll('[data-slot="message-author"] time'), (time) =>
+        time.getAttribute('datetime')
+      );
+    expect(times()).toHaveLength(2);
+    for (const at of times()) expect(at).toMatch(/^\d{4}-/);
+
+    // The turn ends and history reloads: the server's times, nothing else.
+    view.rerender(
+      <SessionTranscript sessionId="scout-direct" messages={MESSAGES} directMessage={surface} />
+    );
+    expect(times()).toEqual([AT, AT]);
   });
 
   it('keeps a message’s own time as its time', () => {

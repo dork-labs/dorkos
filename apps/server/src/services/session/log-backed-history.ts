@@ -32,7 +32,16 @@ import { getSessionEventStore, peekProjector } from './session-state-projector.j
 export function readLogBackedHistory(sessionId: string): HistoryMessage[] {
   const store = getSessionEventStore();
   if (store !== undefined) {
-    return reconstructHistoryFromEvents(store.readAll(sessionId));
+    // Each message is dated from what was recorded (DOR-3074): a user message
+    // by its turn's `at`, a reply by when its turn was saved, which is when it
+    // finished. Without the store (unit tests) nothing is dated, and the app
+    // shows no time rather than invent one.
+    const rows = store.readAllTimed(sessionId);
+    const savedAt = new Map(rows.map((row) => [row.event.seq, row.createdAt]));
+    return reconstructHistoryFromEvents(
+      rows.map((row) => row.event),
+      (event) => savedAt.get(event.seq)
+    );
   }
   const projector = peekProjector(sessionId);
   return projector ? reconstructHistoryFromEvents(projector.replayFrom(0)) : [];

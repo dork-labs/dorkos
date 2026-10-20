@@ -288,30 +288,34 @@ export function SessionTranscript({
   const runtime = useSessionRuntime(sessionId);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const dmAgent = directMessage?.agent ?? null;
-  // Every DM message names its time (DOR-3074). One with none of its own (a
-  // reply still arriving, or history a runtime keeps without times) shows when
-  // this transcript first drew it, kept so it never moves.
-  const stampsUntimed = directMessage?.settled === true;
-  const [firstSeen] = useState(() => new Map<string, string>());
+  // A DM names a message's time the way a room does (DOR-3074), and only a
+  // time that is true. History carries the server's own; a row with none shows
+  // none. The one exception is a message arriving LIVE in this window (the
+  // person's words on their way, a reply still being written): it has no
+  // server time yet, and the moment it arrived here is its time. Once the turn
+  // ends the transcript reloads, and the server's time replaces it.
+  const stampsLive = directMessage?.settled === true;
+  const [arrivedAt] = useState(() => new Map<string, string>());
   const untimedAt = useCallback(
     (message: ChatMessage): string | undefined => {
-      if (!stampsUntimed || message.timestamp) return undefined;
-      const known = firstSeen.get(message.id);
+      if (!stampsLive || message.timestamp || !message._streaming) return undefined;
+      const known = arrivedAt.get(message.id);
       if (known) return known;
       const now = new Date().toISOString();
-      firstSeen.set(message.id, now);
+      arrivedAt.set(message.id, now);
       return now;
     },
-    [stampsUntimed, firstSeen]
+    [stampsLive, arrivedAt]
   );
-  // A live turn's stand-in rows reuse one id from turn to turn, so a stand-in
-  // that has left the transcript forgets its time and the next turn's is new.
+  // A live row that has left the transcript (its turn ended and the history
+  // reloaded) forgets its arrival: live rows reuse ids from turn to turn, and
+  // the next turn's must be its own.
   useEffect(() => {
     const present = new Set(messages.map((message) => message.id));
-    for (const id of firstSeen.keys()) {
-      if (id.startsWith('__') && !present.has(id)) firstSeen.delete(id);
+    for (const id of arrivedAt.keys()) {
+      if (!present.has(id)) arrivedAt.delete(id);
     }
-  }, [messages, firstSeen]);
+  }, [messages, arrivedAt]);
   const humanName = directMessage?.humanName ?? null;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({

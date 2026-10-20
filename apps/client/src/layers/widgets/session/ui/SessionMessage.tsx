@@ -52,9 +52,9 @@ interface SessionMessageProps {
    */
   directRoomId?: string | null;
   /**
-   * When to say this message was written if it carries no time of its own: a
-   * DM names every message's time, the way a room does (DOR-3074), and a reply
-   * still arriving, or a history whose runtime keeps no times, has none.
+   * When this message arrived in this window, for a live message that has no
+   * server time yet (DOR-3074). Never set for history: a history row shows the
+   * time the server recorded, or none.
    */
   fallbackAt?: string;
   isNew?: boolean;
