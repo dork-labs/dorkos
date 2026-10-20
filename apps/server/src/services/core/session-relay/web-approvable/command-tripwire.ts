@@ -9,7 +9,10 @@
  * or `$DORK_HOME`, which always name one. A root matches only as a whole
  * folder: followed by a separator, a quote, a shell break or the end, so
  * `~/.dork` does not match `~/.dorkos-notes`. Shell startup files, `.ssh` and
- * `.gitconfig` also count by bare name.
+ * `.gitconfig` also count by bare name. A quote right before or after a
+ * folder variable is dropped first, so `"$HOME"/.zshrc` reads as
+ * `$HOME/.zshrc`. The git settings `core.hooksPath` and `core.fsmonitor`,
+ * which make git run a program, are refused by name.
  *
  * This is a tripwire, not a parser. A command that hides the name still gets
  * through: a variable of its own, base64, a glob or brace (`.g?t`,
@@ -31,6 +34,13 @@ const WORD_BREAK = /[\s'"`;|&<>()=,:]+/;
 
 /** What may follow a root for it to name that whole folder. */
 const AFTER_ROOT = /[\s'"`;|&<>()=,:/\\]/;
+
+/** A quote right before or after a folder variable, which a shell drops: `"$HOME"/.zshrc`. */
+const QUOTED_ANCHOR =
+  /["']?(~|\$home|\$\{home\}|%userprofile%|\$xdg_config_home|\$\{xdg_config_home\})["']?/gi;
+
+/** Git settings that make git run a program, refused by name in any case. */
+const GIT_RUN_KEYS = new Set(['core.hookspath', 'core.fsmonitor']);
 
 /** Variables whose value is always a protected root, in `$X`, `${X}` or `%X%` form. */
 const ROOT_VARIABLES = /(?:\$\{?|%)(?:claude_config_dir|codex_home|dork_home)(?![a-z0-9_])/i;
@@ -105,12 +115,16 @@ function holdsWhole(text: string, spelling: string): boolean {
  * @returns True when the command should be decided at this computer.
  */
 export function commandNamesProtected(command: string, context: CommandTripwireContext): boolean {
-  const text = context.fold(command);
+  const text = context.fold(command).replace(QUOTED_ANCHOR, '$1');
   if (ROOT_VARIABLES.test(text)) return true;
   const roots = context.protectedRoots.flatMap((root) => rootSpellings(root, context));
   if (roots.some((spelling) => holdsWhole(text, spelling))) return true;
   return text
     .split(WORD_BREAK)
     .map((word) => word.split(/[\\/]+/))
-    .some((parts) => wordNamesProtected(parts) || parts.some((part) => HOME_NAMES.has(part)));
+    .some(
+      (parts) =>
+        wordNamesProtected(parts) ||
+        parts.some((part) => HOME_NAMES.has(part) || GIT_RUN_KEYS.has(part.toLowerCase()))
+    );
 }

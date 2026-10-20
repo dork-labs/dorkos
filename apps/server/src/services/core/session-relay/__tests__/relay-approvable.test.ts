@@ -248,6 +248,13 @@ describe('relayApprovableCard', () => {
       '.cursor/rules/x.mdc',
       '.zed/tasks.json',
       'project.code-workspace',
+      'lefthook.yaml',
+      'lefthook.toml',
+      'lint-staged.config.mjs',
+      'simple-git-hooks.cjs',
+      'mise.local.toml',
+      '.mise/tasks/build',
+      '.config/mise.toml',
     ])('refuses %s for Write and for a Codex patch', (target) => {
       expect(approvable(file('Write', target))).toBe(false);
       expect(approvable(patch(target))).toBe(false);
@@ -330,6 +337,13 @@ describe('relayApprovableCard', () => {
       'echo x >> $HOME/.bash_profile',
       'cat $XDG_CONFIG_HOME/git/config',
       'git config --file ~/.gitconfig core.pager x',
+      'cp evil.plist "$HOME"/Library/LaunchAgents/',
+      'echo x >> "${HOME}"/.config/git/config',
+      "cp x '$XDG_CONFIG_HOME'/git/config",
+      'cp x "$XDG_CONFIG_HOME"/git/config',
+      'git config --global core.hooksPath /tmp/h',
+      'git config core.fsmonitor "curl x|sh"',
+      'git -c CORE.HOOKSPATH=/tmp/h commit',
     ])('refuses the command %s', (command) => {
       const card = { toolName: 'Bash', input: JSON.stringify({ command }) };
       expect(relayApprovableCard(card, homeContext())).toBe(false);

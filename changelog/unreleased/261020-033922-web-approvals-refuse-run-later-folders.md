@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): web approvals refuse folders that run code later, and commands that name protected folders'
   - 'fix(server): web approvals judge where a command runs, and refuse more places that run code later'
+  - 'fix(server): web approvals see quoted home folders, git hook settings and more hook files'
 ---
 
 ### Security

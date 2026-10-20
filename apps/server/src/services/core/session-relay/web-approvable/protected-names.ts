@@ -20,16 +20,22 @@
  * | ----------------------------------------------------- | ------------------------------------- |
  * | any `.git` part, and any git folder by its contents   | hooks run on commit; config runs code |
  * | `.husky`, `.githooks`, `.lefthook`                    | git hooks, committed to the project   |
- * | `lefthook.yml`, `.lefthook.yml`, `lefthook-local.yml` | git hooks                             |
- * | `.pre-commit-config.yaml`, `.simple-git-hooks*`       | git hooks                             |
- * | `.lintstagedrc*`                                      | runs on commit                        |
+ * | `lefthook.{yml,yaml,toml,json}`, `.lefthook.{yml,yaml}` | git hooks                           |
+ * | `lefthook-local.{yml,yaml}`                           | git hooks                             |
+ * | `.pre-commit-config.yaml`                             | git hooks                             |
+ * | `.simple-git-hooks*`, `simple-git-hooks.*`            | git hooks                             |
+ * | `.lintstagedrc*`, `lint-staged.config.*`              | runs on commit                        |
  * | `.vscode`, `.cursor`, `.zed`, `*.code-workspace`      | editor tasks run when a folder opens  |
  * | `.idea`                                               | run configurations                    |
  * | `.devcontainer`                                       | runs when the container is built      |
  * | `.github/workflows`, `.github/actions`                | runs in CI on the next push           |
  * | `.gitlab-ci.yml`, `.circleci`, `.buildkite`           | runs in CI on the next push           |
  * | `.envrc`, `.envrc.local`                              | direnv runs it on entering the folder |
- * | `mise.toml`, `.mise.toml`                             | mise runs its hooks and tasks         |
+ * | `mise.toml`, `.mise.toml`, `mise.local.toml`, `.mise` | mise runs its hooks and tasks         |
+ *
+ * Known gap: a repo may point `core.hooksPath` at any folder, and writes
+ * there are not refused, since this never reads git config. The command
+ * tripwire refuses setting `core.hooksPath` or `core.fsmonitor` instead.
  *
  * A git folder not named `.git` (a bare clone such as `.bare`) is known by
  * its contents: a `HEAD` file beside an `objects` folder. Nothing inside one
@@ -63,6 +69,7 @@ const PROTECTED_FOLDERS = new Set([
   '.devcontainer',
   '.circleci',
   '.buildkite',
+  '.mise',
 ]);
 
 /** Files that may not be written wherever they sit. */
@@ -75,16 +82,28 @@ const PROTECTED_FILES = new Set([
   '.envrc',
   '.envrc.local',
   'lefthook.yml',
+  'lefthook.yaml',
+  'lefthook.toml',
+  'lefthook.json',
   '.lefthook.yml',
+  '.lefthook.yaml',
   'lefthook-local.yml',
+  'lefthook-local.yaml',
   '.pre-commit-config.yaml',
   '.gitlab-ci.yml',
   'mise.toml',
   '.mise.toml',
+  'mise.local.toml',
+  '.mise.local.toml',
 ]);
 
 /** File name prefixes and suffixes that run later, whatever follows or leads. */
-const PROTECTED_PREFIXES = ['.simple-git-hooks', '.lintstagedrc'];
+const PROTECTED_PREFIXES = [
+  '.simple-git-hooks',
+  'simple-git-hooks.',
+  '.lintstagedrc',
+  'lint-staged.config.',
+];
 const PROTECTED_SUFFIXES = ['.code-workspace'];
 
 /** `.github/<folder>` folders that run in CI. */
