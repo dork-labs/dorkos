@@ -34,7 +34,7 @@ import type { PendingApprovalCard } from './approval-challenges.js';
 import { bumpSignCount, readApprovalKeys } from './approval-key-store.js';
 import { readRelayPin } from './pin-store.js';
 import { relayApprovableCard } from './relay-approvable.js';
-import { relayProtectedRoots } from './relay-protected-roots.js';
+import { relayHomeDir, relayProtectedRoots } from './relay-protected-roots.js';
 import type { RelayRequestServerDeps } from './relay-request-server.js';
 import type { RelayAgent, RelaySessionFacts } from './relay-serves.js';
 
@@ -196,7 +196,11 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
       };
     },
     approvableCard: (card, cwd) =>
-      relayApprovableCard(card, { cwd, protectedRoots: relayProtectedRoots() }),
+      relayApprovableCard(card, {
+        cwd,
+        protectedRoots: relayProtectedRoots(),
+        homeDir: relayHomeDir(),
+      }),
     approveTool: async (sessionId, toolCallId, approved, options) =>
       (await runtimeRegistry.resolveForSession(sessionId)).approveTool(
         sessionId,

@@ -376,7 +376,7 @@ describe('approvals from the web with a passkey', () => {
 
     it('for another tool call', async () => {
       const h = harness();
-      h.cards.set('t2', { toolName: 'Bash', input: '{}' });
+      h.cards.set('t2', { toolName: 'Bash', input: JSON.stringify({ command: 'ls' }) });
       const body = h.bodyOf(await h.challenge('approve', 't1'));
       const answer = await h.respond('approve', h.sign(body), 't2');
       expect(h.audits.at(-1)).toMatchObject({ error: 'mismatch' });
@@ -559,7 +559,8 @@ describe('approvals from the web with a passkey', () => {
       ['nested deeper than the hash can walk', `${'['.repeat(20_000)}${']'.repeat(20_000)}`],
     ])('an input %s, with the fixed sentence', async (_, input) => {
       const h = harness();
-      h.cards.set('t1', { toolName: 'Bash', input });
+      // WebFetch takes any input shape, so the size check is what refuses.
+      h.cards.set('t1', { toolName: 'WebFetch', input });
       const frame = await h.challenge();
       expect(errorOf(frame)).toEqual({
         status: 403,
@@ -570,7 +571,8 @@ describe('approvals from the web with a passkey', () => {
 
     it('a ninth live challenge on one connection', async () => {
       const h = harness();
-      for (let n = 1; n <= 9; n += 1) h.cards.set(`t${n}`, { toolName: 'Bash', input: '{}' });
+      for (let n = 1; n <= 9; n += 1)
+        h.cards.set(`t${n}`, { toolName: 'Bash', input: JSON.stringify({ command: 'ls' }) });
       for (let n = 1; n <= 8; n += 1) h.bodyOf(await h.challenge('approve', `t${n}`));
       // Asking again for one already live replaces it, and is not a ninth.
       h.bodyOf(await h.challenge('approve', 't1'));
