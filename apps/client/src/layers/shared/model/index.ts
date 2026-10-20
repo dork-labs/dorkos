@@ -58,6 +58,7 @@ export {
 export {
   SPACES_EXPERIMENT,
   DOCS_EXPERIMENT,
+  DM_VIEW_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
   officialSpaceLink,

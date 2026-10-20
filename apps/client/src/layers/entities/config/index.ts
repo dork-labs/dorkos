@@ -43,6 +43,12 @@ export {
 } from './model/use-panel-tab-placements';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
 export {
+  useDmViewEnabled,
+  useShowSessions,
+  useUpdateShowSessions,
+  type UpdateShowSessions,
+} from './model/use-dm-view';
+export {
   useNotificationPrefs,
   resetLegacySoundImportForTests,
   type NotificationPrefsPatch,

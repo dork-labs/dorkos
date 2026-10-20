@@ -953,6 +953,27 @@
       "terms": ["community"],
       "contains": "Join the DorkOS community",
       "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
+    },
+    {
+      "path": "apps/client/src/layers/features/settings/ui/tabs/ShowSessionsRow.tsx",
+      "terms": ["session", "sessions"],
+      "reason": "DOR-3074. With the DM view on, a chat with one agent is the DM, and \"session\" names something else: the working layer behind that chat (its model, account, permissions and context). The Show sessions setting, the header's session chip and the session view's own header name that layer on purpose, for the people who turn it on. The chat itself is still never called a session."
+    },
+    {
+      "path": "apps/client/src/layers/widgets/one-bar/ui/DirectMessageHeader.tsx",
+      "terms": ["session"],
+      "reason": "DOR-3074. With the DM view on, a chat with one agent is the DM, and \"session\" names something else: the working layer behind that chat (its model, account, permissions and context). The Show sessions setting, the header's session chip and the session view's own header name that layer on purpose, for the people who turn it on. The chat itself is still never called a session."
+    },
+    {
+      "path": "apps/client/src/layers/widgets/one-bar/ui/SessionRouteHeader.tsx",
+      "terms": ["session"],
+      "reason": "DOR-3074. With the DM view on, a chat with one agent is the DM, and \"session\" names something else: the working layer behind that chat (its model, account, permissions and context). The Show sessions setting, the header's session chip and the session view's own header name that layer on purpose, for the people who turn it on. The chat itself is still never called a session."
+    },
+    {
+      "path": "apps/client/src/layers/features/direct-message/model/use-agent-card.ts",
+      "terms": ["session"],
+      "contains": "Session in",
+      "reason": "DOR-3074. With the DM view on, a chat with one agent is the DM, and \"session\" names something else: the working layer behind that chat (its model, account, permissions and context). The Show sessions setting, the header's session chip and the session view's own header name that layer on purpose, for the people who turn it on. The chat itself is still never called a session."
     }
   ]
 }
