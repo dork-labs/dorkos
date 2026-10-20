@@ -1,7 +1,9 @@
 /**
- * Startup step: wire the chat-mode port and run the one-time raise of existing
- * chats to their agent's level (DOR-3107, `existing-chats-raise.ts`). Runs after
- * the person-set floor is seeded, since that is the level a chat is raised to.
+ * Startup step: wire the chat-mode port and run the one-time raises of existing
+ * chats to their agent's level (`existing-chats-raise.ts`): every chat of our own
+ * (DOR-3107), then the chats agents started for themselves (DOR-3147), each
+ * under its own note and done file. Runs after the person-set floor is seeded,
+ * since that is the level a chat is raised to.
  *
  * @module startup/steps/raise-existing-chats
  */
@@ -20,6 +22,8 @@ import {
   EXISTING_CHATS_NOTE,
   raiseExistingChats,
   setChatModePort,
+  SPIN_OFF_CHATS_NOTE,
+  SPIN_OFF_ORIGINS,
   type ChatModePort,
 } from '../../services/core/permissions/existing-chats-raise.js';
 import { chatLaunchMarks } from '../../services/core/permissions/chat-launch-marks.js';
@@ -51,12 +55,16 @@ function agentsOf(mesh: ServerRefs['meshCore']): PermissionAgentRef[] {
 const PRIOR_RAISE_DEPTH = 2_000;
 
 /**
- * Whether the permission history already holds the raise of existing chats:
- * the second half of the done flag, for an install whose done file was lost.
+ * Whether the permission history already holds a raise of existing chats: the
+ * second half of the done flag, for an install whose done file was lost.
  *
  * @param activity - The Activity reader.
+ * @param raiseNote - The note that raise's history event carries.
  */
-async function historyHoldsRaise(activity: Pick<ActivityService, 'list'>): Promise<boolean> {
+async function historyHoldsRaise(
+  activity: Pick<ActivityService, 'list'>,
+  raiseNote: string
+): Promise<boolean> {
   let cursor: string | undefined;
   for (let seen = 0; seen < PRIOR_RAISE_DEPTH;) {
     const page = await activity.list({
@@ -66,7 +74,7 @@ async function historyHoldsRaise(activity: Pick<ActivityService, 'list'>): Promi
     });
     for (const row of page.items) {
       const note = (row.metadata as { note?: unknown } | null)?.note;
-      if (row.eventType === PERMISSION_CHANGED_EVENT && note === EXISTING_CHATS_NOTE) return true;
+      if (row.eventType === PERMISSION_CHANGED_EVENT && note === raiseNote) return true;
       cursor = row.occurredAt;
     }
     seen += page.items.length;
@@ -121,8 +129,14 @@ export function sessionSettingsChatModePort(db: Db): ChatModePort {
   };
 }
 
+/** The one-time raises, in order: each runs once per install, by its own done file and note. */
+const RAISES: ReadonlyArray<{ doneFile: string; note: string; origins?: ReadonlySet<string> }> = [
+  { doneFile: 'existing-chats-raised.json', note: EXISTING_CHATS_NOTE },
+  { doneFile: 'spin-off-chats-raised.json', note: SPIN_OFF_CHATS_NOTE, origins: SPIN_OFF_ORIGINS },
+];
+
 /**
- * Wire the port and run the raise. Never throws: a failure is logged and the
+ * Wire the port and run the raises. Never throws: a failure is logged and the
  * server starts as it would have.
  *
  * @param refs - The server's live references, for Mesh.
@@ -135,9 +149,22 @@ export async function raiseExistingChatsOnBoot(
   const port = sessionSettingsChatModePort(input.db);
   setChatModePort(port);
   const launchMarked = chatLaunchMarks(input.db, true);
+  for (const raise of RAISES) await runRaise(refs, input, port, launchMarked, raise);
+}
+
+/** Run one raise. Never throws. */
+async function runRaise(
+  refs: ServerRefs,
+  input: RaiseExistingChatsInput,
+  port: ChatModePort,
+  launchMarked: ReturnType<typeof chatLaunchMarks>,
+  raise: (typeof RAISES)[number]
+): Promise<void> {
   try {
     await raiseExistingChats({
-      doneFile: path.join(input.dorkHome, 'permissions', 'existing-chats-raised.json'),
+      doneFile: path.join(input.dorkHome, 'permissions', raise.doneFile),
+      note: raise.note,
+      ...(raise.origins ? { origins: raise.origins } : {}),
       chats: () =>
         input.db
           .select({
@@ -166,11 +193,12 @@ export async function raiseExistingChatsOnBoot(
           : undefined,
       port,
       activity: input.activity,
-      priorRaise: () => historyHoldsRaise(input.activity),
+      priorRaise: () => historyHoldsRaise(input.activity, raise.note),
       logger,
     });
   } catch (err) {
-    logger.warn('[Permissions] the raise of existing chats did not run', {
+    logger.warn('[Permissions] a raise of existing chats did not run', {
+      note: raise.note,
       err: err instanceof Error ? err.message : String(err),
     });
   }

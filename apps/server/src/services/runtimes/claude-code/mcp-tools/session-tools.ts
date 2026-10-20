@@ -69,7 +69,6 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -92,6 +91,7 @@ import {
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
+import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -271,6 +271,8 @@ function findAccount(runtime: string, id: string): RuntimeAccount | null {
 interface CallerAgent {
   agentPath: string;
   label: string;
+  name: string;
+  displayName?: string;
 }
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
@@ -292,6 +294,8 @@ function callerOf(
   return {
     agentPath,
     label: agent.displayName ?? agent.name,
+    name: agent.name,
+    ...(agent.displayName ? { displayName: agent.displayName } : {}),
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -301,17 +305,6 @@ function callerOf(
         }
       : null,
   };
-}
-
-/**
- * The ceiling a started session's first turn carries when its starter's turn
- * read an outsider's words, as the spread a launch takes; empty otherwise.
- *
- * @param caller - Who is starting it: the calling chat, or only the agent.
- */
-function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
-  const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
-  return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 
 /**
@@ -502,7 +495,8 @@ export function createSessionStartHandler(
       caller.chat,
       runtimeType,
       await chatlessCallerStop(caller.chat, runtime, agentPath),
-      'permissionCeiling' in markedCeiling
+      'permissionCeiling' in markedCeiling,
+      await startLevelFacts(caller, runtime, args)
     );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
@@ -703,7 +697,9 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
-        'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
+        'higher one is refused, and never above what a person set for you. From your own chat ' +
+        'at Full autonomy, with nothing outside in view, it starts at Full; otherwise Full ' +
+        'autonomy is granted only when named in permissionMode. ' +
         'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
         'that link, never the id.',

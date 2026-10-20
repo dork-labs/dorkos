@@ -81,6 +81,7 @@ import {
 } from '@dorkos/shared/permissions';
 
 import { marksOf } from '../turn-power/turn-levels.js';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
 import { logger } from '../../../lib/logger.js';
@@ -107,6 +108,13 @@ export interface PermissionGateSources {
    * build; empty until boot wires the registry.
    */
   listActions: () => readonly PermissionListedAction[];
+  /**
+   * What a person set for one agent's Files & commands, by its folder: the
+   * stop, `null` for nothing set, or `'unknown'` while the person-set record
+   * cannot be trusted or the folder is no registered agent (DOR-3147). Absent
+   * until boot wires it, which reads as `'unknown'`.
+   */
+  personSetFilesAndCommands?: (agentPath: string) => PermissionStop | null | 'unknown';
 }
 
 /** One agent-reachable action, as the tool-list builders read it. */
