@@ -19,20 +19,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import { clampModeToCeiling, levelOfMode } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   lastTurnLevelOf,
   noteEntryHeldToDefault,
   noteEntryLevel,
   markedBoundOf,
+  passedOnLevelOf,
   postLevelFor,
   recordTurnLevels,
 } from '../turn-levels.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
-import { senderCeiling } from '../../../session/chat-messages/chat-message-service.js';
+import {
+  parseCeiling,
+  senderCeilingJson,
+} from '../../../session/chat-messages/chat-message-ceiling.js';
 import { WIFI_TURN_CEILING } from '../../auth/sessions/wifi-turn-ceiling.js';
 
 const created = vi.hoisted(() => [] as Array<{ callerIsOurAgent?: boolean }>);
@@ -126,7 +130,15 @@ describe('a turn started from Wi-Fi', () => {
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
     await run(runtime, ana, WIFI);
     // `chat_send` stores this as the queue row's ceiling; the dispatcher launches under it.
-    const stored = JSON.parse(JSON.stringify(senderCeiling(lastTurnLevelOf(ana))));
+    // Even with the sender's own agent set to Full autonomy (DOR-3107's own-circle
+    // rule), the hold's mark rides on: Wi-Fi only lowers.
+    const full = levelOfMode(MODES, 'bypassPermissions')!;
+    const stored = parseCeiling(
+      await senderCeilingJson(
+        { turnLevelOf: passedOnLevelOf, ownLevelOf: async () => full },
+        { sessionId: ana, agentPath: '/agents/ana' }
+      )
+    );
     await run(runtime, bo, { permissionCeiling: stored });
     expect(runsAt(sent.get(bo))).toBe('default');
   });
