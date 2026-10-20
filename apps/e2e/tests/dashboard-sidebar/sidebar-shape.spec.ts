@@ -100,8 +100,11 @@ test.describe('Dashboard Sidebar — the list @smoke', { tag: SOLE_SIDEBAR_TAG }
       dms.locator(`[data-slot="room-title"]`).filter({ hasText: agent.name })
     ).toHaveCount(0);
 
-    // Pressing it opens the Direct chat.
-    await row.getByRole('button', { name: new RegExp(`Switch to ${agent.name}`) }).click();
+    // Pressing it opens the Direct chat. The row IS the button (`data-slot`
+    // sits on the `<button>` itself), so it is pressed directly — a role query
+    // scoped inside it looks only at its descendants and finds nothing.
+    await expect(row).toHaveAccessibleName(new RegExp(`Switch to ${agent.name}`));
+    await row.click();
     await expect(page).toHaveURL(/\/session\?.*session=/, { timeout: SERVER_ROUND_TRIP_MS });
   });
 

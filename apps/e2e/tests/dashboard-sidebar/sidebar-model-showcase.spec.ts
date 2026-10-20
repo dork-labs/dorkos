@@ -239,11 +239,16 @@ test.describe('Sidebar model showcase @smoke', () => {
         `${fixture} draws the wrong sections`
       ).toEqual(EXPECTED_SECTIONS[fixture]);
 
-      // Places only: no reason the model stamps names a session or a thread.
+      // Places only: no row is a session or a thread. The one reason allowed to
+      // say "thread" is the Threads door at the top (`top:threads`) — a page
+      // that holds them, not a thread itself — and every fixture draws it.
       const reasons = await panel
         .locator('[data-slot="sidebar-model-reason"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-reason') ?? ''));
-      expect(reasons.filter((reason) => /session|thread/.test(reason))).toEqual([]);
+      expect(reasons).toContain('top:threads');
+      expect(
+        reasons.filter((reason) => reason !== 'top:threads' && /session|thread/.test(reason))
+      ).toEqual([]);
     }
   });
 

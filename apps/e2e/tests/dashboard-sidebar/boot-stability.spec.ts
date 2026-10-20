@@ -102,6 +102,16 @@ interface BootFilm {
    * to be an arrival. See the note in this file's header.
    */
   peakArrivedAtFirstPaint: number;
+  /**
+   * Whether any frame showed the bones with the landmark saying `aria-busy`.
+   *
+   * Sampled per frame rather than asserted once, because the busy flag lasts
+   * only as long as the cold phase, and the bones outlive it by their own
+   * 160 ms exit. The gate now waits on fewer sources (the list no longer draws
+   * attention rows), so on a quick machine the phase can end before a single
+   * `expect` round trip — a live assertion then read the exit, not the boot.
+   */
+  busyWhileBones: boolean;
 }
 
 /**
@@ -126,12 +136,14 @@ async function filmBoot(page: Page): Promise<void> {
       skeletonDisappeared: number;
       peakArrived: number;
       peakArrivedAtFirstPaint: number;
+      busyWhileBones: boolean;
     } = {
       pictures: [],
       skeletonAppeared: 0,
       skeletonDisappeared: 0,
       peakArrived: 0,
       peakArrivedAtFirstPaint: 0,
+      busyWhileBones: false,
     };
     (window as unknown as { __bootFilm: typeof film }).__bootFilm = film;
 
@@ -144,6 +156,12 @@ async function filmBoot(page: Page): Promise<void> {
         bones = hasBones;
         if (hasBones) film.skeletonAppeared++;
         else film.skeletonDisappeared++;
+      }
+      if (
+        hasBones &&
+        document.querySelector('nav[aria-label="Sidebar"]')?.getAttribute('aria-busy') === 'true'
+      ) {
+        film.busyWhileBones = true;
       }
 
       const found = document.querySelectorAll('nav[aria-label="Sidebar"] [data-sidebar-row]');
@@ -226,15 +244,18 @@ test.describe('the sidebar’s first paint @smoke', { tag: SOLE_SIDEBAR_TAG }, (
     await page.goto('/');
 
     await expect(skeleton(page)).toBeVisible();
-    await expect(nav(page)).toHaveAttribute('aria-busy', 'true');
 
     await expect(skeleton(page)).toHaveCount(0);
+    // Settled: the landmark no longer says it is busy.
+    await expect(nav(page)).not.toHaveAttribute('aria-busy', 'true');
     await expect(rows(page).first()).toBeVisible();
     await page.waitForTimeout(SETTLE_MS);
 
     // One change of state, not two. `AnimatePresence mode="wait"` is what makes
     // it one; a panel that flickered back to bones on a refetch would count two.
     const cold = await bootFilm(page);
+    // The bones were announced as a busy landmark while they were up (D6).
+    expect(cold.busyWhileBones).toBe(true);
     expect(cold.skeletonAppeared).toBe(1);
     expect(cold.skeletonDisappeared).toBe(1);
 

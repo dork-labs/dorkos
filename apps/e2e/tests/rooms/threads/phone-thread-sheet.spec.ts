@@ -18,19 +18,26 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
 test.describe('Rooms — the thread sheet on a phone', () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
-  /** A room tall enough to scroll, with one thread in it. */
+  /**
+   * A room tall enough to scroll, with one thread in it.
+   *
+   * **The thread hangs off the NEWEST message.** A room opens at its newest
+   * message and its timeline is virtualized, so a reply row thirty messages up
+   * is never mounted and nothing can find it. History goes in first, so the
+   * room still scrolls, and the thread's reply row is on screen at the bottom.
+   */
   async function seedRoom(roomsApi: RoomsApi) {
     const slug = `e2e-thread-sheet-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, [`What should we call the release? ${roomsApi.runId}`]);
-    const [rootEntryId] = await roomsApi.entryIds(room.id);
-    await roomsApi.postThreadReply(room.id, rootEntryId!, 'Something short.');
-    await roomsApi.postThreadReply(room.id, rootEntryId!, 'Something with a number in it.');
-    // Enough after the root that the room has somewhere to scroll to.
     await roomsApi.postEntries(
       room.id,
-      Array.from({ length: 30 }, (_, i) => `later line ${i} ${'and some more words '.repeat(3)}`)
+      Array.from({ length: 30 }, (_, i) => `earlier line ${i} ${'and some more words '.repeat(3)}`)
     );
+    await roomsApi.postEntries(room.id, [`What should we call the release? ${roomsApi.runId}`]);
+    const ids = await roomsApi.entryIds(room.id);
+    const rootEntryId = ids[ids.length - 1]!;
+    await roomsApi.postThreadReply(room.id, rootEntryId, 'Something short.');
+    await roomsApi.postThreadReply(room.id, rootEntryId, 'Something with a number in it.');
     return { slug, room };
   }
 
