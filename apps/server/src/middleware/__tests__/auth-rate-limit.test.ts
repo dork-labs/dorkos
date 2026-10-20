@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import { Hono, type MiddlewareHandler } from 'hono';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { honoListener } from '@dorkos/test-utils/listening-server';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
@@ -347,5 +347,56 @@ describe('buildAccountSignInLimiter (DOR-3172)', () => {
       expect((await signIn('owner@dork.test', 'wrong', 'localhost')).status).toBe(401);
     }
     expect((await signIn('owner@dork.test', 'right', 'localhost')).status).toBe(200);
+  });
+
+  it('answers byte for byte as the per-address limit does, so it names no account', async () => {
+    currentLimiter = buildAuthRateLimiter({ maxAttempts: 1 });
+    await request(server).post('/api/auth/sign-in/email').send({ email: 'x@dork.test' });
+    const byAddress = await request(server)
+      .post('/api/auth/sign-in/email')
+      .send({ email: 'x@dork.test' });
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    await signIn('owner@dork.test', 'wrong');
+    const byAccount = await signIn('owner@dork.test', 'wrong');
+    expect(byAddress.status).toBe(429);
+    expect(byAccount.status).toBe(429);
+    expect(byAccount.text).toBe(byAddress.text);
+    expect(byAccount.headers['content-type']).toBe(byAddress.headers['content-type']);
+    // An account that does not exist is counted the same way.
+    await signIn('nobody@dork.test', 'wrong');
+    expect((await signIn('nobody@dork.test', 'wrong')).text).toBe(byAddress.text);
+  });
+
+  it('reads no more than 8 KB of a body that names no length', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    /** POST a chunked body (no content-length), in two writes. */
+    const chunked = (body: object): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const { port } = server.address() as { port: number };
+        const req = httpRequest(
+          {
+            host: '127.0.0.1',
+            port,
+            method: 'POST',
+            path: '/api/auth/sign-in/email',
+            headers: { host: 'box.ngrok.app', 'content-type': 'application/json' },
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode ?? 0));
+          }
+        );
+        req.on('error', reject);
+        const text = JSON.stringify(body);
+        req.write(text.slice(0, 10));
+        req.end(text.slice(10));
+      });
+    // An account behind 9 KB of padding is never read, so never counted.
+    const padded = { pad: 'x'.repeat(9 * 1024), email: 'owner@dork.test', password: 'wrong' };
+    for (let i = 0; i < 3; i++) expect(await chunked(padded)).toBe(401);
+    // A small chunked body is still read and counted.
+    const small = { email: 'small@dork.test', password: 'wrong' };
+    expect(await chunked(small)).toBe(401);
+    expect(await chunked(small)).toBe(429);
   });
 });

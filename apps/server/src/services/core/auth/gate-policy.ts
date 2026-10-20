@@ -197,7 +197,8 @@ export function isAtThisComputer(
  * - **The own tunnel and managed remote access**: their marked listeners,
  *   `https` at the tunnel's edge, then forwarded over loopback.
  * - **A TLS socket**: the request reached DorkOS's own `https` listener
- *   (`http/tls-listener.ts`).
+ *   (`http/tls-listener.ts`). Test runtime only until DOR-3173: in production
+ *   this list is the tunnel and managed remote access alone.
  * - **Never Wi-Fi**: that listener is plain `http`, and its cookie drops
  *   `Secure` to work there (`lan-access/lan-cookies.ts`).
  * - **Never a plain `http` socket**, a proxy's say-so, the relay or a hub
@@ -215,5 +216,7 @@ export function isOnEncryptedConnection(
   if (requestClass.kind !== 'other-device') return false;
   if (requestClass.route === 'own-tunnel' || requestClass.route === 'managed') return true;
   if (requestClass.route !== 'network') return false;
-  return facts.connectionEncrypted === true;
+  // DorkOS's own https listener opens only on a test home for now (DOR-3173
+  // settles its certificate), so a TLS socket counts only under the test runtime.
+  return env.DORKOS_TEST_RUNTIME === true && facts.connectionEncrypted === true;
 }

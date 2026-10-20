@@ -5,26 +5,40 @@
  * self-signed certificate, through the same front-door server the app uses.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// The TLS-socket rule counts only under the test runtime; this file is one.
+vi.mock('../../env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../env.js')>();
+  return { env: { ...actual.env, DORKOS_TEST_RUNTIME: true } };
+});
+
 import type { ApiEnv } from '../api-chain.js';
 import { createFrontDoorServer } from '../front-door.js';
 import { honoRequestFacts } from '../request-facts.js';
-import { readTlsListenerSettings, startTlsListener } from '../tls-listener.js';
+import { readTlsListenerSettings, startTlsListener, TEST_HOME_SENTINEL } from '../tls-listener.js';
 import { isOnEncryptedConnection } from '../../services/core/auth/gate-policy.js';
 
 const quiet = { info: vi.fn(), warn: vi.fn() };
+const ALL = { DORKOS_TLS_PORT: 4443, DORKOS_TLS_CERT: 'c', DORKOS_TLS_KEY: 'k' };
+
+/** A throwaway data folder, marked as a test home or not. */
+function home(sentinel: boolean): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dorkos-tls-home-'));
+  if (sentinel) writeFileSync(path.join(dir, TEST_HOME_SENTINEL), '');
+  return dir;
+}
 
 describe('readTlsListenerSettings', () => {
   it('is off when nothing is set: a normal boot opens no https listener', () => {
     expect(readTlsListenerSettings({})).toBeNull();
     const create = vi.fn();
-    expect(startTlsListener({}, create, vi.fn(), quiet)).toBeNull();
+    expect(startTlsListener({}, home(true), create, vi.fn(), quiet)).toBeNull();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -32,14 +46,32 @@ describe('readTlsListenerSettings', () => {
     expect(() => readTlsListenerSettings({ DORKOS_TLS_PORT: 4443 })).toThrow(/together/);
     expect(() => readTlsListenerSettings({ DORKOS_TLS_CERT: 'c', DORKOS_TLS_KEY: 'k' })).toThrow();
     const create = vi.fn();
-    expect(startTlsListener({ DORKOS_TLS_PORT: 4443 }, create, vi.fn(), quiet)).toBeNull();
+    const testRun = { DORKOS_TEST_RUNTIME: true, DORKOS_TLS_PORT: 4443 };
+    expect(startTlsListener(testRun, home(true), create, vi.fn(), quiet)).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  // Security, 0.124.2: a self-signed listener must never hand out desk power
+  // in production (DOR-3173 settles its certificate).
+  it('opens nothing in a normal boot even with all three settings set', () => {
+    const create = vi.fn();
+    expect(startTlsListener(ALL, home(true), create, vi.fn(), quiet)).toBeNull();
+    expect(
+      startTlsListener({ ...ALL, DORKOS_TEST_RUNTIME: false }, home(true), create, vi.fn(), quiet)
+    ).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('opens nothing under the test runtime on a home that is not a test home', () => {
+    const create = vi.fn();
+    const testRun = { ...ALL, DORKOS_TEST_RUNTIME: true };
+    expect(startTlsListener(testRun, home(false), create, vi.fn(), quiet)).toBeNull();
     expect(create).not.toHaveBeenCalled();
   });
 
   it('binds loopback unless told otherwise', () => {
-    const all = { DORKOS_TLS_PORT: 4443, DORKOS_TLS_CERT: 'c', DORKOS_TLS_KEY: 'k' };
-    expect(readTlsListenerSettings(all)?.host).toBe('127.0.0.1');
-    expect(readTlsListenerSettings({ ...all, DORKOS_TLS_HOST: '192.168.1.5' })?.host).toBe(
+    expect(readTlsListenerSettings(ALL)?.host).toBe('127.0.0.1');
+    expect(readTlsListenerSettings({ ...ALL, DORKOS_TLS_HOST: '192.168.1.5' })?.host).toBe(
       '192.168.1.5'
     );
   });
@@ -76,10 +108,12 @@ describe('a request on the https listener', () => {
     await new Promise<void>((resolve) => {
       server = startTlsListener(
         {
+          DORKOS_TEST_RUNTIME: true,
           DORKOS_TLS_PORT: 0 as unknown as number,
           DORKOS_TLS_CERT: path.join(dir, 'cert.pem'),
           DORKOS_TLS_KEY: path.join(dir, 'key.pem'),
         },
+        home(true),
         (tls) => createFrontDoorServer(app, { tls }),
         (opened) => {
           port = (opened.address() as { port: number }).port;

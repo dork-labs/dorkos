@@ -24,6 +24,7 @@ import { honoListener, listeningServer } from '@dorkos/test-utils/listening-serv
 const mockEnv = vi.hoisted(() => ({
   DORKOS_ALLOW_INSECURE_BIND: false,
   DORKOS_SERVER_ROLE: 'computer' as 'computer' | 'hub',
+  DORKOS_TEST_RUNTIME: false,
 }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 // The gate policy's other inputs. `isAtThisComputer` reads neither: whether
@@ -68,6 +69,7 @@ const server = listeningServer(honoListener(honoApp));
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
   mockEnv.DORKOS_SERVER_ROLE = 'computer';
+  mockEnv.DORKOS_TEST_RUNTIME = false;
   currentPeer = '127.0.0.1';
   viaIngress = null;
 });
@@ -203,13 +205,16 @@ describe('isOnEncryptedConnection', () => {
     expect(await encrypted({ forwarded: 'proto=https' }, '192.168.86.200')).toBe(false);
   });
 
-  it('counts a TLS socket from another device, and only from another device', () => {
+  it('counts a TLS socket from another device only under the test runtime', () => {
     const facts = (peer: string, encrypted: boolean) => ({
       headers: { host: 'box.example:4443' },
       peerAddress: peer,
       ingress: 'direct' as const,
       connectionEncrypted: encrypted,
     });
+    // Production: the tunnel and managed remote access only (DOR-3173 first).
+    expect(isOnEncryptedConnection(facts('192.168.86.200', true))).toBe(false);
+    mockEnv.DORKOS_TEST_RUNTIME = true;
     expect(isOnEncryptedConnection(facts('192.168.86.200', true))).toBe(true);
     expect(isOnEncryptedConnection(facts('192.168.86.200', false))).toBe(false);
     // A TLS socket marked as Wi-Fi is still Wi-Fi.

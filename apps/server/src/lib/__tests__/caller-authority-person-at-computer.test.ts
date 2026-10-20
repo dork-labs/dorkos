@@ -111,10 +111,12 @@ describe('requirePersonAtThisComputer', () => {
   );
 
   // Encrypted is the listener's say, never a header's (Security, DOR-3172).
-  it('lets the owner through a TLS socket, never a plain-http one claiming https', async () => {
+  // In production a TLS socket counts for nothing yet: DorkOS's own https
+  // listener is test homes only until DOR-3173 (`tls-listener.test.ts`).
+  it('refuses a plain-http request claiming https, and a TLS socket outside the test runtime', async () => {
     const remote = { 'x-forwarded-for': '100.64.0.7' };
     const tls = await local({ user: OWNER_COOKIE, encrypted: true, headers: remote });
-    expect(requirePersonAtThisComputer(tls)).toBeUndefined();
+    expect(requirePersonAtThisComputer(tls)).toBe('not-at-this-computer');
     const forged = await local({
       user: OWNER_COOKIE,
       headers: { ...remote, 'x-forwarded-proto': 'https' },

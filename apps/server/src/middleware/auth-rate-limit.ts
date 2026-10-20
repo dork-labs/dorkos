@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
 import { createAccountRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
@@ -70,6 +70,19 @@ const RATE_LIMITED_BODY = {
 };
 
 /**
+ * The one refusal both limiters answer with, recorded in the audit log. One
+ * function, so the per-account refusal is byte for byte the per-address one
+ * and never tells a guesser which limit, or which account, it met
+ * (DOR-3172). The same bytes and type Express's `res.json` sent.
+ */
+function refuseRateLimited(c: Context): Response {
+  recordSignInRateLimited(c.req.header('user-agent'));
+  return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+}
+
+/**
  * Build the app-level rate limiter for Better Auth's sign-in / sign-up endpoints.
  *
  * Defense-in-depth for local password brute-force (DOR-281). Mounted on the
@@ -112,13 +125,7 @@ export function buildAuthRateLimiter(
     // log too (admins-only, naming nobody). Better Auth never sees it, so its
     // own hooks cannot record it.
     message: RATE_LIMITED_BODY,
-    onLimited: (c) => {
-      recordSignInRateLimited(c.req.header('user-agent'));
-      // The same bytes and type Express's `res.json` sends.
-      return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
-        'Content-Type': 'application/json; charset=utf-8',
-      });
-    },
+    onLimited: refuseRateLimited,
   });
 }
 
@@ -147,6 +154,32 @@ export interface AccountSignInLimitOptions {
 }
 
 /**
+ * Read at most {@link MAX_ACCOUNT_BODY_BYTES} of a copy of the body, or
+ * `undefined` when there is more: a chunked body names no length, so the cap is
+ * counted as it arrives rather than trusted from a header.
+ */
+async function readCappedBody(request: Request): Promise<string | undefined> {
+  const stream = request.clone().body;
+  if (!stream) return '';
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_ACCOUNT_BODY_BYTES) return undefined;
+      chunks.push(value);
+    }
+  } finally {
+    // Stop reading this copy; the handler reads its own.
+    void reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
  * The account a password sign-in names, lower-cased, or `undefined` when its
  * body names none or is too long to be a sign-in. Reads a copy of the body, so
  * the handler still reads it.
@@ -155,8 +188,8 @@ async function signInAccount(request: Request): Promise<string | undefined> {
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(declared) || declared > MAX_ACCOUNT_BODY_BYTES) return undefined;
   try {
-    const text = await request.clone().text();
-    if (text.length > MAX_ACCOUNT_BODY_BYTES) return undefined;
+    const text = await readCappedBody(request);
+    if (text === undefined) return undefined;
     const email = (JSON.parse(text) as { email?: unknown }).email;
     if (typeof email !== 'string') return undefined;
     const account = email.trim().toLowerCase();
@@ -191,12 +224,7 @@ export function buildAccountSignInLimiter(
     const account = await signInAccount(c.req.raw);
     if (!account) return next();
     const decision = limiter.hit(`${requestClass.route}:${account}`);
-    if (!decision.allowed) {
-      recordSignInRateLimited(c.req.header('user-agent'));
-      return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
-        'Content-Type': 'application/json; charset=utf-8',
-      });
-    }
+    if (!decision.allowed) return refuseRateLimited(c);
     await next();
     if (c.res.status < 400) decision.refund();
   };

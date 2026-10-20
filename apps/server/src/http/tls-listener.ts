@@ -1,30 +1,37 @@
 /**
- * DorkOS's own `https` listener, off unless asked for (DOR-3172).
+ * DorkOS's own `https` listener, for test homes only (DOR-3172).
  *
  * A signed-in person on an encrypted connection gets exactly what they get at
  * this computer, and "encrypted" is decided only by the listener a request
  * arrived on, never by a header (`isOnEncryptedConnection` in
  * `services/core/auth/gate-policy.ts`). This is the one listener of DorkOS's
- * own whose sockets are TLS: a request on it has `connectionEncrypted` set,
- * and is classified like any other direct request (this computer from a
- * loopback peer, another device otherwise).
+ * own whose sockets are TLS, so QA can drive that row live without a tunnel.
  *
- * Turned on by three settings together, all read at boot:
+ * **Never in production, for now (Security, 0.124.2).** With a self-signed
+ * certificate, someone on the same network can get a person to click through
+ * the browser's warning and take the sign-in, and with it desk power. Until
+ * the certificate story is settled (DOR-3173), the listener opens only when
+ * all of these hold, and otherwise logs why and opens nothing:
  *
- * - `DORKOS_TLS_PORT`: the port to listen on.
- * - `DORKOS_TLS_CERT` and `DORKOS_TLS_KEY`: paths to a PEM certificate and its
- *   key. A self-signed pair works for a test home.
- * - `DORKOS_TLS_HOST` (optional): the address to bind, `127.0.0.1` unless set.
+ * - the server runs the test runtime (`DORKOS_TEST_RUNTIME`);
+ * - the data folder is a test home: it holds {@link TEST_HOME_SENTINEL};
+ * - `DORKOS_TLS_PORT`, `DORKOS_TLS_CERT` and `DORKOS_TLS_KEY` are all set (a
+ *   PEM certificate and key; self-signed is fine). `DORKOS_TLS_HOST` is
+ *   optional, `127.0.0.1` unless set.
  *
- * Only some of them set is a mistake, logged and ignored rather than half
- * honoured. The host must also be one the host guard and the sign-in origin
- * check accept (`DORKOS_TRUSTED_HOSTS`, `DORKOS_CORS_ORIGIN`), as for any
- * other address DorkOS is reached at.
+ * The TLS-socket rule in `isOnEncryptedConnection` checks the test runtime
+ * too, so a TLS socket from anywhere else never counts. The host must also be
+ * one the host guard and the sign-in origin check accept
+ * (`DORKOS_TRUSTED_HOSTS`, `DORKOS_CORS_ORIGIN`).
  *
  * @module http/tls-listener
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Server } from 'node:http';
+
+/** The file whose presence in the data folder marks it a throwaway test home. */
+export const TEST_HOME_SENTINEL = '.dorkos-test-home';
 
 /** The `https` listener's settings, when all of them are set. */
 export interface TlsListenerSettings {
@@ -40,6 +47,7 @@ export interface TlsListenerSettings {
 
 /** The environment the settings come from. */
 export interface TlsListenerEnv {
+  readonly DORKOS_TEST_RUNTIME?: boolean;
   readonly DORKOS_TLS_PORT?: number;
   readonly DORKOS_TLS_CERT?: string;
   readonly DORKOS_TLS_KEY?: string;
@@ -65,9 +73,10 @@ export function readTlsListenerSettings(env: TlsListenerEnv): TlsListenerSetting
 }
 
 /**
- * Open the `https` listener when its settings say so.
+ * Open the `https` listener when its settings say so, on a test home only.
  *
  * @param env - The parsed environment.
+ * @param dorkHome - The data folder, checked for {@link TEST_HOME_SENTINEL}.
  * @param create - Builds the front-door server for a certificate and key.
  * @param onListening - Called with the listening server, to attach upgrades.
  * @param log - Where a refusal or the address goes.
@@ -75,6 +84,7 @@ export function readTlsListenerSettings(env: TlsListenerEnv): TlsListenerSetting
  */
 export function startTlsListener(
   env: TlsListenerEnv,
+  dorkHome: string,
   create: (tls: { cert: Buffer; key: Buffer }) => Server,
   onListening: (server: Server) => void,
   log: { info: (message: string) => void; warn: (message: string, meta?: object) => void }
@@ -84,6 +94,11 @@ export function startTlsListener(
   try {
     settings = readTlsListenerSettings(env);
     if (!settings) return null;
+    if (env.DORKOS_TEST_RUNTIME !== true || !existsSync(path.join(dorkHome, TEST_HOME_SENTINEL))) {
+      throw new Error(
+        `The https listener opens only under DORKOS_TEST_RUNTIME on a test home (${TEST_HOME_SENTINEL}).`
+      );
+    }
     tls = { cert: readFileSync(settings.certPath), key: readFileSync(settings.keyPath) };
   } catch (error) {
     log.warn('[DorkOS] The https listener did not open', {

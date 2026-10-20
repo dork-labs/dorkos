@@ -3,6 +3,7 @@ import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { startTlsListener } from './http/tls-listener.js';
+import { resolveDorkHome } from './lib/dork-home.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { previewListeners } from './services/workbench-serve/index.js';
@@ -328,9 +329,10 @@ async function start() {
         attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
       });
 
-      // DorkOS's own https listener, only when its settings say so (DOR-3172).
+      // DorkOS's own https listener: test homes only, for now (DOR-3172).
       tlsServer = startTlsListener(
         env,
+        resolveDorkHome(),
         (tls) => createFrontDoorServer(frontDoor, { tls }),
         (opened) => attachUpgradeRouter(opened, upgradeRoutes, mainRequestAdmission),
         logger
