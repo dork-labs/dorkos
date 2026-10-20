@@ -84,7 +84,13 @@ export function WorkView({
   // Each step that lands keeps a following reader at the end, and leaves one
   // who has scrolled up exactly where they are, including when the running
   // turn's stand-in id is swapped for the saved one.
+  // Another chat opens at its newest step, however far up the last one was read.
+  const shownSession = useRef(sessionId);
   useLayoutEffect(() => {
+    if (shownSession.current !== sessionId) {
+      shownSession.current = sessionId;
+      following.current = true;
+    }
     const scroller = scrollerRef.current;
     if (scroller && following.current) scroller.scrollTop = scroller.scrollHeight;
   });

@@ -194,6 +194,19 @@ describe('WorkView', () => {
     expect(scroller.scrollTop).toBe(1600);
   });
 
+  it('opens another chat at its newest step, even after the last one was scrolled up', () => {
+    const height = { value: 1000 };
+    const { redraw } = draw();
+    const scroller = sizeScroller(height);
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+    redraw({ messages: [...MESSAGES] });
+    expect(scroller.scrollTop).toBe(100);
+
+    redraw({ sessionId: 'another-direct', messages: [...MESSAGES] });
+    expect(scroller.scrollTop).toBe(1000);
+  });
+
   it('lets go of a request for another session', () => {
     useWorkPanelFocusStore.setState({ request: { sessionId: 'someone-else', turn: 'a1' } });
     draw();
