@@ -31,6 +31,7 @@ import {
 import { hasDirectMessageIn } from '../../model/has-direct-message';
 import { DragLiftChip } from '../motion/DragLiftChip';
 import { SidebarDndEnabledProvider, sidebarRowDndId } from './SidebarDndPrimitives';
+import { holdEarlyKeys } from './hold-early-keys';
 import { focusRowOnArrival } from './restore-drop-focus';
 import { useLatest } from '@/layers/shared/lib';
 
@@ -174,6 +175,15 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
   }));
 
   const handleDragStart = (event: DragStartEvent) => {
+    // A keyboard lift: keep the keys pressed before dnd-kit is listening, so
+    // an Escape or an arrow pressed straight away is not lost (see the module).
+    if (
+      event.activatorEvent instanceof KeyboardEvent &&
+      event.activatorEvent.target instanceof Node
+    ) {
+      const doc = event.activatorEvent.target.ownerDocument;
+      if (doc !== null) holdEarlyKeys(doc);
+    }
     setActiveData(readSidebarDndData(event.active.data.current));
   };
 

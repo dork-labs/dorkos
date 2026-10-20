@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { SIDEBAR_DRAGGING_ATTRIBUTE } from '@/layers/shared/model';
 import { SidebarDnd } from '../ui/dnd/SidebarDnd';
 import {
@@ -184,6 +184,23 @@ describe('SidebarDnd', () => {
     expect(isDragging()).toBe(false);
   });
 
+  it('hears an Escape pressed before dnd-kit is listening, and puts the row back', async () => {
+    // dnd-kit arms its keyboard sensor's listener a task after the lift. A key
+    // pressed inside that gap used to be lost, so an Escape straight after
+    // Space left the row in the air (and arrows left it where it was). The
+    // keys are held and replayed once the sensor listens.
+    render(<Row />);
+    const row = screen.getByTestId('row');
+    row.focus();
+    fireEvent.keyDown(row, { code: 'Space' });
+    expect(isDragging()).toBe(true);
+
+    // Inside the gap: no turn has passed since the lift.
+    fireEvent.keyDown(row, { code: 'Escape', key: 'Escape' });
+
+    await waitFor(() => expect(isDragging()).toBe(false));
+  });
+
   it('writes nothing when a lifted row is put straight back down (DOR-1746)', async () => {
     // Every write here carries the WHOLE `ui.sidebar` section, so a drop that
     // resolves to no change still PATCHed the server with what it already had.
@@ -195,16 +212,13 @@ describe('SidebarDnd', () => {
     fireEvent.keyDown(row, { code: 'Space' });
     expect(isDragging()).toBe(true);
 
-    // dnd-kit arms the sensor's own document listener in a `setTimeout`, so the
-    // drop has to be fired on the next turn to be heard at all.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    // The second Space comes before dnd-kit is listening, so it is held and
+    // handed over once it is (DOR-3151) — the drop lands a task or two later.
     fireEvent.keyDown(row, { code: 'Space' });
 
     // The drag really did end — otherwise "no write" would be true for the
     // uninteresting reason that nothing happened.
-    expect(isDragging()).toBe(false);
+    await waitFor(() => expect(isDragging()).toBe(false));
     expect(mockUpdateSidebar).not.toHaveBeenCalled();
   });
 });

@@ -1158,13 +1158,13 @@ describe('DashboardSidebar', () => {
       expect(lifted[0]).toBe(row?.closest('[data-sidebar-drag-root]'));
       expect(document.querySelector('[id^="DndLiveRegion"]')?.textContent ?? '').not.toBe('');
 
-      // dnd-kit arms its own document listener in a `setTimeout`, so a cancel
-      // fired in the same turn as the pick-up is heard by nobody.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+      // Escape right away: dnd-kit is not listening yet, so the key is held and
+      // handed to it once it is (DOR-3151). The outcome lands a task or two
+      // later, which is why it is waited for rather than read at once.
       fireEvent.keyDown(row!, { code: 'Escape' });
-      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0)
+      );
     });
 
     it('picks a SECTION you made up from its own header, and Escape puts it back', async () => {
@@ -1180,11 +1180,11 @@ describe('DashboardSidebar', () => {
       expect(lifted.length, 'Space on the focused section header lifted nothing').toBe(1);
       expect(lifted[0]).toBe(header.closest('[data-sidebar-drag-root]'));
 
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+      // Held until dnd-kit listens, then handed over (DOR-3151).
       fireEvent.keyDown(header, { code: 'Escape' });
-      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0)
+      );
     });
 
     it('leaves a FIXED section header undraggable, so its Space is still the fold’s', async () => {

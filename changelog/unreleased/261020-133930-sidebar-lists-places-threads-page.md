@@ -17,6 +17,10 @@ covers:
 - A "Message an agent or person" row at the end of Direct messages opens the Directory to pick someone
 - On a phone there are three tabs: Home, DorkBot and You. Home holds the whole list. Anything waiting on you sits at the top: approvals, questions and suggested schedules to answer there, and chats that stopped with an error
 
+### Fixed
+
+- Pressing Escape or an arrow key straight after picking up a sidebar row or section with the keyboard now works, instead of leaving it stuck in the air (DOR-3151)
+
 ### Removed
 
 - Heads up, Today and the Agents list are gone from the sidebar. Earlier chats are in ⌘K and on each agent's profile, threads are on the Threads page, approvals are in the Inbox, and scheduled runs are in Schedules and Activity
