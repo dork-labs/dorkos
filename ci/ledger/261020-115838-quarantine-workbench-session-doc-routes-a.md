@@ -1,6 +1,6 @@
 ---
 id: 261020-115838
-title: "Fix or delete workbench/session-doc-routes.spec.ts › a person reviews, allows and turns off a document route from the canvas header"
+title: 'Fix or delete workbench/session-doc-routes.spec.ts › a person reviews, allows and turns off a document route from the canvas header'
 kind: hygiene
 status: proposed
 actor: agent
