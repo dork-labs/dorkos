@@ -124,7 +124,7 @@ function describeSections(groups: readonly SidebarGroup[]): string {
  *
  * A smart section derives its members from `rules`; its `items` array is kept
  * only so "convert to manual" has somewhere to land, and the sidebar never reads
- * it (`build-library-sections.ts` skips smart sections when it indexes
+ * it (`build-sections.ts` skips smart sections when it indexes
  * membership). Writing into it would report success and change nothing anyone
  * can see, which is the worst answer available.
  *
@@ -355,7 +355,7 @@ export interface SidebarLiftResult {
  * Sidebar membership is single-parent everywhere the app writes it: the client's
  * own `moveToGroup`
  * (`apps/client/src/layers/entities/config/model/use-sidebar-prefs.ts`) filters a
- * ref out of every section before filing it, and `build-library-sections.ts`
+ * ref out of every section before filing it, and `build-sections.ts`
  * assumes that when it decides which agents are still ungrouped. An append that
  * left the old membership in place would put one row in two sections, which is a
  * state no surface in the app can produce and no surface knows how to undo — so

@@ -5,7 +5,7 @@
  * `buildSidebarModel` emits semantic ids (`glyph: { kind: 'agent-avatar' }`), a
  * target, and a reason. It never emits a face, a colour, or a navigation. Those
  * are resolved here, once, and handed to every row through a context so that
- * `SidebarZone` and `SidebarSection` can stay pure model consumers with no row
+ * `SidebarSections` and `SidebarSection` can stay pure model consumers with no row
  * plumbing threaded through them.
  *
  * **This reads queries, and `useSidebarState` is still the one assembly hook.**

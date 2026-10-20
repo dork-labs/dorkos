@@ -5,7 +5,7 @@
  * ## The defect this exists to close
  *
  * A `SidebarItemRef` is resolved by the client with an exact string match:
- * `build-library-sections.ts` keys agents by the mesh `projectPath` and rooms by
+ * `build-sections.ts` keys agents by the mesh `projectPath` and rooms by
  * id, and **stale references are never pruned by design**. So a stored
  * `{ kind: 'agent', path: 'scout' }` is not an error anywhere — it is a member
  * of the section forever, and it draws nothing, forever. Storing whatever the

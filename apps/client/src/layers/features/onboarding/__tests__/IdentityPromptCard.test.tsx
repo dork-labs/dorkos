@@ -22,11 +22,8 @@ import { setPrefersReducedMotion } from '@/test-setup';
 import { IdentityPromptCard } from '../ui/IdentityPromptCard';
 import { useIdentityPrompt } from '../model/use-identity-prompt';
 
-/** What the host tells the prompt; the sidebar passes the card's visibility. */
-let hostOptions: { gettingStartedCardShown?: boolean } = {};
-
 function PromptHost() {
-  const prompt = useIdentityPrompt(hostOptions);
+  const prompt = useIdentityPrompt();
   if (!prompt.visible) return null;
   return <IdentityPromptCard prompt={prompt} />;
 }
@@ -108,7 +105,6 @@ describe('IdentityPromptCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setPrefersReducedMotion(true);
-    hostOptions = {};
   });
   afterEach(() => cleanup());
 
@@ -164,14 +160,6 @@ describe('IdentityPromptCard', () => {
     // is the single place the question is put then.
     await renderCard({ onboarding: { dismissedAt: null } });
     expect(screen.queryByTestId('identity-prompt-card')).toBeNull();
-  });
-
-  it('asks when the host holds the getting-started card back (DOR-2845)', async () => {
-    // The sidebar hides the card while its own Getting started list shows, and
-    // says so; the name question then gets the slot instead of going unasked.
-    hostOptions = { gettingStartedCardShown: false };
-    await renderCard({ onboarding: { dismissedAt: null } });
-    expect(screen.getByTestId('identity-prompt-card')).toBeInTheDocument();
   });
 
   it('never shows when this install has no row for the operator', async () => {

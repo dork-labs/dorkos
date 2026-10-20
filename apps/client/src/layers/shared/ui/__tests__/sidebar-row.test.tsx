@@ -524,7 +524,7 @@ describe('SidebarRow — the reserved verb line (BC-24, R1)', () => {
   });
 
   it('keeps the preview of a busy room, which reserves a line but has no verb node', () => {
-    // The shape `library-rows.ts` and `select-today-items.ts` already ship:
+    // The shape the sidebar's room rows (`section-rows.ts`) already ship:
     // `reservesVerbLine: (room.working ?? 0) > 0` on a row that carries a
     // preview and no verb node at all. Deciding the line's CONTENT from
     // `reservesVerbLine` — rather than only its EXISTENCE — emptied every one

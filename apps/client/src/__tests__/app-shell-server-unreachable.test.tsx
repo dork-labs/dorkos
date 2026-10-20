@@ -77,9 +77,8 @@ vi.mock('@/layers/widgets/one-bar', () => ({
   BarFixedCluster: () => null,
 }));
 
-// Partial, because the mobile tabs derive their zone sets from this module's
-// real `SIDEBAR_ZONE_IDS` at import time — only the panel's own bodies are
-// scenery here.
+// Partial, because the mobile tabs draw the panel from this module's real
+// model and sections — only the panel's own bodies are scenery here.
 vi.mock('@/layers/features/dashboard-sidebar', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/dashboard-sidebar')>()),
   DashboardSidebar: () => <nav aria-label="Sidebar" data-testid="dashboard-sidebar" />,

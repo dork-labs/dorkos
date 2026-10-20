@@ -29,8 +29,6 @@ let promoQualifies = false;
 let spaceOffer = false;
 /** Its connection list is still loading, so it may yet become due. */
 let spaceOfferPending = false;
-/** What the slot told the two prompts about the getting-started card. */
-let promptOptions: Array<{ gettingStartedCardShown?: boolean } | undefined> = [];
 
 // A settled panel, so these cases are about what they are named after rather
 // than about the boot gate. The gate's own behaviour is covered in
@@ -45,14 +43,8 @@ vi.mock('@/layers/features/onboarding', () => ({
     dismiss: vi.fn(),
     isLoading: false,
   }),
-  useIdentityPrompt: (options?: { gettingStartedCardShown?: boolean }) => {
-    promptOptions.push(options);
-    return { visible: identityVisible };
-  },
-  useProfilePrompt: (options?: { gettingStartedCardShown?: boolean }) => {
-    promptOptions.push(options);
-    return { visible: profileVisible };
-  },
+  useIdentityPrompt: () => ({ visible: identityVisible }),
+  useProfilePrompt: () => ({ visible: profileVisible }),
   ProgressCard: () => <div data-testid="card-getting-started" />,
   IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
@@ -128,7 +120,6 @@ beforeEach(() => {
   promoQualifies = false;
   spaceOffer = false;
   spaceOfferPending = false;
-  promptOptions = [];
 });
 
 afterEach(() => cleanup());
@@ -138,12 +129,6 @@ describe('SidebarBottomSlot priority', () => {
     gettingStarted = updateReady = identityVisible = profileVisible = promoQualifies = true;
     render(<SidebarBottomSlot />);
     expect(drawn()).toBe('getting-started');
-  });
-
-  it('tells the prompts the card is showing when it is', () => {
-    gettingStarted = true;
-    render(<SidebarBottomSlot />);
-    expect(promptOptions.every((o) => o?.gettingStartedCardShown === true)).toBe(true);
   });
 
   it('falls to the update pill once getting started is done', () => {

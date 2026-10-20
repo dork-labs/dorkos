@@ -141,8 +141,8 @@ interface SidebarSlot {
    *
    * The two widths spend a takeover differently: on desktop it replaces the
    * whole body, and on a phone it replaces the list under Home and leaves the
-   * answer cards above it standing (P4). So the shell has to say which kind of body this is, rather
-   * than the mobile layout guessing from a key string.
+   * answer cards above it standing (P4). So the shell has to say which kind of
+   * body this is, rather than the mobile layout guessing from a key string.
    */
   isTakeover: boolean;
 }
@@ -932,12 +932,12 @@ export function AppShell() {
                     </main>
                   </SidebarInset>
                 </SidebarProvider>
-                {/* ── The phone cockpit: four destinations, no drawer ──
+                {/* ── The phone cockpit: three destinations, no drawer ──
                       A sibling of the provider rather than a child of it, so
                       the bar reserves its own room at the bottom of the shell
                       and no routed page has to know it exists to avoid being
-                      covered by it. Its panels are what Now, Today and Library
-                      look like when they get the whole screen. */}
+                      covered by it. Its Home panel is the sidebar's list with
+                      the whole screen to itself. */}
                 {isMobile && (
                   <MobileTabsLayout takeover={sidebarSlot.isTakeover ? sidebarSlot.body : null} />
                 )}

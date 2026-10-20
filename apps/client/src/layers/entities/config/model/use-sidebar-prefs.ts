@@ -469,52 +469,6 @@ export function setSectionDisplayFilter(
 }
 
 // ---------------------------------------------------------------------------
-
-/**
- * The suggestion id the "group your agents" hint card became when Getting
- * started absorbed it. Anyone who dismissed the card already answered this
- * suggestion, and the conf migration keyed `0.59.0` records that.
- */
-export const GROUPS_HINT_SUGGESTION_ID = 'suggestion:groups-hint';
-
-/** Whether this person has finished with a Getting-started suggestion. */
-export function isSuggestionRetired(prefs: SidebarPrefs, suggestionId: string): boolean {
-  return prefs.gettingStarted.retired.includes(suggestionId);
-}
-
-/**
- * Retire a Getting-started suggestion, for good (idempotent).
- *
- * Retirement is one-way on purpose: a suggestion never comes back once it has
- * been answered, even if the condition that raised it becomes true again.
- */
-export function retireSuggestion(prev: SidebarPrefs, suggestionId: string): SidebarPrefs {
-  if (prev.gettingStarted.retired.includes(suggestionId)) return prev;
-  return {
-    ...prev,
-    gettingStarted: { retired: [...prev.gettingStarted.retired, suggestionId] },
-  };
-}
-
-/**
- * Record that the welcome-back digest has been shown on a local calendar day
- * (idempotent).
- *
- * **Once per day per ACCOUNT, not per device** (BC-22). That is the whole
- * reason the date lives in server-held config rather than in localStorage: a
- * person who reads the digest on a laptop and then opens the cockpit on a
- * desktop has already had the moment, and a second one is the product
- * repeating itself.
- *
- * @param prev - The prefs to patch.
- * @param date - The local calendar day, `YYYY-MM-DD`.
- */
-export function markDigestShown(prev: SidebarPrefs, date: string): SidebarPrefs {
-  if (prev.digest.lastShownDate === date) return prev;
-  return { ...prev, digest: { lastShownDate: date } };
-}
-
-// ---------------------------------------------------------------------------
 // Display filter + mute (DOR-339) — additive on the DOR-329 shape above.
 // ---------------------------------------------------------------------------
 

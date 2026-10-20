@@ -46,11 +46,10 @@ import { UpdatePill } from './UpdatePill';
  */
 export function SidebarBottomSlot() {
   const { shouldShowGettingStarted, dismiss: dismissOnboarding } = useOnboarding();
-  const gettingStartedCardShown = shouldShowGettingStarted;
   const update = useUpdateReady();
-  // The prompts wait for the card, so they are told whether it is on screen.
-  const identityPrompt = useIdentityPrompt({ gettingStartedCardShown });
-  const prompt = useProfilePrompt({ gettingStartedCardShown });
+  // The prompts wait for the card on their own: both read the same answer.
+  const identityPrompt = useIdentityPrompt();
+  const prompt = useProfilePrompt();
   const spaceOffer = useFirstRunSpaceOffer();
   const promo = usePromoCandidate('dashboard-sidebar');
   const boot = useBootState();
@@ -58,7 +57,7 @@ export function SidebarBottomSlot() {
   const candidates: BottomSlotCandidate[] = [
     {
       id: 'getting-started',
-      show: gettingStartedCardShown,
+      show: shouldShowGettingStarted,
       render: () => <ProgressCard onDismiss={dismissOnboarding} />,
     },
     {
@@ -79,7 +78,7 @@ export function SidebarBottomSlot() {
     {
       // Inside the card while it shows; here only once it is gone.
       id: 'official-space-offer',
-      show: spaceOffer.due && !gettingStartedCardShown,
+      show: spaceOffer.due && !shouldShowGettingStarted,
       render: () => <OfficialSpaceOfferCard className="bg-secondary/60 rounded-lg" />,
     },
     // A promo waits while the offer's connection list is still loading, so the

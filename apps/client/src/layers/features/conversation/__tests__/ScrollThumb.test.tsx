@@ -27,8 +27,7 @@ describe('ScrollThumb', () => {
     // this proves the thumb actually becomes reachable, not just styled.
     //
     // `pointerOver`, not `pointerEnter`: React synthesizes enter/leave from
-    // the bubbling over/out pair (see `SidebarZones.damping-seam.test.tsx`),
-    // so dispatching the non-bubbling pair directly is a test that would pass
+    // the bubbling over/out pair, so dispatching the non-bubbling pair directly is a test that would pass
     // against no handler at all.
     const scrollRef = { current: null };
     const { container } = render(<ScrollThumb scrollRef={scrollRef} />);

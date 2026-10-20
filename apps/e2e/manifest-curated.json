@@ -79,7 +79,7 @@
       "relatedCode": [
         "apps/client/src/layers/shared/lib/query-persister.ts",
         "apps/client/src/layers/features/dashboard-sidebar/model/boot/use-boot-state.ts",
-        "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarZones.tsx"
+        "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarSections.tsx"
       ]
     },
     "compaction": {

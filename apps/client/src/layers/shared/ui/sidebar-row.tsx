@@ -626,7 +626,7 @@ export function SidebarRow({
   //   not it is live, and a node that renders `null` is still an ELEMENT — so
   //   `??`, which falls back only on `undefined`, never reached the preview.
   // - Keying only on `reservesVerbLine` ate the preview of every BUSY ROOM.
-  //   `library-rows.ts` and `select-today-items.ts` both set
+  //   The sidebar's room rows (`section-rows.ts`) set
   //   `reservesVerbLine: (room.working ?? 0) > 0` on rows that carry a preview
   //   and no verb node at all, so those rows rendered an empty line.
   //

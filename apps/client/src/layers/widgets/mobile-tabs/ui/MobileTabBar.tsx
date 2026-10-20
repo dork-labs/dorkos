@@ -113,7 +113,7 @@ export function MobileTabBar({
                   // system requires of every label. 70% lands at #565656 (5.99:1
                   // light, 7.84:1 dark), which clears it in both. Caught by the
                   // showcase page's axe gate once the bar was drawn there, which
-                  // is the same way `SidebarZone` found the same defect at `/50`.
+                  // is how the sidebar's own headings were caught at `/50`.
                   'text-sidebar-foreground/70 hover:text-sidebar-foreground font-medium',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
