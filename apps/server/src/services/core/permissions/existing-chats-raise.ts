@@ -317,8 +317,15 @@ function stricterStop(a: PermissionStop, b: PermissionStop): PermissionStop {
   return PERMISSION_STOPS.indexOf(a) <= PERMISSION_STOPS.indexOf(b) ? a : b;
 }
 
-/** Whether an agent is one whose chats stay as they are. */
-function isKept(agent: PermissionAgentRef): boolean {
+/**
+ * Whether an agent is one whose chats stay as they are ({@link KEPT_AS_THEY_ARE}).
+ * Also read by `session_start`, which passes no Full on unnamed from one (DOR-3147).
+ *
+ * @param agent - Its folder, name and display name.
+ */
+export function isKept(
+  agent: Pick<PermissionAgentRef, 'projectPath' | 'name' | 'displayName'>
+): boolean {
   const names = [path.basename(agent.projectPath), agent.name, agent.displayName ?? ''];
   return names.some((n) => KEPT_AS_THEY_ARE.has(n.trim().toLowerCase().replace(/\s+/g, '-')));
 }

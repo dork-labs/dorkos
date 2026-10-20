@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- A chat at Full autonomy now starts its own chats at Full too, unless it asks for less. Before, those chats started lower, so they kept asking you to approve routine work. Chats your agents already started below their level move up once, on the next start, with an Undo in Activity. Chats started from outside content stay where they are. (DOR-3147)
+- A chat at Full autonomy now starts its own chats at Full too, unless it asks for less. Before, those chats started lower, so they kept asking you to approve routine work. A new chat never goes above the level you set for its agent. Chats your agents already started below their level move up once, on the next start, with an Undo in Activity. Chats that read outside content stay where they are. (DOR-3147)

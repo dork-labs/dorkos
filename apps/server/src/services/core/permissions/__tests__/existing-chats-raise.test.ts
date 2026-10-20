@@ -401,8 +401,13 @@ describe('the raise of spin-off chats (DOR-3147)', () => {
           permissionMode: 'acceptEdits',
         }),
         chat('already-full', { launchOrigin: 'agent-launch', permissionMode: FULL }),
+        // Not spin-offs at all: a relay chat, a bridged room's chat, a schedule.
+        chat('relay', { launchOrigin: 'relay-binding', permissionMode: 'acceptEdits' }),
+        chat('session-relay', { launchOrigin: 'session-relay', permissionMode: 'acceptEdits' }),
+        chat('bridged', { launchOrigin: 'room', permissionMode: 'acceptEdits' }),
+        chat('schedule', { launchOrigin: 'schedule', permissionMode: 'acceptEdits' }),
       ],
-      ['marked']
+      ['marked', 'bridged']
     );
 
     expect(await raiseExistingChats(t.deps)).toEqual({ raised: 0 });
@@ -420,6 +425,23 @@ describe('the raise of spin-off chats (DOR-3147)', () => {
 
     expect(await raiseExistingChats(deps)).toEqual({ raised: 1 });
     expect(t.modes.get('spin')).toBe(ACT);
+  });
+
+  it('records ONE history event, whose Undo sets every spin-off back', async () => {
+    const t = await afterFirstRaise([
+      chat('spin-a', { launchOrigin: 'agent-launch', permissionMode: 'acceptEdits' }),
+      chat('spin-b', { launchOrigin: 'agent-launch', permissionMode: 'default' }),
+    ]);
+    await raiseExistingChats(t.deps);
+    expect(t.world.events).toHaveLength(1);
+    const raised = t.world.events[0]!;
+    expect((raised.metadata as unknown as PermissionChangedMetadata).changes).toHaveLength(2);
+
+    const result = await t.world.service.undo(raised.id, {}, personWriter('local-trust'));
+
+    expect(result.skipped).toEqual([]);
+    expect(t.modes.get('spin-a')).toBe('acceptEdits');
+    expect(t.modes.get('spin-b')).toBe('default');
   });
 });
 
