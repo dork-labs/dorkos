@@ -120,8 +120,11 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     dashboardSidebar,
   }) => {
     // Seeded wide enough that Library genuinely scrolls — a "scroll" on a list
-    // that fits is a press that happens to move.
-    for (let i = 0; i < 12; i += 1) {
+    // that fits is a press that happens to move. Twenty-four, not twelve: at
+    // twelve the list scrolled far enough to hide the row only when a
+    // neighbour's rooms were on the server too, which made the press below
+    // pass or fail by shard.
+    for (let i = 0; i < 24; i += 1) {
       await roomsApi.createChannel(`e2e-touch-scroll-${i}-${roomsApi.runId}`);
     }
     await basePage.goto();
