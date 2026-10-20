@@ -209,6 +209,32 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
     expect(spy).toHaveBeenCalledWith({ state: 's1', code: 'c1', error: undefined });
   });
 
+  // The sign-in cookie is SameSite=Strict (DOR-3172): the provider's redirect
+  // never carries it, so the callback at this computer cannot ask for it.
+  it('finishes with no cookie while this computer asks for a password, and nothing else gets in', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    vi.mocked(configManager.get).mockImplementation(((key: string) =>
+      key === 'auth' ? { enabled: true } : null) as never);
+    try {
+      const spy = vi.fn();
+      const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
+      const res = await request(server)
+        .get('/api/agents/mcp-oauth/callback?state=s1&code=c1')
+        .set('Referer', 'https://mcp.artblocks.io/');
+      expect(res.status).toBe(303);
+      expect(spy).toHaveBeenCalledTimes(1);
+      // Any other route at this computer still asks for the password.
+      const other = await request(server).get('/api/agents/mcp-oauth/other');
+      expect(other.status).toBe(401);
+      // A write to the callback path still does.
+      const write = await request(server).post('/api/agents/mcp-oauth/callback?state=s1&code=c1');
+      expect(write.status).toBe(401);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.mocked(configManager.get).mockReturnValue(null);
+    }
+  });
+
   it('still fails an unknown state when the provider page is the Referer', async () => {
     const server = fixtureTarget.mount(
       appWith(stubOAuth({ connected: false, error: 'This sign-in expired.', reason: 'expired' }))
