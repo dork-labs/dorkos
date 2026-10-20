@@ -169,9 +169,9 @@ export class RoomsPage {
     // the row unique — the only other button in the item is its "… actions"
     // trigger, which holds no room title — so the looser combinator costs
     // nothing and stops one more wrapper from doing this again.
-    return section
-      .locator('[data-slot="sidebar-menu-item"] button')
-      .filter({ has: this.page.locator(`[data-slot="room-title"][title="${spokenName}"]`) });
+    return section.locator('[data-slot="sidebar-menu-item"] button').filter({
+      has: this.page.locator(`[data-slot="room-title"][data-spoken-name="${spokenName}"]`),
+    });
   }
 
   /**

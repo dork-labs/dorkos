@@ -6,6 +6,7 @@
  */
 import { Hash, Moon, Sun } from 'lucide-react';
 import { CountPill, SidebarMenu, SidebarRow } from '@/layers/shared/ui';
+import { directedCountLabel } from '@/layers/features/dashboard-sidebar/ui/rooms/directed-count-label';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 
@@ -34,7 +35,7 @@ export const PANEL_WIDTH = 272;
  * @param count - How many things are addressed to you here.
  */
 export function DirectedBadge({ count }: { count: number }) {
-  return <CountPill count={count} label={count === 1 ? '1 mention' : `${count} mentions`} />;
+  return <CountPill count={count} label={directedCountLabel(count, 'mentions')} />;
 }
 
 /**

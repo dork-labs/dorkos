@@ -582,7 +582,7 @@ test.describe('Sidebar model showcase @smoke', () => {
       // and the gate failed naming elements it had in fact been handed.
       const isCountBadge = (text: string) =>
         /data-slot="count-pill"/.test(text) ||
-        /aria-label="\d+ (mentions?|new messages?)"/.test(text) ||
+        /aria-label="(\d+|More than \d+) (mentions?|new messages?)"/.test(text) ||
         /data-testid="mobile-tab-badge-/.test(text) ||
         /data-slot="catch-up-count"/.test(text);
       const badges = undecided.filter(

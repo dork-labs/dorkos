@@ -486,7 +486,7 @@ export type {
 } from './sidebar-menu-node';
 export type { SidebarMenuNodesProps, SidebarMenuSurfaceProps } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
-export { CountPill, type CountPillProps } from './count-pill';
+export { CountPill, COUNT_PILL_CAP, type CountPillProps } from './count-pill';
 export {
   TOUCH_TARGET_MIN_H,
   TOUCH_TARGET_RESPONSIVE_H,

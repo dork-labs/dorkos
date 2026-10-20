@@ -35,7 +35,13 @@ import { PRESS_MARK, PRESS_ROW } from './press';
 import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+import {
+  TOOLTIP_MUTED_TEXT,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './tooltip';
 
 /**
  * The horizontal inset every sidebar row pays, and the only place it is paid.
@@ -487,8 +493,9 @@ export interface SidebarRowProps {
    * A line shown in a tooltip while the pointer rests on the row — a room's
    * last message. Absent, `null` or blank draws no tooltip at all.
    *
-   * While there is one, the row's `title` attribute is dropped: the browser's
-   * own tooltip would open on top of it and say something else.
+   * The tooltip leads with the row's name, so a name cut short is still
+   * readable in full. While there is one, the row's `title` attribute is
+   * dropped: the browser's own tooltip would open on top of it.
    */
   hint?: string | null;
   /** This row is the thing currently on screen. */
@@ -627,6 +634,7 @@ export function SidebarRow({
   const previewLine = preview?.trim() ? preview : null;
   const hintLine = hint?.trim() ? hint : null;
   const rowState = sidebarRowState({ isActive, muted, emphasized });
+  const rowLabel = composeRowLabel(who, plainTitle);
   const second = reservesVerbLine === true ? (secondLine ?? previewLine) : previewLine;
   // The reservation, watched in development for the one thing it must not
   // contain. See {@link useReservationGuard}.
@@ -662,7 +670,7 @@ export function SidebarRow({
         ref={rowRef}
         type="button"
         onClick={onSelect}
-        title={hintLine === null ? composeRowLabel(who, plainTitle) || undefined : undefined}
+        title={hintLine === null ? rowLabel || undefined : undefined}
         aria-current={isActive ? 'page' : undefined}
         data-slot={dataSlot}
         // Which rung the row stands on, readable without parsing its classes —
@@ -763,6 +771,13 @@ export function SidebarRow({
         <Tooltip>
           <TooltipTrigger asChild>{row}</TooltipTrigger>
           <TooltipContent side="right" align="start" className="max-w-64">
+            {/* The row's name above the line, so a name the row had to cut
+                short is still readable in full while the pointer rests. */}
+            {rowLabel !== '' && (
+              <span data-slot="sidebar-row-hint-name" className={cn('block', TOOLTIP_MUTED_TEXT)}>
+                {rowLabel}
+              </span>
+            )}
             <span data-slot="sidebar-row-hint" className="line-clamp-3">
               {hintLine}
             </span>

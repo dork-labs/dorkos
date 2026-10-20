@@ -180,7 +180,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const trailing = useMemo(
     () =>
       section.collapsed && (section.rollup?.workingCount ?? 0) > 0 ? (
-        <FoldedWorkingDot />
+        <FoldedWorkingDot count={section.rollup?.workingCount ?? 0} />
       ) : undefined,
     [section]
   );
@@ -260,8 +260,29 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {chrome.dialogs}
       {/* **The fold, as a height spring** (spec D5) — `SidebarFoldBody` owns the
           numbers and the unmount, and the Dev Playground draws the same
-          component rather than a copy of it. */}
-      <SidebarFoldBody open={!section.collapsed}>
+          component rather than a copy of it. What folding leaves on screen
+          (BC-31) is the rows still asking for something, drawn exactly as they
+          are when the section is open, and only once the body has finished
+          leaving so no row is ever drawn twice. They are not drag sources —
+          the model says so — because a folded section has nowhere to drop. */}
+      <SidebarFoldBody
+        open={!section.collapsed}
+        whenFolded={
+          keptRows.length > 0 ? (
+            <SidebarMenu data-slot="sidebar-section-kept">
+              {keptRows.map((row) => (
+                <SidebarModelRow
+                  key={`${prefix}-${row.key}`}
+                  row={row}
+                  keyPrefix={prefix}
+                  layoutKey={keptLayoutKey}
+                  {...(sectionId === undefined ? {} : { sectionId })}
+                />
+              ))}
+            </SidebarMenu>
+          ) : undefined
+        }
+      >
         <Droppable
           id={`container::${bodyId}`}
           data={{ type: 'container', container: sectionContainer(section.id) }}
@@ -274,23 +295,6 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
           {chrome.footer}
         </Droppable>
       </SidebarFoldBody>
-      {/* **What folding leaves on screen** (BC-31): the rows still asking for
-          something, drawn exactly as they are when the section is open. They
-          are not drag sources — the model says so — because a folded section
-          has nowhere in it to drop. */}
-      {keptRows.length > 0 && (
-        <SidebarMenu data-slot="sidebar-section-kept">
-          {keptRows.map((row) => (
-            <SidebarModelRow
-              key={`${prefix}-${row.key}`}
-              row={row}
-              keyPrefix={prefix}
-              layoutKey={keptLayoutKey}
-              {...(sectionId === undefined ? {} : { sectionId })}
-            />
-          ))}
-        </SidebarMenu>
-      )}
     </SidebarGroup>
   );
 }
@@ -302,13 +306,15 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
  * **Never a number.** Unread needs no mark here at all — the rows asking for
  * something stay on screen under the folded header — but work in flight has
  * no row of its own to stay behind, so the header says it, once, without
- * counting it.
+ * counting it — "Agent working" or "Agents working", never a number.
+ *
+ * @param props.count - How many members are working; only one-or-more matters.
  */
-function FoldedWorkingDot() {
+function FoldedWorkingDot({ count }: { count: number }) {
   return (
     <span
       role="img"
-      aria-label="Agents working"
+      aria-label={count === 1 ? 'Agent working' : 'Agents working'}
       className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
     />
   );

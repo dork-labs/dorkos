@@ -745,9 +745,13 @@ describe('RoomRow unread', () => {
     expect(row()).toHaveAttribute('data-row-state', 'emphasized');
   });
 
-  it('caps the pill at 9+ and reads the real number out', () => {
-    renderRow(channel({ unreadCount: 40, mentionCount: 14 }));
-    expect(screen.getByLabelText('14 mentions')).toHaveTextContent('9+');
+  it('caps the pill at 9+ and never claims an exact number past it', () => {
+    // The server counts mentions up to ten, so ten means "ten or more".
+    const { unmount } = renderRow(channel({ unreadCount: 40, mentionCount: 10 }));
+    expect(screen.getByLabelText('More than 9 mentions')).toHaveTextContent('9+');
+    unmount();
+    renderRow(channel({ unreadCount: 9, mentionCount: 9 }));
+    expect(screen.getByLabelText('9 mentions')).toHaveTextContent('9');
   });
 
   it('keeps a muted room at regular weight, and still shows a mention’s count', () => {
@@ -768,6 +772,20 @@ describe('RoomRow unread', () => {
     const pill = screen.getByLabelText('1 mention');
     expect(pill.className).toContain('text-foreground');
     expect(pill.className).not.toMatch(/brand|warning/);
+  });
+
+  it('opens one tooltip, not two: the name drops its own when the row has a last line', () => {
+    const { container, unmount } = renderRow(channel({ lastLine: 'Shipped it' }));
+    const name = () => container.querySelector('[data-slot="room-title"]');
+    expect(name()).not.toHaveAttribute('title');
+    expect(row()).not.toHaveAttribute('title');
+    unmount();
+
+    const quiet = renderRow(channel({ lastLine: null }));
+    expect(quiet.container.querySelector('[data-slot="room-title"]')).toHaveAttribute(
+      'title',
+      '#general'
+    );
   });
 
   it('is quiet when the reader is caught up', () => {

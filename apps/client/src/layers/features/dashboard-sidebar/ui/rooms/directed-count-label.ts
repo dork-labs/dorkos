@@ -3,6 +3,7 @@
  *
  * @module features/dashboard-sidebar/ui/rooms/directed-count-label
  */
+import { COUNT_PILL_CAP } from '@/layers/shared/ui';
 
 /**
  * What a count pill counts. A direct message counts every new message, since
@@ -11,8 +12,11 @@
 export type DirectedCountKind = 'mentions' | 'messages';
 
 /**
- * The words a screen reader hears for a count pill, with the real number in
- * them even where the pill draws `9+`.
+ * The words a screen reader hears for a count pill.
+ *
+ * Up to nine it is the number; past it, "More than 9", which is what the pill's
+ * `9+` says. The server stops counting mentions at ten, so a bigger number
+ * here would be a claim nobody measured.
  *
  * It joins the row's own name, so it never names the row again: the row reads
  * "#general 3 mentions", not "#general 3 mentions in #general".
@@ -21,6 +25,7 @@ export type DirectedCountKind = 'mentions' | 'messages';
  * @param kind - What is being counted.
  */
 export function directedCountLabel(count: number, kind: DirectedCountKind): string {
-  if (kind === 'messages') return count === 1 ? '1 new message' : `${count} new messages`;
-  return count === 1 ? '1 mention' : `${count} mentions`;
+  const amount = count > COUNT_PILL_CAP ? `More than ${COUNT_PILL_CAP}` : String(count);
+  if (kind === 'messages') return count === 1 ? '1 new message' : `${amount} new messages`;
+  return count === 1 ? '1 mention' : `${amount} mentions`;
 }

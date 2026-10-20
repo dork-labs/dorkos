@@ -349,6 +349,9 @@ export const RoomRow = memo(function RoomRow({
   const quiet = isMuted || !isMember;
   const countKind = isDm && !isMuted ? 'messages' : 'mentions';
   const showWorking = working > 0 && !quiet;
+  // The row's own tooltip carries the name and the last line together, so the
+  // name drops its browser tooltip whenever there is a line to show.
+  const hasHint = (room.lastLine ?? '').trim().length > 0;
 
   const menuNodes = acts
     ? buildRoomRowMenuNodes({
@@ -392,11 +395,11 @@ export const RoomRow = memo(function RoomRow({
         title={
           allRetired ? (
             <>
-              <RoomTitle room={room} />
+              <RoomTitle room={room} tooltip={!hasHint} />
               <RetiredMark retired className="ml-1 shrink-0" />
             </>
           ) : (
-            <RoomTitle room={room} />
+            <RoomTitle room={room} tooltip={!hasHint} />
           )
         }
         titleText={title}

@@ -386,6 +386,7 @@ function AgentRowFromModel({
       isMuted={row.muted}
       isPaused={manifest !== null && chrome.pausedAgentIds.has(manifest.id)}
       {...(row.liveCount === undefined ? {} : { liveCount: row.liveCount })}
+      unread={row.unread}
       onSelect={() => chrome.openTarget(row.target)}
       onViewProfile={chrome.viewProfileFor(path)}
       onRequestNewGroup={chrome.requestNewGroup}

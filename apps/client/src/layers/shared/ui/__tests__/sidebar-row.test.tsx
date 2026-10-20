@@ -253,6 +253,8 @@ describe('SidebarRow — the resting hint', () => {
     fireEvent.focus(row());
     const tip = await screen.findByRole('tooltip');
     expect(tip).toHaveTextContent('Shipped the fix, tests are green');
+    // Led by the name, so a name the row cut short is still readable in full.
+    expect(tip).toHaveTextContent(/^#general/);
   });
 
   it('keeps the browser title and draws no tooltip without a hint', () => {

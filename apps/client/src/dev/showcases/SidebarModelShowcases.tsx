@@ -173,12 +173,14 @@ function ModelRow({
  *
  * Kept in step with `features/dashboard-sidebar/ui/SidebarSection.tsx`, which is
  * what the cockpit really draws.
+ *
+ * @param props.count - How many members are working; only one-or-more matters.
  */
-function FoldedWorkingDot() {
+function FoldedWorkingDot({ count }: { count: number }) {
   return (
     <span
       role="img"
-      aria-label="Agents working"
+      aria-label={count === 1 ? 'Agent working' : 'Agents working'}
       className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
     />
   );
@@ -232,7 +234,9 @@ function ModelSection({
               controlsId={listId}
               // Never a count, and never bold: the rows still asking for
               // something stay on screen below a folded header (BC-31).
-              {...(collapsed && rollup.workingCount > 0 ? { trailing: <FoldedWorkingDot /> } : {})}
+              {...(collapsed && rollup.workingCount > 0
+                ? { trailing: <FoldedWorkingDot count={rollup.workingCount} /> }
+                : {})}
             />
           </div>
           <ReasonChip reason={section.reason} show={showReasons} className="mr-1 shrink-0" />

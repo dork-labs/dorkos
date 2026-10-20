@@ -21,12 +21,12 @@ export function formatPillCount(count: number): string {
 
 /** Props for {@link CountPill}. */
 export interface CountPillProps extends Omit<ComponentProps<'span'>, 'children'> {
-  /** How many there are. Drawn capped; read out in full through `label`. */
+  /** How many there are. Drawn capped at `9+`. */
   count: number;
   /**
-   * What a screen reader hears in place of the number, with the real count in
-   * it: "12 mentions", not "9+". It joins the row's own name, so it never names
-   * the row again.
+   * What a screen reader hears in place of the drawn number — "3 mentions", or
+   * "More than 9 mentions" past the cap. It joins the row's own name, so it
+   * never names the row again.
    */
   label: string;
 }

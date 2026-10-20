@@ -73,7 +73,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(`#${slug}`);
   });
 
-  test('an unread channel row names itself once, and stops counting once read', async ({
+  test('an unread channel row names itself once, and stops being bold once read', async ({
     page,
     basePage,
     roomsApi,
@@ -83,20 +83,23 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     const room = await roomsApi.createChannel(slug);
     // Three entries the reader has not seen: the local human's read cursor sits
     // at 0 until something moves it, and reading the room is the only thing
-    // that does. Three is the number asserted below — not "some".
+    // that does. Three is the number the server is held to below — not "some".
     await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
-    // The badge is read from the room LIST, which lags the entry write. Waiting
-    // for it here keeps a slow projection from being reported as a missing badge.
+    // The bold is read from the room LIST, which lags the entry write. Waiting
+    // for it here keeps a slow projection from being reported as a missing bold.
     await roomsApi.waitForUnread(room.id, 3);
     await openCockpit(basePage);
 
     const row = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
-    // The whole announced name, not a substring: `toContainText('#slug')` is
-    // satisfied by "#slug 3 unread in #slug", which is the defect.
-    await expect(row).toHaveAccessibleName(`#${slug} 3 unread`, {
+    // Unread in a channel is bold and nothing else: no number, because none of
+    // the three named the reader. The whole announced name, not a substring —
+    // `toContainText('#slug')` is satisfied by "#slug … in #slug", which is the
+    // defect this test was written for.
+    await expect(row).toHaveAttribute('data-row-state', 'emphasized', {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    expect(await visibleText(row)).toBe(`${slug} 3`);
+    await expect(row).toHaveAccessibleName(`#${slug}`);
+    expect(await visibleText(row)).toBe(slug);
 
     // Opening the room is what marks it read.
     await row.click();
@@ -104,6 +107,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(row).not.toHaveAttribute('data-row-state', 'emphasized');
     await expect(row).toHaveAccessibleName(`#${slug}`);
     expect(await visibleText(row)).toBe(slug);
   });

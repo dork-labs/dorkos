@@ -1139,9 +1139,11 @@ describe('DashboardSidebar', () => {
     // The read conversation folds away; the one with something new stays put.
     expect(screen.queryByText('Read chat')).not.toBeInTheDocument();
     expect(screen.getByText('Quiet chat')).toBeInTheDocument();
-    // The header carries no number at all — only a dot while a member works.
+    // The header carries no number at all — only a dot while a member works,
+    // named in the singular: one conversation with two agents in it is one
+    // member working.
     expect(heading.textContent).not.toMatch(/\d/);
-    expect(within(heading).getByRole('img', { name: 'Agents working' })).toBeInTheDocument();
+    expect(within(heading).getByRole('img', { name: 'Agent working' })).toBeInTheDocument();
   });
 
   // ── BC-32: chrome by data volume ──

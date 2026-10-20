@@ -9,7 +9,16 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 import { describe, expect, it } from 'vitest';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
-import { HOUR, busyFixture, hoursAgo, prefs, quietFixture, room, session } from '../fixtures';
+import {
+  HOUR,
+  busyFixture,
+  hoursAgo,
+  prefs,
+  quietFixture,
+  room,
+  session,
+  thread,
+} from '../fixtures';
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { archiveOvernight } from '../rules/archive-overnight';
 import { buildDigestRow, localDateKey } from '../rules/build-digest-row';
@@ -741,5 +750,35 @@ describe('orderToday — determinism', () => {
     expect(orderToday(selectTodayItems(later), later).map((row) => row.key)).toEqual(
       orderToday(selectTodayItems(quietFixture), quietFixture).map((row) => row.key)
     );
+  });
+});
+
+describe('a thread never borrows its room’s mention count', () => {
+  it('leaves both threads of a mentioned room without the room’s count', () => {
+    // The room's count is about the room's entries; a thread cannot tell which
+    // of them named you, so it must not wear the number — nor be pinned or
+    // kept as if it were the mention.
+    const state: SidebarState = {
+      ...busyFixture,
+      mentions: { 'room-design': 3 },
+      threads: [
+        thread({ roomId: 'room-design', roomTitle: 'design', rootEntryId: 'a', unreadCount: 2 }),
+        thread({ roomId: 'room-design', roomTitle: 'design', rootEntryId: 'b', unreadCount: 0 }),
+      ],
+    };
+    const rows = selectTodayItems(state);
+    const threads = rows.filter(
+      (row) => row.target.kind === 'room' && row.target.roomKind === 'thread'
+    );
+    expect(threads).toHaveLength(2);
+    expect(threads.map((row) => row.unread)).toEqual([{ tier: 'activity' }, { tier: 'none' }]);
+    // The room itself still carries it.
+    const design = rows.find(
+      (row) =>
+        row.target.kind === 'room' &&
+        row.target.roomKind !== 'thread' &&
+        row.target.roomId === 'room-design'
+    );
+    expect(design?.unread).toEqual({ tier: 'directed', count: 3 });
   });
 });
