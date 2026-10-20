@@ -32,7 +32,7 @@ vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 vi.mock('../../config-manager.js', () => ({ configManager: { get: () => undefined } }));
 vi.mock('../index.js', () => ({ hasAnyUser: () => false }));
 
-const { isAtThisComputer } = await import('../gate-policy.js');
+const { isAtThisComputer, isOnEncryptedConnection } = await import('../gate-policy.js');
 const { honoRequestFacts } = await import('../../../../http/request-facts.js');
 const { markIngress } = await import('../../remote/ingress-mark.js');
 
@@ -57,7 +57,10 @@ honoApp.get('/probe', (c) => {
     configurable: true,
   });
   if (viaIngress) markIngress(c.env.incoming, viaIngress);
-  return c.json({ local: isAtThisComputer(honoRequestFacts(c)) });
+  return c.json({
+    local: isAtThisComputer(honoRequestFacts(c)),
+    encrypted: isOnEncryptedConnection(honoRequestFacts(c)),
+  });
 });
 
 const server = listeningServer(honoListener(honoApp));
@@ -161,5 +164,63 @@ describe('isAtThisComputer', () => {
     expect(await probe('localhost:4242')).toBe(false);
     mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
     expect(await probe('localhost:4242')).toBe(false);
+  });
+});
+
+// Where a signed-in person connects from changes nothing on an encrypted
+// connection (DOR-3172). This file runs as a development build: its sign-in
+// cookie is not `Secure`, so a proxy counts only when it says `https`.
+describe('isOnEncryptedConnection', () => {
+  async function encrypted(
+    headers: Record<string, string> = {},
+    peer: string | null = '127.0.0.1'
+  ): Promise<boolean> {
+    currentPeer = peer;
+    const res = await request(server)
+      .get('/probe')
+      .set('Host', 'localhost:4242')
+      .set(headers);
+    expect(res.status).toBe(200);
+    return res.body.encrypted as boolean;
+  }
+
+  it('counts the own tunnel and managed remote access', async () => {
+    for (const ingress of ['own-tunnel', 'managed'] as const) {
+      viaIngress = ingress;
+      expect(await encrypted()).toBe(true);
+    }
+  });
+
+  it('never counts plain-http Wi-Fi, the relay or this computer itself', async () => {
+    for (const ingress of ['wifi', 'relay'] as const) {
+      viaIngress = ingress;
+      expect(await encrypted({ 'x-forwarded-proto': 'https' })).toBe(false);
+    }
+    viaIngress = null;
+    expect(await encrypted()).toBe(false);
+  });
+
+  it('counts a proxy on this host that says https, and no other', async () => {
+    const proxied = { 'x-forwarded-for': '100.64.0.7' };
+    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https' })).toBe(true);
+    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https, http' })).toBe(true);
+    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'http' })).toBe(false);
+    expect(await encrypted(proxied)).toBe(false);
+  });
+
+  it('never counts a bare network bind, whatever its headers claim', async () => {
+    expect(
+      await encrypted(
+        { 'x-forwarded-for': '1.2.3.4', 'x-forwarded-proto': 'https' },
+        '192.168.86.200'
+      )
+    ).toBe(false);
+    expect(await encrypted({ 'x-forwarded-proto': 'https' }, '192.168.86.200')).toBe(false);
+  });
+
+  it('never counts a hub: it has its own bar', async () => {
+    mockEnv.DORKOS_SERVER_ROLE = 'hub';
+    viaIngress = 'own-tunnel';
+    expect(await encrypted()).toBe(false);
   });
 });

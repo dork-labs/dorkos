@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { honoListener } from '@dorkos/test-utils/listening-server';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
-import { buildAuthRateLimiter } from '../auth-rate-limit.js';
+import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../auth-rate-limit.js';
 import { env } from '../../env.js';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
 
@@ -44,7 +44,11 @@ let currentLimiter: MiddlewareHandler<RequestFactsEnv> = (_c, next) => next();
 const app = new Hono<RequestFactsEnv>();
 app.use((c, next) => currentLimiter(c, next));
 // Stand-ins for the Better Auth handler and a normal API route.
-app.post('/api/auth/sign-in/email', (c) => c.json({ ok: true }, 200));
+// A wrong password fails, as Better Auth answers it; anything else signs in.
+app.post('/api/auth/sign-in/email', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { password?: string };
+  return body.password === 'wrong' ? c.json({ code: 'INVALID' }, 401) : c.json({ ok: true }, 200);
+});
 app.post('/api/auth/sign-up/email', (c) => c.json({ ok: true }, 200));
 app.get('/api/auth/get-session', (c) => c.json({ session: null }, 200));
 // A future OAuth-initiation endpoint (invites/OAuth spec) — a redirect
@@ -289,5 +293,43 @@ describe('buildAuthRateLimiter', () => {
         expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
       }
     });
+  });
+});
+
+describe('buildAccountSignInLimiter (DOR-3172)', () => {
+  const failures = 3;
+  const signIn = (email: string, password: string) =>
+    request(server).post('/api/auth/sign-in/email').send({ email, password });
+
+  it('refuses an account after its failures fill the window, from any address', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    // Spelled differently, the same account: still refused, right password or not.
+    const blocked = await signIn('  Owner@Dork.Test ', 'right');
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+    // Another account is untouched.
+    expect((await signIn('someone@dork.test', 'right')).status).toBe(200);
+  });
+
+  it('gives a sign-in that works its count back, so only failures add up', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures * 3; i++) {
+      expect((await signIn('owner@dork.test', 'right')).status).toBe(200);
+    }
+    for (let i = 0; i < failures - 1; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right')).status).toBe(200);
+  });
+
+  it('passes a body that names no account straight through', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    for (let i = 0; i < 3; i++) {
+      const res = await request(server).post('/api/auth/sign-in/email').send({ password: 'wrong' });
+      expect(res.status).toBe(401);
+    }
   });
 });
