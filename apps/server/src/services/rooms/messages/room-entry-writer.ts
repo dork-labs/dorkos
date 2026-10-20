@@ -109,9 +109,7 @@ export interface RoomExternalPostInput {
  * carry that hold too (an unverified agent's post from Wi-Fi). A hold only
  * ever lowers: a held post is never read as the owner's own circle.
  */
-export type PostAuthorBound =
-  | TurnPermissionBound
-  | { marks: TurnMarks; heldToDefault?: true };
+export type PostAuthorBound = TurnPermissionBound | { marks: TurnMarks; heldToDefault?: true };
 
 /** The shared write half of every post that reaches a room's log. */
 export class RoomEntryWriter {

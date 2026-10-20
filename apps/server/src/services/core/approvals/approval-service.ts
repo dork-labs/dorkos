@@ -62,7 +62,6 @@ import {
 } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
-  ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
   type ApprovalServiceAction,
@@ -80,6 +79,7 @@ import {
   storableServiceAction,
   storableSummary,
   ownAnswerInput,
+  withServiceAction,
 } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
@@ -437,30 +437,8 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-/**
- * Read a stored connected-app action back, or nothing when the row has none or
- * it no longer parses — a card without it still has its summary.
- *
- * @param stored - The column's JSON.
- */
-function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
-  if (stored === null) return undefined;
-  try {
-    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
-    return parsed.success ? parsed.data : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
-
-/** The stored connected-app action as a spreadable field, or nothing. */
-function withServiceAction(stored: string | null): { serviceAction?: ApprovalServiceAction } {
-  const serviceAction = storedServiceAction(stored);
-  return serviceAction ? { serviceAction } : {};
-}
 
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */
 function recordedArea(area: string | null): PermissionAreaId | null {

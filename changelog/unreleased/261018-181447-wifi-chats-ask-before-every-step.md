@@ -10,6 +10,9 @@ covers:
   - 'fix(client): at phone width the permission chip always shows, and the Wi-Fi pill is easy to tap (DOR-3037)'
   - 'fix(client): Plan and the phone-width runtime icon hug their content on the status line (DOR-3037)'
   - "fix(server): the Wi-Fi refusals read the turn's marks after DOR-3036 part 1 (DOR-3037)"
+  - 'refactor(server): reading a stored connected-app action joins its writer in approval-storable (DOR-3037)'
+  - "fix(server): the Wi-Fi refusals read the turn's marks after DOR-3036 (DOR-3037)"
+  - "test(server): Wi-Fi holds read through DOR-3107's sender bound and own circle (DOR-3037)"
 ---
 
 ### Security

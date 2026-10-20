@@ -128,7 +128,12 @@ describe('a Wi-Fi room post across a restart', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
       first.human
     );
-    first.service.post(room.id, { authorId: first.human, text: '@ana hello' }, false, 'runtime-default');
+    first.service.post(
+      room.id,
+      { authorId: first.human, text: '@ana hello' },
+      false,
+      'runtime-default'
+    );
 
     const after: RoomTurnRequest[] = [];
     createRoomHarness({

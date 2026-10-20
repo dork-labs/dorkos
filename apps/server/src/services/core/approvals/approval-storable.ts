@@ -125,3 +125,31 @@ export function ownAnswerInput<T extends { capabilityId: string }>(input: T): T 
     throw new Error(`Only ${OWN_ANSWER_CAPABILITY} records a person's own answer.`);
   return input;
 }
+
+/**
+ * Read a stored connected-app action back, or nothing when the row has none or
+ * it no longer parses — a card without it still has its summary.
+ *
+ * @param stored - The column's JSON.
+ */
+function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
+  if (stored === null) return undefined;
+  try {
+    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The stored connected-app action as a spreadable field, or nothing.
+ *
+ * @param stored - The column's JSON.
+ */
+export function withServiceAction(stored: string | null): {
+  serviceAction?: ApprovalServiceAction;
+} {
+  const serviceAction = storedServiceAction(stored);
+  return serviceAction ? { serviceAction } : {};
+}
