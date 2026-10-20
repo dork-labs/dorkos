@@ -19,7 +19,7 @@
  *
  * @module services/core/operator/front-door-settings
  */
-import { OPERATOR_ONLY_STAKES, type OperatorOnlyStake } from './config-write-policy.js';
+import { OPERATOR_ONLY_STAKES, type OperatorOnlyStake } from './operator-only-stakes.js';
 
 /** The stakes whose settings are front-door settings, and how a refusal names each. */
 export const FRONT_DOOR_STAKES: Readonly<Partial<Record<OperatorOnlyStake, string>>> = {
