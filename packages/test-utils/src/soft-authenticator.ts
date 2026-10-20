@@ -176,15 +176,20 @@ export class SoftAuthenticator {
     return SOFT_AUTHENTICATOR_COSE_ALG[this.alg];
   }
 
-  /** The public key as a COSE key, raw bytes. */
-  cosePublicKey(): Uint8Array {
+  /**
+   * The public key as a COSE key, raw bytes.
+   *
+   * @param claimedAlg - The COSE algorithm the key claims, when a test wants a
+   *   key that names one it does not sign with (RS1, -65535, say).
+   */
+  cosePublicKey(claimedAlg?: number): Uint8Array {
     const jwk = this.publicKey.export({ format: 'jwk' });
     const x = Buffer.from(jwk.x!, 'base64url');
     if (this.alg === 'Ed25519') {
       return cbor(
         new Map<CborValue, CborValue>([
           [1, 1],
-          [3, -8],
+          [3, claimedAlg ?? -8],
           [-1, 6],
           [-2, x],
         ])
@@ -193,7 +198,7 @@ export class SoftAuthenticator {
     return cbor(
       new Map<CborValue, CborValue>([
         [1, 2],
-        [3, -7],
+        [3, claimedAlg ?? -7],
         [-1, 1],
         [-2, x],
         [-3, Buffer.from(jwk.y!, 'base64url')],
@@ -284,10 +289,20 @@ export class SoftAuthenticator {
   /**
    * Make a `none` attestation for this passkey, as `navigator.credentials.create` would.
    *
-   * @param options - The challenge, and the origin and relying party when not the authenticator's own.
+   * @param options - The challenge, the origin and relying party when not the
+   *   authenticator's own, and anything to break: `userVerified: false` clears
+   *   the UV flag, `crossOrigin` sets `clientDataJSON.crossOrigin`, and
+   *   `claimedAlg` makes the COSE key name another algorithm.
    * @returns The attestation, every binary field base64url.
    */
-  attest(options: { challenge: string; origin?: string; rpId?: string }): SoftAttestation {
+  attest(options: {
+    challenge: string;
+    origin?: string;
+    rpId?: string;
+    userVerified?: boolean;
+    crossOrigin?: boolean;
+    claimedAlg?: number;
+  }): SoftAttestation {
     const credentialId = Buffer.from(this.credentialId, 'base64url');
     const idLength = Buffer.alloc(2);
     idLength.writeUInt16BE(credentialId.length, 0);
@@ -295,11 +310,11 @@ export class SoftAuthenticator {
       Buffer.alloc(16), // AAGUID: all zeros, as `none` attestation reports it.
       idLength,
       credentialId,
-      Buffer.from(this.cosePublicKey()),
+      Buffer.from(this.cosePublicKey(options.claimedAlg)),
     ]);
     const flags =
       AUTHENTICATOR_FLAGS.userPresent |
-      AUTHENTICATOR_FLAGS.userVerified |
+      (options.userVerified === false ? 0 : AUTHENTICATOR_FLAGS.userVerified) |
       AUTHENTICATOR_FLAGS.attestedCredentialData;
     const authData = this.authenticatorData(
       options.rpId ?? this.rpId,
@@ -311,7 +326,7 @@ export class SoftAuthenticator {
       'webauthn.create',
       options.challenge,
       options.origin ?? this.origin,
-      false,
+      options.crossOrigin ?? false,
       undefined
     );
     const attestationObject = cbor(

@@ -20,11 +20,15 @@ import { logger } from '../../../../lib/logger.js';
 import type { RecordAuditInput } from '../../../audit/audit-trail.js';
 import {
   ApprovalKeyStoreError,
+  KEYS_READ_ERROR,
+  UNREADABLE_KEYS_REFUSAL,
   addApprovalKey,
   approvalKeysPath,
+  approvalKeysUnreadable,
   bumpSignCount,
   readApprovalKeys,
   removeApprovalKey,
+  removeDamagedApprovalKeys,
   type ApprovalKey,
 } from '../approval-key-store.js';
 import { clearRelayPin, writeRelayPin } from '../pin-store.js';
@@ -173,6 +177,28 @@ describe('the approval key store', () => {
     expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe(text);
   });
 
+  it('refuses to add a key over a file it cannot read, and leaves the file be', async () => {
+    fs.mkdirSync(path.dirname(approvalKeysPath(home)), { recursive: true });
+    fs.writeFileSync(approvalKeysPath(home), '{"v":1,');
+    expect(approvalKeysUnreadable(home)).toBe(true);
+    await expect(addApprovalKey(PARTY, key(), audit(), home)).rejects.toThrow(
+      UNREADABLE_KEYS_REFUSAL
+    );
+    expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe('{"v":1,');
+    expect(audits).toEqual([]);
+    fs.rmSync(approvalKeysPath(home));
+    expect(approvalKeysUnreadable(home)).toBe(false);
+    await addApprovalKey(PARTY, key(), audit(), home);
+    expect(readApprovalKeys(home)?.keys).toHaveLength(1);
+  });
+
+  it('refuses a key that signs with an algorithm outside ES256, EdDSA and RS256', async () => {
+    await expect(
+      addApprovalKey(PARTY, key({ alg: -65535 as ApprovalKey['alg'] }), audit(), home)
+    ).rejects.toThrow();
+    expect(readApprovalKeys(home)).toBeNull();
+  });
+
   it('goes when the pin goes', async () => {
     await writeRelayPin(
       {
@@ -190,5 +216,44 @@ describe('the approval key store', () => {
     clearRelayPin(home);
     expect(fs.existsSync(approvalKeysPath(home))).toBe(false);
     expect(readApprovalKeys(home)).toBeNull();
+  });
+});
+
+describe('a keys file that cannot be read just now', () => {
+  let home: string;
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-approval-keys-err-'));
+    fs.mkdirSync(path.dirname(approvalKeysPath(home)), { recursive: true });
+    fs.writeFileSync(approvalKeysPath(home), '{"v":1,');
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('is an error, not damaged: nothing removes or replaces it', async () => {
+    const realRead = fs.readFileSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      file: fs.PathOrFileDescriptor,
+      ...rest: unknown[]
+    ) => {
+      if (file === approvalKeysPath(home)) {
+        throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+      }
+      return (realRead as (...args: unknown[]) => unknown)(file, ...rest);
+    }) as typeof fs.readFileSync);
+    const sink = {
+      owner: () => ({ accountId: 'a', kind: 'person' as const, name: 'A' }),
+      recordAudit: vi.fn(),
+    };
+    expect(approvalKeysUnreadable(home)).toBe(false);
+    expect(readApprovalKeys(home)).toBeNull();
+    expect(await removeDamagedApprovalKeys(sink, home)).toBe('read-error');
+    await expect(addApprovalKey(PARTY, key(), sink, home)).rejects.toThrow(KEYS_READ_ERROR);
+    vi.restoreAllMocks();
+    expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe('{"v":1,');
+    expect(sink.recordAudit).not.toHaveBeenCalled();
+    // Readable again, it is damaged, and only then removable.
+    expect(await removeDamagedApprovalKeys(sink, home)).toBe('removed');
   });
 });
