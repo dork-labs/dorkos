@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { Lock } from 'lucide-react';
+import { ArrowUpRight, Lock } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { ExternalLinkAnchor } from '@/layers/shared/ui';
 
 /**
  * One section of the Settings tab: a heading, an optional count beside it, an optional action on
@@ -18,7 +19,8 @@ export function SettingsSection({
   title: string;
   meta?: ReactNode;
   action?: ReactNode;
-  reason?: string | null;
+  /** Why the section is read-only: a sentence gets a lock; a node (a link) is shown as it is. */
+  reason?: ReactNode;
   children: ReactNode;
   testId?: string;
 }) {
@@ -32,7 +34,11 @@ export function SettingsSection({
         {meta && <span className="text-muted-foreground text-xs">{meta}</span>}
         {action && <div className="ml-auto">{action}</div>}
       </div>
-      {reason && <LockedReason className="px-1">{reason}</LockedReason>}
+      {typeof reason === 'string' ? (
+        <LockedReason className="px-1">{reason}</LockedReason>
+      ) : (
+        reason && <div className="px-1">{reason}</div>
+      )}
       <div className="bg-muted flex flex-col rounded-xl py-1">{children}</div>
     </section>
   );
@@ -51,7 +57,7 @@ export function SettingsRow({
 }: {
   label: ReactNode;
   description?: string;
-  reason?: string | null;
+  reason?: ReactNode;
   children?: ReactNode;
   stacked?: boolean;
 }) {
@@ -65,7 +71,7 @@ export function SettingsRow({
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="text-sm font-medium">{label}</div>
         {description && <p className="text-muted-foreground text-xs">{description}</p>}
-        {reason && <LockedReason>{reason}</LockedReason>}
+        {typeof reason === 'string' ? <LockedReason>{reason}</LockedReason> : reason}
       </div>
       {children !== undefined && (
         <div className={cn('min-w-0 text-sm', !stacked && 'text-right')}>{children}</div>
@@ -105,5 +111,21 @@ export function LetterTile({
     >
       {letter}
     </span>
+  );
+}
+
+/**
+ * Where an owner or admin changes what this tab only shows: the space's own web settings, which
+ * check their sign-in there. No lock: it is a way through, not a wall.
+ */
+export function ManageOnWeb({ href }: { href: string }) {
+  return (
+    <ExternalLinkAnchor
+      href={href}
+      className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+    >
+      Manage this in web settings
+      <ArrowUpRight aria-hidden className="size-3" />
+    </ExternalLinkAnchor>
   );
 }

@@ -40,6 +40,8 @@ describe('groupPeople', () => {
     expect(people.map((row) => row.agents.map((a) => a.memberId))).toEqual([['a1', 'a2'], []]);
     expect(headcount(people, true)).toBe('2 people · 2 agents');
     expect(headcount(people, false)).toBe('2 people');
+    // A space with more people than were read is never counted as if it had only these.
+    expect(headcount(people, true, true)).toBe('First 2 people · 2 agents');
     expect(personDetail(people[0]!)).toBe('@alex · 2 agents');
     expect(personDetail(people[1]!)).toBe('@maya');
   });

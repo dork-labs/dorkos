@@ -33,6 +33,8 @@ const FileSchema = z.record(
 export class SpaceSettingsCache {
   private readonly directory: string;
   private readonly memory = new Map<string, Partial<Record<CommunitySpaceRead, CachedSpaceRead>>>();
+  /** The last write queued for each connection, so the next one waits for it. */
+  private readonly writes = new Map<string, Promise<void>>();
 
   /**
    * Keep the answers under the DorkOS data directory.
@@ -52,30 +54,46 @@ export class SpaceSettingsCache {
     return (await this.load(owner, ref))[read];
   }
 
-  /** Keep a value the space just sent. A failed write keeps it in memory only. */
-  async set(
-    owner: string,
-    ref: string,
-    read: CommunitySpaceRead,
-    entry: CachedSpaceRead
-  ): Promise<void> {
-    const entries = { ...(await this.load(owner, ref)), [read]: entry };
-    this.memory.set(this.key(owner, ref), entries);
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const target = this.file(owner, ref);
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, JSON.stringify(entries), { mode: 0o600, flag: 'wx' });
-      await rename(temporary, target);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+  /**
+   * Keep a value the space just sent. Writes to one connection run one at a time, each reading
+   * the entry the last one left, so four reads answering at once keep all four. A failed disk
+   * write keeps the value in memory only.
+   */
+  set(owner: string, ref: string, read: CommunitySpaceRead, entry: CachedSpaceRead): Promise<void> {
+    return this.exclusive(owner, ref, async () => {
+      const entries = { ...(await this.load(owner, ref)), [read]: entry };
+      this.memory.set(this.key(owner, ref), entries);
+      await mkdir(this.directory, { recursive: true, mode: 0o700 });
+      const target = this.file(owner, ref);
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify(entries), { mode: 0o600, flag: 'wx' });
+        await rename(temporary, target);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    });
   }
 
-  /** Drop everything kept for a connection, as when it is disconnected. */
-  async forget(owner: string, ref: string): Promise<void> {
-    this.memory.delete(this.key(owner, ref));
-    await rm(this.file(owner, ref), { force: true });
+  /** Drop everything kept for a connection, as when it is disconnected or refused. */
+  forget(owner: string, ref: string): Promise<void> {
+    return this.exclusive(owner, ref, async () => {
+      this.memory.set(this.key(owner, ref), {});
+      await rm(this.file(owner, ref), { force: true });
+    });
+  }
+
+  /** Run `work` after every earlier write to this connection has finished, failed or not. */
+  private exclusive(owner: string, ref: string, work: () => Promise<void>): Promise<void> {
+    const key = this.key(owner, ref);
+    const run = (this.writes.get(key) ?? Promise.resolve()).catch(() => undefined).then(work);
+    this.writes.set(key, run);
+    void run
+      .finally(() => {
+        if (this.writes.get(key) === run) this.writes.delete(key);
+      })
+      .catch(() => undefined);
+    return run;
   }
 
   private async load(

@@ -12,6 +12,7 @@
  * @module routes/community-space-settings
  */
 import type { Context, Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_SPACE_READS,
@@ -19,8 +20,7 @@ import {
 } from '@dorkos/shared/community-space-settings';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
+import { assessPerson, type PersonBarCopy, type PersonRefusal } from './extensions-person-bar.js';
 import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionNotFoundError,
@@ -30,22 +30,38 @@ import {
   type SpaceSettingsReader,
 } from '../services/communities/remote/settings/index.js';
 
+/** What these reads say when the caller is not the person at the app. */
+const PERSON_BAR: PersonBarCopy = {
+  error: 'Only a person can read a space’s settings, in the app.',
+  code: 'NOT_A_PERSON',
+  subject: 'a space’s settings',
+  crossSite: (origin) => `A page on ${origin} tried to read a space’s settings.`,
+  agent: 'Only a person can read a space’s settings, not an agent.',
+};
+
 /**
- * Why this caller is not the person at the app, or `undefined` when it is. Read before the owner
- * check, so a refused caller learns nothing about which connections exist.
+ * The person bar every person-only route shares (`assessPerson`: another site's page, an agent's
+ * identity or an approval token, and anything but a browser session under login), and one more:
+ * no bearer of any kind, so an API key never reads a space's settings in any posture. Run before
+ * the owner check, so a refused caller learns nothing about which connections exist.
  *
  * @param c - The request's context.
+ * @returns The refusal to answer with, or `null` when the person at the app is asking.
  */
-export function refuseNonPerson(c: Context<ApiEnv>): string | undefined {
+export function refuseNonPerson(c: Context<ApiEnv>): PersonRefusal | null {
   const facts = honoRequestFacts(c);
-  if (presentsAgentIdentity(facts) || facts.headers[APPROVAL_TOKEN_HEADER] !== undefined)
-    return 'Only a person can read a space’s settings, not an agent.';
+  const refusal = assessPerson(facts, PERSON_BAR);
+  if (refusal) return refusal;
   if (facts.user?.credential === 'api-key' || facts.headers.authorization !== undefined)
-    return 'Read a space’s settings in the app, not with a key.';
-  // A mini app's sandboxed frame has no origin of its own and is never same-site.
-  if (facts.headers.origin === 'null' || facts.headers['sec-fetch-site'] === 'cross-site')
-    return 'Read a space’s settings in the app itself.';
-  return undefined;
+    return {
+      status: 403,
+      body: {
+        error: PERSON_BAR.error,
+        code: PERSON_BAR.code,
+        message: 'Read a space’s settings in the app, not with a key.',
+      },
+    };
+  return null;
 }
 
 /**
@@ -62,15 +78,16 @@ export function addSpaceSettingsRoutes(
 ): void {
   for (const read of COMMUNITY_SPACE_READS) {
     router.get(`/:ref/space/${read}`, async (c) => {
+      // Nothing here, answer or refusal, is for any cache between the app and this server.
+      c.header('Cache-Control', 'no-store');
       const refused = refuseNonPerson(c);
-      if (refused) return c.json({ error: refused, code: 'NOT_A_PERSON' }, 403);
+      if (refused) return c.json(refused.body, refused.status as ContentfulStatusCode);
       const owner = resolveCommunityOwner(c);
       if (typeof owner !== 'string') return owner;
       const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
       if (!ref.success) return c.json({ error: 'Space connection not found.' }, 404);
       try {
         const result = await reader().read(ref.data, owner, read);
-        c.header('Cache-Control', 'no-store');
         return c.json(COMMUNITY_SPACE_READ_SCHEMAS[read].parse(result));
       } catch (error) {
         if (error instanceof SpaceReadRefusedError)

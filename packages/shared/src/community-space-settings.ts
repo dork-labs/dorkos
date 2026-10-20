@@ -11,7 +11,8 @@
 import { z } from 'zod';
 import { CommunityAdminSettingsSchema } from './community-admin-wire.js';
 import {
-  CommunityWireMemberDirectoryPageSchema,
+  COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX,
+  CommunityWireDirectoryMemberSchema,
   CommunityWireMemberResponseSchema,
   CommunityWireRulesSchema,
 } from './community-wire.js';
@@ -42,9 +43,31 @@ export const CommunitySpaceMeReadSchema = z.strictObject({
   value: CommunityWireMemberResponseSchema,
   ...freshness,
 });
+/** How many people the members read follows the space's pages to, at most. */
+export const COMMUNITY_SPACE_MEMBERS_MAX = 1000;
+
+/** Directory pages the members read follows: {@link COMMUNITY_SPACE_MEMBERS_MAX} at 100 each. */
+export const COMMUNITY_SPACE_MEMBER_PAGES = 10;
+
+/**
+ * Who is in a space, as the members read gathers it: up to {@link COMMUNITY_SPACE_MEMBERS_MAX}
+ * people across the space's pages, with their agents when the space sends them. `nextCursor` is
+ * set when the space has more people than were read.
+ */
+export const CommunitySpaceMembersSchema = z.strictObject({
+  members: z.array(CommunityWireDirectoryMemberSchema).max(COMMUNITY_SPACE_MEMBERS_MAX),
+  agents: z
+    .array(CommunityWireDirectoryMemberSchema)
+    .max(COMMUNITY_SPACE_MEMBER_PAGES * COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX)
+    .optional(),
+  nextCursor: z.string().nullable(),
+});
+/** Who is in a space, as the members read gathers it. */
+export type CommunitySpaceMembers = z.infer<typeof CommunitySpaceMembersSchema>;
+
 /** `GET /api/community-connections/:ref/space/members`: people, with their agents when sent. */
 export const CommunitySpaceMembersReadSchema = z.strictObject({
-  value: CommunityWireMemberDirectoryPageSchema,
+  value: CommunitySpaceMembersSchema,
   ...freshness,
 });
 /** `GET /api/community-connections/:ref/space/rules`. */

@@ -20,11 +20,16 @@ import {
   CommunityWireMemberDirectoryPageSchema,
   CommunityWireMemberResponseSchema,
   CommunityWireRulesSchema,
+  type CommunityWireMemberDirectoryPage,
 } from '@dorkos/shared/community-wire';
-import type {
-  CommunitySpaceRead,
-  CommunitySpaceReadResult,
+import {
+  COMMUNITY_SPACE_MEMBER_PAGES,
+  CommunitySpaceMembersSchema,
+  type CommunitySpaceMembers,
+  type CommunitySpaceRead,
+  type CommunitySpaceReadResult,
 } from '@dorkos/shared/community-space-settings';
+import { RemoteConnectionAuthorizationError } from '../connection-store.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   communityApiPath,
@@ -81,6 +86,11 @@ export interface SpaceConnectionSource {
   ): Promise<{ pinnedOrigin: string; remoteCommunityId: string }>;
   /** The connection's personal grant. Throws when it needs reconnecting. */
   credential(ref: CommunityRef, owner: string): Promise<string>;
+  /**
+   * After a 401: ask the space whether the grant itself was rejected, marking the connection for
+   * reconnecting when it was. False when the grant still works, and the 401 was this read's.
+   */
+  grantRejected(ref: CommunityRef, owner: string): Promise<boolean>;
 }
 
 /** How a request reaches a space; `pinnedJson` in production, a fake in tests. */
@@ -115,7 +125,19 @@ export class SpaceSettingsReader {
           ? await this.members(place, authorization)
           : await this.fetch(place, SPACE_READ_PATHS[read], authorization, WIRE[read]);
     } catch (error) {
-      if (!unreachable(error)) throw refusal(read, error);
+      if (!unreachable(error)) {
+        if (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403)) {
+          // A refusal now means what was kept may no longer be theirs to see: drop it, as the
+          // attention and owner-notice caches do, so going offline next never shows it again.
+          await this.cache.forget(owner, ref).catch(() => undefined);
+          // A 401 is a rejected grant, or a space from before these reads that takes no grant
+          // here. The connection's own access check tells them apart, and marks a rejected one
+          // for reconnecting, as every other read of the connection does.
+          if (error.status === 401 && (await this.source.grantRejected(ref, owner)))
+            throw new RemoteConnectionAuthorizationError();
+        }
+        throw refusal(read, error);
+      }
       const kept = await this.cache.get(owner, ref, read);
       // Only the kind of failure, never the error itself: nothing about the request is logged.
       logger.warn('[space-settings] space unreachable; showing its last answer', {
@@ -159,19 +181,45 @@ export class SpaceSettingsReader {
   }
 
   /**
-   * The first 100 people, with their agents when the space sends them. A space from before the
-   * combined directory refuses `include`, and is asked again for its plain page.
+   * Who is in the space: the space's pages followed up to {@link COMMUNITY_SPACE_MEMBER_PAGES},
+   * with their agents when the space sends them. `nextCursor` stays set when there are more. A
+   * space from before the combined directory refuses `include`, and is asked for its plain pages.
    */
   private async members(
     place: { pinnedOrigin: string; remoteCommunityId: string },
     authorization: string
-  ): Promise<unknown> {
-    try {
-      return await this.fetch(place, SPACE_READ_PATHS.members, authorization, WIRE.members);
-    } catch (error) {
-      if (!(error instanceof PinnedHttpError && error.status === 400)) throw error;
-      return this.fetch(place, MEMBERS_WITHOUT_EXTRAS, authorization, WIRE.members);
+  ): Promise<CommunitySpaceMembers> {
+    let base = SPACE_READ_PATHS.members;
+    const gathered: CommunitySpaceMembers = { members: [], nextCursor: null };
+    let cursor: string | null = null;
+    for (let page = 0; page < COMMUNITY_SPACE_MEMBER_PAGES; page += 1) {
+      const path = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base;
+      let answer: CommunityWireMemberDirectoryPage;
+      try {
+        answer = (await this.fetch(
+          place,
+          path,
+          authorization,
+          WIRE.members
+        )) as CommunityWireMemberDirectoryPage;
+      } catch (error) {
+        if (page > 0 || base === MEMBERS_WITHOUT_EXTRAS) throw error;
+        if (!(error instanceof PinnedHttpError && error.status === 400)) throw error;
+        base = MEMBERS_WITHOUT_EXTRAS;
+        answer = (await this.fetch(
+          place,
+          base,
+          authorization,
+          WIRE.members
+        )) as CommunityWireMemberDirectoryPage;
+      }
+      gathered.members.push(...answer.members);
+      if (answer.agents) gathered.agents = [...(gathered.agents ?? []), ...answer.agents];
+      cursor = answer.nextCursor;
+      gathered.nextCursor = cursor;
+      if (!cursor) break;
     }
+    return CommunitySpaceMembersSchema.parse(gathered);
   }
 }
 

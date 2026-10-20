@@ -167,9 +167,15 @@ function ChannelsPageBody() {
 
 /** A connected space's Settings tab, once its connection is known. */
 function SpaceSettingsTab({ community }: { community: string }) {
-  const connection = useCommunityConnections().data?.find((item) => item.ref === community);
-  if (!connection) return null;
-  return <SpaceSettingsPanel connection={connection} />;
+  const connections = useCommunityConnections();
+  const connection = connections.data?.find((item) => item.ref === community);
+  if (connection) return <SpaceSettingsPanel connection={connection} />;
+  if (connections.data === undefined) return null;
+  return (
+    <p className="text-muted-foreground mx-auto w-full max-w-[680px] px-4 py-10 text-sm">
+      This space isn’t connected.
+    </p>
+  );
 }
 
 /**

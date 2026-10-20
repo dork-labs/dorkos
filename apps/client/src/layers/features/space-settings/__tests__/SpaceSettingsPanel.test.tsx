@@ -104,14 +104,28 @@ function mount(
 }
 
 describe('an owner', () => {
-  it('reads every section as plain text, told once to pair again to manage here', async () => {
-    // Purpose: fails if an owner sees inputs, or the read-only reason is missing or repeated.
+  it('reads every section as plain text, with one link to manage it in web settings', async () => {
+    // Purpose: fails if an owner sees inputs, is promised a way to manage here that does not
+    // exist yet, or the link is missing or repeated.
     mount('owner');
     expect(await screen.findByText('You’re the owner', { exact: false })).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     const general = screen.getByTestId('space-settings-general');
     expect(within(general).getByText('Invite only')).toBeInTheDocument();
-    expect(within(general).getAllByText('Pair again to manage here.')).toHaveLength(1);
+    const manage = within(general).getAllByRole('link', { name: /Manage this in web settings/ });
+    expect(manage).toHaveLength(1);
+    expect(manage[0]).toHaveAttribute(
+      'href',
+      `https://spaces.example/c/${connection.remoteCommunityId}/settings/community`
+    );
+    expect(screen.queryByText(/Pair again/)).not.toBeInTheDocument();
+    const members = screen.getByTestId('space-settings-members');
+    expect(
+      within(members).getAllByRole('link', { name: /Manage this in web settings/ })[0]
+    ).toHaveAttribute(
+      'href',
+      `https://spaces.example/c/${connection.remoteCommunityId}/settings/members`
+    );
     expect(screen.getByText('Invite links and mutes')).toBeInTheDocument();
   });
 
@@ -144,7 +158,7 @@ describe('an owner', () => {
 });
 
 describe('an admin', () => {
-  it('is told to pair again, and may leave through the web settings', async () => {
+  it('manages through the web settings, and may leave there too', async () => {
     mount('admin');
     expect(await screen.findByText('You’re an admin', { exact: false })).toBeInTheDocument();
     const danger = screen.getByTestId('space-settings-danger');
@@ -158,13 +172,13 @@ describe('an admin', () => {
 
 describe('a member', () => {
   it('sees who can change each value, row by row, and no admin rows', async () => {
-    // Purpose: fails if a member is told to pair again (they could not manage anyway).
+    // Purpose: fails if a member is sent to manage what they cannot change anyway.
     mount('member');
     expect(await screen.findByText('Only the owner can rename the space.')).toBeInTheDocument();
     expect(
       screen.getByText('Ask an owner or admin to invite or remove people.')
     ).toBeInTheDocument();
-    expect(screen.queryByText('Pair again to manage here.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Manage this in web settings/ })).toBeNull();
     expect(screen.queryByText('Invite links and mutes')).not.toBeInTheDocument();
     expect(await screen.findByText('You agreed to version 3.')).toBeInTheDocument();
   });
@@ -193,8 +207,8 @@ describe('a space that cannot be reached', () => {
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
       expect(screen.getByText('Offline')).toBeInTheDocument();
-      expect(screen.queryByText('Pair again to manage here.')).not.toBeInTheDocument();
-      expect(screen.getByText('Northwind Studio', { selector: 'div' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Manage this in web settings/ })).toBeNull();
+      expect(screen.getAllByText('Northwind Studio').length).toBeGreaterThan(0);
       expect(screen.queryAllByRole('link', { name: /Continue in web settings/ })).toHaveLength(0);
     } finally {
       vi.useRealTimers();

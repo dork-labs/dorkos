@@ -29,7 +29,7 @@ const CONNECTION = {
   ref: 'northwind',
   remoteCommunityId: REMOTE_ID,
   label: 'Northwind Studio',
-  pinnedOrigin: 'https://spaces.dorkos.ai',
+  pinnedOrigin: 'https://spaces.example.com',
   connectedHumanMemberId: 'm-alex',
   status: 'connected',
   expiresAt: null,

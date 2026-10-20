@@ -14,8 +14,14 @@ import {
   tileColor,
   type SpaceRole,
 } from '../lib/space-view';
-import { LetterTile, LockedReason, SettingsRow, SettingsSection } from './SettingsBlocks';
-import { PAIR_AGAIN, SpaceMembersSection } from './SpaceMembersSection';
+import {
+  LetterTile,
+  LockedReason,
+  ManageOnWeb,
+  SettingsRow,
+  SettingsSection,
+} from './SettingsBlocks';
+import { SpaceMembersSection } from './SpaceMembersSection';
 import { SpaceDangerSection } from './SpaceDangerSection';
 
 /** Props for {@link SpaceSettingsPanel}. */
@@ -28,9 +34,9 @@ export interface SpaceSettingsPanelProps {
  * A connected space's Settings tab (DOR-3005): one 680px column of General, Members, Rules and
  * the ways to leave, archive or delete, read through the app's own pairing with the space.
  *
- * Read-only in this version. Every value is plain text, never a disabled input, with a lock and
- * one line saying why. An owner or admin is told to pair again to manage here; a member is told
- * who can. Leaving, handing over, archiving and deleting continue on the space's web settings.
+ * Read-only in this version. Every value is plain text, never a disabled input. An owner or
+ * admin gets one link per section to the space's web settings, where they change it; a member
+ * gets a lock and one line saying who can. Leaving, handing over, archiving and deleting continue on the space's web settings.
  *
  * When the space cannot be reached, it shows what the space said last and how long ago, with one
  * amber line and Try again; no row adds a reason of its own then.
@@ -53,7 +59,9 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
   const owner = role === 'owner';
   const moderator = owner || role === 'admin';
   // Once per section when it applies to every row, as the design asks; none while offline.
-  const generalReason = offline ? null : moderator ? PAIR_AGAIN : null;
+  // An owner or admin changes these in the space's web settings until the app can pair to manage.
+  const generalReason =
+    offline || !moderator ? null : <ManageOnWeb href={webSettingsUrl('community')} />;
   const memberReason = (text: string) => (offline || moderator ? null : text);
   const name = settings?.name ?? connection.label;
 
@@ -83,9 +91,11 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
     <SettingsColumn>
       <header className="flex items-center gap-4">
         <LetterTile letter={initialOf(name)} color={tileColor(connection.ref)} size="lg" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 className="flex items-center gap-2 truncate text-lg font-semibold">
-            {name}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold">
+            <span className="min-w-0 truncate" dir="auto">
+              {name}
+            </span>
             {offline && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                 <WifiOff aria-hidden className="size-3" />
@@ -124,7 +134,9 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
           <LetterTile letter={initialOf(name)} color={tileColor(connection.ref)} />
         </SettingsRow>
         <SettingsRow label="Name" reason={memberReason('Only the owner can rename the space.')}>
-          {name}
+          <span dir="auto" className="break-words">
+            {name}
+          </span>
         </SettingsRow>
         <SettingsRow
           label="Description"
@@ -132,7 +144,9 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
           stacked
         >
           {settings?.description ? (
-            <p className="whitespace-pre-wrap">{settings.description}</p>
+            <p dir="auto" className="break-words whitespace-pre-wrap">
+              {settings.description}
+            </p>
           ) : (
             <p className="text-muted-foreground">No description</p>
           )}
@@ -148,12 +162,15 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
         role={role}
         meId={meId}
         offline={offline}
+        manageUrl={webSettingsUrl('members')}
       />
 
       <SettingsSection title="Rules" testId="space-settings-rules">
         <div className="flex flex-col gap-3 px-4 py-3">
           {reads.rules.data?.value.text ? (
-            <p className="text-sm whitespace-pre-wrap">{reads.rules.data.value.text}</p>
+            <p dir="auto" className="text-sm break-words whitespace-pre-wrap">
+              {reads.rules.data.value.text}
+            </p>
           ) : (
             <p className="text-muted-foreground text-sm">
               {reads.rules.error && !reads.rules.data ? reads.rules.error.message : 'No rules yet.'}
@@ -166,11 +183,12 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
                   ? `You agreed to version ${reads.rules.data.value.version}.`
                   : `Version ${reads.rules.data.value.version}`}
               </span>
-              {!offline && (
-                <LockedReason>
-                  {moderator ? PAIR_AGAIN : 'Owners and admins change the rules.'}
-                </LockedReason>
-              )}
+              {!offline &&
+                (moderator ? (
+                  <ManageOnWeb href={webSettingsUrl('community')} />
+                ) : (
+                  <LockedReason>Owners and admins change the rules.</LockedReason>
+                ))}
             </div>
           )}
         </div>

@@ -6,10 +6,8 @@
  */
 import { fnv1aHash } from '@/layers/shared/lib';
 import type { CommunitySpaceReadResult } from '@dorkos/shared/community-space-settings';
-import type {
-  CommunityWireDirectoryMember,
-  CommunityWireMemberDirectoryPage,
-} from '@dorkos/shared/community-wire';
+import type { CommunitySpaceMembers } from '@dorkos/shared/community-space-settings';
+import type { CommunityWireDirectoryMember } from '@dorkos/shared/community-wire';
 
 /** A person's role in a space. */
 export type SpaceRole = 'owner' | 'admin' | 'member';
@@ -47,7 +45,7 @@ export function admissionLabel(
  * People in directory order, each with the agents they own. An agent whose owner is not on the
  * page is left out: an agent sits under its person, never alone.
  */
-export function groupPeople(page: CommunityWireMemberDirectoryPage): SpacePerson[] {
+export function groupPeople(page: CommunitySpaceMembers): SpacePerson[] {
   const byOwner = new Map<string, CommunityWireDirectoryMember[]>();
   for (const agent of page.agents ?? []) {
     if (!agent.ownerMemberId) continue;
@@ -56,12 +54,22 @@ export function groupPeople(page: CommunityWireMemberDirectoryPage): SpacePerson
   return page.members.map((person) => ({ person, agents: byOwner.get(person.memberId) ?? [] }));
 }
 
-/** "4 people · 3 agents", or "1 person" when the space sent no agents. */
-export function headcount(people: readonly SpacePerson[], agentsKnown: boolean): string {
+/**
+ * "4 people · 3 agents", or "4 people" when the space sent no agents. When the space has more
+ * people than were read, it says these are the first so many, never a total.
+ */
+export function headcount(
+  people: readonly SpacePerson[],
+  agentsKnown: boolean,
+  more = false
+): string {
   const agents = people.reduce((sum, row) => sum + row.agents.length, 0);
-  const peopleText = `${people.length} ${people.length === 1 ? 'person' : 'people'}`;
+  const count = people.length.toLocaleString('en-US');
+  const peopleText = more
+    ? `First ${count} people`
+    : `${count} ${people.length === 1 ? 'person' : 'people'}`;
   if (!agentsKnown) return peopleText;
-  return `${peopleText} · ${agents} ${agents === 1 ? 'agent' : 'agents'}`;
+  return `${peopleText} · ${agents.toLocaleString('en-US')} ${agents === 1 ? 'agent' : 'agents'}`;
 }
 
 /** "@alex · 1 agent" under a person's name. */

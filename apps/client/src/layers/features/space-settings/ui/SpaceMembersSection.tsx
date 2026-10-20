@@ -12,10 +12,7 @@ import {
   tileColor,
   type SpaceRole,
 } from '../lib/space-view';
-import { LetterTile, LockedReason, SettingsSection } from './SettingsBlocks';
-
-/** What managing here needs that a paired app does not have yet. */
-export const PAIR_AGAIN = 'Pair again to manage here.';
+import { LetterTile, LockedReason, ManageOnWeb, SettingsSection } from './SettingsBlocks';
 
 /** Props for {@link SpaceMembersSection}. */
 export interface SpaceMembersSectionProps {
@@ -29,12 +26,14 @@ export interface SpaceMembersSectionProps {
   meId: string | null;
   /** Whether the space is unreachable now, so the section adds no reason of its own. */
   offline: boolean;
+  /** The space's web settings at its Members section, where an owner or admin manages them. */
+  manageUrl: string;
 }
 
 /**
  * Who is in the space: each person with their role as text and their agents under them, and the
  * Invite button, shown but off, with the reason beside it (DOR-3005). Invite links and mutes are
- * owner and admin business the app cannot read yet, so for them one row says how to get there.
+ * owner and admin business the app cannot read yet, so for them one row links to where they are.
  */
 export function SpaceMembersSection({
   members,
@@ -42,19 +41,24 @@ export function SpaceMembersSection({
   role,
   meId,
   offline,
+  manageUrl,
 }: SpaceMembersSectionProps) {
   const people = members ? groupPeople(members.value) : [];
   const moderator = role === 'owner' || role === 'admin';
-  const reason = offline
-    ? null
-    : moderator
-      ? PAIR_AGAIN
-      : 'Ask an owner or admin to invite or remove people.';
+  const reason = offline ? null : moderator ? (
+    <ManageOnWeb href={manageUrl} />
+  ) : (
+    'Ask an owner or admin to invite or remove people.'
+  );
   return (
     <SettingsSection
       title="Members"
       testId="space-settings-members"
-      meta={members ? headcount(people, members.value.agents !== undefined) : undefined}
+      meta={
+        members
+          ? headcount(people, members.value.agents !== undefined, members.value.nextCursor !== null)
+          : undefined
+      }
       action={
         <Button variant="secondary" size="xs" disabled>
           <Plus aria-hidden />
@@ -82,12 +86,12 @@ export function SpaceMembersSection({
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium">
-                    {person.displayName}
+                    <bdi>{person.displayName}</bdi>
                     {person.memberId === meId && (
                       <span className="text-muted-foreground ml-1.5 text-xs font-normal">You</span>
                     )}
                   </span>
-                  <span className="text-muted-foreground truncate text-xs">
+                  <span className="text-muted-foreground truncate text-xs" dir="auto">
                     {personDetail({ person, agents })}
                   </span>
                 </div>
@@ -107,7 +111,9 @@ export function SpaceMembersSection({
                         />
                         <div className="flex min-w-0 flex-1 flex-col">
                           <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-                            <span className="truncate">{agent.displayName}</span>
+                            <span className="truncate" dir="auto">
+                              {agent.displayName}
+                            </span>
                             <span className="bg-background text-muted-foreground shrink-0 rounded px-1.5 text-[11px] font-normal">
                               Agent
                             </span>
@@ -128,7 +134,7 @@ export function SpaceMembersSection({
       {moderator && !refusal && (
         <div className="px-4 py-3">
           <div className="text-sm font-medium">Invite links and mutes</div>
-          {!offline && <LockedReason>{PAIR_AGAIN}</LockedReason>}
+          {!offline && <ManageOnWeb href={manageUrl} />}
         </div>
       )}
     </SettingsSection>

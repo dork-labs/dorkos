@@ -29,7 +29,8 @@ vi.mock('../../services/core/auth/index.js', () => ({
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined) },
 }));
-vi.mock('../../lib/caller-authority.js', () => ({
+vi.mock('../../lib/caller-authority.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/caller-authority.js')>()),
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
 }));
@@ -53,6 +54,7 @@ import {
   PinnedOriginError,
 } from '../../services/communities/remote/pinned-origin.js';
 import {
+  connectionSource,
   SpaceSettingsCache,
   SpaceSettingsReader,
   type SpaceRequest,
@@ -99,12 +101,14 @@ let server: Server;
 let clock = new Date('2026-10-20T10:00:00.000Z');
 const remote = vi.fn<SpaceRequest>();
 const credential = vi.fn(async () => TOKEN);
+const grantRejected = vi.fn(async () => false);
 
 function reader(cacheDirectory = directory) {
   return new SpaceSettingsReader(
     {
       place: async () => ({ pinnedOrigin: 'https://space.example', remoteCommunityId: REMOTE_ID }),
       credential,
+      grantRejected,
     },
     new SpaceSettingsCache(cacheDirectory),
     remote,
@@ -153,6 +157,8 @@ beforeEach(() => {
     throw new PinnedHttpError(404, 'NOT_FOUND');
   });
   credential.mockClear();
+  grantRejected.mockReset();
+  grantRejected.mockResolvedValue(false);
 });
 afterEach(() => {
   owner.id = 'author-a';
@@ -198,7 +204,6 @@ describe('only the person at the app', () => {
     ['an agent identity', { 'x-dorkos-agent': 'agent-token' }],
     ['an approval token', { 'x-dorkos-approval': 'approval-token' }],
     ['an API key', { authorization: 'Bearer dork_api_key' }],
-    ['a cross-site frame', { 'sec-fetch-site': 'cross-site' }],
   ];
   it.each(refusals)('refuses %s before reaching the space', async (_label, headers) => {
     // Purpose: fails if any non-person caller gets a read, or the space is asked for one.
@@ -209,11 +214,13 @@ describe('only the person at the app', () => {
     expect(credential).not.toHaveBeenCalled();
   });
 
-  it('refuses a mini app’s sandboxed frame, which the API’s origin check already turns away', async () => {
+  it('refuses a mini app’s sandboxed frame and another site’s page, which the API’s origin check turns away first', async () => {
     // Purpose: fails if an opaque-origin frame ever gets a read. The `/api` chain's origin
     // check refuses it first; the route's own check stands behind that.
-    const response = await request(server).get(`${base}/settings`).set('origin', 'null');
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    for (const origin of ['null', 'https://elsewhere.example']) {
+      const response = await request(server).get(`${base}/settings`).set('origin', origin);
+      expect(response.status, origin).toBeGreaterThanOrEqual(400);
+    }
     expect(remote).not.toHaveBeenCalled();
     expect(credential).not.toHaveBeenCalled();
   });
@@ -297,7 +304,8 @@ describe('refusals and the credential', () => {
         expect(response.status).toBeGreaterThanOrEqual(500);
         expect(response.text).not.toContain(TOKEN);
       }
-      // An answer that echoes the credential is unreadable, and is not passed on either.
+      // An answer with a field the wire does not have fails its strict schema and is not passed
+      // on, so a credential the space put in an extra field never reaches the app.
       remote.mockResolvedValueOnce({ ...SETTINGS, name: TOKEN, extra: TOKEN });
       const echoed = await request(empty).get(`${base}/settings`);
       expect(echoed.status).toBe(502);
@@ -369,5 +377,142 @@ describe('the last answer, for when the space cannot be reached', () => {
     await request(server).get(`${base}/members`).expect(200);
     remote.mockRejectedValue(new PinnedHttpError(403, 'FORBIDDEN'));
     expect((await request(server).get(`${base}/members`)).status).toBe(403);
+  });
+});
+
+describe('the kept answers under load and after a refusal', () => {
+  it('keeps all four when they answer at once, in memory and after a restart', async () => {
+    // Purpose: fails if concurrent writes to one connection's kept file lose each other's read.
+    const fresh = await mkdtemp(join(tmpdir(), 'space-settings-race-'));
+    // All four answer in the same tick, so their writes to the one kept file overlap.
+    remote.mockImplementation(async (_origin, path) => ANSWERS[path]);
+    const live = reader(fresh);
+    const reads = ['settings', 'me', 'members', 'rules'] as const;
+    await Promise.all(reads.map((read) => live.read(ref, 'author-a', read)));
+    remote.mockRejectedValue(new PinnedOriginError('REMOTE_UNAVAILABLE'));
+    try {
+      for (const kept of [live, reader(fresh)])
+        for (const read of reads)
+          expect((await kept.read(ref, 'author-a', read)).offline, read).toBe(true);
+    } finally {
+      await rm(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('forgets what it kept once the space refuses, so going offline shows nothing stale', async () => {
+    // Purpose: fails if a member who lost access sees the old directory when the space is down.
+    const fresh = await mkdtemp(join(tmpdir(), 'space-settings-refused-'));
+    const target = await serve(reader(fresh));
+    try {
+      await request(target).get(`${base}/members`).expect(200);
+      remote.mockRejectedValue(new PinnedHttpError(403, 'FORBIDDEN'));
+      const refused = await request(target).get(`${base}/members`);
+      expect(refused.status).toBe(403);
+      expect(refused.headers['cache-control']).toBe('no-store');
+      remote.mockRejectedValue(new PinnedOriginError('REMOTE_UNAVAILABLE'));
+      const down = await request(target).get(`${base}/members`);
+      expect(down.status).toBe(503);
+      expect(down.body.code).toBe('SPACE_UNREACHABLE');
+    } finally {
+      await close(target);
+      await rm(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('asks for a reconnect when a 401 turns out to be a rejected grant', async () => {
+    // Purpose: fails if a rejected grant reads as "not shown to the app yet".
+    remote.mockRejectedValue(new PinnedHttpError(401, 'UNAUTHENTICATED'));
+    grantRejected.mockResolvedValue(true);
+    const response = await request(server).get(`${base}/rules`);
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: 'Reconnect this space to continue.',
+      code: 'COMMUNITY_RECONNECT_REQUIRED',
+    });
+  });
+
+  it('keeps the connection when a 401 is an older space that takes no grant there', async () => {
+    // Purpose: fails if one read an older space refuses breaks a working connection.
+    remote.mockRejectedValue(new PinnedHttpError(401, 'UNAUTHENTICATED'));
+    const response = await request(server).get(`${base}/settings`);
+    expect(grantRejected).toHaveBeenCalledWith(ref, 'author-a');
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('SPACE_READ_UNAVAILABLE');
+  });
+});
+
+describe('the connection store decides which connection is read', () => {
+  const ACCESS = {
+    state: 'verified' as const,
+    effective: { read: true, post: true, enrollAgent: true, stream: true },
+    lastKnown: {
+      lifecycle: 'active' as const,
+      capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+      verifiedAt: '2026-10-20T00:00:00.000Z',
+    },
+  };
+  const secrets = new Map<string, string>();
+  const memory = {
+    put: async (name: string, secret: string) => {
+      secrets.set(name, secret);
+      return `file:${name}`;
+    },
+    get: async (name: string) => secrets.get(name) ?? null,
+    delete: async (name: string) => {
+      secrets.delete(name);
+    },
+  };
+
+  async function storeWith(owner: string, status: 'pending' | 'connected' | 'reconnect-required') {
+    const home = await mkdtemp(join(tmpdir(), 'space-settings-store-'));
+    const store = new RemoteConnectionStore(home, memory);
+    await store.addPending(
+      {
+        ref,
+        ownerKey: owner,
+        remoteCommunityId: REMOTE_ID,
+        label: 'Northwind',
+        pinnedOrigin: 'https://space.example',
+        pairingId: 'pairing-1',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'verifier'
+    );
+    if (status !== 'pending') await store.complete(ref, owner, 'm-1', TOKEN, ACCESS);
+    if (status === 'reconnect-required') await store.requireReconnect(ref, owner);
+    const real = new SpaceSettingsReader(
+      connectionSource(store, () => ({ status: vi.fn() }) as never),
+      new SpaceSettingsCache(home),
+      remote
+    );
+    return { home, target: await serve(real) };
+  }
+
+  it.each([
+    ['another owner’s connection', 'author-b', 'connected', 404],
+    ['a connection still pending approval', 'author-a', 'pending', 404],
+    ['a connection that needs reconnecting', 'author-a', 'reconnect-required', 409],
+  ] as const)('refuses %s without asking the space', async (_label, owner, status, code) => {
+    // Purpose: fails if a read reaches the space through a connection this owner may not use.
+    const { home, target } = await storeWith(owner, status);
+    try {
+      const response = await request(target).get(`${base}/settings`);
+      expect(response.status).toBe(code);
+      expect(remote).not.toHaveBeenCalled();
+    } finally {
+      await close(target);
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('reads this owner’s connected space with its own stored grant', async () => {
+    const { home, target } = await storeWith('author-a', 'connected');
+    try {
+      await request(target).get(`${base}/settings`).expect(200);
+      expect(remote.mock.calls[0]![4]).toMatchObject({ authorization: TOKEN });
+    } finally {
+      await close(target);
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });
