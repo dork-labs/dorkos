@@ -264,8 +264,9 @@ export type SidebarTarget =
 /** How much of the operator's attention a row's unread state is asking for. */
 export interface SidebarUnread {
   /**
-   * `'activity'` = bold label and nothing else; `'directed'` = a numbered amber
-   * badge; `'none'` = nothing. Two tiers and no more (design-decisions §18).
+   * `'activity'` = bold label and nothing else; `'directed'` = bold and a
+   * numbered count pill in neutral ink; `'none'` = nothing. Two tiers and no
+   * more (design-decisions §18).
    *
    * **`'activity'` draws no dot.** §18 reads "Bold label only. No badge, no
    * dot." The spec's table restated it with a dot while claiming to quote §18
@@ -365,29 +366,23 @@ export interface SidebarRowModel {
   reason: string;
 }
 
-/** What a folded section still says about what it is hiding (BC-31). */
+/** What a folded section still shows of what it is hiding (BC-31). */
 export interface SidebarRollup {
   /**
-   * How many rows are behind the fold — the "12" in "12 · 3 unread".
+   * The rows a folded section keeps on screen, in section order: every row
+   * with unread, and in Heads up every row that needs the operator.
    *
-   * Always present, so a folded section is never a bare word: the operator can
-   * see the size of what they put away without unfolding it.
+   * **This is why a header never needs a count.** Folding hides the quiet rows
+   * and leaves the ones asking for something where they were, drawn as they
+   * are when the section is open. Folding Heads up can never be a quiet way to
+   * put a permission prompt out of sight (D1, BC-11).
    */
-  count: number;
-  /** Its rolled-up unread state, by the same two-tier rule a row follows. */
-  unread: SidebarUnread;
-  /** How many of its members are streaming right now. */
-  workingCount: number;
+  keptRows: SidebarRowModel[];
   /**
-   * How many things inside NEED the operator — Heads up only.
-   *
-   * **This is why folding Heads up is safe.** Every other section's roll-up
-   * counts rows; Heads up's rows include the "N working" report, which needs
-   * nobody. Folding it must never be a way to make a permission prompt
-   * disappear quietly, so the number the header keeps is the one that means
-   * "answer something" (D1, BC-11). Absent on every other section.
+   * How many of its members are streaming right now. The header draws one dot
+   * when this is above zero, never the number.
    */
-  needsYouCount?: number;
+  workingCount: number;
 }
 
 /** One section: a header (or none) and its rows. */
@@ -509,6 +504,18 @@ export function needsYouLiveRegionText(count: number): string | undefined {
 }
 
 /**
+ * Whether a Heads up row is one that needs the operator — every row but the
+ * "N working" report, which is news rather than a question. A folded Heads up
+ * keeps these on screen, so folding it never puts something waiting on you out
+ * of sight.
+ *
+ * @param row - One Heads up row.
+ */
+function needsTheOperator(row: SidebarRowModel): boolean {
+  return !(row.target.kind === 'rollup' && row.target.rollup === 'working');
+}
+
+/**
  * A zone holding one section, or `undefined` when that section is empty.
  *
  * The `undefined` is BC-1 in one place: a caller cannot accidentally push an
@@ -535,6 +542,9 @@ function bodyZone(
   const stored = persistedSectionId(id);
   const collapsible = stored !== null;
   const collapsed = collapsible && (state.prefs.sections[stored]?.collapsed ?? false);
+  // Heads up keeps what needs answering when folded; every other zone keeps
+  // what is unread.
+  const keeps = id === 'now' ? needsTheOperator : undefined;
   return {
     id,
     label: ZONE_LABEL[id],
@@ -545,9 +555,9 @@ function bodyZone(
         collapsible,
         collapsed,
         // Computed rows: nothing in Heads up, Today or Getting started is a
-        // session this panel is streaming, so there is no "N working" to count
+        // session this panel is streaming, so there is no working dot to raise
         // here — Heads up's own rollup ROW is where that lives.
-        ...(collapsed ? { rollup: rollUpCollapsedSection(rows, () => false) } : {}),
+        ...(collapsed ? { rollup: rollUpCollapsedSection(rows, () => false, keeps) } : {}),
         rows,
         reason: `${id}:body`,
       },
@@ -609,11 +619,6 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
       // region are one fact rather than two (P4 AC-2).
       zone.needsYouCount = attentionRows.length;
       zone.liveRegionText = needsYouLiveRegionText(zone.needsYouCount);
-      // …and the same number rides the fold. Heads up's roll-up counts what
-      // needs answering rather than what is in the list, so folding it can
-      // never be a quiet way to put a permission prompt out of sight (D1).
-      const body = zone.sections[0];
-      if (body?.rollup) body.rollup.needsYouCount = zone.needsYouCount;
       zones.push(zone);
     }
   } else if (attentionRows.length === 0) {

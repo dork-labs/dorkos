@@ -146,25 +146,40 @@ describe('BC-32 — chrome appears by data volume', () => {
 });
 
 describe('BC-31 — a folded section keeps its signal', () => {
-  it('sums the directed counts and nothing else', () => {
+  it('keeps the rows with unread on screen, and only those', () => {
     const state: SidebarState = {
       ...busyFixture,
       prefs: prefs({ ...busyFixture.prefs, sections: { dms: { collapsed: true } } }),
     };
     const dms = library(state).find((section) => section.id === 'dms');
     expect(dms?.collapsed).toBe(true);
-    // Priya's two, and not the 31 unread messages sitting in #noise.
-    expect(dms?.rollup?.unread).toEqual({ tier: 'directed', count: 2 });
+    // Priya has two waiting; Kai has nothing, so folding hides Kai.
+    expect(dms?.rollup?.keptRows.map((row) => row.key)).toEqual(['room:dm-priya']);
+    // Each kept row says what it says when the section is open.
+    expect(dms?.rollup?.keptRows[0]?.unread).toEqual({ tier: 'directed', count: 2 });
   });
 
-  it('falls back to activity when a member is unread but nobody was addressed', () => {
+  it('keeps a channel that is merely bold, so folding never hides activity', () => {
     const state: SidebarState = {
       ...busyFixture,
       mentions: {},
       prefs: prefs({ ...busyFixture.prefs, sections: { channels: { collapsed: true } } }),
     };
     const channels = library(state).find((section) => section.id === 'channels');
-    expect(channels?.rollup?.unread).toEqual({ tier: 'activity' });
+    const kept = channels?.rollup?.keptRows ?? [];
+    expect(kept.map((row) => row.key)).toContain('room:room-releases');
+    expect(kept.map((row) => row.key)).not.toContain('room:room-design');
+    expect(kept.every((row) => row.unread.tier !== 'none')).toBe(true);
+  });
+
+  it('makes a kept row no drag source, because a folded section has nowhere to drop', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({ ...busyFixture.prefs, sections: { channels: { collapsed: true } } }),
+    };
+    const channels = library(state).find((section) => section.id === 'channels');
+    expect(channels?.rollup?.keptRows.length).toBeGreaterThan(0);
+    expect(channels?.rollup?.keptRows.some((row) => row.draggable)).toBe(false);
   });
 
   it('counts the working members', () => {
@@ -173,15 +188,8 @@ describe('BC-31 — a folded section keeps its signal', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('still reports a size when there is no signal, because the size IS the signal', () => {
-    // It used to answer `undefined` for a quiet section, so a folded header said
-    // nothing about what was behind it. Now that every header in the panel folds
-    // (D1), "12" is the minimum a fold owes the person who made it.
-    expect(rollUpCollapsedSection([], () => false)).toEqual({
-      count: 0,
-      unread: { tier: 'none' },
-      workingCount: 0,
-    });
+  it('keeps nothing and counts nothing for a quiet section', () => {
+    expect(rollUpCollapsedSection([], () => false)).toEqual({ keptRows: [], workingCount: 0 });
   });
 
   describe('a member that starts working while the section is folded', () => {

@@ -208,39 +208,26 @@ describe('SectionHeader', () => {
     expect(screen.queryByLabelText('Clients section actions')).not.toBeInTheDocument();
   });
 
-  it('renders a collapsed section’s rollup in the trailing slot', () => {
+  it('renders a folded section’s mark in the trailing slot', () => {
     render(
       <SectionHeader
         label="Channels"
         collapsed
         onToggle={vi.fn()}
-        trailing={<span>3 unread</span>}
+        trailing={<span role="img" aria-label="Agents working" />}
       />
     );
-    expect(screen.getByText('3 unread')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Agents working' })).toBeInTheDocument();
   });
 
-  // A folded section may not lose its `activity` tier (BC-31), and that tier is
-  // a bold label and nothing else — no badge, no dot (design-decisions §18). So
-  // the emphasis has to live on the label itself; there is nowhere else it is
-  // allowed to go. Asserted on the CLASS rather than on a screenshot because
-  // jsdom has no computed font weight to read.
-  it('wears the unread emphasis on its own label, so a folded section keeps its activity tier', () => {
-    const { rerender } = render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
-    const quiet = screen.getByRole('button', { name: 'Channels' });
-    expect(quiet.className).toContain('text-sidebar-foreground/70');
-    expect(quiet.className).not.toContain('font-semibold');
-
-    rerender(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} emphasized />);
-    const loud = screen.getByRole('button', { name: 'Channels' });
-    expect(loud.className).toContain('font-semibold');
-    expect(loud.className).not.toContain('text-sidebar-foreground/70');
-  });
-
-  it('emphasises a header that cannot collapse too — Pinned is a label, not a button', () => {
-    render(<SectionHeader label="Pinned" emphasized />);
-    const label = screen.getByText('Pinned').parentElement;
-    expect(label?.className).toContain('font-semibold');
+  // Folding keeps a section's unread rows on screen (BC-31), so the header
+  // itself never goes bold and never carries a count: the weight belongs to
+  // the rows that earned it.
+  it('keeps a folded label at its quiet weight', () => {
+    render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
+    const header = screen.getByRole('button', { name: 'Channels' });
+    expect(header.className).toContain('text-sidebar-foreground/70');
+    expect(header.className).not.toContain('font-semibold');
   });
 
   describe('on touch (DOR-1083)', () => {

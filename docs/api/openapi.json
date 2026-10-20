@@ -14399,6 +14399,20 @@
               "viewerHasPosted": {
                 "type": "boolean",
                 "description": "Whether the viewer has ever written in this room themselves. Derived from the log on every read, so it cannot drift; membership does not imply it and neither does reading. The server always sends it, and it is optional for the same reason `working` is — a caller that predates it still parses. **Absent means \"this source cannot say\", never `false`**: a client reads it to decide whether to nudge somebody to say hello, and a missing field read as \"never posted\" would nudge an operator who has been talking in #team for months."
+              },
+              "mentionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10,
+                "description": "How many entries above the viewer's read cursor @mention the viewer, thread replies included, counted up to 10: 10 means \"10 or more\", since a sidebar draws anything past nine as 9+ and counting further would only cost reads. Counted from the room log, never from notifications, so clearing a notification does not clear it and reading the room does. Absent when the viewer is not a member (there is no cursor to count above, exactly as `unreadCount` is `null`) and from a source that cannot count it. A person naming themselves is not counted."
+              },
+              "lastLine": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 120,
+                "description": "The newest top-level message's text as one plain line: basic markdown (code fences, inline code, bold, links) taken out, whitespace collapsed, and cut to 120 characters with no ellipsis added. `null` when there is no top-level message with text the viewer may read — a member who is not the owner is never shown a message from before they joined; absent from a source that cannot say. Thread replies are skipped: the room's own last line is what its row stands for."
               }
             },
             "required": [

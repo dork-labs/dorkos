@@ -13,8 +13,10 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarRow,
+  statusDotClass,
   type RowDragBindings,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { useRovingFocus } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
@@ -158,26 +160,31 @@ function SidebarRowShowcase() {
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Folded headers, with the roll-ups that survive the fold</ShowcaseLabel>
+      <ShowcaseLabel>Folded headers: no counts, one working dot</ShowcaseLabel>
       <ShowcaseDemo>
-        {/* Every header folds now, Heads up and Today included — so the state
-            worth looking at is the one where a fold has to say what it hid.
-            Heads up counts what NEEDS answering rather than its rows. */}
+        {/* Every header folds, and none carries a count: a folded section
+            keeps its unread rows on screen below the header instead. The one
+            mark a header wears is a dot while something inside is working. */}
         <div
           data-slot="sidebar-folded-frame"
           className="bg-sidebar group/section space-y-1 rounded-md px-2 py-1"
           style={{ width: COCKPIT_SIDEBAR_WIDTH }}
         >
-          <SectionHeader label="Heads up" collapsed onToggle={() => {}} trailing="2 need you" />
-          <SectionHeader label="Today" collapsed onToggle={() => {}} trailing="6 · 1 unread" />
+          <SectionHeader label="Heads up" collapsed onToggle={() => {}} />
+          <SectionHeader label="Today" collapsed onToggle={() => {}} />
           <SectionHeader
             label="Channels"
             collapsed
             onToggle={() => {}}
-            emphasized
-            trailing="12 · 3 unread · 1 working"
+            trailing={
+              <span
+                role="img"
+                aria-label="Agents working"
+                className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
+              />
+            }
           />
-          <SectionHeader label="Agents" collapsed onToggle={() => {}} trailing="31" />
+          <SectionHeader label="Agents" collapsed onToggle={() => {}} />
         </div>
       </ShowcaseDemo>
 

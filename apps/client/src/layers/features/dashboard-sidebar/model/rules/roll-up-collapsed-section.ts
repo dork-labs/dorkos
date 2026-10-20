@@ -6,65 +6,62 @@
 import type { SidebarRollup, SidebarRowModel } from '../build-sidebar-model';
 
 /**
- * What a folded section still says: how many messages were aimed at the
- * operator inside it, and how many of its members are working.
+ * Whether a folded section keeps a row on screen: by default, any row with
+ * unread of either tier.
  *
- * **The tiers do not add up into each other.** The badge counts tier-2 only —
- * a numbered badge means "this many things were addressed to you", and folding
- * a channel with four hundred unread messages must not produce a 400. The
- * `'activity'` tier survives as a bold header when any member has ordinary
- * unread and none has directed unread, which is the same two-tier rule a row
- * follows.
+ * @param row - One row of the section.
+ */
+function hasUnreadSignal(row: SidebarRowModel): boolean {
+  return row.unread.tier !== 'none';
+}
+
+/**
+ * What a folded section still shows: the rows that are asking for the
+ * operator, and whether any of its members are working.
+ *
+ * **Rows, not counts.** A folded header used to say "12 · 3 unread", which put
+ * a number on a header and made the reader unfold the section to learn what
+ * the number was about. Now the header never carries a count: a folded
+ * section keeps its unread rows on screen beneath it, each one drawn exactly
+ * as it is when the section is open — bold, with its own count pill where
+ * something was aimed at you. Folding hides what is quiet and nothing else,
+ * which is what "folding never loses signal" asks for.
+ *
+ * **What counts as asking is the caller's to say, and it defaults to unread.**
+ * Heads up passes its own rule: its rows need the operator by definition, and
+ * none of them carries an unread tier, so the unread default would let folding
+ * it hide a permission prompt — the one thing it must never do.
  *
  * **The working count is asked, not inferred** — and that is the whole of
  * `isWorking`. BC-31's text is "members currently streaming", and streaming is
  * a fact about the session. A row draws ONE mark and needs-you outranks
  * streaming on it, so a member that is both blocked and streaming presents as
- * blocked; reading the count off that mark did not merely undercount such a
- * member, it could take `workingCount` to zero, return `undefined` here, and
- * **lose the folded header's rollup entirely** — the exact thing BC-31 says
- * folding never does. A blocked-and-working agent is still working, and a
- * folded header may say both.
+ * blocked; reading the count off that mark could take it to zero and lose the
+ * folded header's working dot. A blocked-and-working agent is still working.
  *
  * The predicate is the caller's because the caller is where the truth is:
  * `buildLibrarySections` holds the snapshot and the room index, so it can put
- * an agent row's answer through `liveSessionIds` — the same list Heads up counts —
- * rather than through a status the row had already collapsed.
+ * an agent row's answer through `liveSessionIds` — the same list Heads up
+ * counts — rather than through a status the row had already collapsed.
  *
- * A live session whose directory nothing knows is in Heads up's number and in no
- * section's, because it is a member of nothing. That is a gap in attribution,
- * not in signal: the operator is still told something is running.
- *
- * **It always answers.** It used to return `undefined` for a quiet section, so a
- * folded header said nothing at all about what was behind it. Now that every
- * header in the panel folds (D1), a size is the minimum a fold owes the person
- * who made it: "12" is what tells them the section they put away still has
- * twelve things in it. A caller that wants "nothing to say" reads the fields.
- *
- * @param rows - The section's rows, including any subsection's.
+ * @param rows - The section's rows, in order.
  * @param isWorking - Whether one row's subject is streaming right now,
  *   independent of the dot that row draws.
+ * @param keeps - Whether a folded section keeps this row on screen. Defaults
+ *   to any row with unread.
  */
 export function rollUpCollapsedSection(
   rows: readonly SidebarRowModel[],
-  isWorking: (row: SidebarRowModel) => boolean
+  isWorking: (row: SidebarRowModel) => boolean,
+  keeps: (row: SidebarRowModel) => boolean = hasUnreadSignal
 ): SidebarRollup {
-  let unreadCount = 0;
-  let anyActivity = false;
+  const keptRows: SidebarRowModel[] = [];
   let workingCount = 0;
   for (const row of rows) {
-    if (row.unread.tier === 'directed') unreadCount += row.unread.count ?? 0;
-    if (row.unread.tier === 'activity') anyActivity = true;
+    // A kept row is not a drag source: its section is folded, so there is
+    // nowhere in it to drop, and a drag that starts there has no list to land in.
+    if (keeps(row)) keptRows.push(row.draggable ? { ...row, draggable: false } : row);
     if (isWorking(row)) workingCount += 1;
   }
-  return {
-    count: rows.length,
-    unread:
-      unreadCount > 0
-        ? { tier: 'directed', count: unreadCount }
-        : anyActivity
-          ? { tier: 'activity' }
-          : { tier: 'none' },
-    workingCount,
-  };
+  return { keptRows, workingCount };
 }

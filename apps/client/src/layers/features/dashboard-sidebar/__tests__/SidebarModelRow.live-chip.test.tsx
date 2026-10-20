@@ -189,3 +189,27 @@ describe('SidebarModelRow hands an agent row its liveCount', () => {
     expect(chip()).toBeNull();
   });
 });
+
+describe('SidebarModelRow hands an agent row its Direct chat’s unread', () => {
+  /** The agent row's own button. */
+  const button = () => document.querySelector<HTMLElement>('[data-slot="agent-list-item"]')!;
+
+  it('goes bold and counts every waiting message, with the neutral pill', () => {
+    renderRow(agentRow({ unread: { tier: 'directed', count: 11 } }));
+    expect(button()).toHaveAttribute('data-row-state', 'emphasized');
+    const pill = screen.getByLabelText('More than 9 new messages');
+    expect(pill).toHaveTextContent('9+');
+    expect(pill).toHaveAttribute('data-slot', 'count-pill');
+  });
+
+  it('draws two as two', () => {
+    renderRow(agentRow({ unread: { tier: 'directed', count: 2 } }));
+    expect(screen.getByLabelText('2 new messages')).toHaveTextContent('2');
+  });
+
+  it('draws nothing for an agent with nothing waiting', () => {
+    renderRow(agentRow());
+    expect(button()).not.toHaveAttribute('data-row-state', 'emphasized');
+    expect(document.querySelector('[data-slot="count-pill"]')).toBeNull();
+  });
+});

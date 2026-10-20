@@ -114,7 +114,7 @@ describe('the Add-ons section', () => {
     }
   });
 
-  it('folds under its own stored id, and says how many pages it holds', () => {
+  it('folds under its own stored id, and keeps nothing on screen when nothing is unread', () => {
     const open = addOns({ ...busyFixture, addOns: [FLOW, SOCIAL] });
     expect(open?.collapsible).toBe(true);
     expect(open?.collapsed).toBe(false);
@@ -125,7 +125,7 @@ describe('the Add-ons section', () => {
       prefs: prefs({ ...busyFixture.prefs, sections: { addons: { collapsed: true } } }),
     });
     expect(folded?.collapsed).toBe(true);
-    expect(folded?.rollup).toEqual({ count: 2, unread: { tier: 'none' }, workingCount: 0 });
+    expect(folded?.rollup).toEqual({ keptRows: [], workingCount: 0 });
   });
 
   it('has somewhere to store its fold', () => {

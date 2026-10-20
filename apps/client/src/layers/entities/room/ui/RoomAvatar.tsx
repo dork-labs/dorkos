@@ -97,7 +97,37 @@ export interface RoomAvatarProps {
    * Defaults to {@link FACE_STACK}'s entry for {@link RoomAvatarProps.size}.
    */
   overlap?: string;
+  /**
+   * Whether an agent in this direct message is working right now. Draws a soft
+   * live dot on the face's top-right corner; ignored for a channel, whose `#`
+   * is a place rather than somebody who could be busy.
+   *
+   * **Soft, on purpose.** The dot breathes rather than throwing out a ring:
+   * a sidebar can hold several busy faces at once, and a column of ripples is
+   * louder than the fact it reports. Under reduced motion it holds still and
+   * stays, because the fact outlives the preference.
+   */
+  working?: boolean;
   className?: string;
+}
+
+/**
+ * The live dot a working direct message wears on its face.
+ *
+ * Decoration only: the mark it sits on is hidden from assistive technology, so
+ * the row that draws the mark says "working" in words of its own.
+ */
+function WorkingFaceDot() {
+  return (
+    <span
+      aria-hidden
+      data-slot="room-avatar-working"
+      className={cn(
+        'ring-sidebar absolute -top-px -right-px size-2 rounded-full ring-2',
+        'bg-status-success motion-safe:animate-pulse'
+      )}
+    />
+  );
 }
 
 /**
@@ -126,6 +156,7 @@ export function RoomAvatar({
   size = DEFAULT_SIZE,
   maxFaces = FACE_STACK[size].maxFaces,
   overlap = FACE_STACK[size].overlap,
+  working = false,
   className,
 }: RoomAvatarProps) {
   // Everything that is not a direct message is a place, and a place is drawn
@@ -158,7 +189,9 @@ export function RoomAvatar({
         color={faces[0]!.color}
         emoji={faces[0]!.emoji}
         className={className}
-      />
+      >
+        {working && <WorkingFaceDot />}
+      </IdentityAvatar>
     );
   }
 
@@ -167,7 +200,7 @@ export function RoomAvatar({
       <span
         aria-hidden
         data-slot="room-avatar"
-        className={cn('flex shrink-0 items-center', overlap, className)}
+        className={cn('relative flex shrink-0 items-center', overlap, className)}
       >
         {faces.map((face, i) => (
           <IdentityAvatar
@@ -182,6 +215,7 @@ export function RoomAvatar({
             emoji={face.emoji}
           />
         ))}
+        {working && <WorkingFaceDot />}
       </span>
     );
   }
@@ -205,6 +239,8 @@ export function RoomAvatar({
       imageUrl={counterpart?.imageUrl}
       fallback={initialOf(counterpart?.displayName ?? room.title)}
       className={className}
-    />
+    >
+      {working && <WorkingFaceDot />}
+    </IdentityAvatar>
   );
 }

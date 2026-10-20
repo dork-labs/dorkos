@@ -3,14 +3,16 @@ import { BellOff, Pause } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
 import { LiveSessionsChip } from './LiveSessionsChip';
 import { SessionSwitcher } from './SessionSwitcher';
+import type { SidebarUnread } from '../model/build-sidebar-model';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
+import { directedCountLabel } from './rooms/directed-count-label';
 
 /**
  * The empty id list the roster's status hook is called with, hoisted so it is
@@ -63,6 +65,14 @@ interface AgentListItemProps {
    * answer a question the model had already answered.
    */
   liveCount?: number;
+  /**
+   * What the agent's Direct chat has waiting — `SidebarRowModel.unread`, which
+   * the model fills from that conversation when it is drawn as this row rather
+   * than as a row of its own. Bold for new messages, and a count, because every
+   * message in a direct message is addressed to you. Absent or `none` draws
+   * nothing.
+   */
+  unread?: SidebarUnread;
   onSelect: () => void;
   /**
    * View this agent's profile — what its face opens, and the menu item beside it.
@@ -112,6 +122,7 @@ export function AgentListItem({
   isMuted = false,
   isPaused = false,
   liveCount,
+  unread,
   onSelect,
   onViewProfile,
   onRequestNewGroup,
@@ -149,6 +160,11 @@ export function AgentListItem({
   // The presence of `liveCount` IS the threshold: the model omits it below
   // `LIVE_CHIP_MIN`, so there is no second number here to fall out of step.
   const chipCount = isMuted ? undefined : liveCount;
+  // The Direct chat's waiting messages. The count arrives already through the
+  // mute rule (`deriveUnreadSignal`), so it is drawn as given; the bold is the
+  // row's own and goes with the agent's mute like every other emphasis here.
+  const emphasized = (unread?.tier ?? 'none') !== 'none' && !isMuted;
+  const directedCount = unread?.tier === 'directed' ? unread.count : undefined;
 
   // The handler and its accessible name as ONE value, because they are one
   // decision: an agent the roster cannot name gets neither, and the face is
@@ -211,13 +227,16 @@ export function AgentListItem({
         // the agent and opens its last conversation.
         glyphAction={faceControl}
         isActive={isActive}
+        emphasized={emphasized}
         muted={isMuted}
         onSelect={onSelect}
         menuNodes={menuNodes}
         actionsLabel="Agent actions"
         drag={sortable}
         {...(rowMotion === undefined ? {} : { rowMotion })}
-        className="font-medium"
+        // An agent's name sits a step heavier than a place's at rest; the bold
+        // unread rung brings its own weight, which this would otherwise undo.
+        className={emphasized ? undefined : 'font-medium'}
         trailing={
           <>
             {isMuted && (
@@ -241,6 +260,12 @@ export function AgentListItem({
             */}
             {chipCount === undefined && (
               <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
+            )}
+            {directedCount !== undefined && (
+              <CountPill
+                count={directedCount}
+                label={directedCountLabel(directedCount, 'messages')}
+              />
             )}
           </>
         }

@@ -143,11 +143,16 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
 
   queryClient.setQueriesData<RoomSummary[]>({ queryKey: roomKeys.lists() }, (rooms) =>
     Array.isArray(rooms)
-      ? rooms.map((room) =>
-          room.id === event.threadId && room.unreadCount !== null
-            ? { ...room, unreadCount: Math.min(room.unreadCount, event.unreadCount) }
-            : room
-        )
+      ? rooms.map((room) => {
+          if (room.id !== event.threadId || room.unreadCount === null) return room;
+          const unreadCount = Math.min(room.unreadCount, event.unreadCount);
+          // Mentions are a subset of the unread entries, so they can never
+          // outnumber them: a cursor that cleared the room clears its mention
+          // count too, without a round trip to recount it.
+          return room.mentionCount === undefined
+            ? { ...room, unreadCount }
+            : { ...room, unreadCount, mentionCount: Math.min(room.mentionCount, unreadCount) };
+        })
       : rooms
   );
 

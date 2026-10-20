@@ -146,10 +146,9 @@ function roomRow(
  * thread origin mark and inherits that room's read cursor.
  *
  * @param thread - The thread.
- * @param state - The snapshot.
  * @param mutes - The resolved mute sets.
  */
-function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex): SidebarRowModel {
+function threadRow(thread: ThreadSummary, mutes: MuteIndex): SidebarRowModel {
   const target = {
     kind: 'room',
     roomId: thread.roomId,
@@ -164,10 +163,14 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
     primary: thread.roomSlug ?? thread.roomTitle,
     secondary: thread.rootPreview,
     reservesVerbLine: false,
+    // **No mention count, on purpose.** `state.mentions` is the ROOM's count,
+    // and a thread knows nothing about which of the room's entries named you —
+    // handing it the room's number put that count on every thread in the room,
+    // and pinned each one in Today as if it were the mention. A thread is
+    // bold while it has unread replies, and the room row carries the count.
     unread: deriveUnreadSignal({
       unreadCount: thread.unreadCount,
       directed: false,
-      mentionCount: state.mentions[thread.roomId],
       muted,
     }),
     muted,
@@ -244,7 +247,7 @@ function anchorRow(
     // two names.
     if (active.roomKind === 'thread') {
       const thread = state.threads.find((entry) => entry.rootEntryId === active.rootEntryId);
-      if (thread !== undefined) return threadRow(thread, state, mutes);
+      if (thread !== undefined) return threadRow(thread, mutes);
       const room = state.rooms.find((entry) => entry.id === active.roomId);
       const muted = mutes.rooms.has(active.roomId);
       return {
@@ -431,7 +434,7 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   }
   for (const thread of state.threads) {
     if (!touched(`room:${thread.roomId}`)) continue;
-    rows.push(threadRow(thread, state, mutes));
+    rows.push(threadRow(thread, mutes));
   }
   // **BC-21 says "always", and the three loops above cannot keep that on their
   // own.** Each one walks a list, so a conversation the operator has OPEN but

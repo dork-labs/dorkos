@@ -682,9 +682,9 @@ function libraryZone(): HTMLElement | null {
 function libraryHeadings(): string[] {
   const zone = libraryZone();
   if (zone === null) return [];
-  // The LABEL, not the header's whole text: a folded header also carries its
-  // roll-up ("12 · 3 unread"), so reading `textContent` off the `<h3>` turned
-  // "Channels" into "Channels1" the moment somebody collapsed it.
+  // The LABEL, not the header's whole text: a folded header can also carry a
+  // working mark, so reading `textContent` off the `<h3>` is reading more than
+  // the label.
   return Array.from(zone.querySelectorAll('h3')).map(
     (h) => h.querySelector('.truncate')?.textContent?.trim() ?? h.textContent?.trim() ?? ''
   );
@@ -1121,7 +1121,7 @@ describe('DashboardSidebar', () => {
 
   // ── BC-31: a folded section keeps its signal ──
 
-  it('BC-31 — a folded section still shows the numbers its rows carried', async () => {
+  it('BC-31 — a folded section keeps its unread rows on screen and carries no count', async () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ sections: { dms: { collapsed: true } } }));
     // Named apart from every agent on purpose: `beta` is also a row in Agents,
     // and a "the rows are gone" assertion that matched it would pass on the
@@ -1132,16 +1132,18 @@ describe('DashboardSidebar', () => {
         unreadCount: 3,
         working: 2,
       },
+      { ...groupDmWith('r3', ['/projects/alpha', '/projects/beta'], 'Read chat'), unreadCount: 0 },
     ]);
     renderWithProviders(<DashboardSidebar />);
     const heading = await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
-    // The rows are gone…
-    expect(screen.queryByText('Quiet chat')).not.toBeInTheDocument();
-    // …and everything they were carrying is on the header, in words. It used to
-    // be a dot and a pill — two shapes borrowed from the row vocabulary, drawn
-    // where no row was. One MEMBER is working, not two: BC-31 counts members
-    // currently streaming, so one conversation with two agents in it is one.
-    expect(heading.textContent).toContain('1 · 3 unread · 1 working');
+    // The read conversation folds away; the one with something new stays put.
+    expect(screen.queryByText('Read chat')).not.toBeInTheDocument();
+    expect(screen.getByText('Quiet chat')).toBeInTheDocument();
+    // The header carries no number at all — only a dot while a member works,
+    // named in the singular: one conversation with two agents in it is one
+    // member working.
+    expect(heading.textContent).not.toMatch(/\d/);
+    expect(within(heading).getByRole('img', { name: 'Agent working' })).toBeInTheDocument();
   });
 
   // ── BC-32: chrome by data volume ──
@@ -1778,16 +1780,17 @@ describe('Heads up — the zone that justifies the redesign', () => {
       expect(heading!.textContent).toContain('Heads up');
     });
 
-    it('folds Heads up like any other header, and keeps the needs-you count on it', async () => {
+    it('folds Heads up like any other header, and keeps what needs you on screen', async () => {
       // The exception D1 removed, and the safety that let it go: folding Heads
       // up may never be a quiet way to put a permission prompt out of sight, so
-      // the folded header counts what NEEDS answering rather than its rows.
+      // a folded Heads up keeps every row that needs answering below its header.
       mockApprovals.mockReturnValue([pendingApproval()]);
       mockSidebarPrefs.mockReturnValue(makePrefs({ sections: { now: { collapsed: true } } }));
       await renderSidebarWithNow();
       await waitFor(() => expect(nowZone()).not.toBeNull());
       const heading = nowZone()!.querySelector('h3')!;
-      expect(heading.textContent).toContain('1 need you');
+      expect(heading.textContent).not.toMatch(/\d/);
+      expect(nowZone()!.querySelectorAll('[data-sidebar-row]')).toHaveLength(1);
       expect(heading.querySelector('[data-sidebar-section-toggle]')).toHaveAttribute(
         'aria-expanded',
         'false'
@@ -2666,7 +2669,7 @@ describe('Today — what you were doing, and it holds still', () => {
       await waitFor(() =>
         expect(
           todayRowNodes().find((row) => row.textContent?.includes('general'))?.className
-        ).toContain('font-medium')
+        ).toContain('font-semibold')
       );
       expect(scrolls).toHaveLength(0);
 

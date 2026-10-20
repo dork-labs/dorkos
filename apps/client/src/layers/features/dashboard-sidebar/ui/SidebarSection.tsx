@@ -13,7 +13,7 @@ import { memo, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
-import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
+import { SectionHeader, SidebarGroup, SidebarMenu, statusDotClass } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
@@ -114,8 +114,8 @@ export interface SidebarSectionProps {
  *
  * **The whole header row is the toggle** and every destination is a leaf row,
  * so select-versus-expand is never ambiguous (BC-29). A collapsed section keeps
- * its rollup in the header's trailing slot, so folding never loses signal
- * (BC-31).
+ * its unread rows on screen under the header, so folding never loses signal
+ * (BC-31), and the header itself never carries a count.
  *
  * @param props - The section and the all-sections toggle.
  */
@@ -179,11 +179,13 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   // what stops {@link MemoSectionHeader} from bailing out.
   const trailing = useMemo(
     () =>
-      section.collapsed && section.rollup !== undefined ? (
-        <SectionRollup section={section} />
+      section.collapsed && (section.rollup?.workingCount ?? 0) > 0 ? (
+        <FoldedWorkingDot count={section.rollup?.workingCount ?? 0} />
       ) : undefined,
     [section]
   );
+  const keptRows = section.collapsed ? (section.rollup?.keptRows ?? []) : [];
+  const keptLayoutKey = sectionLayoutKey(keptRows);
 
   /**
    * The header, drawn with or without the drag layer's activators.
@@ -208,11 +210,6 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {...(chrome.hasSectionAction ? { hasSectionAction: true } : {})}
       {...(chrome.adornment === undefined ? {} : { adornment: chrome.adornment })}
       {...(chrome.editor === undefined ? {} : { editor: chrome.editor })}
-      // Folded and holding unread: the label goes bold, whichever tier it is.
-      // `directed` also spells its count out in the roll-up; `activity` is a
-      // bold label and nothing else (design-decisions §18), so the weight is
-      // where it lives.
-      emphasized={section.collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
       {...(trailing === undefined ? {} : { trailing })}
     />
   );
@@ -263,8 +260,29 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {chrome.dialogs}
       {/* **The fold, as a height spring** (spec D5) — `SidebarFoldBody` owns the
           numbers and the unmount, and the Dev Playground draws the same
-          component rather than a copy of it. */}
-      <SidebarFoldBody open={!section.collapsed}>
+          component rather than a copy of it. What folding leaves on screen
+          (BC-31) is the rows still asking for something, drawn exactly as they
+          are when the section is open, and only once the body has finished
+          leaving so no row is ever drawn twice. They are not drag sources —
+          the model says so — because a folded section has nowhere to drop. */}
+      <SidebarFoldBody
+        open={!section.collapsed}
+        whenFolded={
+          keptRows.length > 0 ? (
+            <SidebarMenu data-slot="sidebar-section-kept">
+              {keptRows.map((row) => (
+                <SidebarModelRow
+                  key={`${prefix}-${row.key}`}
+                  row={row}
+                  keyPrefix={prefix}
+                  layoutKey={keptLayoutKey}
+                  {...(sectionId === undefined ? {} : { sectionId })}
+                />
+              ))}
+            </SidebarMenu>
+          ) : undefined
+        }
+      >
         <Droppable
           id={`container::${bodyId}`}
           data={{ type: 'container', container: sectionContainer(section.id) }}
@@ -282,49 +300,22 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 }
 
 /**
- * What a folded section says about what it is hiding, as one line of text
- * (BC-31, D1).
+ * The one mark a folded header carries: a dot while any of its members are
+ * working (BC-31).
  *
- * **Words, not marks.** It used to be a dot and a pill — two shapes borrowed
- * from the row vocabulary, sitting on a header where no row was. Now that every
- * header in the panel folds, folding is an ordinary act and its receipt is an
- * ordinary sentence: "12 · 3 unread". A screen reader gets the same string.
+ * **Never a number.** Unread needs no mark here at all — the rows asking for
+ * something stay on screen under the folded header — but work in flight has
+ * no row of its own to stay behind, so the header says it, once, without
+ * counting it — "Agent working" or "Agents working", never a number.
  *
- * Heads up says "2 need you" instead of a row count, because its rows include
- * the "N working" report — which needs nobody — and folding it must never be a
- * quiet way to hide a permission prompt.
- *
- * Renders nothing while the section is open: the rows say it better.
- *
- * @param props - The section.
+ * @param props.count - How many members are working; only one-or-more matters.
  */
-function SectionRollup({ section }: { section: SidebarSectionModel }) {
-  const rollup = section.rollup;
-  if (!section.collapsed || rollup === undefined) return null;
-  const parts: string[] = [];
-  const working = rollup.workingCount > 0 ? `${rollup.workingCount} working` : null;
-  if (rollup.needsYouCount !== undefined) {
-    // **Heads up counts what needs answering, and never a bare item count.**
-    // Its rows include the "N working" report, which needs nobody — so a Heads
-    // up holding only that report folded to "1", which reads as one thing
-    // waiting on you when nothing is. With nothing to answer, the fold says
-    // what is actually in there: the work.
-    if (rollup.needsYouCount > 0) parts.push(`${rollup.needsYouCount} need you`);
-    else if (working !== null) parts.push(working);
-  } else {
-    parts.push(`${rollup.count}`);
-  }
-  if (rollup.unread.tier === 'directed' && (rollup.unread.count ?? 0) > 0) {
-    parts.push(`${rollup.unread.count} unread`);
-  } else if (rollup.unread.tier === 'activity') {
-    // Tier one is a bold label and nothing else (design-decisions §18) — which
-    // the header wears through `emphasized`. "new" is here so a reader who
-    // cannot see the weight is told the same thing, and it is deliberately not
-    // the word "unread": beside "3 unread" on the same line, a bare "unread"
-    // read as a truncated count rather than as a different tier.
-    parts.push('new');
-  }
-  // Already spent above when Heads up had nothing to answer.
-  if (working !== null && !parts.includes(working)) parts.push(working);
-  return <>{parts.join(' · ')}</>;
+function FoldedWorkingDot({ count }: { count: number }) {
+  return (
+    <span
+      role="img"
+      aria-label={count === 1 ? 'Agent working' : 'Agents working'}
+      className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
+    />
+  );
 }

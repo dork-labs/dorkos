@@ -260,6 +260,13 @@ describe('RoomTitle', () => {
     expect(titleOf(container)).toHaveAttribute('title', '#general');
   });
 
+  it('drops its own tooltip when the caller draws one, keeping the name as data', () => {
+    const { container } = render(<RoomTitle room={GENERAL} tooltip={false} />);
+
+    expect(titleOf(container)).not.toHaveAttribute('title');
+    expect(titleOf(container)).toHaveAttribute('data-spoken-name', '#general');
+  });
+
   it('writes a direct message as one text node — no mark, nothing to split', () => {
     const { container } = render(<RoomTitle room={{ kind: 'dm', slug: null, title: 'Ana' }} />);
 
