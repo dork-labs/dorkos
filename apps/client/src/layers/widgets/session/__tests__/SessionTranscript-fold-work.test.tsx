@@ -184,6 +184,25 @@ describe('SessionTranscript folding a DM reply’s work', () => {
     expect(screen.getByTestId('dm-worked-line')).toHaveTextContent('Worked · 3 steps');
   });
 
+  it('keeps the live line under the closed segment right after a steer, before the next one speaks', () => {
+    const justSteered: ChatMessage[] = [
+      MESSAGES[0]!,
+      { ...MESSAGES[1]!, id: 'seg-1', timestamp: '', _streaming: true },
+      {
+        id: 'steer',
+        role: 'user',
+        content: 'Check the footer too',
+        parts: [{ type: 'text', text: 'Check the footer too' }],
+        timestamp: '',
+        _streaming: true,
+      },
+    ];
+    draw(justSteered);
+
+    expect(screen.getAllByTestId('dm-working-line')).toHaveLength(1);
+    expect(screen.queryByTestId('dm-worked-line')).toBeNull();
+  });
+
   it('describes each Show work by the reply it opens', () => {
     draw(MESSAGES);
     const button = screen.getByRole('button', { name: 'Show work' });

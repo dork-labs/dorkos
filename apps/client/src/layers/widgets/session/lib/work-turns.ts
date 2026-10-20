@@ -100,3 +100,22 @@ export function turnDuration(
   if (!Number.isFinite(ms) || ms <= 0) return null;
   return formatDuration(ms);
 }
+
+/**
+ * The reply still being written, by id, or `null` when no turn is running.
+ *
+ * The newest in-progress reply, as long as everything after it is in progress
+ * too: right after a steer, before the new segment has said anything, the
+ * steer is the only thing after it and the turn is still running, so the reply
+ * before it is still the live one. Once the new segment arrives it takes over.
+ *
+ * @param messages - The transcript, oldest first.
+ */
+export function liveReplyId(messages: readonly ChatMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!;
+    if (!message._streaming) return null;
+    if (message.role === 'assistant') return message.id;
+  }
+  return null;
+}

@@ -56,7 +56,7 @@ import { SessionMessage } from './SessionMessage';
 import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
 import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
-import { turnStartsByReply } from '../lib/work-turns';
+import { liveReplyId, turnStartsByReply } from '../lib/work-turns';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
@@ -325,6 +325,7 @@ export function SessionTranscript({
     () => (foldWork ? turnStartsByReply(messages) : null),
     [foldWork, messages]
   );
+  const liveReply = useMemo(() => (foldWork ? liveReplyId(messages) : null), [foldWork, messages]);
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
       // A DM names the agent it is with, whatever folder is selected.
@@ -509,6 +510,7 @@ export function SessionTranscript({
           fallbackAt={untimedAt(message)}
           foldWork={foldWork}
           turnStartedAt={turnStarts?.get(message.id)}
+          liveReply={liveReply === message.id}
           isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
@@ -547,6 +549,7 @@ export function SessionTranscript({
       untimedAt,
       foldWork,
       turnStarts,
+      liveReply,
       historyCount,
       isTextStreaming,
       activeToolCallId,

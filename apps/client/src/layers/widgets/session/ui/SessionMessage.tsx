@@ -122,6 +122,11 @@ interface SessionMessageProps {
    */
   turnStartedAt?: string;
   /**
+   * Whether this is the reply still being written (DOR-3075): it draws the
+   * live line with Watch instead of its folded work. See `liveReplyId`.
+   */
+  liveReply?: boolean;
+  /**
    * Where this message sits in the transcript's feed, when it is rendering
    * inside one.
    *
@@ -194,6 +199,7 @@ function SessionMessageRow({
   fallbackAt,
   foldWork = false,
   turnStartedAt,
+  liveReply = false,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -232,9 +238,6 @@ function SessionMessageRow({
   const at = showTime ? writtenAt : undefined;
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
   const foldsReply = foldWork && message.role === 'assistant';
-  // Only the turn's newest segment is still being written. A steer closes the
-  // segment before it, which keeps its in-progress mark until history reloads.
-  const liveTail = message._streaming === true && isFinalMessage;
 
   return (
     <MessageProvider
@@ -291,8 +294,8 @@ function SessionMessageRow({
               ? renderReplyBody(message)
               : renderSessionBody(message, { rowId: message.id, isStreaming })}
           </Message.Content>
-          {foldsReply && liveTail && <WorkingLine sessionId={sessionId} />}
-          {foldsReply && !liveTail && hasWork(message.parts ?? []) && (
+          {foldsReply && liveReply && <WorkingLine sessionId={sessionId} />}
+          {foldsReply && !liveReply && hasWork(message.parts ?? []) && (
             <WorkedLine
               sessionId={sessionId}
               messageId={message.id}
