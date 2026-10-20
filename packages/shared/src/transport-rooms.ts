@@ -574,8 +574,7 @@ export interface RoomTransport {
    * they released, or a broadcast word like `everyone`), `HANDLE_LOOKALIKE`
    * (it reads as somebody else's, like `d0rian` beside `dorian`; the message
    * names whose) and `INVALID_HANDLE` (the spelling itself is not
-   * addressable). Each arrives as the `code` on the thrown error. Renaming an
-   * agent from Wi-Fi is refused with `NOT_FROM_WIFI`.
+   * addressable). Each arrives as the `code` on the thrown error.
    *
    * @param authorId - Whose handle to set.
    * @param handle - The new handle, without the `@`. Empty clears it.

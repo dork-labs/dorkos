@@ -9,4 +9,4 @@ covers:
 
 ### Changed
 
-- DorkOS now turns down a handle that looks like someone else's, like `@d0rian` next to `@dorian`, and `@room` joins the reserved words. Renaming an agent works at this computer, not from a phone on your Wi-Fi.
+- DorkOS now turns down a handle that looks like someone else's, like `@d0rian` next to `@dorian`, and `@room` joins the reserved words.

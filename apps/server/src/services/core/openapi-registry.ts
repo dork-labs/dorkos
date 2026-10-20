@@ -6504,8 +6504,7 @@ registry.registerPath({
     },
     401: roomAgentUnverified,
     403: {
-      description:
-        "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on Wi-Fi tried to change an agent's (`NOT_FROM_WIFI`)",
+      description: 'An agent caller tried to change a handle (`OPERATOR_ONLY`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {

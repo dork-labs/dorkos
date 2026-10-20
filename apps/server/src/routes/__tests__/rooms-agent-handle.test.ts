@@ -1,7 +1,7 @@
 /**
  * A person renaming an agent's handle through the real app mount (DOR-3156):
  * the room line, mentions staying on the agent's id, the look-alike refusal,
- * the Wi-Fi refusal, and proof that a rename touches nothing but the handle.
+ * and proof that a rename touches nothing but the handle.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
@@ -64,15 +64,6 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-
-vi.mock('../../services/core/auth/sessions/wifi-level.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../services/core/auth/sessions/wifi-level.js')>();
-  return { ...actual, isFromWifi: vi.fn(() => viaWifi) };
-});
-
-/** Whether the next request reads as coming from a Wi-Fi sign-in. */
-let viaWifi = false;
 
 const admission = new MainRequestAdmission();
 const testServer = listeningServer(composedListener(admission));
@@ -158,7 +149,6 @@ describe('a person renaming an agent (DOR-3156)', () => {
   beforeEach(() => {
     fakeRuntime = new FakeAgentRuntime();
     vi.clearAllMocks();
-    viaWifi = false;
     resetAgentIdentityService();
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
@@ -267,28 +257,6 @@ describe('a person renaming an agent (DOR-3156)', () => {
       error: '@d0rian looks too much like @dorian. Pick a different one.',
       code: 'HANDLE_LOOKALIKE',
     });
-  });
-
-  it('refuses renaming an agent from Wi-Fi, and keeps a person’s own handle open there', async () => {
-    const { roomId, me, ana } = await channelWithAgents('Wifi');
-    viaWifi = true;
-
-    const agent = await request(testServer)
-      .patch(`/api/rooms/authors/${ana}/handle`)
-      .send({ handle: 'ana-pm' });
-    expect(agent.status).toBe(403);
-    expect(agent.body).toEqual({
-      error: "Change an agent's handle at this computer.",
-      code: 'NOT_FROM_WIFI',
-    });
-    expect(getRoomService().authorRegistry.getById(ana)?.handle).toBe('ana');
-    expect((await entries(roomId)).filter((e) => e.body.notice === 'handle_changed')).toEqual([]);
-
-    const own = await request(testServer)
-      .patch(`/api/rooms/authors/${me}/handle`)
-      .send({ handle: 'dorian' });
-    expect(own.status).toBe(200);
-    expect(own.body.handle).toBe('dorian');
   });
 
   it('still refuses an agent renaming another agent, even with the person’s rename open', async () => {

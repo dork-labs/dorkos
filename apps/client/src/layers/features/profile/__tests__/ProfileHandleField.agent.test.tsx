@@ -4,7 +4,7 @@
 /**
  * The Handle field on an agent you manage (DOR-3156): it renames the agent by
  * its author id, not its roster id, says the server's own sentence for a
- * look-alike or a Wi-Fi refusal, and waits for a room when the agent has no
+ * look-alike, and waits for a room when the agent has no
  * author row yet.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -53,13 +53,11 @@ describe('the Handle field on an agent you manage', () => {
     );
   });
 
-  it.each([
-    ['HANDLE_LOOKALIKE', '@d0rian looks too much like @dorian. Pick a different one.'],
-    ['NOT_FROM_WIFI', "Change an agent's handle at this computer."],
-  ])('draws the server’s own sentence for %s', async (code, sentence) => {
+  it('draws the server’s own sentence for a look-alike, naming whose', async () => {
+    const sentence = '@d0rian looks too much like @dorian. Pick a different one.';
     mount(WARDEN);
     vi.mocked(transport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error(sentence), { code })
+      Object.assign(new Error(sentence), { code: 'HANDLE_LOOKALIKE' })
     );
 
     submit('d0rian');
