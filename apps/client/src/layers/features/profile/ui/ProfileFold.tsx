@@ -66,7 +66,7 @@ export function ProfileFold({ fold, open, onOpenChange, children }: ProfileFoldP
             open ? 'rotate-90 duration-200 ease-out' : 'duration-150 ease-in'
           )}
         />
-        <span id={titleId} className="text-[13px] font-semibold">
+        <span id={titleId} className="text-sm font-semibold">
           {fold.title}
         </span>
         {fold.summary && (
