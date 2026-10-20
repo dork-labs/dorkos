@@ -264,10 +264,16 @@ describe('origins and the way back', () => {
   it('accepts a loopback return page with an explicit port', () => {
     for (const ok of [
       'http://127.0.0.1:4242/relay-passkey',
-      'http://localhost:6242/relay-passkey?state=abc',
+      'http://[::1]:6242/relay-passkey?state=abc',
     ]) {
       expect(StepUpLoopbackReturnToSchema.safeParse(ok).success, ok).toBe(true);
     }
+  });
+
+  it('keeps the bracketed IPv6 loopback exactly as written', () => {
+    const value = 'http://[::1]:4242/relay-passkey';
+    expect(new URL(value).href).toBe(value);
+    expect(PasskeyEnrolStatementV1Schema.safeParse(enrol({ returnTo: value })).success).toBe(true);
   });
 
   it('refuses every return page that is not this computer`s loopback', () => {
@@ -277,7 +283,13 @@ describe('origins and the way back', () => {
       'http://127.0.0.1.evil.example/',
       'http://127.0.0.1.evil.example:4242/',
       'http://localhost.evil.example:4242/',
-      'http://[::1]:4242/relay-passkey',
+      'http://localhost:4242/relay-passkey',
+      'http://LOCALHOST:4242/relay-passkey',
+      'http://[::ffff:127.0.0.1]:4242/relay-passkey',
+      'http://[0:0:0:0:0:0:0:1]:4242/relay-passkey',
+      'http://[::0:1]:4242/relay-passkey',
+      'http://[::1]/relay-passkey',
+      'http://[::1]:4242',
       'http://127.0.0.1/relay-passkey',
       'http://127.0.0.1:4242',
       'http://127.0.0.1:4242/relay-passkey#frag',

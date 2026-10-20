@@ -34,7 +34,7 @@ extendZodWithOpenApiOnce();
  * person's place in one conversation into two rows that each look right.
  */
 export const ReadCursorThreadKindSchema = z
-  .enum(['room', 'session', 'inbox'])
+  .enum(['room', 'session', 'inbox', 'room-thread'])
   .openapi('ReadCursorThreadKind');
 
 /** What kind of thing a read cursor points into. */

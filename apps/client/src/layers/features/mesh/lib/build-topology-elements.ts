@@ -6,7 +6,12 @@
  * @module features/mesh/lib/build-topology-elements
  */
 import type { Node, Edge } from '@xyflow/react';
-import type { NamespaceInfo, CrossNamespaceRule, TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import {
+  OPEN_MESH_NAMESPACE,
+  type NamespaceInfo,
+  type CrossNamespaceRule,
+  type TopologyAgent,
+} from '@dorkos/shared/mesh-schemas';
 import type { AdapterListItem } from '@dorkos/shared/transport';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { AgentNodeData } from '../ui/AgentNode';
@@ -216,8 +221,17 @@ export function buildTopologyElements(
   // Cross-namespace edges connect between group nodes. Bridge-written default
   // rules (DOR-336) are self-referencing (ns -> ns) or use the '*' catch-all
   // target sentinel — neither maps to a real group-to-group edge, so the graph
-  // only visualizes explicit grants a user configured.
-  const explicitRules = accessRules.filter((rule) => rule.origin !== 'default');
+  // only visualizes explicit grants a user configured. The open-mesh switch
+  // (`*` -> `*`, DOR-1338) is explicit but names no group either: drawn, it
+  // points at a `group:*` node that does not exist, ELK refuses the whole
+  // graph, and the map renders no agents at all (DOR-3154). Trusted installs
+  // turn it on by default, so it is skipped here.
+  const explicitRules = accessRules.filter(
+    (rule) =>
+      rule.origin !== 'default' &&
+      rule.sourceNamespace !== OPEN_MESH_NAMESPACE &&
+      rule.targetNamespace !== OPEN_MESH_NAMESPACE
+  );
   for (const rule of explicitRules) {
     const sourceId = useGroups
       ? `group:${rule.sourceNamespace}`

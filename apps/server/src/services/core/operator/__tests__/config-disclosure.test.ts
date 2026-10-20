@@ -357,6 +357,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      // Which rooms a mini app may reply in as the person (DOR-3017).
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'mcp.apiKey',

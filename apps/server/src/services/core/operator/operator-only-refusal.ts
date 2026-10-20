@@ -5,7 +5,7 @@
  *
  * @module services/core/operator/operator-only-refusal
  */
-import { OPERATOR_ONLY_STAKES } from './config-write-policy.js';
+import { OPERATOR_ONLY_STAKES } from './operator-only-stakes.js';
 
 /**
  * The clause for a refused path with no stake on file. Deliberately says only

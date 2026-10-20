@@ -2,14 +2,19 @@ import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, primaryKey, check, index } from 'drizzle-orm/sqlite-core';
 
 /**
- * The three kinds of thread a person can have read state in
+ * The kinds of thread a person can have read state in
  * (team-room-home spec §D4, ADR 260808-140956).
  *
+ * `room-thread` is one reply thread inside a room, addressed as
+ * `<roomId>/<rootEntryId>` (DOR-3017): the per-thread "read" a mini app marks.
+ * It never replaces the room's own cursor; a thread counts as read up to the
+ * higher of the two.
+ *
  * One list, used twice: it types {@link readCursors.threadKind} and it builds
- * the table's `CHECK`, so a fourth kind cannot be added to one half and
+ * the table's `CHECK`, so a new kind cannot be added to one half and
  * forgotten in the other.
  */
-export const READ_CURSOR_THREAD_KINDS = ['room', 'session', 'inbox'] as const;
+export const READ_CURSOR_THREAD_KINDS = ['room', 'session', 'inbox', 'room-thread'] as const;
 
 /** What kind of thing a read cursor points into. */
 export type ReadCursorThreadKind = (typeof READ_CURSOR_THREAD_KINDS)[number];
@@ -76,7 +81,7 @@ export const readCursors = sqliteTable(
      */
     userId: text('user_id').notNull(),
 
-    /** `'room' | 'session' | 'inbox'` — which store `thread_id` addresses. */
+    /** `'room' | 'session' | 'inbox' | 'room-thread'` — which store `thread_id` addresses. */
     threadKind: text('thread_kind').$type<ReadCursorThreadKind>().notNull(),
 
     /** Opaque id within `thread_kind`. Never joined, never parsed. */

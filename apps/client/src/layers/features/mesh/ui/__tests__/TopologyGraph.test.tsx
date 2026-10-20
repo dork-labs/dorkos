@@ -54,11 +54,15 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }));
 
-// Mock ELK layout — returns nodes with position set to { x: 0, y: 0 }
+// Mock ELK layout — returns nodes with position set to { x: 0, y: 0 }, or
+// refuses the graph while `elkRefuses` is set (a real ELK throws on an edge to
+// a node that does not exist).
+let elkRefuses = false;
 vi.mock('elkjs/lib/elk.bundled.js', () => {
   return {
     default: class MockELK {
       async layout(graph: { children?: Array<{ id: string; children?: Array<{ id: string }> }> }) {
+        if (elkRefuses) throw new Error('Referenced shape does not exist: group:*');
         return {
           ...graph,
           children: graph.children?.map((child) => ({
@@ -295,6 +299,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturedReactFlowProps = {};
   capturedBindingDialogProps = {};
+  elkRefuses = false;
 });
 
 afterEach(cleanup);
@@ -462,6 +467,41 @@ describe('TopologyGraph', () => {
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     });
 
+    it('says the map could not be drawn when the layout is refused, never a blank canvas', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      elkRefuses = true;
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Couldn’t draw the map of your agents/)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('react-flow')).not.toBeInTheDocument();
+
+      // Retry runs the layout again, and a layout that works draws the agents.
+      elkRefuses = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('node-agent-1')).toBeInTheDocument();
+      });
+    });
+
+    it('says everyone can message everyone only while the open-mesh rule is on', async () => {
+      setupDefaults({ topology: { ...mockTopologyData, openMesh: true } });
+      const { unmount } = render(<TopologyGraph />);
+      await waitFor(() => {
+        expect(screen.getByText('Everyone can message everyone')).toBeInTheDocument();
+      });
+      unmount();
+
+      setupDefaults();
+      render(<TopologyGraph />);
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Everyone can message everyone')).not.toBeInTheDocument();
+    });
+
     it('shows empty state when no agents exist', async () => {
       setupDefaults({ topology: { namespaces: [], accessRules: [] } });
       render(<TopologyGraph />);
@@ -496,6 +536,28 @@ describe('TopologyGraph', () => {
       expect(
         screen.getByText('Drag from a platform to an agent to connect them')
       ).toBeInTheDocument();
+    });
+
+    it('hides the drag hint on a touch screen, where dragging is not how you connect', async () => {
+      const original = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        ...original(query),
+        matches: query === '(pointer: coarse)',
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as typeof window.matchMedia;
+      try {
+        setupDefaults({ bindings: [] });
+        render(<TopologyGraph />);
+        await waitFor(() => {
+          expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+        });
+        expect(
+          screen.queryByText('Drag from a platform to an agent to connect them')
+        ).not.toBeInTheDocument();
+      } finally {
+        window.matchMedia = original;
+      }
     });
 
     it('does not show hints when bindings exist', async () => {

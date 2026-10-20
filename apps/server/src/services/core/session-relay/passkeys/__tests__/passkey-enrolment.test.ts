@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { SoftAuthenticator } from '@dorkos/test-utils/soft-authenticator';
 import { decodeStepUpBase64url, decodeStepUpStatement } from '@dork-labs/cloud-api';
+import { SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS } from '@dorkos/shared/session-relay-link';
 import {
   PasskeyEnrolment,
   loopbackReturnHost,
@@ -34,7 +35,7 @@ describe('loopbackReturnHost', () => {
   it.each([
     ['127.0.0.1', '127.0.0.1'],
     ['::ffff:127.0.0.1', '127.0.0.1'],
-    ['::1', 'localhost'],
+    ['::1', '[::1]'],
     ['10.0.0.2', undefined],
     ['::ffff:192.168.1.4', undefined],
     [undefined, undefined],
@@ -48,7 +49,7 @@ describe('PasskeyEnrolment.start', () => {
     const started = await new PasskeyEnrolment(() => NOW).start({ ...INPUT, localAddress: '::1' });
     if (typeof started === 'string') throw new Error(started);
     const statement = decodeStepUpStatement(decodeStepUpBase64url(started.statement));
-    expect(statement).toMatchObject({ returnTo: 'http://localhost:4242/relay-passkey' });
+    expect(statement).toMatchObject({ returnTo: 'http://[::1]:4242/relay-passkey' });
   });
 
   it.each<[string, Partial<StartEnrolmentInput>]>([
@@ -59,6 +60,29 @@ describe('PasskeyEnrolment.start', () => {
     const enrolment = new PasskeyEnrolment(() => NOW);
     expect(await enrolment.start({ ...INPUT, ...over })).toBe('cannot-start');
     expect(enrolment.open).toBe(false);
+  });
+});
+
+describe('PasskeyEnrolment.start and the finish cap', () => {
+  it('refuses to issue a statement longer than /finish takes', async () => {
+    // Sixteen long security-key ids: legal in the contract, too long for /finish.
+    const keys = Array.from({ length: 16 }, (_, i) => ({
+      credentialId: `${'A'.repeat(1_398)}${String(i).padStart(2, '0')}`,
+    }));
+    const pinned = {
+      rpId: 'approve.dorkos.ai',
+      origin: 'https://approve.dorkos.ai',
+      keys,
+    } as unknown as StartEnrolmentInput['pinned'];
+    const enrolment = new PasskeyEnrolment(() => NOW);
+    expect(await enrolment.start({ ...INPUT, pinned })).toBe('cannot-start');
+    expect(enrolment.open).toBe(false);
+  });
+
+  it('issues one at or under the cap', async () => {
+    const started = await new PasskeyEnrolment(() => NOW).start(INPUT);
+    if (typeof started === 'string') throw new Error(started);
+    expect(started.statement.length).toBeLessThanOrEqual(SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS);
   });
 });
 

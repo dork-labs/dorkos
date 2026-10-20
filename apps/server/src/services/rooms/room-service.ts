@@ -60,7 +60,11 @@ import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
 import type { RoomFollowService } from './follow/room-follow-service.js';
-import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
+import {
+  postAuthorBound,
+  type PersonPostBound,
+  type RoomExternalPostInput,
+} from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
   MemberRoomSummary,
@@ -466,27 +470,18 @@ export class RoomService {
    *
    * @param roomId - The room.
    * @param input - The post itself.
-   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP routes).
-   * @param authorBound - `'runtime-default'` holds the turns it starts to the
-   *   runtime's default: a post from Wi-Fi (DOR-3037).
+   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP
+   *   routes): kept marked as an outsider's ({@link postAuthorBound}).
+   * @param authorBound - What the post hands on to the turns it starts; see
+   *   {@link PersonPostBound}.
    */
   post(
     roomId: string,
     input: RoomPostInput,
     unverifiedAgent = false,
-    authorBound?: 'runtime-default'
+    authorBound?: PersonPostBound
   ): PostedEntry {
-    // An agent posting over HTTP names itself with a header nothing verifies:
-    // its post is kept as an outsider's (DOR-3107, trust first covers only a
-    // verified own agent's unknown marks). From Wi-Fi it is held to the
-    // default as well, so neither reading can loosen the other.
-    return this.parts.posting.post(
-      roomId,
-      input,
-      unverifiedAgent
-        ? { marks: { outsider: true }, ...(authorBound ? { heldToDefault: true as const } : {}) }
-        : authorBound
-    );
+    return this.parts.posting.post(roomId, input, postAuthorBound(unverifiedAgent, authorBound));
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
@@ -509,6 +504,14 @@ export class RoomService {
     opts: { limit: number; before?: number; threadRootEntryId?: string }
   ): RoomEntry[] {
     return this.parts.reads.readHistory(roomId, viewerAuthorId, opts);
+  }
+  /** Whether a room mirrors a Community's. See {@link RoomStore.isRemoteTimelineRoom}. */
+  isMirroredRoom(roomId: string): boolean {
+    return this.parts.core.store.isRemoteTimelineRoom(roomId);
+  }
+  /** One entry by id, for a member. See {@link RoomReads.readEntry}. */
+  readEntry(roomId: string, viewerAuthorId: string, entryId: string): RoomEntry | null {
+    return this.parts.reads.readEntry(roomId, viewerAuthorId, entryId);
   }
   /** The messages in one room that match some words. See {@link RoomSearch.searchHistory}. */
   searchHistory(

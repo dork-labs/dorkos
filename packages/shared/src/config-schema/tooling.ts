@@ -124,6 +124,19 @@ export const ExtensionsConfigSchema = z
      * one of the three asks only a person can answer.
      */
     trustedSources: z.array(ExtensionTrustedSourceSchema).default(() => []),
+    /**
+     * The rooms each mini app may read and reply in as the person, keyed by
+     * extension id (DOR-3017). A missing id, or an empty list, means none: a
+     * mini app reaches no room until a person picks one in Settings →
+     * Extensions. Reads still follow the person's own room membership.
+     *
+     * Optional rather than defaulted: absence already means "no rooms", so
+     * there is nothing for a migration to seed.
+     *
+     * `operator-only`: a caller that could add a room here would let a mini
+     * app post in the person's name somewhere they never chose.
+     */
+    roomAccess: z.record(z.string(), z.array(z.string().min(1)).max(50)).optional(),
   })
   .default(() => ({
     enabled: [],

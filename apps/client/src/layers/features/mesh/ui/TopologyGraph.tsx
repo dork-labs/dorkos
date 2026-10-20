@@ -7,7 +7,7 @@
  *
  * @module features/mesh/ui/TopologyGraph
  */
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -26,6 +26,7 @@ import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
 import { TopologyLegend } from './TopologyLegend';
+import { OpenMeshNote } from './OpenMeshNote';
 import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
@@ -40,6 +41,7 @@ import {
 } from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
 import { cn, useLatest, useRenderSlot } from '@/layers/shared/lib';
+import { useIsMobile, useMediaQuery } from '@/layers/shared/model';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,6 +107,14 @@ function TopologyGraphInner({
 
   const namespaces = topology?.namespaces;
   const accessRules = topology?.accessRules;
+  const openMesh = topology?.openMesh ?? false;
+  // Dragging a connection is a mouse gesture; on a phone or a touch screen the
+  // hint only takes up space (DOR-3154).
+  const isMobile = useIsMobile();
+  const isTouch = useMediaQuery('(pointer: coarse)');
+  // Set when ELK refuses the graph, so the map says so instead of drawing an
+  // empty canvas (DOR-3154).
+  const [layoutFailed, setLayoutFailed] = useState(false);
 
   // Adapter & binding data (only fetched when Relay is enabled).
   const relayEnabled = useRelayEnabled();
@@ -239,11 +249,17 @@ function TopologyGraphInner({
           });
           setLayoutedNodes(merged);
           setLayoutedEdges(rawEdges);
+          setLayoutFailed(false);
           setIsLayouting(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) setIsLayouting(false);
+      .catch((err: unknown) => {
+        // A refused layout leaves the map with no nodes, so say why (DOR-3154).
+        console.warn('[topology] layout failed; the map has no nodes to draw', err);
+        if (!cancelled) {
+          setLayoutFailed(true);
+          setIsLayouting(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -282,6 +298,20 @@ function TopologyGraphInner({
         title="Couldn’t draw the map of your agents"
         description="Couldn’t reach DorkOS. Check that it’s running."
         onRetry={() => void refetch()}
+      />
+    );
+  }
+
+  if (layoutFailed && layoutedNodes.length === 0) {
+    return (
+      <QueryErrorState
+        className="h-full"
+        title="Couldn’t draw the map of your agents"
+        description="Your agents are fine. Only the map couldn’t be drawn."
+        onRetry={() => {
+          void refetch();
+          handleResetLayout();
+        }}
       />
     );
   }
@@ -351,6 +381,10 @@ function TopologyGraphInner({
         edgesFocusable
         fitView
         fitViewOptions={{ duration: 400, padding: 0.15 }}
+        // React Flow's default floor (0.5) is too high for a phone: the map is
+        // wider than it is tall, fitView stopped at 0.5, and the left groups
+        // were cut off under an empty band (DOR-3154).
+        minZoom={0.2}
         colorMode="system"
         onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
@@ -375,7 +409,8 @@ function TopologyGraphInner({
           className="!right-2 !bottom-2"
           style={{ height: 80 }}
         />
-        <Controls showInteractive={false} />
+        {/* Top-right: the legend owns bottom-left and covered these (DOR-3154). */}
+        <Controls showInteractive={false} position="top-right" />
         {hasDraggedNodes && (
           <div className="absolute bottom-2 left-2 z-10">
             <Button
@@ -392,13 +427,14 @@ function TopologyGraphInner({
         )}
         <TopologyLegend namespaces={legendEntries} />
       </ReactFlow>
+      {openMesh && <OpenMeshNote />}
       {/* Contextual hints for adapter/binding onboarding */}
       {relayEnabled && hasAgents && !hasAdapters && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
           Add a chat app in Connections, then connect it to an agent
         </div>
       )}
-      {hasAdapters && hasAgents && !hasBindings && (
+      {hasAdapters && hasAgents && !hasBindings && !isMobile && !isTouch && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
           Drag from a platform to an agent to connect them
         </div>

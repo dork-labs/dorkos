@@ -17139,7 +17139,8 @@
         "enum": [
           "room",
           "session",
-          "inbox"
+          "inbox",
+          "room-thread"
         ]
       },
       "SetReadCursorPositionRequest": {
@@ -32459,7 +32460,7 @@
           "Session relay"
         ],
         "summary": "Begin adding an approvals passkey",
-        "description": "Needs the owner's password and a linked computer. Writes a single-use enrol statement (two minutes, one live at a time; a new start replaces it) for the approve page (`https://approve.dorkos.ai` unless a self-hoster names their own https origin, and always the one already pinned once a passkey exists; never the hub itself, and only DorkOS's own for a DorkOS Cloud account). Answers the approve page to open: `<origin>/enrol#<base64url statement>`. The statement sends the browser back to the loopback address this request arrived on (`127.0.0.1`, or `localhost` for `::1`) at this server's port, `/relay-passkey`. Only a direct request on this computer passes, so a container install cannot add a passkey.",
+        "description": "Needs the owner's password and a linked computer. Writes a single-use enrol statement (two minutes, one live at a time; a new start replaces it) for the approve page (`https://approve.dorkos.ai` unless a self-hoster names their own https origin, and always the one already pinned once a passkey exists; never the hub itself, and only DorkOS's own for a DorkOS Cloud account). Answers the approve page to open: `<origin>/enrol#<base64url statement>`. The statement sends the browser back to the loopback address this request arrived on (`127.0.0.1`, or `[::1]` for `::1`) at this server's port, `/relay-passkey`. Only a direct request on this computer passes, so a container install cannot add a passkey.",
         "requestBody": {
           "content": {
             "application/json": {

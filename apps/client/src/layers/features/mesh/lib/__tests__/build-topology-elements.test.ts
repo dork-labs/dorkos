@@ -278,6 +278,32 @@ describe('buildTopologyElements', () => {
       // Only the two explicit rules from `accessRules` produce edges.
       expect(crossNamespaceEdges).toHaveLength(2);
     });
+
+    it('does not draw the open-mesh rule, which names no group (DOR-3154)', () => {
+      // `*` -> `*` is the explicit "let all my agents talk" switch, on by default
+      // on Trusted. Drawn, it targets a `group:*` node that does not exist and ELK
+      // refuses the whole graph, so the map shows no agents.
+      const result = buildTopologyElements(
+        multiNamespace,
+        [
+          ...accessRules,
+          { sourceNamespace: '*', targetNamespace: '*', action: 'allow', origin: 'explicit' },
+        ],
+        false,
+        undefined,
+        undefined,
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks()
+      );
+
+      const nodeIds = new Set(result.rawNodes.map((n) => n.id));
+      expect(result.rawEdges).toHaveLength(2);
+      for (const edge of result.rawEdges) {
+        expect(nodeIds.has(edge.source)).toBe(true);
+        expect(nodeIds.has(edge.target)).toBe(true);
+      }
+    });
   });
 
   describe('adapter nodes', () => {

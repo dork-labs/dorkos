@@ -19,6 +19,7 @@ import {
   useAddedSinceSeen,
 } from '@/layers/entities/extension';
 import { PanelTabPlacementSection } from './PanelTabPlacementEditor';
+import { RoomAccessEditor } from './RoomAccessEditor';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -155,6 +156,12 @@ export function ExtensionCard({
           {/* Where its right-panel tabs show (spec `mini-app-placement`).
               Nothing while it adds no tab, or is not running. */}
           {isEnabled && <PanelTabPlacementSection extensionId={extension.id} />}
+
+          {/* The rooms it may read and reply in as you (DOR-3017). Only for a
+              mini app that asks for rooms. */}
+          {manifest.capabilities?.rooms === true && (
+            <RoomAccessEditor extensionId={extension.id} name={manifest.name} />
+          )}
 
           {/* Incompatible message */}
           {isIncompatible && manifest.minHostVersion && (

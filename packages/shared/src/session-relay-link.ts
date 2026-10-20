@@ -510,9 +510,15 @@ export const SessionRelayPasskeyAttestationSchema = z.object({
   authenticatorAttachment: z.enum(['platform', 'cross-platform']).optional(),
 });
 
+/**
+ * Longest encoded enrolment statement `/finish` takes, in base64url characters. `/start` refuses
+ * to issue one longer, so a passkey is never made for a statement `/finish` would turn away.
+ */
+export const SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS = 8_192;
+
 /** `POST /api/session-relay/passkeys/finish`: the statement `/start` issued, and the new passkey. */
 export const SessionRelayPasskeyFinishBodySchema = z.object({
-  statement: base64urlText(8_192),
+  statement: base64urlText(SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS),
   attestation: SessionRelayPasskeyAttestationSchema,
 });
 

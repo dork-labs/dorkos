@@ -140,20 +140,21 @@ const OriginSchema = HttpsOriginSchema.max(256);
 /**
  * Where the enrol page sends the browser back with the new passkey: a page on
  * the computer itself, over plain http to its loopback address with an explicit
- * port (RFC 8252). The numeric loopback address and `localhost` only. No user part, no
+ * port (RFC 8252). The two numeric loopback addresses only, never the name
+ * `localhost`, which a hosts file or VPN can point elsewhere (RFC 8252). No user part, no
  * fragment (the enrol page puts the result there), and written exactly as the
  * URL standard writes it, so two readers cannot disagree about where it goes.
  */
 export const StepUpLoopbackReturnToSchema = z
   .string()
   .max(2_048)
-  .regex(/^http:\/\/(127\.0\.0\.1|localhost):[1-9][0-9]{0,4}\//, 'must be a loopback http page')
+  .regex(/^http:\/\/(127\.0\.0\.1|\[::1\]):[1-9][0-9]{0,4}\//, 'must be a loopback http page')
   .refine((value) => {
     try {
       const url = new URL(value);
       return (
         url.protocol === 'http:' &&
-        (url.hostname === '127.0.0.1' || url.hostname === 'localhost') &&
+        (url.hostname === '127.0.0.1' || url.hostname === '[::1]') &&
         url.port !== '' &&
         url.username === '' &&
         url.password === '' &&
