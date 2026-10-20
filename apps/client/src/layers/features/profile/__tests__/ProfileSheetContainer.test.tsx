@@ -183,6 +183,16 @@ describe('resolving ?profile=', () => {
     expect(panel()?.getAttribute('data-member-id')).toBe(WARDEN);
   });
 
+  it('opens with focus on the sheet, not wearing a ring on the face', async () => {
+    const harness = renderContainer({ url: `/?profile=${WARDEN}` });
+    await harness.ready();
+    await screen.findByText('Warden');
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(document.querySelector('[data-slot="profile-sheet"]'))
+    );
+  });
+
   it('resolves the owner from the same roster read', async () => {
     const harness = renderContainer({ url: `/?profile=${WARDEN}` });
     await harness.ready();
