@@ -176,10 +176,7 @@ describe('isOnEncryptedConnection', () => {
     peer: string | null = '127.0.0.1'
   ): Promise<boolean> {
     currentPeer = peer;
-    const res = await request(server)
-      .get('/probe')
-      .set('Host', 'localhost:4242')
-      .set(headers);
+    const res = await request(server).get('/probe').set('Host', 'localhost:4242').set(headers);
     expect(res.status).toBe(200);
     return res.body.encrypted as boolean;
   }

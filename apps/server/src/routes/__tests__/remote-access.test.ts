@@ -187,7 +187,9 @@ describe.each([
 
   // Managed access is encrypted: the owner there is the owner at the desk (DOR-3172).
   it('lets the owner through over managed access, and nobody else', async () => {
-    const guest = await request(app({ managed: true, user: { userId: 'guest', credential: 'cookie' } }))
+    const guest = await request(
+      app({ managed: true, user: { userId: 'guest', credential: 'cookie' } })
+    )
       .post(path)
       .send(body);
     expect(guest.status).toBe(403);

@@ -17,7 +17,11 @@ import {
   type SessionRelayDevice,
   type SessionRelayPresence,
 } from '@dorkos/shared/session-relay-link';
-import { useExperimentEnabledState, useIsHub, useTrustedConnection } from '@/layers/entities/config';
+import {
+  useExperimentEnabledState,
+  useIsHub,
+  useTrustedConnection,
+} from '@/layers/entities/config';
 import { useEventSubscription, useTransport } from '@/layers/shared/model';
 import { SESSION_RELAY_EXPERIMENT } from './use-web-access';
 import {

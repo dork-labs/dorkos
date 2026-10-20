@@ -82,9 +82,7 @@ import {
   endSession,
   resetLiveConnectionsForTests,
 } from '../../services/core/auth/sessions/live-connections.js';
-import {
-  resetSignedInTurnsForTests,
-} from '../../services/core/auth/sessions/signed-in-turns.js';
+import { resetSignedInTurnsForTests } from '../../services/core/auth/sessions/signed-in-turns.js';
 import { WIFI_RAISE_REFUSAL } from '../../services/core/auth/sessions/wifi-raise-guard.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000e1';

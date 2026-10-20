@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
-import { createRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
+import { createAccountRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
@@ -178,7 +178,7 @@ async function signInAccount(request: Request): Promise<string | undefined> {
 export function buildAccountSignInLimiter(
   options: AccountSignInLimitOptions = {}
 ): MiddlewareHandler<RequestFactsEnv> {
-  const limiter = createRateLimiter({
+  const limiter = createAccountRateLimiter({
     windowMs: WINDOW_MS,
     limit: options.maxFailures ?? DEFAULT_MAX_ACCOUNT_FAILURES,
   });
