@@ -61,6 +61,7 @@
     "DELETE /api/tasks/:id",
     "DELETE /api/templates/:id",
     "DELETE /api/terminal/:id",
+    "DELETE /api/test/account-world",
     "DELETE /api/workspaces/:id",
     "DELETE /mcp",
     "GET /.well-known/agent-card.json",
@@ -640,6 +641,7 @@
     "PUT /api/rooms/:id/follow",
     "PUT /api/runtimes/claude-code/accounts/:id/only-projects",
     "PUT /api/runtimes/claude-code/project-accounts",
-    "PUT /api/runtimes/doe/inference"
+    "PUT /api/runtimes/doe/inference",
+    "PUT /api/test/account-world"
   ]
 }

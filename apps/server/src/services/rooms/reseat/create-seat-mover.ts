@@ -26,7 +26,13 @@ import {
   probeRoomBindingTranscript,
   type RoomBindingTranscriptDeps,
 } from '../session-bindings/room-binding-transcripts.js';
-import { RoomSeatMover, type ReseatActivity } from './seat-mover.js';
+import { RESEAT_RUNTIME, RoomSeatMover, type ReseatActivity } from './seat-mover.js';
+import {
+  hasTestAccountWorld,
+  testWorldRan,
+  testWorldRanking,
+  testWorldSeatAccount,
+} from './test-account-world.js';
 
 let current: RoomSeatMover | null = null;
 
@@ -85,6 +91,20 @@ export function recordReseatActivity(
     .catch(() => undefined);
 }
 
+/** The test runtime's type: its sessions stand in for Claude Code's under a test world. */
+const TEST_RUNTIME = 'test-mode';
+
+/**
+ * A runtime as the mover sees it: under the forced-limit seam's test world
+ * (test runtime only), a test-runtime session stands in for a Claude Code one,
+ * since the world's accounts are Claude Code accounts. Unchanged otherwise.
+ *
+ * @param type - The session's resolved runtime.
+ */
+function asWorldRuntime(type: string): string {
+  return hasTestAccountWorld() && type.startsWith(TEST_RUNTIME) ? RESEAT_RUNTIME : type;
+}
+
 /**
  * Build the production mover.
  *
@@ -101,16 +121,29 @@ export function createRoomSeatMover(opts: {
   return new RoomSeatMover({
     rebind: (roomId, authorId, sessionId) =>
       opts.store.rebindRoomSession(roomId, authorId, sessionId),
-    runtimeOf: (seat) =>
-      resolveTurnRuntimeType({ sessionId: seat.sessionId, agentPath: seat.agentPath }),
-    newSeatRuntime: (agentPath) => resolveTurnRuntimeType({ sessionId: null, agentPath }),
+    runtimeOf: async (seat) =>
+      asWorldRuntime(
+        await resolveTurnRuntimeType({ sessionId: seat.sessionId, agentPath: seat.agentPath })
+      ),
+    newSeatRuntime: async (agentPath) =>
+      asWorldRuntime(await resolveTurnRuntimeType({ sessionId: null, agentPath })),
     settingsOf: (sessionId) => runtimeRegistry.getSessionSettings(sessionId),
     saveSettings: (sessionId, settings) => runtimeRegistry.saveSessionSettings(sessionId, settings),
-    declaredModes: (runtime) =>
-      runtimeRegistry.has(runtime)
-        ? runtimeRegistry.get(runtime).getCapabilities().permissionModes
-        : undefined,
+    declaredModes: (runtime) => {
+      const type = runtimeRegistry.has(runtime)
+        ? runtime
+        : hasTestAccountWorld() && runtimeRegistry.has(TEST_RUNTIME)
+          ? TEST_RUNTIME
+          : null;
+      return type === null
+        ? undefined
+        : runtimeRegistry.get(type).getCapabilities().permissionModes;
+    },
     accountOf: async (runtime, sessionId, cwd) => {
+      // The forced-limit seam (DOR-3143), set only under the test runtime.
+      if (hasTestAccountWorld()) {
+        return testWorldSeatAccount(sessionId) ?? { id: null, label: null, usage: null };
+      }
       const usage = runtimeRegistry.has(runtime)
         ? await accountUsageForSession(
             getAccountUsageStore(),
@@ -121,8 +154,12 @@ export function createRoomSeatMover(opts: {
         : null;
       return { id: usage?.accountId ?? null, label: usage?.label ?? null, usage };
     },
-    ranking: async (runtime, cwd) => coreRanking(runtime, await projectOfFolder(cwd)),
+    ranking: async (runtime, cwd) =>
+      testWorldRanking() ?? coreRanking(runtime, await projectOfFolder(cwd)),
     transcriptState: async (seat) => {
+      if (hasTestAccountWorld()) {
+        return seat.sessionId !== null && testWorldRan(seat.sessionId) ? 'present' : 'unknown';
+      }
       if (!opts.transcripts || seat.sessionId === null) return 'unknown';
       const { verdict } = await probeRoomBindingTranscript(
         { roomId: seat.roomId, authorId: seat.authorId, sessionId: seat.sessionId },

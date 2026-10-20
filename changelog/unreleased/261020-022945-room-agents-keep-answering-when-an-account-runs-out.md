@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(rooms): room agents keep answering when an account runs out (re-seat)'
+  - 'feat(rooms): room agents keep answering when an account runs out (DOR-3143)'
 ---
 
 ### Added
