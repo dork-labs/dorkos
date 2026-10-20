@@ -127,6 +127,8 @@ export const channelsSearchSchema = mergeDialogSearch(
     community: z.string().min(1).optional(),
     thread: z.string().optional(),
     entry: roomEntrySeqParam,
+    // A space's Settings tab (DOR-3005). Caught, so a stale link shows the space, not an error.
+    tab: z.literal('settings').optional().catch(undefined),
   })
 );
 

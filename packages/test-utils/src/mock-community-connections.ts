@@ -53,5 +53,7 @@ export function communityConnectionTransportMocks(): CommunityConnectionTranspor
       destinations: [],
     }),
     resolveCommunityNavigation: vi.fn().mockResolvedValue(null),
+    // A space that never answered and cannot be reached; a test arranges the reads it is about.
+    readCommunitySpace: vi.fn().mockRejectedValue(new Error('Can’t reach this space right now.')),
   };
 }

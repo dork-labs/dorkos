@@ -17,6 +17,8 @@ import {
   useCommunityConnections,
   useSpaceVisible,
 } from '@/layers/entities/community';
+import { useIsHub } from '@/layers/entities/config';
+import { PrivateSpaceSettings, SpaceSettingsPanel } from '@/layers/features/space-settings';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -48,7 +50,7 @@ import {
  * so; nothing about the space is asked for or drawn first.
  */
 export function ChannelsPage() {
-  const { id, community } = useSearch({ from: '/_shell/channels' });
+  const { id, community, tab } = useSearch({ from: '/_shell/channels' });
   const space = useSpaceVisible(community);
   if (community && !space.visible)
     return space.isLoading ? null : <Navigate {...appRoutes.channels()} search={{}} replace />;
@@ -57,7 +59,9 @@ export function ChannelsPage() {
       {community ? (
         <CommunityPageHeading community={community} roomId={id} />
       ) : (
-        id === undefined && <PageHeading>Channels</PageHeading>
+        id === undefined && (
+          <PageHeading>{tab === 'settings' ? 'Settings' : 'Channels'}</PageHeading>
+        )
       )}
       <ChannelsPageBody />
     </>
@@ -66,8 +70,10 @@ export function ChannelsPage() {
 
 /** The room, or the state that stands in for one. */
 function ChannelsPageBody() {
-  const { id, thread, entry, community } = useSearch({ from: '/_shell/channels' });
+  const { id, thread, entry, community, tab } = useSearch({ from: '/_shell/channels' });
   const navigate = useNavigate();
+  // On a hub, this DorkOS is the person's private space, with a Settings tab of its own (A6).
+  const isHub = useIsHub();
   const teamRoom = useTeamRoomRedirect(community ? undefined : id, thread, entry);
   // You plus one agent opens as that agent's Direct chat, never a room (S12).
   const direct = useDirectChatRedirect(community ? undefined : id);
@@ -75,6 +81,17 @@ function ChannelsPageBody() {
   // phone: `MobileTabsLayout` deliberately has no sidebar and no hamburger, so
   // copy pointing at one described a control that had been removed (DOR-1755).
   const isMobile = useIsMobile();
+
+  // A space's Settings tab (DOR-3005), on the space's page rather than in a channel.
+  if (tab === 'settings' && id === undefined) {
+    if (community)
+      return (
+        <CommunityGoneGuard community={community}>
+          <SpaceSettingsTab community={community} />
+        </CommunityGoneGuard>
+      );
+    if (isHub) return <PrivateSpaceSettings />;
+  }
 
   if (community && id)
     return (
@@ -146,6 +163,13 @@ function ChannelsPageBody() {
   }
 
   return <RoomSurface roomId={id} threadId={thread} entrySeq={entry} threadRoute="/channels" />;
+}
+
+/** A connected space's Settings tab, once its connection is known. */
+function SpaceSettingsTab({ community }: { community: string }) {
+  const connection = useCommunityConnections().data?.find((item) => item.ref === community);
+  if (!connection) return null;
+  return <SpaceSettingsPanel connection={connection} />;
 }
 
 /**
