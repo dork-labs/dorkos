@@ -11,7 +11,7 @@ const DISPLAY_FILTER_OPTIONS: { value: SidebarDisplayFilter; label: string }[] =
 
 /**
  * What the display-filter submenu is called, wherever it appears — a group's
- * header menu, the Agents header menu, and any menu that adds it next. One
+ * header menu, and any menu that adds it next. One
  * constant because §14.1's whole point is that the same verb reads the same
  * everywhere.
  */

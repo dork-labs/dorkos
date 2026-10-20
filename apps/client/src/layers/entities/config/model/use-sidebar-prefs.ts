@@ -344,12 +344,6 @@ export function reorderWithinGroup(
   };
 }
 
-/** Reorder the `pinned` array (bounds-checked no-op). */
-export function reorderPinned(prev: SidebarPrefs, from: number, to: number): SidebarPrefs {
-  const pinned = moveItem(prev.pinned, from, to);
-  return pinned === prev.pinned ? prev : { ...prev, pinned };
-}
-
 /**
  * Set a group's `sortMode`. MUST NOT touch `items` — switching away from
  * 'manual' never destroys the durable manual order.
@@ -474,8 +468,6 @@ export function setSectionDisplayFilter(
   return patchSection(prev, id, { displayFilter });
 }
 
-// ---------------------------------------------------------------------------
-// Getting started + digest
 // ---------------------------------------------------------------------------
 
 /**

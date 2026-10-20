@@ -1,7 +1,7 @@
 /**
  * The one reveal's numbers, in one place (spec `sidebar-simplification` D6).
  *
- * Separated from `SidebarZones` so the promise "reduced motion is instant" can
+ * Separated from `SidebarSections` so the promise "reduced motion is instant" can
  * be asserted as a value rather than inferred from a rendered tree — jsdom
  * reports no geometry and runs no animation, so a test that rendered the panel
  * and found the rows present would pass whether or not the duration was zero.
@@ -12,13 +12,13 @@
 /** How long the one reveal takes, in seconds. */
 export const REVEAL_SECONDS = 0.16;
 
-/** How far a zone travels on the way in, in pixels. A hint, not an entrance. */
+/** How far a section travels on the way in, in pixels. A hint, not an entrance. */
 export const REVEAL_RISE_PX = 4;
 
 /**
- * The gap between one zone's reveal and the next, in seconds.
+ * The gap between one section's reveal and the next, in seconds.
  *
- * Per ZONE and never per row: a thirty-row panel staggered by row would take
+ * Per SECTION and never per row: a thirty-row panel staggered by row would take
  * most of a second to finish arriving, which is the pop-in this replaces
  * wearing better clothes.
  */
@@ -30,8 +30,8 @@ export const REVEAL_CONTAINER = {
   shown: { transition: { staggerChildren: REVEAL_STAGGER_SECONDS } },
 };
 
-/** One zone's half: it fades and rises, and its rows do neither. */
-export const REVEAL_ZONE = {
+/** One section's half: it fades and rises, and its rows do neither. */
+export const REVEAL_SECTION = {
   hidden: { opacity: 0, y: REVEAL_RISE_PX },
   shown: { opacity: 1, y: 0 },
 };

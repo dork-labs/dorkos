@@ -140,8 +140,8 @@ interface SidebarSlot {
    * rather than the built-in roster.
    *
    * The two widths spend a takeover differently: on desktop it replaces the
-   * whole body, and on a phone it replaces the Library tab and leaves Home
-   * standing (P4). So the shell has to say which kind of body this is, rather
+   * whole body, and on a phone it replaces the list under Home and leaves the
+   * answer cards above it standing (P4). So the shell has to say which kind of body this is, rather
    * than the mobile layout guessing from a key string.
    */
   isTakeover: boolean;

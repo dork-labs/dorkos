@@ -96,29 +96,21 @@ vi.mock('@/layers/widgets/one-bar', async () => {
 
 // ── Mock child components with identifiable test markers ──
 
-vi.mock('@/layers/features/dashboard-sidebar', async () => {
-  // The zone enumeration is the REAL one: the mobile tabs widget reads it at
-  // module load to derive which zones each destination draws, and the shell
-  // imports that widget whatever width this suite runs at.
-  const { SIDEBAR_ZONE_IDS } =
-    await import('@/layers/features/dashboard-sidebar/model/build-sidebar-model');
-  return {
-    SIDEBAR_ZONE_IDS,
-    DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
-    // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
-    SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
-    MobileCommunityContextSwitcher: () => null,
-    SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
-    // The phone cockpit's pieces. This suite runs at desktop width, so the
-    // layout is never mounted — but the module graph is loaded either way.
-    SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    SidebarZones: () => null,
-    useSidebarState: () => ({ activeTarget: null }),
-    useSidebarModel: () => ({ zones: [] }),
-    useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
-    useLegacyPinMigration: () => {},
-  };
-});
+vi.mock('@/layers/features/dashboard-sidebar', () => ({
+  DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
+  // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
+  SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+  MobileCommunityContextSwitcher: () => null,
+  SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+  // The phone cockpit's pieces. This suite runs at desktop width, so the
+  // layout is never mounted — but the module graph is loaded either way.
+  SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  SidebarSections: () => null,
+  useSidebarState: () => ({ activeTarget: null }),
+  useSidebarModel: () => ({ sections: [] }),
+  useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
+  useLegacyPinMigration: () => {},
+}));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,

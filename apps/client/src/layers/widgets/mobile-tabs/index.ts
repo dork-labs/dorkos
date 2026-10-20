@@ -1,12 +1,12 @@
 /**
- * The phone cockpit: four destinations along the bottom, and no drawer.
+ * The phone cockpit: three destinations along the bottom, and no drawer.
  *
  * `AppShell` picks between this and the desktop sidebar at one call site, so
  * reverting that one line restores the off-canvas sheet, which stays in
  * `shared/ui/sidebar.tsx` as the shared primitive it always was — the Dev
  * Playground and a dozen component tests mount it (spec §9, P4).
  *
- * The destination list, the zone split and the bar's height are internal: they
+ * The destination list and the bar's height are internal: they
  * are what this widget is made of, not what it offers, and the widget's own
  * tests import them by relative path like every other internal.
  *
@@ -20,5 +20,5 @@ export { MobileTabBar } from './ui/MobileTabBar';
 export type { MobileTabId } from './model/mobile-tabs';
 // Whether a panel is covering the routed page. `AppShell` reads it to mark that
 // page `inert` while it is covered — the modality the Radix Sheet used to
-// provide for free, which four bottom destinations have to ask for.
+// provide for free, which the bottom destinations have to ask for.
 export { useMobilePanelStore } from './model/mobile-panel-store';

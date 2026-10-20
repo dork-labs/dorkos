@@ -18,9 +18,9 @@ import type { RoomsApi } from '../../fixtures/rooms-api';
  * what an operator sees.
  *
  * **The defect it exists to catch** is the one D6 was written for: the panel
- * used to paint an empty box and then assemble itself over about eight beats —
- * Heads up, then pins and groups a round trip late, then the rooms, then the
- * agents, then every agent's name and face flipping at once.
+ * used to paint an empty box and then assemble itself over several beats —
+ * sections a round trip late, then the rooms, then the agents, then every
+ * agent's name and face flipping at once.
  *
  * **The measurement is per FRAME, not per poll**, and that is the load-bearing
  * choice. A poll at +100 ms and another at +2000 ms can straddle a 160 ms
@@ -66,7 +66,7 @@ const SETTLE_MS = 2_000;
 /**
  * How many channels to seed.
  *
- * Enough that the panel has real rows in more than one zone, so "nothing moved"
+ * Enough that the panel has real rows in more than one section, so "nothing moved"
  * is a claim about a populated list rather than about an empty one.
  */
 const CHANNEL_COUNT = 12;
@@ -149,7 +149,7 @@ async function filmBoot(page: Page): Promise<void> {
       const found = document.querySelectorAll('nav[aria-label="Sidebar"] [data-sidebar-row]');
       if (found.length > 0) {
         // `getBoundingClientRect` carries an ANCESTOR transform, which is where
-        // the reveal's 4px rise lives — the zones move, the rows do not — so a
+        // the reveal's 4px rise lives — the sections move, the rows do not — so a
         // row's own box is what notices an entrance animation.
         const picture = [...found]
           .map((row) => {
@@ -238,8 +238,8 @@ test.describe('the sidebar’s first paint @smoke', { tag: SOLE_SIDEBAR_TAG }, (
     expect(cold.skeletonAppeared).toBe(1);
     expect(cold.skeletonDisappeared).toBe(1);
 
-    // (c) Nothing "arrived" while the panel was painting. Every row in Heads up
-    // and Today was part of the load, and the arrival tint is reserved for a row
+    // (c) Nothing "arrived" while the panel was painting. Every row in Direct
+    // messages was part of the load, and the arrival tint is reserved for a row
     // that turns up AFTER the boot gate has opened (spec D5) — which on a cold
     // boot with a slow source is a legitimate thing to happen, so the window
     // here stops at first paint rather than running for the whole settle.
@@ -270,7 +270,7 @@ test.describe('the sidebar’s first paint @smoke', { tag: SOLE_SIDEBAR_TAG }, (
     // (2), (3) and (4) at once: ONE picture. Every row was in its final place,
     // with its final title and its final face, on the first frame it existed,
     // and nothing about it changed for the next two seconds. A row arriving
-    // late, a zone rising 4px into place, a group restructuring after the config
+    // late, a section rising 4px into place, a group restructuring after the config
     // landed, or an agent's face flipping from its directory hash to its
     // manifest (DOR-1143) would each be a second picture.
     expect(warm.pictures).toHaveLength(1);
@@ -283,7 +283,7 @@ test.describe('the sidebar’s first paint @smoke', { tag: SOLE_SIDEBAR_TAG }, (
     // to the wider window precisely because it had its rows in the first frame:
     // there is no late source left to bring a legitimate arrival. This is the
     // leg that would go red if `useArrivedRows` ever seeded itself empty —
-    // every row in Today would read as new.
+    // every row in Direct messages would read as new.
     expect(warm.peakArrived).toBe(0);
     expect(warm.peakArrivedAtFirstPaint).toBe(0);
   });

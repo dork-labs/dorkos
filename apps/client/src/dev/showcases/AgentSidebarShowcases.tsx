@@ -5,13 +5,12 @@ import {
   SidebarMenu,
   SidebarMenuSurface,
 } from '@/layers/shared/ui';
-import { Bot, Hash } from 'lucide-react';
 import type { SessionBorderKind } from '@/layers/entities/session';
 import { resolveAgentVisual } from '@/layers/entities/agent';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MOCK_AGENTS, minutesAgo } from './agent-sidebar-fixtures';
+import { MOCK_AGENTS } from './agent-sidebar-fixtures';
 import {
   LIVE_BY_PATH,
   ChatListShowcase,
@@ -22,7 +21,6 @@ import {
   AgentActivityBadge,
   AgentListItem,
   GroupCreateInput,
-  buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   useAgentRowMenuNodes,
 } from '@/layers/features/dashboard-sidebar';
@@ -248,7 +246,7 @@ function SectionHeaderShowcase() {
   return (
     <PlaygroundSection
       title="SectionHeader"
-      description="One header style for the whole panel: 11px medium at --sidebar-header-x, no icon, nothing drawn at rest but the label. Hover or focus reveals the fold chevron at the right, beside the ⋮ and the section's +. Every header carries its own menu — right-click it, or use the ⋮ — and both render ONE node list, so they can never drift. Channels folds, can clear its unread and offers its own Sort by (DOR-906); Agents exposes the section's own Show and Sort by settings. Neither makes anything: creating moved to the one New menu, and a section's + deep-links into it."
+      description="One header style for the whole panel: 11px medium at --sidebar-header-x, no icon, nothing drawn at rest but the label. Hover or focus reveals the fold chevron at the right, beside the ⋮ and the section's +. Every header carries its own menu — right-click it, or use the ⋮ — and both render ONE node list, so they can never drift. Channels folds, can clear its unread and offers its own Sort by (DOR-906). No header makes anything: creating moved to the one New menu, and a section's + deep-links into it. A header that cannot fold is a plain label with the same menus."
     >
       <ShowcaseLabel>Channels — collapsible, with unread to clear</ShowcaseLabel>
       <ShowcaseDemo>
@@ -269,18 +267,18 @@ function SectionHeaderShowcase() {
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>
-        Agents — a label rather than a toggle, with the section settings
-      </ShowcaseLabel>
+      <ShowcaseLabel>A label rather than a toggle, with the section settings</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-64">
           <SectionHeader
-            label="Agents"
-            nodes={buildAgentsHeaderMenuNodes({
+            label="Direct messages"
+            nodes={buildChannelsHeaderMenuNodes({
+              collapsed: false,
+              hasUnread: false,
+              onMarkAllRead: () => {},
               sortMode,
-              displayFilter: 'all',
               onSortModeChange: setSortMode,
-              onDisplayFilterChange: () => {},
+              onToggleCollapsed: () => {},
             })}
           />
         </div>

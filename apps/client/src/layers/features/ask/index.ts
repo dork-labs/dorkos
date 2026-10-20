@@ -3,8 +3,8 @@
  *
  * A tool approval, a question and an MCP elicitation are one object to whoever
  * is being asked, so they are one card family here. It is drawn on five
- * surfaces: the header tray, the sidebar's Heads up rows, the home triage
- * header, a room's live lane, and inline in the session that raised it. Answer
+ * surfaces: the header tray, the phone's Home cards, the home triage header, a
+ * room's live lane, and inline in the session that raised it. Answer
  * it once and it resolves everywhere, because every copy reads the same
  * fleet-wide list (`entities/attention`) and the same resolution event.
  *

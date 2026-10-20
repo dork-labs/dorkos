@@ -5,19 +5,7 @@
  *
  * @module dev/showcases/sidebar-model-row-glyph
  */
-import {
-  AlertTriangle,
-  Bot,
-  CalendarClock,
-  ChevronRight,
-  CircleHelp,
-  Hash,
-  Loader,
-  MessageSquarePlus,
-  ShieldQuestion,
-  Sparkles,
-  UserPlus,
-} from 'lucide-react';
+import { Bot, BookUser, Hash, MessageSquareReply, Plus } from 'lucide-react';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { ContributedIcon, IdentityAvatar } from '@/layers/shared/ui';
 import type {
@@ -28,19 +16,9 @@ import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sid
 
 /** What each semantic icon id in the model is actually drawn as. */
 const ICON: Record<SidebarIconId, typeof Bot> = {
-  permission: ShieldQuestion,
-  question: CircleHelp,
-  error: AlertTriangle,
-  schedule: CalendarClock,
-  overflow: ChevronRight,
-  working: Loader,
-  automated: CalendarClock,
-  digest: Sparkles,
-  'add-agent': UserPlus,
-  'first-session': MessageSquarePlus,
-  team: Hash,
-  dorkbot: Bot,
-  session: MessageSquarePlus,
+  threads: MessageSquareReply,
+  directory: BookUser,
+  add: Plus,
 };
 
 /**

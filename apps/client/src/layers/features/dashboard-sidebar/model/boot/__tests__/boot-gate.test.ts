@@ -2,7 +2,7 @@
  * The boot gate's truth table (spec `sidebar-simplification` D6).
  *
  * What a failure here would mean: the panel either paints before it knows what
- * it is painting — which is the eight-beat pop-in and the face flip this whole
+ * it is painting — which is the pop-in and the face flip this whole
  * design exists to remove — or it waits on a source that will never answer and
  * shows bones forever.
  */
@@ -14,15 +14,11 @@ function allAnswered(overrides: Partial<BootQueryFacts> = {}): BootQueryFacts {
   return {
     config: true,
     rooms: true,
-    threads: true,
     mesh: true,
     manifests: true,
     hasAgentPaths: true,
     recents: true,
     roster: true,
-    approvals: true,
-    interactions: true,
-    scheduleApprovals: true,
     ...overrides,
   };
 }
@@ -33,33 +29,18 @@ describe('bootGateOpen — what the panel waits for', () => {
   });
 
   // One case per member. Each fails if that source is dropped from the gate,
-  // which is the regression that puts an unpainted zone on screen.
-  const members = [
-    'config',
-    'rooms',
-    'threads',
-    'mesh',
-    'manifests',
-    'recents',
-    'roster',
-    'approvals',
-    'interactions',
-    'scheduleApprovals',
-  ] as const;
+  // which is the regression that puts an unpainted section on screen.
+  const members = ['config', 'rooms', 'mesh', 'manifests', 'recents', 'roster'] as const;
   for (const member of members) {
     it(`stays shut while ${member} is pending`, () => {
       expect(bootGateOpen(allAnswered({ [member]: false }))).toBe(false);
     });
   }
 
-  it('counts Heads up’s three sources among them', () => {
-    // Named explicitly because they were added after the first cut of D6: a
-    // panel that painted before its approvals landed grew a whole zone at the
-    // top a beat later and pushed every row below it down.
-    expect(members).toContain('approvals');
-    expect(members).toContain('interactions');
-    expect(members).toContain('scheduleApprovals');
-    expect(members).toHaveLength(10);
+  it('waits on what the list is drawn from, and nothing it does not draw', () => {
+    // The list holds places and no attention rows, so approvals, questions and
+    // threads are no reason to hold the bones up.
+    expect(members).toHaveLength(6);
   });
 
   it('does not wait for manifests on an install with no agent directories', () => {
@@ -113,12 +94,8 @@ describe('fleetKnown — the one source that may not degrade (DOR-1143)', () => 
     const noneElse = allAnswered({
       config: false,
       rooms: false,
-      threads: false,
       recents: false,
       roster: false,
-      approvals: false,
-      interactions: false,
-      scheduleApprovals: false,
     });
     expect(fleetKnown(noneElse)).toBe(true);
     expect(bootGateOpen(noneElse)).toBe(false);

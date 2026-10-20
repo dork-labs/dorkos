@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
- * One definition of "live", pinned across the five surfaces that draw it
+ * One definition of "live", pinned across the four surfaces that draw it
  * (DOR-1137, `design-decisions.md` §18).
  *
- * Heads up's "N working" line, a folded Library section's "N agents working" header,
- * ⌘K's Continue list, the presence strip Heads up's rollup NAVIGATES to, and the
- * badge an agent row actually draws are five renderings of one fact, and every
- * one of them used to compute it alone.
+ * A folded section's "agents working" dot, ⌘K's Continue list, the presence
+ * strip, and the badge an agent row actually draws are four renderings of one
+ * fact, and every one of them used to compute it alone.
  *
  * **This test exists to catch the next drift as a set.** Each surface has its
  * own unit tests for its own rules; what none of them could see is two surfaces
@@ -32,9 +31,9 @@ import type { Session } from '@dorkos/shared/types';
 import { useAgentHottestStatus, useSessionListStore } from '@/layers/entities/session';
 import { selectContinueEntries } from '@/layers/features/command-palette/model/palette-recent';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
-import { buildWorkingRollup } from '@/layers/features/dashboard-sidebar/model/rules/build-working-rollup';
 import {
   agent,
+  agentDm,
   emptyState,
   prefs,
   session,
@@ -71,7 +70,8 @@ function store(overrides: Partial<StoreState> = {}): StoreState {
 const streaming: SessionStatus = { lifecycle: 'streaming' } as SessionStatus;
 
 /**
- * The sidebar's snapshot of one store state, with its Agents section folded.
+ * The sidebar's snapshot of one store state: the agent has a direct message, so
+ * it is a row in Direct messages, and that section is folded.
  *
  * Derived rather than written out, so the sidebar and the palette below cannot
  * be given subtly different worlds — which is the failure this whole file
@@ -83,6 +83,7 @@ function sidebarState(state: StoreState): SidebarState {
   return emptyState({
     agents: [agent(CWD)],
     displayNames: { [CWD]: 'tangerine' },
+    rooms: [agentDm('dm-tangerine', CWD, 'tangerine')],
     sessions: state.records,
     // Exactly what `useSidebarState` derives: the streaming ids, and the
     // directory map the same events carried.
@@ -90,30 +91,22 @@ function sidebarState(state: StoreState): SidebarState {
       .filter(([, status]) => status.lifecycle === 'streaming')
       .map(([id]) => id),
     liveSessionCwds: state.statusCwds,
-    prefs: prefs({ sections: { agents: { collapsed: true } } }),
+    prefs: prefs({ sections: { dms: { collapsed: true } } }),
   });
 }
 
 /** What each surface says is live, from one store state. */
 function whatEachSurfaceSays(state: StoreState) {
   const snapshot = sidebarState(state);
-  const agents = buildSidebarModel(snapshot)
-    .zones.find((zone) => zone.id === 'library')
-    ?.sections.find((section) => section.id === 'agents');
+  const dms = buildSidebarModel(snapshot).sections.find((section) => section.id === 'dms');
   return {
-    /** Heads up's "N working" row — the count it prints, or 0 when there is no row. */
-    nowWorking: Number(buildWorkingRollup(snapshot)?.primary.split(' ')[0] ?? 0),
     /** The folded section header's count. */
-    foldedWorking: agents?.rollup?.workingCount ?? 0,
+    foldedWorking: dms?.rollup?.workingCount ?? 0,
     /** ⌘K's Continue rows, by session id. */
     continueIds: selectContinueEntries(state.statuses, state.records).map(
       (entry) => entry.sessionId
     ),
-    /**
-     * The presence strip's working half — where Heads up's rollup NAVIGATES, which
-     * is why it belongs in this set rather than in a suite of its own
-     * (`SidebarChrome` routes `rollup: 'working'` to the home surface).
-     */
+    /** The presence strip's working half, on the home surface. */
     stripWorking: selectWorkingSessions(state.statuses, state.statusCwds, recordsById(state))
       .map((entry) => entry.sessionId)
       .sort(),
@@ -156,7 +149,7 @@ function agentBadgeKind(state: StoreState): string {
   return kind;
 }
 
-describe('§18 — five surfaces, one definition of live', () => {
+describe('§18 — four surfaces, one definition of live', () => {
   beforeEach(() => {
     useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   });
@@ -174,7 +167,6 @@ describe('§18 — five surfaces, one definition of live', () => {
       })
     );
     expect(said).toEqual({
-      nowWorking: 1,
       foldedWorking: 1,
       continueIds: ['ses-human'],
       stripWorking: ['ses-human'],
@@ -184,7 +176,7 @@ describe('§18 — five surfaces, one definition of live', () => {
 
   it('agree that an automated run is not', () => {
     // The defect, from both ends at once: this state used to yield
-    // `{ nowWorking: 0, foldedWorking: 0, continueIds: ['ses-room'] }` — the
+    // `{ foldedWorking: 0, continueIds: ['ses-room'] }` — the
     // sidebar silent, ⌘K offering a verb-carrying row for the same session.
     const said = whatEachSurfaceSays(
       store({
@@ -194,7 +186,6 @@ describe('§18 — five surfaces, one definition of live', () => {
       })
     );
     expect(said).toEqual({
-      nowWorking: 0,
       foldedWorking: 0,
       continueIds: [],
       stripWorking: [],
@@ -215,7 +206,6 @@ describe('§18 — five surfaces, one definition of live', () => {
       })
     );
     expect(said).toEqual({
-      nowWorking: 1,
       foldedWorking: 1,
       continueIds: ['ses-human'],
       stripWorking: ['ses-human'],
@@ -232,7 +222,6 @@ describe('§18 — five surfaces, one definition of live', () => {
       store({ statuses: { 'ses-new': streaming }, statusCwds: { 'ses-new': CWD } })
     );
     expect(said).toEqual({
-      nowWorking: 1,
       foldedWorking: 1,
       continueIds: ['ses-new'],
       stripWorking: ['ses-new'],
@@ -242,13 +231,12 @@ describe('§18 — five surfaces, one definition of live', () => {
 
   it('leave a running session nobody can place out of the SECTION only', () => {
     // No directory anywhere: it belongs to no agent, so no section can claim
-    // it. Heads up still says it is running, which is the honest half — a gap in
-    // attribution is not a reason to tell the operator nothing is happening.
+    // it. ⌘K still offers it, which is the honest half — a gap in attribution
+    // is not a reason to tell the operator nothing is happening.
     const said = whatEachSurfaceSays(store({ statuses: { 'ses-nowhere': streaming } }));
     // The strip and the badge need a directory to draw anything at all, so both
     // are silent here for the same reason the section is.
     expect(said).toEqual({
-      nowWorking: 1,
       foldedWorking: 0,
       continueIds: ['ses-nowhere'],
       stripWorking: [],
@@ -258,11 +246,11 @@ describe('§18 — five surfaces, one definition of live', () => {
 
   it('differ only where a documented rule says they should: blocked', () => {
     // Continue is a list of what to go back to, so it holds what has STOPPED
-    // and is waiting on a person as well as what is streaming (BC-6's order).
-    // Heads up's rollup counts streaming turns and lets `entities/attention` raise
-    // the blocked one as its own item. The origin rule is identical across
-    // both, which is what this file is here to hold; the lifecycle set is not,
-    // and this is where that is written down.
+    // and is waiting on a person as well as what is streaming. The folded
+    // section counts streaming turns, and the Inbox raises the blocked one as
+    // its own item. The origin rule is identical across both, which is what
+    // this file is here to hold; the lifecycle set is not, and this is where
+    // that is written down.
     const state = store({
       statuses: { 'ses-blocked': { lifecycle: 'blocked' } as SessionStatus },
       statusCwds: { 'ses-blocked': CWD },
@@ -270,11 +258,11 @@ describe('§18 — five surfaces, one definition of live', () => {
     });
     const said = whatEachSurfaceSays(state);
     expect(said.continueIds).toEqual(['ses-blocked']);
-    expect(said.nowWorking).toBe(0);
+    expect(said.foldedWorking).toBe(0);
 
     // And the origin rule still holds over that difference: an automated
-    // session that is blocked is in none of the three, Heads up included — it
-    // reaches the operator as an attention signal instead.
+    // session that is blocked is in none of the counts — it reaches the
+    // operator as an attention signal instead.
     const automated = whatEachSurfaceSays({
       ...state,
       records: [session({ id: 'ses-blocked', title: 'Nightly digest', cwd: CWD, origin: 'task' })],
@@ -284,7 +272,6 @@ describe('§18 — five surfaces, one definition of live', () => {
     // row it belongs to (BC-19), while contributing to no count of what is
     // running.
     expect(automated).toEqual({
-      nowWorking: 0,
       foldedWorking: 0,
       continueIds: [],
       stripWorking: [],

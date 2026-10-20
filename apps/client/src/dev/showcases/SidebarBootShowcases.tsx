@@ -6,7 +6,7 @@ import { Button, SectionHeader, SidebarRow, Skeleton } from '@/layers/shared/ui'
 import { SidebarSkeleton } from '@/layers/features/dashboard-sidebar';
 import {
   REVEAL_CONTAINER,
-  REVEAL_ZONE,
+  REVEAL_SECTION,
   revealTransition,
 } from '@/layers/features/dashboard-sidebar';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -26,17 +26,17 @@ function Panel({ children }: { children: React.ReactNode }) {
 function SettledPanel() {
   return (
     <div className="flex flex-col gap-1">
-      <SectionHeader label="Heads up" />
+      <SectionHeader label="Channels" />
       <SidebarRow glyph={<Hash className="size-[18px]" />} title="#team" />
       <SidebarRow glyph={<Hash className="size-[18px]" />} title="#releases" />
-      <SectionHeader label="Today" />
-      <SidebarRow who="Scout" title="fix the flake" />
-      <SidebarRow who="Ana" title="rewrite the importer" />
-      <SidebarRow who="Bo" title="chase the 500s" />
-      <SectionHeader label="Agents" />
+      <SidebarRow glyph={<Hash className="size-[18px]" />} title="#design" />
+      <SectionHeader label="Direct messages" />
       <SidebarRow who="Scout" title="Scout" />
       <SidebarRow who="Ana" title="Ana" />
       <SidebarRow who="Bo" title="Bo" />
+      <SectionHeader label="Release crew" />
+      <SidebarRow who="Cy" title="Cy" />
+      <SidebarRow who="Di" title="Di" />
     </div>
   );
 }
@@ -81,7 +81,7 @@ export function SidebarBootShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        The one reveal — 160 ms, 4 px, zones staggered 30 ms, rows never
+        The one reveal — 160 ms, 4 px, sections staggered 30 ms, rows never
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="space-y-2">
@@ -96,13 +96,13 @@ export function SidebarBootShowcases() {
             <AnimatePresence mode="wait" initial={false}>
               {revealed ? (
                 <motion.div
-                  key="zones"
+                  key="sections"
                   className="flex flex-col gap-1"
                   variants={REVEAL_CONTAINER}
                   initial="hidden"
                   animate="shown"
                 >
-                  <motion.div variants={REVEAL_ZONE} transition={revealTransition(reducedMotion)}>
+                  <motion.div variants={REVEAL_SECTION} transition={revealTransition(reducedMotion)}>
                     <SettledPanel />
                   </motion.div>
                 </motion.div>

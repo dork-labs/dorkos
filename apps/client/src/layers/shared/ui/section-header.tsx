@@ -6,11 +6,11 @@
  * two hover treatments, two menu wirings and two ideas about where the "…"
  * sits. A group IS a section, so it gets the section header.
  *
- * **And it is now the only header in the panel.** Heads up, Today, Getting
- * started, Pins, Channels, Direct messages, Agents and every section the
- * operator makes are all this component: 11px, medium, `--sidebar-header-x`,
- * no icon. The zone `<h2>` above it is gone (`specs/sidebar-simplification`
- * D1) — three levels in a 272px panel was one more than anybody could read.
+ * **And it is now the only header in the panel.** Channels, Direct messages,
+ * Add-ons and every section the operator makes are all this component: 11px,
+ * medium, `--sidebar-header-x`, no icon. There is no level above it
+ * (`specs/sidebar-simplification` D1) — three levels in a 272px panel was one
+ * more than anybody could read.
  *
  * @module shared/ui/section-header
  */

@@ -1,7 +1,7 @@
 /**
  * The per-section chrome the model deliberately has no opinion about.
  *
- * `buildLibrarySections` decides which sections exist, what is in them and
+ * `buildSections` decides which sections exist, what is in them and
  * whether they are folded. It says nothing about the inline field that renames
  * a section, the confirmation that deletes one, or the `+` in the header's
  * corner — those are acts, not membership.
@@ -49,7 +49,6 @@ import {
   setGroupRules,
   setGroupSortMode,
   setSectionCollapsed,
-  setSectionDisplayFilter,
   setSectionSortMode,
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -58,7 +57,6 @@ import { persistedSectionId, type SidebarSectionModel } from '../model/build-sid
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
 import {
-  buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   buildDirectMessagesHeaderMenuNodes,
   buildGroupHeaderMenuNodes,
@@ -204,12 +202,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     toggleCollapsed,
   };
 
-  if (section.id === 'pins') {
-    // No menu: Pins appears purely because you put something in it, and folding
-    // away the shortcuts you hand-made is a control nobody reaches for.
-    return base;
-  }
-
   if (section.id === 'channels') {
     return {
       ...base,
@@ -218,7 +210,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         collapsed: section.collapsed,
         hasUnread: unreadIds.channels.length > 0,
         onMarkAllRead: () => markRoomsRead(unreadIds.channels),
-        // Read off the MODEL, which is where `build-library-sections` published
+        // Read off the MODEL, which is where `build-sections` published
         // what it actually sorted by — never a second read of prefs that could
         // tick a radio the list is not honouring.
         sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
@@ -242,21 +234,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         onToggleCollapsed: toggleCollapsed,
       }),
       action: deepLinkAction('new-message', 'New direct message'),
-    };
-  }
-
-  if (section.id === 'agents') {
-    return {
-      ...base,
-      hasSectionAction: true,
-      menuNodes: buildAgentsHeaderMenuNodes({
-        sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
-        displayFilter: section.options?.displayFilter ?? 'all',
-        onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'agents', mode)),
-        onDisplayFilterChange: (next) =>
-          update((prev) => setSectionDisplayFilter(prev, 'agents', next)),
-      }),
-      action: deepLinkAction('new-agent', 'New agent'),
     };
   }
 
@@ -402,8 +379,8 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }
 
-  // Heads up, Today, Getting started and Add-ons. No menu and no `+`: each
-  // fills itself, so there is nothing to sort, filter or create into. They
-  // still fold, through `toggleCollapsed` on the base.
+  // The top items and Add-ons. No menu and no `+`: each fills itself, so there
+  // is nothing to sort, filter or create into. Add-ons still folds, through
+  // `toggleCollapsed` on the base.
   return base;
 }

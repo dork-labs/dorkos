@@ -31,11 +31,9 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
     const room = await roomsApi.createChannel(slug, slug, [ana]);
 
     await page.goto(`/channels?id=${room.id}`);
-    // Scoped to Today: the open room is drawn there AND in Library, and an
-    // unscoped `getByRole` resolves to both — Today's is the one BC-21 pins
-    // to the conversation actually on screen.
+    // Scoped to Channels, which is where the room's one row lives.
     const actions = dashboardSidebar
-      .zone('today')
+      .section('channels')
       .getByRole('button', { name: `#${slug} actions` });
     await expect(actions).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
@@ -72,8 +70,7 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
       page.getByText('You’re not in this channel. You can read it, but not add to it.')
     ).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    // The sidebar row says so too, dimmed with its own hint — found once
-    // more through Today, now pinned to this re-opened room.
+    // The sidebar row says so too, dimmed with its own hint.
     //
     // Given the same `SERVER_ROUND_TRIP_MS` ceiling as every other assertion
     // here, and for the same reason (DOR-1358). The row's membership comes from
@@ -82,7 +79,9 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
     // this and its partner below were the two waits in the file still on
     // Playwright's bare 5s default, on a machine this suite's own fixtures
     // describe as routinely several worktrees deep in concurrent agents.
-    const notInHint = dashboardSidebar.zone('today').getByLabel('You’re not in this channel');
+    const notInHint = dashboardSidebar
+      .section('channels')
+      .getByLabel('You’re not in this channel');
     await expect(notInHint).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     // And the way back is right there in the composer's own place. Waited in
@@ -120,11 +119,9 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
     const room = await roomsApi.createChannel(slug, slug, [ana, bo]);
 
     await page.goto(`/channels?id=${room.id}`);
-    // Scoped to Today: the open room is drawn there AND in Library, and an
-    // unscoped `getByRole` resolves to both — Today's is the one BC-21 pins
-    // to the conversation actually on screen.
+    // Scoped to Channels, which is where the room's one row lives.
     const actions = dashboardSidebar
-      .zone('today')
+      .section('channels')
       .getByRole('button', { name: `#${slug} actions` });
     await expect(actions).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 

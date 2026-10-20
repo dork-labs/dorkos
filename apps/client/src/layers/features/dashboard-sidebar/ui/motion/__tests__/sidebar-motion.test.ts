@@ -107,9 +107,7 @@ describe('sectionLayoutKey', () => {
     const after = buildSidebarModel({ ...powerFixture, now: powerFixture.now + 60_000 });
 
     const keys = (model: ReturnType<typeof buildSidebarModel>) =>
-      model.zones.flatMap((zone) =>
-        zone.sections.map((section) => `${section.id}=${sectionLayoutKey(section.rows)}`)
-      );
+      model.sections.map((section) => `${section.id}=${sectionLayoutKey(section.rows)}`);
 
     // The fixture has to be a real panel, or "nothing changed" is a claim about
     // an empty list.

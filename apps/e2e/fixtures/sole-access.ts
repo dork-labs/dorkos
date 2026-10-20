@@ -3,15 +3,14 @@
  *
  * **What is shared, and why naming cannot isolate it.** Every other fixture here
  * isolates by NAMING: `roomsApi` gives each test a `run-<runId>` namespace, and
- * two tests asserting on `#e2e-today-a-3f2c` and `#e2e-today-b-91ab` never
- * collide. That works for assertions about a room. It does not work for
+ * two tests asserting on `#e2e-a-3f2c` and `#e2e-b-91ab` never collide. That works for assertions about a room. It does not work for
  * assertions about the PANEL, because the sidebar draws every room on the
  * server — so the twenty-five channels `sidebar-bottom-slot.spec.ts` seeds to
  * overflow its list are drawn in the page `sidebar-groups.spec.ts` is dragging
  * in, whatever they are called.
  *
- * Measured, not theorised. Running `sidebar-groups`, `sidebar-today` and
- * `sidebar-bottom-slot` together at `--workers=3` against one server:
+ * Measured, not theorised. Running `sidebar-groups` and `sidebar-bottom-slot`
+ * beside a third sidebar spec at `--workers=3` against one server:
  *
  * ```
  * Error: Drag target is off screen (centre y=-553, viewport height 720).

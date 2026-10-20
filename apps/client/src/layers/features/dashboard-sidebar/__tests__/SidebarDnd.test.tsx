@@ -228,10 +228,10 @@ describe('sidebar row dnd nodes', () => {
   });
 
   it('names the home container from the section key prefix, for either kind', () => {
-    expect(sidebarDndData('pinned', roomRef)).toEqual({
+    expect(sidebarDndData('ungrouped', roomRef)).toEqual({
       type: 'item',
       ref: roomRef,
-      container: { kind: 'pinned' },
+      container: { kind: 'ungrouped', section: undefined },
     });
     expect(sidebarDndData('g1', roomRef)).toEqual({
       type: 'item',
@@ -241,8 +241,8 @@ describe('sidebar row dnd nodes', () => {
   });
 
   it('carries the ungrouped section name so a hover announces the list it is over', () => {
-    // "Ungrouped" is three sections now. Without the name the drag layer would
-    // announce "Over Agents." while the cursor sat over Channels.
+    // "Ungrouped" is two sections. Without the name the drag layer would
+    // announce the wrong one while the cursor sat over Channels.
     expect(sidebarDndData('ungrouped', roomRef, 'channels')).toEqual({
       type: 'item',
       ref: roomRef,

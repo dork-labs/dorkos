@@ -169,13 +169,13 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
   test.describe('on a phone', () => {
     test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
-    test('lists its page under Add-ons in the Library tab, and opens it', async ({ page }) => {
+    test('lists its page under Add-ons in the Home tab, and opens it', async ({ page }) => {
       await page.goto('/');
       await new BasePage(page).waitForAppReady();
 
-      await page.getByTestId('mobile-tab-library').click();
-      const library = page.getByTestId('mobile-tab-panel-library');
-      const addOns = library.locator('[data-sidebar-section="addons"]');
+      await page.getByTestId('mobile-tab-home').click();
+      const home = page.getByTestId('mobile-tab-panel-home');
+      const addOns = home.locator('[data-sidebar-section="addons"]');
       await expect(addOns.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
 
       await addOns.getByRole('button', { name: 'Hello', exact: true }).click();

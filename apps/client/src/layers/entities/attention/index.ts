@@ -2,11 +2,11 @@
  * Attention entity — the one normalized answer to "what needs me right now?"
  * (spec `sidebar-now-today-library` §A1).
  *
- * Two surfaces ask it: the sidebar's Heads up zone and the home surface's triage
- * header. Their sources used to live in two sibling feature slices, which meant
- * neither surface could read the other's answer and the sidebar could read
- * neither. The normalization lives here so both read the same list, and the
- * feature slices keep their own surfaces — the cards, the rows, the sheets.
+ * Several surfaces ask it: the Inbox, the phone's Home cards and the home
+ * surface's triage header. Their sources used to live in sibling feature
+ * slices, which meant no surface could read another's answer. The
+ * normalization lives here so all of them read the same list, and the feature
+ * slices keep their own surfaces — the cards, the rows, the sheets.
  *
  * What is **not** here: rendering. A signal carries facts (`kind`, `since`,
  * `deepLink`), never an icon, a colour or a relative time.

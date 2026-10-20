@@ -317,15 +317,37 @@ describe('RoomThreadPanel', () => {
     expect(screen.queryByRole('button', { name: 'Close thread' })).not.toBeInTheDocument();
   });
 
-  it('gives Back a target a finger can hit, without growing the header', () => {
-    // 24px of button, and on a phone this is the control a reader reaches for
-    // most. The glyph stays 16px so the header keeps its height; the reach
-    // grows to 44px, and only below the breakpoint.
+  it('gives Back a target a finger can hit, named for the room it returns to', () => {
+    // On a phone this is the control a reader reaches for most, so it is a real
+    // 44px box carrying the room's name — "← #build" — rather than a glyph
+    // with invisible reach.
     renderPanel({ pushed: true });
 
     const back = screen.getByRole('button', { name: 'Back to #build' });
-    expect(back.className).toContain('after:-inset-2.5');
-    expect(back.className).toContain('md:after:hidden');
+    expect(back).toHaveTextContent('#build');
+    expect(back.className).toContain('h-11');
+  });
+
+  it('pins the message the thread hangs off under the header on a phone', () => {
+    // The replies scroll; the root stays put, so a long thread never scrolls
+    // away what it is about.
+    renderPanel({ pushed: true });
+
+    const pinned = screen.getByTestId('room-thread-pinned-root');
+    expect(pinned).toHaveTextContent('line 1');
+    const feed = screen.getByTestId('room-thread-feed');
+    expect(feed).not.toHaveTextContent('line 1');
+    expect(feed).toHaveTextContent('line 2');
+    // Above the feed, not inside it.
+    expect(pinned.compareDocumentPosition(feed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('keeps the root in the feed beside the room on a wide screen', () => {
+    renderPanel();
+
+    expect(screen.queryByTestId('room-thread-pinned-root')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-thread-feed')).toHaveTextContent('line 1');
+    expect(screen.getByRole('button', { name: 'Close thread' })).toBeInTheDocument();
   });
 
   it('draws the working line for an agent answering inside this thread', () => {

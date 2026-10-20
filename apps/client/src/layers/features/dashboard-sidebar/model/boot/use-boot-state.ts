@@ -3,9 +3,8 @@
  *
  * **"Pending" and "empty" used to be the same value everywhere in the model**,
  * so the panel painted an empty `<div>` and then assembled itself in front of
- * the operator in about eight beats — Heads up, then pins and groups a round
- * trip late, then sixty rooms, then thirty agents that collapsed to a handful
- * when the recents landed, then every agent's name and face flipping at once.
+ * the operator in several beats — sections a round trip late, then sixty rooms,
+ * then every agent's name and face flipping at once.
  * This is the one bit that tells those two states apart, and everything about
  * the first paint hangs off it.
  *
@@ -19,14 +18,9 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useResolvedAgents } from '@/layers/entities/agent';
-import {
-  usePendingApprovals,
-  usePendingInteractions,
-  usePendingScheduleApprovals,
-} from '@/layers/entities/attention';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useRooms, useThreads } from '@/layers/entities/room';
+import { useRooms } from '@/layers/entities/room';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '@/layers/entities/session';
 import { useTeamRoster } from '@/layers/entities/team';
 import { bootGateOpen, fleetKnown, BOOT_GATE_TIMEOUT_MS, type BootQueryFacts } from './boot-gate';
@@ -83,11 +77,6 @@ function answered(query: GateQuery): boolean {
 /** No paths, as one identity — a fresh `[]` per render would re-key the manifests query. */
 const NO_PATHS: string[] = [];
 
-/** How the three attention hooks report the same fact, since they hide their query. */
-function attentionAnswered(state: { isLoading: boolean }): boolean {
-  return !state.isLoading;
-}
-
 /**
  * The panel's boot phase.
  *
@@ -97,7 +86,7 @@ function attentionAnswered(state: { isLoading: boolean }): boolean {
  * **Every consumer latches independently, and that is currently safe.** Each
  * mount runs its own 1500 ms timer and its own `startedWarm` read, so two
  * consumers could in principle disagree. They cannot today: the panel, its
- * header, its bottom slot and Today all mount in the same commit, off one
+ * header and its bottom slot all mount in the same commit, off one
  * router render, so their timers start within a frame of each other and they
  * read one shared query cache. Centralise this behind a provider the moment
  * either of those stops being true — a consumer mounted on a later route, or a
@@ -106,15 +95,9 @@ function attentionAnswered(state: { isLoading: boolean }): boolean {
 export function useBootState(): BootState {
   const config = useConfig();
   const rooms = useRooms();
-  const threads = useThreads();
   const mesh = useMeshAgentPaths();
   const recents = useRecentSessions(RECENT_SESSIONS_WINDOW);
   const roster = useTeamRoster();
-  // Heads up's three sources. Cheap, already open, and the zone they feed is
-  // the top of the panel — a late arrival there pushes everything down.
-  const approvals = usePendingApprovals();
-  const interactions = usePendingInteractions();
-  const scheduleApprovals = usePendingScheduleApprovals();
 
   // The paths key the manifests query, so they have to be stable or every render
   // would re-key it. Derived through the joined string rather than held in a
@@ -127,16 +110,9 @@ export function useBootState(): BootState {
   // **The sources the panel's SHAPE comes from, named once.** Both answers below
   // are derived from this one object rather than from two hand-kept lists, which
   // is what a review of task 3.2 asked for: the lists had already drifted apart
-  // in effect once (see `rosterResolved` in `use-sidebar-state.ts`), and a
-  // seventh source added to one and forgotten in the other fails in the
-  // hardest-to-see way — a panel that is subtly not warm on a reload.
-  //
-  // Heads up's three are deliberately NOT here. They belong to the gate (a late
-  // Heads up pushes the whole panel down) but not to warmth, because they are
-  // the three the persisted cache refuses to keep: a stale "three things need
-  // you" that resolves to zero is a confident lie. Adding one here would make
-  // every warm reload cold again.
-  const shape = { config, rooms, threads, mesh, recents, roster };
+  // in effect once, and a source added to one and forgotten in the other fails
+  // in the hardest-to-see way — a panel that is subtly not warm on a reload.
+  const shape = { config, rooms, mesh, recents, roster };
 
   const facts: BootQueryFacts = {
     ...(Object.fromEntries(
@@ -144,9 +120,6 @@ export function useBootState(): BootState {
     ) as Record<keyof typeof shape, boolean>),
     manifests: answered(manifests),
     hasAgentPaths: paths.length > 0,
-    approvals: attentionAnswered(approvals),
-    interactions: attentionAnswered(interactions),
-    scheduleApprovals: attentionAnswered(scheduleApprovals),
   };
 
   // Hydrated-at-mount, read once. A query that has never held data reports

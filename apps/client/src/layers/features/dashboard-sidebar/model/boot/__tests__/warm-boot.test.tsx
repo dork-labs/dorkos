@@ -16,7 +16,7 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { dehydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -28,18 +28,6 @@ import { createBootCache, type BootCache } from '@/layers/shared/lib/query-persi
 import { HttpTransport } from '@/layers/shared/lib/transport';
 import { configKeys } from '@/layers/shared/model';
 import { powerFixture } from '../../fixtures/power';
-// Heads up's three sources are the one part of the gate that is mocked here,
-// and only because they ride a live event stream this harness has no server
-// for. They are also the three the allow-list deliberately EXCLUDES — what
-// needs a person now must never be replayed from yesterday — so nothing this
-// file is about passes through them. That exclusion is asserted directly in
-// `shared/lib/__tests__/query-persister.test.ts`.
-vi.mock('@/layers/entities/attention', () => ({
-  usePendingApprovals: () => ({ isLoading: false }),
-  usePendingInteractions: () => ({ isLoading: false }),
-  usePendingScheduleApprovals: () => ({ isLoading: false }),
-}));
-
 const { useBootState } = await import('../use-boot-state');
 
 /** A `Storage` in a plain object, so the two mounts share one and nothing else does. */
@@ -137,9 +125,8 @@ describe('booting the sidebar from local memory', () => {
     // reload below would still pass on a lucky day — this goes red immediately,
     // naming the key that was left out.
     //
-    // Heads up's three sources are mocked away in this file (see above), so what
-    // remains in the cache is exactly the shape sources plus manifests — every
-    // one of which must be remembered.
+    // What remains in the cache is exactly the shape sources plus manifests —
+    // every one of which must be remembered.
     const minted = first
       .getQueryCache()
       .getAll()
@@ -206,7 +193,6 @@ describe('booting the sidebar from local memory', () => {
     const client = new QueryClient();
     client.setQueryData(configKeys.current(), { userSettings: powerFixture.prefs });
     client.setQueryData(['rooms', 'list', null], powerFixture.rooms);
-    client.setQueryData(['rooms', 'threads'], powerFixture.threads);
     client.setQueryData(['mesh', 'agent-paths'], {
       agents: powerFixture.agents.map((entry) => ({
         agentId: entry.path,

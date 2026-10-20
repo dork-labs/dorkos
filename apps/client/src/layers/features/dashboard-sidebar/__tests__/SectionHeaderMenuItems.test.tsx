@@ -3,12 +3,10 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import {
-  buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   buildDirectMessagesHeaderMenuNodes,
   buildGroupHeaderMenuNodes,
   type GroupHeaderMenuModel,
-  type AgentsHeaderMenuModel,
   type RoomSectionHeaderMenuModel,
   type SectionHeaderMenuNode,
 } from '../ui/SectionHeaderMenuItems';
@@ -44,16 +42,6 @@ function channels(overrides: Partial<RoomSectionHeaderMenuModel> = {}): RoomSect
 }
 
 const dms = channels;
-
-function agents(overrides: Partial<AgentsHeaderMenuModel> = {}): AgentsHeaderMenuModel {
-  return {
-    sortMode: 'name',
-    displayFilter: 'all',
-    onSortModeChange: vi.fn(),
-    onDisplayFilterChange: vi.fn(),
-    ...overrides,
-  };
-}
 
 /** Every node's id, separators included, in order. */
 function ids(nodes: SectionHeaderMenuNode[]): string[] {
@@ -103,13 +91,6 @@ describe('section header item lists', () => {
     ).toBe('Mark all channels read');
   });
 
-  it('puts Show before Sort by on the Agents header, matching a group header', () => {
-    // The audit rule from spec §14.1: where a verb already exists, it keeps its
-    // label AND its relative position. GroupHeader shows the display filter
-    // above the sort submenu, so this one does too.
-    expect(ids(buildAgentsHeaderMenuNodes(agents()))).toEqual(['display', 'sort']);
-  });
-
   it('names the collapse item for what choosing it will do', () => {
     expect(
       action(buildChannelsHeaderMenuNodes(channels({ collapsed: false })), 'collapse')
@@ -123,7 +104,6 @@ describe('section header item lists', () => {
     const labels = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind === 'action' || node.kind === 'radio')
       .map((node) => node.label);
@@ -134,7 +114,6 @@ describe('section header item lists', () => {
     const opening = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind === 'action' && node.opensInput)
       .map((node) => node.id);
@@ -144,8 +123,8 @@ describe('section header item lists', () => {
     expect(opening).toEqual([]);
   });
 
-  it('withholds Manual from the Agents sort submenu, which has no hand order', () => {
-    const sort = submenu(buildAgentsHeaderMenuNodes(agents()), 'sort');
+  it('withholds Manual from a room section’s sort submenu, which has no hand order', () => {
+    const sort = submenu(buildChannelsHeaderMenuNodes(channels()), 'sort');
     expect(sort.label).toBe('Sort by');
     expect(sort.options).toEqual([
       { value: 'recent', label: 'Recent activity' },
@@ -153,22 +132,9 @@ describe('section header item lists', () => {
     ]);
   });
 
-  it('offers the Agents display filter the same three choices a group header does', () => {
-    const display = submenu(buildAgentsHeaderMenuNodes(agents()), 'display');
-    expect(display.label).toBe('Show');
-    expect(display.options).toEqual([
-      { value: 'all', label: 'All' },
-      { value: 'active', label: 'Active' },
-      { value: 'attention', label: 'Needs attention' },
-    ]);
-  });
-
-  it('reflects the section’s stored settings as the submenu values', () => {
-    const nodes = buildAgentsHeaderMenuNodes(
-      agents({ sortMode: 'recent', displayFilter: 'attention' })
-    );
+  it('reflects the section’s stored sort as the submenu value', () => {
+    const nodes = buildChannelsHeaderMenuNodes(channels({ sortMode: 'recent' }));
     expect(submenu(nodes, 'sort').value).toBe('recent');
-    expect(submenu(nodes, 'display').value).toBe('attention');
   });
 
   it('runs the real handler behind every item', () => {
@@ -190,14 +156,11 @@ describe('section header item lists', () => {
     expect(onDmMarkAllRead).toHaveBeenCalledOnce();
   });
 
-  it('writes a chosen sort mode and display filter back to the section', () => {
+  it('writes a chosen sort mode back to the section', () => {
     const onSortModeChange = vi.fn();
-    const onDisplayFilterChange = vi.fn();
-    const nodes = buildAgentsHeaderMenuNodes(agents({ onSortModeChange, onDisplayFilterChange }));
+    const nodes = buildChannelsHeaderMenuNodes(channels({ onSortModeChange }));
     submenu(nodes, 'sort').onChange('recent');
-    submenu(nodes, 'display').onChange('attention');
     expect(onSortModeChange).toHaveBeenCalledWith('recent');
-    expect(onDisplayFilterChange).toHaveBeenCalledWith('attention');
   });
 });
 
@@ -278,38 +241,35 @@ function fullMenuTree(subLabels: string[] = []): string[][] {
 }
 
 function header(nodes: SectionHeaderMenuNode[]) {
-  return <SectionHeader label="Agents" nodes={nodes} collapsed={false} onToggle={() => {}} />;
+  return (
+    <SectionHeader label="Direct messages" nodes={nodes} collapsed={false} onToggle={() => {}} />
+  );
 }
 
 describe('SectionHeader variant parity', () => {
   it('renders the identical item tree from the right-click menu and the "…" menu', () => {
-    const nodes = buildAgentsHeaderMenuNodes(agents({ sortMode: 'recent' }));
+    const nodes = buildDirectMessagesHeaderMenuNodes(dms({ sortMode: 'recent' }));
 
     // Right-click the header itself.
     render(header(nodes));
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'Agents' }));
-    const contextTree = fullMenuTree(['Show', 'Sort by']);
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Direct messages' }));
+    const contextTree = fullMenuTree(['Sort by']);
     cleanup();
 
     // The "…" button beside it.
     render(header(nodes));
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-    const dropdownTree = fullMenuTree(['Show', 'Sort by']);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Direct messages section actions' }));
+    const dropdownTree = fullMenuTree(['Sort by']);
 
     // Same surfaces, same nodes, same order, same checked states — one list,
     // two renderers.
     expect(contextTree).toEqual(dropdownTree);
-    // Written out in full: the two settings, and nothing that makes anything —
-    // the Agents header's creates moved to the New menu (BC-45). The stored
-    // sort mode carries the dot; the other option does not.
+    // Written out in full: the settings, and nothing that makes anything —
+    // creating moved to the New menu (BC-45). The stored sort mode carries the
+    // dot; the other option does not.
     expect(contextTree).toEqual(
       sortSurfaces([
-        ['menuitem:Show', 'menuitem:Sort by'],
-        [
-          'menuitemradio:All:true',
-          'menuitemradio:Active:false',
-          'menuitemradio:Needs attention:false',
-        ],
+        ['menuitem:Sort by', 'menuitem:Collapse'],
         ['menuitemradio:Recent activity:true', 'menuitemradio:Name:false'],
       ])
     );
@@ -342,22 +302,22 @@ describe('SectionHeader variant parity', () => {
 
 describe('SectionHeader', () => {
   it('gives the "…" a name and keyboard focus, so the menu opens without a pointer', () => {
-    render(header(buildAgentsHeaderMenuNodes(agents())));
+    render(header(buildDirectMessagesHeaderMenuNodes(dms())));
 
-    const trigger = screen.getByRole('button', { name: 'Agents section actions' });
+    const trigger = screen.getByRole('button', { name: 'Direct messages section actions' });
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
 
     // Enter on a focused Radix trigger is a keydown, not a click.
     fireEvent.keyDown(trigger, { key: 'Enter' });
-    expect(screen.getByRole('menuitem', { name: 'Show' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sort by' })).toBeInTheDocument();
   });
 
   it('reveals the "…" on focus, not only on hover — a keyboard has no hover', () => {
-    render(header(buildAgentsHeaderMenuNodes(agents())));
-    expect(screen.getByRole('button', { name: 'Agents section actions' }).className).toContain(
-      'focus-visible:opacity-100'
-    );
+    render(header(buildDirectMessagesHeaderMenuNodes(dms())));
+    expect(
+      screen.getByRole('button', { name: 'Direct messages section actions' }).className
+    ).toContain('focus-visible:opacity-100');
   });
 
   it('runs the chosen item’s handler', () => {
@@ -400,11 +360,11 @@ describe('SectionHeader', () => {
   });
 
   it('renders a section that cannot collapse as a plain label with the same menus', () => {
-    render(<SectionHeader label="Agents" nodes={buildAgentsHeaderMenuNodes(agents())} />);
+    render(<SectionHeader label="Add-ons" nodes={buildChannelsHeaderMenuNodes(channels())} />);
 
-    expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-    expect(screen.getByRole('menuitem', { name: 'Show' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add-ons' })).not.toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Add-ons section actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Sort by' })).toBeInTheDocument();
   });
 });
 

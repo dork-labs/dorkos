@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { describeViolation, runAxe } from '../../axe';
@@ -94,16 +94,49 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
   const secondGroupName = `E2E Group B ${runId}`;
   /** The path the server canonicalized on registration — what `items` stores. */
   let agentProjectPath: string;
+  /** The agents this run pinned, so teardown can unpin exactly those. */
+  let pinnedPaths: string[] = [];
+
+  /**
+   * Rewrite `ui.sidebar.pinned` through the config API.
+   *
+   * @param request - The test's API client.
+   * @param next - The new pin list, from the current one.
+   */
+  async function setPins(
+    request: APIRequestContext,
+    next: (pinned: { kind: string; path?: string }[]) => { kind: string; path?: string }[]
+  ): Promise<void> {
+    const res = await request.get('/api/config');
+    if (!res.ok()) return;
+    const config = (await res.json()) as {
+      ui: { sidebar: { pinned: { kind: string; path?: string }[] } };
+    };
+    await request.patch('/api/config', {
+      data: { ui: { sidebar: { pinned: next(config.ui.sidebar.pinned) } } },
+    });
+  }
 
   // Seeded through `roomsApi` rather than by hand: it registers the agent under
   // a directory the run owns and deletes that directory again in teardown. The
   // hand-rolled version put it under `~/.dork-e2e-fixtures` and only ever
   // unregistered it, which removes `<path>/.dork` and leaves the directory —
   // one more orphan in the operator's home per run, forever.
-  test.beforeEach(async ({ roomsApi, basePage, dashboardSidebar }) => {
+  test.beforeEach(async ({ roomsApi, request, basePage, dashboardSidebar }) => {
     const agent = await roomsApi.registerAgent(agentName, '🧩', '#8b5cf6');
     agentProjectPath = agent.projectPath;
-    await roomsApi.registerAgent(secondAgentName, '🧭', '#0ea5e9', { runtime: 'codex' });
+    const second = await roomsApi.registerAgent(secondAgentName, '🧭', '#0ea5e9', {
+      runtime: 'codex',
+    });
+    // **Pinned, so each has a row.** An agent appears in the sidebar as its
+    // direct message — once there is one, or once it is pinned — and a freshly
+    // registered agent has neither. Pinning is the cheaper of the two and
+    // leaves no room behind; teardown unpins.
+    pinnedPaths = [agent.projectPath, second.projectPath];
+    await setPins(request, (pinned) => [
+      ...pinned,
+      ...pinnedPaths.map((path) => ({ kind: 'agent', path })),
+    ]);
 
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -112,6 +145,9 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
   });
 
   test.afterEach(async ({ request }) => {
+    await setPins(request, (pinned) =>
+      pinned.filter((ref) => ref.kind !== 'agent' || !pinnedPaths.includes(ref.path ?? ''))
+    );
     // Drop the group over the API rather than by clicking its "…" menu. Groups
     // live in `ui.sidebar.groups`, so removing one is a config write — and
     // driving that through a hover-revealed menu inside a list that crossfades
@@ -272,7 +308,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     const row = dashboardSidebar.agentRow(agentName);
     await expect(row).toBeVisible();
 
-    await dashboardSidebar.tabToSectionHeader('Agents');
+    await dashboardSidebar.tabToSectionHeader('Direct messages');
     await dashboardSidebar.arrowToRow(row);
     await dashboardSidebar.keyboardDragRowIntoGroup(row, groupName);
 
@@ -321,7 +357,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // direction happened to be convenient. The jsdom suite therefore pins only
     // the lift; the fold semantics live here.
     await dashboardSidebar.createGroup(groupName);
-    const header = dashboardSidebar.librarySectionToggle(groupName);
+    const header = dashboardSidebar.sectionToggle(groupName);
     await expect(header).toBeVisible();
     await expect(header).toHaveAttribute('aria-expanded', 'true');
     // The positive control for the pair below: this header really is inside a
@@ -366,11 +402,12 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     page,
     dashboardSidebar,
   }) => {
-    // The other side of the trade. Agents cannot be reordered, so nothing takes
-    // its Space — the difference between the two headers is draggability itself,
-    // not an inconsistency laid on top of it. Agents rather than Channels
-    // because `beforeEach` guarantees this run put two agents in it.
-    const header = dashboardSidebar.librarySectionToggle('Agents');
+    // The other side of the trade. Direct messages cannot be reordered, so
+    // nothing takes its Space — the difference between the two headers is
+    // draggability itself, not an inconsistency laid on top of it. Direct
+    // messages rather than Channels because `beforeEach` guarantees this run
+    // put two agents in it.
+    const header = dashboardSidebar.sectionToggle('Direct messages');
     await expect(header).toBeVisible();
     await expect(header).toHaveAttribute('aria-expanded', 'true');
     // No drag root ANYWHERE above it — `closest`, not a descendant query: a
@@ -382,7 +419,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
 
     // **Focused directly, and that costs this test nothing.** Its subject is
     // which key does what once you are on the header, not whether you can get
-    // there — and "there" is the very same Agents header the keyboard-drag test
+    // there — and "there" is the very same Direct messages header the keyboard-drag test
     // above walks to with Tab presses and no programmatic focus anywhere.
     // Proving one element's reachability twice buys nothing, and buying it
     // through a long Tab walk spends the result on something this spec does not
@@ -440,7 +477,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // to it.
     expect(await persistedOrder()).toEqual([groupName, secondGroupName]);
 
-    const second = dashboardSidebar.librarySectionToggle(secondGroupName);
+    const second = dashboardSidebar.sectionToggle(secondGroupName);
     await expect(second).toBeVisible();
 
     // Tab in, Space lifts, arrows carry it over the first section, Space drops.
@@ -461,7 +498,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     await basePage.waitForAppReady();
     await basePage.ensureSidebarOpen();
     const sections = dashboardSidebar.panel.locator(
-      '[data-sidebar-zone="library"] [data-sidebar-section^="group:"]'
+      '[data-sidebar-section^="group:"]'
     );
     await expect(sections.first()).toContainText(secondGroupName);
     await expect(sections.nth(1)).toContainText(groupName);
@@ -486,10 +523,8 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     const group = dashboardSidebar.groupContainer(groupName);
     await expect(group).toBeVisible();
 
-    // **Scoped to Channels, not to the panel.** The same room also draws a row
-    // in Today once anything happens in it, and a Today row is not a drag source
-    // (R3) — a press on that copy arms nothing and the drop reports "never came
-    // to rest", which reads as a DnD regression and is not one.
+    // **Scoped to Channels, not to the panel**, so the row pressed is the one
+    // the drag layer registered.
     const channels = dashboardSidebar.panel.locator('[data-sidebar-section="channels"]');
     const channel = channels.locator('[data-sidebar-row]').filter({ hasText: slug });
     await expect(channel).toBeVisible();
@@ -517,10 +552,10 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     basePage,
     dashboardSidebar,
   }) => {
-    // Defect #9: the name field mounted under Agents wherever the flow was
-    // started from, so asking for a section from a channel put a focused text
-    // box below thirty agent rows, off the bottom of a 272px panel. It mounts at
-    // the top of Library now, which is one predictable place (D3).
+    // Defect #9: the name field once mounted wherever the flow was started
+    // from, so asking for a section from a channel could put a focused text box
+    // off the bottom of a 272px panel. It mounts right under the top items now,
+    // where a new section lands — one predictable place (D3).
     const slug = `e2e-menu-${runId}`;
     await roomsApi.createChannel(slug);
     await basePage.goto();
@@ -528,10 +563,9 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     await basePage.ensureSidebarOpen();
 
     await dashboardSidebar.createGroup(groupName);
-    // Scoped to the LIBRARY zone: Getting started is a section too, and it sits
-    // at the top of the panel on a day-one install.
+    // Past the top items, which are always first and never a section you made.
     const firstSection = dashboardSidebar.panel
-      .locator('[data-sidebar-zone="library"] [data-sidebar-section]')
+      .locator('[data-sidebar-section]:not([data-sidebar-section="top"])')
       .first();
     await expect(firstSection).toHaveAttribute('data-sidebar-section', /^group:/);
 

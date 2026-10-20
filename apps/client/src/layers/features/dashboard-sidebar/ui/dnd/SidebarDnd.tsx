@@ -16,15 +16,11 @@ import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
-import {
-  sameSidebarItem,
-  type SidebarPrefs,
-  type SidebarItemRef,
-} from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
-  computedZoneRejection,
+  computedSectionRejection,
   readSidebarDndData,
   resolveSidebarDrop,
   toDragDescriptor,
@@ -44,7 +40,7 @@ interface SidebarDndProps {
   /**
    * Every room the sidebar can see, for the same two surfaces: room rows are
    * drag sources since DOR-581, and `ui.sidebar` is agent-writable besides, so
-   * `config_patch` can also put a room reference in `pinned`.
+   * `config_patch` can also put a room reference in a section.
    *
    * The LIST rather than a prepared title map, so the one caller that has this
    * state does not have to reshape it on the way in — `DashboardSidebar` is
@@ -76,32 +72,24 @@ const DRAG_KEYS: KeyboardCodes = {
  * The dnd id the moved row will be drawn under once a drop has been applied, or
  * `null` when the drop leaves the row where it already was.
  *
- * The three operations named here are the ones that take the row out of the
+ * The two operations named here are the ones that take the row out of the
  * container it was lifted from, so the node dnd-kit was carrying is unmounted
  * and its `RestoreFocus` finds nothing (see `restore-drop-focus.ts`). Everything
- * else — the reorders, and `pin`, which COPIES a row into Pins and leaves the
- * original where it is — keeps that node, so dnd-kit restores focus itself and
+ * else — the reorders — keeps that node, so dnd-kit restores focus itself and
  * this must not fight it.
  *
- * `unpin` reads its destination from the prefs rather than naming one: it takes
- * the row out of Pins, and where the row then lives is wherever it already
- * belonged — a section, or the ungrouped list it came from.
+ * An agent taken out of a section lands in Direct messages only when it has a
+ * direct message or a pin; otherwise it is in the Directory, there is no row to
+ * land on, and the restore finds nothing to do.
  *
- * @param prefs - The prefs the drop was classified against.
  * @param op - The classified drop.
  */
-function movedRowDndId(prefs: SidebarPrefs, op: SidebarDropOp): string | null {
+function movedRowDndId(op: SidebarDropOp): string | null {
   switch (op.kind) {
     case 'move-to-group':
       return sidebarRowDndId(op.groupId, op.ref);
     case 'remove-from-group':
       return sidebarRowDndId('ungrouped', op.ref);
-    case 'unpin': {
-      const home = prefs.groups.find((group) =>
-        group.items.some((item) => sameSidebarItem(item, op.ref))
-      );
-      return sidebarRowDndId(home?.id ?? 'ungrouped', op.ref);
-    }
     default:
       return null;
   }
@@ -198,10 +186,10 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
       });
       return;
     }
-    // Same mechanism, different reason: Heads up and Today are derived, so a row
-    // dropped there has no place to be put (R3).
-    if (op.kind === 'reject-computed-zone') {
-      toast.info(computedZoneRejection(op.zone), { description: itemName(op.ref) });
+    // Same mechanism, different reason: the top items and Add-ons fill
+    // themselves, so a row dropped there has no place to be put (R3).
+    if (op.kind === 'reject-computed-section') {
+      toast.info(computedSectionRejection(op.section), { description: itemName(op.ref) });
       return;
     }
     // **A drop that changes nothing writes nothing** (DOR-1746). `none` is what
@@ -226,7 +214,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // (`isKeyboardEvent(previousActivatorEvent)`), and this is the same rule
     // applied to the rows it cannot reach.
     if (!(event.activatorEvent instanceof KeyboardEvent)) return;
-    const landing = movedRowDndId(latestPrefs.read(), op);
+    const landing = movedRowDndId(op);
     if (landing !== null) focusRowOnArrival(landing);
   };
 

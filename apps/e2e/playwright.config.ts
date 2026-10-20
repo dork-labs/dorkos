@@ -488,7 +488,7 @@ export default defineConfig({
     // Set HERE rather than in a fixture because half this suite does not use the
     // shared `test` — 48 files import `test` straight from `@playwright/test`,
     // and a fixture-level opt-out silently misses every one of them (measured:
-    // `now-survives-reload.ts` was the one that noticed, by reloading into a
+    // `dorkbot-seed-survives-reload.ts` was the one that noticed, by reloading into a
     // snapshot taken before the session it was asserting on errored). A config
     // `storageState` applies to every context in every project however `test`
     // was imported, which is the property this needs.

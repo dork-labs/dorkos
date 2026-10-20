@@ -1,31 +1,14 @@
 /**
- * The two small derivations every zone shares: the unread tier and mute (§18,
- * BC-40).
+ * The two small derivations every section shares: the unread tier and mute
+ * (§18, BC-40).
  *
  * @module features/dashboard-sidebar/model/__tests__/derive-rules
  */
 import { describe, expect, it } from 'vitest';
-import type { SidebarRowModel } from '../build-sidebar-model';
 import { prefs } from '../fixtures';
-import { applyMuteRules, isMuted, muteIndex } from '../rules/apply-mute-rules';
+import { muteIndex } from '../rules/apply-mute-rules';
 import { deriveUnreadSignal } from '../rules/derive-unread-signal';
-import { interactionKeyOf, rowKey } from '../rules/targets';
-
-/** A bare row pointing at one target. */
-function row(target: SidebarRowModel['target'], overrides: Partial<SidebarRowModel> = {}) {
-  return {
-    key: rowKey(target),
-    target,
-    glyph: { kind: 'hash' },
-    primary: 'row',
-    reservesVerbLine: false,
-    unread: { tier: 'none' },
-    muted: false,
-    draggable: false,
-    reason: 'today:interaction-recency',
-    ...overrides,
-  } as SidebarRowModel;
-}
+import { rowKey, sameTarget } from '../rules/targets';
 
 describe('deriveUnreadSignal', () => {
   it('makes a busy channel bold and nothing more', () => {
@@ -115,37 +98,6 @@ describe('mute resolution', () => {
   it('ignores a smart group’s stored items', () => {
     expect(muteIndex(state).agents.has('/a/two')).toBe(false);
   });
-
-  it('a session inherits its agent’s mute', () => {
-    const index = muteIndex(state);
-    expect(
-      isMuted(row({ kind: 'session', sessionId: 's', agentPath: '/a/one', cwd: '/a/one' }), index)
-    ).toBe(true);
-  });
-
-  it('drops muted rows where mute means ineligible', () => {
-    const rows = [
-      row({ kind: 'room', roomId: 'noisy', roomKind: 'channel' }),
-      row({ kind: 'room', roomId: 'calm', roomKind: 'channel' }),
-    ];
-    expect(
-      applyMuteRules(rows, muteIndex(state), { dropMuted: true }).map((entry) => entry.key)
-    ).toEqual(['room:calm']);
-  });
-
-  it('keeps and marks them where it does not', () => {
-    const rows = [row({ kind: 'room', roomId: 'noisy', roomKind: 'channel' })];
-    const kept = applyMuteRules(rows, muteIndex(state), { dropMuted: false });
-    expect(kept).toHaveLength(1);
-    expect(kept[0]?.muted).toBe(true);
-  });
-
-  it('exempts the row the operator is standing in', () => {
-    const rows = [row({ kind: 'room', roomId: 'noisy', roomKind: 'channel' })];
-    expect(
-      applyMuteRules(rows, muteIndex(state), { dropMuted: true, exemptKey: 'room:noisy' })
-    ).toHaveLength(1);
-  });
 });
 
 describe('target vocabulary', () => {
@@ -155,20 +107,14 @@ describe('target vocabulary', () => {
     );
     expect(rowKey({ kind: 'room', roomId: 'r1', roomKind: 'dm' })).toBe('room:r1');
     expect(rowKey({ kind: 'agent', path: '/a' })).toBe('agent:/a');
-    expect(rowKey({ kind: 'attention', signalId: 'x', deepLink: '/' })).toBe('attention:x');
-    expect(rowKey({ kind: 'rollup', rollup: 'working' })).toBe('rollup:working');
-    expect(rowKey({ kind: 'suggestion', suggestionId: 'suggestion:ask-dorkbot' })).toBe(
-      'suggestion:ask-dorkbot'
-    );
-    expect(rowKey({ kind: 'digest' })).toBe('digest:today');
-    expect(rowKey({ kind: 'command', commandId: 'new-session' })).toBe('command:new-session');
+    expect(rowKey({ kind: 'command', commandId: 'open-threads' })).toBe('command:open-threads');
+    expect(rowKey({ kind: 'add-on', extensionId: 'crm', path: '' })).toBe('add-on:crm:');
   });
 
-  it('gives a thread its room’s interaction key', () => {
-    expect(interactionKeyOf({ kind: 'room', roomId: 'r1', roomKind: 'thread' })).toBe('room:r1');
-  });
-
-  it('gives a rollup no interaction key at all', () => {
-    expect(interactionKeyOf({ kind: 'rollup', rollup: 'automated' })).toBeNull();
+  it('treats two targets as one place only when their keys agree', () => {
+    const room = { kind: 'room', roomId: 'r1', roomKind: 'channel' } as const;
+    expect(sameTarget(room, { ...room, roomKind: 'dm' })).toBe(true);
+    expect(sameTarget(room, { kind: 'room', roomId: 'r2', roomKind: 'channel' })).toBe(false);
+    expect(sameTarget(room, null)).toBe(false);
   });
 });

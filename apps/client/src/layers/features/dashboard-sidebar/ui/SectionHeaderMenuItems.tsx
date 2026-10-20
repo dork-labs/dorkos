@@ -22,7 +22,7 @@ import {
   Users,
   Wand2,
 } from 'lucide-react';
-import type { SidebarDisplayFilter, SidebarGroup } from '@dorkos/shared/config-schema';
+import type { SidebarGroup } from '@dorkos/shared/config-schema';
 import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
 import { SECTION_SORT_OPTIONS, SORT_MENU_LABEL } from '../model/section-sort-options';
 import { describeRules } from '../model/evaluate-smart-group';
@@ -110,7 +110,7 @@ function markAllReadNodes(
  *
  * Channels and Direct messages have no hand-orderable sequence; a section is the
  * place for that. The two remaining choices are the ones a list of rooms can
- * honour, and both are performed by `build-library-sections.ts` — a room's
+ * honour, and both are performed by `build-sections.ts` — a room's
  * "Recent activity" reads its own `lastActivityAt` (DOR-906).
  *
  * @param sortMode - What the section is sorted by right now.
@@ -186,60 +186,6 @@ export function buildDirectMessagesHeaderMenuNodes(
   ];
 }
 
-/** Inputs the Agents header's item list is built from. */
-export interface AgentsHeaderMenuModel {
-  /** The ungrouped section's sort mode (`ui.sidebar.sections.agents.sortMode`). */
-  sortMode: 'name' | 'recent';
-  /** The ungrouped section's display filter (`ui.sidebar.sections.agents.displayFilter`). */
-  displayFilter: SidebarDisplayFilter;
-  /** Write the chosen sort mode back to `ui.sidebar`. */
-  onSortModeChange: (mode: 'name' | 'recent') => void;
-  /** Write the chosen display filter back to `ui.sidebar`. */
-  onDisplayFilterChange: (filter: SidebarDisplayFilter) => void;
-}
-
-/**
- * Build the Agents (ungrouped) header's items, in order.
- *
- * **Show comes before Sort by**, matching {@link buildGroupHeaderMenuNodes} —
- * the menu this whole family was aligned to. A hand-made section and the
- * ungrouped Agents section are the same kind of list with the same two
- * settings, so the settings sit in the same order in both; the spec's table lists them the other way round and the
- * audit rule ("where a verb exists, reuse its exact label and position") wins.
- *
- * The section has no collapse item because it has no collapse control: the
- * ungrouped list is what is left over, and hiding it would leave the sidebar
- * with nothing in it.
- *
- * "New agent" and "New section" are not here: the New menu on the header block
- * is the one place either is made, and this section's `+` deep-links into it
- * (BC-45).
- *
- * @param model - The section's settings plus the action callbacks.
- */
-export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): SectionHeaderMenuNode[] {
-  return [
-    displayFilterNode(model.displayFilter, (value) =>
-      model.onDisplayFilterChange(value as SidebarDisplayFilter)
-    ),
-    {
-      kind: 'radio',
-      id: 'sort',
-      label: SORT_MENU_LABEL,
-      icon: ArrowUpDown,
-      value: model.sortMode,
-      // No 'manual': the ungrouped section has no hand-orderable sequence —
-      // hand-made sections are the place for manual curation
-      // (`SidebarPrefsSchema`).
-      options: SECTION_SORT_OPTIONS.filter((option) => option.value !== 'manual'),
-      // The filter above is what makes the narrowing sound: 'manual' is the one
-      // value this submenu never offers, so the value coming back is one of the
-      // two the section's state accepts.
-      onChange: (value) => model.onSortModeChange(value as 'name' | 'recent'),
-    },
-  ];
-}
-
 /** Inputs a hand-made section's header item list is built from. */
 export interface GroupHeaderMenuModel {
   /**
@@ -273,8 +219,7 @@ export interface GroupHeaderMenuModel {
  *
  * What you can rename, then what you can clear, then how this section looks,
  * then the destructive one on its own at the bottom. **Show comes before Sort
- * by**, and the built-in Agents header matches it rather than the other way
- * round.
+ * by.**
  *
  * Muting a section is a lens over its members (DOR-339): it never writes member
  * references into `ui.sidebar.muted`, so unmuting restores whatever individual

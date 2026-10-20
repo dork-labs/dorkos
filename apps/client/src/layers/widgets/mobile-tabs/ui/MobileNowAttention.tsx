@@ -1,14 +1,19 @@
 /**
- * Answer from anywhere — an approval or a question, inside Now, on a phone.
+ * Answer from anywhere — an approval or a question, at the top of Home, on a
+ * phone.
  *
- * **This is the mobile feature the redesign is for.** A permission prompt or a
+ * **This is the mobile feature the cockpit is for.** A permission prompt or a
  * question is the one thing in this product that stops an agent dead, and
- * until now answering one from a phone meant finding the conversation it came
- * from. Both land in Now like every other blocking state (design-decisions
- * §18), and here the card comes with them: allow, deny, skip or answer in
- * place, the route never changes, and the agent moves again (P4 AC-5).
+ * answering one from a phone used to mean finding the conversation it came
+ * from. Here the card comes to you: allow, deny, skip or answer in place, the
+ * route never changes, and the agent moves again (P4 AC-5).
  *
- * **Two kinds of blockage, one zone.** A capability approval and an Ask
+ * **Why the phone keeps these when the sidebar lists only places.** They are
+ * the Inbox's own cards, not sidebar rows — and on a phone the raised panel
+ * covers the header the Inbox lives in, so this is the Inbox, drawn where the
+ * phone can see it.
+ *
+ * **Two kinds of blockage, one place.** A capability approval and an Ask
  * (question, elicitation, or a permission prompt raised outside a session) are
  * different objects on the wire, but they are the same thing to the person
  * being asked, so this widget draws both. The prompts go first — their window
@@ -17,18 +22,16 @@
  * header's tray) already settled on.
  *
  * **Composed, never copied.** `AskList` and `ApprovalList` are the exact stacks
- * the header tray, the sidebar and the home triage header draw, so a decision
+ * the header tray and the home triage header draw, so a decision
  * looks and behaves the same wherever it is made — including the optimistic
  * checkmark, the countdown, and the answer plumbing. This module decides one
  * thing only: whether there is anything to say.
  *
  * @module widgets/mobile-tabs/ui/MobileNowAttention
  */
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  approvalSignalId,
-  interactionSignalId,
   useAskAgentNames,
   usePendingApprovals,
   usePendingInteractions,
@@ -38,39 +41,24 @@ import { AskList } from '@/layers/features/ask';
 import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
 import { toSession } from '@/layers/shared/lib';
 
-/** Nothing covered — one shared array, so an empty slot never rebuilds the model. */
-const NOTHING_COVERED: readonly string[] = [];
-
 /** What {@link useNowAttentionSlot} hands the phone's Home tab. */
 export interface NowAttentionSlot {
   /** The cards, or `null` when there is nothing to say. */
   slot: ReactNode | null;
   /**
-   * The signal ids these cards cover, for the sidebar model's Heads up rows.
-   *
-   * **This is the whole of the "one blockage, one place" rule** (DOR-1391): the
-   * cards below and the Now rows underneath them were drawing the same
-   * approvals and the same prompts, so a single blocked agent appeared twice in
-   * one viewport. The ids are built through {@link approvalSignalId} and
-   * {@link interactionSignalId} — the same functions `deriveAttentionSignals`
-   * itself calls — because that is what the model matches on, and a
-   * hand-spelled copy of the format is a copy that can drift from it.
-   *
-   * A blocked session whose prompt has not arrived yet keeps its row, and
-   * correctly: its signal is `blocked:<sessionId>`, no card here covers it, and
-   * the row is the only thing telling anybody it is waiting.
+   * How many things these cards are waiting on you for — the Home badge's
+   * number, and the one the phone announces. Receipts are not counted: a
+   * settled Ask is not waiting on anybody.
    */
-  coveredSignalIds: readonly string[];
+  count: number;
 }
 
 /**
- * What Now should draw above its rows, and which blockages that covers.
+ * What Home should draw above its list, and how much of it is waiting on you.
  *
  * A hook returning a node rather than a component, because the caller has to
- * know the difference between "nothing" and "something": a non-null slot brings
- * the Now zone into existence when the model has none, and that is exactly the
- * failure case — no approvals were read, so none of them became a Now row, so
- * without this there is no zone in which to say the read failed.
+ * know the difference between "nothing" and "something": a failed read with
+ * nothing pending is still something to say.
  *
  * **The failure is loud even while stale cards are on screen.** A refetch that
  * fails while yesterday's list is still cached would otherwise show cards that
@@ -97,23 +85,14 @@ export function useNowAttentionSlot(): NowAttentionSlot {
   const agentNames = useAskAgentNames(asks);
   const navigate = useNavigate();
 
-  // Memoized because it feeds the sidebar model's snapshot, where a fresh array
-  // per render would rebuild the whole panel on every activity event (spec §H).
-  // Receipts are not covered: a settled Ask has no signal left to hide.
-  const coveredSignalIds = useMemo(
-    () => [
-      ...approvals.map((approval) => approvalSignalId(approval.approvalId)),
-      ...asks.map((ask) => interactionSignalId(ask.interaction.id)),
-    ],
-    [approvals, asks]
-  );
+  const count = approvals.length + asks.length;
 
   const nothingToSay =
     !isError && shownApprovals.length === 0 && asks.length === 0 && settling.length === 0;
-  if (nothingToSay) return { slot: null, coveredSignalIds: NOTHING_COVERED };
+  if (nothingToSay) return { slot: null, count };
 
   return {
-    coveredSignalIds,
+    count,
     slot: (
       <div data-testid="mobile-now-attention" className="flex flex-col gap-2 px-2 pt-0.5 pb-1">
         {isError && <ApprovalsUnavailable onRetry={retry} />}
@@ -122,8 +101,8 @@ export function useNowAttentionSlot(): NowAttentionSlot {
             asks={asks}
             agentNames={agentNames}
             // Home is not a popover to escape on the way there — the panel stays
-            // up, `onBeforeLoad` lowers it, and the route lands on the same
-            // conversation a tap on any other Now row would open.
+            // up, `onBeforeLoad` lowers it, and the route lands on the
+            // conversation the question came from.
             onOpenSession={(sessionId) => {
               void navigate(toSession({ session: sessionId }));
             }}

@@ -3,7 +3,7 @@
  * D5).
  *
  * **Motion here explains a state change the operator did not cause.** A section
- * folding, a row arriving in Today, a list reordering after the hold releases, a
+ * folding, a conversation arriving in Direct messages, a list reordering, a
  * row lifting under a drag — each of those moves something the eye was already
  * tracking, and the movement is what keeps it tracked. Nothing here decorates,
  * nothing loops, and every duration is ≤200 ms except the fold spring.
@@ -118,7 +118,7 @@ export const LAYOUT_KEY_SEPARATOR = '\u0000';
  *
  * **Per section, and never per panel** (D5). `layoutDependency` is what tells
  * motion when to re-measure, and handing every row in the sidebar one whole-panel
- * key would make a channel arriving in Today re-measure thirty agent rows that
+ * key would make a conversation arriving in Direct messages re-measure every row that
  * did not move. Scoped to the section, a list only re-measures when its OWN
  * membership or order changed.
  *
@@ -137,7 +137,7 @@ export function sectionLayoutKey(rows: readonly { key: string }[]): string {
 export interface RowMotionInputs {
   /** The section's row ids, from {@link sectionLayoutKey}. */
   layoutKey: string | undefined;
-  /** The section announces arrivals — Heads up and Today, and nothing else. */
+  /** The section announces arrivals — Direct messages, and nothing else. */
   arrives: boolean;
   /** This row is one of them, so it enters and tints once. */
   arrived: boolean;
