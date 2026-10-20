@@ -233,9 +233,7 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
     // nothing in it is dismissible any more. Going quiet is a guess about
     // somebody's afternoon rather than a blockage: nothing is stopped, nobody
     // is waiting, and a zone that asks for attention on a guess is a zone
-    // people learn to skim. What it observed is still reported, once a day and
-    // in the past tense, by the Today digest
-    // (`features/dashboard-sidebar/model/use-digest-facts`).
+    // people learn to skim.
   }
 
   return signals;
