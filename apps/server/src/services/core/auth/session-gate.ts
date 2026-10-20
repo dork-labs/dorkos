@@ -27,6 +27,14 @@
  *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
  *   step B3). The computer never signs in to the hub; the code is its
  *   credential. A trailing slash or any sibling under `/api/hub/` stays gated.
+ * - **`/api/session-relay/passkeys/finish`, on a computer only, and only that
+ *   exact path** — a new approvals passkey posted by the loopback return page
+ *   (`routes/session-relay-passkeys.ts`, B4c). The system browser that page
+ *   opens in may not be signed in here. The route requires instead a direct
+ *   loopback caller with no forwarding header, an `Origin` that is exactly the
+ *   return page's, a JSON body, and the single-use enrol statement `/start`
+ *   issued after the owner's password; that statement is the capability.
+ *   Every other passkey route stays gated.
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -44,7 +52,10 @@ import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
-import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
+import {
+  RELAY_LINK_PATH,
+  SESSION_RELAY_PASSKEY_FINISH_PATH,
+} from '@dorkos/shared/session-relay-link';
 import {
   requestSessionRoute,
   sessionWorksOn,
@@ -134,7 +145,9 @@ function isExemptPath(path: string): boolean {
     // Signed-token-authorized embedded-browser content (see the module doc).
     path.startsWith('/api/workbench/serve/') ||
     // A computer redeeming a link code, on a hub only (see the module doc).
-    (path === RELAY_LINK_PATH && currentServerRole() === 'hub')
+    (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
+    // A new approvals passkey coming back to this computer (see the module doc).
+    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub')
   );
 }
 

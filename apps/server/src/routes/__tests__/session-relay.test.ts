@@ -56,6 +56,14 @@ import {
   type RelayPin,
 } from '../../services/core/session-relay/pin-store.js';
 import {
+  addApprovalKey,
+  approvalKeysUnreadable,
+  readApprovalKeys,
+  removeApprovalKey,
+  removeDamagedApprovalKeys,
+} from '../../services/core/session-relay/approval-key-store.js';
+import { PasskeyEnrolment } from '../../services/core/session-relay/passkeys/passkey-enrolment.js';
+import {
   createSessionRelayRoutes,
   SESSION_RELAY_NEEDS_THIS_COMPUTER,
   type SessionRelayRouteDeps,
@@ -125,6 +133,16 @@ function makeDeps(overrides: Partial<SessionRelayRouteDeps> = {}) {
     ),
     presence: () => PRESENCE,
     devices: () => PRESENCE.devices,
+    passkeys: {
+      readKeys: () => readApprovalKeys(home),
+      keysUnreadable: () => approvalKeysUnreadable(home),
+      addKey: (party, key, audit, stillLinked) =>
+        addApprovalKey(party, key, audit, home, stillLinked),
+      removeKey: (credentialId, audit) => removeApprovalKey(credentialId, audit, home),
+      removeDamaged: (audit) => removeDamagedApprovalKeys(audit, home),
+      enrolment: new PasskeyEnrolment(),
+      audit: { owner: () => ({ accountId: 'owner', kind: 'person', name: 'Owner' }), recordAudit },
+    },
     ...overrides,
   } as typeof deps;
 }

@@ -7,10 +7,16 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { links } from '@dorkos/shared/links';
 import {
   SessionRelayDeviceListSchema,
   SessionRelayLevelBodySchema,
   SessionRelayLinkBodySchema,
+  SessionRelayPasskeyFinishBodySchema,
+  SessionRelayPasskeyListSchema,
+  SessionRelayPasskeyRemoveBodySchema,
+  SessionRelayPasskeyStartBodySchema,
+  SessionRelayPasskeyStartSchema,
   SessionRelayPresenceSchema,
   SessionRelayResumeBodySchema,
   SessionRelayStatusSchema,
@@ -182,4 +188,106 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     'Unlink this computer',
     'Forgets the hub and closes the live connection. Works with the network off.'
   );
+
+  registerPasskeyOpenApi(registry);
+}
+
+const PASSKEYS = json(SessionRelayPasskeyListSchema, 'The pinned approve page and passkeys');
+const PASSKEY_REFUSED = json(ErrorSchema, 'Refused (`SESSION_RELAY_PASSKEY`), with why');
+
+/** The approvals passkeys (B4c): adding one, listing them, removing one. */
+function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
+  registry.registerPath({
+    method: 'get',
+    path: '/api/session-relay/passkeys',
+    tags: TAGS,
+    summary: 'The approvals passkeys pinned here',
+    description:
+      'The approve page approvals from the web must come from, and each passkey by label, ' +
+      'date and algorithm. Never key material. The owner at this computer only.',
+    responses: { 200: PASSKEYS, 403: NOT_HERE, 404: OFF },
+  });
+
+  registerWrite(
+    registry,
+    'post',
+    '/passkeys/start',
+    'Begin adding an approvals passkey',
+    "Needs the owner's password and a linked computer. Writes a single-use enrol statement " +
+      '(two minutes, one live at a time; a new start replaces it) for the approve page ' +
+      `(\`${links.approve}\` unless a self-hoster names their own https origin, and ` +
+      'always the one already pinned once a passkey exists; never the hub itself, and only ' +
+      "DorkOS's own for a DorkOS Cloud account). Answers the approve page to open: " +
+      '`<origin>/enrol#<base64url statement>`. The statement sends the browser back to the ' +
+      'loopback address this request arrived on (`127.0.0.1`, or `localhost` for `::1`) at ' +
+      "this server's port, `/relay-passkey`. Only a direct request on this computer passes, " +
+      'so a container install cannot add a passkey.',
+    {
+      400: PASSKEY_REFUSED,
+      403: PASSWORD,
+      409: PASSKEY_REFUSED,
+      429: THROTTLED,
+      500: json(ErrorSchema, 'This computer could not write the statement'),
+    },
+    SessionRelayPasskeyStartBodySchema,
+    json(SessionRelayPasskeyStartSchema, 'The enrol statement and the approve page to open')
+  );
+
+  registerWrite(
+    registry,
+    'post',
+    '/passkeys/finish',
+    'Pin the approvals passkey just made',
+    'Takes the live enrol statement whether it passes or not. Accepts only the same bytes ' +
+      '`/start` issued, unexpired, and a registration over `SHA-256` of them from the ' +
+      "statement's origin and relying party, with the person verified, signing with ES256, " +
+      'EdDSA or RS256, and not already pinned. Sent by the loopback page `GET /relay-passkey`. ' +
+      'Needs no session even when this computer asks for a password; instead a direct ' +
+      "loopback caller with no forwarding header, an `Origin` that is exactly the return page's, " +
+      'and a JSON body. The single-use statement is the credential.',
+    {
+      400: PASSKEY_REFUSED,
+      403: json(ErrorSchema, "Not a direct loopback caller, or not the return page's own request"),
+      409: PASSKEY_REFUSED,
+      410: json(ErrorSchema, 'The statement expired'),
+    },
+    SessionRelayPasskeyFinishBodySchema,
+    PASSKEYS
+  );
+
+  registerWrite(
+    registry,
+    'delete',
+    '/passkeys',
+    'Remove a damaged passkeys file',
+    "Needs the owner's password. Removes the passkeys file only when it is damaged (the list " +
+      'says `damaged: true`), so a passkey can be added again; a sound file is refused.',
+    {
+      403: PASSWORD,
+      409: json(ErrorSchema, 'The file is not damaged: remove passkeys one at a time'),
+      429: THROTTLED,
+      500: json(ErrorSchema, 'The file could not be read just now; nothing was removed'),
+    },
+    SessionRelayPasskeyRemoveBodySchema,
+    PASSKEYS
+  );
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/session-relay/passkeys/{credentialId}',
+    tags: TAGS,
+    summary: 'Remove an approvals passkey',
+    description:
+      "Needs the owner's password. Approvals from the web stop at once when the last one goes.",
+    request: {
+      params: z.object({ credentialId: z.string().describe('The passkey, base64url') }),
+      body: { content: { 'application/json': { schema: SessionRelayPasskeyRemoveBodySchema } } },
+    },
+    responses: {
+      200: PASSKEYS,
+      403: PASSWORD,
+      404: json(ErrorSchema, 'No such passkey here, or the experiment is off'),
+      429: THROTTLED,
+    },
+  });
 }
