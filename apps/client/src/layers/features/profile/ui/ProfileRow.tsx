@@ -31,12 +31,17 @@ function RowGlyph({
   kind,
   copied,
   failed,
+  attention,
 }: {
   kind: ProfileRowModel['kind'];
   copied: boolean;
   failed: boolean;
+  attention?: boolean;
 }) {
-  const className = 'text-muted-foreground/70 size-3.5 shrink-0';
+  const className = cn(
+    'size-3.5 shrink-0',
+    attention ? 'text-brand-text' : 'text-muted-foreground/70'
+  );
   if (kind === 'nav') return <ChevronRight aria-hidden className={className} />;
   if (kind === 'pick') return <ChevronDown aria-hidden className={className} />;
   if (kind === 'locked') return <Lock aria-hidden className={className} />;
@@ -110,22 +115,38 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
   const [pickOpen, setPickOpen] = useState(false);
   const isStatic = row.kind === 'text';
 
+  const attention = row.tone === 'attention';
   const body = (
     <>
-      <span className="text-muted-foreground shrink-0 text-sm">{row.label}</span>
+      <span
+        className={cn(
+          'shrink-0 text-sm',
+          attention ? 'text-brand-text font-medium' : 'text-muted-foreground'
+        )}
+      >
+        {row.label}
+      </span>
       <span className="ml-auto flex min-w-0 items-center gap-1.5">
         {row.faces && <FaceStack members={row.faces} />}
-        {row.value !== null && <span className="truncate text-sm">{row.value}</span>}
+        {row.value !== null && (
+          <span className={cn('truncate text-sm', attention && 'font-medium')}>
+            {row.value}
+            {row.valueNote && <span className="text-muted-foreground"> · {row.valueNote}</span>}
+          </span>
+        )}
         {row.meta && <span className="text-muted-foreground text-2xs shrink-0">{row.meta}</span>}
-        <RowGlyph kind={row.kind} copied={copied} failed={failed} />
+        <RowGlyph kind={row.kind} copied={copied} failed={failed} attention={attention} />
       </span>
     </>
   );
 
   const shared = cn(
-    'flex h-9 w-full items-center gap-3 rounded-md px-2 text-left',
+    // 36px, and 44px where a finger is the pointer.
+    'flex min-h-9 w-full items-center gap-3 rounded-lg px-2.5 py-1 text-left max-md:min-h-11',
     // The inset is paid once, here: the list container pays none.
-    'text-foreground'
+    'text-foreground',
+    // The one tinted row, and only while something waits (spec: Needs you).
+    attention && 'bg-brand/8 dark:bg-brand/12'
   );
 
   if (isStatic) {
@@ -134,6 +155,7 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
         data-slot="profile-row"
         data-profile-row={row.id}
         data-row-kind={row.kind}
+        title={row.hint}
         className={shared}
       >
         {body}
@@ -171,12 +193,18 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
       // found the same way.
       data-profile-return={row.kind === 'nav' ? row.page : undefined}
       // `focus-ring` is opt-in: index.css clears the native outline globally.
-      className={cn(shared, 'focus-ring hover:bg-muted/50', PRESS_ROW)}
+      className={cn(
+        shared,
+        'focus-ring',
+        attention ? 'hover:bg-brand/13' : 'hover:bg-muted/70',
+        PRESS_ROW
+      )}
+      title={row.hint}
       // The label and its value in one string, so a screen reader hears the row
       // rather than "Runs on" followed by an unrelated-sounding model name.
       aria-label={
         row.value
-          ? `${row.accessibleLabel ?? row.label}: ${row.value}`
+          ? `${row.accessibleLabel ?? row.label}: ${row.value}${row.valueNote ? `, ${row.valueNote}` : ''}`
           : (row.accessibleLabel ?? row.label)
       }
       aria-haspopup={row.kind === 'pick' ? 'dialog' : undefined}

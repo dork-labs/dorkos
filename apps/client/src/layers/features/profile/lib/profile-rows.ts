@@ -11,6 +11,8 @@
  */
 import type { MemberRoom, TeamMember } from '@dorkos/shared/team-schemas';
 import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import type { AgentLevelResponse } from '@dorkos/shared/permissions';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { roomDisplayTitle } from '@/layers/entities/room';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
@@ -56,13 +58,37 @@ export interface ProfileRowModel {
   lockedReason?: string;
   /** Faces drawn before the value — the Manages row's stack. */
   faces?: TeamMember[];
+  /** Muted words after the value — "held there by you". */
+  valueNote?: string;
+  /** What a pointer resting on the row reads, for a fact the value cannot fit. */
+  hint?: string;
+  /** `attention`: the one tinted row, drawn only while something waits on a person. */
+  tone?: 'attention';
 }
 
-/** A block of rows, separated from its neighbours by space rather than a label. */
+/** The three folds an agent's profile keeps its less-read rows in. */
+export type ProfileFoldId = 'work' | 'setup' | 'files';
+
+/** What a folded group shows while it is closed. */
+export interface ProfileFold {
+  /** Which fold, and the key its open state is remembered under. */
+  id: ProfileFoldId;
+  /** The header's title. */
+  title: string;
+  /** One line of what is inside, or `null` when nothing in it is known yet. */
+  summary: string | null;
+}
+
+/**
+ * A block of rows, separated from its neighbours by space rather than a label.
+ * A group with a `fold` is drawn collapsed under a header until opened.
+ */
 export interface ProfileRowGroup {
   /** Stable within a profile — the React key. */
   id: string;
   rows: ProfileRowModel[];
+  /** Present on a folded group (Work, Setup, Files). */
+  fold?: ProfileFold;
 }
 
 /** Rooms this identity is in, as the row wants them (W1.2's `useMemberRooms`). */
@@ -132,6 +158,11 @@ export interface ProfileRowsContext {
    * agent: anyone may read any agent's heartbeat (spec `heartbeats` §7.6).
    */
   heartbeat?: Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason' | 'nextBeatAt'> | null;
+  /**
+   * The level the agent actually runs at, or `null` while unknown. Read only
+   * where the Permissions row is drawn (spec: same audience).
+   */
+  level?: AgentLevelResponse | null;
   /**
    * The moment "next in 12 min" is read from, as epoch ms. Passed in by a
    * ticking caller so the row moves with the clock; defaults to now.
@@ -368,15 +399,101 @@ function runsOnValue(member: TeamMember): string | null {
   return member.agent ? formatRuntimeIdentity(member.agent).text : null;
 }
 
+/** The Level row's words for each stop. Spoken short: the row is a glance. */
+const LEVEL_WORDS: Record<PermissionStop, string> = {
+  ask: 'Ask',
+  act: 'Act',
+  autonomy: 'Full autonomy',
+};
+
+/** Every Level row's hover says what the level is not: a chat's own limit. */
+const LEVEL_SCOPE = 'Before any per-chat limits.';
+
 /**
- * What this agent has been doing: its conversations, its schedules, its rooms,
- * and every action on record.
+ * The Level row: what the agent actually runs at, resolved by the server from
+ * the rule a launch uses (`GET /api/agents/:id/level`). It opens Permissions,
+ * which is where the level is changed.
+ */
+function levelRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const level = ctx.level;
+  const base: ProfileRowModel = {
+    id: 'level',
+    kind: 'nav',
+    label: 'Level',
+    accessibleLabel: 'Agent level',
+    value: null,
+    hint: LEVEL_SCOPE,
+    page: 'permissions',
+  };
+  if (!level) return base;
+  if (level.effective === null) return { ...base, value: 'Runtime default' };
+  const value = LEVEL_WORDS[level.effective];
+  if (!level.cappedByPerson || level.declared === null) return { ...base, value };
+  return {
+    ...base,
+    value,
+    valueNote: 'held there by you',
+    hint: `Set to ${LEVEL_WORDS[level.declared]}. ${LEVEL_SCOPE}`,
+  };
+}
+
+/**
+ * The Needs you row, or nothing. Drawn only while a promise is overdue: a row
+ * that says "nothing waiting" is noise on every profile where nothing is.
+ */
+function needsYouRows(ctx: ProfileRowsContext): ProfileRowModel[] {
+  const overdue = ctx.commitments?.overdue ?? 0;
+  if (overdue === 0) return [];
+  return [
+    {
+      id: 'needs-you',
+      kind: 'nav',
+      label: 'Needs you',
+      value: `${overdue} overdue`,
+      tone: 'attention',
+      page: 'commitments',
+    },
+  ];
+}
+
+/** The About row: what the agent says it does. */
+function aboutRow(kind: 'nav' | 'text' | 'locked', ctx: ProfileRowsContext): ProfileRowModel {
+  return {
+    id: 'about',
+    kind,
+    label: 'About',
+    value: ctx.description ?? null,
+    ...(kind === 'nav' ? { page: 'about' as const } : {}),
+    ...(kind === 'locked' ? { lockedReason: SYSTEM_LOCK_REASON } : {}),
+  };
+}
+
+/** Summary parts that are known, joined; `null` when none is. */
+function summaryOf(parts: Array<string | null | undefined>): string | null {
+  const known = parts.filter((part): part is string => Boolean(part));
+  return known.length > 0 ? known.join(' · ') : null;
+}
+
+/** A fold, wrapped around its rows. */
+function fold(
+  id: ProfileFoldId,
+  title: string,
+  rows: ProfileRowModel[],
+  summary: string | null
+): ProfileRowGroup {
+  return { id, rows, fold: { id, title, summary } };
+}
+
+/**
+ * Work: what this agent has been doing — its conversations, its schedules, its
+ * promises, how it wakes, and every action on record.
  *
- * The same three rows for an agent you manage and for DorkBot — what DorkBot
+ * The same rows for an agent you manage and for DorkBot — what DorkBot
  * withholds is its identity, not its work.
  */
-function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
+function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
   const facts = ctx.facts;
+  const tasksAvailable = facts?.tasksAvailable !== false;
   const rows: ProfileRowModel[] = [
     {
       id: 'sessions',
@@ -389,7 +506,7 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
   ];
   // Not "0 scheduled" and not a locked row: an install with the tasks tool off
   // has no such thing as a schedule, so there is nothing here to name (§1.4).
-  if (facts?.tasksAvailable !== false) {
+  if (tasksAvailable) {
     rows.push({
       id: 'tasks',
       kind: 'nav',
@@ -401,50 +518,97 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
   }
   rows.push(commitmentsRow(ctx));
   rows.push(heartbeatRow(ctx));
-  rows.push(roomsRow(ctx));
-  // No count on this one, deliberately. Everything above answers "how much of
-  // this exists"; this answers "what has it told me", and the number that would
-  // fit here — unread — is a fleet-wide number the header bell already draws.
-  rows.push({
-    id: 'notifications',
-    kind: 'nav',
-    label: 'Notifications',
-    value: null,
-    page: 'notifications',
-  });
   // What it did, and what was done to it, from the audit log. No value: a count
   // of every recorded action is a number nobody acts on.
   rows.push({ id: 'activity', kind: 'nav', label: 'Activity', value: null, page: 'activity' });
-  return rows;
+  return fold(
+    'work',
+    'Work',
+    rows,
+    summaryOf([
+      // Beside a DM with Show sessions off, the Chats row is left out, so its
+      // count is too.
+      ctx.quietSessionDetail ? null : countValue(facts?.sessions?.count, 'chat', 'chats'),
+      tasksAvailable ? countValue(facts?.tasks?.count, 'schedule', 'schedules') : null,
+      ctx.commitments ? `${ctx.commitments.open} open` : null,
+    ])
+  );
 }
 
-/** An agent you manage: the row IS the control, all the way down. */
-function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
-  const folder = member.agent?.projectPath;
-  const setup: ProfileRowModel[] = [
-    { id: 'about', kind: 'nav', label: 'About', value: ctx.description ?? null, page: 'about' },
-    // A person may rename an agent they manage (DOR-3156), on the same page as
-    // their own handle.
-    handleRow(member),
-    { id: 'runs-on', kind: 'pick', label: 'Runs on', value: runsOnValue(member), pick: 'runs-on' },
+/** The Personality row: a picker on every agent whose voice is yours to set. */
+function personalityRow(ctx: ProfileRowsContext): ProfileRowModel {
+  return {
+    id: 'personality',
+    kind: 'pick',
+    label: 'Personality',
+    // A control that makes you open it to find out what it is set to is worse
+    // than the fact it replaced.
+    value: ctx.facts?.personality ?? null,
+    pick: 'personality',
+  };
+}
+
+/** The Setup fold's summary: the personality, then how many servers. */
+function setupSummary(ctx: ProfileRowsContext): string | null {
+  const personality = ctx.facts?.personality;
+  return summaryOf([
+    personality ? `${personality} personality` : null,
+    countValue(ctx.facts?.tools, 'server', 'servers'),
+  ]);
+}
+
+/**
+ * The rows every agent's Setup fold ends with: notifications, skills, servers
+ * and permissions.
+ */
+function toolkitRows(ctx: ProfileRowsContext): ProfileRowModel[] {
+  return [
+    // No count on this one, deliberately: the number that would fit here —
+    // unread — is a fleet-wide number the header bell already draws.
     {
-      id: 'personality',
-      kind: 'pick',
-      label: 'Personality',
-      // A control that makes you open it to find out what it is set to is worse
-      // than the fact it replaced.
-      value: ctx.facts?.personality ?? null,
-      pick: 'personality',
+      id: 'notifications',
+      kind: 'nav',
+      label: 'Notifications',
+      value: null,
+      page: 'notifications',
     },
-    // Who gets this agent's report and its escalations (spec `heartbeats` §4).
     {
-      id: 'reports-to',
-      kind: 'pick',
-      label: 'Reports to',
-      value: ctx.reportsTo ?? null,
-      pick: 'reports-to',
+      id: 'skills',
+      kind: 'nav',
+      label: 'Skills',
+      value: countValue(ctx.facts?.skills, 'skill', 'skills'),
+      page: 'skills',
+    },
+    {
+      id: 'tools',
+      kind: 'nav',
+      label: 'MCP servers',
+      value: countValue(ctx.facts?.tools, 'server', 'servers'),
+      page: 'tools',
     },
   ];
+}
+
+/** What this agent may do, where it differs from everyone (spec `agent-permissions`). */
+const PERMISSIONS_ROW: ProfileRowModel = {
+  id: 'permissions',
+  kind: 'nav',
+  label: 'Permissions',
+  // The chat's status bar has its own "Permissions" control (the session's
+  // permission mode), visible beside the docked profile.
+  accessibleLabel: 'Agent permissions',
+  value: null,
+  page: 'permissions',
+};
+
+/**
+ * An agent you manage: five rows always in view, then Work, Setup and Files,
+ * folded. The row IS the control, all the way down; nothing is removed, only
+ * folded.
+ */
+function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
+  const folder = member.agent?.projectPath;
+  const setup: ProfileRowModel[] = [personalityRow(ctx)];
   if (folder) {
     setup.push({
       id: 'folder',
@@ -454,40 +618,48 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
       copyValue: folder,
     });
   }
+  const [notifications, ...rest] = toolkitRows(ctx);
+  setup.push(notifications!, ...rest);
+  setup.push({
+    id: 'connections',
+    kind: 'nav',
+    label: 'Connections',
+    value: null,
+    page: 'connections',
+  });
+  setup.push(PERMISSIONS_ROW);
 
   return [
-    { id: 'setup', rows: setup },
-    { id: 'work', rows: workRows(ctx) },
+    { id: 'needs-you', rows: needsYouRows(ctx) },
     {
-      id: 'toolkit',
+      id: 'essentials',
       rows: [
+        aboutRow('nav', ctx),
         {
-          id: 'skills',
-          kind: 'nav',
-          label: 'Skills',
-          value: countValue(ctx.facts?.skills, 'skill', 'skills'),
-          page: 'skills',
+          id: 'runs-on',
+          kind: 'pick',
+          label: 'Runs on',
+          value: runsOnValue(member),
+          pick: 'runs-on',
         },
+        levelRow(ctx),
+        // Who gets this agent's report and its escalations (spec `heartbeats` §4).
         {
-          id: 'tools',
-          kind: 'nav',
-          label: 'MCP servers',
-          value: countValue(ctx.facts?.tools, 'server', 'servers'),
-          page: 'tools',
+          id: 'reports-to',
+          kind: 'pick',
+          label: 'Reports to',
+          value: ctx.reportsTo ?? null,
+          pick: 'reports-to',
         },
-        // What this agent may do, where it differs from everyone (spec
-        // `agent-permissions`).
-        {
-          id: 'permissions',
-          kind: 'nav',
-          label: 'Permissions',
-          // The chat's status bar has its own "Permissions" control (the
-          // session's permission mode), visible beside the docked profile.
-          accessibleLabel: 'Agent permissions',
-          value: null,
-          page: 'permissions',
-        },
-        { id: 'connections', kind: 'nav', label: 'Connections', value: null, page: 'connections' },
+        roomsRow(ctx),
+      ],
+    },
+    workFold(ctx),
+    fold('setup', 'Setup', setup, setupSummary(ctx)),
+    fold(
+      'files',
+      'Files',
+      [
         {
           id: 'instructions',
           kind: 'nav',
@@ -504,17 +676,11 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
         },
         // Beside the other two files, because it is one: the agent's own notes,
         // in markdown, in the same `.dork/` folder. No count — what an operator
-        // wants from this row is the file, and a number of lines answers a
-        // question nobody asked.
-        {
-          id: 'memory',
-          kind: 'nav',
-          label: 'Memory',
-          value: 'MEMORY.md',
-          page: 'memory',
-        },
+        // wants from this row is the file.
+        { id: 'memory', kind: 'nav', label: 'Memory', value: 'MEMORY.md', page: 'memory' },
       ],
-    },
+      'SOUL.md · NOPE.md · MEMORY.md'
+    ),
   ];
 }
 
@@ -523,42 +689,45 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
  *
  * Private is not the same as locked. A locked row says "you cannot change
  * this"; these rows are simply not theirs to read, so they are absent — no
- * sessions, no tools, no instructions, and no lock icons implying a door.
+ * sessions, no tools, no instructions, no level, and no lock icons implying a
+ * door.
  */
 function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   return [
     {
-      id: 'setup',
+      id: 'essentials',
       rows: [
-        { id: 'about', kind: 'text', label: 'About', value: ctx.description ?? null },
+        aboutRow('text', ctx),
         { id: 'runs-on', kind: 'text', label: 'Runs on', value: runsOnValue(member) },
-        commitmentsRow(ctx),
-        heartbeatRow(ctx),
         roomsRow(ctx),
       ],
     },
+    fold(
+      'work',
+      'Work',
+      [commitmentsRow(ctx), heartbeatRow(ctx)],
+      ctx.commitments ? `${ctx.commitments.open} open` : null
+    ),
   ];
 }
 
 /**
- * DorkBot: the same rows as your own agent, with the identity ones locked.
+ * DorkBot: the same frame as your own agent, with the identity rows locked.
  *
  * Locked, not hidden — the server answers 403 `SYSTEM_PROTECTED` on these, and
  * a row that explains itself is better than a control that fails after you use
- * it. The model still runs on your machine and stays yours to set.
+ * it. The model still runs on your machine and stays yours to set, and so does
+ * its voice: `personalityUpdate` puts the traits in the manifest AND
+ * regenerates SOUL.md's trait block. Its permissions are a person's to set like
+ * any agent's: it is the agent that most often needs Rooms.
  */
 function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   return [
+    { id: 'needs-you', rows: needsYouRows(ctx) },
     {
-      id: 'setup',
+      id: 'essentials',
       rows: [
-        {
-          id: 'about',
-          kind: 'locked',
-          label: 'About',
-          value: ctx.description ?? null,
-          lockedReason: SYSTEM_LOCK_REASON,
-        },
+        aboutRow('locked', ctx),
         {
           id: 'runs-on',
           kind: 'pick',
@@ -566,50 +735,17 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           value: runsOnValue(member),
           pick: 'runs-on',
         },
-        {
-          // The same control an agent you manage gets, and the same write:
-          // `personalityUpdate` puts the traits in the manifest AND regenerates
-          // SOUL.md's trait block, so DorkBot's next turn actually hears it.
-          id: 'personality',
-          kind: 'pick',
-          label: 'Personality',
-          value: ctx.facts?.personality ?? null,
-          pick: 'personality',
-        },
+        levelRow(ctx),
+        roomsRow(ctx),
       ],
     },
-    { id: 'work', rows: workRows(ctx) },
-    {
-      id: 'toolkit',
-      rows: [
-        {
-          id: 'skills',
-          kind: 'nav',
-          label: 'Skills',
-          value: countValue(ctx.facts?.skills, 'skill', 'skills'),
-          page: 'skills',
-        },
-        {
-          id: 'tools',
-          kind: 'nav',
-          label: 'MCP servers',
-          value: countValue(ctx.facts?.tools, 'server', 'servers'),
-          page: 'tools',
-        },
-        // DorkBot's permissions are a person's to set like any agent's: it is
-        // the agent that most often needs Rooms (spec `agent-permissions`).
-        {
-          id: 'permissions',
-          kind: 'nav',
-          label: 'Permissions',
-          // The chat's status bar has its own "Permissions" control (the
-          // session's permission mode), visible beside the docked profile.
-          accessibleLabel: 'Agent permissions',
-          value: null,
-          page: 'permissions',
-        },
-      ],
-    },
+    workFold(ctx),
+    fold(
+      'setup',
+      'Setup',
+      [personalityRow(ctx), ...toolkitRows(ctx), PERMISSIONS_ROW],
+      setupSummary(ctx)
+    ),
   ];
 }
 

@@ -267,6 +267,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import {
+  AgentLevelResponseSchema,
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
@@ -6027,6 +6028,27 @@ registry.registerPath({
     200: {
       description: "The agent's permissions",
       content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{id}/level',
+  tags: ['Permissions'],
+  summary: 'Read the level an agent runs at',
+  description:
+    'The Files & commands level a new chat of this agent starts at, before any per-chat limit, ' +
+    "the level its runtime's agents get by default, and whether a person's setting holds it lower.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "The agent's level",
+      content: { 'application/json': { schema: AgentLevelResponseSchema } },
     },
     404: {
       description: 'No such agent (`UNKNOWN_AGENT`)',

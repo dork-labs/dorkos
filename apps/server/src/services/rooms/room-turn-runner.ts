@@ -76,8 +76,7 @@ import {
   deriveSessionActivity,
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
-  resolveUnattendedPermissionMode,
-  readAgentExecutionDefaults,
+  resolveAgentLaunchLevel,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -583,16 +582,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // The row half of that rule is `externalAuthor` on the turn origin.
       // The addressed agent's own Files & commands stop beats the operator's
       // (spec `agent-permissions` D16), exactly as it does for the row's seed.
-      const agentStop =
-        isNewSession && !request.externalAuthor
-          ? (await readAgentExecutionDefaults(request.agentPath)).filesAndCommands
-          : undefined;
+      // One function with the profile's Level row, so the level it reports is
+      // the level this launches at (`agent-launch-level.ts`).
       const unattendedMode =
         isNewSession && !request.externalAuthor
-          ? resolveUnattendedPermissionMode({
-              capabilities: runtime.getCapabilities(),
-              ...(agentStop ? { agent: { filesAndCommands: agentStop } } : {}),
-            })
+          ? (
+              await resolveAgentLaunchLevel({
+                agentPath: request.agentPath,
+                capabilities: runtime.getCapabilities(),
+              })
+            ).mode
           : undefined;
       const seed = isNewSession
         ? await resolveUnattendedSessionDefaults({

@@ -32,6 +32,7 @@ import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
 import { profileStack, type ProfileStackState } from '../model/profile-stack';
+import { openEveryProfileFold, resetProfileFolds } from './profile-fold-helpers';
 
 // The drift banner subscribes to `approval_resolved`, which needs the app-level
 // `EventStreamProvider` — a whole SSE stack for a stream nothing here fires.
@@ -155,6 +156,8 @@ beforeAll(async () => {
 }, 60_000);
 
 beforeEach(() => {
+  resetProfileFolds();
+  openEveryProfileFold(ROSTER);
   vi.clearAllMocks();
 });
 
