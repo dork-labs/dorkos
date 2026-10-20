@@ -545,6 +545,10 @@
       "types": "./src/canvas-channel-schemas.ts",
       "default": "./dist/canvas-channel-schemas.js"
     },
+    "./canvas-doc-routes": {
+      "types": "./src/canvas-doc-routes.ts",
+      "default": "./dist/canvas-doc-routes.js"
+    },
     "./canvas-doc-frame-wire": {
       "types": "./src/canvas-doc-frame-wire.ts",
       "default": "./dist/canvas-doc-frame-wire.js"

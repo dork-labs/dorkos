@@ -48,6 +48,7 @@ import { CanvasErrorBoundary } from '../CanvasErrorBoundary';
 import { RoomWorktreeDiff } from '@/layers/features/diff-review';
 import { CanvasRenderer } from '../CanvasRenderer';
 import { CanvasSplash } from '../CanvasSplash';
+import { CanvasDocRoutes } from '../doc-routes/CanvasDocRoutes';
 import { RoomCanvasChrome, type FollowableMember } from './RoomCanvasChrome';
 import { RoomCanvasFileCard } from './RoomCanvasFileCard';
 import { RoomCanvasMarkdown } from './RoomCanvasMarkdown';
@@ -364,6 +365,7 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
         onDiscuss={active === null ? undefined : discuss}
         discussing={discussing}
       />
+      {active && <CanvasDocRoutes key={active.id} documentId={active.id} />}
       <div
         id={panelId}
         ref={panel}

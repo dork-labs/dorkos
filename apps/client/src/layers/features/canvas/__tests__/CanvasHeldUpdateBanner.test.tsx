@@ -21,6 +21,8 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 
 // jsdom cannot load Milkdown/ProseMirror. The stub surfaces the value and the
 // editable flag, which is how these cases read "is the person still editing".
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
 // Wiki links belong to the Docs feature and are tested there (`features/docs`).
 vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('../ui/BlintzCanvas', () => ({

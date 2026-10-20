@@ -80,7 +80,7 @@ export function createDocChannelGrantCapabilities(
       id: 'ui.approve_doc_route',
       title: 'Allow a document event route',
       description:
-        'Enable an exact document route. Your own route needs your verified identity. Other targets and file writes need a matching approval.',
+        'Enable an exact document route. Your own route needs your verified identity. Other targets and file writes need a matching approval. A route holds one grant: to change its types or end time, turn it off first.',
       tier: 'act',
       area: null,
       areaNote: 'independent operator approval binds each exact route and target',

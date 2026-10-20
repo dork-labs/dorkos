@@ -25447,6 +25447,1781 @@
         }
       }
     },
+    "/api/canvas/docs/{id}/routes": {
+      "get": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "List a document’s declared event routes and their state",
+        "description": "Operator only. A route is granted only when the grant service revalidates it now; a declared route nobody allowed is no_grant. Approval evidence is never returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every declared route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "on": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                          },
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "log"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "agent:owner"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "room:self"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "maxLength": 206,
+                                "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                              }
+                            ]
+                          },
+                          "turn": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "immediate",
+                              "coalesce"
+                            ]
+                          },
+                          "destination": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "log"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "owner"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "agent"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "room"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "needsPerson": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "no_grant",
+                              "granted",
+                              "waiting",
+                              "suspended",
+                              "revoked",
+                              "expired"
+                            ]
+                          },
+                          "grant": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "grantId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "allowedTypes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                                },
+                                "minItems": 1,
+                                "maxItems": 128
+                              },
+                              "limits": {
+                                "type": "object",
+                                "properties": {
+                                  "envelopeBytes": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "eventsPerMinute": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnsPerHour": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                },
+                                "required": [
+                                  "envelopeBytes",
+                                  "eventsPerMinute",
+                                  "turnsPerHour"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "expiresAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "revokedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "approvedBy": {
+                                "type": "string",
+                                "enum": [
+                                  "person",
+                                  "agent"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "grantId",
+                              "allowedTypes",
+                              "limits",
+                              "createdAt",
+                              "expiresAt",
+                              "revokedAt",
+                              "approvedBy"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "waiting": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "approvalId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "expiresAt": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "approvalId",
+                              "expiresAt"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "on",
+                          "to",
+                          "turn",
+                          "destination",
+                          "needsPerson",
+                          "state",
+                          "grant",
+                          "waiting"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 16
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "routes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/review": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Show the exact details allowing a route would bind",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records nothing. reviewHash covers the document, route, declaration, app, target, types, limits and expiry.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresAt": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "expiresAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reviewed binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "destination": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "owner"
+                              ]
+                            },
+                            "agentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "agent"
+                              ]
+                            },
+                            "agentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "room"
+                              ]
+                            },
+                            "agentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "allowedTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                      },
+                      "minItems": 1,
+                      "maxItems": 128
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "envelopeBytes": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "eventsPerMinute": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "turnsPerHour": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "envelopeBytes",
+                        "eventsPerMinute",
+                        "turnsPerHour"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "format": "date-time"
+                    },
+                    "reviewHash": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$/u"
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "routeId",
+                    "on",
+                    "destination",
+                    "allowedTypes",
+                    "limits",
+                    "expiresAt",
+                    "reviewHash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/approve": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Allow a reviewed route",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 409 ROUTE_CHANGED.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresAt": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "format": "date-time"
+                  },
+                  "reviewHash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$/u"
+                  }
+                },
+                "required": [
+                  "expiresAt",
+                  "reviewHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The route as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "immediate",
+                            "coalesce"
+                          ]
+                        },
+                        "destination": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "log"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "agent"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "room"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "needsPerson": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "no_grant",
+                            "granted",
+                            "waiting",
+                            "suspended",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "grant": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "grantId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "allowedTypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                              },
+                              "minItems": 1,
+                              "maxItems": 128
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "envelopeBytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "eventsPerMinute": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "turnsPerHour": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "envelopeBytes",
+                                "eventsPerMinute",
+                                "turnsPerHour"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "revokedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "approvedBy": {
+                              "type": "string",
+                              "enum": [
+                                "person",
+                                "agent"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "grantId",
+                            "allowedTypes",
+                            "limits",
+                            "createdAt",
+                            "expiresAt",
+                            "revokedAt",
+                            "approvedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "waiting": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "approvalId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "approvalId",
+                            "expiresAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn",
+                        "destination",
+                        "needsPerson",
+                        "state",
+                        "grant",
+                        "waiting"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "route"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The route changed since review, or is already on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/revoke": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Turn a route’s grant off",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. New events stop starting work. Work already started keeps its recorded source.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The route as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "immediate",
+                            "coalesce"
+                          ]
+                        },
+                        "destination": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "log"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "agent"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "room"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "needsPerson": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "no_grant",
+                            "granted",
+                            "waiting",
+                            "suspended",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "grant": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "grantId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "allowedTypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                              },
+                              "minItems": 1,
+                              "maxItems": 128
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "envelopeBytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "eventsPerMinute": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "turnsPerHour": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "envelopeBytes",
+                                "eventsPerMinute",
+                                "turnsPerHour"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "revokedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "approvedBy": {
+                              "type": "string",
+                              "enum": [
+                                "person",
+                                "agent"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "grantId",
+                            "allowedTypes",
+                            "limits",
+                            "createdAt",
+                            "expiresAt",
+                            "revokedAt",
+                            "approvedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "waiting": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "approvalId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "approvalId",
+                            "expiresAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn",
+                        "destination",
+                        "needsPerson",
+                        "state",
+                        "grant",
+                        "waiting"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "route"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/holds/{holdId}/cancel": {
       "post": {
         "tags": [
