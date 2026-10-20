@@ -3,7 +3,10 @@
  *
  * A person signed in over Wi-Fi reaches DorkOS over plain `http` on the local
  * network, where anyone on the same network can watch or relay the traffic.
- * So a Wi-Fi sign-in gets a lower level: it can chat, read, and answer
+ * The level is about that proof, not the place (DOR-3172): the same person on
+ * the own tunnel, managed remote access or `https` gets what the desk gets
+ * (`isOnEncryptedConnection` in `../gate-policy.ts`). So a Wi-Fi sign-in gets
+ * a lower level: it can chat, read, and answer
  * approvals that are not front-door settings, and is refused (403,
  * {@link NOT_FROM_WIFI}) on everything in {@link WIFI_REFUSED_ROUTES}:
  *
@@ -20,7 +23,8 @@
  *   sources, and the password. `PATCH /api/config` carries front-door settings
  *   in its body, so that route runs the front-door bar on them itself
  *   (`refuseFrontDoorChange` in `lib/caller-authority.ts`), which refuses
- *   Wi-Fi as it refuses every caller not at this computer;
+ *   Wi-Fi as it refuses every caller neither at this computer nor on an
+ *   encrypted connection;
  * - **the host itself**: resetting or restarting DorkOS, syncing or adopting
  *   the harness, adding a workspace, folder or agent, turning on and setting
  *   up extensions, installing and removing packages. Pairing a new device

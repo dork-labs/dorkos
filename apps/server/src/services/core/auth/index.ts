@@ -279,6 +279,12 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
         sameSite: 'lax',
         secure: isProduction,
       },
+      // The sign-in itself is `SameSite=Strict` (DOR-3172): no other site can
+      // make a browser send it, even on a link. Safe because only `/api` and
+      // `/mcp` read it and the app calls them from its own pages; the pages
+      // load without it. A hub keeps `lax`: its owner arrives from DorkOS
+      // Cloud's sign-in by redirect.
+      cookies: sessionCookiesStrict(currentServerRole() !== 'hub'),
     },
     databaseHooks: {
       user: {
@@ -349,6 +355,24 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // Failed sign-ins and API keys created or revoked, in the audit log.
     hooks: { after: authAuditAfterHook },
   };
+}
+
+/** The three cookies that carry a sign-in. */
+const SESSION_COOKIE_KEYS = ['session_token', 'session_data', 'dont_remember'] as const;
+
+/**
+ * Better Auth's per-cookie settings that make the sign-in cookies
+ * `SameSite=Strict`, or none when `strict` is false.
+ *
+ * @param strict - Whether to make them strict.
+ */
+export function sessionCookiesStrict(
+  strict: boolean
+): Record<string, { attributes: { sameSite: 'strict' } }> | undefined {
+  if (!strict) return undefined;
+  return Object.fromEntries(
+    SESSION_COOKIE_KEYS.map((key) => [key, { attributes: { sameSite: 'strict' as const } }])
+  );
 }
 
 /** How long a person session lasts without use: 30 days, rolling (DOR-2968). */

@@ -41,6 +41,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { recordAccepted } from './session-message-accepted.js';
 import { launchRefusalReply, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
@@ -86,11 +87,7 @@ import {
   rejectUndeclaredPermissionMode,
   rejectUnknownModel,
 } from './session-model-gate.js';
-import {
-  recordWroteIfPerson,
-  sessionOpenedHandler,
-  touchedSinceKeeper,
-} from './session-touch-handler.js';
+import { sessionOpenedHandler, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { createSessionCanvasRoutes } from './session-canvas.js';
@@ -892,8 +889,9 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // Accepted, so it counts as you writing here (spec `your-activity-first`
     // D4). A dispatch that answered `accepted: false` refused the message and
     // records nothing. An accepted one names the chat's canonical id; the
-    // fallback only covers the type, which leaves the field optional.
-    if (result.accepted) recordWroteIfPerson(honoRequestFacts(c), result.canonicalId ?? sessionId);
+    // fallback only covers the type, which leaves the field optional. Signing
+    // the sending device out stops the chat (DOR-3172).
+    if (result.accepted) recordAccepted(honoRequestFacts(c), result, sessionId, clientId);
 
     return c.json(
       {

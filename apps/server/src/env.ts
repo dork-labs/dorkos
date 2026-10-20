@@ -271,6 +271,13 @@ export const serverEnvSchema = z.object({
   // through a forwarded hop so proxied deployments keep secure cookies. See
   // middleware/rate-limit-key.ts.
   DORKOS_TRUST_PROXY: boolFlag,
+  // DorkOS's own https listener, off unless all three are set (DOR-3172,
+  // http/tls-listener.ts). A person signed in on it counts as on an encrypted
+  // connection, decided by the socket, never a header.
+  DORKOS_TLS_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  DORKOS_TLS_CERT: z.string().optional(),
+  DORKOS_TLS_KEY: z.string().optional(),
+  DORKOS_TLS_HOST: z.string().optional(),
   // Where this computer's Ollama answers. Loopback only: models are never
   // pulled through another host. Tests point it at a stub, so no run depends
   // on whether this machine has Ollama running.

@@ -196,6 +196,31 @@ export function sessionRecentlyEnded(sessionId: string, now = Date.now()): boole
 export function endSession(sessionId: string): void {
   noteSessionEnded(sessionId);
   closeForSession(sessionId);
+  for (const listener of endListeners) {
+    try {
+      listener(sessionId);
+    } catch (error) {
+      logger.warn('[Auth] A sign-out listener failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/** What else runs when a session ends (`./signed-in-turns.ts`). */
+const endListeners = new Set<(sessionId: string) => void>();
+
+/**
+ * Run `listener` every time a session ends, after its streams close. A
+ * listener that throws is logged and the rest still run.
+ *
+ * @param listener - Called with the ended session's id.
+ * @returns Stop listening.
+ */
+export function onSessionEnded(listener: (sessionId: string) => void): () => void {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
 }
 
 /** The session ids that hold something open now. */

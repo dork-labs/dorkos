@@ -65,7 +65,10 @@ import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
 import { classifyRequest, noteForeignOrigin } from '../lib/request-classifier.js';
 import { decideGateAccess, readGatePosture } from '../services/core/auth/gate-policy.js';
-import { gateFactsFor } from '../services/core/auth/oauth-callback-arrival.js';
+import {
+  gateFactsFor,
+  isOAuthCallbackArrival,
+} from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
@@ -196,7 +199,14 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     const facts = gateFactsFor(c.req.method, c.req.path, honoRequestFacts(c));
     const requestClass = classifyRequest(facts, currentServerRole());
     noteForeignOrigin(facts, requestClass);
-    const access = decideGateAccess(requestClass, readGatePosture());
+    // The sign-in cookie is `SameSite=Strict` (DOR-3172), so a provider's
+    // cross-site redirect back never carries it. A callback arrival at this
+    // computer is therefore not asked for one even when this computer asks for
+    // a password; its handler finishes only a flow it started (state, PKCE).
+    const access =
+      isOAuthCallbackArrival(c.req.method, c.req.path) && requestClass.kind === 'this-computer'
+        ? 'open'
+        : decideGateAccess(requestClass, readGatePosture());
     const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
     if (!decision.allowed) return c.json(authRequiredBody(), 401);
     if (decision.user) c.set('user', decision.user);

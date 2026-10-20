@@ -26,14 +26,14 @@ function Heading() {
  * A small mark in the top bar, present only while someone is using this
  * computer from the web: the relay is connected and a chat of this computer
  * is open on the hub (step B3, DOR-2946). Its popover lists the browsers seen
- * since then and, at this computer only, "End now", which closes the relay
+ * since then and, at this computer or over an encrypted connection, "End now", which closes the relay
  * and pauses the link.
  *
  * Calm like the keep-awake cup beside it: no animation, no colour. It
  * appears, says what is happening, and goes.
  */
 export function RemoteSessionIndicator() {
-  const { presence, atThisComputer, end, ending, error } = useRemotePresence();
+  const { presence, canEnd, end, ending, error } = useRemotePresence();
   const [open, setOpen] = useState(false);
   if (!presence?.active) return null;
 
@@ -68,7 +68,7 @@ export function RemoteSessionIndicator() {
         ) : (
           <p className="text-muted-foreground text-xs">No device named yet.</p>
         )}
-        {atThisComputer ? (
+        {canEnd ? (
           <div className="space-y-1">
             <Button variant="outline" size="sm" disabled={ending} onClick={end}>
               End now

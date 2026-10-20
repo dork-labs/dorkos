@@ -4603,6 +4603,10 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
+    onTrustedConnection: z.boolean().optional().openapi({
+      description:
+        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
+    }),
     callerRoute: z
       .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
       .nullable()

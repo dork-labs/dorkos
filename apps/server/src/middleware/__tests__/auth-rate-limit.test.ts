@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import { Hono, type MiddlewareHandler } from 'hono';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { honoListener } from '@dorkos/test-utils/listening-server';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
-import { buildAuthRateLimiter } from '../auth-rate-limit.js';
+import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../auth-rate-limit.js';
 import { env } from '../../env.js';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
 
@@ -44,7 +44,11 @@ let currentLimiter: MiddlewareHandler<RequestFactsEnv> = (_c, next) => next();
 const app = new Hono<RequestFactsEnv>();
 app.use((c, next) => currentLimiter(c, next));
 // Stand-ins for the Better Auth handler and a normal API route.
-app.post('/api/auth/sign-in/email', (c) => c.json({ ok: true }, 200));
+// A wrong password fails, as Better Auth answers it; anything else signs in.
+app.post('/api/auth/sign-in/email', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { password?: string };
+  return body.password === 'wrong' ? c.json({ code: 'INVALID' }, 401) : c.json({ ok: true }, 200);
+});
 app.post('/api/auth/sign-up/email', (c) => c.json({ ok: true }, 200));
 app.get('/api/auth/get-session', (c) => c.json({ session: null }, 200));
 // A future OAuth-initiation endpoint (invites/OAuth spec) — a redirect
@@ -289,5 +293,110 @@ describe('buildAuthRateLimiter', () => {
         expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
       }
     });
+  });
+});
+
+describe('buildAccountSignInLimiter (DOR-3172)', () => {
+  const failures = 3;
+  /** A sign-in from another device: a `Host` that is not this computer. */
+  const signIn = (email: string, password: string, host = 'box.ngrok.app') =>
+    request(server).post('/api/auth/sign-in/email').set('Host', host).send({ email, password });
+
+  it('refuses an account after its failures fill the window, from any address', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    // Spelled differently, the same account: still refused, right password or not.
+    const blocked = await signIn('  Owner@Dork.Test ', 'right');
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+    // Another account is untouched.
+    expect((await signIn('someone@dork.test', 'right')).status).toBe(200);
+  });
+
+  it('gives a sign-in that works its count back, so only failures add up', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures * 3; i++) {
+      expect((await signIn('owner@dork.test', 'right')).status).toBe(200);
+    }
+    for (let i = 0; i < failures - 1; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right')).status).toBe(200);
+  });
+
+  it('passes a body that names no account straight through', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    for (let i = 0; i < 3; i++) {
+      const res = await request(server)
+        .post('/api/auth/sign-in/email')
+        .set('Host', 'box.ngrok.app')
+        .send({ password: 'wrong' });
+      expect(res.status).toBe(401);
+    }
+  });
+
+  it('never counts or refuses a sign-in at this computer, so the owner cannot be locked out', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right')).status).toBe(429);
+    for (let i = 0; i < failures * 2; i++) {
+      expect((await signIn('owner@dork.test', 'wrong', 'localhost')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right', 'localhost')).status).toBe(200);
+  });
+
+  it('answers byte for byte as the per-address limit does, so it names no account', async () => {
+    currentLimiter = buildAuthRateLimiter({ maxAttempts: 1 });
+    await request(server).post('/api/auth/sign-in/email').send({ email: 'x@dork.test' });
+    const byAddress = await request(server)
+      .post('/api/auth/sign-in/email')
+      .send({ email: 'x@dork.test' });
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    await signIn('owner@dork.test', 'wrong');
+    const byAccount = await signIn('owner@dork.test', 'wrong');
+    expect(byAddress.status).toBe(429);
+    expect(byAccount.status).toBe(429);
+    expect(byAccount.text).toBe(byAddress.text);
+    expect(byAccount.headers['content-type']).toBe(byAddress.headers['content-type']);
+    // An account that does not exist is counted the same way.
+    await signIn('nobody@dork.test', 'wrong');
+    expect((await signIn('nobody@dork.test', 'wrong')).text).toBe(byAddress.text);
+  });
+
+  it('reads no more than 8 KB of a body that names no length', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
+    /** POST a chunked body (no content-length), in two writes. */
+    const chunked = (body: object): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const { port } = server.address() as { port: number };
+        const req = httpRequest(
+          {
+            host: '127.0.0.1',
+            port,
+            method: 'POST',
+            path: '/api/auth/sign-in/email',
+            headers: { host: 'box.ngrok.app', 'content-type': 'application/json' },
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode ?? 0));
+          }
+        );
+        req.on('error', reject);
+        const text = JSON.stringify(body);
+        req.write(text.slice(0, 10));
+        req.end(text.slice(10));
+      });
+    // An account behind 9 KB of padding is never read, so never counted.
+    const padded = { pad: 'x'.repeat(9 * 1024), email: 'owner@dork.test', password: 'wrong' };
+    for (let i = 0; i < 3; i++) expect(await chunked(padded)).toBe(401);
+    // A small chunked body is still read and counted.
+    const small = { email: 'small@dork.test', password: 'wrong' };
+    expect(await chunked(small)).toBe(401);
+    expect(await chunked(small)).toBe(429);
   });
 });

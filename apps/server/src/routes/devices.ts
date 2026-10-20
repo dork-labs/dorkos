@@ -6,11 +6,12 @@
  *   when it was last used. Each is named by an opaque id, never its token. A
  *   person at this computer whose gate asked for no password sees the owner's.
  * - `DELETE /sessions/:id`: sign one out. Your own current one from anywhere;
- *   any other only from a person at this computer
- *   ({@link requirePersonAtThisComputer}), so a stolen Wi-Fi or tunnel sign-in
- *   cannot lock the owner out of their other devices.
- * - `POST /sign-out-all`: at this computer only. Signs out every sign-in but
- *   the one asking (all of them when the asking person has none).
+ *   any other only from the owner at this computer or on an encrypted
+ *   connection ({@link requirePersonAtThisComputer}, DOR-3172), so a Wi-Fi
+ *   sign-in, which anyone on that network can copy, cannot sign the owner's
+ *   other devices out. The desk itself never needs a sign-in to undo it.
+ * - `POST /sign-out-all`: the same bar. Signs out every sign-in but the one
+ *   asking (all of them when the asking person has none).
  *
  * Every sign-out closes what that sign-in had open, through the session-delete
  * hook (`services/core/auth/sessions/live-connections.ts`), which also writes
@@ -58,7 +59,10 @@ interface DevicesCaller {
   readonly userId: string;
   /** The asking sign-in, when the person has one. */
   readonly sessionId?: string;
-  /** Whether they are the person at this computer. */
+  /**
+   * Whether they are the owner in person: at this computer, or signed in on an
+   * encrypted connection ({@link requirePersonAtThisComputer}).
+   */
   readonly atThisComputer: boolean;
 }
 

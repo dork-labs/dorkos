@@ -13,8 +13,12 @@ import { contractSuite, SERVER_ORIGIN } from './harness.js';
 const OWNER = { email: 'owner' + '@' + 'dork.test', password: 'correct-horse-battery-staple' };
 /** A host the server answers to, as if reached through a TLS-terminating proxy. */
 const PROXIED_HOST = 'dorkos.example';
-/** A Better Auth session cookie: prefixed per data directory, never `Secure` in development. */
-const SESSION_COOKIE = /^better-auth[-0-9a-f]*\.session_token=[^;]+;.*HttpOnly.*SameSite=Lax/i;
+/**
+ * A Better Auth session cookie: prefixed per data directory, never `Secure` in
+ * development, and `SameSite=Strict` so no other site can make a browser send
+ * it (DOR-3172).
+ */
+const SESSION_COOKIE = /^better-auth[-0-9a-f]*\.session_token=[^;]+;.*HttpOnly.*SameSite=Strict/i;
 
 contractSuite(
   'auth',

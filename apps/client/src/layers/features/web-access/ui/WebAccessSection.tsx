@@ -47,7 +47,7 @@ function LinkForm({ access, status }: { access: WebAccess; status: SessionRelayS
   const [linkCode, setLinkCode] = useState('');
   const [name, setName] = useState(status.suggestedName);
   const [password, setPassword] = useState('');
-  const disabled = !access.atThisComputer || access.busy;
+  const disabled = !access.canChange || access.busy;
   return (
     <form
       className="space-y-3"
@@ -156,7 +156,7 @@ function stateLine(status: SessionRelayStatus): string {
 
 /** Linked: the hub, the level, Pause or Resume, and Unlink. */
 function LinkedControls({ access, status }: { access: WebAccess; status: SessionRelayStatus }) {
-  const disabled = !access.atThisComputer || access.busy;
+  const disabled = !access.canChange || access.busy;
   const [prompt, setPrompt] = useState<Prompt>(null);
   return (
     <div className="space-y-3">
@@ -257,7 +257,7 @@ export function WebAccessSection({ className }: { className?: string }) {
       <p id="web-access-title" className="text-sm font-medium">
         Chat from the web
       </p>
-      {!access.atThisComputer && (
+      {!access.canChange && (
         <p className="text-muted-foreground text-xs">Change this on the computer DorkOS runs on.</p>
       )}
       {status.linked ? (

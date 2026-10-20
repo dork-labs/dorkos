@@ -286,7 +286,10 @@ describe('POST /api/session-relay/passkeys/start', () => {
 
   it.each<[string, { user?: RequestUser; ingress?: IngressKind }]>([
     ['Wi-Fi', { user: OWNER_COOKIE, ingress: 'wifi' }],
+    // A passkey strengthens a sign-in, so it is added only at this computer,
+    // even from an encrypted connection (DOR-3172).
     ['a tunnel', { user: OWNER_COOKIE, ingress: 'own-tunnel' }],
+    ['managed remote access', { user: OWNER_COOKIE, ingress: 'managed' }],
     ['the relay', { user: OWNER_COOKIE, ingress: 'relay' }],
   ])('refuses from %s, password or not', async (_, caller) => {
     const res = await request(app(caller))
