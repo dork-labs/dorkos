@@ -28,12 +28,16 @@ export function PostingStanding({
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A failed read hid the rules or mute notice, so a post was refused with no
+  // warning above the composer (DOR-3154).
+  const [checkFailed, setCheckFailed] = useState(false);
   const load = useCallback(async () => {
     const [nextRules, nextStanding, slow] = await Promise.all([
       request<CommunityWireRules>('/api/v1/rules').catch(() => null),
       request<CommunityWireStanding>('/api/v1/me/standing').catch(() => null),
       request<{ seconds: number }>(`/api/v1/channels/${channelId}/slow-mode`).catch(() => null),
     ]);
+    setCheckFailed(!nextRules || !nextStanding);
     setRules(nextRules);
     setStanding(nextStanding);
     setSlowSeconds(slow?.seconds ?? 0);
@@ -71,6 +75,11 @@ export function PostingStanding({
         <Notice tone="info" className="mb-2" role="status">
           You're muted until {formatUntil(standing.mutedUntil)}.
         </Notice>
+      )}
+      {checkFailed && (
+        <p className="small muted mb-2" role="status">
+          Couldn't check your posting status.
+        </p>
       )}
       {!exempt && slowSeconds > 0 && (
         <p className="small muted mb-2">

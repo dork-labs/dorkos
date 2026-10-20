@@ -43,7 +43,8 @@ export function ExportPanel({ scope, idPrefix }: Props) {
   }, [scope]);
 
   useEffect(() => {
-    void load().catch(() => undefined);
+    // A failed read must not look like "no export yet" (DOR-3154).
+    void load().catch((cause: unknown) => setError(describeError(cause)));
   }, [load]);
 
   const id = current?.id;

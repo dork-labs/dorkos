@@ -1,4 +1,4 @@
-import { Label } from '@dork-labs/ui';
+import { Button, Label } from '@dork-labs/ui';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { request } from '../api.js';
 import type { Perform } from '../components/members/SpaceMembers.js';
@@ -33,15 +33,21 @@ export function SlowModeControl({
 }) {
   const id = useId();
   const [seconds, setSeconds] = useState<number | null>(null);
+  // A failed read left the select disabled with no reason given (DOR-3154).
+  const [readFailed, setReadFailed] = useState(false);
   const read = useCallback(
     () =>
       request<{ seconds: number }>(`/api/v1/channels/${channelId}/slow-mode`)
-        .then((body) => setSeconds(body.seconds))
-        .catch(() => undefined),
+        .then((body) => {
+          setSeconds(body.seconds);
+          setReadFailed(false);
+        })
+        .catch(() => setReadFailed(true)),
     [channelId]
   );
   useEffect(() => {
     setSeconds(null);
+    setReadFailed(false);
     void read();
   }, [read]);
   // A wait set some other way (the API takes any) is shown as it is, never as a wrong choice.
@@ -71,9 +77,18 @@ export function SlowModeControl({
           </option>
         ))}
       </select>
-      <span id={`${id}-slow-hint`} className="hint">
-        Time each member waits between posts. Owners and admins don't wait.
-      </span>
+      {readFailed ? (
+        <span id={`${id}-slow-hint`} className="hint row gap-2" role="alert">
+          Couldn't read slow mode.
+          <Button type="button" variant="outline" size="xs" onClick={() => void read()}>
+            Retry
+          </Button>
+        </span>
+      ) : (
+        <span id={`${id}-slow-hint`} className="hint">
+          Time each member waits between posts. Owners and admins don't wait.
+        </span>
+      )}
     </div>
   );
 }
