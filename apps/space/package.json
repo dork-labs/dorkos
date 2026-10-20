@@ -35,7 +35,7 @@
     "better-auth": "1.7.6",
     "drizzle-orm": "0.45.3",
     "fflate": "0.8.3",
-    "hono": "4.13.9",
+    "hono": "4.13.11",
     "lucide-react": "1.48.0",
     "nodemailer": "10.0.10",
     "pg": "8.23.0",
