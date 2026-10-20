@@ -1556,6 +1556,17 @@
           "projects"
         ]
       },
+      "NoAutoMove": {
+        "type": "object",
+        "properties": {
+          "noAutoMove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "noAutoMove"
+        ]
+      },
       "KeepAwakeStatus": {
         "type": "object",
         "properties": {
@@ -21197,6 +21208,76 @@
           },
           "404": {
             "description": "There is no such account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/accounts/{id}/no-auto-move": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Keep room agents off a Claude account in automatic moves",
+        "description": "With `noAutoMove: true`, DorkOS never moves a room agent whose account ran out to this registered account on its own; a person may still move one there. `false` lets it be picked again. Recorded in the permission history with an Undo, rather than as a config change. Main (`default`) has no registry row, so it answers `404`. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoAutoMove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The flag as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoAutoMove"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no such registered account",
             "content": {
               "application/json": {
                 "schema": {

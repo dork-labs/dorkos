@@ -32,7 +32,7 @@ export function directChatTransportMocks(): Pick<
     }),
     // Re-seat: nowhere to move by default, so a test about the picker says
     // which accounts it offers.
-    getRoomReseatOptions: vi.fn().mockResolvedValue({ current: null, accounts: [] }),
+    getRoomReseatOptions: vi.fn().mockResolvedValue({ current: null, accounts: [], seated: false }),
     reseatRoomAgent: vi.fn().mockResolvedValue({ sessionId: 'reseated-session' }),
   };
 }

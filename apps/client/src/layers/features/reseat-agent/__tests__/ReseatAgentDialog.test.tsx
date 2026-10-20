@@ -61,6 +61,7 @@ describe('ReseatAgentDialog', () => {
   it('offers the best account that can take the agent, and moves it there', async () => {
     const { transport, onOpenChange } = renderDialog({
       current: { id: 'claude4', label: 'Claude4' },
+      seated: true,
       accounts: [account('claude2', false, 'Almost out of usage'), account('claude3', true)],
     });
 
@@ -78,20 +79,31 @@ describe('ReseatAgentDialog', () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it('says no other account has usage left, and offers no move, when none can take it', async () => {
-    const { transport } = renderDialog({
+  it('says no other account has usage left, and offers only Close, when none can take it', async () => {
+    const { transport, onOpenChange } = renderDialog({
       current: { id: 'claude4', label: 'Claude4' },
+      seated: true,
       accounts: [account('claude3', false, 'Out until Tue 3pm')],
     });
 
     expect(await screen.findByText(NOTHING_LEFT)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(screen.queryByText(/starts fresh there/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Continue/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+
+    // The dialog's own corner X is also named Close; the footer's is the one asked for.
+    const close = screen
+      .getAllByRole('button', { name: 'Close' })
+      .find((button) => button.getAttribute('data-slot') !== 'dialog-content-close');
+    await userEvent.click(close!);
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(transport.reseatRoomAgent).not.toHaveBeenCalled();
   });
 
   it('shows why a move was refused, and stays open', async () => {
     const { onOpenChange } = renderDialog(
-      { current: null, accounts: [account('claude3', true)] },
+      { current: null, seated: true, accounts: [account('claude3', true)] },
       {
         reseatRoomAgent: vi
           .fn()

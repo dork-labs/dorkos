@@ -8,8 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
-import { Button } from '@/layers/shared/ui';
-import { ReseatAgentDialog } from '@/layers/features/reseat-agent';
+import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/layers/shared/ui';
+import { ReseatAgentDialog, ReseatMenuItem } from '@/layers/features/reseat-agent';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
@@ -25,6 +25,7 @@ const CURRENT = { id: MOCK_ACCOUNT_USAGE[0]!.accountId!, label: MOCK_ACCOUNT_USA
 
 const SOME: ReseatOptions = {
   current: CURRENT,
+  seated: true,
   accounts: [
     account(2),
     account(3, false, 'Almost out of usage'),
@@ -34,8 +35,12 @@ const SOME: ReseatOptions = {
 
 const NONE: ReseatOptions = {
   current: CURRENT,
+  seated: true,
   accounts: [account(2, false, 'Out until Tue 3pm'), account(3, false, 'Almost out of usage')],
 };
+
+/** The agent has not answered in this room yet, so there is no seat to move. */
+const UNSEATED: ReseatOptions = { current: null, accounts: [], seated: false };
 
 /** The playground transport answering this variant's options, and optionally refusing the move. */
 function variantTransport(answer: ReseatOptions, moveError?: Error): Transport {
@@ -92,6 +97,40 @@ function Variant({
   );
 }
 
+/** One labelled menu: the member's "…" menu with the entry, over its own transport. */
+function MenuVariant({ label, answer }: { label: string; answer: ReseatOptions }) {
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  );
+  const [transport] = useState(() => variantTransport(answer));
+  return (
+    <>
+      <ShowcaseLabel>{label}</ShowcaseLabel>
+      <ShowcaseDemo>
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  Open the menu
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <ReseatMenuItem
+                  roomId="playground-room"
+                  authorId="playground-agent"
+                  agentName="dorkos-qa"
+                  onRequested={() => {}}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TransportProvider>
+        </QueryClientProvider>
+      </ShowcaseDemo>
+    </>
+  );
+}
+
 /**
  * The seat picker for each answer the server can give, shown inside the
  * ContinueOnAccountDialog section: it is the same picker, for a room agent.
@@ -104,13 +143,19 @@ export function ReseatAgentVariants() {
         answer={SOME}
       />
       <Variant
-        label="Room agent — nothing left, every other account is out or nearly out"
+        label="Room agent — nothing left: every other account is out, one Close button"
         answer={NONE}
       />
       <Variant
         label="Room agent — refused, the agent is answering right now"
         answer={SOME}
         moveError={new Error('dorkos-qa is answering here right now. Move it when it’s done.')}
+      />
+      <MenuVariant label="Member menu — the entry, ready to open the picker" answer={SOME} />
+      <MenuVariant label="Member menu — disabled, nothing left on any account" answer={NONE} />
+      <MenuVariant
+        label="Member menu — disabled, the agent hasn’t answered yet"
+        answer={UNSEATED}
       />
     </>
   );

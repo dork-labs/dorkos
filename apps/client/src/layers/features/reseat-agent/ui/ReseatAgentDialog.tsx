@@ -106,6 +106,9 @@ export function ReseatAgentDialog({
   // The server ranks best first, so the first one that can take it is the pick.
   const selected = eligible.find((account) => account.id === choice) ?? eligible[0] ?? null;
   const loading = open && options.isPending;
+  // Reached with nowhere to go (the menu offered it a moment before usage ran
+  // out): say so, and offer only a way out.
+  const nowhere = !loading && options.data !== undefined && eligible.length === 0;
   const failure = options.isError ? options.error : move.isError ? move.error : null;
   const current = options.data?.current ?? null;
 
@@ -163,11 +166,15 @@ export function ReseatAgentDialog({
             </RadioGroup>
           )}
 
-          {!loading && options.data !== undefined && eligible.length === 0 && (
-            <p className="text-muted-foreground text-sm">{NOTHING_LEFT}</p>
+          {nowhere && (
+            <p className="text-muted-foreground text-sm">
+              {options.data?.seated === false
+                ? `${agentName} hasn’t answered here yet`
+                : NOTHING_LEFT}
+            </p>
           )}
 
-          {!loading && options.data !== undefined && (
+          {!loading && options.data !== undefined && !nowhere && (
             <p className="text-muted-foreground text-xs">
               Its next turn starts fresh there, with a summary of where it was.
             </p>
@@ -181,17 +188,25 @@ export function ReseatAgentDialog({
         </ResponsiveDialogBody>
 
         <ResponsiveDialogFooter className="shrink-0">
-          <Button variant="outline" onClick={close} disabled={move.isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={selected === null || move.isPending}
-            aria-busy={move.isPending || undefined}
-          >
-            {move.isPending && <Spinner />}
-            {selected ? `Continue on ${nameOf(selected)}` : 'Continue'}
-          </Button>
+          {nowhere ? (
+            <Button variant="outline" onClick={close}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={close} disabled={move.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={submit}
+                disabled={selected === null || move.isPending}
+                aria-busy={move.isPending || undefined}
+              >
+                {move.isPending && <Spinner />}
+                {selected ? `Continue on ${nameOf(selected)}` : 'Continue'}
+              </Button>
+            </>
+          )}
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

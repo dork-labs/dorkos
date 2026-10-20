@@ -30,6 +30,7 @@ import {
   type ResponseRung,
   type RoomPresenceAuthor,
 } from '@/layers/entities/room';
+import { ReseatMenuItem } from '@/layers/features/reseat-agent';
 import { memberSecondaryLine } from '../lib/member-line';
 import { RemoveMemberConfirm } from './RemoveMemberConfirm';
 
@@ -99,10 +100,11 @@ export interface RoomMemberRowProps {
   /** Ask to take this member out. The list decides which row is asking. */
   onRemoveRequested: () => void;
   /**
-   * Open "Continue on another account…" for this agent, or absent where its
-   * seat cannot move (an archived room). Only an agent's row offers it.
+   * "Continue on another account…" for this agent: the room its seat is in, and
+   * how to open the picker. Absent where the seat cannot move (an archived
+   * room). Only an agent's row offers it.
    */
-  onReseatRequested?: () => void;
+  reseat?: { roomId: string; onRequested: () => void };
   /** Whether this row is the one waiting to be confirmed. */
   confirmingRemoval: boolean;
   /** Take this member out for real. */
@@ -283,7 +285,7 @@ export function RoomMemberRow({
   rungError,
   roomTitle,
   onRemoveRequested,
-  onReseatRequested,
+  reseat,
   confirmingRemoval,
   onConfirmRemoval,
   onCancelRemoval,
@@ -489,10 +491,13 @@ export function RoomMemberRow({
                 confirmRef.current.focus();
               }}
             >
-              {onReseatRequested && (
-                <DropdownMenuItem onSelect={onReseatRequested}>
-                  Continue on another account…
-                </DropdownMenuItem>
+              {reseat && (
+                <ReseatMenuItem
+                  roomId={reseat.roomId}
+                  authorId={member.authorId}
+                  agentName={author.displayName}
+                  onRequested={reseat.onRequested}
+                />
               )}
               <DropdownMenuItem variant="destructive" onSelect={onRemoveRequested}>
                 Remove from this room
@@ -544,16 +549,14 @@ export function RoomMemberRow({
                 disabledReasonId={dormantReasonId}
                 isLead={isLead}
               />
-              {isMobile && dormantReasonId === null && onReseatRequested && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={onReseatRequested}
-                  className="mt-1 h-11 w-full justify-start px-3"
-                >
-                  Continue on another account…
-                </Button>
+              {isMobile && dormantReasonId === null && reseat && (
+                <ReseatMenuItem
+                  variant="row"
+                  roomId={reseat.roomId}
+                  authorId={member.authorId}
+                  agentName={author.displayName}
+                  onRequested={reseat.onRequested}
+                />
               )}
               {isMobile && dormantReasonId === null && (
                 <Button

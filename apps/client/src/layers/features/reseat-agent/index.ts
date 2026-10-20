@@ -6,3 +6,5 @@
  */
 export { ReseatAgentDialog, NOTHING_LEFT } from './ui/ReseatAgentDialog';
 export type { ReseatAgentDialogProps } from './ui/ReseatAgentDialog';
+export { ReseatMenuItem } from './ui/ReseatMenuItem';
+export type { ReseatMenuItemProps } from './ui/ReseatMenuItem';

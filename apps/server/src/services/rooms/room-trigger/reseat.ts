@@ -367,15 +367,18 @@ export async function reseatOptionsFor(
   room: Room,
   agent: { authorId: string; agentPath: string }
 ): Promise<ReseatOptions> {
+  const sessionId = self.deps.store.getRoomSession(room.id, agent.authorId);
+  const seated = sessionId !== null;
   const mover = self.deps.seatMover?.() ?? null;
-  if (mover === null) return { current: null, accounts: [] };
+  if (mover === null) return { current: null, accounts: [], seated };
   const { current, accounts } = await mover.options({
     roomId: room.id,
     authorId: agent.authorId,
     agentPath: agent.agentPath,
-    sessionId: self.deps.store.getRoomSession(room.id, agent.authorId),
+    sessionId,
   });
   return {
+    seated,
     current: current.id === null ? null : { id: current.id, label: current.label },
     accounts: accounts.map((row) => ({
       id: row.id,

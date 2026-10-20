@@ -520,7 +520,11 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
                   // lands when that menu closes is a decision only the menu can
                   // make. See `RoomMemberRow`.
                   onRemoveRequested={() => setPendingRemoval(member.authorId)}
-                  onReseatRequested={detail.archived ? undefined : () => setReseating(member)}
+                  reseat={
+                    detail.archived
+                      ? undefined
+                      : { roomId, onRequested: () => setReseating(member) }
+                  }
                   confirmingRemoval={pendingRemoval === member.authorId}
                   onConfirmRemoval={() => confirmRemoval(member)}
                   onCancelRemoval={() => setPendingRemoval(null)}
