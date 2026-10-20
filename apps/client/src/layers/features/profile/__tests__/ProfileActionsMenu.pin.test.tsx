@@ -36,7 +36,11 @@ vi.mock('@/layers/entities/mesh', () => ({
 import { ProfileActionsMenu } from '../ui/ProfileActionsMenu';
 
 const MANAGED: TeamMember = MOCK_TEAM_ROSTER.find((member) => member.id === 'agent-warden')!;
-const PATH = MANAGED.agent!.projectPath;
+const PATH = ((): string => {
+  const path = MANAGED.agent?.projectPath;
+  if (!path) throw new Error('the managed fixture has no project path');
+  return path;
+})();
 
 /** Mount the kebab over a config whose sidebar pins are `pinned`. */
 function renderMenu(pinned: Array<{ kind: 'agent'; path: string }>) {
