@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Show project paths from ~ and re-capture agent-discovery
+- The "Bring in existing projects" window now shows folder paths starting with `~`, like the rest of the app, so it no longer shows your computer's username when you share your screen.
