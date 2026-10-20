@@ -259,6 +259,19 @@ describe('a person renaming an agent (DOR-3156)', () => {
     });
   });
 
+  it('never renames the room’s own voice', async () => {
+    await channelWithAgents('Voice');
+    const system = getRoomService().authorRegistry.system();
+
+    const res = await request(testServer)
+      .patch(`/api/rooms/authors/${system.id}/handle`)
+      .send({ handle: 'voice' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('HANDLE_RESERVED');
+    expect(getRoomService().authorRegistry.getById(system.id)?.handle).toBe(system.handle);
+  });
+
   it('still refuses an agent renaming another agent, even with the person’s rename open', async () => {
     const { ana, bo } = await channelWithAgents('Agents');
     const identity = initAgentIdentityService(db);

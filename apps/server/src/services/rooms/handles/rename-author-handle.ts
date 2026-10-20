@@ -4,7 +4,9 @@
  * The write itself is {@link AuthorRegistry.setHandle}; this adds what a rename
  * of an AGENT owes the rooms it is in: one quiet `handle_changed` line in each,
  * naming who renamed it and both handles, so the next mention uses the new one.
- * A person renaming themselves writes no line, as before.
+ * A person renaming themselves writes no line, as before. The room's own voice
+ * (`@dorkos`, the system author) is never renamed: freeing it would let the next
+ * agent named DorkOS speak as the room.
  *
  * **Identity is the author id, never the handle.** Nothing here touches a
  * level, a mark, a grant or a membership: every one of those is keyed on the
@@ -17,6 +19,7 @@
 import type { AuthorRecord } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import { buildHandleChangedNotice } from '../notices/notice-copy.js';
+import { RoomError } from '../room-errors.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -34,7 +37,11 @@ export function renameAuthorHandle(
   authorId: string,
   raw: string
 ): AuthorRecord {
-  const before = service.authorRegistry.getById(authorId)?.handle ?? null;
+  const target = service.authorRegistry.getById(authorId);
+  if (target?.kind === 'system') {
+    throw new RoomError('HANDLE_RESERVED', 'The room’s own voice keeps its handle.');
+  }
+  const before = target?.handle ?? null;
   const after = service.authorRegistry.setHandle(authorId, raw);
   if (after.kind === 'agent' && after.handle !== before) {
     announceHandleChange(service, byAuthorId, after, before);
