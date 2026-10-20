@@ -203,7 +203,9 @@ describe('isOnEncryptedConnection', () => {
   it('counts a proxy on this host that says https, and no other', async () => {
     const proxied = { 'x-forwarded-for': '100.64.0.7' };
     expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https' })).toBe(true);
-    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https, http' })).toBe(true);
+    // The last value is the proxy's own; an earlier one is the browser's to write.
+    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'http, https' })).toBe(true);
+    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https, http' })).toBe(false);
     expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'http' })).toBe(false);
     expect(await encrypted(proxied)).toBe(false);
   });

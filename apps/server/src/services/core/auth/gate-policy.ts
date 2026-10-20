@@ -219,9 +219,14 @@ export function isOnEncryptedConnection(facts: ClassifierFacts): boolean {
   return AUTH_COOKIES_SECURE || proxySaysHttps(facts);
 }
 
-/** Whether the proxy named `https` as the scheme the browser used. */
+/**
+ * Whether the proxy named `https` as the scheme the browser used. Reads the
+ * last value: the one the proxy next to DorkOS added. Earlier values are
+ * whatever the browser or a hop before it sent.
+ */
 function proxySaysHttps(facts: ClassifierFacts): boolean {
   const raw = facts.headers['x-forwarded-proto'];
-  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(',')[0]?.trim().toLowerCase();
-  return first === 'https';
+  const joined = Array.isArray(raw) ? raw.join(',') : raw;
+  const last = joined?.split(',').at(-1)?.trim().toLowerCase();
+  return last === 'https';
 }

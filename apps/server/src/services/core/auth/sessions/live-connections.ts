@@ -36,8 +36,7 @@
  *   just before the restart cannot ride its cached copy.
  * - **Bounded.** At most {@link MAX_LIVE_PER_SESSION} per session: past that,
  *   the oldest stream is closed, never silently forgotten, and never a
- *   terminal or a turn, which hold a person's work: a terminal is capped by
- *   its own manager, and a turn is one per chat.
+ *   terminal, which holds a person's work and is capped by its own manager.
  *   A close never throws out of here.
  *
  * In memory: a restart closes every stream anyway.
@@ -60,11 +59,10 @@ const MAX_ENDED_REMEMBERED = 10_000;
 
 /**
  * What a registration is: a `stream` (an event stream, a socket, a streamed
- * response), which a client reopens when it drops, a `terminal`, which holds a
- * shell and its work, or a `turn`, a chat turn the sign-in started
- * (`./signed-in-turns.ts`).
+ * response), which a client reopens when it drops, or a `terminal`, which
+ * holds a shell and its work.
  */
-export type LiveConnectionKind = 'stream' | 'terminal' | 'turn';
+export type LiveConnectionKind = 'stream' | 'terminal';
 
 /** One live thing a sign-in holds open. */
 interface LiveEntry {
@@ -112,8 +110,8 @@ function runClose(entry: LiveEntry, sessionId: string): void {
  *
  * Past {@link MAX_LIVE_PER_SESSION}, the oldest stream closes to make room
  * (the new one, when it is the only stream). A terminal is never closed for
- * room: when only terminals and turns are left, the bound is let go, since the
- * terminal manager caps the one and each chat holds at most one of the other.
+ * room: when only terminals are left, the bound is let go, since the terminal
+ * manager caps them already.
  *
  * @param sessionId - The Better Auth session id (never the token).
  * @param userId - The signed-in person.
@@ -198,6 +196,31 @@ export function sessionRecentlyEnded(sessionId: string, now = Date.now()): boole
 export function endSession(sessionId: string): void {
   noteSessionEnded(sessionId);
   closeForSession(sessionId);
+  for (const listener of endListeners) {
+    try {
+      listener(sessionId);
+    } catch (error) {
+      logger.warn('[Auth] A sign-out listener failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/** What else runs when a session ends (`./signed-in-turns.ts`). */
+const endListeners = new Set<(sessionId: string) => void>();
+
+/**
+ * Run `listener` every time a session ends, after its streams close. A
+ * listener that throws is logged and the rest still run.
+ *
+ * @param listener - Called with the ended session's id.
+ * @returns Stop listening.
+ */
+export function onSessionEnded(listener: (sessionId: string) => void): () => void {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
 }
 
 /** The session ids that hold something open now. */

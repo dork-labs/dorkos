@@ -147,9 +147,24 @@ function isExemptPath(path: string): boolean {
     // A computer redeeming a link code, on a hub only (see the module doc).
     (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
     // A new approvals passkey coming back to this computer (see the module doc).
-    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub')
+    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub') ||
+    // A provider's sign-in coming back to this computer (DOR-3172).
+    (OAUTH_RETURN_PATHS.has(path) && currentServerRole() !== 'hub')
   );
 }
+
+/**
+ * The two loopback pages a provider's sign-in redirects back to. The sign-in
+ * cookie is `SameSite=Strict`, so a browser never sends it on that cross-site
+ * redirect, and asking for it would fail every such sign-in while this
+ * computer asks for a password. Each handler admits only a request at this
+ * computer and finishes only a flow it started (one-time `state`, PKCE), so
+ * the cookie adds nothing there.
+ */
+const OAUTH_RETURN_PATHS = new Set([
+  '/api/agents/mcp-oauth/callback',
+  '/api/runtimes/opencode/openrouter/oauth/callback',
+]);
 
 /** Extract the token from an `Authorization: Bearer <token>` header, or `null`. */
 function extractBearerToken(authorization: string | undefined): string | null {

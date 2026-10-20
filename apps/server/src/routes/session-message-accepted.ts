@@ -8,37 +8,59 @@
  * @module routes/session-message-accepted
  */
 import type { RequestFacts } from '../http/request-facts.js';
-import { noteChatTurnSender } from '../services/core/auth/sessions/signed-in-turns.js';
-import { recordWroteIfPerson } from './session-touch-handler.js';
+import {
+  noteChatTurnSender,
+  setSignedInWorkStopper,
+  type SignedInChatWork,
+} from '../services/core/auth/sessions/signed-in-turns.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { clearQueuedMessages } from '../services/session/index.js';
+import { cancelQueuedMessage } from '../services/session/index.js';
 import { logError, logger } from '../lib/logger.js';
+import { recordWroteIfPerson } from './session-touch-handler.js';
 
 /**
- * Stop a chat whose sender signed out: drop its queue, then interrupt its
- * turn, as Stop does. A chat that already finished answers "not running".
- * Never throws: it runs inside a sign-out.
+ * Take back what a signed-out sign-in sent to a chat: its messages still
+ * waiting, and the running turn only when one of its windows holds it. Never
+ * throws: it runs inside a sign-out.
  *
  * @param chatId - The chat's canonical id.
+ * @param work - What that sign-in sent there.
  */
-function stopChatForSignOut(chatId: string): void {
-  clearQueuedMessages(chatId);
+function stopSignedInWork(chatId: string, work: SignedInChatWork): void {
+  try {
+    for (const messageId of work.messageIds) cancelQueuedMessage(chatId, messageId);
+  } catch (err) {
+    logger.warn('[Sessions] Could not remove a signed-out message', { chatId, ...logError(err) });
+  }
   void runtimeRegistry
     .resolveForSession(chatId)
-    .then((runtime) => runtime.interruptQuery(chatId))
+    .then((runtime) => {
+      const holder = runtime.getLockInfo(chatId)?.clientId;
+      if (holder !== undefined && work.clientIds.has(holder)) return runtime.interruptQuery(chatId);
+      return undefined;
+    })
     .catch((err: unknown) => {
       logger.warn('[Sessions] Could not stop a signed-out chat', { chatId, ...logError(err) });
     });
 }
 
 /**
- * Record an accepted chat message: a person wrote here, and the sign-in that
- * sent it now owns the chat until someone else sends to it.
+ * Record an accepted chat message: a person wrote here, and signing out the
+ * sign-in that sent it takes it back.
  *
  * @param facts - The request's facts.
- * @param chatId - The chat's canonical id.
+ * @param accepted - The dispatch's answer: the chat's canonical id and the message's.
+ * @param sessionId - The id the request named, when no canonical one came back.
+ * @param clientId - The sending window's `X-Client-Id`.
  */
-export function recordAccepted(facts: RequestFacts, chatId: string): void {
+export function recordAccepted(
+  facts: RequestFacts,
+  accepted: { readonly canonicalId?: string; readonly outcome: { readonly messageId: string } },
+  sessionId: string,
+  clientId: string
+): void {
+  const chatId = accepted.canonicalId ?? sessionId;
   recordWroteIfPerson(facts, chatId);
-  noteChatTurnSender(chatId, facts.user, () => stopChatForSignOut(chatId));
+  setSignedInWorkStopper(stopSignedInWork);
+  noteChatTurnSender(chatId, facts.user, clientId, accepted.outcome.messageId);
 }

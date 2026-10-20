@@ -891,7 +891,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // records nothing. An accepted one names the chat's canonical id; the
     // fallback only covers the type, which leaves the field optional. Signing
     // the sending device out stops the chat (DOR-3172).
-    if (result.accepted) recordAccepted(honoRequestFacts(c), result.canonicalId ?? sessionId);
+    if (result.accepted) recordAccepted(honoRequestFacts(c), result, sessionId, clientId);
 
     return c.json(
       {

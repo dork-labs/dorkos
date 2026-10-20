@@ -83,7 +83,6 @@ import {
   resetLiveConnectionsForTests,
 } from '../../services/core/auth/sessions/live-connections.js';
 import {
-  noteChatTurnSender,
   resetSignedInTurnsForTests,
 } from '../../services/core/auth/sessions/signed-in-turns.js';
 import { WIFI_RAISE_REFUSAL } from '../../services/core/auth/sessions/wifi-raise-guard.js';
@@ -105,7 +104,10 @@ function app() {
           if (via === 'wifi' || via === 'own-tunnel' || via === 'managed') {
             markIngress(c.env.incoming, via);
           }
-          c.set('user', { userId: 'owner', credential: 'cookie', sessionId: SIGN_IN });
+          // The desk with no password asked: no sign-in at all.
+          if (c.req.header('x-test-desk') !== '1') {
+            c.set('user', { userId: 'owner', credential: 'cookie', sessionId: SIGN_IN });
+          }
           await next();
         },
       }
@@ -220,32 +222,36 @@ describe('signing out the device that sent it', () => {
     resetLiveConnectionsForTests();
   });
 
-  it('stops the turn and drops what it still had queued', async () => {
+  /** A turn that runs until `release` is called. */
+  function heldTurn(): { release: () => void; turn: () => AsyncGenerator<StreamEvent> } {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    fakeRuntime.withScenarios([
-      async function* () {
+    return {
+      release,
+      turn: async function* () {
         yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
         await gate;
         yield { type: 'done', data: {} } as StreamEvent;
       },
-      doneTurn,
-    ]);
+    };
+  }
+
+  it('stops the turn its window holds and removes its waiting messages', async () => {
+    const held = heldTurn();
+    fakeRuntime.withScenarios([held.turn, doneTurn]);
+    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'phone', acquiredAt: 0 });
     fakeRuntime.interruptQuery.mockImplementation(async () => {
-      release();
+      held.release();
       return { outcome: 'interrupted', runtime: 'fake' } as never;
     });
-    await request(app())
-      .post(`/api/sessions/${SESSION_ID}/messages`)
-      .set('x-test-via', 'own-tunnel')
-      .send({ content: 'a long job' });
-    await request(app())
-      .post(`/api/sessions/${SESSION_ID}/messages`)
-      .set('x-test-via', 'own-tunnel')
-      .send({ content: 'queued behind it' });
-    expect(store.list(SESSION_ID).map((row) => row.content)).toContain(
-      'queued behind it'
-    );
+    for (const content of ['a long job', 'queued behind it']) {
+      await request(app())
+        .post(`/api/sessions/${SESSION_ID}/messages`)
+        .set('x-test-via', 'own-tunnel')
+        .set('x-client-id', 'phone')
+        .send({ content });
+    }
+    expect(store.list(SESSION_ID).map((row) => row.content)).toContain('queued behind it');
 
     endSession(SIGN_IN);
 
@@ -253,17 +259,30 @@ describe('signing out the device that sent it', () => {
     expect(store.list(SESSION_ID)).toEqual([]);
   });
 
-  it('leaves alone a chat somebody else sent to since', async () => {
-    fakeRuntime.withScenarios([doneTurn, doneTurn]);
+  it('leaves a turn the desk holds, and the desk’s waiting messages, alone', async () => {
+    const held = heldTurn();
+    fakeRuntime.withScenarios([held.turn, doneTurn, doneTurn]);
+    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'desk', acquiredAt: 0 });
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('x-client-id', 'desk')
+      .set('x-test-desk', '1')
+      .send({ content: 'the desk is working' });
+    store.enqueue({ sessionId: SESSION_ID, content: 'the desk queued this', clientId: 'desk' });
     await request(app())
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('x-test-via', 'own-tunnel')
-      .send({ content: 'from the phone' });
-    // The same chat, then sent to from the desk with no sign-in of its own.
-    noteChatTurnSender(SESSION_ID, undefined, () => {});
+      .set('x-client-id', 'phone')
+      .send({ content: 'the phone queued this' });
+
     endSession(SIGN_IN);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
     expect(fakeRuntime.interruptQuery).not.toHaveBeenCalled();
+    const left = store.list(SESSION_ID).map((row) => row.content);
+    expect(left).toContain('the desk queued this');
+    expect(left).not.toContain('the phone queued this');
+    held.release();
   });
 });
 

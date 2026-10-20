@@ -298,8 +298,9 @@ describe('buildAuthRateLimiter', () => {
 
 describe('buildAccountSignInLimiter (DOR-3172)', () => {
   const failures = 3;
-  const signIn = (email: string, password: string) =>
-    request(server).post('/api/auth/sign-in/email').send({ email, password });
+  /** A sign-in from another device: a `Host` that is not this computer. */
+  const signIn = (email: string, password: string, host = 'box.ngrok.app') =>
+    request(server).post('/api/auth/sign-in/email').set('Host', host).send({ email, password });
 
   it('refuses an account after its failures fill the window, from any address', async () => {
     currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
@@ -328,8 +329,23 @@ describe('buildAccountSignInLimiter (DOR-3172)', () => {
   it('passes a body that names no account straight through', async () => {
     currentLimiter = buildAccountSignInLimiter({ maxFailures: 1 });
     for (let i = 0; i < 3; i++) {
-      const res = await request(server).post('/api/auth/sign-in/email').send({ password: 'wrong' });
+      const res = await request(server)
+        .post('/api/auth/sign-in/email')
+        .set('Host', 'box.ngrok.app')
+        .send({ password: 'wrong' });
       expect(res.status).toBe(401);
     }
+  });
+
+  it('never counts or refuses a sign-in at this computer, so the owner cannot be locked out', async () => {
+    currentLimiter = buildAccountSignInLimiter({ maxFailures: failures });
+    for (let i = 0; i < failures; i++) {
+      expect((await signIn('owner@dork.test', 'wrong')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right')).status).toBe(429);
+    for (let i = 0; i < failures * 2; i++) {
+      expect((await signIn('owner@dork.test', 'wrong', 'localhost')).status).toBe(401);
+    }
+    expect((await signIn('owner@dork.test', 'right', 'localhost')).status).toBe(200);
   });
 });

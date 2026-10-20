@@ -1,7 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
 import { createRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
-import type { RequestFactsEnv } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
+import { classifyRequest } from '../lib/request-classifier.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 /**
  * Rate-limit window for credential attempts: 15 minutes.
@@ -127,13 +129,16 @@ export function buildAuthRateLimiter(
  * addresses; this one counts by the account named in the attempt, whatever
  * address it came from (DOR-3172). Higher than the per-address limit, so one
  * person mistyping on two devices never meets it, and a sign-in that works
- * gives its count back. It can only ever slow a sign-in from another device:
- * at this computer DorkOS asks for no password unless told to.
+ * gives its count back.
+ *
+ * So that a guesser can never lock the owner out, the count is kept apart for
+ * each way in (the tunnel, Wi-Fi, managed remote access, ...), and a sign-in at
+ * this computer is never counted or refused here at all.
  */
 const DEFAULT_MAX_ACCOUNT_FAILURES = 20;
 
-/** Longest sign-in body read to find the account, in characters. */
-const MAX_ACCOUNT_BODY_CHARS = 8192;
+/** Longest sign-in body read to find the account, in bytes. */
+const MAX_ACCOUNT_BODY_BYTES = 8192;
 
 /** Options for {@link buildAccountSignInLimiter}. Omitted values use the defaults. */
 export interface AccountSignInLimitOptions {
@@ -143,12 +148,15 @@ export interface AccountSignInLimitOptions {
 
 /**
  * The account a password sign-in names, lower-cased, or `undefined` when its
- * body names none. Reads a copy of the body, so the handler still reads it.
+ * body names none or is too long to be a sign-in. Reads a copy of the body, so
+ * the handler still reads it.
  */
 async function signInAccount(request: Request): Promise<string | undefined> {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (!Number.isFinite(declared) || declared > MAX_ACCOUNT_BODY_BYTES) return undefined;
   try {
     const text = await request.clone().text();
-    if (text.length > MAX_ACCOUNT_BODY_CHARS) return undefined;
+    if (text.length > MAX_ACCOUNT_BODY_BYTES) return undefined;
     const email = (JSON.parse(text) as { email?: unknown }).email;
     if (typeof email !== 'string') return undefined;
     const account = email.trim().toLowerCase();
@@ -161,8 +169,8 @@ async function signInAccount(request: Request): Promise<string | undefined> {
 /**
  * Build the per-account limiter for `POST /api/auth/sign-in/email`. Mounted
  * beside {@link buildAuthRateLimiter}, before the body is parsed. Every
- * attempt is counted against its account; one that signs in is given back, so
- * only failures fill the window.
+ * attempt from another device is counted against its account and its way in;
+ * one that signs in is given back, so only failures fill the window.
  *
  * @param options - Per-limiter overrides (default: 20 failures per window).
  * @returns Hono middleware returning the same JSON `429` as the per-address limit.
@@ -178,9 +186,11 @@ export function buildAccountSignInLimiter(
     if (c.req.method !== 'POST' || c.req.path.toLowerCase() !== '/api/auth/sign-in/email') {
       return next();
     }
+    const requestClass = classifyRequest(honoRequestFacts(c), currentServerRole());
+    if (requestClass.kind === 'this-computer') return next();
     const account = await signInAccount(c.req.raw);
     if (!account) return next();
-    const decision = limiter.hit(`account:${account}`);
+    const decision = limiter.hit(`${requestClass.route}:${account}`);
     if (!decision.allowed) {
       recordSignInRateLimited(c.req.header('user-agent'));
       return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
