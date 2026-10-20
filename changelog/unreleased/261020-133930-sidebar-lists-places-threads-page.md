@@ -15,7 +15,7 @@ covers:
 - The sidebar now lists places, never single chats or threads. From the top: your workspace and New, a search box, Threads and Directory, your sections, Channels, Direct messages and Add-ons (DOR-3092)
 - An agent shows up in Direct messages once you have messaged it or pinned it, and clicking it opens your chat with it. Every other agent is in the Directory
 - A "Message an agent or person" row at the end of Direct messages opens the Directory to pick someone
-- On a phone there are three tabs: Home, DorkBot and You. Home holds the whole list, with anything waiting on you as a card at the top
+- On a phone there are three tabs: Home, DorkBot and You. Home holds the whole list. Anything waiting on you sits at the top: approvals, questions and suggested schedules to answer there, and chats that stopped with an error
 
 ### Removed
 
