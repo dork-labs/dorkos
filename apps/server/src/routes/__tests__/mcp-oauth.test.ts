@@ -231,7 +231,7 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
       expect(write.status).toBe(401);
       expect(spy).toHaveBeenCalledTimes(1);
     } finally {
-      vi.mocked(configManager.get).mockReturnValue(null);
+      vi.mocked(configManager.get).mockReturnValue(null as never);
     }
   });
 
