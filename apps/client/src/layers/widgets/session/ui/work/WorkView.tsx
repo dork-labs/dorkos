@@ -14,8 +14,8 @@ import {
 } from 'react';
 import { ArrowUpRight, Terminal } from 'lucide-react';
 import type { ChatMessage } from '@/layers/shared/model';
-import { activityVerb, useLatest } from '@/layers/shared/lib';
-import { useModels, useSessionToolActivity } from '@/layers/entities/session';
+import { useLatest } from '@/layers/shared/lib';
+import { useModels } from '@/layers/entities/session';
 import { formatTime } from '@/layers/features/conversation';
 import { statusModelLabel, useSessionDiagnostics } from '@/layers/features/status';
 import { AssistantMessageContent, MessageProvider } from '@/layers/features/chat';
@@ -24,6 +24,15 @@ import { useWorkPanelFocusStore } from '../../model/work-panel-focus';
 
 /** How near the end still counts as at the end, in pixels. */
 const FOLLOW_SLACK_PX = 48;
+
+/**
+ * The session's tool card dims a finished step to half strength, which in the
+ * session reads as "done, step past it". Here the steps are what a person came
+ * to read, so a finished one stays at full strength with its label on the
+ * secondary text colour (AA). Only in the Work tab: the transcript keeps its dim.
+ */
+const WORK_STEPS =
+  '[&_[data-testid=tool-call-card]]:opacity-100 [&_[data-testid=tool-call-card]_.font-mono]:text-muted-foreground';
 
 /** The heading of the turn running now: it may answer a task or another chat. */
 const LIVE_HEADING = 'Now · working';
@@ -147,7 +156,7 @@ export function WorkView({
           {turns.map((turn) => (
             <WorkTurnCard key={turn.key} turn={turn} sessionId={sessionId!} />
           ))}
-          {working && !hasLive && sessionId !== null && <StartingTurn sessionId={sessionId} />}
+          {working && !hasLive && sessionId !== null && <StartingTurn />}
         </>
       )}
     </div>
@@ -222,9 +231,11 @@ function WorkTurnCard({ turn, sessionId }: { turn: WorkTurn; sessionId: string }
       className="focus-ring rounded-lg border px-3 py-2"
     >
       <h3 className="text-foreground line-clamp-2 text-xs font-medium">{heading}</h3>
-      {turn.replies.map((reply) => (
-        <WorkReply key={reply.id} reply={reply} sessionId={sessionId} />
-      ))}
+      <div data-slot="work-steps" className={WORK_STEPS}>
+        {turn.replies.map((reply) => (
+          <WorkReply key={reply.id} reply={reply} sessionId={sessionId} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -263,9 +274,8 @@ const WorkReply = memo(function WorkReply({
   );
 });
 
-/** A turn that has started and not done anything yet: what the agent is doing. */
-function StartingTurn({ sessionId }: { sessionId: string }) {
-  const activity = useSessionToolActivity(sessionId);
+/** A turn that has started and not taken a step yet. */
+function StartingTurn() {
   return (
     <section
       data-work-turn="live"
@@ -275,7 +285,7 @@ function StartingTurn({ sessionId }: { sessionId: string }) {
       className="focus-ring rounded-lg border px-3 py-2"
     >
       <h3 className="text-foreground text-xs font-medium">{LIVE_HEADING}</h3>
-      <p className="text-muted-foreground mt-1 text-xs">{activityVerb('streaming', activity)}</p>
+      <p className="text-muted-foreground mt-1 text-xs">Waiting for the first step</p>
     </section>
   );
 }

@@ -556,7 +556,10 @@ export function AssistantMessageContent({
           gaps between tool calls instead of collapsing and reopening on each
           one. A message read back from history never carries it, so a reopened
           transcript shows the settled summary and nothing moves. */}
-      {show !== 'reply' && (
+      {/* Only where the cards above it can hide themselves. A DM's reply has
+          none, and the Work tab shows every step, so there its "show all"
+          would open nothing that is not already on screen (DOR-3075). */}
+      {show === 'all' && (
         <TouchChipStrip
           parts={parts}
           sessionId={sessionId}

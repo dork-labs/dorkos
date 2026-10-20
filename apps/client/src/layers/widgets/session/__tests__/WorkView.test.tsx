@@ -236,7 +236,43 @@ describe('WorkView', () => {
 
     cleanup();
     draw({ messages: MESSAGES.slice(0, 5), working: true });
-    expect(screen.getByRole('region', { name: 'Now · working' })).toHaveTextContent('Working…');
+    expect(screen.getByRole('region', { name: 'Now · working' })).toHaveTextContent(
+      'Waiting for the first step'
+    );
+  });
+
+  it('keeps finished steps readable, and only here', () => {
+    draw();
+    const steps = document.querySelector('[data-work-turn="a2"] [data-slot="work-steps"]');
+    // The session dims a finished card; the Work tab undoes that and sets the
+    // label on the secondary text colour.
+    expect(steps?.className).toContain('[&_[data-testid=tool-call-card]]:opacity-100');
+    expect(steps?.className).toContain(
+      '[&_[data-testid=tool-call-card]_.font-mono]:text-muted-foreground'
+    );
+    expect(steps?.querySelector('[data-testid="tool-call-card"]')).toBeInTheDocument();
+  });
+
+  it('draws no "show all" row, since every step is already shown', () => {
+    const touched: ChatMessage[] = [
+      MESSAGES[2]!,
+      {
+        ...MESSAGES[3]!,
+        parts: [
+          {
+            type: 'tool_call',
+            toolCallId: 'e1',
+            toolName: 'Edit',
+            input: '{"file_path":"/src/sidebar.ts","old_string":"a","new_string":"b"}',
+            status: 'complete',
+          },
+        ],
+      },
+    ];
+    draw({ messages: touched });
+    expect(document.querySelector('[data-work-turn]')).toBeInTheDocument();
+    expect(screen.queryByTestId('touch-chip-strip')).toBeNull();
+    expect(screen.queryByText('show all')).toBeNull();
   });
 
   it('says so when there is nothing yet', () => {
