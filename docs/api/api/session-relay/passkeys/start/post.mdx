@@ -18,7 +18,7 @@ _openapi:
           own for a DorkOS Cloud account). Answers the approve page to open:
           `<origin>/enrol#<base64url statement>`. The statement sends the
           browser back to the loopback address this request arrived on
-          (`127.0.0.1`, or `localhost` for `::1`) at this server's port,
+          (`127.0.0.1`, or `[::1]` for `::1`) at this server's port,
           `/relay-passkey`. Only a direct request on this computer passes, so a
           container install cannot add a passkey."
 ---

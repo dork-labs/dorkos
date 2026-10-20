@@ -23,8 +23,10 @@
  * unlinking or linking again drops the live statement.
  *
  * `returnTo` names the loopback address the `/start` request actually arrived
- * on: `127.0.0.1` for IPv4 loopback, `localhost` for `::1` (a default install
- * binds `localhost`, which on macOS is `::1` only).
+ * on: `127.0.0.1` for IPv4 loopback, `[::1]` for `::1` (a default install
+ * binds `localhost`, which on macOS is `::1` only). Never the name `localhost`:
+ * a loopback redirect uses the IP literal (RFC 8252 §8.3), because a hosts file,
+ * a VPN or an old browser can resolve the name somewhere else.
  *
  * **Residuals.** Only a request the classifier calls this computer can enrol,
  * so a container install, whose browser reaches it through the bridge, cannot
@@ -51,7 +53,10 @@ import {
   type PasskeyEnrolStatementV1,
 } from '@dork-labs/cloud-api';
 import { links } from '@dorkos/shared/links';
-import type { SessionRelayPasskeyFinishBodySchema } from '@dorkos/shared/session-relay-link';
+import {
+  SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS,
+  type SessionRelayPasskeyFinishBodySchema,
+} from '@dorkos/shared/session-relay-link';
 import type { z } from 'zod';
 import { APPROVAL_KEY_ALGS, type ApprovalKey, type ApprovalKeys } from '../approval-key-store.js';
 
@@ -140,14 +145,14 @@ export interface EnrolmentPin {
 
 /**
  * The host a loopback socket address is reached by in a browser: `127.0.0.1`
- * for IPv4 loopback (plain or IPv4-mapped), `localhost` for `::1`, and
+ * for IPv4 loopback (plain or IPv4-mapped), `[::1]` for `::1`, and
  * `undefined` for anything else.
  */
 export function loopbackReturnHost(address: string | undefined): string | undefined {
   if (!address) return undefined;
   const v4 = address.replace(/^::ffff:/i, '');
   if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v4)) return '127.0.0.1';
-  if (address === '::1') return 'localhost';
+  if (address === '::1') return '[::1]';
   return undefined;
 }
 
@@ -306,8 +311,11 @@ export class PasskeyEnrolment {
       if (error instanceof StepUpStatementError) return 'cannot-start';
       throw error;
     }
-    this.live = { bytes, statement, label: input.label };
     const encoded = encodeStepUpBase64url(bytes);
+    // Many long excluded ids can make a statement the contract allows but `/finish`
+    // would refuse: never issue one a passkey could be made for and then turned away.
+    if (encoded.length > SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS) return 'cannot-start';
+    this.live = { bytes, statement, label: input.label };
     return {
       statement: encoded,
       challenge: await stepUpChallenge(bytes),

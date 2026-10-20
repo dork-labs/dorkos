@@ -2,7 +2,9 @@
  * `GET /relay-passkey`: the page the approve page sends the browser back to
  * after it made an approvals passkey (spec `everything-is-a-space` B4c, plan
  * part 1, "Enrolment transport", RFC 8252 style). The enrol statement names
- * it as `returnTo`: `http://127.0.0.1:<this server's port>/relay-passkey`.
+ * it as `returnTo`: `http://127.0.0.1:<port>/relay-passkey`, or `http://[::1]:<port>/…`
+ * when `/start` arrived over IPv6. Never `localhost`: a name a hosts file or VPN can
+ * point elsewhere, where the IP literal cannot (RFC 8252 §8.3).
  *
  * The approve page navigates here with everything in the fragment, which
  * never reaches any server's logs:
