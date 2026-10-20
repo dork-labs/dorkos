@@ -251,16 +251,23 @@ export function RoomMessage({
   });
   // An agent's card over its face and name while the DM view is on (DOR-3074):
   // a click opens it, and its Message opens the agent's DM. `null` otherwise.
-  const agentCard = useRoomAgentCard({
-    agentRef: authorRef?.agentRef,
-    identity: {
+  // One identity per change of who wrote it, so the card's wrappers keep their
+  // identity across the feed's re-renders rather than being rebuilt each time.
+  const authorHandle = authorRef?.handle ?? undefined;
+  const cardIdentity = useMemo(
+    () => ({
       kind: author.kind,
       displayName: author.displayName,
-      handle: authorRef?.handle ?? undefined,
+      handle: authorHandle,
       color: author.color,
       emoji: author.emoji,
       imageUrl: author.imageUrl,
-    },
+    }),
+    [author.kind, author.displayName, authorHandle, author.color, author.emoji, author.imageUrl]
+  );
+  const agentCard = useRoomAgentCard({
+    agentRef: authorRef?.agentRef,
+    identity: cardIdentity,
     onViewProfile: viewAuthorProfile,
   });
   const handleKeyDown = useEntryRowKeys({

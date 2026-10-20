@@ -14,7 +14,7 @@
  *
  * @module widgets/room-view/ui/MentionPillRenderer
  */
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import type { Components } from 'streamdown';
 import {
   IdentityHoverCard,
@@ -96,26 +96,36 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
   // disagreeing: 🦊 in the gutter, a grey letter in the card describing it.
   const face = author ? resolveIdentityFace({ record: author, override: agent?.visual }) : null;
   const memberId = author ? profileMemberIdOf(author, agent?.memberId) : undefined;
-  const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
-  const identity: IdentityHoverCardDescriptor | null =
-    author && face
-      ? {
-          kind: author.kind,
-          displayName: author.displayName,
-          handle: author.handle ?? undefined,
-          color: face.color,
-          emoji: face.emoji,
-          // The card and the message gutter draw the same person, so they
-          // climb the same ladder. Omitting this is how a photo would show
-          // beside somebody's message and an emoji inside the card.
-          imageUrl: face.imageUrl,
-          origin: author.origin,
-          // A chip per fact the card is handed and nothing for one it is not,
-          // so an agent whose manifest never resolved reads as name and handle
-          // alone. Spelled out because `memberId` is a routing fact.
-          agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
-        }
-      : null;
+  const viewProfile = useMemo(
+    () => (memberId === undefined ? undefined : () => openProfile(memberId)),
+    [memberId, openProfile]
+  );
+  // Memoized so the card's wrappers keep their identity across re-renders.
+  const faceColor = face?.color;
+  const faceEmoji = face?.emoji;
+  const faceImage = face?.imageUrl;
+  const identity = useMemo<IdentityHoverCardDescriptor | null>(
+    () =>
+      author
+        ? {
+            kind: author.kind,
+            displayName: author.displayName,
+            handle: author.handle ?? undefined,
+            color: faceColor,
+            emoji: faceEmoji,
+            // The card and the message gutter draw the same person, so they
+            // climb the same ladder. Omitting this is how a photo would show
+            // beside somebody's message and an emoji inside the card.
+            imageUrl: faceImage,
+            origin: author.origin,
+            // A chip per fact the card is handed and nothing for one it is not,
+            // so an agent whose manifest never resolved reads as name and handle
+            // alone. Spelled out because `memberId` is a routing fact.
+            agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
+          }
+        : null,
+    [author, faceColor, faceEmoji, faceImage, agent]
+  );
   // With the DM view on, an agent's pill opens its card on a click, and the
   // card's Message opens its DM (DOR-3074). `null` otherwise.
   const agentCard = useRoomAgentCard({
@@ -133,25 +143,29 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
   // hover card gives the trigger focus already, and this is what makes that
   // focus mean something. `Space` as well as `Enter` because a role of button
   // promises both.
-  const pillControl = viewProfile
-    ? {
-        role: 'button',
-        tabIndex: 0,
-        // Names the ACTION, the same way the Team card and the sidebar face do
-        // — the visible text is only who, which is the half a reader can
-        // already see. The name stays inside the label, so this still satisfies
-        // "label in name" for anyone driving by voice.
-        'aria-label': `View ${author.displayName}’s profile`,
-        // With the card on a click, the click is the card's; Enter and Space
-        // still open the profile, so a keyboard keeps its door.
-        ...(agentCard ? {} : { onClick: viewProfile }),
-        onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          viewProfile();
-        },
-      }
-    : {};
+  // With the DM view on, an agent's pill opens its card by click, tap, Enter
+  // or Space, and says so: named for who it is, announced as opening a
+  // dialog, and the card's Profile is the profile door (DOR-3074).
+  const cardControl = { role: 'button', tabIndex: 0, 'aria-haspopup': 'dialog' as const };
+  const pillControl = agentCard
+    ? cardControl
+    : viewProfile
+      ? {
+          role: 'button',
+          tabIndex: 0,
+          // Names the ACTION, the same way the Team card and the sidebar face do
+          // — the visible text is only who, which is the half a reader can
+          // already see. The name stays inside the label, so this still satisfies
+          // "label in name" for anyone driving by voice.
+          'aria-label': `View ${author.displayName}’s profile`,
+          onClick: viewProfile,
+          onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            viewProfile();
+          },
+        }
+      : {};
 
   const pill = (
     <MentionPill

@@ -424,4 +424,3 @@ export { awayFromTheComputerSentence, serverSentence } from './server-sentence';
 export { appRoutes } from './route-factory';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
-export { readDmViewEnabled } from './dm-view';

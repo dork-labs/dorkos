@@ -480,6 +480,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // would be asserting the stub.
   resolveSessionForCwd: (await importOriginal<typeof import('@/layers/entities/session')>())
     .resolveSessionForCwd,
+  // Real, and the door every agent row goes through (DOR-3074): the Direct
+  // chat, or the latest chat for anyone refused one.
+  agentChatTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .agentChatTarget,
   beginSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
     .beginSessionNavigation,
   notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())

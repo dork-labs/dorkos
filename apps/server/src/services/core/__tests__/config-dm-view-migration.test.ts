@@ -18,6 +18,7 @@ vi.hoisted(() => {
 });
 
 import { ConfigManager, seedUiDmViewLeaves } from '../config-manager.js';
+import { findOperatorOnlyPaths } from '../operator/config-write-policy.js';
 
 const homes: string[] = [];
 
@@ -80,5 +81,12 @@ describe("the '0.125.0' DM view migration", () => {
     const empty = { get: () => undefined, set: vi.fn() };
     seedUiDmViewLeaves(empty);
     expect(empty.set).not.toHaveBeenCalled();
+  });
+
+  it('lets only a person turn either on or off', () => {
+    expect(findOperatorOnlyPaths({ ui: { dmView: true, showSessions: false } })).toEqual([
+      'ui.dmView',
+      'ui.showSessions',
+    ]);
   });
 });

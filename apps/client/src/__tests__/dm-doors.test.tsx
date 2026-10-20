@@ -109,7 +109,7 @@ function Doors() {
 }
 
 /** Mount the doors on a room page, with the DM view on. */
-function mountDoors() {
+function mountDoors(options: { owner?: boolean } = {}) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
@@ -126,12 +126,21 @@ function mountDoors() {
     }),
     listRooms: vi.fn().mockResolvedValue([]),
     reportError: vi.fn().mockResolvedValue(undefined),
-    openDirectChat: vi.fn().mockResolvedValue({
-      sessionId: 'direct-chat',
-      sessionIds: ['direct-chat'],
-      roomId: 'dm-room',
-      agentPath: WARDEN_PATH,
-    }),
+    openDirectChat:
+      options.owner === false
+        ? vi.fn().mockRejectedValue(Object.assign(new Error('owner only'), { status: 403 }))
+        : vi.fn().mockResolvedValue({
+            sessionId: 'direct-chat',
+            sessionIds: ['direct-chat'],
+            roomId: 'dm-room',
+            agentPath: WARDEN_PATH,
+          }),
+    // Anyone but the owner gets the agent's latest chat with them.
+    listSessions: vi
+      .fn()
+      .mockResolvedValue({
+        sessions: [{ id: 'latest-with-warden', cwd: WARDEN_PATH, title: 'Hi' }],
+      }),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const searchSchema = mergeDialogSearch(
@@ -222,5 +231,39 @@ describe('every door to an agent opens its DM, with the DM view on', () => {
     await waitFor(() =>
       expect(Object.keys(useInteractionStore.getState().opened)).toContain(`agent:${WARDEN_PATH}`)
     );
+  });
+});
+
+describe('every door, for anyone but the owner', () => {
+  // Only the owner has Direct chats: the server refuses anyone else, and every
+  // door then opens the agent's latest chat with them, never an error.
+  const LATEST = { pathname: '/session', search: { session: 'latest-with-warden' } };
+
+  it('the card’s Message', async () => {
+    const view = mountDoors({ owner: false });
+    await view.ready();
+
+    await userEvent.click(screen.getByText('Warden’s face'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Message' }));
+
+    await waitFor(() => expect(view.where()).toEqual(LATEST));
+  });
+
+  it('the agent picked in ⌘K', async () => {
+    const view = mountDoors({ owner: false });
+    await view.ready();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pick Warden in the palette' }));
+
+    await waitFor(() => expect(view.where()).toEqual(LATEST));
+  });
+
+  it('the profile’s Open chat', async () => {
+    const view = mountDoors({ owner: false });
+    await view.ready();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open chat' }));
+
+    await waitFor(() => expect(view.where()).toEqual(LATEST));
   });
 });

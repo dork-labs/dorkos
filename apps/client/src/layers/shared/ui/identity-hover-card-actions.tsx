@@ -7,6 +7,7 @@
  */
 import { SquareTerminal } from 'lucide-react';
 import { Button } from './button';
+import { moveBetweenCardActions } from './identity-hover-card-keyboard';
 
 /** The card's role and status lines. */
 export interface IdentityHoverCardAbout {
@@ -62,9 +63,10 @@ export function IdentityHoverCardAboutLines({
  * The action row: Message first and filled, Profile beside it, and the
  * session as a quiet line under both.
  *
- * Like the card's own footer, this is the POINTER path. A keyboard reaches the
- * same places through the trigger's own click (a name or a mention opens the
- * profile) and the message's action capsule.
+ * A keyboard reaches it too: Enter or Space on a trigger that opens the card
+ * on a press (an agent's face, name or mention in a room) steps in to the
+ * first action, the arrows and Tab move between them, and Escape steps back
+ * out to the trigger (`identity-hover-card-keyboard.ts`).
  *
  * @param props.actions - What to offer.
  * @param props.onAct - Called before any action runs: hands focus back to the
@@ -85,10 +87,17 @@ export function IdentityHoverCardActionRow({
     <div
       className="border-border mt-auto flex flex-col gap-2 border-t p-3"
       data-slot="identity-hover-card-actions"
+      role="group"
+      aria-label="Actions"
     >
       <div className="flex gap-2">
         {actions.onMessage && (
-          <Button size="xs" className="flex-1" onClick={run(actions.onMessage)}>
+          <Button
+            size="xs"
+            className="flex-1"
+            onClick={run(actions.onMessage)}
+            onKeyDown={moveBetweenCardActions}
+          >
             Message
           </Button>
         )}
@@ -98,6 +107,7 @@ export function IdentityHoverCardActionRow({
             variant="outline"
             className="flex-1"
             onClick={run(actions.onViewProfile)}
+            onKeyDown={moveBetweenCardActions}
           >
             Profile
           </Button>
@@ -108,6 +118,7 @@ export function IdentityHoverCardActionRow({
           type="button"
           data-slot="identity-hover-card-session"
           onClick={run(actions.session.onOpen)}
+          onKeyDown={moveBetweenCardActions}
           className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex min-w-0 items-center gap-1.5 rounded-sm text-left text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
         >
           <SquareTerminal className="size-3.5 shrink-0" aria-hidden />

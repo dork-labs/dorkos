@@ -17,6 +17,7 @@ import {
   type IdentityHoverCardAbout,
   type IdentityHoverCardActions,
 } from './identity-hover-card-actions';
+import { useIdentityCardKeyboard } from './identity-hover-card-keyboard';
 import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
 
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
@@ -271,9 +272,18 @@ function IdentityHoverCard({
       if (isTouchLikePressRef.current) setOpen(true);
     },
   });
+  // A trigger that opens the card on a press opens it on Enter and Space too,
+  // and the keyboard steps inside to the actions and back out on Escape.
+  const { contentRef, handleOpenChange, onTriggerKeyDown, contentHandlers } =
+    useIdentityCardKeyboard({
+      open,
+      setOpen,
+      triggerRef,
+      enabled: openOnClick && actions !== undefined,
+    });
 
   return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={OPEN_DELAY_MS}>
+    <HoverCard open={open} onOpenChange={handleOpenChange} openDelay={OPEN_DELAY_MS}>
       <HoverCardTrigger
         asChild
         ref={triggerRef}
@@ -288,11 +298,16 @@ function IdentityHoverCard({
             event.pointerType === 'touch' || event.pointerType === 'pen';
           longPress.onPointerDown(event);
         }}
-        {...(openOnClick ? { onClick: () => setOpen(true) } : {})}
+        {...(openOnClick ? { onClick: () => setOpen(true), onKeyDown: onTriggerKeyDown } : {})}
       >
         {children}
       </HoverCardTrigger>
       <HoverCardContent
+        ref={contentRef}
+        {...contentHandlers}
+        // With actions on it the card is something a keyboard steps into, so
+        // it says what it is: the dialog its trigger announces it opens.
+        {...(actions ? { role: 'dialog', 'aria-label': displayName } : {})}
         data-slot="identity-hover-card"
         align="start"
         className={cn('flex w-64 flex-col gap-0 overflow-hidden p-0', className)}

@@ -12,6 +12,8 @@ import {
   useOpenConnections,
   useFeedbackDialogStore,
   useTransport,
+  readExperimentEnabled,
+  DM_VIEW_EXPERIMENT,
 } from '@/layers/shared/model';
 import {
   openLink,
@@ -19,7 +21,6 @@ import {
   useCopyFeedback,
   toSession,
   newSessionTarget,
-  readDmViewEnabled,
 } from '@/layers/shared/lib';
 import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
@@ -127,7 +128,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     (agent: AgentPathEntry) => {
       // With the DM view on, picking an agent opens its DM, the same chat every
       // other door to it opens (DOR-3074), rather than its newest session.
-      if (readDmViewEnabled(queryClient)) {
+      // Read at the click, from the config cache, rather than subscribed to:
+      // the palette draws nothing differently either way.
+      if (readExperimentEnabled(queryClient, DM_VIEW_EXPERIMENT)) {
         closePalette();
         void openDirectChat({ agentPath: agent.projectPath }).then((opened) => {
           if (opened) recordAgentOpened(agent.projectPath);

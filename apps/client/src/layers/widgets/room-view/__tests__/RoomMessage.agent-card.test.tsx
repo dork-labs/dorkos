@@ -5,7 +5,7 @@
  * view off, the face is today's door to the profile and nothing else.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,6 +22,8 @@ import { agentFacesByRef, type RosterAgentInfo } from '../lib/agent-details';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
 import { RoomMessage } from '../ui/RoomMessage';
+import { useRoomAgentCard, type RoomAgentCard } from '../ui/identity/room-agent-card';
+import { renderHook } from '@testing-library/react';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
@@ -102,16 +104,19 @@ const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
 
 const FLEET: RoomAgentDirectory = { info: FLEET_INFO, faces: agentFacesByRef(FLEET_INFO) };
 
-function entry(authorId: string): RoomEntry {
+function entry(authorId: string, text = 'shipped it'): RoomEntry {
+  const at = text.indexOf('@warden');
+  const spans =
+    at === -1 ? [] : [{ offset: at, length: '@warden'.length, authorId: WARDEN_AUTHOR_ID }];
   return {
     roomId: 'room-1',
     seq: 1,
     id: 'entry-1',
     authorId,
     kind: 'post',
-    body: { text: 'shipped it' },
-    mentions: [],
-    mentionSpans: [],
+    body: { text },
+    mentions: spans.map((span) => span.authorId),
+    mentionSpans: spans,
     sessionId: null,
     cascadeRoot: 'entry-1',
     cascadeDepth: 0,
@@ -123,7 +128,7 @@ function entry(authorId: string): RoomEntry {
 }
 
 /** Mount one row, with the DM view on or off. */
-function renderRow(author: RosterAuthor, dmView: boolean) {
+function renderRow(author: RosterAuthor, dmView: boolean, text?: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -147,7 +152,7 @@ function renderRow(author: RosterAuthor, dmView: boolean) {
   render(
     <RoomMessage
       roomId="room-1"
-      entry={entry(author.id)}
+      entry={entry(author.id, text)}
       author={toMessageAuthor(author.id, AUTHORS, FLEET.faces)}
       authorRef={author}
       authors={AUTHORS}
@@ -217,6 +222,65 @@ describe('RoomMessage with the DM view on', () => {
   });
 });
 
+describe('RoomMessage with the DM view on, by keyboard', () => {
+  it('makes the face and the name buttons named for the agent that open a dialog', async () => {
+    renderRow(WARDEN, true);
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('button', { name: 'Warden' })
+          .filter((button) => button.getAttribute('aria-haspopup') === 'dialog')
+      ).toHaveLength(2)
+    );
+    // The name is the tab stop; the face stays out of the tab order, as faces do.
+    const face = document.querySelector('[data-slot="room-agent-card-face"]');
+    expect(face).toHaveAttribute('tabindex', '-1');
+    expect(document.querySelector('[data-slot="room-agent-card-name"]')).not.toHaveAttribute(
+      'tabindex'
+    );
+  });
+
+  it('opens the card on Enter, steps in to Message, moves on with the arrows, and Escape returns', async () => {
+    const user = userEvent.setup();
+    renderRow(WARDEN, true);
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="room-agent-card-name"]')).not.toBeNull()
+    );
+    const name = document.querySelector('[data-slot="room-agent-card-name"]') as HTMLElement;
+
+    name.focus();
+    await user.keyboard('{Enter}');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Warden' });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Message' })).toHaveFocus()
+    );
+    await user.keyboard('{ArrowRight}');
+    expect(within(dialog).getByRole('button', { name: 'Profile' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(name).toHaveFocus();
+  });
+
+  it('names a mention for who it is and opens the same card from it', async () => {
+    const user = userEvent.setup();
+    renderRow(ANA, true, 'ping @warden about it');
+
+    const pill = await waitFor(() => {
+      const found = document.querySelector('[aria-haspopup="dialog"][role="button"]');
+      if (!found) throw new Error('no card on the mention yet');
+      return found as HTMLElement;
+    });
+    expect(pill).not.toHaveAttribute('aria-label', 'View Warden’s profile');
+
+    pill.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog', { name: 'Warden' })).toBeInTheDocument();
+  });
+});
+
 describe('RoomMessage with the DM view off', () => {
   it('draws no card: the face stays the door to the profile', async () => {
     renderRow(WARDEN, false);
@@ -228,5 +292,39 @@ describe('RoomMessage with the DM view off', () => {
     });
     expect(face).toHaveAttribute('role', 'button');
     expect(document.querySelector('[data-slot="room-agent-card-face"]')).toBeNull();
+  });
+});
+
+describe('useRoomAgentCard', () => {
+  it('keeps its wrappers across re-renders while the agent stays the same', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue({
+        version: '1.0.0',
+        experiments: [
+          { key: 'ui.dmView', title: '', description: '', enabled: true, lockedByEnv: false },
+        ],
+      }),
+      listMeshAgentPaths: vi
+        .fn()
+        .mockResolvedValue({ agents: [{ id: WARDEN_MEMBER_ID, projectPath: WARDEN_PATH }] }),
+    });
+    const identity = { kind: 'agent' as const, displayName: 'Warden' };
+    const { result, rerender } = renderHook(
+      () => useRoomAgentCard({ agentRef: WARDEN_REF, identity }),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>
+            <TransportProvider transport={transport}>
+              <AgentInfoProvider known={FLEET}>{children}</AgentInfoProvider>
+            </TransportProvider>
+          </QueryClientProvider>
+        ),
+      }
+    );
+    await waitFor(() => expect(result.current).not.toBeNull());
+    const first: RoomAgentCard | null = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 });

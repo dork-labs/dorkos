@@ -4,7 +4,7 @@
  *
  * @module widgets/room-view/ui/identity/room-agent-card
  */
-import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react';
+import { useMemo, type ReactElement, type ReactNode } from 'react';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { cn } from '@/layers/shared/lib';
@@ -69,8 +69,11 @@ export interface RoomAgentCard {
  * person, and for an agent the fleet cannot place. `null` means the row draws
  * exactly what it did before.
  *
- * Clicking the face or the name opens the card (a pointer or a finger); the
- * keyboard keeps the row's own "View profile" in its action capsule.
+ * The face and the name become buttons named for the agent that open its card:
+ * a click, a tap, or Enter or Space, which also steps focus into the card;
+ * Escape steps back. The name takes a tab stop, which is how a keyboard
+ * reaches Message from a room; the face stays out of the tab order, as faces
+ * always have (`MessageAuthorAvatar`), so a message costs one more stop, not two.
  *
  * @param input - See {@link RoomAgentCardInput}.
  */
@@ -99,19 +102,31 @@ export function useRoomAgentCard(input: RoomAgentCardInput): RoomAgentCard | nul
       wrap,
       wrapAvatar: (avatar) =>
         wrap(
-          <span className="inline-flex cursor-pointer" data-slot="room-agent-card-face">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={identity.displayName}
+            aria-haspopup="dialog"
+            className="focus-ring inline-flex cursor-pointer rounded-sm"
+            data-slot="room-agent-card-face"
+          >
             {avatar}
-          </span>,
+          </button>,
           { openOnClick: true }
         ),
       wrapName: (name) =>
         wrap(
-          cloneElement(name as ReactElement<{ className?: string }>, {
-            className: cn(
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            className={cn(
               (name.props as { className?: string }).className,
-              'cursor-pointer underline-offset-4 hover:underline'
-            ),
-          }),
+              'focus-ring cursor-pointer rounded-sm text-left underline-offset-4 hover:underline'
+            )}
+            data-slot="room-agent-card-name"
+          >
+            {identity.displayName}
+          </button>,
           { openOnClick: true }
         ),
     };
