@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): room agents keep answering when an account runs out (DOR-3143)'
+  - "fix(rooms): keep flagged accounts out of automatic moves, and keep a seat's own level (DOR-3143)"
 ---
 
 ### Added
