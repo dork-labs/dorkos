@@ -218,6 +218,35 @@ describe('Direct messages — an agent is its direct message', () => {
     expect(ops?.rows[0]?.unread).toEqual({ tier: 'directed', count: 2 });
   });
 
+  it('draws an agent a smart section matches there, and not in Direct messages', () => {
+    const smart: SidebarGroup = {
+      ...manualGroup('codex', 'Codex', []),
+      kind: 'smart',
+      rules: { runtimes: ['codex'] },
+    };
+    // Pinned, so without the smart section it would be a Direct messages row.
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        pinned: [{ kind: 'agent', path: SAFFRON }],
+        groups: [smart],
+      }),
+    };
+    expect(keys(state, 'group:codex')).toEqual([`agent:${SAFFRON}`]);
+    expect(keys(state, 'dms')).not.toContain(`agent:${SAFFRON}`);
+    const everyRow = sections(state).flatMap((entry) => entry.rows.map((row) => row.key));
+    expect(everyRow.filter((key) => key === `agent:${SAFFRON}`)).toHaveLength(1);
+
+    // A match the section's own filter hides is still drawn, in Direct messages.
+    const filtered: SidebarState = {
+      ...state,
+      prefs: prefs({ ...state.prefs, groups: [{ ...smart, displayFilter: 'attention' }] }),
+    };
+    expect(keys(filtered, 'group:codex')).toEqual([]);
+    expect(keys(filtered, 'dms')).toContain(`agent:${SAFFRON}`);
+  });
+
   it('silences the agent row when its conversation is muted, an @mention still piercing', () => {
     const muted: SidebarState = {
       ...busyFixture,
@@ -388,6 +417,16 @@ describe('BC-31 — a folded section keeps its signal', () => {
       'room:dm-priya',
     ]);
     expect(dms?.rollup?.keptRows.some((row) => row.draggable)).toBe(false);
+  });
+
+  it('keeps the way to message an agent when an empty Direct messages is folded', () => {
+    const state: SidebarState = {
+      ...firstRunFixture,
+      prefs: prefs({ ...firstRunFixture.prefs, sections: { dms: { collapsed: true } } }),
+    };
+    const dms = section(state, 'dms');
+    expect(dms?.collapsed).toBe(true);
+    expect(dms?.rollup?.keptRows.map((row) => row.primary)).toEqual(['Message an agent']);
   });
 
   it('counts a working agent even before the recent window has seen its turn', () => {

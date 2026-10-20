@@ -516,9 +516,13 @@ function directMessagesSection(
     state,
     'section:dms',
     isWorking
-  );
-  // `section` answers `null` only for no rows, and the door is always a row.
-  return filled as SidebarSectionModel;
+  ) as SidebarSectionModel; // `null` only for no rows, and the door is always a row.
+  // **Folded and empty, the door stays.** It is the section's whole content
+  // and the one way to start a conversation, so folding must not hide it.
+  if (rows.length === 0 && filled.rollup !== undefined) {
+    return { ...filled, rollup: { ...filled.rollup, keptRows: [door] } };
+  }
+  return filled;
 }
 
 /**
@@ -542,15 +546,29 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
   const recencyOf = recencyResolver(byPath, rooms, dms);
   const isWorking = rowIsWorking(state, rooms);
 
+  const groupSections = state.prefs.groups.map((group) =>
+    groupSection(group, state, ctx, byPath, rooms, isWorking, recencyOf)
+  );
+
+  // **An agent is one row** (DOR-3092). One filed into a hand-made section, or
+  // matched by a smart section's rules, is drawn there and not in Direct
+  // messages. A smart match is read off the rows the section actually drew,
+  // so an agent its display filter hides stays in Direct messages rather than
+  // vanishing from the panel.
   const groupedAgents = new Set<string>();
   const groupedRooms = new Set<string>();
-  for (const group of state.prefs.groups) {
-    if (group.kind === 'smart') continue;
+  state.prefs.groups.forEach((group, index) => {
+    if (group.kind === 'smart') {
+      for (const row of groupSections[index]?.rows ?? []) {
+        if (row.target.kind === 'agent') groupedAgents.add(row.target.path);
+      }
+      return;
+    }
     for (const ref of group.items) {
       if (ref.kind === 'agent') groupedAgents.add(ref.path);
       else groupedRooms.add(ref.roomId);
     }
-  }
+  });
 
   const channelRows: SidebarRowModel[] = [];
   const dmRooms: RoomSummary[] = [];
@@ -576,9 +594,7 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
 
   return [
     topSection(),
-    ...state.prefs.groups.map((group) =>
-      groupSection(group, state, ctx, byPath, rooms, isWorking, recencyOf)
-    ),
+    ...groupSections,
     ...SIDEBAR_SECTION_IDS.map((id) =>
       id === 'dms'
         ? directMessagesSection(state, dmRows, isWorking)

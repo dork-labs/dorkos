@@ -98,7 +98,7 @@ The order is fixed and never varies with content:
 Two rules worth knowing before you read the code:
 
 - **A section with nothing in it is absent**, not empty — except Direct messages (its empty state is how you start one) and a section the operator made (it has to exist to be dragged into).
-- **An agent is one row.** It is drawn in Direct messages, or in the hand-made section it was filed into, never both. Every other agent lives in the Directory. A smart section's members are matched by rule and not filed, so they do not leave Direct messages.
+- **An agent is one row.** It is drawn in Direct messages, or in the section that holds it (filed by hand, or matched by a smart section's rules), never both. A smart match its section's display filter hides stays in Direct messages. Every other agent lives in the Directory.
 
 ### Reading a `reason`
 
