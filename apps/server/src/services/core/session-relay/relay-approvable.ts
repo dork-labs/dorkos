@@ -14,13 +14,13 @@
  * Refused, whatever proof follows: every `mcp__*` tool (DorkOS's own and any
  * other server's), Codex `Permissions`, OpenCode `external_directory`, `Task`,
  * `Agent`, `ExitPlanMode`, and any name not on the list. A file change is
- * refused when it lands under a protected name (`relay-protected-roots.ts`:
- * harness settings folders and files, which change what agents may do next,
- * and folders and files that run code later, such as `.git` hooks and
- * `.vscode` tasks) or in one of the protected roots the caller passes
- * (DorkOS's data folder and every folder DorkOS resolves for a harness:
- * Claude Code accounts, the Codex home, OpenCode's data and config folders,
- * `~/.agents`). A path with a `..` part is refused outright, so text
+ * refused when it lands under a protected name
+ * (`web-approvable/protected-names.ts`: harness settings folders and files,
+ * which change what agents may do next, and folders and files that run code
+ * later, such as git hooks and editor tasks), inside any git folder, or in
+ * one of the protected roots the caller passes (`relay-protected-roots.ts`:
+ * DorkOS's data folder, every folder DorkOS resolves for a harness, and the
+ * home folder's shell startup files, SSH and login items). A path with a `..` part is refused outright, so text
  * folding can never step around a symlink, and so is one starting with `~`.
  * A Codex patch is checked change by change, including where an `update`
  * moves a file to. Paths are judged after following
@@ -31,10 +31,14 @@
  *
  * `Bash` and `Shell` cannot be classified from their text: a command can do
  * anything. They are allowed because each is a one-shot the owner reads in
- * full on the approve page before signing, never a standing permission. A
- * cheap tripwire still refuses one whose text names a protected root or a
- * protected name, and one with no command text; it is not a parser, and a
- * command that hides the name gets through (the accepted residual).
+ * full on the approve page before signing, never a standing permission. Still
+ * refused: one with no command text; one that runs in a protected folder (the
+ * chat's own, or the `cwd` a Codex command names), judged as a file write
+ * there would be; a Codex approval to type into a running terminal
+ * (`writeStdin`) or that asks for extra permissions; and one whose text names
+ * a protected root or name (`web-approvable/command-tripwire.ts`). That last
+ * check is a tripwire, not a parser, and a command that hides the name gets
+ * through (the accepted residual).
  *
  * Accepted residuals: a folder made into a symlink after this check, by
  * another process or another turn (the same class as an unasked shell, out of
@@ -43,10 +47,14 @@
  *
  * @module services/core/session-relay/relay-approvable
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import type { PendingApprovalCard } from './approval-challenges.js';
-import { commandNamesProtected, pathNamesProtected } from './relay-protected-roots.js';
+import { commandNamesProtected } from './web-approvable/command-tripwire.js';
+import {
+  insideGitDir,
+  pathNamesProtected,
+  realOrResolved,
+} from './web-approvable/protected-names.js';
 
 /** Tools whose web approval is a single run of exactly what the owner read. */
 const ONE_SHOT_TOOLS = new Set(['WebFetch', 'WebSearch']);
@@ -79,6 +87,8 @@ export interface RelayApprovableContext {
   protectedRoots: readonly string[];
   /** The home folder, so the tripwire knows `~/…` and `$HOME/…` spellings of a root. */
   homeDir?: string | null;
+  /** `$XDG_CONFIG_HOME` when set, so the tripwire knows that spelling of a root. */
+  xdgConfigHome?: string | null;
   /** Compare without regard to case; defaults to true on macOS and Windows. */
   caseInsensitive?: boolean;
 }
@@ -91,32 +101,16 @@ function folder(context: RelayApprovableContext): (text: string) => string {
     : (text: string) => text;
 }
 
-/**
- * A path with its deepest existing ancestor resolved by the OS (symlinks
- * followed, the case the disk stores), the rest appended as written.
- */
-function realOrResolved(target: string): string {
-  let existing = target;
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync.native(existing), ...rest);
-    } catch {
-      const parent = path.dirname(existing);
-      if (parent === existing) return target;
-      rest.unshift(path.basename(existing));
-      existing = parent;
-    }
-  }
-}
-
 /** Whether `child` is `parent` or inside it. */
 function isWithin(child: string, parent: string): boolean {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-/** Whether one file a tool would change is somewhere the web may write. */
+/**
+ * Whether one file a tool would change, or one folder a command runs in, is
+ * somewhere the web may write.
+ */
 function targetAllowed(raw: unknown, context: RelayApprovableContext): boolean {
   if (typeof raw !== 'string' || raw === '') return false;
   // Refused before resolving: `path.resolve` folds `..` as text, past any symlink.
@@ -126,8 +120,9 @@ function targetAllowed(raw: unknown, context: RelayApprovableContext): boolean {
   if (segments[0]?.startsWith('~')) return false;
   if (!path.isAbsolute(raw) && context.cwd === null) return false;
   const fold = folder(context);
-  const target = fold(realOrResolved(path.resolve(context.cwd ?? '/', raw)));
-  if (pathNamesProtected(target)) return false;
+  const real = realOrResolved(path.resolve(context.cwd ?? '/', raw));
+  const target = fold(real);
+  if (pathNamesProtected(target) || insideGitDir(real)) return false;
   return !context.protectedRoots.some((root) => {
     const resolved = path.resolve(root);
     return isWithin(target, fold(resolved)) || isWithin(target, fold(realOrResolved(resolved)));
@@ -174,13 +169,26 @@ function patchAllowed(card: PendingApprovalCard, context: RelayApprovableContext
   return changes.every((change: unknown) => changeAllowed(change, context));
 }
 
-/** Whether a shell command has text, and none of it names a protected root or name. */
+/**
+ * Whether a shell command may be approved from the web: a plain command (not
+ * input to a running terminal, asking for no extra permissions), run in no
+ * protected folder, whose text names no protected root or name.
+ */
 function commandAllowed(card: PendingApprovalCard, context: RelayApprovableContext): boolean {
-  const command = inputObject(card)?.command;
+  const input = inputObject(card);
+  if (input === null) return false;
+  const { command, cwd, kind, additionalPermissions } = input;
   if (typeof command !== 'string' || command.trim() === '') return false;
+  // Codex: `writeStdin` types into a terminal already running; extra permissions outlast the run.
+  if (kind !== undefined && kind !== 'command') return false;
+  if (additionalPermissions !== undefined && additionalPermissions !== null) return false;
+  // Where it runs counts as much as what it names: `echo x > pre-commit` inside `.git/hooks`.
+  if (context.cwd !== null && !targetAllowed(context.cwd, context)) return false;
+  if (cwd !== undefined && cwd !== null && !targetAllowed(cwd, context)) return false;
   return !commandNamesProtected(command, {
     protectedRoots: context.protectedRoots,
     homeDir: context.homeDir ?? null,
+    xdgConfigHome: context.xdgConfigHome ?? null,
     fold: folder(context),
   });
 }
