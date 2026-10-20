@@ -22,6 +22,7 @@ export const CommunityInstallationPathSchema = z.enum([
   '/marketplace',
   '/marketplace/sources',
   '/feedback-requests',
+  '/threads',
 ]);
 const CommunityInstallationSearchScalarSchema = z.union([
   z.string(),

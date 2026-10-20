@@ -14,6 +14,12 @@ import {
 const EMPTY = { version: 1 as const, owners: [] };
 
 describe('Community navigation preferences', () => {
+  it('remembers the Threads page as a place to come back to (DOR-3078)', () => {
+    expect(
+      CommunityInstallationDestinationSchema.safeParse({ path: '/threads', search: {} }).success
+    ).toBe(true);
+  });
+
   const descriptor = {
     kind: 'community' as const,
     key: 'community:community_a',
