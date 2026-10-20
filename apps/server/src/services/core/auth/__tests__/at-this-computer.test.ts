@@ -168,8 +168,7 @@ describe('isAtThisComputer', () => {
 });
 
 // Where a signed-in person connects from changes nothing on an encrypted
-// connection (DOR-3172). This file runs as a development build: its sign-in
-// cookie is not `Secure`, so a proxy counts only when it says `https`.
+// connection (DOR-3172). Encrypted is decided by the listener, never a header.
 describe('isOnEncryptedConnection', () => {
   async function encrypted(
     headers: Record<string, string> = {},
@@ -197,24 +196,26 @@ describe('isOnEncryptedConnection', () => {
     expect(await encrypted()).toBe(false);
   });
 
-  it('counts a proxy on this host that says https, and no other', async () => {
-    const proxied = { 'x-forwarded-for': '100.64.0.7' };
-    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https' })).toBe(true);
-    // The last value is the proxy's own; an earlier one is the browser's to write.
-    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'http, https' })).toBe(true);
-    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'https, http' })).toBe(false);
-    expect(await encrypted({ ...proxied, 'x-forwarded-proto': 'http' })).toBe(false);
-    expect(await encrypted(proxied)).toBe(false);
+  it('never believes a header: plain http claiming https stays plain', async () => {
+    const forged = { 'x-forwarded-proto': 'https', 'x-forwarded-for': '100.64.0.7' };
+    expect(await encrypted(forged)).toBe(false);
+    expect(await encrypted(forged, '192.168.86.200')).toBe(false);
+    expect(await encrypted({ forwarded: 'proto=https' }, '192.168.86.200')).toBe(false);
   });
 
-  it('never counts a bare network bind, whatever its headers claim', async () => {
-    expect(
-      await encrypted(
-        { 'x-forwarded-for': '1.2.3.4', 'x-forwarded-proto': 'https' },
-        '192.168.86.200'
-      )
-    ).toBe(false);
-    expect(await encrypted({ 'x-forwarded-proto': 'https' }, '192.168.86.200')).toBe(false);
+  it('counts a TLS socket from another device, and only from another device', () => {
+    const facts = (peer: string, encrypted: boolean) => ({
+      headers: { host: 'box.example:4443' },
+      peerAddress: peer,
+      ingress: 'direct' as const,
+      connectionEncrypted: encrypted,
+    });
+    expect(isOnEncryptedConnection(facts('192.168.86.200', true))).toBe(true);
+    expect(isOnEncryptedConnection(facts('192.168.86.200', false))).toBe(false);
+    // A TLS socket marked as Wi-Fi is still Wi-Fi.
+    expect(isOnEncryptedConnection({ ...facts('192.168.86.200', true), ingress: 'wifi' })).toBe(
+      false
+    );
   });
 
   it('never counts a hub: it has its own bar', async () => {

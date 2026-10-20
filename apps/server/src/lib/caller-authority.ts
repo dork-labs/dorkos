@@ -78,7 +78,8 @@ import { currentServerRole } from './server-role.js';
  * The facts a bar needs to know whether the gate asked this request for a
  * credential ({@link credentialGated}): its TCP peer, headers and ingress.
  */
-type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>;
+type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'> &
+  Partial<Pick<RequestFacts, 'connectionEncrypted'>>;
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -328,8 +329,8 @@ export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person
  * signing other devices out).
  *
  * Where the owner connects from changes nothing (DOR-3172): signed in over the
- * own tunnel, managed remote access or an `https` proxy such as `tailscale
- * serve`, they get exactly what they get at the desk. Plain-`http` Wi-Fi is
+ * own tunnel, managed remote access or DorkOS's own `https` listener, they get
+ * exactly what they get at the desk. Plain-`http` Wi-Fi is
  * the exception, and it is about proof, not place: anyone on that network can
  * copy the sign-in cookie, so a Wi-Fi sign-in does not prove the owner well
  * enough for these.
@@ -381,7 +382,8 @@ export const NEEDS_PERSON_AT_THIS_COMPUTER = 'NEEDS_PERSON_AT_THIS_COMPUTER';
  * with. One function, so every front-door route refuses the same callers in
  * the same words: plain-`http` Wi-Fi, the relay, an agent, an API key, and any
  * signed-in person who is not this install's owner. The owner signed in over
- * the own tunnel, managed remote access or `https` passes, as at the desk.
+ * the own tunnel, managed remote access or DorkOS's own `https` listener
+ * passes, as at the desk.
  *
  * A hub has no "this computer" (every request is remote), so there the bar is
  * the owner's own browser session, with no agent identity or approval token.

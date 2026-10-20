@@ -2,6 +2,7 @@ import { localBrowserHost } from './startup/local-browser.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
+import { startTlsListener } from './http/tls-listener.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { previewListeners } from './services/workbench-serve/index.js';
@@ -327,6 +328,14 @@ async function start() {
         attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
       });
 
+      // DorkOS's own https listener, only when its settings say so (DOR-3172).
+      tlsServer = startTlsListener(
+        env,
+        (tls) => createFrontDoorServer(frontDoor, { tls }),
+        (opened) => attachUpgradeRouter(opened, upgradeRoutes, mainRequestAdmission),
+        logger
+      );
+
       // The two ngrok ingresses, each a loopback listener of its own: managed
       // access (edge-proof and host checks first) and the person's own tunnel.
       // Each marks what it admits, then hands requests to the same front door
@@ -393,6 +402,8 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 let docNotificationCleanup: (() => void) | undefined;
+/** DorkOS's own https listener, when its settings opened one (DOR-3172). */
+let tlsServer: import('node:http').Server | null = null;
 
 async function shutdownServices() {
   mainRequestAdmission.close();
@@ -505,6 +516,8 @@ async function shutdownServices() {
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
   await lanAccess.close();
+  tlsServer?.close();
+  tlsServer = null;
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();
   getCloudLinkManager().stop();

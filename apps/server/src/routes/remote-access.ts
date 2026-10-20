@@ -16,7 +16,7 @@
  *    approval token, is refused in every posture;
  * 3. the connection bar (`isAtThisComputer`, or `isOnEncryptedConnection`,
  *    DOR-3172): plain-`http` Wi-Fi and a bare network bind are refused; the
- *    own tunnel, managed access itself and an `https` proxy pass;
+ *    own tunnel, managed access itself and DorkOS's own `https` listener pass;
  * 3b. the front-door bar (`refuseFrontDoorChange`, DOR-2969): only the
  *    install's owner using the app, never an API key;
  * 4. for anything managed, a real login (`canExpose`), answered with the same

@@ -66,6 +66,14 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
     'switches on DorkOS managed remote access (DOR-2086), which stays off until its live supplier acceptance passes; documenting it would offer a feature that does not work yet',
   DORKOS_SERVER_ROLE:
     'set only by DorkOS Cloud when it starts a hub (DOR-2934); a person running DorkOS on their own computer never sets it',
+  DORKOS_TLS_PORT:
+    'DorkOS`s own https listener (DOR-3172, http/tls-listener.ts), for a test home and QA until HTTPS for Wi-Fi ships as a setting; it needs DORKOS_TRUSTED_HOSTS and DORKOS_CORS_ORIGIN by hand, so documenting it now would offer a half-finished way in',
+  DORKOS_TLS_CERT:
+    'DorkOS`s own https listener (DOR-3172, http/tls-listener.ts), for a test home and QA until HTTPS for Wi-Fi ships as a setting; it needs DORKOS_TRUSTED_HOSTS and DORKOS_CORS_ORIGIN by hand, so documenting it now would offer a half-finished way in',
+  DORKOS_TLS_KEY:
+    'DorkOS`s own https listener (DOR-3172, http/tls-listener.ts), for a test home and QA until HTTPS for Wi-Fi ships as a setting; it needs DORKOS_TRUSTED_HOSTS and DORKOS_CORS_ORIGIN by hand, so documenting it now would offer a half-finished way in',
+  DORKOS_TLS_HOST:
+    'DorkOS`s own https listener (DOR-3172, http/tls-listener.ts), for a test home and QA until HTTPS for Wi-Fi ships as a setting; it needs DORKOS_TRUSTED_HOSTS and DORKOS_CORS_ORIGIN by hand, so documenting it now would offer a half-finished way in',
   DORKOS_HUB_INSTANCE_KEY:
     'a hub`s DorkOS Cloud key, set only by Cloud when it starts a hub (DOR-2935); a person running DorkOS never sets it',
 };

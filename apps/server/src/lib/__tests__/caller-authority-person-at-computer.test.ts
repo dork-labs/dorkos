@@ -110,14 +110,21 @@ describe('requirePersonAtThisComputer', () => {
     }
   );
 
-  it('lets the owner through an https proxy on this host, never a plain-http one', async () => {
-    const proxied = (proto: string) =>
-      local({
-        user: OWNER_COOKIE,
-        headers: { 'x-forwarded-for': '100.64.0.7', 'x-forwarded-proto': proto },
-      });
-    expect(requirePersonAtThisComputer(await proxied('https'))).toBeUndefined();
-    expect(requirePersonAtThisComputer(await proxied('http'))).toBe('not-at-this-computer');
+  // Encrypted is the listener's say, never a header's (Security, DOR-3172).
+  it('lets the owner through a TLS socket, never a plain-http one claiming https', async () => {
+    const remote = { 'x-forwarded-for': '100.64.0.7' };
+    const tls = await local({ user: OWNER_COOKIE, encrypted: true, headers: remote });
+    expect(requirePersonAtThisComputer(tls)).toBeUndefined();
+    const forged = await local({
+      user: OWNER_COOKIE,
+      headers: { ...remote, 'x-forwarded-proto': 'https' },
+    });
+    expect(requirePersonAtThisComputer(forged)).toBe('not-at-this-computer');
+    const wifiForged = await through('wifi', {
+      user: OWNER_COOKIE,
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(requirePersonAtThisComputer(wifiForged)).toBe('not-at-this-computer');
   });
 
   it('refuses another device on the network', async () => {

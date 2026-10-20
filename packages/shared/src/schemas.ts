@@ -4605,7 +4605,7 @@ export const ServerConfigSchema = z
     }),
     onTrustedConnection: z.boolean().optional().openapi({
       description:
-        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel, managed remote access, an `https` proxy on that machine). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
+        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel, managed remote access, or DorkOS`s own https listener; decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
     }),
     callerRoute: z
       .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
