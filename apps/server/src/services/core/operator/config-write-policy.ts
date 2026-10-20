@@ -337,11 +337,12 @@ export const CONFIG_WRITE_POLICY = {
   // a record of what a person was told is still not an agent's to forge.
   'ui.trustNoticeSeenAt': 'operator-only',
   // How a chat with one agent is drawn, and whether its working session can be
-  // opened (DOR-3074). Both only change what the person sees: neither widens
-  // what an agent may do or who can reach this computer, so a person may ask
-  // their agent to flip either, like `ui.composer.richText` above.
-  'ui.dmView': 'agent-writable',
-  'ui.showSessions': 'agent-writable',
+  // opened (DOR-3074). Like every experiment, `ui.dmView` is a person's to
+  // try, never an agent's. `ui.showSessions` decides whether the model,
+  // account and context of a chat stay in view: an agent that turned it off
+  // would hide from the person the readings about its own work.
+  'ui.dmView': 'operator-only',
+  'ui.showSessions': 'operator-only',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing

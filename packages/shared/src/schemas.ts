@@ -5143,12 +5143,12 @@ export const ServerConfigSchema = z
           description:
             'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
-        // Whether this person can open the working session behind a chat
+        // Whether the working session behind a chat can be opened
         // (DOR-3074). On the wire because Settings shows it back as a switch
         // and the chat header reads it. Optional so an older server still parses.
         showSessions: z.boolean().optional().openapi({
           description:
-            'Whether this person can open the working session behind a chat: its model, account and context. Off by default',
+            'Whether the working session behind a chat can be opened, for everyone using this DorkOS: its model, account and context. Off by default',
         }),
       })
       .optional()

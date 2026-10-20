@@ -1,10 +1,11 @@
 /**
  * The two switches behind the DM view (DOR-3074): the experiment that draws a
- * chat with one agent like a direct message, and the person's own Show sessions
- * setting that keeps the working session behind it one click away.
+ * chat with one agent like a direct message, and the Show sessions setting that
+ * keeps the working session behind it one click away.
  *
- * Both live in server config, so the choice follows the person to every client
- * on this machine and an agent can flip either when asked. `PATCH /api/config`
+ * Both live in server config, so they hold for everyone using this DorkOS, on
+ * every client. Only a person changes either: both are operator-only to an
+ * agent's config patch. `PATCH /api/config`
  * deep-merges plain objects, so a `{ ui: { showSessions } }` patch touches no
  * other `ui` key.
  *
@@ -30,8 +31,8 @@ export function useDmViewEnabled(): boolean {
 }
 
 /**
- * Whether this person can open the working session behind a chat
- * (`ui.showSessions`). `false` until the config arrives, the shipped default.
+ * Whether the working session behind a chat can be opened, for everyone using
+ * this DorkOS (`ui.showSessions`). `false` until the config arrives, the shipped default.
  */
 export function useShowSessions(): boolean {
   const { data } = useConfig();

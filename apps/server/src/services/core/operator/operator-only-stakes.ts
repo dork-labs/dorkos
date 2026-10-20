@@ -35,6 +35,8 @@ import { ONBOARDING_CREDENTIAL_PATHS } from './onboarding-write-policy.js';
  *   agent's suggestion.
  * - `navigation` — where the app takes the person when they switch back to
  *   this DorkOS, and whose saved places those are.
+ * - `view` — how a chat is drawn, and what it shows the person about the work
+ *   behind it (DOR-3074).
  *
  * `authorship` is the newest and the narrowest (DOR-1022): it covers the record
  * of WHO wrote the display name, and nothing else on this list guards a record
@@ -59,7 +61,8 @@ export type OperatorOnlyStake =
   | 'resources'
   | 'attention'
   | 'authorship'
-  | 'navigation';
+  | 'navigation'
+  | 'view';
 
 /**
  * The floor permission area an operator-only setting is asked about in (spec
@@ -370,6 +373,15 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // Which #team entry the app shows as DorkBot's first-run welcome.
       'onboarding.welcomeEntryId',
     ],
+  },
+  {
+    stake: 'view',
+    area: 'safety',
+    // Not `attention` (nothing here says something is waiting on you) and not
+    // `navigation` (no saved place). What the chat on screen shows you about
+    // the work behind it, and how a chat with one agent is drawn (DOR-3074).
+    description: 'How your chats are drawn, and what they show you about the work behind them',
+    paths: ['ui.dmView', 'ui.showSessions'],
   },
   {
     stake: 'attention',

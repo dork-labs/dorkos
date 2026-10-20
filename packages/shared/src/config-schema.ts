@@ -596,7 +596,9 @@ export const UserConfigSchema = z.object({
       dmView: z.boolean().default(false),
       /**
        * Whether the working session behind a chat can be opened: its model,
-       * account, permissions and context. A person's own setting, off by default.
+       * account, permissions and context. For everyone using this DorkOS, off by
+       * default. Operator-only: an agent could otherwise hide the readings
+       * about its own work.
        */
       showSessions: z.boolean().default(false),
     })
