@@ -99,13 +99,12 @@ export function AssistantMessageContent({
   const expandToolCalls = useAppStore((s) => s.expandToolCalls);
   // The Work tab exists to show every step, so nothing there hides itself.
   const autoHideToolCalls = useAppStore((s) => s.autoHideToolCalls) && show !== 'work';
-  const allParts = message.parts ?? [];
   // A part left out is not drawn at all, so the runs below never see it.
-  const parts = useMemo(
-    () =>
-      show === 'all' ? allParts : allParts.filter((part) => isWorkPart(part) === (show === 'work')),
-    [allParts, show]
-  );
+  const messageParts = message.parts;
+  const parts = useMemo(() => {
+    const all = messageParts ?? [];
+    return show === 'all' ? all : all.filter((part) => isWorkPart(part) === (show === 'work'));
+  }, [messageParts, show]);
   // What this chat sent other chats — the Sent cards' live state. One shared
   // read per chat however many messages ask for it.
   const { sent } = useChatActivity(sessionId);
