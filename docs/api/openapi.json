@@ -27390,6 +27390,681 @@
         }
       }
     },
+    "/api/canvas/docs/{id}/work": {
+      "get": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "List a document’s expired and in-doubt work",
+        "description": "Operator only. Work that expired unadmitted after 24 hours, or reached the agent with its result unknown, oldest first. Nothing here replays on its own. Event payloads are never returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The work waiting on a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "batchId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "routeId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "expired",
+                              "in_doubt"
+                            ]
+                          },
+                          "eventCount": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "since": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "format": "date-time"
+                          },
+                          "replay": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "no_grant",
+                              "route_changed",
+                              "inputs_gone",
+                              "route_busy",
+                              "still_running"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "batchId",
+                          "routeId",
+                          "status",
+                          "eventCount",
+                          "since",
+                          "replay"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/work/{batchId}/replay": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Run reviewed work again as new work",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Needs current ownership and the route's current grant, both checked again now. Queues the same inputs as a new batch and generation, once. In-doubt work also needs confirmRepeat: true, since it may already have run.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "batchId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmRepeat": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was replayed, with the new batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "replayed",
+                        "cleared"
+                      ]
+                    },
+                    "previousStatus": {
+                      "type": "string",
+                      "enum": [
+                        "expired",
+                        "in_doubt"
+                      ]
+                    },
+                    "nextBatchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "batchId",
+                    "routeId",
+                    "action",
+                    "previousStatus",
+                    "nextBatchId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/work/{batchId}/clear": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Set reviewed work aside without running it",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Needs current ownership; no grant, since it starts nothing. In-doubt work frees its route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "batchId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "replayed",
+                        "cleared"
+                      ]
+                    },
+                    "previousStatus": {
+                      "type": "string",
+                      "enum": [
+                        "expired",
+                        "in_doubt"
+                      ]
+                    },
+                    "nextBatchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "batchId",
+                    "routeId",
+                    "action",
+                    "previousStatus",
+                    "nextBatchId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already reviewed, not reviewable, or still running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/holds/{holdId}/cancel": {
       "post": {
         "tags": [

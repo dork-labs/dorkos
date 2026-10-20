@@ -22,6 +22,7 @@ import {
   type DocPumpObservation,
 } from '../delivery/pump.js';
 import { retainDocHistory } from '../retention.js';
+import { replayDocBatch } from '../delivery/replay.js';
 // Synchronous transaction ports reject async callbacks at the declaration boundary too.
 const invalidAsyncGates: Pick<DocBatchPumpOptions, 'capacity' | 'budget' | 'markWaitingWarning'> = {
   // @ts-expect-error Final capacity gates must return their decision synchronously.
@@ -282,15 +283,22 @@ describe('durable document delivery pump', () => {
       .set({ dueAt: new Date(Date.parse(NOW) - 24 * 3600000 + 1000).toISOString() })
       .run();
     expect(h.pump().run().expired).toBe(1);
-    const next = h.pump().replayExpired(old.batchId, h.f.grantId, h.f.actor);
+    const replay = () =>
+      replayDocBatch(h.f.store, h.f.grants, {
+        documentId: h.f.documentId,
+        batchId: old.batchId,
+        grantId: h.f.grantId,
+        actor: h.f.actor,
+        now: h.options.now().toISOString(),
+      }).nextBatchId!;
+    const next = replay();
     expect(h.f.store.getBatch(next)).toMatchObject({
       status: 'pending',
       inputEventIds: old.inputEventIds,
     });
     expect(h.f.store.getBatch(next)?.generation).not.toBe(old.generation);
-    expect(() => h.pump().replayExpired(old.batchId, h.f.grantId, h.f.actor)).toThrow();
+    expect(replay).toThrow();
     expect(h.pump().run().admitted).toBe(1);
-    expect(h.observations.some((event) => event.outcome === 'replayed')).toBe(true);
   });
   it('refuses replay whose retained input was pruned instead of dropping it', () => {
     const h = setup();
@@ -306,7 +314,15 @@ describe('durable document delivery pump', () => {
       .set({ payload: sql`'null'`, payloadPrunedAt: NOW })
       .where(eq(canvasDocEvents.direction, 'upstream'))
       .run();
-    expect(() => h.pump().replayExpired(id, h.f.grantId, h.f.actor)).toThrow();
+    expect(() =>
+      replayDocBatch(h.f.store, h.f.grants, {
+        documentId: h.f.documentId,
+        batchId: id,
+        grantId: h.f.grantId,
+        actor: h.f.actor,
+        now: NOW,
+      })
+    ).toThrow(expect.objectContaining({ code: 'INPUTS_GONE' }));
     expect(h.f.db.select().from(canvasDocBatches).all()).toHaveLength(1);
   });
   it('caps long external waits at the warning and expiry boundaries even if the grant later expires', () => {

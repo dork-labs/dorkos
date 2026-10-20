@@ -40,6 +40,7 @@ import type { WireCoreStoresResult } from './core-stores.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { WireConnectorEventsAndApprovalsResult } from './connector-events-approvals.js';
 import type { WireRoomsResult } from './rooms.js';
+import type { WireDocDeliveryResult } from './doc-delivery.js';
 import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapters.js';
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
@@ -56,6 +57,7 @@ export interface WireMcpTasksAndSkillsInput {
   connectorSignedIngress: WireConnectorEventsAndApprovalsResult['connectorSignedIngress'];
   docChannelHttp: WireConnectorEventsAndApprovalsResult['docChannelHttp'];
   docChannelMetrics: WireConnectorEventsAndApprovalsResult['docChannelMetrics'];
+  docWorkReview: WireDocDeliveryResult['docWorkReview'];
   tasksEnabled: StartSearchRelayAndMeshResult['tasksEnabled'];
   schedulerConfig: StartSearchRelayAndMeshResult['schedulerConfig'];
   firing: StartSearchRelayAndMeshResult['firing'];
@@ -81,6 +83,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     connectorSignedIngress,
     docChannelHttp,
     docChannelMetrics,
+    docWorkReview,
     tasksEnabled,
     schedulerConfig,
     firing,
@@ -329,7 +332,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     localBrowser: localBrowserService,
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
-    docChannel: { ...docChannelHttp, metrics: docChannelMetrics },
+    docChannel: { ...docChannelHttp, metrics: docChannelMetrics, workReview: docWorkReview },
   };
   // The test-control routes' reads, on a test-mode server only: handing them
   // over is what mounts the routes. The managed-MCP resolver is what the probe
