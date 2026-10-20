@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
-import { honoRateLimit } from '../http/rate-limiter.js';
+import { createRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
 import type { RequestFactsEnv } from '../http/request-facts.js';
 
 /**
@@ -118,4 +118,76 @@ export function buildAuthRateLimiter(
       });
     },
   });
+}
+
+/**
+ * Default max failed password sign-ins per account per window (20).
+ *
+ * The per-address limiter above cannot see a guesser spread across many
+ * addresses; this one counts by the account named in the attempt, whatever
+ * address it came from (DOR-3172). Higher than the per-address limit, so one
+ * person mistyping on two devices never meets it, and a sign-in that works
+ * gives its count back. It can only ever slow a sign-in from another device:
+ * at this computer DorkOS asks for no password unless told to.
+ */
+const DEFAULT_MAX_ACCOUNT_FAILURES = 20;
+
+/** Longest sign-in body read to find the account, in characters. */
+const MAX_ACCOUNT_BODY_CHARS = 8192;
+
+/** Options for {@link buildAccountSignInLimiter}. Omitted values use the defaults. */
+export interface AccountSignInLimitOptions {
+  /** Max failed password sign-ins per account per 15-minute window (default 20). */
+  maxFailures?: number;
+}
+
+/**
+ * The account a password sign-in names, lower-cased, or `undefined` when its
+ * body names none. Reads a copy of the body, so the handler still reads it.
+ */
+async function signInAccount(request: Request): Promise<string | undefined> {
+  try {
+    const text = await request.clone().text();
+    if (text.length > MAX_ACCOUNT_BODY_CHARS) return undefined;
+    const email = (JSON.parse(text) as { email?: unknown }).email;
+    if (typeof email !== 'string') return undefined;
+    const account = email.trim().toLowerCase();
+    return account.length > 0 ? account : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Build the per-account limiter for `POST /api/auth/sign-in/email`. Mounted
+ * beside {@link buildAuthRateLimiter}, before the body is parsed. Every
+ * attempt is counted against its account; one that signs in is given back, so
+ * only failures fill the window.
+ *
+ * @param options - Per-limiter overrides (default: 20 failures per window).
+ * @returns Hono middleware returning the same JSON `429` as the per-address limit.
+ */
+export function buildAccountSignInLimiter(
+  options: AccountSignInLimitOptions = {}
+): MiddlewareHandler<RequestFactsEnv> {
+  const limiter = createRateLimiter({
+    windowMs: WINDOW_MS,
+    limit: options.maxFailures ?? DEFAULT_MAX_ACCOUNT_FAILURES,
+  });
+  return async (c, next) => {
+    if (c.req.method !== 'POST' || c.req.path.toLowerCase() !== '/api/auth/sign-in/email') {
+      return next();
+    }
+    const account = await signInAccount(c.req.raw);
+    if (!account) return next();
+    const decision = limiter.hit(`account:${account}`);
+    if (!decision.allowed) {
+      recordSignInRateLimited(c.req.header('user-agent'));
+      return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+    }
+    await next();
+    if (c.res.status < 400) decision.refund();
+  };
 }

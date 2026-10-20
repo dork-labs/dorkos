@@ -2282,17 +2282,27 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
-  it.each([
-    ['Wi-Fi', 'wifi'],
-    ['the own tunnel', 'own-tunnel'],
-  ] as const)("refuses the owner's own sign-in over %s", async (_l, via) => {
-    arrivedVia = via;
+  it("refuses the owner's own sign-in over plain-http Wi-Fi", async () => {
+    arrivedVia = 'wifi';
     const res = await request(server)
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
     expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
     expect(res.body.paths).toEqual(['auth.enabled']);
+  });
+
+  // An encrypted connection is the desk, for the owner (DOR-3172).
+  it.each([
+    ['the own tunnel', 'own-tunnel'],
+    ['managed remote access', 'managed'],
+  ] as const)("lets the owner's own sign-in over %s change one", async (_l, via) => {
+    arrivedVia = via;
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ tunnel: { domain: 'me.ngrok.app' } })
+      .expect(200);
+    expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
   it('refuses a signed-in person at this computer who is not the owner', async () => {

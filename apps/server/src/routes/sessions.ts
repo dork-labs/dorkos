@@ -41,6 +41,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { noteChatTurnSender } from '../services/core/auth/sessions/signed-in-turns.js';
 import { launchRefusalReply, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
@@ -145,6 +146,23 @@ export interface SessionRouteDeps extends SessionOriginResolvers {
 }
 
 const vaultRoot = DEFAULT_CWD;
+
+/**
+ * Stop a chat whose sender signed out: drop its queue, then interrupt its
+ * turn, as Stop does. A chat that already finished answers "not running".
+ * Never throws: it runs inside a sign-out.
+ *
+ * @param chatId - The chat's canonical id.
+ */
+function stopChatForSignOut(chatId: string): void {
+  clearQueuedMessages(chatId);
+  void runtimeRegistry
+    .resolveForSession(chatId)
+    .then((runtime) => runtime.interruptQuery(chatId))
+    .catch((err: unknown) => {
+      logger.warn('[Sessions] Could not stop a signed-out chat', { chatId, ...logError(err) });
+    });
+}
 
 /**
  * Who is posting a message, for a new workspace its `workspaceKey` names
@@ -893,7 +911,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // D4). A dispatch that answered `accepted: false` refused the message and
     // records nothing. An accepted one names the chat's canonical id; the
     // fallback only covers the type, which leaves the field optional.
-    if (result.accepted) recordWroteIfPerson(honoRequestFacts(c), result.canonicalId ?? sessionId);
+    if (result.accepted) {
+      const chatId = result.canonicalId ?? sessionId;
+      recordWroteIfPerson(honoRequestFacts(c), chatId);
+      // Signing this device out stops the chat it started (DOR-3172).
+      noteChatTurnSender(chatId, honoRequestFacts(c).user, () => stopChatForSignOut(chatId));
+    }
 
     return c.json(
       {

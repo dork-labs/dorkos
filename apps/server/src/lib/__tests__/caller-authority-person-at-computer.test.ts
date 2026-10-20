@@ -1,8 +1,9 @@
 /**
  * `requirePersonAtThisComputer` (DOR-2946): the bar on the switches that
  * decide whether this computer can be reached from the web. Only the owner,
- * at this computer, using the app: a browser session of the owner, or the open
- * gate with no credential at all.
+ * using the app: a browser session of the owner at this computer or on an
+ * encrypted connection (DOR-3172), or the open gate at this computer with no
+ * credential at all. Never plain-`http` Wi-Fi or the relay.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -70,9 +71,7 @@ describe('requirePersonAtThisComputer', () => {
 
   it.each([
     ['the session relay', 'relay'],
-    ['the own tunnel', 'own-tunnel'],
-    ['managed remote access', 'managed'],
-    ['Wi-Fi', 'wifi'],
+    ['plain-http Wi-Fi', 'wifi'],
   ] as const)(
     'refuses a request through %s, even with the owner’s session',
     async (_l, ingress) => {
@@ -81,6 +80,44 @@ describe('requirePersonAtThisComputer', () => {
       );
     }
   );
+
+  // Where the owner connects from changes nothing on an encrypted connection (DOR-3172).
+  it.each([
+    ['the own tunnel', 'own-tunnel'],
+    ['managed remote access', 'managed'],
+  ] as const)('lets the owner’s browser session through %s', async (_l, ingress) => {
+    expect(
+      requirePersonAtThisComputer(await through(ingress, { user: OWNER_COOKIE }))
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['the own tunnel', 'own-tunnel'],
+    ['managed remote access', 'managed'],
+  ] as const)(
+    'refuses everyone but the owner’s browser session through %s',
+    async (_l, ingress) => {
+      for (const described of [
+        {},
+        { user: OWNER_KEY },
+        { user: GUEST_COOKIE },
+        { user: OWNER_COOKIE, headers: { 'x-dorkos-agent': 't' } },
+        { user: OWNER_COOKIE, headers: { [APPROVAL_TOKEN_HEADER]: 'tok' } },
+      ]) {
+        expect(requirePersonAtThisComputer(await through(ingress, described))).toBe('not-a-person');
+      }
+    }
+  );
+
+  it('lets the owner through an https proxy on this host, never a plain-http one', async () => {
+    const proxied = (proto: string) =>
+      local({
+        user: OWNER_COOKIE,
+        headers: { 'x-forwarded-for': '100.64.0.7', 'x-forwarded-proto': proto },
+      });
+    expect(requirePersonAtThisComputer(await proxied('https'))).toBeUndefined();
+    expect(requirePersonAtThisComputer(await proxied('http'))).toBe('not-at-this-computer');
+  });
 
   it('refuses another device on the network', async () => {
     const facts = await requestFactsFor({
@@ -132,6 +169,14 @@ describe('requirePersonAtThisComputer', () => {
 });
 
 describe('refuseFrontDoorChange (DOR-2969)', () => {
+  it('lets the owner change a front-door setting over an encrypted connection (DOR-3172)', async () => {
+    for (const ingress of ['own-tunnel', 'managed'] as const) {
+      expect(
+        refuseFrontDoorChange(await through(ingress, { user: OWNER_COOKIE }), 'remote access')
+      ).toBeUndefined();
+    }
+  });
+
   it('lets the owner at this computer change a front-door setting', async () => {
     expect(refuseFrontDoorChange(await local(), 'remote access')).toBeUndefined();
     state.login = true;
@@ -141,9 +186,7 @@ describe('refuseFrontDoorChange (DOR-2969)', () => {
   });
 
   it.each([
-    ['Wi-Fi', 'wifi'],
-    ['the own tunnel', 'own-tunnel'],
-    ['managed remote access', 'managed'],
+    ['plain-http Wi-Fi', 'wifi'],
     ['the session relay', 'relay'],
   ] as const)('refuses %s, with a sentence that says where to do it', async (_l, ingress) => {
     const refusal = refuseFrontDoorChange(

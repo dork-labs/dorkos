@@ -185,13 +185,19 @@ describe.each([
     expect(effect()).not.toHaveBeenCalled();
   });
 
-  it('refuses a request that arrived over managed access, whatever its Host says', async () => {
-    const res = await request(app({ managed: true, user: SIGNED_IN }))
+  // Managed access is encrypted: the owner there is the owner at the desk (DOR-3172).
+  it('lets the owner through over managed access, and nobody else', async () => {
+    const guest = await request(app({ managed: true, user: { userId: 'guest', credential: 'cookie' } }))
       .post(path)
       .send(body);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    expect(guest.status).toBe(403);
+    expect(guest.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
     expect(effect()).not.toHaveBeenCalled();
+    const owner = await request(app({ managed: true, user: SIGNED_IN }))
+      .post(path)
+      .send(body);
+    expect(owner.status).toBe(200);
+    expect(effect()).toHaveBeenCalled();
   });
 
   it('refuses without a real login, with the code the client routes to owner setup', async () => {
@@ -277,7 +283,7 @@ describe('POST /api/remote-access/withdraw, a person at this computer', () => {
     expect(current.coordinator.withdraw).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses an agent, another device (signed in or not) and a request over managed access', async () => {
+  it('refuses an agent and another device (signed in or not), and lets the owner over managed access', async () => {
     const agent = await request(app()).post(path).set('x-dorkos-agent', 'agent-token');
     expect(agent.status).toBe(403);
     expect(agent.body.code).toBe('operator_only_config');
@@ -289,10 +295,11 @@ describe('POST /api/remote-access/withdraw, a person at this computer', () => {
     const unsigned = await request(app()).post(path).set('Host', 'box.ngrok.app');
     expect(unsigned.status).toBe(403);
     expect(unsigned.body.code).toBe('operator_cookie_required');
-    const managed = await request(app({ managed: true, user: SIGNED_IN })).post(path);
-    expect(managed.status).toBe(403);
-    expect(managed.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
     expect(current.coordinator.withdraw).not.toHaveBeenCalled();
+    // The owner over managed access may withdraw, as at the desk (DOR-3172).
+    const managed = await request(app({ managed: true, user: SIGNED_IN })).post(path);
+    expect(managed.status).toBe(200);
+    expect(current.coordinator.withdraw).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an API key under login, and lets a signed-in person through', async () => {

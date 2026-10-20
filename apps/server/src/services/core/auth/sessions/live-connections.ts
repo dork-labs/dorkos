@@ -36,7 +36,8 @@
  *   just before the restart cannot ride its cached copy.
  * - **Bounded.** At most {@link MAX_LIVE_PER_SESSION} per session: past that,
  *   the oldest stream is closed, never silently forgotten, and never a
- *   terminal, which holds a person's work and is capped by its own manager.
+ *   terminal or a turn, which hold a person's work: a terminal is capped by
+ *   its own manager, and a turn is one per chat.
  *   A close never throws out of here.
  *
  * In memory: a restart closes every stream anyway.
@@ -59,10 +60,11 @@ const MAX_ENDED_REMEMBERED = 10_000;
 
 /**
  * What a registration is: a `stream` (an event stream, a socket, a streamed
- * response), which a client reopens when it drops, or a `terminal`, which
- * holds a shell and its work.
+ * response), which a client reopens when it drops, a `terminal`, which holds a
+ * shell and its work, or a `turn`, a chat turn the sign-in started
+ * (`./signed-in-turns.ts`).
  */
-export type LiveConnectionKind = 'stream' | 'terminal';
+export type LiveConnectionKind = 'stream' | 'terminal' | 'turn';
 
 /** One live thing a sign-in holds open. */
 interface LiveEntry {
@@ -110,8 +112,8 @@ function runClose(entry: LiveEntry, sessionId: string): void {
  *
  * Past {@link MAX_LIVE_PER_SESSION}, the oldest stream closes to make room
  * (the new one, when it is the only stream). A terminal is never closed for
- * room: when only terminals are left, the bound is let go, since the terminal
- * manager caps them already.
+ * room: when only terminals and turns are left, the bound is let go, since the
+ * terminal manager caps the one and each chat holds at most one of the other.
  *
  * @param sessionId - The Better Auth session id (never the token).
  * @param userId - The signed-in person.

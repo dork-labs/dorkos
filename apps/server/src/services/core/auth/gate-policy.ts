@@ -34,7 +34,9 @@ import {
   type RequestClass,
 } from '../../../lib/request-classifier.js';
 import { currentServerRole } from '../../../lib/server-role.js';
+import { isLoopbackPeer } from '../../../lib/trusted-origins.js';
 import { configManager } from '../config-manager.js';
+import { AUTH_COOKIES_SECURE } from './cookie-security.js';
 import { hasAnyUser } from './index.js';
 import type { RequestUser } from './session-gate.js';
 
@@ -181,4 +183,45 @@ export function isAtThisComputer(
   const live = () => (posture ??= readGatePosture());
   if (!isContainerPortRequest(requestClass, live)) return false;
   return facts.user?.credential === 'cookie' || !live().ownerExists();
+}
+
+/**
+ * Whether a request from another device came over an encrypted connection, so
+ * a signed-in person on it gets exactly what they get at this computer
+ * (DOR-3172). Where someone connects from never changes what they may do; how
+ * well DorkOS knows it is them does, and plain `http` is the one way in where
+ * anyone on the same network can copy the sign-in.
+ *
+ * - **The own tunnel and managed remote access**: always `https` at their
+ *   edge, then forwarded over loopback.
+ * - **A proxy on this host** (forwarding headers from a loopback peer, such as
+ *   `tailscale serve`): in a built DorkOS the sign-in cookie is `Secure`, so a
+ *   browser only ever sends it over `https`. In a development build, where it
+ *   is not, only when the proxy says `X-Forwarded-Proto: https`.
+ * - **Never a bare network bind** (`DORKOS_HOST`), which is plain `http`.
+ * - **Never Wi-Fi**: that listener is plain `http`, and its cookie drops
+ *   `Secure` to work there (`lan-access/lan-cookies.ts`).
+ * - **Never the relay or a hub**: each has its own bar.
+ *
+ * This answers only "is the connection private". Who is asking is the bar's
+ * own question, and every caller of this pairs it with one.
+ *
+ * @param facts - The request's TCP peer, raw headers and ingress.
+ */
+export function isOnEncryptedConnection(facts: ClassifierFacts): boolean {
+  const requestClass = classifyRequest(facts, currentServerRole());
+  if (requestClass.kind !== 'other-device') return false;
+  if (requestClass.route === 'own-tunnel' || requestClass.route === 'managed') return true;
+  // A proxy on this host: forwarding headers from a loopback peer. Never a
+  // bare network bind, which is plain `http`, nor a page on another site.
+  if (requestClass.route !== 'network' || requestClass.reason !== 'forwarded') return false;
+  if (!isLoopbackPeer(facts.peerAddress)) return false;
+  return AUTH_COOKIES_SECURE || proxySaysHttps(facts);
+}
+
+/** Whether the proxy named `https` as the scheme the browser used. */
+function proxySaysHttps(facts: ClassifierFacts): boolean {
+  const raw = facts.headers['x-forwarded-proto'];
+  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(',')[0]?.trim().toLowerCase();
+  return first === 'https';
 }
