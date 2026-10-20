@@ -296,11 +296,11 @@ describe('the seeded reservations', () => {
     expect(impostor.handle).toBe('dorkos-2');
   });
 
-  it('holds the three broadcast words against anybody claiming them', () => {
+  it('holds the broadcast words against anybody claiming them', () => {
     ensureHandles(db, registry);
     const person = registry.localHuman();
 
-    for (const word of ['everyone', 'here', 'channel']) {
+    for (const word of ['everyone', 'here', 'channel', 'room']) {
       expect(() => registry.setHandle(person.id, word), word).toThrow(
         expect.objectContaining({ code: 'HANDLE_RESERVED' })
       );

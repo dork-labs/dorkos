@@ -23,7 +23,7 @@ function messageOf(error: unknown): string | undefined {
 }
 
 /**
- * What went wrong with a handle, said three different ways.
+ * What went wrong with a handle, said a different way for each refusal.
  *
  * **Three refusals, three sentences, because they are three different things to
  * do about it** (spec §W3.3): somebody else has it, it is spoken for, or it is
@@ -47,6 +47,9 @@ export function handleErrorMessage(error: unknown, attempted: string): string {
       return `${at} belongs to someone else. Pick a different one.`;
     case 'HANDLE_RESERVED':
       return `${at} is spoken for. Either you used it before, or it is a word DorkOS uses to reach everyone. Pick a different one.`;
+    // The server names whose handle it looks like, which no sentence here can.
+    case 'HANDLE_LOOKALIKE':
+      return messageOf(error) ?? `${at} looks too much like another handle. Pick a different one.`;
     case 'INVALID_HANDLE':
       return (
         messageOf(error) ??

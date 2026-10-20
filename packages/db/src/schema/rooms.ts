@@ -203,12 +203,12 @@ export const authors = sqliteTable(
  * The original author may always reclaim its own: that is the case that would
  * otherwise be infuriating, and the one `author_id` exists to answer.
  *
- * **Also the reservation table.** `everyone`, `here` and `channel` are seeded
+ * **Also the reservation table.** `everyone`, `here`, `channel` and `room` are seeded
  * here at boot, owned by the system author, because a model writes `@everyone`
  * whether or not that is our spelling for a broadcast — and an unreserved
  * `everyone` is a name an adversarial agent could claim precisely to harvest
  * broadcast-intent messages. That is not a blocklist: nothing consults a list of
- * forbidden words at any enforcement point. It is three rows under one index.
+ * forbidden words at any enforcement point. It is a few rows under one index.
  */
 export const handleTombstones = sqliteTable(
   'handle_tombstones',

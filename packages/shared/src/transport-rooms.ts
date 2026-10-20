@@ -568,12 +568,14 @@ export interface RoomTransport {
    * (spec `handles` S6): nothing agent-reachable may write a handle, and an
    * invariant kept in one place is a test rather than a convention.
    *
-   * Three refusals, and they are three different things for the person to do
-   * about it, so a caller that collapses them into one message is throwing away
-   * the answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a
-   * handle they released, or a broadcast word like `everyone`) and
-   * `INVALID_HANDLE` (the spelling itself is not addressable). Each arrives as
-   * the `code` on the thrown error.
+   * Four refusals, and they are different things for the person to do about
+   * it, so a caller that collapses them into one message is throwing away the
+   * answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a handle
+   * they released, or a broadcast word like `everyone`), `HANDLE_LOOKALIKE`
+   * (it reads as somebody else's, like `d0rian` beside `dorian`; the message
+   * names whose) and `INVALID_HANDLE` (the spelling itself is not
+   * addressable). Each arrives as the `code` on the thrown error. Renaming an
+   * agent from Wi-Fi is refused with `NOT_FROM_WIFI`.
    *
    * @param authorId - Whose handle to set.
    * @param handle - The new handle, without the `@`. Empty clears it.

@@ -55,6 +55,8 @@ import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { renameAuthorHandle } from '../services/rooms/handles/rename-author-handle.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
@@ -443,10 +445,18 @@ router.patch('/:id/members/:authorId', (c) => {
  * owner and renamed as the person — in a loop, at whatever rate it liked, which
  * is precisely the mechanism this route claims not to have.
  *
+ * **A person may rename an agent, but only at this computer** (DOR-3156): from
+ * Wi-Fi an agent's handle is refused like the rest of its setup, while a
+ * person's own stays open. A rename of an agent writes one quiet line in each
+ * room it is in (`renameAuthorHandle`).
+ *
  * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
  * mistaken for a room id, because a room id is a ULID and this path has a second
  * segment matched literally.
  */
+/** What a person on Wi-Fi reads when they try to rename an agent. */
+const WIFI_AGENT_HANDLE_REFUSAL = "Change an agent's handle at this computer.";
+
 router.patch('/authors/:authorId/handle', (c) => {
   const body = parseOrRefuse(c, SetAuthorHandleRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
@@ -454,9 +464,13 @@ router.patch('/authors/:authorId/handle', (c) => {
     if (caller().kind !== 'human') {
       throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
     }
-    return c.json(
-      toAuthorRef(getRoomService().authorRegistry.setHandle(c.req.param('authorId'), body.handle))
-    );
+    const service = getRoomService();
+    const authorId = c.req.param('authorId');
+    const target = service.authorRegistry.getById(authorId);
+    if (target && target.kind !== 'human' && isFromWifi(honoRequestFacts(c))) {
+      return c.json({ error: WIFI_AGENT_HANDLE_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    }
+    return c.json(toAuthorRef(renameAuthorHandle(service, caller().id, authorId, body.handle)));
   });
 });
 

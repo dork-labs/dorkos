@@ -132,6 +132,8 @@ describe('an agent you manage', () => {
     expect(groups.map((group) => group.id)).toEqual(['setup', 'work', 'toolkit']);
     expect(shape(groups)).toEqual([
       'About nav',
+      // A person may rename an agent they manage (DOR-3156).
+      'Handle nav',
       'Runs on pick',
       'Personality pick',
       'Reports to pick',

@@ -15250,7 +15250,8 @@
           "bridge_agent_swapped",
           "bridge_history_note",
           "room_archived",
-          "agent_reseated"
+          "agent_reseated",
+          "handle_changed"
         ]
       },
       "RoomMoment": {
@@ -16182,7 +16183,7 @@
           "handle": {
             "type": "string",
             "maxLength": 64,
-            "description": "The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED."
+            "description": "The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN, HANDLE_RESERVED or HANDLE_LOOKALIKE."
           }
         },
         "required": [
@@ -17258,6 +17259,10 @@
         "type": "object",
         "properties": {
           "manifestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorId": {
             "type": "string",
             "minLength": 1
           },
@@ -83518,7 +83523,7 @@
             }
           },
           "403": {
-            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`)",
+            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on Wi-Fi tried to change an agent's (`NOT_FROM_WIFI`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -83538,7 +83543,7 @@
             }
           },
           "409": {
-            "description": "The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)",
+            "description": "The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`HANDLE_RESERVED`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`HANDLE_LOOKALIKE`)",
             "content": {
               "application/json": {
                 "schema": {

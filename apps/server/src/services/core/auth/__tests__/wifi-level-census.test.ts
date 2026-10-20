@@ -55,7 +55,6 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/rooms/:id/members',
     'PATCH /api/rooms/:id/members/:authorId',
     'DELETE /api/rooms/:id/members/:authorId',
-    'PATCH /api/rooms/authors/:authorId/handle',
     'POST /api/rooms/:id/halt',
     'POST /api/rooms/:id/halt/:authorId',
     'POST /api/rooms/:id/holds/:authorId/promote',
@@ -163,6 +162,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/push/subscriptions',
     'DELETE /api/push/subscriptions/:id',
     'DELETE /api/devices/sessions/:id',
+  ],
+  // DOR-3156: the route reads whose handle it is, so the path alone cannot.
+  'Handles: a person’s own on Wi-Fi; renaming an agent is refused by the route itself': [
+    'PATCH /api/rooms/authors/:authorId/handle',
   ],
   'Work and agents at the chat level: tasks, commitments, pausing, agent settings': [
     'DELETE /api/tasks/:id',
