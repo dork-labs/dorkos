@@ -152,7 +152,7 @@ describe('POST /api/extensions/:id/start-work', () => {
     });
   });
 
-  it('holds a chat started from Wi-Fi to the runtime default, and one here to nothing', async () => {
+  it('holds a chat an extension starts to the runtime default, from Wi-Fi and from here alike', async () => {
     // A Wi-Fi sign-in is always a session cookie.
     signedInUser = { userId: 'owner', credential: 'cookie' };
     const wifi = await request(server)
@@ -168,7 +168,8 @@ describe('POST /api/extensions/:id/start-work', () => {
       .set('Origin', TRUSTED_ORIGIN)
       .send(BODY);
     expect(here.status).toBe(200);
-    expect(launches[1]!.permissionCeiling).toBeUndefined();
+    // An extension-started chat is capped whoever asked for it (DOR-3036, #3085).
+    expect(launches[1]!.permissionCeiling).toBe('runtime-default');
   });
 
   it('refuses an agent-headed request and starts nothing', async () => {

@@ -13,6 +13,7 @@ covers:
   - 'refactor(server): reading a stored connected-app action joins its writer in approval-storable (DOR-3037)'
   - "fix(server): the Wi-Fi refusals read the turn's marks after DOR-3036 (DOR-3037)"
   - "test(server): Wi-Fi holds read through DOR-3107's sender bound and own circle (DOR-3037)"
+  - 'test(server): an extension-started chat is capped from here as well as from Wi-Fi (DOR-3037)'
 ---
 
 ### Security
