@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "updated_at": "2026-10-20T11:58:38.891Z",
+ "entries": [
+  {
+   "runner": "playwright",
+   "file": "workbench/session-doc-routes.spec.ts",
+   "title": "a person reviews, allows and turns off a document route from the canvas header",
+   "reason": "Flaked on 5 of 58 queue builds since 10-14 (the review-button click never opens the review); ejected #3120 ahead of the 0.124.1 release. Fix or delete.",
+   "evidence": {
+    "occurrences": 5,
+    "builds_sampled": 29,
+    "shas": [
+     "3d7a7d440349",
+     "aab7fb7da4cb",
+     "d7ba240b31b7",
+     "d48f83fa1c6b",
+     "a7fa994151d1"
+    ],
+    "first_day": "2026-10-20",
+    "last_day": "2026-10-20",
+    "source": "ci-steward flaky --fetch, 2026-10-07..2026-10-20"
+   },
+   "added_by": "dorkos-2",
+   "added_at": "2026-10-20T11:58:38.891Z",
+   "expires_at": "2026-10-27T11:58:38.891Z",
+   "ledger": "261020-115838"
+  }
+ ]
+}
