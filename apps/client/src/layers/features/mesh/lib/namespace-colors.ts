@@ -4,7 +4,9 @@ const NAMESPACE_PALETTE = [
   '#f59e0b', // amber
   '#10b981', // emerald
   '#ec4899', // pink
-  '#8b5cf6', // violet
+  // Fuchsia, not violet: violet sat too close to indigo to tell two namespaces
+  // apart (DOR-3154).
+  '#d946ef', // fuchsia
   '#14b8a6', // teal
   '#f97316', // orange
   '#06b6d4', // cyan
