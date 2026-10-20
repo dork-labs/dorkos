@@ -7,7 +7,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import { setEntryMarksStore } from '../../core/turn-power/turn-levels.js';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import { resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
+import { noteEntryLevel, setEntryMarksStore } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { createEntryMarksStore } from '../limits/entry-marks-store.js';
 import { ceilingForEntry } from '../limits/turn-ceiling.js';
 import { isOwnCircle, posterCapsFor } from '../limits/own-circle.js';
@@ -128,6 +131,44 @@ describe('own-circle room turns', () => {
     const entry = postByBo({ outsider: true });
     expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({
       permissionCeiling: 'runtime-default',
+    });
+  });
+
+  describe('a marked post whose poster ran at Full (DOR-3141)', () => {
+    const FULL: TurnPermissionLevel = { asks: 'never', reach: 'everything' };
+    /** Whether a turn under this ceiling would ask before a write: a card. */
+    const asksBeforeWriting = (ceiling: { permissionCeiling?: unknown }): boolean =>
+      ceiling.permissionCeiling !== undefined &&
+      resolveCeilingLevel(
+        CLAUDE_CODE_CAPABILITIES.permissionModes,
+        ceiling.permissionCeiling as Parameters<typeof resolveCeilingLevel>[1]
+      ).asks !== 'never';
+
+    it('makes the agent it wakes ask before a write, in the circle and outside it', () => {
+      const entry = harness.service.post(channel.id, { authorId: bo, text: '@hop write it' });
+      noteEntryLevel(entry.id, { ...FULL, outsider: true }, channel.id);
+      const inCircle = ceilingForEntry(harness.authors, entry, false, channel.id, OWN);
+      expect(asksBeforeWriting(inCircle)).toBe(true);
+      expect(asksBeforeWriting(ceilingForEntry(harness.authors, entry, false, channel.id))).toBe(
+        true
+      );
+    });
+
+    it('still makes it ask after a restart, from the marks kept on the row', () => {
+      // No level in memory: only the row's marks survive a restart.
+      const entry = postByBo({ outsider: true });
+      expect(
+        asksBeforeWriting(ceilingForEntry(harness.authors, entry, false, channel.id, OWN))
+      ).toBe(true);
+    });
+
+    it('leaves an unmarked own-agent post at Full', () => {
+      const entry = harness.service.post(channel.id, { authorId: bo, text: '@hop write it' });
+      noteEntryLevel(entry.id, FULL, channel.id);
+      expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({});
+      expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({
+        permissionCeiling: FULL,
+      });
     });
   });
 

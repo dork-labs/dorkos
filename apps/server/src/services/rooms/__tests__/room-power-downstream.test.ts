@@ -130,11 +130,11 @@ describe('a turn another agent’s post starts', () => {
 
     service.post(channel.id, { authorId: human, text: '@ana ask bo, from elsewhere' });
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    // Capped, and carrying the mark on: it asks before acting.
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toMatchObject({
-      asks: 'always',
-      outsider: true,
-    });
+    // Capped, and carrying the mark on: it asks before acting. Ana's level comes
+    // first, then the cap her post's mark carries (DOR-3141).
+    const ceiling = turnsOf('/agents/bo')[0]!.permissionCeiling as unknown[];
+    expect(ceiling[0]).toMatchObject({ asks: 'always', outsider: true });
+    expect(ceiling).toContain('runtime-default');
   });
 
   it('is held to the runtime default when nobody verified the calling session', async () => {
