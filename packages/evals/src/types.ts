@@ -145,8 +145,8 @@ export const PAID_PROVIDER_OPT_IN_VAR = 'DORKOS_EVALS_PAID_PROVIDER';
  * `--runtime codex` must never be told to set an OpenRouter key.
  *
  * `CODEX_API_KEY` rather than `OPENAI_API_KEY` because it is the name the
- * installed `@openai/codex-sdk` (0.154.0) writes into the CLI's environment
- * (`dist/index.js:258`), the name the runtime's own dependency check tells a
+ * installed `@openai/codex-sdk` (0.163.0) writes into the CLI's environment
+ * (`dist/index.js:262`), the name the runtime's own dependency check tells a
  * person to set (`services/runtimes/codex/check-dependencies.ts:161`), and the
  * name the codex auth profile inherits into a turn's child process
  * (`services/runtimes/shared/runtime-environment-catalog.ts:138`).

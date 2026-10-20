@@ -2,11 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
 import { createCodexEventContext } from '../../event-mapper.js';
-import {
-  AppServerTurnMapper,
-  CODEX_STOPPED_COPY,
-  NOTIFICATION_DISPOSITION,
-} from '../notification-mapper.js';
+import { AppServerTurnMapper, CODEX_STOPPED_COPY } from '../notification-mapper.js';
+import { NOTIFICATION_DISPOSITION } from '../notification-disposition.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../rate-limits.js';
 import { SERVER_NOTIFICATION_METHODS } from '../protocol/methods.js';
 
