@@ -73,7 +73,10 @@ export interface AgentBrowserConnection {
  * its browser is written back. `--storage-state` seeds each of those in-memory
  * browsers from the operator's saved session. `--headless` keeps a window from
  * appearing for every session and lets it run on a machine with no screen;
- * dropping it from the entry shows the window.
+ * dropping it from the entry shows the window. The Cloud block is deliberately
+ * not baked in here: {@link withCloudOriginBlocked} adds it to every agent
+ * browser on its way to a runtime, so the list is always the current one, and
+ * a manifest written before the block existed starts blocked too.
  *
  * @param stateFile - Absolute path to the saved session file.
  * @returns The stdio connection to add under {@link AGENT_BROWSER_SERVER_NAME}.
@@ -92,6 +95,100 @@ export function agentBrowserConnection(stateFile: string): AgentBrowserConnectio
     ],
     env: {},
   };
+}
+
+const BLOCKED_ORIGINS_FLAG = '--blocked-origins';
+const CONFIG_FLAG = '--config';
+
+/**
+ * Whether a managed server connection is a Playwright MCP browser, by shape
+ * (the package in its arguments), so a renamed or hand-added one counts.
+ *
+ * @param connection - Any managed server connection.
+ */
+export function isPlaywrightBrowser(connection: {
+  transport: string;
+  args?: readonly string[];
+}): boolean {
+  return (
+    connection.transport === 'stdio' &&
+    Boolean(connection.args?.some((arg) => arg.startsWith('@playwright/mcp')))
+  );
+}
+
+/**
+ * The value of a `--flag value` or `--flag=value` argument, every time it
+ * appears, and the arguments without it.
+ */
+function takeFlag(args: readonly string[], flag: string): { values: string[]; rest: string[] } {
+  const values: string[] = [];
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === flag) {
+      if (args[i + 1] !== undefined) values.push(args[i + 1]!);
+      i += 1;
+    } else if (arg.startsWith(`${flag}=`)) {
+      values.push(arg.slice(flag.length + 1));
+    } else {
+      rest.push(arg);
+    }
+  }
+  return { values, rest };
+}
+
+/**
+ * The config file a Playwright MCP browser connection names with `--config`,
+ * or `undefined`. Read before {@link withCloudOriginBlocked} replaces it, so
+ * the operator's own settings can be carried into DorkOS's file.
+ *
+ * @param connection - Any managed server connection.
+ */
+export function agentBrowserConfigFileOf(connection: {
+  transport: string;
+  args?: readonly string[];
+}): string | undefined {
+  if (!isPlaywrightBrowser(connection)) return undefined;
+  return takeFlag(connection.args!, CONFIG_FLAG).values.at(-1);
+}
+
+/**
+ * A Playwright MCP browser connection that cannot reach the Cloud origin,
+ * whatever its manifest says (DOR-3196). Two layers, because neither covers
+ * every path on its own (both measured against `@playwright/mcp` 0.0.82):
+ *
+ * - `--blocked-origins` aborts direct visits, iframes and popups with
+ *   `net::ERR_BLOCKED_BY_CLIENT`, but a route only sees the first request of a
+ *   redirect chain, so a link that answers 302 to Cloud gets through;
+ * - `--config` names a file whose Chrome launch flags make the Cloud hosts
+ *   unresolvable (`net::ERR_NAME_NOT_RESOLVED`), which stops every hop of a
+ *   redirect, every subresource, and anything an agent's own Playwright code
+ *   does in the page. The server writes that file
+ *   (`services/browser/agent-browser-guard.ts`).
+ *
+ * An operator's own `--blocked-origins` entries are kept beside the Cloud
+ * ones; their `--config` is replaced by the guarded file, which carries their
+ * settings over. A server that is not a Playwright MCP browser is returned
+ * unchanged.
+ *
+ * @param connection - Any managed server connection.
+ * @param guard - The Cloud list as `--blocked-origins` wants it, and the guarded config file.
+ */
+export function withCloudOriginBlocked<T extends { transport: string; args?: readonly string[] }>(
+  connection: T,
+  guard: { blockedOrigins: string; configFile: string }
+): T {
+  if (!isPlaywrightBrowser(connection)) return connection;
+  const blocked = takeFlag(connection.args!, BLOCKED_ORIGINS_FLAG);
+  const { rest } = takeFlag(blocked.rest, CONFIG_FLAG);
+  const merged = [
+    ...new Set([guard.blockedOrigins, ...blocked.values].flatMap((value) => value.split(';'))),
+  ]
+    .filter(Boolean)
+    .join(';');
+  const at = rest.findIndex((arg) => arg.startsWith('@playwright/mcp'));
+  rest.splice(at + 1, 0, BLOCKED_ORIGINS_FLAG, merged, CONFIG_FLAG, guard.configFile);
+  return { ...connection, args: rest };
 }
 
 /**

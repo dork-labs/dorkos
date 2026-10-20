@@ -182,8 +182,8 @@ async function saveAndReport(
   state: StorageState,
   note?: string
 ): Promise<number> {
-  await writeStorageState(stateFile, state);
-  const sites = summarizeStorageState(state, deps.now().getTime() / 1000).filter((s) => !s.expired);
+  const saved = await writeStorageState(stateFile, state);
+  const sites = summarizeStorageState(saved, deps.now().getTime() / 1000).filter((s) => !s.expired);
   deps.log('');
   if (sites.length === 0) {
     deps.log('Saved, but no site is signed in yet. Sign in to a site in the agent browser,');

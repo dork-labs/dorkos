@@ -3,6 +3,8 @@ import {
   AGENT_BROWSER_SERVER_NAME,
   StorageStateSchema,
   agentBrowserConnection,
+  agentBrowserConfigFileOf,
+  withCloudOriginBlocked,
   agentBrowserStateFileOf,
   hostBelongsToSite,
   normalizeSiteInput,
@@ -43,6 +45,60 @@ describe('agentBrowserConnection', () => {
       ],
       env: {},
     });
+  });
+});
+
+describe('withCloudOriginBlocked', () => {
+  const guard = { blockedOrigins: 'cloud.example;*.cloud.example', configFile: '/guard/c.json' };
+
+  it('adds the Cloud block and the guarded config right after the package', () => {
+    expect(withCloudOriginBlocked(agentBrowserConnection('/s.json'), guard).args).toEqual([
+      '-y',
+      '@playwright/mcp@0.0.82',
+      '--blocked-origins',
+      'cloud.example;*.cloud.example',
+      '--config',
+      '/guard/c.json',
+      '--isolated',
+      '--headless',
+      '--storage-state',
+      '/s.json',
+    ]);
+  });
+
+  it('keeps an operator block beside the Cloud one and replaces their config', () => {
+    const connection = {
+      transport: 'stdio',
+      args: [
+        '@playwright/mcp@0.0.82',
+        '--blocked-origins=ads.example;cloud.example',
+        '--config',
+        '/mine.json',
+        '--storage-state=/s.json',
+      ],
+    };
+    expect(agentBrowserConfigFileOf(connection)).toBe('/mine.json');
+    expect(withCloudOriginBlocked(connection, guard).args).toEqual([
+      '@playwright/mcp@0.0.82',
+      '--blocked-origins',
+      'cloud.example;*.cloud.example;ads.example',
+      '--config',
+      '/guard/c.json',
+      '--storage-state=/s.json',
+    ]);
+  });
+
+  it('is the same however many times it is applied', () => {
+    const once = withCloudOriginBlocked(agentBrowserConnection('/s.json'), guard);
+    expect(withCloudOriginBlocked(once, guard)).toEqual(once);
+  });
+
+  it('leaves every other server alone', () => {
+    const other = { transport: 'stdio', args: ['some-other-mcp', '--config', '/x.json'] };
+    expect(withCloudOriginBlocked(other, guard)).toBe(other);
+    expect(agentBrowserConfigFileOf(other)).toBeUndefined();
+    const remote = { transport: 'http' };
+    expect(withCloudOriginBlocked(remote, guard)).toBe(remote);
   });
 });
 
