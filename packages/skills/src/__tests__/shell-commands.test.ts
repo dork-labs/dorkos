@@ -6,7 +6,7 @@
  * either one would run must be found: missing one is a command nobody saw.
  *
  * The reference patterns are the programs' own, copied from their source:
- * Claude Code's (from the bundled CLI, SDK 0.3.280) and OpenCode's (`6df0d5d`).
+ * Claude Code's (from the bundled CLI, SDK 0.3.280; unchanged at 0.3.304) and OpenCode's (`6df0d5d`).
  */
 import { describe, expect, it } from 'vitest';
 import { findSkillShellCommands, usesTypedArguments } from '../shell-commands.js';
