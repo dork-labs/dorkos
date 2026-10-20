@@ -102,9 +102,14 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ...actual,
     // The real promotion + budget pipeline runs; only its OUTPUT is stubbed, so the
     // assertion is about which items earned a slot rather than how they draw.
-    StatusLine: () => <div data-testid="status-line" />,
+    StatusLine: ({ trailing }: { trailing?: React.ReactNode }) => (
+      <div data-testid="status-line">{trailing}</div>
+    ),
     UsageRevealPopover: () => <div data-testid="usage-reveal" />,
-    SessionPopover: () => null,
+    WifiTurnCapPill: () => <span data-testid="wifi-cap" />,
+    SessionPopover: ({ open }: { open: boolean }) => (
+      <div data-testid="session-popover" data-open={String(open)} />
+    ),
     useGitStatus: vi.fn(() => ({ data: undefined })),
     useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
     RuntimeItem: () => null,
@@ -116,11 +121,23 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
   };
 });
 
+// The compaction reading, steered per case: 85%+ full is when it warns.
+const compaction = vi.hoisted(() => ({
+  visible: false,
+  percent: 0,
+  pending: false,
+  onCompact: vi.fn(),
+}));
+vi.mock('../model/status/use-compaction-chip', () => ({
+  useCompactionChip: () => compaction,
+}));
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Import after mocks
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { ChatStatusSection } from '../ui/status/ChatStatusSection';
+import { fireEvent } from '@testing-library/react';
 
 const SESSION_ID = 'line-hidden-session';
 
@@ -146,5 +163,33 @@ describe('ChatStatusSection — lineHidden', () => {
     render(<ChatStatusSection {...props} lineHidden />);
     expect(screen.queryByTestId('status-line')).not.toBeInTheDocument();
     expect(screen.getByTestId('usage-reveal')).toBeInTheDocument();
+  });
+
+  it('keeps why every turn asks on Wi-Fi in view in a DM', () => {
+    render(<ChatStatusSection {...props} lineHidden />);
+    expect(screen.getByTestId('dm-safety-line')).toContainElement(screen.getByTestId('wifi-cap'));
+  });
+
+  it('warns of a nearly full context in a DM, with the way to compact it', () => {
+    compaction.visible = true;
+    compaction.percent = 87;
+    try {
+      render(<ChatStatusSection {...props} lineHidden />);
+      expect(screen.getByTestId('dm-compact-warning')).toHaveTextContent('Context 87% full');
+      fireEvent.click(screen.getByRole('button', { name: 'Compact chat' }));
+      expect(compaction.onCompact).toHaveBeenCalledOnce();
+    } finally {
+      compaction.visible = false;
+    }
+  });
+
+  it('ignores the session shortcut in a DM, so nothing opens later on its own', () => {
+    const { rerender } = render(<ChatStatusSection {...props} lineHidden />);
+    fireEvent.keyDown(document, { key: '.', metaKey: true, shiftKey: true });
+    rerender(<ChatStatusSection {...props} />);
+    expect(screen.getByTestId('session-popover')).toHaveAttribute('data-open', 'false');
+
+    fireEvent.keyDown(document, { key: '.', metaKey: true, shiftKey: true });
+    expect(screen.getByTestId('session-popover')).toHaveAttribute('data-open', 'true');
   });
 });

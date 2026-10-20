@@ -52,6 +52,7 @@ import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
 import { ExtensionStatusRows } from './ExtensionStatusItems';
+import { DirectMessageSafetyLine } from './DirectMessageSafetyLine';
 
 /**
  * The stable stand-in for "this runtime's capability profile has not arrived".
@@ -82,8 +83,11 @@ interface ChatStatusSectionProps {
   agentPath?: string;
   /**
    * Draw no status line (DOR-3074): a chat drawn as a direct message keeps the
-   * model, account and context behind its session view instead. What a typed
-   * command opens (`/context`, the Full-autonomy question) still opens.
+   * model, account, permission mode, usage and git behind its session view
+   * instead. Safety and limits stay: the Wi-Fi notice and a nearly full
+   * context show on a quiet line of their own (`DirectMessageSafetyLine`), and
+   * what a typed command opens (`/context`, the Full-autonomy question) still
+   * opens. The session shortcut does nothing, having no popover to open.
    */
   lineHidden?: boolean;
 }
@@ -332,7 +336,9 @@ export function ChatStatusSection({
   });
 
   const [sessionOpen, setSessionOpen] = useState(false);
-  useSessionPopoverShortcut(() => setSessionOpen((o) => !o));
+  // A DM draws no popover to open, so the shortcut does nothing there; it
+  // would otherwise open one later, unasked, in the session view (DOR-3074).
+  useSessionPopoverShortcut(() => !lineHidden && setSessionOpen((o) => !o));
 
   const promotionContext: StatusPromotionContext = {
     cwd: status.cwd,
@@ -445,6 +451,7 @@ export function ChatStatusSection({
       {!lineHidden && !pickerOpen && makeDefault.line && (
         <MakeDefaultStopLine {...makeDefault.line} placement="overlay" />
       )}
+      {lineHidden && <DirectMessageSafetyLine compaction={compaction} />}
       {!lineHidden && (
         <StatusLine
           items={items}

@@ -9,7 +9,8 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { useSessionSurface } from '../model/use-session-surface';
 
 const state = vi.hoisted(() => ({
-  mode: 'off' as 'off' | 'dm' | 'session',
+  mode: 'off' as 'off' | 'dm' | 'session' | 'pending',
+  showSessions: false,
   name: null as string | null,
   displayName: null as string | null,
 }));
@@ -18,7 +19,7 @@ vi.mock('@/layers/features/direct-message', () => ({
   useDirectMessageView: () => ({
     mode: state.mode,
     chat:
-      state.mode === 'off'
+      state.mode === 'off' || state.mode === 'pending'
         ? null
         : { sessionId: 's', sessionIds: ['s'], roomId: 'dm', agentPath: '/agents/scout' },
   }),
@@ -35,6 +36,7 @@ vi.mock('@/layers/features/direct-message', () => ({
 }));
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: { profile: { displayName: state.displayName } } }),
+  useShowSessions: () => state.showSessions,
 }));
 
 afterEach(() => {
@@ -42,6 +44,7 @@ afterEach(() => {
   state.mode = 'off';
   state.name = null;
   state.displayName = null;
+  state.showSessions = false;
 });
 
 const AT_FOLDER = { id: 'm', name: 'scout', displayName: 'Scout' } as unknown as AgentManifest;
@@ -49,7 +52,11 @@ const AT_FOLDER = { id: 'm', name: 'scout', displayName: 'Scout' } as unknown as
 describe('useSessionSurface', () => {
   it('is a session with today’s placeholder while the chat is not a DM', () => {
     const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
-    expect(result.current).toEqual({ directMessage: null, placeholder: 'Message Scout…' });
+    expect(result.current).toEqual({
+      directMessage: null,
+      placeholder: 'Message Scout…',
+      quietTurnNumbers: false,
+    });
 
     const bare = renderHook(() => useSessionSurface('s', null));
     expect(bare.result.current.placeholder).toBe('Send a message…');
@@ -77,9 +84,27 @@ describe('useSessionSurface', () => {
           color: 'hsl(20 80% 50%)',
         },
         humanName: 'Dorian',
+        settled: true,
       },
       placeholder: 'Message Scout',
+      quietTurnNumbers: true,
     });
+  });
+
+  it('shows the turn’s time and tokens in a DM only with Show sessions on', () => {
+    state.mode = 'dm';
+    state.name = 'Scout';
+    state.showSessions = true;
+    const { result } = renderHook(() => useSessionSurface('s', null));
+    expect(result.current.quietTurnNumbers).toBe(false);
+  });
+
+  it('draws neutral while it asks, keeping today’s names until it knows', () => {
+    state.mode = 'pending';
+    state.displayName = 'Dorian';
+    const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
+    expect(result.current.directMessage).toEqual({ agent: null, humanName: null, settled: false });
+    expect(result.current.quietTurnNumbers).toBe(true);
   });
 
   it('keeps one DM object while nothing it says changes', () => {

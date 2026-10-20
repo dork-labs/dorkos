@@ -5,6 +5,7 @@
  * @module widgets/one-bar/ui/SessionRouteHeader
  */
 import { Terminal } from 'lucide-react';
+import { AgentAvatar } from '@/layers/entities/agent';
 import {
   useDirectMessageAgent,
   useDirectMessageView,
@@ -12,6 +13,7 @@ import {
 } from '@/layers/features/direct-message';
 import { useOneBarState } from '../model/one-bar-context';
 import { DirectMessageHeader } from './DirectMessageHeader';
+import { OneBar } from './OneBar';
 import { SessionHeader } from './SessionHeader';
 
 /**
@@ -20,11 +22,13 @@ import { SessionHeader } from './SessionHeader';
  * With the DM view off, or on a chat that is not an agent's Direct chat, this
  * is {@link SessionHeader} exactly as it always was. On a Direct chat it is
  * {@link DirectMessageHeader}; on the session view behind one, the session bar
- * saying so, with the way back.
+ * saying so, with the way back. While the server has not yet said which, a
+ * neutral bar, so a DM never flashes the session's title and badge first.
  */
 export function SessionRouteHeader() {
   const { sessionId } = useOneBarState();
   const view = useDirectMessageView(sessionId ?? null);
+  if (view.mode === 'pending') return <PendingBar />;
   if (view.mode === 'dm' && view.chat && sessionId)
     return <DirectMessageHeader sessionId={sessionId} chat={view.chat} />;
   if (view.mode === 'session' && view.chat)
@@ -56,5 +60,34 @@ function BehindDirectMessage({ agentPath }: { agentPath: string }) {
         {label}
       </button>
     </span>
+  );
+}
+
+/**
+ * The bar while the Direct-chat lookup is out: who the chat is with, and
+ * nothing that only one of the two answers would show.
+ */
+function PendingBar() {
+  const { agentName, agentVisual } = useOneBarState();
+  return (
+    <OneBar
+      identity={
+        <div
+          className="flex min-w-0 shrink items-center gap-1.5 text-sm"
+          data-testid="session-bar-pending"
+          aria-busy="true"
+        >
+          {agentVisual && (
+            <AgentAvatar
+              color={agentVisual.color}
+              emoji={agentVisual.emoji}
+              size="xs"
+              badge={null}
+            />
+          )}
+          {agentName && <span className="min-w-0 truncate font-medium">{agentName}</span>}
+        </div>
+      }
+    />
   );
 }

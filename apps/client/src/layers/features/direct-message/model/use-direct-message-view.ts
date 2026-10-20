@@ -25,16 +25,20 @@ export interface DirectMessageView {
  * session like any other.
  *
  * Asks the server whether this is a Direct chat only while the experiment is
- * on, so with it off nothing new is fetched and nothing changes.
+ * on, so with it off nothing new is fetched and nothing changes. While it
+ * asks, the answer is `pending`, which every surface draws neutral.
  *
  * @param sessionId - The session on screen, or null for none.
  */
 export function useDirectMessageView(sessionId: string | null): DirectMessageView {
   const enabled = useDmViewEnabled();
-  const { data } = useDirectChat(sessionId, { enabled });
+  const { data, isLoading } = useDirectChat(sessionId, { enabled });
   const { view } = useSessionSearch();
   const chat = enabled ? (data ?? null) : null;
-  return { mode: directMessageMode({ enabled, isDirect: chat !== null, view }), chat };
+  return {
+    mode: directMessageMode({ enabled, isDirect: chat !== null, view, pending: isLoading }),
+    chat,
+  };
 }
 
 /** The two ways between a DM and the session behind it. */

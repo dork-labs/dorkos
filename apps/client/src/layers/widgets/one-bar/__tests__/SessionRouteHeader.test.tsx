@@ -99,7 +99,10 @@ function channel(id: string, member = true): RoomSummary {
 }
 
 /** Mount the bar on a real `/session` route at `at`. */
-function mountBar(at: string, options: { dmView?: boolean; showSessions?: boolean } = {}) {
+function mountBar(
+  at: string,
+  options: { dmView?: boolean; showSessions?: boolean; lookupPending?: boolean } = {}
+) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
@@ -114,12 +117,14 @@ function mountBar(at: string, options: { dmView?: boolean; showSessions?: boolea
       ],
       ui: { showSessions: options.showSessions ?? false },
     }),
-    findDirectChat: vi.fn().mockResolvedValue({
-      sessionId: SESSION,
-      sessionIds: [SESSION],
-      roomId: 'dm-scout',
-      agentPath: SCOUT_PATH,
-    }),
+    findDirectChat: options.lookupPending
+      ? vi.fn().mockReturnValue(new Promise(() => {}))
+      : vi.fn().mockResolvedValue({
+          sessionId: SESSION,
+          sessionIds: [SESSION],
+          roomId: 'dm-scout',
+          agentPath: SCOUT_PATH,
+        }),
     getAgentByPath: vi.fn().mockResolvedValue({
       id: 'scout-manifest',
       name: 'scout',
@@ -198,6 +203,15 @@ describe('SessionRouteHeader', () => {
     // The Direct chat question is the session bar's own (its "Direct" title),
     // and the DM view asks the agent and the roster nothing on top of it.
     expect(transport.getTeamRoster).not.toHaveBeenCalled();
+  });
+
+  it('draws a neutral bar, none of the session’s chrome, while it asks which chat this is', async () => {
+    mountBar(`/session?session=${SESSION}`, { lookupPending: true });
+
+    expect(await screen.findByTestId('session-bar-pending')).toHaveTextContent('Scout');
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dm-header-identity')).not.toBeInTheDocument();
   });
 
   it('draws the agent, its role and the channels you share on its Direct chat', async () => {

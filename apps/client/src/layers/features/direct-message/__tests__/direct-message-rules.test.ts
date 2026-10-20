@@ -37,6 +37,11 @@ describe('directMessageMode', () => {
     expect(directMessageMode({ enabled: true, isDirect: true })).toBe('dm');
   });
 
+  it('is pending while the lookup is out, and only with the experiment on', () => {
+    expect(directMessageMode({ enabled: true, isDirect: false, pending: true })).toBe('pending');
+    expect(directMessageMode({ enabled: false, isDirect: false, pending: true })).toBe('off');
+  });
+
   it('draws the session behind the DM when the route asks for it', () => {
     expect(directMessageMode({ enabled: true, isDirect: true, view: 'session' })).toBe('session');
   });

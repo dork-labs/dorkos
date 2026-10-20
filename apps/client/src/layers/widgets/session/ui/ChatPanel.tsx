@@ -68,7 +68,7 @@ import {
   useToolShortcuts,
 } from '@/layers/features/chat';
 import { SESSION_CAPABILITIES } from '../model/session-capabilities';
-import { clickModelTrigger } from '../model/model-trigger';
+import { useChooseModel } from '../model/model-trigger';
 import { useDirectChatLog } from '../model/use-direct-chat-notes';
 import { useSessionLaneState } from '../model/use-session-lane-state';
 import { useSessionSurface } from '../model/use-session-surface';
@@ -130,7 +130,6 @@ export function ChatPanel({
   const queryClient = useQueryClient();
   const chatInputRef = useRef<ComposerInputHandle>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
-  const handleChooseModel = useCallback(() => clickModelTrigger(chatPanelRef.current), []);
   // An agent's Direct chat draws the pings in the log under it (rule S12).
   const directLog = useDirectChatLog(sessionId);
   const taskState = useTaskState(sessionId);
@@ -510,8 +509,7 @@ export function ChatPanel({
   //
   // The rung itself is not dead: the room's lane is the surface with no inline
   // card, and it draws it (`RoomLiveLane`). The header tray covers this session
-  // from every OTHER route.
-  const sessionAsks = NO_ASKS;
+  // from every OTHER route. So the lane below is handed `NO_ASKS`.
 
   // The queue lives on the server; this window reads it out of the session
   // projection and narrows it to the messages that are genuinely waiting. Read
@@ -594,6 +592,8 @@ export function ChatPanel({
   // Drawn as a session, or as a DM with one agent (DOR-3074), and what the
   // empty box says: the agent it reaches, or the generic invitation.
   const surface = useSessionSurface(sessionId, composerAgent);
+  // A DM has no status line, so "Choose model" opens the session view first.
+  const handleChooseModel = useChooseModel(chatPanelRef, surface.directMessage !== null);
 
   // Where this session's words go, and the files staged against them. Built
   // here rather than inside the composer so the whole conversation can publish
@@ -694,7 +694,7 @@ export function ChatPanel({
   );
 
   const laneState = useSessionLaneState({
-    asks: sessionAsks,
+    asks: NO_ASKS,
     status,
     streamStartTime,
     estimatedTokens,
@@ -704,6 +704,7 @@ export function ChatPanel({
     operationProgress,
     systemStatus,
     activity,
+    quietNumbers: surface.quietTurnNumbers,
   });
 
   return (

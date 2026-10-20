@@ -16,7 +16,7 @@
  *
  * @module widgets/session/ui/SessionTranscript
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
@@ -288,6 +288,30 @@ export function SessionTranscript({
   const runtime = useSessionRuntime(sessionId);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const dmAgent = directMessage?.agent ?? null;
+  // Every DM message names its time (DOR-3074). One with none of its own (a
+  // reply still arriving, or history a runtime keeps without times) shows when
+  // this transcript first drew it, kept so it never moves.
+  const stampsUntimed = directMessage?.settled === true;
+  const [firstSeen] = useState(() => new Map<string, string>());
+  const untimedAt = useCallback(
+    (message: ChatMessage): string | undefined => {
+      if (!stampsUntimed || message.timestamp) return undefined;
+      const known = firstSeen.get(message.id);
+      if (known) return known;
+      const now = new Date().toISOString();
+      firstSeen.set(message.id, now);
+      return now;
+    },
+    [stampsUntimed, firstSeen]
+  );
+  // A live turn's stand-in rows reuse one id from turn to turn, so a stand-in
+  // that has left the transcript forgets its time and the next turn's is new.
+  useEffect(() => {
+    const present = new Set(messages.map((message) => message.id));
+    for (const id of firstSeen.keys()) {
+      if (id.startsWith('__') && !present.has(id)) firstSeen.delete(id);
+    }
+  }, [messages, firstSeen]);
   const humanName = directMessage?.humanName ?? null;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
@@ -470,6 +494,7 @@ export function SessionTranscript({
           author={row.author}
           sessionId={sessionId}
           directRoomId={directLog?.roomId}
+          fallbackAt={untimedAt(message)}
           isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
@@ -505,6 +530,7 @@ export function SessionTranscript({
       foldedPromptIndex,
       sessionId,
       directLog?.roomId,
+      untimedAt,
       historyCount,
       isTextStreaming,
       activeToolCallId,

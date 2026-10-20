@@ -86,7 +86,7 @@ describe('SessionTranscript as a direct message', () => {
       <SessionTranscript
         sessionId="scout-direct"
         messages={MESSAGES}
-        directMessage={{ agent: SCOUT, humanName: 'Dorian' }}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true }}
       />,
       readState.transport
     );
@@ -102,7 +102,7 @@ describe('SessionTranscript as a direct message', () => {
       <SessionTranscript
         sessionId="scout-direct"
         messages={MESSAGES}
-        directMessage={{ agent: SCOUT, humanName: null }}
+        directMessage={{ agent: SCOUT, humanName: null, settled: true }}
       />,
       readState.transport
     );
@@ -118,5 +118,35 @@ describe('SessionTranscript as a direct message', () => {
 
     // No agent at the folder: the runtime's brand, exactly as before.
     expect(authorNames()).toEqual(['You', 'Claude Code']);
+  });
+
+  it('names a time on every message, even one that carries none of its own', () => {
+    const untimed = MESSAGES.map((message) => ({ ...message, timestamp: '' }));
+    renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={untimed}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true }}
+      />,
+      readState.transport
+    );
+
+    const times = document.querySelectorAll('[data-slot="message-author"] time');
+    expect(times).toHaveLength(2);
+    for (const time of times) expect(time.getAttribute('datetime')).toMatch(/^\d{4}-/);
+  });
+
+  it('keeps a message’s own time as its time', () => {
+    renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true }}
+      />,
+      readState.transport
+    );
+
+    const times = document.querySelectorAll('[data-slot="message-author"] time');
+    expect(Array.from(times, (time) => time.getAttribute('datetime'))).toEqual([AT, AT]);
   });
 });

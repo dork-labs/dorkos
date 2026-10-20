@@ -17,8 +17,11 @@ import { formatRelativeTime } from '@/layers/shared/lib';
  * - `dm` — as a direct message with the agent.
  * - `session` — as the working session behind that DM, asked for by the
  *   `?view=session` param.
+ * - `pending` — the experiment is on and the server has not yet said whether
+ *   this chat is a Direct chat. Drawn neutral, with none of the session's
+ *   chrome, so a DM never flashes the old header and status line first.
  */
-export type DirectMessageMode = 'off' | 'dm' | 'session';
+export type DirectMessageMode = 'off' | 'dm' | 'session' | 'pending';
 
 /**
  * Decide how a chat is drawn.
@@ -26,13 +29,17 @@ export type DirectMessageMode = 'off' | 'dm' | 'session';
  * @param input.enabled - Whether the DM view experiment is on.
  * @param input.isDirect - Whether this chat is an agent's Direct chat.
  * @param input.view - The route's `view` param.
+ * @param input.pending - Whether the Direct-chat lookup is still out.
  */
 export function directMessageMode(input: {
   enabled: boolean;
   isDirect: boolean;
   view?: 'session';
+  pending?: boolean;
 }): DirectMessageMode {
-  if (!input.enabled || !input.isDirect) return 'off';
+  if (!input.enabled) return 'off';
+  if (input.pending) return 'pending';
+  if (!input.isDirect) return 'off';
   return input.view === 'session' ? 'session' : 'dm';
 }
 
