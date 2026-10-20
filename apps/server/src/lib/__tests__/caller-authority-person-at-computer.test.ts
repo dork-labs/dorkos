@@ -6,7 +6,12 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ login: false, ownerId: 'user_owner' as string | null }));
+const state = vi.hoisted(() => ({
+  login: false,
+  ownerId: 'user_owner' as string | null,
+  role: 'computer' as 'computer' | 'hub',
+}));
+vi.mock('../server-role.js', () => ({ currentServerRole: () => state.role }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: vi.fn((key: string) => (key === 'auth' ? { enabled: state.login } : undefined)),
@@ -22,7 +27,11 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import type { RequestIngress } from '../../services/core/remote/ingress-mark.js';
 import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js';
 import { requestFactsFor, type DescribedRequest } from '../../http/__tests__/described-request.js';
-import { requirePersonAtThisComputer } from '../caller-authority.js';
+import {
+  NEEDS_PERSON_AT_THIS_COMPUTER,
+  refuseFrontDoorChange,
+  requirePersonAtThisComputer,
+} from '../caller-authority.js';
 
 const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
 const OWNER_KEY: RequestUser = { userId: 'user_owner', credential: 'api-key' };
@@ -44,6 +53,7 @@ async function through(ingress: RequestIngress, described: DescribedRequest = {}
 afterEach(() => {
   state.login = false;
   state.ownerId = 'user_owner';
+  state.role = 'computer';
 });
 
 describe('requirePersonAtThisComputer', () => {
@@ -118,5 +128,68 @@ describe('requirePersonAtThisComputer', () => {
   it('refuses a request with no credential when this computer asks for a password', async () => {
     state.login = true;
     expect(requirePersonAtThisComputer(await local())).toBe('not-a-person');
+  });
+});
+
+describe('refuseFrontDoorChange (DOR-2969)', () => {
+  it('lets the owner at this computer change a front-door setting', async () => {
+    expect(refuseFrontDoorChange(await local(), 'remote access')).toBeUndefined();
+    state.login = true;
+    expect(
+      refuseFrontDoorChange(await local({ user: OWNER_COOKIE }), 'remote access')
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['Wi-Fi', 'wifi'],
+    ['the own tunnel', 'own-tunnel'],
+    ['managed remote access', 'managed'],
+    ['the session relay', 'relay'],
+  ] as const)('refuses %s, with a sentence that says where to do it', async (_l, ingress) => {
+    const refusal = refuseFrontDoorChange(
+      await through(ingress, { user: OWNER_COOKIE }),
+      'Wi-Fi access'
+    );
+    expect(refusal).toEqual({
+      status: 403,
+      code: NEEDS_PERSON_AT_THIS_COMPUTER,
+      error: 'Change Wi-Fi access on the computer DorkOS runs on.',
+    });
+  });
+
+  it.each([
+    ['an agent', { headers: { 'x-dorkos-agent': 't' } }],
+    ['an approval token', { headers: { [APPROVAL_TOKEN_HEADER]: 'tok' } }],
+    ['a bearer the open gate never read', { headers: { authorization: 'Bearer dork_key' } }],
+  ])('refuses %s at this computer', async (_l, described) => {
+    expect(refuseFrontDoorChange(await local(described), 'x')).toMatchObject({
+      status: 403,
+      code: NEEDS_PERSON_AT_THIS_COMPUTER,
+    });
+  });
+
+  it('refuses an API key and a person who is not the owner, with login on', async () => {
+    state.login = true;
+    for (const user of [OWNER_KEY, GUEST_COOKIE]) {
+      expect(refuseFrontDoorChange(await local({ user }), 'x')).toMatchObject({
+        code: NEEDS_PERSON_AT_THIS_COMPUTER,
+        error: 'Only the owner can change x, in the app.',
+      });
+    }
+  });
+
+  it("on a hub, takes the owner's own browser session and nothing else", async () => {
+    state.role = 'hub';
+    expect(refuseFrontDoorChange(await local({ user: OWNER_COOKIE }), 'x')).toBeUndefined();
+    for (const described of [
+      { user: OWNER_KEY },
+      { user: GUEST_COOKIE },
+      {},
+      { user: OWNER_COOKIE, headers: { 'x-dorkos-agent': 't' } },
+    ]) {
+      expect(refuseFrontDoorChange(await local(described), 'x')).toMatchObject({
+        code: NEEDS_PERSON_AT_THIS_COMPUTER,
+      });
+    }
   });
 });

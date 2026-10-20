@@ -67,6 +67,11 @@ export interface RankedAccount {
   badge?: 'recommended' | 'reserved';
   /** `true` for an account that may not work in the project ({@link notAllowedAccounts}). */
   notAllowed?: true;
+  /**
+   * `true` for an account a person kept out of automatic moves: a room seat
+   * whose account runs out never moves here on its own (`reseat-accounts.ts`).
+   */
+  noAutoMove?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -212,6 +217,7 @@ function defaultRanking(
           usage,
           eligible,
           reason: defaultReason(usage, eligible),
+          ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
         } satisfies RankedAccount,
       };
     });
@@ -290,6 +296,7 @@ async function advisedRanking(
         eligible: row.eligible,
         reason: row.reason,
         ...(row.badge ? { badge: row.badge } : {}),
+        ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
       };
     }),
     recommendedId: validated.recommendedId,
@@ -327,9 +334,29 @@ export function launchFallbackOrder(
   project: ProjectRef | null,
   config: EligibilityConfigReader = configManager
 ): string[] {
-  return defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project, config)
-    .accounts.filter((row) => row.runtime === runtime)
-    .map((row) => row.id);
+  return coreRanking(runtime, project, config).map((row) => row.id);
+}
+
+/**
+ * Core's own ranking of one runtime's accounts that may work in the project,
+ * as full rows, in {@link launchFallbackOrder}'s order. Never asks the advisor.
+ * What an automatic move picks from (a room seat whose account ran out), so
+ * it never waits on an extension. Empty with no usage store.
+ *
+ * @param runtime - The runtime.
+ * @param project - The folder's project, or null for no project.
+ * @param config - Where the rules live.
+ */
+export function coreRanking(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): RankedAccount[] {
+  return defaultRanking(
+    { purpose: 'launch', caller: 'person', cwd: '', runtime },
+    project,
+    config
+  ).accounts.filter((row) => row.runtime === runtime);
 }
 
 /**

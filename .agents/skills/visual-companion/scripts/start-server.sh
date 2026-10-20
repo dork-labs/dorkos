@@ -10,9 +10,9 @@
 # Options:
 #   --project-dir <path>  Store session files under <path>/.dork/visual-companion/
 #                         instead of /tmp. Files persist after server stops.
-#   --host <bind-host>    Host/interface to bind (default: 127.0.0.1).
-#                         Use 0.0.0.0 in remote/containerized environments.
-#   --url-host <host>     Hostname shown in returned URL JSON.
+#   --host <bind-host>    Host to bind (default: 127.0.0.1). Only 127.0.0.1, ::1
+#                         or localhost: from another machine, forward the port.
+#   --url-host <host>     Hostname shown in returned URL JSON: localhost, 127.0.0.1 or ::1.
 #   --foreground          Run server in the current terminal (no backgrounding).
 #   --background          Force background mode (overrides Codex auto-foreground).
 

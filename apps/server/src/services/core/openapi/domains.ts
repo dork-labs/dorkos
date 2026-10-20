@@ -1,6 +1,7 @@
 /** Keep domain-owned API registration out of the large legacy path registry. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerFileWriteOpenApi } from '../../canvas/doc-channel/writes/file-writes-openapi.js';
+import { registerDocRouteControlsOpenApi } from '../../canvas/doc-channel/route-controls/openapi.js';
 import { registerConnectorEventOpenApi } from '../../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../../session/fleet/continue-openapi.js';
 import { registerSessionLocationsOpenApi } from '../../session/resolution/session-locations-openapi.js';
@@ -33,6 +34,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);
   registerFileWriteOpenApi(registry);
+  registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
   registerHubComputersOpenApi(registry);

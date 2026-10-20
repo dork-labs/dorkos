@@ -4603,6 +4603,14 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
+    callerRoute: z
+      .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
+      }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
@@ -4666,6 +4674,10 @@ export const ServerConfigSchema = z
               onlyProjects: z.array(ProjectRefSchema).nullable().optional().openapi({
                 description:
                   'The projects this account may work in ("Only for client-app"), or null for any project (spec flow-multiproject §8). Change it with PUT /api/runtimes/claude-code/accounts/:id/only-projects, never by writing it back through PATCH /api/config. Absent on a server too old to report it',
+              }),
+              noAutoMove: z.boolean().optional().openapi({
+                description:
+                  'True when DorkOS never moves a room agent to this account on its own (a person still may). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
               }),
             })
           )
@@ -5433,6 +5445,33 @@ export const TaskRunTriggerSchema = z
 
 export type TaskRunTrigger = z.infer<typeof TaskRunTriggerSchema>;
 
+/**
+ * The turn marks a schedule was created or last edited under (DOR-3036, `specs/turn-marks`), as
+ * its approval card shows them: words from outside the owner's circle, and each teammate in a
+ * shared space whose message started the chain, with the names DorkOS knew when it was written.
+ */
+export const ScheduleOriginMarksSchema = z
+  .object({
+    /** The turn read words DorkOS can't vouch for: a stranger's message, or another agent's that carried one. */
+    outsider: z.literal(true).optional(),
+    /** Each teammate whose message started the chain, and the space room they wrote in. */
+    teammate: z
+      .array(
+        z.object({
+          roomId: z.string(),
+          authorId: z.string(),
+          /** The teammate's name when the mark was written, or null when it was unknown. */
+          name: z.string().nullable().default(null),
+          /** The room's title when the mark was written, or null when it was unknown. */
+          room: z.string().nullable().default(null),
+        })
+      )
+      .optional(),
+  })
+  .openapi('ScheduleOriginMarks');
+
+export type ScheduleOriginMarks = z.infer<typeof ScheduleOriginMarksSchema>;
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5616,6 +5655,12 @@ export const TaskSchema = z
      * such. `null` on every schedule a person or an agent explained themselves.
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
+    /**
+     * The turn marks the schedule was created or last edited under, or null for an unmarked
+     * turn or a person's own schedule (DOR-3036). A marked schedule waits for a person, whatever
+     * the trust preset; approving it clears this.
+     */
+    originMarks: ScheduleOriginMarksSchema.nullable().optional(),
     nextRun: z.string().nullable().optional(),
     /**
      * When the schedule last started a run (ISO 8601), or null when it never

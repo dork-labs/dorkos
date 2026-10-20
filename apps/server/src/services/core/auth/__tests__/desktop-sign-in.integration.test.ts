@@ -154,6 +154,17 @@ describe('redeeming', () => {
     expect(who?.session.route).toBe('local');
   });
 
+  it('marks only its own sign-in as the DorkOS app, for the devices list', async () => {
+    const res = await redeem(mint());
+    const pairs = (res.headers['set-cookie'] as unknown as string[])
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const who = await auth.api.getSession({ headers: new Headers({ cookie: pairs }) });
+    expect(signIn.isDesktopSignIn(who!.session.token)).toBe(true);
+    const others = db.select().from(sessionTable).all();
+    expect(others.filter((row) => signIn.isDesktopSignIn(row.token))).toHaveLength(1);
+  });
+
   it('ends the last desktop session when the window signs in again', async () => {
     await redeem(mint());
     const before = db.select().from(sessionTable).all().length;

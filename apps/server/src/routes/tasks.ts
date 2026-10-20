@@ -35,6 +35,7 @@ import type { TaskSchedulerService } from '../services/tasks/task-scheduler-serv
 import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
+import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
@@ -82,6 +83,8 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
+import { marksOf } from '../services/core/turn-power/turn-levels.js';
+import { hasMarks } from '../services/core/turn-power/turn-marks.js';
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504):
@@ -344,6 +347,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const trusted = clearsTheAgentBar(caller);
     const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
     if (operatorOnly) return c.json(operatorOnly, 403);
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal = namesCredits(body)
       ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
       : undefined;
@@ -365,6 +371,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         input: body as CreateTaskInput,
         trusted,
         callerIsOurAgent: agentIdentity != null,
+        // An agent's HTTP call names no chat, so its turn is read through its
+        // agent: the marks of any marked turn of it running now (DOR-3036).
+        ...(agentIdentity ? { originMarks: marksOf(undefined, agentIdentity.agentPath) } : {}),
         // An unidentified caller leaves this null, and the approval card
         // honestly says it does not know who asked.
         proposal: { agentPath: agentIdentity?.agentPath ?? null },
@@ -433,6 +442,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!existing) {
       return c.json({ error: 'Scheduled task not found' }, 404);
     }
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -649,6 +661,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         trusted: rearms,
         armsAgentWork: !trusted && agentSchedulesArmWithoutAsking(caller.agentIdentity != null),
       });
+      updated = store.getTask(updated.id) ?? updated;
+    }
+    // An agent's edit from a marked turn parks the schedule for a person and keeps the marks for
+    // its card, whatever it changed (DOR-3036). Picked up by the park edge below like any other.
+    const marks = caller.agentIdentity ? marksOf(undefined, caller.agentIdentity.agentPath) : {};
+    if (!trusted && hasMarks(marks) && store.approvals.markOrigin(updated.id, marks)) {
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -873,6 +891,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       );
     }
 
+    const wifiRefusal = wifiRunNowRefusal(caller, store.getTask(id) ?? undefined);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal =
       store.getTask(id)?.account === CREDITS_ACCOUNT_ID
         ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)

@@ -27,6 +27,14 @@
  *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
  *   step B3). The computer never signs in to the hub; the code is its
  *   credential. A trailing slash or any sibling under `/api/hub/` stays gated.
+ * - **`/api/session-relay/passkeys/finish`, on a computer only, and only that
+ *   exact path** — a new approvals passkey posted by the loopback return page
+ *   (`routes/session-relay-passkeys.ts`, B4c). The system browser that page
+ *   opens in may not be signed in here. The route requires instead a direct
+ *   loopback caller with no forwarding header, an `Origin` that is exactly the
+ *   return page's, a JSON body, and the single-use enrol statement `/start`
+ *   issued after the owner's password; that statement is the capability.
+ *   Every other passkey route stays gated.
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -44,7 +52,10 @@ import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
-import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
+import {
+  RELAY_LINK_PATH,
+  SESSION_RELAY_PASSKEY_FINISH_PATH,
+} from '@dorkos/shared/session-relay-link';
 import {
   requestSessionRoute,
   sessionWorksOn,
@@ -134,7 +145,9 @@ function isExemptPath(path: string): boolean {
     // Signed-token-authorized embedded-browser content (see the module doc).
     path.startsWith('/api/workbench/serve/') ||
     // A computer redeeming a link code, on a hub only (see the module doc).
-    (path === RELAY_LINK_PATH && currentServerRole() === 'hub')
+    (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
+    // A new approvals passkey coming back to this computer (see the module doc).
+    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub')
   );
 }
 
@@ -167,6 +180,12 @@ export interface VerifyRequestAuthOptions {
   bearerIsNotAnApiKey?: boolean;
   /** Bypass this deployment's cookie cache for a fresh database observation. */
   sessionFreshness?: 'server-store';
+  /**
+   * Skip the session-cookie leg, so only a valid bearer key can prove an
+   * identity. `/mcp` and A2A set it on the Wi-Fi route (DOR-2969): a Wi-Fi
+   * sign-in is never an agent tool's credential there.
+   */
+  ignoreSessionCookie?: boolean;
 }
 
 /**
@@ -217,42 +236,9 @@ export async function verifyRequestAuth(
   if (!auth) return null;
 
   // 1. Session cookie — verified against the cookie cache / DB.
-  try {
-    const result = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-      // Just after a restart, nothing remembers which sign-ins ended before it,
-      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
-      ...(options.sessionFreshness === 'server-store'
-        ? { query: { disableCookieCache: true, disableRefresh: true } }
-        : inRestartWindow()
-          ? { query: { disableCookieCache: true } }
-          : {}),
-    });
-    // A public-computer sign-in never outlives its day, whatever its expiry
-    // says (`public-computer.ts`).
-    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
-      // Only on the route it was made on; anywhere else it is no session. A
-      // session that just ended is no session either, though its cached
-      // snapshot still vouches for it (`./sessions/live-connections.ts`).
-      const route = requestSessionRoute(req);
-      if (
-        route !== null &&
-        result.session &&
-        sessionWorksOn(result.session, route) &&
-        !sessionRecentlyEnded(result.session.id)
-      ) {
-        return {
-          userId: result.user.id,
-          credential: 'cookie',
-          sessionId: result.session.id,
-          route,
-        };
-      }
-    }
-  } catch (error) {
-    logger.debug('[Auth] Session cookie verification failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+  if (!options.ignoreSessionCookie) {
+    const user = await verifySessionCookie(auth, req, options);
+    if (user) return user;
   }
 
   // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
@@ -349,4 +335,54 @@ export async function decideSessionGate(
     readOnly ? {} : { sessionFreshness: 'server-store' }
   );
   return user ? { allowed: true, user } : { allowed: false };
+}
+
+/**
+ * The session-cookie leg of {@link verifyRequestAuth}: the signed-in person,
+ * or `null` when no session works for this request on its route.
+ */
+async function verifySessionCookie(
+  auth: NonNullable<ReturnType<typeof getAuth>>,
+  req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
+  options: VerifyRequestAuthOptions
+): Promise<RequestUser | null> {
+  try {
+    const result = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      // Just after a restart, nothing remembers which sign-ins ended before it,
+      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
+      ...(options.sessionFreshness === 'server-store'
+        ? { query: { disableCookieCache: true, disableRefresh: true } }
+        : inRestartWindow()
+          ? { query: { disableCookieCache: true } }
+          : {}),
+    });
+    // A public-computer sign-in never outlives its day, whatever its expiry
+    // says (`public-computer.ts`).
+    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
+      // Only on the route it was made on; anywhere else it is no session. A
+      // session that just ended is no session either, though its cached
+      // snapshot still vouches for it (`./sessions/live-connections.ts`).
+      const route = requestSessionRoute(req);
+      if (
+        route !== null &&
+        result.session &&
+        sessionWorksOn(result.session, route) &&
+        !sessionRecentlyEnded(result.session.id)
+      ) {
+        return {
+          userId: result.user.id,
+          credential: 'cookie',
+          sessionId: result.session.id,
+          route,
+        };
+      }
+    }
+  } catch (error) {
+    logger.debug('[Auth] Session cookie verification failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return null;
 }

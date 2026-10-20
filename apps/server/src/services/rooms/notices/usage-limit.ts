@@ -6,6 +6,7 @@
  * @module server/services/rooms/notices/usage-limit
  */
 import { getSessionLimitStore } from '../../session/fleet/session-limit-store.js';
+import { testWorldLimitOf } from '../reseat/test-account-world.js';
 
 /** A usage limit as the session limit store keeps it. */
 export interface StoredUsageLimit {
@@ -42,6 +43,10 @@ export function usageLimitNow(
  * @returns When it resets, or `null` when the chat is under no limit.
  */
 export function storedUsageLimit(sessionId: string): StoredUsageLimit | null {
+  // The forced-limit seam (DOR-3143): `null` unless a test set a world, which
+  // only the test runtime can.
+  const forced = testWorldLimitOf(sessionId);
+  if (forced !== null) return forced;
   const stored = getSessionLimitStore()?.get(sessionId);
   if (!stored || stored.state === 'reset-ready' || stored.state === 'moved') return null;
   return { resetsAt: stored.limit.resetsAt ?? null };

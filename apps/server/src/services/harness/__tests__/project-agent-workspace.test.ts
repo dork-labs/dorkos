@@ -61,9 +61,12 @@ import { logger } from '../../../lib/logger.js';
  *
  * 9 → 10 for `working-on-a-heartbeat` (DOR-2788), which teaches an agent how
  * to end a beat with `end_beat` and how loudly to say what it found.
+ *
+ * 10 → 11 for `continuing-on-another-account` (Re-seat P0), which tells an
+ * agent whose room seat moved to another account to finish, not repeat.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 10;
+const PACK_SIZE = 11;
 
 let tmpRoot: string;
 

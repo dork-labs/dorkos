@@ -41,7 +41,7 @@ function notes(events, screen, shotsDir) {
     } else if (e.type === 'pin-delete') m.delete(e.n);
     else if (e.type === 'delivery') {
       // Where a sent note is: queued, delivered or failed (with why). New text resets it.
-      for (const n of e.notes || [])
+      for (const n of Array.isArray(e.notes) ? e.notes : [])
         if (m.has(n))
           m.set(n, {
             ...m.get(n),

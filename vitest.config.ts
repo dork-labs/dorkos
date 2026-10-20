@@ -105,7 +105,7 @@ export default defineConfig({
     ...(process.env.CI ? {} : { maxWorkers: LOCAL_MAX_WORKERS }),
     projects: [
       'apps/client',
-      'apps/community',
+      'apps/space',
       'apps/design-system',
       'apps/desktop',
       // Only the capture pipeline's unit tests; the Playwright browser suite is

@@ -14,7 +14,7 @@
  * | 3 | the first-API-request log line (`http/first-contact.ts`)                 |
  * | 4 | CORS, `hono/cors` over `http/cors-policy.ts`                             |
  * | 5 | `X-Content-Type-Options: nosniff`, also carried onto the raw response    |
- * | 6 | the `Host` allowlist on `/api` (`host-guard.ts`)                         |
+ * | 6 | the `Host` allowlist on `/api` (`host-guard.ts`), then the Wi-Fi level   |
  * | 7 | Better Auth, signed webhook ingress ({@link ApiChainOptions.beforeBodyParsing}) |
  * | 8 | body parsing (`http/request-body.ts`)                                    |
  * | 9 | the request log line                                                     |
@@ -70,6 +70,7 @@ import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
+import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -171,6 +172,10 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     if (refusal) return c.json(refusal, 403);
     await next();
   });
+
+  // The Wi-Fi level (`services/core/auth/sessions/wifi-level.ts`), ahead of Better Auth
+  // so its API key and sign-out endpoints are covered too.
+  app.use(wifiLevelMiddleware());
 
   options.beforeBodyParsing?.(app);
 

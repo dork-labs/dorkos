@@ -22,6 +22,8 @@ import type { Context } from 'hono';
 import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import {
   cancelQueuedMessage,
   editQueuedMessage,
@@ -72,6 +74,8 @@ export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
   const message = editQueuedMessage(sessionId, messageId, {
     ...(content !== undefined ? { content } : {}),
     ...(move !== undefined ? { move } : {}),
+    // Words reworded from Wi-Fi run at the runtime's default at most (DOR-3037).
+    ...(content !== undefined && isFromWifi(honoRequestFacts(c)) ? { holdToDefault: true } : {}),
   });
   // Covers both "no such message on this queue" and "the move named an anchor
   // that is not on it" — from the caller's side those are one thing: an id

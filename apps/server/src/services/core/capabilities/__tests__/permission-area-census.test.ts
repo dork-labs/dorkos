@@ -61,6 +61,7 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'rooms.leave',
     'rooms.merge',
     'rooms.remove_members',
+    'rooms.reseat',
     'rooms.update',
   ],
   tasks: ['tasks_create', 'tasks_delete', 'tasks_get_run_history', 'tasks_list', 'tasks_update'],

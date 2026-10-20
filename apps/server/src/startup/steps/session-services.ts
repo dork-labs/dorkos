@@ -201,6 +201,14 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     // The tool-list builders hide an action whose permission is Blocked; they
     // read this catalog, per build, off the composed registry.
     listActions: () => permissionActions(refs.capabilityRegistry),
+    // What `session_start` holds an inherited level to (DOR-3147): unknown
+    // until the record is seeded, so a broken record can only make it stricter.
+    personSetFilesAndCommands: (agentPath) => {
+      if (!personSetPermissions.isSeeded()) return 'unknown';
+      const agentId = refs.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id;
+      if (!agentId) return 'unknown';
+      return personSetPermissions.get(agentId)?.filesAndCommands ?? null;
+    },
   });
   // The environment variable wins when set; otherwise the setting (default 365).
   const retentionDays =

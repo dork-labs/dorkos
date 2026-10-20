@@ -16,6 +16,7 @@ import type {
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { isRelayClientId } from '../../core/session-relay/relay-client-id.js';
+import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,
@@ -92,20 +93,38 @@ export function setQueuedChatCeilingResolver(
  *   passes that ceiling itself, but a row adopted after a restart has no
  *   in-memory plan to carry it, and words from the web must still ask before
  *   anything that needs a person (spec `everything-is-a-space` B2, option 2).
+ * - A row an extension sent adds the runtime's default too, for the same
+ *   reason: an app's code is not the owner's words (DOR-3036).
+ * - A row marked held to the default (a Wi-Fi sign-in's words, DOR-3037) adds
+ *   the runtime's default, for the same reason: after a restart, or after
+ *   somebody on Wi-Fi rewords a row a person queued here, no plan carries it.
+ *
+ * @param clientId - Who queued the row.
+ * @param messageId - The row's id.
+ * @param own - The ceiling the launching plan carries, if any.
+ * @param heldToDefault - Whether the row is marked held to the default.
  */
 export function launchCeiling(
   clientId: string,
   messageId: string,
-  own: TurnPermissionCeiling | undefined
+  own: TurnPermissionCeiling | undefined,
+  heldToDefault = false
 ): TurnPermissionCeiling | undefined {
-  let bound: TurnPermissionCeiling;
-  if (isChatClientId(clientId)) bound = queuedChatCeiling?.(messageId) ?? 'runtime-default';
-  else if (isRelayClientId(clientId)) bound = 'runtime-default';
-  else return own;
-  if (own === undefined) return bound;
   const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>
     Array.isArray(c) ? (c as readonly TurnPermissionBound[]) : [c as TurnPermissionBound];
-  return [...list(own), ...list(bound)];
+  const bounds: TurnPermissionBound[] = [];
+  if (isChatClientId(clientId))
+    bounds.push(...list(queuedChatCeiling?.(messageId) ?? 'runtime-default'));
+  else if (isRelayClientId(clientId) || isExtensionClientId(clientId)) {
+    bounds.push('runtime-default');
+  }
+  const ownBounds = own === undefined ? [] : list(own);
+  if (heldToDefault && ![...ownBounds, ...bounds].includes('runtime-default')) {
+    bounds.push('runtime-default');
+  }
+  if (bounds.length === 0) return own;
+  if (own === undefined) return bounds.length === 1 ? bounds[0]! : bounds;
+  return [...ownBounds, ...bounds];
 }
 
 /**

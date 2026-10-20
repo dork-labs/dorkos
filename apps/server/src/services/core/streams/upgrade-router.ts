@@ -42,6 +42,7 @@ import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
 import { admitHubRequest, trackHubConnection } from '../hub/hub-serving.js';
 import { registerLiveConnection } from '../auth/sessions/live-connections.js';
+import { refuseUpgradeFromWifi } from '../auth/sessions/wifi-level.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -261,9 +262,15 @@ export function attachUpgradeRouter(
       return;
     }
     trackHubConnection(socket);
-    // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
-    // and is never read.
+    // The terminal's socket, and anything else the Wi-Fi level refuses
+    // (`../auth/sessions/wifi-level.ts`): the same list the HTTP chain reads.
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (refuseUpgradeFromWifi(req, url.pathname)) {
+      refuse(socket, 403, 'Forbidden');
+      return;
+    }
+    // `url` above: `req.url` is origin-form (`/api/...`); the base only
+    // satisfies the parser and is never read.
     const claimed = routes
       .map((route) => ({ route, match: route.pattern.exec(url.pathname) }))
       .find((candidate): candidate is { route: UpgradeRoute; match: RegExpExecArray } =>

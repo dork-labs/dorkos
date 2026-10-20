@@ -30,6 +30,8 @@ import { callAdvisor, validateCarryOverSeed } from '../../core/usage/account-adv
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { configManager } from '../../core/config-manager.js';
 import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { ceilingForContinuation } from '../../core/turn-power/continuation-hold.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../extensions/start-work.js';
@@ -46,7 +48,7 @@ import {
   writePlan,
 } from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
-import { crossRuntimePermissionMode } from './carry-over-power.js';
+import { carriedSettings } from './carry-over-power.js';
 import { episodeKey } from './continue-in-flight.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
@@ -97,7 +99,12 @@ export interface CarryOverRequest {
    */
   targetRuntime?: string;
   /** What starting a session needs from the app. */
-  launch: { meshCore: MeshCore | undefined; roomSessionPlace: RoomSessionPlacePort | undefined };
+  launch: {
+    meshCore: MeshCore | undefined;
+    roomSessionPlace: RoomSessionPlacePort | undefined;
+    /** The new session's first turn's ceiling; see `CarryOverLaunchDeps.permissionCeiling`. */
+    permissionCeiling?: TurnPermissionCeiling;
+  };
   /** The Activity feed writer, when the server has one. */
   activity: ActivityService | undefined;
 }
@@ -405,29 +412,22 @@ async function launchCarriedSession(
   } = launched;
   // Before the send: the row is the new session's power, and the
   // `account-handoff` origin claims it without adding the operator's stop.
-  if (crossRuntime) {
-    // The target runtime's own model and effort defaults (the bind seeds them);
-    // the source's stop, capped at `act`, in the target's vocabulary.
-    const permissionMode = crossRuntimePermissionMode(
-      settings.permissionMode,
-      capabilities[sourceRuntime]?.permissionModes,
-      capabilities[targetRuntime]?.permissionModes
-    );
-    await runtimeRegistry.saveSessionSettings(newId, {
+  // Across runtimes the target picks its own model and effort defaults (the
+  // bind seeds them) and the source's stop is capped at `act`.
+  await runtimeRegistry.saveSessionSettings(
+    newId,
+    carriedSettings(settings, {
       ...(request.model ? { model: request.model } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-    });
-  } else {
-    await runtimeRegistry.saveSessionSettings(newId, {
-      ...(request.model
-        ? { model: request.model }
-        : settings.model
-          ? { model: settings.model }
-          : {}),
-      ...(settings.effort ? { effort: settings.effort } : {}),
-      ...(settings.permissionMode ? { permissionMode: settings.permissionMode } : {}),
-    });
-  }
+      ...(crossRuntime
+        ? {
+            crossRuntime: {
+              source: capabilities[sourceRuntime]?.permissionModes,
+              target: capabilities[targetRuntime]?.permissionModes,
+            },
+          }
+        : {}),
+    })
+  );
   const { seedContext, prompt } = await seedFor(source, cwd, targetAccountId);
   const agentPath = await verifiedAgentPath(source.sessionId, launch.meshCore);
   // Nobody is watching a move the advisor's plan made: it runs like a timer-
@@ -452,6 +452,14 @@ async function launchCarriedSession(
     roomSessionPlace: launch.roomSessionPlace,
     ...(automatic ? { countsTowardLaunchCap: true, unattended: true } : {}),
     ...(reservation ? { onSettled: () => reservation.settle() } : {}),
+    // Held to the default when asked from Wi-Fi, or, for the advisor's own move,
+    // when the chat's latest turn was (DOR-3037): nobody asked, and the seed
+    // carries that turn's words on. A person's own continue here runs as asked.
+    ...(launch.permissionCeiling !== undefined
+      ? { permissionCeiling: launch.permissionCeiling }
+      : automatic
+        ? ceilingForContinuation(source.sessionId)
+        : {}),
   });
   if (isSessionLaunchRefusal(result)) {
     if (result.accountError) throw result.accountError;

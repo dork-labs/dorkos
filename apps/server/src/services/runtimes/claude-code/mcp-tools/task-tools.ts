@@ -74,6 +74,8 @@ import {
   scheduleRunFolder,
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -97,6 +99,12 @@ export type TaskProvenanceResolver = () => {
    */
   agentPath?: string;
 };
+
+/**
+ * The marks of the turn making a task call, for a surface that cannot name the calling session
+ * (the external `/mcp` server, DOR-3036). The in-session server reads them from its session.
+ */
+export type CallerMarksResolver = () => TurnMarks;
 
 /**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
@@ -179,6 +187,16 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
 }
 
 /**
+ * Whether the calling turn read words DorkOS cannot vouch for, from the turn's
+ * own marks (`marksOf`, DOR-3036): its schedule writes then park for a person.
+ *
+ * @param provenance - The calling session and agent, as the server resolved them.
+ */
+function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
+  return hasMarks(marksOf(provenance.sessionId, provenance.agentPath));
+}
+
+/**
  * Create a new scheduled job — armed at once for one of our agents on a Trusted
  * install, parked at `pending_approval` otherwise.
  *
@@ -203,7 +221,8 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
  */
 export function createCreateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     name: string;
@@ -290,8 +309,14 @@ export function createCreateScheduleHandler(
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
         trusted: false,
-        // Only the in-session server knows its caller is one of our agents.
-        callerIsOurAgent: resolveProvenance !== undefined,
+        // Only the in-session server knows its caller is one of our agents. A
+        // turn that read words DorkOS cannot vouch for (a stranger's, or a
+        // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
+        // schedule it makes parks for a person instead of arming at its own
+        // level.
+        callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
+        // The marks of the turn making the call, from its own record (DOR-3036).
+        originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
         proposal: {
           sessionId: provenance.sessionId ?? null,
           agentPath: provenance.agentPath ?? null,
@@ -370,7 +395,8 @@ export function createCreateScheduleHandler(
  */
 export function createUpdateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     id: string;
@@ -586,14 +612,23 @@ export function createUpdateScheduleHandler(
     // One of our agents on a Trusted install keeps an approved schedule live
     // through its own edit, except on a schedule made from a file (ADR
     // 261006-225605); only the in-session server knows the caller is ours.
-    const settled = deps.taskStore!.approvals.settleApprovedWorkChange(
+    let settled = deps.taskStore!.approvals.settleApprovedWorkChange(
       updated.id,
       { ...taskWorkOf(existing), status: existing.status },
       {
         trusted: false,
-        armsAgentWork: agentSchedulesArmWithoutAsking(resolveProvenance !== undefined),
+        armsAgentWork: agentSchedulesArmWithoutAsking(
+          resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
+        ),
       }
     );
+    // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
+    // for its card (DOR-3036).
+    const caller = resolveProvenance?.() ?? {};
+    const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
+    if (hasMarks(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
+      if (existing.status !== 'pending_approval') settled = 'parked';
+    }
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -703,7 +738,11 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
  *   proposing. Omitted by the sessionless external `/mcp` registration, where a
  *   proposal genuinely has no session behind it and provenance stays null.
  */
-export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
+export function getTasksTools(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
+) {
   return [
     tool(
       'tasks_list',
@@ -734,7 +773,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createCreateScheduleHandler(deps, resolveProvenance)
+      createCreateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_update',
@@ -774,7 +813,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createUpdateScheduleHandler(deps, resolveProvenance)
+      createUpdateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_delete',

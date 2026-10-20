@@ -18,8 +18,11 @@
  *   itself included) can link a computer, raise what the web may do, or undo
  *   a pause. Linking also needs an owner account, since the relay only ever
  *   serves one.
+ * - `/passkeys`: the approvals passkeys a web approval is signed with, behind
+ *   the same two bars (`routes/session-relay-passkeys.ts`, B4c).
  * - **The owner's password, on top, for every change that opens access or
- *   raises it**: linking, raising the level to Full control, and resuming. The
+ *   raises it**: linking, raising the level to Full control, resuming, and
+ *   adding or removing an approvals passkey. The
  *   bar above cannot tell the app from an agent's shell calling loopback while
  *   this computer asks for no password (DOR-505); the agent does not have the
  *   owner's password (`services/core/auth/owner-password.ts`). This holds in
@@ -83,6 +86,11 @@ import {
   linkToHub,
   type LinkToHubResult,
 } from '../services/core/session-relay/relay-link.js';
+import {
+  createSessionRelayPasskeyRoutes,
+  livePasskeyDeps,
+  type SessionRelayPasskeyDeps,
+} from './session-relay-passkeys.js';
 
 /** Refusal code for a write from anywhere but the owner at this computer. */
 export const SESSION_RELAY_NEEDS_THIS_COMPUTER = 'SESSION_RELAY_NEEDS_THIS_COMPUTER';
@@ -115,6 +123,8 @@ export interface SessionRelayRouteDeps {
   presence: () => SessionRelayPresence;
   /** Every browser seen here, most recent first. */
   devices: () => SessionRelayDevice[];
+  /** The approvals passkeys and their enrolment (`routes/session-relay-passkeys.ts`). */
+  passkeys: SessionRelayPasskeyDeps;
 }
 
 const liveDeps: SessionRelayRouteDeps = {
@@ -131,6 +141,7 @@ const liveDeps: SessionRelayRouteDeps = {
   checkPassword: (password) => checkOwnerPassword(password),
   presence: () => sessionRelayPresence().snapshot(),
   devices: () => sessionRelayDevices().list(),
+  passkeys: livePasskeyDeps,
 };
 
 /** Code for every refusal of the password step-up. */
@@ -357,6 +368,16 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     audit('presence.end', 'modify', 'Ended use from the web and paused chat from the web', 'ok');
     return c.json(deps.presence());
   });
+
+  // The approvals passkeys, behind the same two bars (B4c).
+  router.route(
+    '/passkeys',
+    createSessionRelayPasskeyRoutes(deps.passkeys, {
+      refusePerson,
+      refusePassword,
+      readPin: deps.readPin,
+    })
+  );
 
   router.post('/pause', (c) => setPaused(c, true));
   router.post('/resume', (c) => setPaused(c, false));

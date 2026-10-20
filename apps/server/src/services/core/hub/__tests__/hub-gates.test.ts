@@ -33,7 +33,10 @@ vi.mock('../../auth/cookie-security.js', () => ({ AUTH_COOKIES_SECURE: true }));
 vi.mock('../../tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
-vi.mock('../../streams/stream-upgrade-auth.js', () => ({ authorizeStreamUpgrade: vi.fn() }));
+vi.mock('../../streams/stream-upgrade-auth.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../streams/stream-upgrade-auth.js')>()),
+  authorizeStreamUpgrade: vi.fn(),
+}));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));

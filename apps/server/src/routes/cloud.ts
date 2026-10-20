@@ -87,7 +87,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { refuseFrontDoorChange, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRoutes } from './cloud-communities.js';
 import { gateCloudCommunities } from '../middleware/spaces-enabled.js';
@@ -175,6 +175,10 @@ for (const path of ['/link/start', '/link/cancel', '/unlink']) {
 router.post('/link/start', async (c) => {
   const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.linkStart);
   if (refusal) return c.json(refusal, 403);
+  // Linking mints, and unlinking clears, the account key this computer holds:
+  // a front-door change, made by the owner at this computer (DOR-2969).
+  const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'the DorkOS account link');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   try {
     const result = await getCloudLinkManager().startLink();
     return c.json(result);
@@ -216,6 +220,10 @@ router.post('/link/cancel', async (c) => {
 router.post('/unlink', async (c) => {
   const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.unlink);
   if (refusal) return c.json(refusal, 403);
+  // Linking mints, and unlinking clears, the account key this computer holds:
+  // a front-door change, made by the owner at this computer (DOR-2969).
+  const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'the DorkOS account link');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   try {
     await getCloudLinkManager().unlink();
     return c.json({ ok: true });

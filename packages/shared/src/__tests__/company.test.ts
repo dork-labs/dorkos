@@ -82,7 +82,7 @@ const PERSONAL_COPYRIGHT = new Map([
  * rendered About panel against an independent literal.
  */
 const LITERAL_NAME_ALLOWED = [
-  'apps/community/LICENSE',
+  'apps/space/LICENSE',
   'apps/desktop/electron-builder.yml',
   'apps/desktop/package.json',
   'apps/desktop/src/main/__tests__/about.test.ts',
@@ -155,14 +155,14 @@ const LITERAL_URL_ALLOWED: Record<string, string> = {
     'the one definition of the Community image repository, which the CLI imports',
   'apps/client/eslint-rules/fsd.js':
     'an ESLint rule loaded as plain JS before any workspace package is built',
-  'apps/community/acceptance/run.mjs':
+  'apps/space/acceptance/run.mjs':
     'a standalone acceptance script that runs without a workspace build',
   'apps/e2e/reporters/refresh-shard-timings.ts': '@dorkos/e2e does not depend on @dorkos/shared',
   'packages/cli/scripts/test-community-deploy-package.ts':
     'a test harness whose fake registry and attestation answers are sample data',
   'apps/server/src/services/mesh/refresh-untouched-templates.ts':
     'old template text that has to match what earlier versions wrote, byte for byte',
-  'apps/community/src/browser/components/host/HostAdministration.tsx':
+  'apps/client/src/space/components/host/HostAdministration.tsx':
     'at the max-lines ratchet: the import line would grow a file that may only shrink',
   'apps/server/src/services/core/auth/cloud-link-client.ts':
     'at the max-lines ratchet: the import line would grow a file that may only shrink',

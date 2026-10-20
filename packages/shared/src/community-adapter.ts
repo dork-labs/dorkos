@@ -1,7 +1,7 @@
 /**
  * The `CommunityAdapter` port — one contract for reading and writing rooms in
  * more than one place: this machine's own SQLite rooms, a Buzz relay, and (one
- * day) `apps/community`.
+ * day) `apps/space`.
  *
  * This is the FOURTH swappable seam beside {@link ./agent-runtime.js | AgentRuntime},
  * {@link ./transport.js | Transport} and {@link ./connector-provider.js | ConnectorProvider}:
@@ -1175,7 +1175,7 @@ export class CommunityUnsupportedError extends Error {
 /**
  * Universal contract for a community backend — the fourth swappable seam beside
  * `AgentRuntime`, `Transport` and `ConnectorProvider`. Local rooms, a Buzz relay
- * and `apps/community` each implement it; `communityConformance` gates every
+ * and `apps/space` each implement it; `communityConformance` gates every
  * one.
  *
  * Why every method earns its place: `connect`/`disconnect` are the admission

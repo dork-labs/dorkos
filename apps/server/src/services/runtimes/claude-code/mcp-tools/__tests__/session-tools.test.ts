@@ -9,7 +9,7 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
-import { setChatMessageService } from '../../../../session/chat-messages/chat-message-service.js';
+import { setChatMessageService } from '../../../../session/chat-messages/chat-message-current.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,7 +25,7 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../codex/runtime-constants.js';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
+import { markedBoundOf, recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../../../core/turn-power/live-outsider-turns.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
@@ -84,6 +84,15 @@ vi.mock('../../../../session/projector-persistence.js', () => ({
 vi.mock('../../../../observability/dispatch-buffers.js', () => ({
   recordDispatchStart: vi.fn(),
   recordDispatchEnd: vi.fn(),
+}));
+// What a person set for the caller and whether a card is raised (DOR-3147),
+// read from the gate and the person-set record in production.
+const startFacts = vi.hoisted(() => ({
+  value: { personSetStop: null as string | null, fullUnnamedAllowed: true },
+}));
+vi.mock('../session-start-facts.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../session-start-facts.js')>()),
+  startLevelFacts: async () => startFacts.value,
 }));
 vi.mock('../../../../session/message-dispatcher.js', () => ({
   dispatchMessage: vi.fn(async (opts: { sessionId: string }) => ({
@@ -263,6 +272,7 @@ let codex: FakeAgentRuntime;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  startFacts.value = { personSetStop: null, fullUnnamedAllowed: true };
   __resetAccountAdvisorForTests();
   registerTestHomes([AGENT_HOME, OTHER_HOME], { roomsDir: ROOMS_DIR });
   meshAgents = [
@@ -1046,22 +1056,29 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
     });
   });
 
-  it('never grants Full autonomy silently: it has to be asked for by name', async () => {
-    // An approval card shows only the arguments sent, so an inherited Full
-    // autonomy would be invisible to the person approving it.
+  it('gives a chat at Full autonomy its own level when no mode is asked for (DOR-3147)', async () => {
+    const result = await fromChatAt('bypassPermissions')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('bypassPermissions');
+    expect(payloadOf(result).permission).toEqual({
+      mode: 'bypassPermissions',
+      label: 'Bypass permissions',
+      callerMode: 'bypassPermissions',
+      sameAsCaller: true,
+    });
+  });
+
+  it('still needs Full named when the call raises a card, or the agent is held', async () => {
+    startFacts.value = { personSetStop: null, fullUnnamedAllowed: false };
     const body = await expectRefused(fromChatAt('bypassPermissions'), BASE);
-    expect(body).toEqual({
-      error:
-        'A new chat at Bypass permissions has to be asked for by name, so the person ' +
-        'approving can see it. Pass permissionMode "bypassPermissions", or a lower mode.',
-      code: 'NAME_FULL_AUTONOMY',
-    });
-    // Named, it is granted.
-    const named = await fromChatAt('bypassPermissions')({
-      ...BASE,
-      permissionMode: 'bypassPermissions',
-    });
-    expect(payloadOf(named).permission).toMatchObject({ mode: 'bypassPermissions' });
+    expect(body).toMatchObject({ code: 'NAME_FULL_AUTONOMY' });
+  });
+
+  it('caps an unnamed start at what a person set for the agent', async () => {
+    startFacts.value = { personSetStop: 'act', fullUnnamedAllowed: true };
+    const result = await fromChatAt('bypassPermissions')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('acceptEdits');
   });
 
   it('refuses a mode above the calling chat, naming both levels, and writes nothing', async () => {
@@ -1538,6 +1555,64 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
 // starter's turn opens is recorded as reading what that turn read, so a
 // stranger's words do not come out of the new session unmarked (spec
 // `trusted-by-default-flip` §4.7).
+// DOR-3147, Security's condition 2: a marked start from a chat at Full keeps
+// both its cap and its marks, and so does the next hop, from the spin-off.
+describe('a marked start from a chat at Full (DOR-3147)', () => {
+  /** Run one turn on `sessionId` through the real level-recording seam. */
+  async function turnOn(sessionId: string, opts: MessageOpts, mode = 'bypassPermissions') {
+    const recorded = recordTurnLevels(claude as unknown as AgentRuntime, () => mode);
+    for await (const _event of recorded.sendMessage(sessionId, 'hi', opts)) {
+      // drain
+    }
+  }
+
+  const fromChat = (sessionId: string, permissionMode: string) =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId,
+      runtime: 'claude-code',
+      permissionMode,
+    }));
+
+  const sent = (n: number) => vi.mocked(dispatchMessage).mock.calls[n]![0];
+  const saved = (n: number) =>
+    vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[n]![1].permissionMode;
+
+  afterEach(() => resetLiveOutsiderTurns());
+
+  it('starts capped at the default, carrying the mark, and refuses Full named', async () => {
+    await turnOn('full-parent', { permissionCeiling: 'runtime-default' });
+    const result = await fromChat('full-parent', 'bypassPermissions')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(saved(0)).toBe(CLAUDE_CODE_CAPABILITIES.permissionModes.default);
+    expect(sent(0).permissionCeiling).toMatchObject({ outsider: true });
+
+    const named = await fromChat(
+      'full-parent',
+      'bypassPermissions'
+    )({
+      ...BASE,
+      permissionMode: 'bypassPermissions',
+    });
+    expect(payloadOf(named)).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+  });
+
+  it('keeps cap and mark on the hop from the spin-off’s own turn', async () => {
+    await turnOn('full-parent-2', { permissionCeiling: 'runtime-default' });
+    await fromChat('full-parent-2', 'bypassPermissions')(BASE);
+    const spinOff = sent(0).sessionId;
+    const carried = sent(0).permissionCeiling;
+    // The spin-off's own turn runs under what it was born with.
+    await turnOn(spinOff, { permissionCeiling: carried! }, saved(0)!);
+    expect(markedBoundOf(spinOff, AGENT_HOME)).toMatchObject({ outsider: true });
+
+    const hop = await fromChat(spinOff, saved(0)!)(BASE);
+    expect(hop.isError).toBeUndefined();
+    expect(saved(1)).not.toBe('bypassPermissions');
+    expect(sent(1).permissionCeiling).toMatchObject({ outsider: true });
+  });
+});
+
 describe("session_start passes on an outsider's words (DOR-2781)", () => {
   /** Run one turn on `sessionId` through the real level-recording seam. */
   async function turnOn(sessionId: string, opts: MessageOpts) {

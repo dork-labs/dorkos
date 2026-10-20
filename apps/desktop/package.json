@@ -1,6 +1,6 @@
 {
   "name": "@dorkos/desktop",
-  "version": "0.123.0",
+  "version": "0.124.1",
   "description": "You, multiplied. The DorkOS desktop app: build and run your business with an agent team.",
   "author": "144 Studio, LLC",
   "private": true,
@@ -36,7 +36,7 @@
     "@ngrok/ngrok": "^1.7.0",
     "@openai/codex": "0.154.0",
     "@openai/codex-sdk": "~0.154.0",
-    "@opencode-ai/sdk": "^1.18.30",
+    "@opencode-ai/sdk": "^1.19.3",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
     "cors": "^2.8.6",

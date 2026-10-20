@@ -431,3 +431,128 @@ export const SessionRelayDeviceListSchema = z.object({
 
 /** See {@link SessionRelayDeviceListSchema}. */
 export type SessionRelayDeviceList = z.infer<typeof SessionRelayDeviceListSchema>;
+
+// === Approvals passkeys (B4c) ===
+
+/**
+ * Where the loopback return page sends a new approvals passkey. The one
+ * session-relay path the login gate lets through without a session: the
+ * single-use enrol statement it carries is the credential (see
+ * `routes/session-relay-passkeys.ts` in the server).
+ */
+export const SESSION_RELAY_PASSKEY_FINISH_PATH = '/api/session-relay/passkeys/finish';
+
+/** What the owner calls an approvals passkey, as Settings lists it. No control characters. */
+export const SessionRelayPasskeyLabelSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  .regex(/^[^\u0000-\u001f\u007f]*$/);
+
+/**
+ * `POST /api/session-relay/passkeys/start`: begin adding an approvals passkey,
+ * at this computer, with the owner's password. `origin` (and `rpId`, its host)
+ * default to DorkOS's approve page, or to the ones already pinned; a
+ * self-hosted hub names its own.
+ */
+export const SessionRelayPasskeyStartBodySchema = z.object({
+  /** The owner's password; see `StepUpPasswordSchema`. */
+  password: StepUpPasswordSchema.optional(),
+  label: SessionRelayPasskeyLabelSchema,
+  /** The relying party: the approve page's host. Derived from `origin` when left out. */
+  rpId: z.string().min(1).max(253).optional(),
+  /** The approve page's https origin. */
+  origin: z.string().min(1).max(256).optional(),
+});
+
+/** See {@link SessionRelayPasskeyStartBodySchema}. */
+export type SessionRelayPasskeyStartBody = z.input<typeof SessionRelayPasskeyStartBodySchema>;
+
+/** What `POST /api/session-relay/passkeys/start` answers. */
+export const SessionRelayPasskeyStartSchema = z.object({
+  /** The enrol statement, base64url of its canonical bytes. */
+  statement: z.string(),
+  /** The WebAuthn challenge: base64url `SHA-256` of the statement bytes. */
+  challenge: z.string(),
+  /** The approve page's enrol page, the statement in its fragment. Open it in a browser. */
+  approveUrl: z.string(),
+  /** When the statement stops being accepted (ISO 8601). */
+  expiresAt: z.string(),
+});
+
+/** See {@link SessionRelayPasskeyStartSchema}. */
+export type SessionRelayPasskeyStart = z.infer<typeof SessionRelayPasskeyStartSchema>;
+
+/** Base64url text, unpadded, at most `max` characters. */
+const base64urlText = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(/^[A-Za-z0-9_-]+$/);
+
+/**
+ * A WebAuthn registration response, as `navigator.credentials.create` gives
+ * it and `PublicKeyCredential.toJSON()` writes it: every binary field base64url.
+ */
+export const SessionRelayPasskeyAttestationSchema = z.object({
+  id: base64urlText(1_400),
+  rawId: base64urlText(1_400),
+  type: z.literal('public-key'),
+  response: z.object({
+    clientDataJSON: base64urlText(4_096),
+    attestationObject: base64urlText(16_384),
+    transports: z.array(z.string().max(32)).max(8).optional(),
+  }),
+  clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
+  authenticatorAttachment: z.enum(['platform', 'cross-platform']).optional(),
+});
+
+/**
+ * Longest encoded enrolment statement `/finish` takes, in base64url characters. `/start` refuses
+ * to issue one longer, so a passkey is never made for a statement `/finish` would turn away.
+ */
+export const SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS = 8_192;
+
+/** `POST /api/session-relay/passkeys/finish`: the statement `/start` issued, and the new passkey. */
+export const SessionRelayPasskeyFinishBodySchema = z.object({
+  statement: base64urlText(SESSION_RELAY_PASSKEY_STATEMENT_MAX_CHARS),
+  attestation: SessionRelayPasskeyAttestationSchema,
+});
+
+/** See {@link SessionRelayPasskeyFinishBodySchema}. */
+export type SessionRelayPasskeyFinishBody = z.input<typeof SessionRelayPasskeyFinishBodySchema>;
+
+/** One pinned approvals passkey, as Settings lists it. Never its public key. */
+export const SessionRelayPasskeySchema = z.object({
+  credentialId: z.string(),
+  label: z.string(),
+  /** When it was added (ISO 8601). */
+  addedAt: z.string(),
+  /** The COSE algorithm it signs with. */
+  alg: z.number().int(),
+});
+
+/** See {@link SessionRelayPasskeySchema}. */
+export type SessionRelayPasskey = z.infer<typeof SessionRelayPasskeySchema>;
+
+/** `GET /api/session-relay/passkeys`: the approve page they belong to, and the passkeys. */
+export const SessionRelayPasskeyListSchema = z.object({
+  /** Present when the keys file is damaged: remove it (`DELETE /passkeys`) to start again. */
+  damaged: z.boolean().optional(),
+  /** The pinned relying party; `null` until a passkey is added. */
+  rpId: z.string().nullable(),
+  /** The pinned approve page; `null` until a passkey is added. */
+  origin: z.string().nullable(),
+  keys: z.array(SessionRelayPasskeySchema),
+});
+
+/** See {@link SessionRelayPasskeyListSchema}. */
+export type SessionRelayPasskeyList = z.infer<typeof SessionRelayPasskeyListSchema>;
+
+/** `DELETE /api/session-relay/passkeys/:credentialId`: the owner's password. */
+export const SessionRelayPasskeyRemoveBodySchema = z.object({
+  password: StepUpPasswordSchema.optional(),
+});

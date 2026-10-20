@@ -149,3 +149,22 @@ function loginIsOn(): boolean {
     return true;
   }
 }
+
+/**
+ * Who made a room tool call, as the server verified it (DOR-3107): the session
+ * the in-session server vouched for, never an argument, which decides the
+ * level the post's turns are held to; and whether a verified agent token stood
+ * behind the call (Codex and OpenCode over the external server have one but no
+ * session), so its post reads as an own agent's rather than a stranger's.
+ *
+ * @param context - The capability call's verified context.
+ */
+export function toolCallerOf(context: { sessionId?: string; identity?: unknown }): {
+  callerSessionId?: string;
+  callerAgentVerified?: boolean;
+} {
+  return {
+    ...(context.sessionId !== undefined ? { callerSessionId: context.sessionId } : {}),
+    ...(context.identity !== undefined ? { callerAgentVerified: true } : {}),
+  };
+}

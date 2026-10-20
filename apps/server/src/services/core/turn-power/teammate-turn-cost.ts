@@ -4,8 +4,10 @@
  * answered, to whoever counts it against that space's monthly limit
  * (`communities/remote/wake/teammate-spend.ts`).
  *
- * Only a turn marked `roomTurn.teammate` is read; every other turn passes through untouched, so
- * the owner's own turns never count against the limit. A turn that ran but reported no cost is
+ * Only a turn a teammate's words reached is read: one answering a teammate (`roomTurn.teammate`),
+ * or one carrying a teammate's mark from any hop before it (DOR-3036, `teammate-mark.ts`). It is
+ * counted against every space room in its chain, once each; every other turn passes through
+ * untouched, so the owner's own turns never count against the limit. A turn that ran but reported no cost is
  * still handed over, as `costUsd: undefined`, so it counts at the estimate rather than not at
  * all. A turn that failed with no sign a model answered (no text, no tool call, no usage) reached
  * no model and counts as `0`.
@@ -19,6 +21,8 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { turnCostReader } from '../../observability/ai-metadata.js';
+import { marksForTurn, marksOfLevel, teammateOrigins } from './turn-marks.js';
+import { lastTurnLevelOf } from './turn-levels.js';
 
 /** One finished teammate turn: the local room it answered and what it cost, if reported. */
 export interface TeammateTurnCost {
@@ -48,17 +52,59 @@ export function setTeammateTurnCostSink(next: ((turn: TeammateTurnCost) => void)
 export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
-        return (sessionId: string, content: string, opts?: MessageOpts) => {
-          const turn = target.sendMessage(sessionId, content, opts);
-          const roomId = opts?.roomTurn?.teammate === true ? opts.roomTurn.roomId : undefined;
-          return roomId === undefined ? turn : metered(target.type, roomId, turn);
+      // A command intent is a turn too, and costs like one (DOR-3036).
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) => {
+          const turn = start(sessionId, input, opts);
+          const rooms = teammateRoomsOf(opts);
+          return rooms.length === 0 ? turn : metered(target.type, rooms, turn);
         };
+      }
+      // A turn the runtime starts on its own runs under the session's latest turn: counted when
+      // that turn carried a teammate's mark.
+      if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
+        const subscribe = target.onRuntimeTurn.bind(target);
+        return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
+          subscribe((sessionId, events) => {
+            const rooms = sessionTeammateRooms(sessionId);
+            listener(
+              sessionId,
+              rooms.length === 0 ? events : metered(target.type, rooms, toGenerator(events))
+            );
+          });
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+}
+
+/** The space rooms a session's latest recorded turn carried a teammate's mark from. */
+function sessionTeammateRooms(sessionId: string): string[] {
+  const rooms = teammateOrigins(marksOfLevel(lastTurnLevelOf(sessionId))).map((o) => o.roomId);
+  return [...new Set(rooms)];
+}
+
+/** An iterable as a generator, so the meter can read it. */
+async function* toGenerator(events: AsyncIterable<StreamEvent>): AsyncGenerator<StreamEvent> {
+  yield* events;
+}
+
+/** Every space room a turn's teammates wrote in, once each: its marks, and the room it answers. */
+function teammateRoomsOf(opts: MessageOpts | undefined): string[] {
+  const rooms = teammateOrigins(marksForTurn(opts)).map((origin) => origin.roomId);
+  if (opts?.roomTurn?.teammate === true) rooms.push(opts.roomTurn.roomId);
+  return [...new Set(rooms)];
 }
 
 /** Whether an event shows a model answered: it wrote, called a tool, or its usage was reported. */
@@ -73,7 +119,7 @@ function answered(event: StreamEvent): boolean {
 
 async function* metered(
   runtimeType: string,
-  roomId: string,
+  rooms: readonly string[],
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const cost = turnCostReader(runtimeType);
@@ -90,14 +136,17 @@ async function* metered(
     failed = true;
     throw error;
   } finally {
-    try {
-      sink?.({ roomId, costUsd: failed && !ran ? 0 : cost.costUsd() });
-    } catch (error) {
-      // Counting must never break the turn it counts.
-      logger.warn('[teammate-turn-cost] Could not count a teammate turn', {
-        roomId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    const costUsd = failed && !ran ? 0 : cost.costUsd();
+    for (const roomId of rooms) {
+      try {
+        sink?.({ roomId, costUsd });
+      } catch (error) {
+        // Counting must never break the turn it counts.
+        logger.warn('[teammate-turn-cost] Could not count a teammate turn', {
+          roomId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }

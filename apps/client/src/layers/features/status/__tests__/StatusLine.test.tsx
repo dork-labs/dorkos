@@ -18,7 +18,9 @@ function item(
   key: StatusBarItemKey,
   cluster: 'left' | 'right' = 'right',
   severity = 0,
-  rigid = false
+  rigid = false,
+  held = false,
+  snug = false
 ): PromotedStatusItem {
   return {
     key,
@@ -27,6 +29,8 @@ function item(
     pinned: false,
     rigid,
     wide: false,
+    held,
+    snug,
     node: <span>{key} content</span>,
   };
 }
@@ -120,6 +124,53 @@ describe('StatusLine', () => {
     });
   });
 
+  describe('at phone width the agent name is the only thing that gives way', () => {
+    /** A 390px phone line: a long agent name, Test Mode, Plan and the chip. */
+    function phoneLine() {
+      const promoted: PromotedStatusItem[] = [
+        {
+          ...item('agent', 'left', 1000),
+          node: <span className="truncate">An agent with a very long name indeed</span>,
+        },
+        item('runtime', 'right', 30),
+        { ...item('permission', 'right', 0, false, true), node: <button>Default</button> },
+        item('plan', 'right', 0),
+      ];
+      return applyStatusBudget(promoted, resolveStatusBudget(358));
+    }
+
+    it('keeps the permission chip on the line, whole, never under the ⋯', () => {
+      const { items, overflow } = phoneLine();
+      const { container } = render(<StatusLine items={items} nameFirst />);
+      expect(overflow).toBe(0);
+      const chip = wrapper('permission');
+      expect(chip).toHaveTextContent('Default');
+      expect(chip).toHaveAttribute('data-held', 'true');
+      expect(chip.className).toContain('shrink-0');
+      expect(chip.className).not.toContain('min-w-10');
+      expect(chip.style.flexShrink).toBe('');
+      expect(container.querySelector('.truncate')?.textContent).toContain('very long name');
+    });
+
+    it('hands the deficit to the agent cluster first, down to its avatar', () => {
+      const { items } = phoneLine();
+      const { container } = render(<StatusLine items={items} nameFirst />);
+      const [left, right] = [...container.querySelectorAll<HTMLElement>('[role="toolbar"] > div')];
+      // The name side shrinks a thousand times harder, so the right side keeps
+      // its width, and its 40px floor keeps the avatar.
+      expect(Number(left.style.flexShrink)).toBeGreaterThanOrEqual(1000);
+      expect(left.className).toContain('min-w-10');
+      expect(right.style.flexShrink).toBe('');
+    });
+
+    it('leaves the wide line as it was', () => {
+      const { container } = render(<StatusLine items={[item('agent', 'left', 1000)]} />);
+      const [left] = [...container.querySelectorAll<HTMLElement>('[role="toolbar"] > div')];
+      expect(left.style.flexShrink).toBe('');
+      expect(left.className).toContain('min-w-0');
+    });
+  });
+
   describe('numbers keep their pixels; names give them up', () => {
     it('lets a name-bearing item be squeezed, so its value can truncate', () => {
       render(<StatusLine items={[item('permission')]} />);
@@ -188,6 +239,21 @@ describe('StatusLine', () => {
       );
       expect(wrapper('context').style.flexShrink).toBe('');
       expect(wrapper('context').className).toContain('shrink-0');
+    });
+
+    it('lets a snug item hug its content: no squeeze, and no 40px floor around it', () => {
+      render(
+        <StatusLine
+          items={[
+            item('runtime', 'right', 10, false, false, true),
+            item('connection', 'right', 100),
+          ]}
+        />
+      );
+      expect(wrapper('runtime').style.flexShrink).toBe('');
+      expect(wrapper('runtime').className).toContain('shrink-0');
+      expect(wrapper('runtime').className).not.toContain('min-w-10');
+      expect(wrapper('runtime')).toHaveAttribute('data-snug', 'true');
     });
   });
 

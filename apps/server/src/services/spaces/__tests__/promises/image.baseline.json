@@ -12,7 +12,7 @@
     "COMMUNITY_STORAGE_PATH": "/data/blobs",
     "NODE_ENV": "production"
   },
-  "copied": ["apps/community/dist", "apps/community/dist-server", "apps/community/migrations"],
+  "copied": ["apps/space/dist", "apps/space/dist-server", "apps/space/migrations"],
   "commands": [
     "dist-server/backout.js",
     "dist-server/erasure/reapply.js",

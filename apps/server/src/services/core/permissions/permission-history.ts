@@ -27,6 +27,8 @@ import {
   PermissionChangedMetadataSchema,
   PermissionSuggestionDismissedMetadataSchema,
   PermissionSuggestionRestoredMetadataSchema,
+  autoMoveWord,
+  chatModeWord,
   getPermissionArea,
   type PermissionAttribution,
   type PermissionChange,
@@ -135,6 +137,8 @@ const STOP_WORD: Record<string, string> = {
  */
 function valueWord(value: string | null, key: PermissionChange['key']): string {
   if (key.kind === 'files' && value !== null) return STOP_WORD[value] ?? value;
+  if (key.kind === 'chat') return chatModeWord(value);
+  if (key.kind === 'account') return autoMoveWord(value);
   return stateWord(value);
 }
 
@@ -169,6 +173,10 @@ function subjectOf(change: PermissionChange, actionTitle: (id: string) => string
       return actionTitle(change.key.action);
     case 'files':
       return 'Files & commands';
+    case 'chat':
+      return 'One chat’s Files & commands';
+    case 'account':
+      return change.key.accountName;
   }
 }
 
@@ -180,6 +188,7 @@ function subjectOf(change: PermissionChange, actionTitle: (id: string) => string
  */
 function describeOne(change: PermissionChange, actionTitle: (id: string) => string): string {
   const subject = subjectOf(change, actionTitle);
+  if (change.key.kind === 'account') return `${subject}: ${valueWord(change.after, change.key)}`;
   if (change.target.kind === 'default') {
     if (change.key.kind === 'preset') return `Preset set to ${valueWord(change.after, change.key)}`;
     return change.after === null
@@ -203,6 +212,9 @@ function describePermissionChanges(
   actionTitle: (id: string) => string = (id) => id
 ): string {
   if (changes.length === 0) return 'No permission changed';
+  if (changes.length > 1 && changes.every((c) => c.key.kind === 'chat')) {
+    return `Files & commands changed in ${changes.length} existing chats`;
+  }
   const defaults = changes.filter((c) => c.target.kind === 'default');
   const agentIds = new Set(
     changes.flatMap((c) => (c.target.kind === 'agent' ? [c.target.agentId] : []))
@@ -551,8 +563,8 @@ function touchesAgent(
 /**
  * The key a recorded change is about, as one string: `default:preset`,
  * `default:area:rooms`, `default:action:rooms.create`, `default:files`,
- * `default:files:codex`, `agent:<id>:area:rooms`, `agent:<id>:action:<id>`,
- * `agent:<id>:files`.
+ * `default:files:codex`, `default:account:<id>`, `agent:<id>:area:rooms`,
+ * `agent:<id>:action:<id>`, `agent:<id>:files`.
  *
  * @param change - The recorded change.
  */
@@ -567,6 +579,10 @@ function permissionKeyOf(change: PermissionChange): string {
       return `${layer}:action:${change.key.action}`;
     case 'files':
       return change.key.runtime ? `${layer}:files:${change.key.runtime}` : `${layer}:files`;
+    case 'chat':
+      return `${layer}:chat:${change.key.sessionId}`;
+    case 'account':
+      return `${layer}:account:${change.key.accountId}`;
   }
 }
 

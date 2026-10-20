@@ -19,7 +19,7 @@
  *    ran a turn on has no level and keeps the card, so a restart errs toward
  *    asking.
  * 5. No stranger started the turn, and no stranger's message reached it
- *    through a room or a ceiling (`turnStartedByOutsider`, `outsiderBoundOf`
+ *    through a room or a ceiling (`startedByOutsider`, `marksOf`
  *    and the level's own `outsider` mark). This does NOT see outside content
  *    the turn read through a tool (an email, a web page); an injection-taint
  *    rule for that is a deferred follow-up (spec §8), and the 60-second
@@ -59,8 +59,8 @@ import {
   getAgentIdentityService,
   type AgentIdentity,
 } from '../../core/agent-identity/agent-identity-service.js';
-import { lastTurnLevelOf, outsiderBoundOf } from '../../core/turn-power/turn-levels.js';
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
+import { marksOfLevel, startedByOutsider } from '../../core/turn-power/turn-marks.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { DestructiveHoldService, HoldRequester } from './destructive-hold.js';
 
@@ -85,12 +85,12 @@ const LIVE_SOURCES: HoldEligibilitySources = {
   describeAgent: async (agentPath) => getAgentIdentityService()?.describeAgent(agentPath),
   turnLevel: lastTurnLevelOf,
   strangerTurn: (sessionId, agentPath) =>
-    turnStartedByOutsider(sessionId) || outsiderBoundOf(sessionId, agentPath) !== undefined,
+    startedByOutsider(sessionId) || marksOf(sessionId, agentPath).outsider === true,
 };
 
 /** Whether a level never asks and read no stranger's words. */
 function neverAsks(level: TurnPermissionLevel | undefined): boolean {
-  return level !== undefined && level.asks === 'never' && level.outsider !== true;
+  return level !== undefined && level.asks === 'never' && marksOfLevel(level).outsider !== true;
 }
 
 /**

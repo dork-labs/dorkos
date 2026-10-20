@@ -30,6 +30,7 @@ import {
   type ResponseRung,
   type RoomPresenceAuthor,
 } from '@/layers/entities/room';
+import { ReseatMenuItem } from '@/layers/features/reseat-agent';
 import { memberSecondaryLine } from '../lib/member-line';
 import { RemoveMemberConfirm } from './RemoveMemberConfirm';
 
@@ -98,6 +99,12 @@ export interface RoomMemberRowProps {
   roomTitle: string;
   /** Ask to take this member out. The list decides which row is asking. */
   onRemoveRequested: () => void;
+  /**
+   * "Continue on another account…" for this agent: the room its seat is in, and
+   * how to open the picker. Absent where the seat cannot move (an archived
+   * room). Only an agent's row offers it.
+   */
+  reseat?: { roomId: string; onRequested: () => void };
   /** Whether this row is the one waiting to be confirmed. */
   confirmingRemoval: boolean;
   /** Take this member out for real. */
@@ -278,6 +285,7 @@ export function RoomMemberRow({
   rungError,
   roomTitle,
   onRemoveRequested,
+  reseat,
   confirmingRemoval,
   onConfirmRemoval,
   onCancelRemoval,
@@ -483,6 +491,14 @@ export function RoomMemberRow({
                 confirmRef.current.focus();
               }}
             >
+              {reseat && (
+                <ReseatMenuItem
+                  roomId={reseat.roomId}
+                  authorId={member.authorId}
+                  agentName={author.displayName}
+                  onRequested={reseat.onRequested}
+                />
+              )}
               <DropdownMenuItem variant="destructive" onSelect={onRemoveRequested}>
                 Remove from this room
               </DropdownMenuItem>
@@ -533,6 +549,15 @@ export function RoomMemberRow({
                 disabledReasonId={dormantReasonId}
                 isLead={isLead}
               />
+              {isMobile && dormantReasonId === null && reseat && (
+                <ReseatMenuItem
+                  variant="row"
+                  roomId={reseat.roomId}
+                  authorId={member.authorId}
+                  agentName={author.displayName}
+                  onRequested={reseat.onRequested}
+                />
+              )}
               {isMobile && dormantReasonId === null && (
                 <Button
                   type="button"

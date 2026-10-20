@@ -5,7 +5,12 @@
  *
  * @module services/core/session-relay/relay-audit
  */
-import type { AuditActor, AuditOperation, AuditOutcome } from '@dorkos/shared/audit-schemas';
+import type {
+  AuditActor,
+  AuditChange,
+  AuditOperation,
+  AuditOutcome,
+} from '@dorkos/shared/audit-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { RecordAuditInput } from '../../audit/audit-trail.js';
 
@@ -15,8 +20,20 @@ export interface RelayAuditEntry {
   operation: AuditOperation;
   outcome: AuditOutcome;
   summary: string;
+  /** A short reason a refusal names, never anything from the request. */
+  error?: string;
   sessionId?: string | undefined;
   target?: { type: string; id: string };
+  /** What was decided, by hash and label only: never what was said or the tool's input. */
+  change?: AuditChange[];
+}
+
+/** Who the audit log names for a relayed action, and its writer. */
+export interface RelayAuditDeps {
+  /** The owner of this computer, as the audit log names them. */
+  owner: () => AuditActor;
+  /** Write one audit entry. */
+  recordAudit: (input: RecordAuditInput) => void;
 }
 
 /**
@@ -25,10 +42,7 @@ export interface RelayAuditEntry {
  * @param deps - The owner, and the audit log's writer.
  * @param entry - What happened.
  */
-export function recordRelayAudit(
-  deps: { owner: () => AuditActor; recordAudit: (input: RecordAuditInput) => void },
-  entry: RelayAuditEntry
-): void {
+export function recordRelayAudit(deps: RelayAuditDeps, entry: RelayAuditEntry): void {
   try {
     const actor = deps.owner();
     const { sessionId, target, ...rest } = entry;

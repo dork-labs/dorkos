@@ -117,6 +117,22 @@ export type RoomErrorCode =
    */
   | 'PEOPLE_ONLY'
   /**
+   * A person asked to move an agent to another account (`rooms.reseat`) and no
+   * account it may use has usage left right now.
+   */
+  | 'NO_ACCOUNT_LEFT'
+  /**
+   * A person asked to move an agent to another account while it is answering
+   * here. Its running turn would bind the seat back to the old session, so the
+   * move waits until the turn is done.
+   */
+  | 'AGENT_WORKING'
+  /**
+   * A person asked to move an agent that has not answered in this room yet.
+   * There is no session to move; its first turn starts on its usual account.
+   */
+  | 'NOTHING_TO_MOVE'
+  /**
    * `leave_room` was aimed at something that is not a channel (spec
    * `rooms-management-tools` §D9, DOR-1611).
    *

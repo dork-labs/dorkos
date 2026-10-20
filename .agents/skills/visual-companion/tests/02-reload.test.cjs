@@ -78,7 +78,9 @@ test('through a proxy that drops WebSocket upgrades, polling takes over', async 
         port: target.port,
         path: req.url,
         method: req.method,
-        headers: req.headers,
+        // Like DorkOS's preview proxy, name the target in Host: the server
+        // answers only to its own loopback name and port.
+        headers: { ...req.headers, host: 'localhost:' + target.port },
       },
       (r) => {
         res.writeHead(r.statusCode, r.headers);

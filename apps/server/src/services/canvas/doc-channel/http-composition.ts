@@ -41,6 +41,7 @@ import { DocChannelStore } from './store.js';
 import { DocChannelService } from './service.js';
 import { DocChannelGrants } from './grants.js';
 import { DocChannelIngest } from './ingest.js';
+import { DocRouteControls } from './route-controls/controls.js';
 import { DocRouteGrantError, type DocGrantAuthority } from './grant-policy.js';
 import {
   docInstallationOwner,
@@ -73,6 +74,7 @@ export function createDocChannelHttpComposition(deps: {
   channels: DocChannelStore;
   authorization: DocChannelAuthorization;
   grantAuthority: DocGrantAuthority;
+  routeControls: DocRouteControls;
 } {
   const channels = new DocChannelStore(deps.db);
   const tokens = new WeakMap<ServerPrincipalProof, string>();
@@ -312,6 +314,10 @@ export function createDocChannelHttpComposition(deps: {
       revalidateRuntime: (proof) => deps.revalidateRuntime?.(proof) ?? Promise.resolve(false),
     })
   );
+  const service = new DocChannelService(deps.documents, channels, authorization, {
+    ingest: new DocChannelIngest(channels),
+    grants,
+  });
   return {
     fileWrites: new InstallationFileWrites(deps.db, {
       db: deps.db,
@@ -325,9 +331,14 @@ export function createDocChannelHttpComposition(deps: {
     channels,
     authorization,
     grantAuthority,
-    service: new DocChannelService(deps.documents, channels, authorization, {
-      ingest: new DocChannelIngest(channels),
+    service,
+    routeControls: new DocRouteControls({
+      db: deps.db,
+      channels,
       grants,
+      approvals: deps.approvals,
+      authorization,
+      readChannel: (documentId, actor) => service.readChannel(documentId, actor),
     }),
     actor(caller) {
       resolveCaller(caller); // Refuse unknown/revoked agent headers before minting a principal.

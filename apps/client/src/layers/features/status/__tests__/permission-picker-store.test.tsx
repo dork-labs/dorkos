@@ -18,6 +18,11 @@ import '@testing-library/jest-dom/vitest';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 const mockCaps = vi.fn<(runtime: string | null | undefined) => RuntimeCapabilities | undefined>();
+// At this computer, not over Wi-Fi: the chip shows the chat's own level (DOR-3037).
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOnWifi: () => false,
+}));
 vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: (runtime: string | null | undefined) => mockCaps(runtime),
 }));

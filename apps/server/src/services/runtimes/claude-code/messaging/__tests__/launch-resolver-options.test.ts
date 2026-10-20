@@ -20,6 +20,7 @@ import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-ru
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
+import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
@@ -253,6 +254,42 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(asked[1]?.teammate).toBeUndefined();
     expect(reach(teammate)).toEqual([]);
     expect(reach(owner)).toContain('/elsewhere/private-repo');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>mock</env>',
+      stable: '<env>mock</env>',
+    });
+  });
+
+  it('holds a chat a teammate’s mark reached to the same tier, fenced to no room (DOR-3036)', async () => {
+    // Red when: the launcher reads only `roomTurn.teammate`, so a chat one hop on from a
+    // teammate's turn gets the owner's notes, profile and grants back.
+    const asked: Array<Record<string, unknown> | undefined> = [];
+    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => {
+      asked.push(options as Record<string, unknown> | undefined);
+      return { text: '<env>mock</env>', stable: '<env>mock</env>' };
+    });
+    const session = makeSession();
+    const launch = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session,
+      opts: makeOpts(),
+      messageOpts: {
+        teammate: true,
+        additionalDirectories: [{ path: '/elsewhere/private-repo', access: 'read' }],
+      },
+      effectiveCwd: '/mock/project',
+    });
+    assignTurnBounds(session, { teammate: true });
+
+    expect(asked[0]).toMatchObject({ memory: false, teammate: true });
+    expect(
+      (launch.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
+        ?.permissions?.additionalDirectories ?? []
+    ).toEqual([]);
+    expect(session.teammateTier).toEqual({ roomId: null });
+    assignTurnBounds(session, undefined);
+    expect(session.teammateTier).toBeUndefined();
     vi.mocked(buildSystemPromptAppend).mockResolvedValue({
       text: '<env>mock</env>',
       stable: '<env>mock</env>',
@@ -575,6 +612,12 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
           'Edit(//rooms/r1/repo/**)',
           'Write(//rooms/r1/repo/**)',
           'NotebookEdit(//rooms/r1/repo/**)',
+          // Then the folders only a person may change, on every turn.
+          ...['permissions', 'session-relay'].flatMap((folder) =>
+            ['Edit', 'Write', 'NotebookEdit'].map(
+              (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
+            )
+          ),
         ],
       },
     });

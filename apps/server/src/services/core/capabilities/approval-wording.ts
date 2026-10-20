@@ -139,3 +139,22 @@ export function approvalMessage(
       return `DorkOS does not recognize that approval token. It has asked for a new approval.`;
   }
 }
+
+/**
+ * Split a presented approval token out of a surface's raw arguments.
+ *
+ * The token travels alongside a capability's input, never inside it: the approval
+ * binds to a hash of the input, so a token carried as an input field would change
+ * the very hash it is being checked against. Destructive capabilities advertise
+ * {@link APPROVAL_TOKEN_ARGUMENT} as an extra MCP argument, and this is where it
+ * comes back off.
+ *
+ * @param args - Raw arguments from an MCP client.
+ * @returns The token (when present) and the arguments with it removed.
+ */
+export function splitApprovalToken(args: unknown): { approvalToken?: string; input: unknown } {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return { input: args };
+  const { [APPROVAL_TOKEN_ARGUMENT]: token, ...rest } = args as Record<string, unknown>;
+  if (typeof token !== 'string' || token.length === 0) return { input: rest };
+  return { approvalToken: token, input: rest };
+}

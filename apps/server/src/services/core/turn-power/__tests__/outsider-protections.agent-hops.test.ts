@@ -41,15 +41,25 @@ import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   lastTurnLevelOf,
+  passedOnLevelOf,
   noteEntryLevel,
-  outsiderBoundOf,
+  markedBoundOf,
+  marksOf,
   postLevelFor,
   recordTurnLevels,
 } from '../turn-levels.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { ceilingForEntry, outsiderInViewOf } from '../../../rooms/limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
-import { senderCeiling } from '../../../session/chat-messages/chat-message-service.js';
+import {
+  chatMessageOrigin,
+  isMarkedBound,
+  parseCeiling,
+  senderBound,
+  senderCeilingJson,
+} from '../../../session/chat-messages/chat-message-ceiling.js';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
+import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { composeRegistry, type CapabilityRegistry } from '../../capabilities/index.js';
 import { MEMORY_OUTSIDER_HELD_MESSAGE, memoryDomain } from '../../../memory/memory-capabilities.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
@@ -148,6 +158,7 @@ beforeEach(async () => {
 afterEach(async () => {
   clearTestHomes();
   resetLiveOutsiderTurns();
+  resetOutsiderTurns();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -188,7 +199,15 @@ describe("a stranger's words, one agent hop later", () => {
     const bo = fresh('bo');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     // `chat_send` stores this as the queue row's ceiling; the dispatcher launches under it.
-    const stored = JSON.parse(JSON.stringify(senderCeiling(lastTurnLevelOf(ana))));
+    const stored = JSON.parse(
+      JSON.stringify(
+        await senderBound(
+          lastTurnLevelOf(ana),
+          { sessionId: ana, agentPath: '/agents/ana' },
+          undefined
+        )
+      )
+    );
     await run(runtime, bo, { permissionCeiling: stored });
     expect(runsAt(sent.get(bo))).toBe('default');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
@@ -200,7 +219,8 @@ describe("a stranger's words, one agent hop later", () => {
     const { runtime, sent } = seam({ child: 'bypassPermissions' });
     const ana = fresh('ana');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
-    const bound = outsiderBoundOf(ana, '/agents/ana');
+    expect(marksOf(ana, '/agents/ana')).toEqual({ outsider: true });
+    const bound = markedBoundOf(ana, '/agents/ana');
     expect(bound).toMatchObject({ outsider: true });
     const child = fresh('child');
     await run(runtime, child, { permissionCeiling: bound! });
@@ -225,7 +245,8 @@ describe("a stranger's words, one agent hop later", () => {
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions' });
     const bo = fresh('bo');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'owner' }));
-    expect(outsiderBoundOf(ana, '/agents/ana')).toBeUndefined();
+    expect(marksOf(ana, '/agents/ana')).toEqual({});
+    expect(markedBoundOf(ana, '/agents/ana')).toBeUndefined();
     const post = fresh('post');
     noteEntryLevel(post, postLevelFor([ana]));
     await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
@@ -273,9 +294,11 @@ describe("a stranger's line the turn is shown but does not answer", () => {
     // Kept no level: not counted, so the owner's edits stay open after a restart.
     expect(outsiderInViewOf({ pending: [agentPost(fresh('no-level'))] })).toEqual({});
 
-    await run(runtime, ana);
+    // A chat a stranger never reached (Ana's own chat stays marked: DOR-3107).
+    const anaOwn = fresh('ana-own');
+    await run(runtime, anaOwn);
     const plain = fresh('plain');
-    noteEntryLevel(plain, postLevelFor([ana]));
+    noteEntryLevel(plain, postLevelFor([anaOwn]));
     const person = { id: fresh('p'), authorOrigin: 'local', authorIsPerson: true, kind: 'post' };
     expect(
       outsiderInViewOf({ pending: [agentPost(plain), person as never], channelTail: [] })
@@ -382,5 +405,124 @@ describe('memory written in a turn that read an outsider’s words', () => {
     await boWrites({ action: 'add', text: 'a plain note' });
     expect(await lastNote()).toMatch(OPERATOR_STAMP);
     await turn.return(undefined);
+  });
+});
+
+// Marks, not levels, between the owner's own agents (DOR-3107). A message from
+// a turn KNOWN to carry no mark passes on only the level a person set its
+// agent to; everything a stranger's words reached keeps its cap, whichever way
+// it travels and however late.
+describe('chat messages between your own agents (DOR-3107)', () => {
+  const FULL = levelOfMode(MODES, 'bypassPermissions')!;
+  const ownLevelFull = async () => FULL;
+  const caller = (sessionId: string) => ({ sessionId, agentPath: '/agents/ana' });
+
+  it('an unmarked chat_send from a Full chat starts a turn with no card', async () => {
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    // The owner's own turn, held to Default by an old cap: its level is not the risk.
+    await run(runtime, ana, { permissionCeiling: levelOfMode(MODES, 'default')! });
+    expect(marksOf(ana, '/agents/ana')).toEqual({});
+    const stored = JSON.parse(
+      JSON.stringify(await senderBound(passedOnLevelOf(ana), caller(ana), ownLevelFull))
+    );
+    expect(chatMessageOrigin(JSON.stringify(stored))).toEqual({ kind: 'chat-message' });
+    await run(runtime, bo, { permissionCeiling: stored });
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+  });
+
+  it('a sender a person set below Full caps the receiver at its own level', async () => {
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana);
+    const DEFAULT = levelOfMode(MODES, 'default')!;
+    const stored = await senderBound(passedOnLevelOf(ana), caller(ana), async () => DEFAULT);
+    await run(runtime, bo, { permissionCeiling: stored });
+    expect(runsAt(sent.get(bo))).toBe('default');
+  });
+
+  it('a marked chat_send stays capped', async () => {
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
+    const stored = await senderBound(passedOnLevelOf(ana), caller(ana), ownLevelFull);
+    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
+    await run(runtime, bo, { permissionCeiling: stored });
+    expect(runsAt(sent.get(bo))).toBe('default');
+  });
+
+  // Trust first (Dorian 2026-10-19): unknown is not marked.
+  it('a sender of your own whose level is unknown (a restart) starts no card', async () => {
+    expect(await senderBound(undefined, caller(fresh('ana')), ownLevelFull)).toEqual(FULL);
+  });
+
+  it('a sender whose level is unknown but whom a stranger reached stays capped', async () => {
+    const lifeos = fresh('lifeos');
+    noteTurnOrigin(lifeos, { kind: 'relay-binding' });
+    const stored = await senderBound(undefined, caller(lifeos), ownLevelFull);
+    expect(stored).toBe('runtime-default');
+    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
+  });
+
+  it('an email read by a connector event, then one chat_send, then a room post: still capped', async () => {
+    // LifeOS's turn is started by a connector event (an email arriving), at Full.
+    const lifeos = fresh('lifeos');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [lifeos]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    noteTurnOrigin(lifeos, { kind: 'connector-event' });
+    await run(runtime, lifeos);
+    expect(passedOnLevelOf(lifeos)?.outsider).toBe(true);
+    const stored = await senderBound(passedOnLevelOf(lifeos), caller(lifeos), ownLevelFull);
+    await run(runtime, bo, { permissionCeiling: stored });
+    expect(runsAt(sent.get(bo))).toBe('default');
+    // Bo posts into a room: the agent it wakes is capped too.
+    expect(postLevelFor([bo])?.outsider).toBe(true);
+  });
+
+  // Security 19:03: the row must show the mark, so the existing-chats raise
+  // can tell a marked sender from an unknown one. The turn runs exactly as a
+  // bare runtime default would.
+  it('stores an unknown-but-marked sender visibly, and reads it as the runtime default', async () => {
+    const lifeos = fresh('lifeos');
+    noteTurnOrigin(lifeos, { kind: 'relay-binding' });
+    const json = await senderCeilingJson(
+      { turnLevelOf: () => undefined, ownLevelOf: ownLevelFull },
+      caller(lifeos)
+    );
+    expect(JSON.parse(json)).toEqual({ bound: 'runtime-default', marks: { outsider: true } });
+    expect(parseCeiling(json)).toBe('runtime-default');
+    expect(isMarkedBound(parseCeiling(json))).toBe(true);
+    expect(chatMessageOrigin(json)).toMatchObject({ marked: true });
+    // An unknown sender nobody outside reached stores its own level, not the default.
+    const own = await senderCeilingJson(
+      { turnLevelOf: () => undefined, ownLevelOf: ownLevelFull },
+      caller(fresh('ana'))
+    );
+    expect(JSON.parse(own)).toEqual(FULL);
+  });
+
+  it('a chat that ran one marked turn stays marked for what it hands on later', async () => {
+    // A beat chat, say: beat 1 ran under a ceiling carrying a stranger's mark.
+    const beat = fresh('beat');
+    const { runtime } = seam({ [beat]: 'bypassPermissions' });
+    await run(runtime, beat, { permissionCeiling: 'runtime-default' });
+    await run(runtime, beat);
+    expect(postLevelFor([beat])?.outsider).toBe(true);
+    const stored = await senderBound(passedOnLevelOf(beat), caller(beat), ownLevelFull);
+    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
+  });
+
+  it('a person typing in a chat a stranger reached earlier does not clear the mark', async () => {
+    const lifeos = fresh('lifeos');
+    const { runtime } = seam({ [lifeos]: 'bypassPermissions' });
+    noteTurnOrigin(lifeos, { kind: 'connector-event' });
+    await run(runtime, lifeos);
+    noteTurnOrigin(lifeos, { kind: 'interactive' });
+    await run(runtime, lifeos);
+    expect(postLevelFor([lifeos])?.outsider).toBe(true);
+    expect(markedBoundOf(lifeos, '/agents/lifeos')).toMatchObject({ outsider: true });
   });
 });

@@ -129,7 +129,12 @@ export function launchDispatchInner(
         ? { newSessionPermissionMode: turn.newSessionPermissionMode }
         : {}),
       ...(() => {
-        const ceiling = launchCeiling(clientId, messageId, turn.permissionCeiling);
+        const ceiling = launchCeiling(
+          clientId,
+          messageId,
+          turn.permissionCeiling,
+          getMessageQueueStore()?.get(messageId)?.heldToDefault === true
+        );
         return ceiling !== undefined ? { permissionCeiling: ceiling } : {};
       })(),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),

@@ -51,9 +51,11 @@ import {
 import {
   forgetMessageOrigin,
   holdTurnOriginFor,
+  noteHeldMessage,
   messageDispatched,
   messageTurnStarted,
 } from '../origin/outsider-turns.js';
+import { ceilingHoldsToDefault } from '../message-dispatcher/held-to-default.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -606,6 +608,8 @@ async function launchSessionMessage(
   const isNewSession = await holdTurnOriginFor(messageId, () =>
     runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
+  // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
+  if (ceilingHoldsToDefault(opts.permissionCeiling)) noteHeldMessage(messageId);
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)

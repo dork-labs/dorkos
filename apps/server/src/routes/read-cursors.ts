@@ -93,6 +93,16 @@ router.put('/:kind/:id', (c) => {
   const caller = personOrRefuse(c);
   if (caller instanceof Response) return caller;
 
+  // A room thread's cursor is moved by a mini app's mark-read, which checks
+  // the room was picked for it, the person's membership and the room-write
+  // bar (DOR-3017). This route checks none of those, so it does not move one.
+  if (params.kind === 'room-thread') {
+    return c.json(
+      { error: 'Mark a thread read from the mini app showing it.', code: 'invalid_kind' },
+      400
+    );
+  }
+
   // Somebody is at the keyboard, and this request is the proof: a client only
   // marks a thread read because a person is looking at it. Told BEFORE the
   // write, because coming back is measured from the last thing this person did

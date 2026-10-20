@@ -8,6 +8,7 @@
  *
  * @module server/services/rooms/service/room-service-deps
  */
+import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { DbTransaction } from '@dorkos/db';
 import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
@@ -21,6 +22,7 @@ import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { CanvasDocumentStore, CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
+import type { RoomSeatMover } from '../reseat/seat-mover.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
@@ -126,6 +128,12 @@ export interface RoomServiceDeps {
   store: RoomStore;
   /** Persisted access control for native remote-community mirror rows. */
   mirrorAccess?: RoomMirrorAccess;
+  /**
+   * The level a person set a poster agent to, by its folder (DOR-3107). Absent
+   * reads the agent's own settings and runtime (`own-circle.ts`); a test
+   * passes its own.
+   */
+  posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
   /** Atomically enqueue local agent output in remote mirrors and suppress recursive dispatch. */
   mirrorWrites?: RoomMirrorWritePolicy;
   /** Reactions on this room's entries — durable state, never a turn. */
@@ -142,6 +150,19 @@ export interface RoomServiceDeps {
    * failed room turn can say when the agent can answer again. Absent in tests.
    */
   usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
+  /**
+   * The server's room seat mover (re-seat): moves a seat whose account ran out,
+   * or nearly did, to another account, and restarts a seat whose transcript
+   * expired. Read per turn, since it is built after the rooms graph. Absent or
+   * `null`: seats never move, exactly as before.
+   */
+  seatMover?(): RoomSeatMover | null;
+  /**
+   * Whether anyone from outside can read this room (a bridged chat, a Wi-Fi
+   * sign-in, an outside author), so a move's line names no account. Absent
+   * reads as yes.
+   */
+  roomHasOutsiders?(roomId: string): boolean;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */

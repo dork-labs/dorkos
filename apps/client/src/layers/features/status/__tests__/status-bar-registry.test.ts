@@ -176,6 +176,29 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     );
   });
 
+  // DOR-3037: from Wi-Fi the chip says what every turn runs at, and is how a
+  // person changes it, so it shows even at the safe stop.
+  it('keeps permissions on the line on Wi-Fi, whatever the mode', () => {
+    expect(promotedKeys(restingContext({ onWifi: true }))).toContain('permission');
+    expect(severityOf('permission', restingContext({ onWifi: true }))).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'acceptEdits' }))
+    );
+  });
+
+  it('holds the permission chip, and only it, on a narrow line', () => {
+    const held = STATUS_BAR_REGISTRY.filter((entry) => entry.held).map(({ key }) => key);
+    expect(held).toEqual(['permission']);
+  });
+
+  it('lets Plan always, and the runtime only as a phone-width icon, hug its content', () => {
+    const snugAt = (density: 'full' | 'compact' | 'identity' | 'avatar') =>
+      STATUS_BAR_REGISTRY.filter((entry) => entry.snug?.(density)).map(({ key }) => key);
+    expect(snugAt('full')).toEqual(['plan']);
+    expect(snugAt('compact')).toEqual(['plan']);
+    expect(snugAt('identity')).toEqual(['runtime', 'plan']);
+    expect(snugAt('avatar')).toEqual(['runtime', 'plan']);
+  });
+
   it('promotes runtime when it is not the default', () => {
     expect(
       promotedKeys(

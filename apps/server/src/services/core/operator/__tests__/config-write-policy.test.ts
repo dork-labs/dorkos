@@ -20,10 +20,10 @@ import { PROTECTIVE_CARRYOVERS } from '../../safe-defaults/protected-state.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
-  OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { OPERATOR_ONLY_STAKES } from '../operator-only-stakes.js';
 import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
@@ -103,6 +103,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
@@ -190,6 +191,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      // An account a person kept out of automatic moves (Re-seat P0).
+      'runtimes.claudeCode.accounts[].noAutoMove',
       // Where each account may work, and which accounts each project may use:
       // they bound where a credential is used (spec flow-multiproject §8).
       'runtimes.claudeCode.accounts[].onlyProjects',
@@ -485,6 +488,16 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
     ).toEqual(['runtimes.claudeCode.accounts[].color', 'runtimes.claudeCode.accounts[].id']);
   });
 
+  it('refuses an agent clearing an account’s keep-out-of-automatic-moves flag (Re-seat P0)', () => {
+    // A person set it; clearing it would let a seat move onto an account the
+    // person reserved, so the flag alone, with nothing else on the row, is caught.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ noAutoMove: false }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].noAutoMove']);
+  });
+
   it('names only the element fields the patch actually writes', () => {
     expect(
       findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
@@ -512,6 +525,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.accounts[].path',
     ]);

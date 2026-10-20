@@ -12,6 +12,7 @@
  *
  * @vitest-environment node
  */
+import { createTestDb } from '@dorkos/test-utils/db';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -335,6 +336,22 @@ describe('resumeAfterMcpSignin', () => {
     vi.doUnmock('../../session/index.js');
     vi.doUnmock('../../../lib/logger.js');
     vi.resetModules();
+  });
+
+  it('holds the nudge to the runtime default when the chat’s latest turn was held (DOR-3037)', async () => {
+    const { resumeAfterMcpSignin, dispatchMessage } = await loadWithMocks({ accepted: true });
+    const hold = await import('../../core/turn-power/continuation-hold.js');
+    hold.setContinuationHoldDb(createTestDb());
+    try {
+      hold.noteTurnHold(SESSION_ID, true);
+      await resumeAfterMcpSignin(EVENT);
+      expect(dispatchMessage.mock.calls[0][0].permissionCeiling).toBe('runtime-default');
+      hold.noteTurnHold(SESSION_ID, false);
+      await resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' });
+      expect(dispatchMessage.mock.calls[1][0].permissionCeiling).toBeUndefined();
+    } finally {
+      hold.setContinuationHoldDb(undefined);
+    }
   });
 
   it('settles the session’s card into a receipt, then resumes the agent', async () => {

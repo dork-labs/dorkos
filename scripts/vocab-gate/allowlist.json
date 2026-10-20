@@ -2,12 +2,12 @@
   "$comment": "Scoped exceptions for banned-terms.json. Each entry suppresses hits on files whose repo-relative path CONTAINS `path` (a plain substring, not a glob). Omit `terms` to allowlist every banned term at that path; scope it to specific terms when the file is legitimate for one wave's word but would be a real hit for a later wave's. Keep entries file- or directory-scoped and explain the domain reason — this file is the audit trail for every 'connection' the gate lets through.",
   "entries": [
     {
-      "path": "apps/community/src/browser/components/Pairing.tsx",
+      "path": "apps/client/src/space/components/Pairing.tsx",
       "terms": ["connection"],
-      "reason": "The space's approval page for a DorkOS install asking to connect to it (DOR-2653 brought apps/community under the gate). The connection is the thing being approved, declined or limited to reading: an entity a person acts on, not a network-health reading."
+      "reason": "The space's approval page for a DorkOS install asking to connect to it (DOR-2653 brought apps/space under the gate). The connection is the thing being approved, declined or limited to reading: an entity a person acts on, not a network-health reading."
     },
     {
-      "path": "apps/community/src/browser/components/host/HostHoldControls.tsx",
+      "path": "apps/client/src/space/components/host/HostHoldControls.tsx",
       "terms": ["connection"],
       "contains": "Every connection stays",
       "reason": "The DorkOS installs connected to a space stay revoked after a suspension: the same approved-connection entity the space's pairing page grants, not network health."
@@ -418,7 +418,7 @@
     {
       "path": "docs/contributing/architecture.mdx",
       "terms": ["community", "communities"],
-      "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/community), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
+      "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/space), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
     },
     {
       "path": "docs/guides/dorkos-community.mdx",

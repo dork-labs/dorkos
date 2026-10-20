@@ -2253,8 +2253,8 @@ export class RoomStore {
    * @param roomId - The room.
    * @param authorId - The agent member.
    * @param sessionId - The session the turn ran on.
-   * @returns Whether the binding moved. `false` means the refusal above fired,
-   *   which a caller that is REPAIRING has to know: a repair sweep counting a
+   * @returns Whether the binding moved. `false` means the refusal above fired
+   *   or there was no binding to move, which a caller that is REPAIRING has to know: a repair sweep counting a
    *   refused write as a repair would report a room fixed while it is still
    *   pointing at a dead id, and stop reporting it as stranded.
    */
@@ -2269,12 +2269,14 @@ export class RoomStore {
       });
       return false;
     }
-    this.db
+    // `false` for a seat that does not exist too: nothing moved, which a caller
+    // that is about to tell the room the agent moved has to know.
+    const { changes } = this.db
       .update(roomSessions)
       .set({ sessionId })
       .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
       .run();
-    return true;
+    return changes > 0;
   }
 }
 

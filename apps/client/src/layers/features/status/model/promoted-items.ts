@@ -15,6 +15,7 @@ import {
   type StatusBarItemKey,
   type StatusPromotionContext,
 } from './status-bar-registry';
+import type { StatusDensity } from './status-budget';
 
 /** One status item that earned a slot in the line. */
 export interface PromotedStatusItem {
@@ -45,6 +46,18 @@ export interface PromotedStatusItem {
    * the budget charges it two. See {@link StatusBarItemConfig.wide}.
    */
   wide: boolean;
+  /**
+   * True when the item may be held on a narrow line — see
+   * {@link StatusBarItemConfig.held}. `applyStatusBudget` keeps it only below the
+   * `full` tier, so on the line it means "held at this width".
+   */
+  held: boolean;
+  /**
+   * True when the item hugs its content at this width — see
+   * {@link StatusBarItemConfig.snug}. Resolved here, against the line's density,
+   * because the same item can be a name at one width and a lone icon at another.
+   */
+  snug: boolean;
   /** The rendered item. */
   node: ReactNode;
 }
@@ -61,6 +74,8 @@ export interface SelectPromotedItemsInput {
    * its rule says. Absence of content is its own answer.
    */
   nodes: Partial<Record<StatusBarItemKey, ReactNode>>;
+  /** The line's density, for the items that hug their content only at some widths. */
+  density?: StatusDensity;
 }
 
 /** Whether a node is worth giving a slot to. */
@@ -87,6 +102,7 @@ export function selectPromotedItems({
   ctx,
   pins,
   nodes,
+  density = 'full',
 }: SelectPromotedItemsInput): PromotedStatusItem[] {
   const pinnedKeys = new Set(pins);
   const promoted: PromotedStatusItem[] = [];
@@ -107,6 +123,8 @@ export function selectPromotedItems({
       pinned,
       rigid: item.rigid === true,
       wide: item.wide?.(ctx) === true,
+      held: item.held === true,
+      snug: item.snug?.(density) === true,
       node,
     });
   }

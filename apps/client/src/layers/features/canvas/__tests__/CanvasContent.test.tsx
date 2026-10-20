@@ -8,6 +8,8 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 
 // Mock streamdown to avoid CSS import issues in jsdom
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
 vi.mock('streamdown', () => ({
   Streamdown: ({ children }: { children: string }) => (
     <div data-testid="streamdown">{children}</div>

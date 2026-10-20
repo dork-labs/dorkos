@@ -14,7 +14,7 @@ import type { AuthorRegistry } from '../rooms/author-registry.js';
 import type { RoomService } from '../rooms/room-service.js';
 import { deliverNotifyDm, type NotifyDmDeps } from '../relay/notify-dm.js';
 import { deliverOverRelay, type RelayChannelDeps } from '../notifications/channels/relay.js';
-import { getChatMessageService } from '../session/chat-messages/chat-message-service.js';
+import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
 import type { BeatAgent } from './beat-runner.js';
 import type { RecipientCheck } from './heartbeat-capabilities.js';
 import { noteBeatRoomPost } from './event-wakes.js';

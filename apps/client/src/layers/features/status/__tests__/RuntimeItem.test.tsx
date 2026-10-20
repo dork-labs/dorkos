@@ -408,6 +408,27 @@ describe('RuntimeItem', () => {
       expect(screen.queryByText(/qwen2\.5-coder/)).not.toBeInTheDocument();
     });
 
+    it('shows Test Mode as its flask alone at phone width, its name in the tooltip', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'test-mode'),
+      });
+      render(
+        <RuntimeItem
+          runtime="test-mode"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+          compact
+          iconOnly
+        />
+      );
+
+      const icon = screen.getByRole('img', { name: 'Test Mode' });
+      expect(icon.querySelector('svg')).not.toBeNull();
+      // No visible words on the line; the name is the tooltip's first line.
+      expect(icon).toHaveTextContent('');
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent(/^Test Mode/);
+    });
+
     it('drops it in the selectable trigger too', () => {
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'opencode'),

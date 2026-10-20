@@ -8,15 +8,25 @@ import {
   useCallback,
 } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Check, X, Shield, ShieldCheck } from 'lucide-react';
+import { Check, Lock, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
+import { useOnWifi } from '@/layers/entities/config';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import type { AlwaysAllowScope } from '@dorkos/shared/types';
-import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
+import {
+  ToolArgumentsDisplay,
+  awayFromTheComputerSentence,
+  cn,
+  getToolLabel,
+  getMcpServerBadge,
+} from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 import { alwaysAllowScopeLabel } from '../lib/always-allow-scope-label';
+
+/** What a card on Wi-Fi says in place of Always allow (DOR-2969). */
+export const WIFI_ALWAYS_ALLOW_LINE = 'Always allow is only available at this computer.';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -161,6 +171,10 @@ export function ApprovalPrompt({
   const label = approvalDisplayName || rawLabel;
   // What one press of "Always Allow" would actually grant, in words.
   const scopeLabel = alwaysAllowScopeLabel(approvalAlwaysAllowScope);
+  // From Wi-Fi an answer is Allow once or Deny, never a standing yes: the
+  // server refuses one (DOR-2969), so the card neither offers it nor answers
+  // its shortcut, and says once where it lives instead.
+  const onWifi = useOnWifi();
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -309,7 +323,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Approval failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -331,7 +345,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Always Allow failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -355,7 +369,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Deny failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -369,13 +383,13 @@ export function ApprovalPrompt({
         handleApprove();
       },
       alwaysAllow() {
-        handleAlwaysAllow();
+        if (!onWifi) handleAlwaysAllow();
       },
       deny() {
         handleDeny();
       },
     }),
-    [handleApprove, handleAlwaysAllow, handleDeny]
+    [handleApprove, handleAlwaysAllow, handleDeny, onWifi]
   );
 
   /**
@@ -515,7 +529,7 @@ export function ApprovalPrompt({
             and the agent gets it with the refusal. Withheld entirely on a
             runtime with no channel for one (DOR-825) — the field would
             otherwise take a person's words and deliver them nowhere. */}
-        {allowsDenyReason && reasonOpen && (
+        {allowsDenyReason && !onWifi && reasonOpen && (
           <div className="mb-2">
             <Input
               autoFocus
@@ -549,14 +563,15 @@ export function ApprovalPrompt({
         <AskCard.Actions>
           <Button
             size="sm"
+            variant={onWifi ? 'outline' : 'default'}
             onClick={handleApprove}
             disabled={responding}
             className="transition-opacity duration-150"
           >
-            <Check className="size-(--size-icon-xs)" /> Allow
+            <Check className="size-(--size-icon-xs)" /> {onWifi ? 'Allow once' : 'Allow'}
             {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
           </Button>
-          {approvalHasSuggestions && (
+          {approvalHasSuggestions && !onWifi && (
             <Button
               size="sm"
               variant="outline"
@@ -592,10 +607,10 @@ export function ApprovalPrompt({
             disabled={responding}
             className="transition-opacity duration-150"
           >
-            <X className="size-(--size-icon-xs)" /> Don’t allow
+            <X className="size-(--size-icon-xs)" /> {onWifi ? 'Deny' : 'Don’t allow'}
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
           </Button>
-          {allowsDenyReason && !reasonOpen && (
+          {allowsDenyReason && !onWifi && !reasonOpen && (
             <button
               type="button"
               onClick={() => setReasonOpen(true)}
@@ -610,6 +625,14 @@ export function ApprovalPrompt({
             </button>
           )}
         </AskCard.Actions>
+        {onWifi && (
+          <p
+            data-slot="approval-wifi-line"
+            className="text-muted-foreground text-2xs flex items-center gap-1"
+          >
+            <Lock className="size-3" aria-hidden /> {WIFI_ALWAYS_ALLOW_LINE}
+          </p>
+        )}
       </AskCard.Root>
       {liveRegion}
     </>

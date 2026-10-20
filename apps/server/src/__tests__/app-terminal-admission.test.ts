@@ -311,7 +311,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/direct-chats');
     // 79 -> 80: a person's own signed-in devices (DOR-2969).
     expect(mounts).toContain('/api/devices');
-    expect(mounts).toHaveLength(80);
+    // 80 -> 81: the forced-limit seam for re-seating, test runtime only (DOR-3143).
+    expect(mounts).toContain('/api/test/account-world');
+    expect(mounts).toHaveLength(81);
     const byHand = [
       '/',
       '/x/fixture',

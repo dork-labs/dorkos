@@ -26,6 +26,8 @@ import { cn } from '@/layers/shared/lib';
 import { useWebAccess, type WebAccess } from '../model/use-web-access';
 import { useSeenDevices } from '../model/use-remote-presence';
 import { SeenDevices } from './SeenDevices';
+import { ApprovalPasskeys } from './ApprovalPasskeys';
+import { PasswordPrompt, type Prompt } from './PasswordPrompt';
 
 /** The host a hub origin names, for showing it. */
 function hostOf(origin: string | null): string {
@@ -152,53 +154,6 @@ function stateLine(status: SessionRelayStatus): string {
   return status.connected ? 'Connected' : 'Not connected';
 }
 
-/** What a password prompt is open for. */
-type Prompt = { title: string; confirm: string; run: (password: string) => void } | null;
-
-/** Ask for the owner's password before a change that opens access wider. */
-function PasswordPrompt({ prompt, onClose }: { prompt: Prompt; onClose: () => void }) {
-  const id = useId();
-  const [password, setPassword] = useState('');
-  const close = () => {
-    setPassword('');
-    onClose();
-  };
-  return (
-    <AlertDialog open={prompt !== null} onOpenChange={(open) => !open && close()}>
-      <AlertDialogContent>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            prompt?.run(password);
-            close();
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>{prompt?.title}</AlertDialogTitle>
-            <AlertDialogDescription>Enter your password for this computer.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor={id}>Password</Label>
-            <PasswordInput
-              id={id}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-            <Button type="submit" disabled={!password}>
-              {prompt?.confirm}
-            </Button>
-          </AlertDialogFooter>
-        </form>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
 /** Linked: the hub, the level, Pause or Resume, and Unlink. */
 function LinkedControls({ access, status }: { access: WebAccess; status: SessionRelayStatus }) {
   const disabled = !access.atThisComputer || access.busy;
@@ -309,6 +264,7 @@ export function WebAccessSection({ className }: { className?: string }) {
         <>
           <LinkedControls access={access} status={status} />
           <SeenDevices devices={devices} />
+          <ApprovalPasskeys atThisComputer={access.atThisComputer} />
         </>
       ) : (
         <LinkForm access={access} status={status} />

@@ -12,6 +12,9 @@ import type {
   SessionRelayDeviceList,
   SessionRelayLevel,
   SessionRelayLinkBody,
+  SessionRelayPasskeyList,
+  SessionRelayPasskeyStart,
+  SessionRelayPasskeyStartBody,
   SessionRelayPresence,
   SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
@@ -72,6 +75,32 @@ export function createHubMethods(baseUrl: string) {
     },
     listSessionRelayDevices(): Promise<SessionRelayDeviceList> {
       return fetchJSON(baseUrl, '/session-relay/devices');
+    },
+    listSessionRelayPasskeys(): Promise<SessionRelayPasskeyList> {
+      return fetchJSON(baseUrl, '/session-relay/passkeys');
+    },
+    startSessionRelayPasskey(
+      body: SessionRelayPasskeyStartBody
+    ): Promise<SessionRelayPasskeyStart> {
+      return fetchJSON(baseUrl, '/session-relay/passkeys/start', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    removeSessionRelayPasskey(
+      credentialId: string,
+      password: string
+    ): Promise<SessionRelayPasskeyList> {
+      return fetchJSON(baseUrl, `/session-relay/passkeys/${encodeURIComponent(credentialId)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      });
+    },
+    removeDamagedSessionRelayPasskeys(password: string): Promise<SessionRelayPasskeyList> {
+      return fetchJSON(baseUrl, '/session-relay/passkeys', {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      });
     },
   };
 }

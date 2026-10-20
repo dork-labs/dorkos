@@ -29,7 +29,16 @@ const REF = 'remote_team_space' as CommunityRef;
 const OWNER_MEMBER = 'remote-owner-member';
 const START = Date.parse('2026-10-16T09:00:00.000Z');
 const LIVE = { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false } as const;
-const TEAMMATE_CEILING = ['runtime-default', READ_ONLY_LEVEL];
+/** A teammate's ceiling: the runtime default and read access, which carries their mark (DOR-3036). */
+const TEAMMATE_CEILING = [
+  'runtime-default',
+  {
+    ...READ_ONLY_LEVEL,
+    teammate: [
+      expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) }),
+    ],
+  },
+];
 
 const TEAMMATE = { memberId: 'remote-bo', displayName: 'Bo', kind: 'human' } as const;
 const OTHER_TEAMMATE = { memberId: 'remote-cy', displayName: 'Cy', kind: 'human' } as const;

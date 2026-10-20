@@ -225,6 +225,8 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
       });
     },
     ...(deps.usageLimitFor ? { usageLimitFor: deps.usageLimitFor } : {}),
+    ...(deps.seatMover ? { seatMover: deps.seatMover } : {}),
+    ...(deps.roomHasOutsiders ? { roomHasOutsiders: deps.roomHasOutsiders } : {}),
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather
@@ -246,6 +248,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
       return isSpaceRoom(roomId) ? SPACE_ROOM_FRAMING : null;
     },
     isSpaceRoom,
+    ...(deps.posterLevel ? { posterLevel: deps.posterLevel } : {}),
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
     // What is on this room's table, as LABELS — never a document's contents.

@@ -15,7 +15,7 @@ import { ConnectorAuthorityCleanupService } from '../../services/connectors/auth
 import { randomUUID } from 'node:crypto';
 import { SessionConnectorAttachmentStore } from '../../services/connectors/attachment-store.js';
 import { takeDailySnapshot } from '@dorkos/db';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 import {
   SessionEventStore,
   wireSessionEventStore,
@@ -38,6 +38,7 @@ import {
 } from '../../services/extensions/inbox/extension-inbox.js';
 import { getStartWorkService } from '../../services/extensions/start-work.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
 import { installSessionStatusHydration } from '../../services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from '../../services/session/fleet/session-context-store.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
@@ -52,7 +53,10 @@ import { setRemoteCommunityDb } from '../../services/communities/remote/state.js
 import { exposeDesktopSignInMint } from '../../services/core/auth/desktop-sign-in.js';
 import { readGatePosture } from '../../services/core/auth/gate-policy.js';
 import { startLiveConnectionSweep } from '../../services/core/auth/sessions/live-connections.js';
-import { liveSessionIds } from '../../services/core/auth/sessions/signed-in-devices.js';
+import {
+  endSetupSignIns,
+  liveSessionIds,
+} from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
@@ -179,6 +183,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+  // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
+  setContinuationHoldDb(db);
 
   // Usage and context shown the moment a session opens, before any turn (spec
   // `claude-account-fleet` §6 U): every new projector is stamped from the usage
@@ -213,6 +219,14 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // A sign-in ended outside this process (`dorkos auth reset-password` writes
   // the database directly) still closes what it had open, within a sweep.
   startLiveConnectionSweep((ids) => liveSessionIds(auth, ids));
+  // The sign-in `dorkos auth enable` made while signing up is held by no
+  // device; end it rather than list it (DOR-3097).
+  const ownerAtStart = readOwnerAccount();
+  if (ownerAtStart) {
+    void endSetupSignIns(auth, ownerAtStart.id).catch((error: unknown) =>
+      logger.warn('[auth] could not end the sign-in made during setup', logError(error))
+    );
+  }
   // The desktop window signs in by itself (F3): its shell mints a code here
   // over the process channel (`services/core/auth/desktop-sign-in.ts`).
   exposeDesktopSignInMint({

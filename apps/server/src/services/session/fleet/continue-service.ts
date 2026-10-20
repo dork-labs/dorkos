@@ -27,7 +27,7 @@ import type {
   ContinueSessionResponse,
   LimitPlan,
 } from '@dorkos/shared/schemas';
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import {
   CREDITS_ACCOUNT_ID,
   LEDGER_RUNTIMES,
@@ -100,6 +100,11 @@ export interface CarryOverLaunchDeps {
   meshCore: MeshCore | undefined;
   /** The room binding port the launch service asks. */
   roomSessionPlace: RoomSessionPlacePort | undefined;
+  /**
+   * The loosest level the continuing turn may run at: the runtime's default
+   * for a continue asked over Wi-Fi (DOR-3037). Absent for the timer's own.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
 }
 
 /** What a continue needs from the app to start a session. */
@@ -269,6 +274,7 @@ async function continueOnModel(
     clientId: deps.clientId,
     meshCore: deps.meshCore,
     roomSessionPlace: deps.roomSessionPlace,
+    ...(deps.permissionCeiling !== undefined ? { permissionCeiling: deps.permissionCeiling } : {}),
   });
   if (isSessionLaunchRefusal(result)) {
     throw new ContinueError(409, result.refused, result.message);
@@ -428,7 +434,13 @@ export async function continueSession(
         by: 'person',
         ...(body.model ? { model: body.model } : {}),
         ...(crossRuntime ? { targetRuntime } : {}),
-        launch: { meshCore: deps.meshCore, roomSessionPlace: deps.roomSessionPlace },
+        launch: {
+          meshCore: deps.meshCore,
+          roomSessionPlace: deps.roomSessionPlace,
+          ...(deps.permissionCeiling !== undefined
+            ? { permissionCeiling: deps.permissionCeiling }
+            : {}),
+        },
         activity,
       });
       return { sessionId };
@@ -653,6 +665,14 @@ async function markContinuedOnce(
     toAccountId: to.accountId,
     newSessionId: to.sessionId,
   });
+}
+
+/**
+ * The Activity writer moves are recorded with, once the service is installed.
+ * Shared with the room seat mover, so every move lands in the same feed.
+ */
+export function continueActivity(): ActivityService | undefined {
+  return activity;
 }
 
 /**

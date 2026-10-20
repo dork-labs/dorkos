@@ -280,6 +280,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // `PERMISSIVE_DEFAULTS` because a wipe carries them; this one rides on its
   // registry row, which a wipe does not carry, so there is nothing to lose.
   'runtimes.claudeCode.accounts[].onlyProjects',
+  // An account a person kept out of automatic moves (Re-seat P0). Absent reads
+  // as "may be picked", exactly how every account behaved before the flag
+  // existed, and it rides on its registry row, which a wipe does not carry.
+  'runtimes.claudeCode.accounts[].noAutoMove',
   // The extension copies a person said "Not now" to in the Activity inbox
   // (DOR-2517). Ships EMPTY, so every extension waiting to run is asked about;
   // an entry only stops the inbox asking again. It approves, runs and grants
@@ -291,6 +295,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // stricter, never looser.
   'extensions.trustedSources[].source',
   'extensions.trustedSources[].trustedAt',
+  // The rooms each mini app may read and reply in as the person (DOR-3017).
+  // Ships ABSENT, which means none: no mini app reaches any room until a
+  // person picks one. A wipe empties it, which is stricter, never looser.
+  'extensions.roomAccess',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

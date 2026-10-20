@@ -152,6 +152,10 @@ describe('a room’s repo is append-only', () => {
       // writes nothing: the four verbs that CHANGE a canvas are `control_ui`
       // actions on the runtime side, not capabilities here.
       'read_canvas',
+      // Moving an agent's seat to another account (Re-seat P0). Touches no
+      // repo; it starts a fresh session for the agent, and only a person may.
+      'reseat_room_agent_options',
+      'reseat_room_agent',
     ]);
     // And nothing in the domain offers to give a room files: enabling a repo is
     // operator-only over HTTP (spec §3.2), because an agent that could hand

@@ -6,6 +6,7 @@
  * @module shared/lib/transport
  */
 export { HttpTransport } from './http-transport';
+export { resolveStableClientId } from './client-id';
 export { UPLOAD_STALLED_MESSAGE, UPLOAD_CANCELED_MESSAGE } from './upload-contract';
 export { RoomStreamHttpError, isFatalStreamError } from './room-methods';
 export { type StreamConnectionOptions } from './ws-connection';

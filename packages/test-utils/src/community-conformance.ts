@@ -1,6 +1,6 @@
 /**
  * Shared `CommunityAdapter` conformance suite — the behavioral gate every
- * community backend (local rooms, a Buzz relay, `apps/community`,
+ * community backend (local rooms, a Buzz relay, `apps/space`,
  * {@link ./fake-community-adapter.js | FakeCommunityAdapter}) clears. The
  * community analogue of `runtimeConformance` and `connectorConformance`.
  *

@@ -14,6 +14,7 @@ import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 import { fileSaveReceiptScenarios } from './file-save-receipt-scenarios.js';
 import { docFrameSdkScenario } from './doc-frame/doc-frame-sdk-scenario.js';
 import { docFrameCompanionScenario } from './doc-frame/doc-frame-companion-scenario.js';
+import { docRouteScenarios } from './doc-route-scenarios.js';
 
 /**
  * One scripted turn.
@@ -315,6 +316,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...browserDrivingScenarios(),
   'local-browser-driving': localBrowserDrivingScenario,
   ...fileSaveReceiptScenarios(),
+  ...docRouteScenarios(),
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.

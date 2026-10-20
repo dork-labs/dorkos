@@ -108,6 +108,9 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 /** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
 let agentHeader: string | undefined;
 
+/** The listener a request arrived through, when not the main one (DOR-2969). */
+let arrivedVia: 'wifi' | 'own-tunnel' | undefined;
+
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
  * (DOR-483). Each test still gets a FRESH app — its own config directory, its
@@ -168,12 +171,17 @@ async function configApp(configRouter: Hono<ApiEnv>) {
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
+  arrivedVia = undefined;
   return honoGroupListener(
     { path: '/api/config', routes: configRouter },
     {
       before: async (c, next) => {
         if (signedInUser) c.set('user', signedInUser);
         if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        if (arrivedVia) {
+          const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
+          markIngress(c.env.incoming, arrivedVia);
+        }
         await next();
       },
     }
@@ -653,6 +661,50 @@ describe('PATCH /api/config', () => {
         .send({ ui: { statusBar: { pins: ['runtime'] } } })
         .expect(200);
       expect(ok.body.config.ui.statusBar.pins).toEqual(['runtime']);
+    });
+  });
+
+  describe('an account kept out of automatic moves (Re-seat P0)', () => {
+    const row = { id: 'claude-ab1', path: '/Users/me/.claude-ab1', label: 'AB1', color: null };
+
+    async function storedFlag(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const accounts = configManager.getDot('runtimes.claudeCode.accounts') as Array<{
+        id: string;
+        noAutoMove?: unknown;
+      }>;
+      return accounts.find((a) => a.id === 'claude-ab1')?.noAutoMove;
+    }
+
+    beforeEach(async () => {
+      // The person keeps the account out, which is the state the upgrade leaves.
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: true }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('refuses an agent clearing the flag, and keeps it on', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.accounts[].noAutoMove');
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('lets the person clear it through the same door', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(false);
     });
   });
 
@@ -2202,5 +2254,121 @@ describe('PUT /api/config/agents/defaultAgent', () => {
       .expect(200);
 
     expect(res.body.defaultAgent).toBe('my-agent');
+  });
+});
+
+describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('lets the owner at this computer change one', async () => {
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ tunnel: { domain: 'me.ngrok.app' } })
+      .expect(200);
+    expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
+  });
+
+  it.each([
+    ['Wi-Fi', 'wifi'],
+    ['the own tunnel', 'own-tunnel'],
+  ] as const)("refuses the owner's own sign-in over %s", async (_l, via) => {
+    arrivedVia = via;
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.paths).toEqual(['auth.enabled']);
+  });
+
+  it('refuses a signed-in person at this computer who is not the owner', async () => {
+    signedInUser = { userId: 'user_member', credential: 'cookie' };
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ server: { lanAccess: true } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+  });
+
+  it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {
+    arrivedVia = 'wifi';
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+    expect(res.body.config.ui.theme).toBe('dark');
+  });
+});
+
+describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('takes a tighter stop for everyone and for one runtime', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'act', claudeCode: { defaultTrustStop: 'ask' } } })
+      .expect(200);
+  });
+
+  it('refuses a looser one, for everyone or for one runtime, and changes nothing', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    const everyone = await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(403);
+    expect(everyone.body).toEqual({
+      error: 'Raising permissions works only at this computer.',
+      code: 'NOT_FROM_WIFI',
+    });
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
+      .expect(403);
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.get('runtimes')?.defaultTrustStop).toBe('ask');
+  });
+
+  it('takes a looser one at this computer', async () => {
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(200);
   });
 });

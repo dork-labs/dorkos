@@ -17,6 +17,8 @@ import type { SignedInDevice, SignedInDeviceRoute } from '@dorkos/shared/signed-
 
 import type { Auth } from '../index.js';
 import { markSignedOutFromDevices, unmarkSignedOutFromDevices } from '../auth-audit.js';
+import { isDesktopSignIn } from '../desktop-sign-in.js';
+import { describeUserAgent, userAgentPlatform } from '../../../../lib/http/user-agent.js';
 import { SESSION_ROUTES } from './session-route.js';
 
 /** The session row fields read here. */
@@ -43,39 +45,47 @@ export function deviceIdOf(sessionId: string): string {
   return createHmac('sha256', DEVICE_ID_KEY).update(sessionId).digest('base64url').slice(0, 22);
 }
 
-/** The browser named in a user agent, most specific first. */
-const BROWSERS: readonly [RegExp, string][] = [
-  [/\bDorkOS\b|\bElectron\//, 'DorkOS app'],
-  [/\bEdg(?:e|A|iOS)?\//, 'Edge'],
-  [/\bOPR\/|\bOpera\b/, 'Opera'],
-  [/\bFirefox\/|\bFxiOS\//, 'Firefox'],
-  [/\bChrome\/|\bCriOS\//, 'Chrome'],
-  [/\bSafari\//, 'Safari'],
-];
-
-/** The system named in a user agent, most specific first. */
-const SYSTEMS: readonly [RegExp, string][] = [
-  [/\biPhone\b/, 'iPhone'],
-  [/\biPad\b/, 'iPad'],
-  [/\bAndroid\b/, 'Android'],
-  [/\bMac OS X\b|\bMacintosh\b/, 'Mac'],
-  [/\bWindows\b/, 'Windows'],
-  [/\bCrOS\b/, 'ChromeOS'],
-  [/\bLinux\b/, 'Linux'],
-];
-
 /**
- * A user agent in a few words ("Safari on iPhone"), or `undefined` when it
- * names nothing known. Only ever a label: never trusted for anything.
+ * What a sign-in is called in the list: "DorkOS app on Mac" for the one the
+ * desktop window's own sign-in made, else its browser and platform ("Chrome
+ * on Mac"), or "A web browser" when its user agent says nothing known. The
+ * user agent is only ever a label, never trusted: it alone never names the
+ * DorkOS app.
  *
  * @param userAgent - The stored user agent.
+ * @param fromDesktopApp - Whether the desktop sign-in made this sign-in.
  */
-export function userAgentLabel(userAgent: string | null | undefined): string | undefined {
-  if (!userAgent) return undefined;
-  const browser = BROWSERS.find(([pattern]) => pattern.test(userAgent))?.[1];
-  const system = SYSTEMS.find(([pattern]) => pattern.test(userAgent))?.[1];
-  if (browser && system) return `${browser} on ${system}`;
-  return browser ?? system;
+export function deviceNameOf(userAgent: string | null | undefined, fromDesktopApp = false): string {
+  const ua = userAgent ?? undefined;
+  if (fromDesktopApp) {
+    const platform = userAgentPlatform(ua);
+    return platform ? `DorkOS app on ${platform}` : 'DorkOS app';
+  }
+  return describeUserAgent(ua);
+}
+
+/** How far apart Better Auth writes an account and the sign-in its sign-up makes. */
+const SIGN_UP_SLACK_MS = 1000;
+
+/**
+ * Whether this is the sign-in the account's own sign-up made: no user agent,
+ * and made the moment the account was. `dorkos auth enable` signed up from the
+ * command line and kept that one on every install before DOR-3097, unused by
+ * any device. No sign-in can be made at that moment later, so this never
+ * names one a person made.
+ */
+function isSignUpSignIn(row: SessionRow, accountCreatedAt: number | undefined): boolean {
+  if (row.userAgent || accountCreatedAt === undefined) return false;
+  return Math.abs(new Date(row.createdAt).getTime() - accountCreatedAt) < SIGN_UP_SLACK_MS;
+}
+
+/** When an account was made, in ms, or `undefined` when it is not found. */
+async function accountCreatedAtOf(auth: Auth, userId: string): Promise<number | undefined> {
+  const context = await auth.$context;
+  const account = (await context.internalAdapter.findUserById(userId)) as {
+    createdAt: Date | string;
+  } | null;
+  return account ? new Date(account.createdAt).getTime() : undefined;
 }
 
 /** A stored route as the list names it: none recorded means this computer. */
@@ -112,20 +122,41 @@ export async function listSignedInDevices(
 ): Promise<SignedInDevice[]> {
   const rows = await liveRowsOf(auth, userId);
   return rows
-    .map((row): SignedInDevice & { sort: number } => {
-      const label = userAgentLabel(row.userAgent);
-      return {
-        id: deviceIdOf(row.id),
-        route: routeOf(row.route),
-        createdAt: iso(row.createdAt),
-        lastSeenAt: iso(row.updatedAt),
-        current: row.id === currentSessionId,
-        ...(label ? { userAgentLabel: label } : {}),
-        sort: new Date(row.updatedAt).getTime(),
-      };
-    })
+    .map((row): SignedInDevice & { sort: number } => ({
+      id: deviceIdOf(row.id),
+      route: routeOf(row.route),
+      createdAt: iso(row.createdAt),
+      lastSeenAt: iso(row.updatedAt),
+      current: row.id === currentSessionId,
+      name: deviceNameOf(row.userAgent, isDesktopSignIn(row.token)),
+      sort: new Date(row.updatedAt).getTime(),
+    }))
     .sort((a, b) => Number(b.current) - Number(a.current) || b.sort - a.sort)
     .map(({ sort: _sort, ...device }) => device);
+}
+
+/**
+ * End the sign-in the account's own sign-up made, if it is still there
+ * (DOR-3097). No device holds it, so nobody is signed out, and ending it beats
+ * hiding it: a list that leaves a live sign-in out could one day leave out a
+ * real one. Run at every start, so it also catches one `dorkos auth enable`
+ * could not end itself; after that it finds nothing.
+ *
+ * Through Better Auth's own adapter, so the session-delete hook runs as for
+ * any sign-out.
+ *
+ * @param auth - The Better Auth instance.
+ * @param userId - The account whose sign-up it was.
+ * @returns How many it ended: 0 or 1.
+ */
+export async function endSetupSignIns(auth: Auth, userId: string): Promise<number> {
+  const accountCreatedAt = await accountCreatedAtOf(auth, userId);
+  const setup = (await liveRowsOf(auth, userId)).filter((row) =>
+    isSignUpSignIn(row, accountCreatedAt)
+  );
+  const context = await auth.$context;
+  for (const row of setup) await context.internalAdapter.deleteSession(row.token);
+  return setup.length;
 }
 
 /**

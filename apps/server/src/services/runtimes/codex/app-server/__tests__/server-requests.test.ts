@@ -103,6 +103,38 @@ describe('mapServerRequest (spec §10)', () => {
     expect(mapped.replies.approve!(false)).toEqual({ decision: 'accept' });
   });
 
+  it('spells out a writeStdin kind and extra permissions on the card input', () => {
+    const inputOf = (params: Record<string, unknown>, turn = noTurn) => {
+      const mapped = mapServerRequest(
+        { id: 3, method: 'item/commandExecution/requestApproval', params },
+        turn
+      );
+      if (!('kind' in mapped)) throw new Error('refused');
+      return JSON.parse(mapped.card.data.input as string) as Record<string, unknown>;
+    };
+    expect(inputOf({ itemId: 'c', command: 'ls', cwd: '/p', kind: 'command' })).toEqual({
+      command: 'ls',
+      cwd: '/p',
+    });
+    expect(inputOf({ itemId: 'c', command: 'ls', cwd: '/p', kind: 'writeStdin' })).toEqual({
+      command: 'ls',
+      cwd: '/p',
+      kind: 'writeStdin',
+    });
+    const extra = { network: { enabled: true } };
+    expect(inputOf({ itemId: 'c', command: 'ls', additionalPermissions: extra })).toEqual({
+      command: 'ls',
+      additionalPermissions: extra,
+    });
+    // With no command on the request, the item's own input is widened the same way.
+    const turn = { ...noTurn, inputOf: () => JSON.stringify({ command: 'cat', cwd: '/p' }) };
+    expect(inputOf({ itemId: 'c', kind: 'writeStdin' }, turn)).toEqual({
+      command: 'cat',
+      cwd: '/p',
+      kind: 'writeStdin',
+    });
+  });
+
   it('maps a file change to an ApplyPatch card carrying the item’s changes and grant root', () => {
     const changes = JSON.stringify({ changes: [{ path: 'a.ts' }] });
     const mapped = mapServerRequest(

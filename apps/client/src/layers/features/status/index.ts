@@ -7,6 +7,7 @@ export { StatusLine } from './ui/StatusLine';
 export { CwdItem } from './ui/CwdItem';
 export { GitStatusItem } from './ui/GitStatusItem';
 export { PermissionModeItem } from './ui/PermissionModeItem';
+export { WifiTurnCapPill } from './ui/WifiTurnCapPill';
 export { MakeDefaultStopLine } from './ui/MakeDefaultStopLine';
 export { useMakeDefaultStop } from './model/use-make-default-stop';
 export type { MakeDefaultStop } from './model/use-make-default-stop';
@@ -68,7 +69,7 @@ export {
 } from './model/extension-status-items';
 export type { EvaluatedExtensionStatusItems } from './model/extension-status-items';
 export { selectPromotedItems } from './model/promoted-items';
-export { applyStatusBudget, resolveStatusBudget } from './model/status-budget';
+export { applyStatusBudget, isPhoneDensity, resolveStatusBudget } from './model/status-budget';
 export type { StatusDensity, StatusBudget } from './model/status-budget';
 export { useStatusBudget } from './model/use-status-budget';
 export { SessionInspector, SessionReadout } from './ui/SessionInspector';

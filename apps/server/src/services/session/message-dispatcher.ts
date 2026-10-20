@@ -191,6 +191,7 @@ import {
   refusesOpenTurn,
 } from './message-dispatcher/turn-probes.js';
 import { launchDispatch } from './message-dispatcher/launch.js';
+import { ceilingHoldsToDefault, heldMessageMayJoin } from './message-dispatcher/held-to-default.js';
 import { parkDispatch, unwatchedSettle } from './message-dispatcher/park.js';
 import { adoptAcceptedPrivateMessages, adoptQueuedMessages } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
@@ -543,7 +544,15 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // everything else — and every downgrade — falls through to the queue below,
   // carrying the reason it could not be delivered as asked.
   let degradedBecause: DispositionDowngradeReason | undefined;
-  if (requested !== 'queue') {
+  const heldToDefault = ceilingHoldsToDefault(opts.permissionCeiling);
+  if (
+    requested !== 'queue' &&
+    heldToDefault &&
+    !heldMessageMayJoin(runtime, sessionKey, requested)
+  ) {
+    // Words held to the runtime's default never join a looser turn (DOR-3037).
+    degradedBecause = requested === 'steer' ? 'not-steerable' : 'not-stageable';
+  } else if (requested !== 'queue') {
     const rung = await deliverByDisposition(opts, requested, caps);
     if ('landed' in rung) return rung.landed;
     degradedBecause = rung.degrade;
@@ -610,6 +619,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
           clientId,
           disposition: requested,
           context: opts.context ?? null,
+          ...(heldToDefault ? { heldToDefault: true } : {}),
         })
       : undefined;
   // **The person first** (spec `spin-off-chats` §3): a message a person (or

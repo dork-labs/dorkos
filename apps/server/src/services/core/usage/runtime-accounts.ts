@@ -101,6 +101,11 @@ export interface RuntimeAccount {
   routable: boolean;
   /** True for the runtime's own `default` (no registry row). */
   implicit: boolean;
+  /**
+   * `true` when a person kept this account out of automatic moves (its row's
+   * `noAutoMove`, Re-seat P0); absent otherwise, an implicit default included.
+   */
+  noAutoMove?: true;
   /** True when `<runtime>:default` names this account (the standalone default, or its alias). */
   isDefault: boolean;
   /** The ledger file's id (`<ledgerId>.json`), or `null` when it has no ledger. */
@@ -281,6 +286,7 @@ function readRegistered(
       isDefault: false,
       ledgerId: routable ? row.id : null,
       ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
+      ...(row.noAutoMove === true ? { noAutoMove: true as const } : {}),
     };
   });
   return {

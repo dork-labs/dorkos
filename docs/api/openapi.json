@@ -1556,6 +1556,17 @@
           "projects"
         ]
       },
+      "NoAutoMove": {
+        "type": "object",
+        "properties": {
+          "noAutoMove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "noAutoMove"
+        ]
+      },
       "KeepAwakeStatus": {
         "type": "object",
         "properties": {
@@ -9768,6 +9779,9 @@
             ],
             "default": null
           },
+          "originMarks": {
+            "$ref": "#/components/schemas/ScheduleOriginMarks"
+          },
           "nextRun": {
             "type": [
               "string",
@@ -9834,6 +9848,52 @@
           "paused",
           "pending_approval"
         ]
+      },
+      "ScheduleOriginMarks": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "outsider": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "teammate": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "roomId": {
+                  "type": "string"
+                },
+                "authorId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                },
+                "room": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "roomId",
+                "authorId"
+              ]
+            }
+          }
+        }
       },
       "CreateTaskRequest": {
         "type": "object",
@@ -13510,6 +13570,46 @@
                           "required": [
                             "kind"
                           ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat"
+                              ]
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sessionId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "account"
+                              ]
+                            },
+                            "accountId": {
+                              "type": "string"
+                            },
+                            "accountName": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "accountId",
+                            "accountName"
+                          ]
                         }
                       ]
                     },
@@ -13739,6 +13839,46 @@
                       "required": [
                         "kind"
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat"
+                          ]
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "sessionId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "account"
+                          ]
+                        },
+                        "accountId": {
+                          "type": "string"
+                        },
+                        "accountName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "accountId",
+                        "accountName"
+                      ]
                     }
                   ]
                 },
@@ -13902,6 +14042,46 @@
                     },
                     "required": [
                       "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "chat"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sessionId"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "account"
+                        ]
+                      },
+                      "accountId": {
+                        "type": "string"
+                      },
+                      "accountName": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "accountId",
+                      "accountName"
                     ]
                   }
                 ]
@@ -15069,7 +15249,8 @@
           "bridge_disconnected",
           "bridge_agent_swapped",
           "bridge_history_note",
-          "room_archived"
+          "room_archived",
+          "agent_reseated"
         ]
       },
       "RoomMoment": {
@@ -16958,7 +17139,8 @@
         "enum": [
           "room",
           "session",
-          "inbox"
+          "inbox",
+          "room-thread"
         ]
       },
       "SetReadCursorPositionRequest": {
@@ -21027,6 +21209,76 @@
           },
           "404": {
             "description": "There is no such account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/accounts/{id}/no-auto-move": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Keep room agents off a Claude account in automatic moves",
+        "description": "With `noAutoMove: true`, DorkOS never moves a room agent whose account ran out to this registered account on its own; a person may still move one there. `false` lets it be picked again. Recorded in the permission history with an Undo, rather than as a config change. Main (`default`) has no registry row, so it answers `404`. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoAutoMove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The flag as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoAutoMove"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no such registered account",
             "content": {
               "application/json": {
                 "schema": {
@@ -25336,6 +25588,1781 @@
                   },
                   "required": [
                     "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes": {
+      "get": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "List a document’s declared event routes and their state",
+        "description": "Operator only. A route is granted only when the grant service revalidates it now; a declared route nobody allowed is no_grant. Approval evidence is never returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every declared route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "on": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                          },
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "log"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "agent:owner"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "room:self"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "maxLength": 206,
+                                "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                              }
+                            ]
+                          },
+                          "turn": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "immediate",
+                              "coalesce"
+                            ]
+                          },
+                          "destination": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "log"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "owner"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "agent"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "room"
+                                    ]
+                                  },
+                                  "agentId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "needsPerson": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "no_grant",
+                              "granted",
+                              "waiting",
+                              "suspended",
+                              "revoked",
+                              "expired"
+                            ]
+                          },
+                          "grant": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "grantId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "allowedTypes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                                },
+                                "minItems": 1,
+                                "maxItems": 128
+                              },
+                              "limits": {
+                                "type": "object",
+                                "properties": {
+                                  "envelopeBytes": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "eventsPerMinute": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnsPerHour": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                },
+                                "required": [
+                                  "envelopeBytes",
+                                  "eventsPerMinute",
+                                  "turnsPerHour"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "expiresAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "revokedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "format": "date-time"
+                              },
+                              "approvedBy": {
+                                "type": "string",
+                                "enum": [
+                                  "person",
+                                  "agent"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "grantId",
+                              "allowedTypes",
+                              "limits",
+                              "createdAt",
+                              "expiresAt",
+                              "revokedAt",
+                              "approvedBy"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "waiting": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "approvalId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "expiresAt": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "approvalId",
+                              "expiresAt"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "on",
+                          "to",
+                          "turn",
+                          "destination",
+                          "needsPerson",
+                          "state",
+                          "grant",
+                          "waiting"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 16
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "routes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/review": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Show the exact details allowing a route would bind",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records nothing. reviewHash covers the document, route, declaration, app, target, types, limits and expiry.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresAt": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "expiresAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reviewed binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "destination": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "owner"
+                              ]
+                            },
+                            "agentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "agent"
+                              ]
+                            },
+                            "agentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "room"
+                              ]
+                            },
+                            "agentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "allowedTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                      },
+                      "minItems": 1,
+                      "maxItems": 128
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "envelopeBytes": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "eventsPerMinute": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "turnsPerHour": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "envelopeBytes",
+                        "eventsPerMinute",
+                        "turnsPerHour"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "format": "date-time"
+                    },
+                    "reviewHash": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$/u"
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "routeId",
+                    "on",
+                    "destination",
+                    "allowedTypes",
+                    "limits",
+                    "expiresAt",
+                    "reviewHash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/approve": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Allow a reviewed route",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 409 ROUTE_CHANGED.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresAt": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "format": "date-time"
+                  },
+                  "reviewHash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$/u"
+                  }
+                },
+                "required": [
+                  "expiresAt",
+                  "reviewHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The route as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "immediate",
+                            "coalesce"
+                          ]
+                        },
+                        "destination": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "log"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "agent"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "room"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "needsPerson": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "no_grant",
+                            "granted",
+                            "waiting",
+                            "suspended",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "grant": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "grantId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "allowedTypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                              },
+                              "minItems": 1,
+                              "maxItems": 128
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "envelopeBytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "eventsPerMinute": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "turnsPerHour": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "envelopeBytes",
+                                "eventsPerMinute",
+                                "turnsPerHour"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "revokedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "approvedBy": {
+                              "type": "string",
+                              "enum": [
+                                "person",
+                                "agent"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "grantId",
+                            "allowedTypes",
+                            "limits",
+                            "createdAt",
+                            "expiresAt",
+                            "revokedAt",
+                            "approvedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "waiting": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "approvalId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "approvalId",
+                            "expiresAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn",
+                        "destination",
+                        "needsPerson",
+                        "state",
+                        "grant",
+                        "waiting"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "route"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The route changed since review, or is already on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/routes/{routeId}/revoke": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Turn a route’s grant off",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. New events stop starting work. Work already started keeps its recorded source.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "routeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The route as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "immediate",
+                            "coalesce"
+                          ]
+                        },
+                        "destination": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "log"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "agent"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "room"
+                                  ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "agentId",
+                                "agentName"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "needsPerson": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "no_grant",
+                            "granted",
+                            "waiting",
+                            "suspended",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "grant": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "grantId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "allowedTypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                              },
+                              "minItems": 1,
+                              "maxItems": 128
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "envelopeBytes": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "eventsPerMinute": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "turnsPerHour": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "envelopeBytes",
+                                "eventsPerMinute",
+                                "turnsPerHour"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "revokedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "approvedBy": {
+                              "type": "string",
+                              "enum": [
+                                "person",
+                                "agent"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "grantId",
+                            "allowedTypes",
+                            "limits",
+                            "createdAt",
+                            "expiresAt",
+                            "revokedAt",
+                            "approvedBy"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "waiting": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "approvalId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "approvalId",
+                            "expiresAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn",
+                        "destination",
+                        "needsPerson",
+                        "state",
+                        "grant",
+                        "waiting"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "route"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
                   ]
                 }
               }
@@ -30122,6 +32149,950 @@
         }
       }
     },
+    "/api/session-relay/passkeys": {
+      "get": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "The approvals passkeys pinned here",
+        "description": "The approve page approvals from the web must come from, and each passkey by label, date and algorithm. Never key material. The owner at this computer only.",
+        "responses": {
+          "200": {
+            "description": "The pinned approve page and passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Remove a damaged passkeys file",
+        "description": "Needs the owner's password. Removes the passkeys file only when it is damaged (the list says `damaged: true`), so a passkey can be added again; a sound file is refused.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pinned approve page and passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file is not damaged: remove passkeys one at a time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The file could not be read just now; nothing was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/passkeys/start": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Begin adding an approvals passkey",
+        "description": "Needs the owner's password and a linked computer. Writes a single-use enrol statement (two minutes, one live at a time; a new start replaces it) for the approve page (`https://approve.dorkos.ai` unless a self-hoster names their own https origin, and always the one already pinned once a passkey exists; never the hub itself, and only DorkOS's own for a DorkOS Cloud account). Answers the approve page to open: `<origin>/enrol#<base64url statement>`. The statement sends the browser back to the loopback address this request arrived on (`127.0.0.1`, or `[::1]` for `::1`) at this server's port, `/relay-passkey`. Only a direct request on this computer passes, so a container install cannot add a passkey.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "rpId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253
+                  },
+                  "origin": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "label"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The enrol statement and the approve page to open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string"
+                    },
+                    "challenge": {
+                      "type": "string"
+                    },
+                    "approveUrl": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "challenge",
+                    "approveUrl",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused (`SESSION_RELAY_PASSKEY`), with why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused (`SESSION_RELAY_PASSKEY`), with why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "This computer could not write the statement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/passkeys/finish": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Pin the approvals passkey just made",
+        "description": "Takes the live enrol statement whether it passes or not. Accepts only the same bytes `/start` issued, unexpired, and a registration over `SHA-256` of them from the statement's origin and relying party, with the person verified, signing with ES256, EdDSA or RS256, and not already pinned. Sent by the loopback page `GET /relay-passkey`. Needs no session even when this computer asks for a password; instead a direct loopback caller with no forwarding header, an `Origin` that is exactly the return page's, and a JSON body. The single-use statement is the credential.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "attestation": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1400,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "rawId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1400,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "public-key"
+                        ]
+                      },
+                      "response": {
+                        "type": "object",
+                        "properties": {
+                          "clientDataJSON": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "attestationObject": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16384,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "transports": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 32
+                            },
+                            "maxItems": 8
+                          }
+                        },
+                        "required": [
+                          "clientDataJSON",
+                          "attestationObject"
+                        ]
+                      },
+                      "clientExtensionResults": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "default": {}
+                      },
+                      "authenticatorAttachment": {
+                        "type": "string",
+                        "enum": [
+                          "platform",
+                          "cross-platform"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "rawId",
+                      "type",
+                      "response"
+                    ]
+                  }
+                },
+                "required": [
+                  "statement",
+                  "attestation"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pinned approve page and passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused (`SESSION_RELAY_PASSKEY`), with why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a direct loopback caller, or not the return page's own request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused (`SESSION_RELAY_PASSKEY`), with why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The statement expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/passkeys/{credentialId}": {
+      "delete": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Remove an approvals passkey",
+        "description": "Needs the owner's password. Approvals from the web stop at once when the last one goes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The passkey, base64url"
+            },
+            "required": true,
+            "description": "The passkey, base64url",
+            "name": "credentialId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pinned approve page and passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such passkey here, or the experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/direct-chats": {
       "post": {
         "tags": [
@@ -30517,7 +33488,7 @@
                           "current": {
                             "type": "boolean"
                           },
-                          "userAgentLabel": {
+                          "name": {
                             "type": "string"
                           }
                         },
@@ -30526,7 +33497,8 @@
                           "route",
                           "createdAt",
                           "lastSeenAt",
-                          "current"
+                          "current",
+                          "name"
                         ]
                       }
                     },
@@ -88281,6 +91253,93 @@
                     "saved"
                   ]
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/{agentId}/reseat-options": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "See where an agent could move",
+        "description": "List the Claude accounts an agent in a room or DM could move to, best first, with the account it runs on now. Each says whether it can take the agent now and why not. DorkOS credits are never listed: only a person picks them, in the chat itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The room or DM, by its id — not its #name. You must be able to see it."
+            },
+            "required": true,
+            "description": "The room or DM, by its id — not its #name. You must be able to see it.",
+            "name": "roomId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The agent member whose seat moves, by its author id from the room’s roster."
+            },
+            "required": true,
+            "description": "The agent member whose seat moves, by its author id from the room’s roster.",
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See where an agent could move result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/{agentId}/reseat": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Move an agent to another account",
+        "description": "Move an agent’s seat in a room or DM to another Claude account, so it keeps answering there. Its next turn starts fresh on that account, with a summary of where it was, the same power and the same marks. Name an account from the options, or leave it out for the one with the most usage left. The room gets one line saying so. Only a person may move an agent for now.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "roomId": {
+                    "type": "string",
+                    "description": "The room or DM, by its id — not its #name. You must be able to see it."
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "description": "The agent member whose seat moves, by its author id from the room’s roster."
+                  },
+                  "account": {
+                    "type": "string",
+                    "description": "The account to move to, by id from the options. Left out: the best one."
+                  }
+                },
+                "required": [
+                  "roomId",
+                  "agentId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Move an agent to another account result",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }

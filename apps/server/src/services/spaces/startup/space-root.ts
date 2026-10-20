@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url';
  */
 export const SPACE_ROOT: Readonly<URL> = Object.freeze(
   // From source this file sits in apps/server/src/services/spaces/startup/, and the package's
-  // folders are still in apps/community/; built, dist-server/ sits inside that package folder.
+  // folders are still in apps/space/; built, dist-server/ sits inside that package folder.
   import.meta.url.endsWith('.ts')
-    ? new URL('../../../../../community/', import.meta.url)
+    ? new URL('../../../../../space/', import.meta.url)
     : new URL('../../', import.meta.url)
 );
 

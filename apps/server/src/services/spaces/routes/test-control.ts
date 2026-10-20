@@ -75,7 +75,7 @@ function mintPrincipals(count: number, runId: string, startIndex: number) {
  * Register test-runtime-only controls. This router is never mounted in production.
  *
  * @param pool - Database pool. `/api/test/delivery-receipt-gate` does not use it; it exists so
- *   `/api/test/load-fixture` can seed a throwaway community directly for `apps/community/load`.
+ *   `/api/test/load-fixture` can seed a throwaway community directly for `apps/space/load`.
  */
 export function registerCommunityTestControlRoutes(
   app: Hono,

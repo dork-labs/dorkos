@@ -526,7 +526,7 @@ A session's canvas is the same table under a `session:` scope (spec `canvas-agen
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
 
-**Actual wiring:** `GET /api/rooms` lists local rooms through caller-aware `RoomService` operations, not through the single-identity local port. Qualified routes and the subscription runtime lazily obtain owner-qualified remote Community implementations; qualified `/api/communities/:ref/rooms/:roomId` routes and the remote-room SSE stream serve the local app's authorized Community channels. The Buzz implementation is not exported or registered at startup. The independent `apps/community` service retains browser chat, invitations, files, exports, pairing, and its own authority. See [Community development](community-server.md).
+**Actual wiring:** `GET /api/rooms` lists local rooms through caller-aware `RoomService` operations, not through the single-identity local port. Qualified routes and the subscription runtime lazily obtain owner-qualified remote Community implementations; qualified `/api/communities/:ref/rooms/:roomId` routes and the remote-room SSE stream serve the local app's authorized Community channels. The Buzz implementation is not exported or registered at startup. The independent `apps/space` service retains browser chat, invitations, files, exports, pairing, and its own authority. See [Community development](community-server.md).
 
 ## Memory Provider (the fifth seam)
 
@@ -662,7 +662,7 @@ Use [project structure](project-structure.md) for the repository map and [system
 | Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server     | Rooms, scheduling, message routing and discovery                                |
 | Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server  | Account actions, remote community seam and agent memory                         |
 | Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server | Transactions, activation and harness projection                                 |
-| Independent Community | `services/spaces/` under the server; `apps/community/` (build, web) | Hono API, browser, PostgreSQL and blob storage                                  |
+| Independent Community | `services/spaces/` under the server; `apps/space/` (build, web)     | Hono API, browser, PostgreSQL and blob storage                                  |
 | Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
 
 ## Claude Code Binary Resolution
@@ -800,13 +800,14 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 **Native dependencies:** `better-sqlite3` (via `@dorkos/db`) and `node-pty` (via the CLI) are required at runtime but cannot be inlined by esbuild. They are direct dependencies in `packages/cli/package.json` so `npm install -g` builds them. `node-pty` ships no Linux prebuilds and compiles via node-gyp; `better-sqlite3` has official Linux prebuilds for Node 24 and vendors its own SQLite. Install environments need build tools (`python3`, `build-essential` on Linux — no `libsqlite3-dev`; Xcode CLI tools on macOS).
 
-**Docker image:** One multi-stage `Dockerfile` at the repo root produces four build targets:
+**Docker image:** One multi-stage `Dockerfile` at the repo root produces these build targets, plus `hub` and `hub-smoke`:
 
 | Target                | Purpose                                                                 | Command                                |
 | --------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
 | `smoke`               | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
 | `integration`         | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
 | `runtime`             | Published product image — starts a DorkOS server on `DORKOS_PORT`       | `pnpm docker:build && pnpm docker:run` |
+| `space`               | The space server's image (`ghcr.io/dork-labs/dorkos-community`)         | `docker build --target space .`        |
 | `builder` / `install` | Internal stages — toolchain + global npm install, not run directly      | —                                      |
 
 `runtime` is the last stage, so a bare `docker build .` produces it. Install mode is selected by the `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to run the integration target against the published npm package. The `integration` and `runtime` targets set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
