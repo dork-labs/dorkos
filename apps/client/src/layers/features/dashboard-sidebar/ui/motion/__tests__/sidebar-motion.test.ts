@@ -20,7 +20,10 @@ import {
   FOLD_STIFFNESS,
   LAYOUT_KEY_SEPARATOR,
   LEAVE_SECONDS,
+  MOVE_SECONDS,
   arriveTransition,
+  buildRowMotion,
+  moveTransition,
   foldTransition,
   leaveTransition,
   sectionLayoutKey,
@@ -36,6 +39,7 @@ describe('reduced motion', () => {
     expect(foldTransition(true)).toEqual({ duration: 0 });
     expect(arriveTransition(true)).toEqual({ duration: 0 });
     expect(leaveTransition(true)).toEqual({ duration: 0 });
+    expect(moveTransition(true)).toEqual({ duration: 0 });
   });
 
   it('treats "not asked yet" as no preference', () => {
@@ -52,6 +56,7 @@ describe('the budget', () => {
     expect(ARRIVE_SECONDS).toBeLessThanOrEqual(BUDGET_SECONDS);
     expect(LEAVE_SECONDS).toBeLessThanOrEqual(BUDGET_SECONDS);
     expect(DRAG_LIFT_SECONDS).toBeLessThanOrEqual(BUDGET_SECONDS);
+    expect(MOVE_SECONDS).toBeLessThanOrEqual(BUDGET_SECONDS);
     expect(ARRIVED_TINT_MS).toBeLessThanOrEqual(BUDGET_SECONDS * 1000);
   });
 
@@ -113,5 +118,25 @@ describe('sectionLayoutKey', () => {
     // an empty list.
     expect(keys(before).length).toBeGreaterThan(2);
     expect(keys(after)).toEqual(keys(before));
+  });
+});
+
+describe('a row moving between sections (DOR-3092)', () => {
+  const inputs = { layoutKey: 'k', arrives: false, arrived: false, reducedMotion: false };
+
+  it('slides for 200 ms, easing out', () => {
+    expect(moveTransition(false)).toEqual({ duration: 0.2, ease: 'easeOut' });
+    expect(buildRowMotion(inputs).transition).toMatchObject({ layout: moveTransition(false) });
+  });
+
+  it('is instant under reduced motion', () => {
+    expect(buildRowMotion({ ...inputs, reducedMotion: true }).transition).toMatchObject({
+      layout: { duration: 0 },
+    });
+  });
+
+  it('carries an identity across sections only for a row that moves on its own', () => {
+    expect(buildRowMotion({ ...inputs, moveId: 'agent:/a' }).layoutId).toBe('agent:/a');
+    expect(buildRowMotion(inputs)).not.toHaveProperty('layoutId');
   });
 });

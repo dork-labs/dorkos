@@ -8,13 +8,14 @@
  * @module features/dashboard-sidebar/ui/SidebarSections
  */
 import { useCallback, useRef } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { communityRefFromRouteDestination, useCommunityRouteEpoch } from '@/layers/shared/model';
 import { SidebarMenu } from '@/layers/shared/ui';
 import { useSpaceVisible } from '@/layers/entities/community';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
+  useSidebarPrefs,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import { useBootState } from '../model/boot/use-boot-state';
@@ -25,6 +26,7 @@ import {
 } from '../model/build-sidebar-model';
 import { rowKey } from '../model/rules/targets';
 import { useScrollToActive } from '../model/use-scroll-to-active';
+import { useHeldSections, useInside } from '../model/use-held-sections';
 import { SidebarSkeleton } from './boot/SidebarSkeleton';
 import { REVEAL_CONTAINER, REVEAL_SECTION, revealTransition } from './boot/sidebar-reveal';
 import { CommunityChannelGroups } from './CommunityChannelGroups';
@@ -65,6 +67,14 @@ export interface SidebarSectionsProps {
  */
 export function SidebarSections({ model }: SidebarSectionsProps) {
   const { update } = useUpdateSidebarPrefs();
+  const prefs = useSidebarPrefs();
+  // **Rows never move under the person using the panel** (DOR-3092). While the
+  // pointer is over the list or focus is in it, an agent drifting between a
+  // smart section and Direct messages stays where it is; the move lands when
+  // they leave. Their own changes (a drag, a pin) retake the snapshot, so those
+  // land at once.
+  const { inside, handlers } = useInside();
+  const sections = useHeldSections(model.sections, inside, prefs);
   const route = useCommunityRouteEpoch();
   // A space's channels replace the panel only while that space is reachable:
   // any with spaces on, the official one alone with them off (DOR-2740).
@@ -134,7 +144,7 @@ export function SidebarSections({ model }: SidebarSectionsProps) {
     );
 
   return (
-    <div ref={container} className="flex flex-col gap-1">
+    <div ref={container} className="flex flex-col gap-1" {...handlers}>
       {/* **One reveal, and only ever one** (spec D6). `mode="wait"` is what
           makes it one: the bones fade out before the panel fades in, so the
           two are never on screen together. On a warm boot there was never a
@@ -156,14 +166,18 @@ export function SidebarSections({ model }: SidebarSectionsProps) {
             initial={boot.startedWarm ? false : 'hidden'}
             animate="shown"
           >
-            {model.sections.map((section) => (
-              <motion.div key={section.id} {...sectionReveal}>
-                <SidebarSection section={section} onToggleAll={onToggleAll} />
-                {/* Under the top items, which is where a new section lands:
-                    the operator's own sections lead the list (D3). */}
-                {section.id === 'top' && <SectionCreateField />}
-              </motion.div>
-            ))}
+            {/* One group, so an agent row that moves between sections slides
+                from its old place to its new one (its `layoutId` is its key). */}
+            <LayoutGroup id="sidebar-sections">
+              {sections.map((section) => (
+                <motion.div key={section.id} {...sectionReveal}>
+                  <SidebarSection section={section} onToggleAll={onToggleAll} />
+                  {/* Under the top items, which is where a new section lands:
+                      the operator's own sections lead the list (D3). */}
+                  {section.id === 'top' && <SectionCreateField />}
+                </motion.div>
+              ))}
+            </LayoutGroup>
           </motion.div>
         )}
       </AnimatePresence>

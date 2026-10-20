@@ -99,6 +99,7 @@ Two rules worth knowing before you read the code:
 
 - **A section with nothing in it is absent**, not empty — except Direct messages (its empty state is how you start one) and a section the operator made (it has to exist to be dragged into).
 - **An agent is one row.** It is drawn in Direct messages, or in the section that holds it (filed by hand, or matched by a smart section's rules), never both. A smart match its section's display filter hides stays in Direct messages. Every other agent lives in the Directory.
+- **A row never moves under the person using the panel.** A smart section's members change on their own, so an agent can drift between it and Direct messages. While the pointer is over the list or focus is in it, `useHeldSections` holds every row in the section it was in (`rules/hold-section-moves.ts`) and the moves land when they leave; the person's own changes (a drag, a pin) retake the snapshot and land at once. An agent row carries its key as motion's `layoutId`, so a move slides for 200 ms ease-out (instant under reduced motion).
 
 ### Reading a `reason`
 

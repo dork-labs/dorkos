@@ -24,7 +24,10 @@ const prefsWrites = vi.hoisted(() => ({
 vi.mock('../model/boot/use-boot-state', () => ({
   useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
 }));
+/** The stored prefs: one stable object, so the hold never re-snapshots. */
+const STORED_PREFS = {};
 vi.mock('@/layers/entities/config', () => ({
+  useSidebarPrefs: () => STORED_PREFS,
   useUpdateSidebarPrefs: () => ({ update: prefsWrites.update }),
   setSectionCollapsed: prefsWrites.setSectionCollapsed,
   setGroupCollapsed: (prefs: unknown) => prefs,

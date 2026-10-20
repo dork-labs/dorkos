@@ -155,9 +155,12 @@ export function SidebarModelRow({
   // would defeat the memo for every room in the panel — the exact regression
   // `RoomRow.render-count.test.tsx` guards. Every dependency here is a primitive,
   // so the object moves only when something about the row's motion moved.
+  // An agent is the one row that moves between sections on its own, so it is
+  // the one that carries an identity across them (DOR-3092).
+  const moveId = row.target.kind === 'agent' ? row.key : undefined;
   const rowMotion = useMemo<SidebarRowMotion>(
-    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion }),
-    [layoutKey, arrives, arrived, reducedMotion]
+    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion, moveId }),
+    [layoutKey, arrives, arrived, reducedMotion, moveId]
   );
   const ref = dragRefOf(row.target);
   const body = <SidebarModelRowBody row={row} rowMotion={rowMotion} />;

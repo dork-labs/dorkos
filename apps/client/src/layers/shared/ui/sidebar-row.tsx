@@ -315,7 +315,7 @@ function assignRef<T>(ref: Ref<T> | undefined, element: T | null): void {
  */
 export interface SidebarRowMotion extends Pick<
   MotionProps,
-  'layout' | 'layoutDependency' | 'initial' | 'animate' | 'exit' | 'transition'
+  'layout' | 'layoutDependency' | 'layoutId' | 'initial' | 'animate' | 'exit' | 'transition'
 > {
   /**
    * The row turned up while the operator was looking, so it tints once.
@@ -883,6 +883,7 @@ export function SidebarRow({
       {...SIDEBAR_MENU_ITEM_ATTRS}
       layout={rowMotion.layout}
       layoutDependency={rowMotion.layoutDependency}
+      layoutId={rowMotion.layoutId}
       initial={rowMotion.initial}
       animate={rowMotion.animate}
       exit={rowMotion.exit}
