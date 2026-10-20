@@ -93,7 +93,7 @@ const config: KnipConfig = {
       // gate, which is the opposite of what they are for.
       entry: ['perf/*.ts'],
     },
-    'apps/community': {
+    'apps/space': {
       // The space's web pages live in apps/client (server-merge step 7e), but the space image
       // builds them from this package's install, through a node_modules link in its Dockerfile.
       ignoreDependencies: [

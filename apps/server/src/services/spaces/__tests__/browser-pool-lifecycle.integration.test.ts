@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createBrowserTestPool } from '../../../../../community/browser-tests/pool-lifecycle.js';
+import { createBrowserTestPool } from '../../../../../space/browser-tests/pool-lifecycle.js';
 
 const connectionString = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!connectionString) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for pool tests');

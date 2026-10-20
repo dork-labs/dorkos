@@ -83,8 +83,8 @@ answers the next `count` matching requests, then passes later ones on with
 `route.fallback()` and never retires its route. A `filter` option narrows which
 requests count (for example, only `GET`s).
 `pnpm run check:one-shot-routes` (a step in the required `typecheck` job) fails
-on any new `times:` line in `apps/e2e`, `apps/community/browser-tests` or
-`apps/community/acceptance` unless the line, or the one above it, carries
+on any new `times:` line in `apps/e2e`, `apps/space/browser-tests` or
+`apps/space/acceptance` unless the line, or the one above it, carries
 `// one-shot-route-allow: <why no later request can match>`. The check is
 line-based, so it misses `{ times }` shorthand and options built elsewhere, and
 it can flag a comment like "three times:"; use the marker for those.

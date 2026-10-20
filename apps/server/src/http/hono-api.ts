@@ -385,7 +385,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/feedback', feedbackRoutes);
   app.route(
     '/api/canvas/docs',
-    createCanvasDocEventRoutes(() => deps.docChannel)
+    createCanvasDocEventRoutes(
+      () => deps.docChannel,
+      () => deps.activity
+    )
   );
   // Diagnostic reads. ALWAYS mounted and read-only: an env gate would make them
   // unavailable in the one situation they exist for, because enabling one needs

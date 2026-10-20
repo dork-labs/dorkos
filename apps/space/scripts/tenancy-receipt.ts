@@ -49,9 +49,9 @@ const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
 /** Classify a cited file by the runner that executes it; files no runner executes are refused. */
 export function runnerFor(file: string): ProofRunner {
   if (/^apps\/server\/src\/services\/spaces\/.+\.integration\.test\.ts$/.test(file)) return 'pg';
-  if (/^apps\/community\/browser-tests\/.+\.spec\.ts$/.test(file)) return 'browser';
+  if (/^apps\/space\/browser-tests\/.+\.spec\.ts$/.test(file)) return 'browser';
   if (
-    /^apps\/(community|server|client)\/src\/.+\.test\.tsx?$/.test(file) &&
+    /^apps\/(server|client)\/src\/.+\.test\.tsx?$/.test(file) &&
     !/\.(integration|s3)\.test\.tsx?$/.test(file)
   )
     return 'unit';
@@ -170,7 +170,7 @@ export function playwrightResults(report: { suites: PlaywrightSuite[] }): Report
     for (const suite of suites) {
       for (const spec of suite.specs) {
         results.push({
-          file: `apps/community/browser-tests/${spec.file}`,
+          file: `apps/space/browser-tests/${spec.file}`,
           title: spec.title,
           passed:
             spec.tests.length > 0 &&

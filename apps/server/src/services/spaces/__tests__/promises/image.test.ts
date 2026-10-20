@@ -285,11 +285,7 @@ describe('the image', () => {
     });
     expect(actual.copied).toEqual(baseline.copied);
     expect(actual.copied).toEqual(
-      expect.arrayContaining([
-        'apps/community/dist',
-        'apps/community/dist-server',
-        'apps/community/migrations',
-      ])
+      expect.arrayContaining(['apps/space/dist', 'apps/space/dist-server', 'apps/space/migrations'])
     );
     expect(FINAL_STAGE).toMatch(/^COPY --from=space-build \/runtime \/app$/mu);
   });

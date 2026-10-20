@@ -71,7 +71,7 @@ const dorkosHostsRecordPath = join(temporary, 'dorkos-hosts.jsonl');
 
 async function migrationCompatibilityId(): Promise<string> {
   const hash = createHash('sha256');
-  const directory = join(root, 'apps/community/migrations');
+  const directory = join(root, 'apps/space/migrations');
   const filenames = (await readdir(directory))
     .filter((filename) => filename.endsWith('.sql'))
     .sort();
@@ -438,7 +438,7 @@ try {
     throw new Error('Packaged launch gave the Community a DorkOS host or a single sign-on');
   }
   const authOptions = execFileSync('pnpm', ['--silent', 'auth-options:probe'], {
-    cwd: join(root, 'apps/community'),
+    cwd: join(root, 'apps/space'),
     input: JSON.stringify(communityEnvironment),
     encoding: 'utf8',
     // Better Auth's background schema check logs against the probe's query-refusing pool; a

@@ -279,7 +279,7 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
 /**
  * A colocated test file (`admission.test.ts` beside `admission.ts`, the
- * `apps/community` habit). Excluded for the same reason `__tests__/` is: its
+ * `apps/space` habit). Excluded for the same reason `__tests__/` is: its
  * fixtures echo arbitrary strings that are not this repo's authored copy.
  */
 const TEST_FILE = /\.test\.tsx?$/;

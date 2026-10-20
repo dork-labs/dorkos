@@ -129,7 +129,7 @@ beforeAll(async () => {
     if (nameLookup) {
       const answer = shortNameAnswers.get(nameLookup[1]);
       if (answer === 'rate-limited') {
-        // The real Community answers a spent lookup budget this way (apps/community http.ts).
+        // The real Community answers a spent lookup budget this way (apps/space http.ts).
         res.setHeader('retry-after', '17');
         send({ code: 'RATE_LIMITED', message: 'Slow down.' }, 429);
       } else if (answer === 'redirect') {

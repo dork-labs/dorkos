@@ -421,7 +421,7 @@ export default defineConfig({
     // Vitest 4 no longer auto-excludes dist/, and `tsc` emits compiled
     // *.test.js there — scope discovery to source like every other package.
     // The space server's code (server-merge step 7) keeps two tests beside their source, and
-    // its Postgres and S3 suites run from apps/community's own configs, not here.
+    // its Postgres and S3 suites run from apps/space's own configs, not here.
     include: ['src/**/__tests__/**/*.test.ts', 'src/services/spaces/**/*.test.ts'],
     exclude: [
       ...configDefaults.exclude,

@@ -1,7 +1,7 @@
 /**
  * The space's web pages build against two installs of their packages (server-merge step 7e):
  * `apps/client`'s, in a checkout, and the space package's, in the image's build stage, which
- * links `apps/client/node_modules` to `apps/community`'s. They must be the same versions, or the
+ * links `apps/client/node_modules` to `apps/space`'s. They must be the same versions, or the
  * image ships a page no local build or test produced.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = join(import.meta.dirname, '../..');
 const fromClient = createRequire(join(root, 'apps/client/package.json'));
-const fromImage = createRequire(join(root, 'apps/community/package.json'));
+const fromImage = createRequire(join(root, 'apps/space/package.json'));
 const SPACE = join(root, 'apps/client/src/space');
 
 /** Every package the page's source imports, plus what builds it. */
@@ -54,7 +54,7 @@ function versionIn(require: NodeJS.Require, name: string): string | null {
 
 describe("the space page's packages", () => {
   it('resolve to the same versions in a checkout and in the image build', () => {
-    // Purpose: fails if a bump in apps/client or apps/community alone (a Dependabot PR, say)
+    // Purpose: fails if a bump in apps/client or apps/space alone (a Dependabot PR, say)
     // leaves the image building the page against versions no local build or test used.
     const names = pagePackages();
     expect(names).toEqual(expect.arrayContaining(['react', 'better-auth', 'lucide-react', 'vite']));
