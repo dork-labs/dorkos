@@ -4,7 +4,7 @@
  *
  * @module widgets/room-view/ui/threads/ThreadsPage
  */
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { MessageSquareReply } from 'lucide-react';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
@@ -14,6 +14,16 @@ import { useRoomOpenThreadStore, useTeamRoom, useThreads } from '@/layers/entiti
 import { useRoomAgentDirectory } from '../../model/agent-info-context';
 import { useFreshThreadRooms } from '../../model/use-fresh-thread-rooms';
 import { ThreadCard } from './ThreadCard';
+
+/**
+ * How many cards the page draws before "Show more", and how many each press
+ * adds.
+ *
+ * **Each card reads its room and that room's history**, so a page that drew
+ * all fifty threads the list can hold would fire about a hundred requests the
+ * moment it opened. Twelve fills a tall screen; the rest are a press away.
+ */
+export const THREADS_PAGE_SIZE = 12;
 
 /**
  * Open one thread in the room it lives in.
@@ -57,6 +67,7 @@ export function ThreadsPage() {
   const threads = useThreads();
   const agents = useRoomAgentDirectory();
   const openThread = useOpenThreadInRoom();
+  const [shown, setShown] = useState(THREADS_PAGE_SIZE);
   useFreshThreadRooms(threads.data);
 
   return (
@@ -86,13 +97,25 @@ export function ThreadsPage() {
           description="Reply to a message in any channel or DM, and the thread shows up here."
         />
       ) : (
-        <ul className="flex flex-col gap-3" aria-label="Your threads">
-          {threads.data.map((thread) => (
-            <li key={thread.rootEntryId}>
-              <ThreadCard thread={thread} agents={agents} onOpen={openThread} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col gap-3" aria-label="Your threads">
+            {threads.data.slice(0, shown).map((thread) => (
+              <li key={thread.rootEntryId}>
+                <ThreadCard thread={thread} agents={agents} onOpen={openThread} />
+              </li>
+            ))}
+          </ul>
+          {threads.data.length > shown && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 self-start"
+              onClick={() => setShown((count) => count + THREADS_PAGE_SIZE)}
+            >
+              Show more
+            </Button>
+          )}
+        </>
       )}
     </PageContainer>
   );

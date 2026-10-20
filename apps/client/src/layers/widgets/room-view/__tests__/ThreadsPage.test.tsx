@@ -172,6 +172,29 @@ describe('ThreadsPage', () => {
     ]);
   });
 
+  it('draws twelve cards at first, and twelve more for each "Show more"', async () => {
+    // Every card reads its room and its history, so fifty at once is a hundred
+    // requests on open.
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      ...THREAD,
+      rootEntryId: `entry-${100 + index}`,
+    }));
+    const transport = renderPage(many);
+    expect(await screen.findAllByTestId('thread-card')).toHaveLength(12);
+    await userEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(screen.getAllByTestId('thread-card')).toHaveLength(24);
+    await userEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(screen.getAllByTestId('thread-card')).toHaveLength(30);
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(transport.listThreads).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no "Show more" when every thread fits', async () => {
+    renderPage();
+    await screen.findAllByTestId('thread-card');
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
   it('shows the room, the root, how many more replies, and the two newest', async () => {
     renderPage();
     const card = await screen.findByTestId('thread-card');
