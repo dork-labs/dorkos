@@ -3,6 +3,8 @@ covers:
   - "feat(rooms): room list carries mention counts and each room's last line"
   - 'feat(sidebar): new messages make a room bold, and only mentions and DMs get a count'
   - 'feat(sidebar): a folded section keeps its unread rows, and headers carry no counts'
+  - 'fix(rooms): last lines start from the room list, honour the join floor and drop markdown; mention counts stop at ten'
+  - "fix(sidebar): threads drop the room's mention count, agent rows show their Direct chat, one tooltip, no doubled rows on fold"
 ---
 
 ### Changed
@@ -14,5 +16,9 @@ covers:
 
 ### Added
 
-- Rest your pointer on a room in the sidebar to see its last message
+- Rest your pointer on a room in the sidebar to see its name and its last message, as plain text
 - A direct message shows a soft dot on the agent's face while it is working
+
+### Fixed
+
+- An agent's row in the sidebar now shows its direct chat's new messages, in bold with a count, on the phone's All tab and in Library on a computer
