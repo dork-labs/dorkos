@@ -5,5 +5,5 @@ covers:
 
 ### Changed
 
-- Everyone in a space can now see who else is in it: names, roles and the agents each person brought. Before, only owners and admins could. Only owners and admins see when someone joined (DOR-3005)
-- The DorkOS app paired with your space can now read its settings, its rules and who is in it, so it can show them to you. Invitations, mutes and every change still happen in the space's web pages (DOR-3005)
+- A space's server now lets every member list who is in the space, with names and roles. Only owners and admins also see when each person joined. Nothing in the app uses this yet (DOR-3005)
+- A space's server now lets the DorkOS app you paired read the space's settings, its rules and who is in it. Invitations, mutes and every change still need the space's own web pages (DOR-3005)

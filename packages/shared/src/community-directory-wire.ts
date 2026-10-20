@@ -30,6 +30,12 @@ const handle = z.string().regex(HANDLE_PATTERN);
  */
 export const COMMUNITY_MEMBER_DIRECTORY_INCLUDES = ['agents', 'availability'] as const;
 
+/**
+ * The most agents one directory page lists. A page holds at most 100 people, and a host lets each
+ * own a bounded number of agents; past this many, the page's agent list stops.
+ */
+export const COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX = 1000;
+
 /** Bounded directory query: a page of people, and the extras the caller asks for. */
 export const CommunityWireMemberDirectoryQuerySchema = z.strictObject({
   cursor: z.uuid().optional(),
@@ -71,7 +77,10 @@ export type CommunityWireDirectoryMember = z.infer<typeof CommunityWireDirectory
 export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
   members: z.array(CommunityWireDirectoryMemberSchema).max(100),
   /** The page's people's active agents, with `include=agents` only. */
-  agents: z.array(CommunityWireDirectoryMemberSchema).optional(),
+  agents: z
+    .array(CommunityWireDirectoryMemberSchema)
+    .max(COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX)
+    .optional(),
   nextCursor: z.uuid().nullable(),
 });
 /** One page of a space's member directory. */

@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import {
   COMMUNITY_AGENT_AVAILABLE_WITHIN_SECONDS,
+  COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX,
   type CommunityWireAgentAvailability,
   type CommunityWireDirectoryMember,
   type CommunityWireMemberDirectoryPage,
@@ -69,8 +70,14 @@ export async function readMemberDirectory(
          JOIN members owner ON owner.community_id=a.community_id AND owner.id=a.owner_member_id
          WHERE a.community_id=$1 AND owner.community_id=$1 AND a.active AND owner.active
            AND a.owner_member_id=ANY($2::uuid[])
-         ORDER BY a.owner_member_id,a.created_at,a.id`,
-        [communityId, people.map((row) => row.id), COMMUNITY_AGENT_AVAILABLE_WITHIN_SECONDS]
+         ORDER BY a.owner_member_id,a.created_at,a.id
+         LIMIT $4`,
+        [
+          communityId,
+          people.map((row) => row.id),
+          COMMUNITY_AGENT_AVAILABLE_WITHIN_SECONDS,
+          COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX,
+        ]
       )
     : null;
   return {

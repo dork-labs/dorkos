@@ -25,6 +25,7 @@ import {
   pairInstall,
   startTenancyHarness,
   type TenancyHarness,
+  TENANCY_PASSWORD,
   type TenancyMember,
 } from './tenancy-test-harness.js';
 import { hashSecret } from '../security.js';
@@ -254,4 +255,90 @@ describe('the member directory', () => {
     const member = await directory('member', 'cookie', '?include=agents');
     for (const row of member.members) expect(row).not.toHaveProperty('mutedUntil');
   });
+});
+
+describe('a grant behaves like the browser beside it', () => {
+  it('refuses a live grant once its member has left', async () => {
+    // Purpose: fails if a grant outlives the membership it was approved from.
+    const leaver = await admit(h, communityId, people.owner.cookie, {
+      name: 'Leaver',
+      email: 'leaver@reads.test',
+    });
+    const grant = await pairInstall(h, communityId, leaver.cookie, ['read']);
+    await expectStatus(await h.call(`${tenant()}/members`, { bearer: grant }), 200, 'before');
+    await h.pool.query('UPDATE members SET active=false WHERE id=$1', [leaver.memberId]);
+    for (const path of ['/settings', '/me', '/members', '/rules']) {
+      const response = await h.call(`${tenant()}${path}`, { bearer: grant });
+      expect(response.status, path).toBe(401);
+    }
+  });
+
+  /** Move the space through the real host and owner routes, the way a person would. */
+  async function lifecycle(action: 'hold' | 'release' | 'archive' | 'restore') {
+    const version = (
+      await h.pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0]!.lifecycle_version;
+    const host = action === 'hold' || action === 'release';
+    await expectStatus(
+      await h.call(
+        host ? `/api/v1/host/communities/${communityId}/lifecycle` : `${tenant()}/owner/lifecycle`,
+        {
+          method: host ? 'PATCH' : 'POST',
+          cookie: people.owner.cookie,
+          body: host
+            ? {
+                action,
+                lifecycleVersion: version,
+                ...(action === 'hold' ? { deletionNoticeAt: null } : {}),
+              }
+            : {
+                action,
+                lifecycleVersion: version,
+                password: TENANCY_PASSWORD,
+                confirmName: 'Owner Community',
+              },
+        }
+      ),
+      200,
+      action
+    );
+  }
+
+  for (const [state, enter, leave] of [
+    ['held', 'hold', 'release'],
+    ['archived', 'archive', 'restore'],
+  ] as const) {
+    it(`answers /settings and /members on a ${state} space as the browser is answered`, async () => {
+      // Purpose: fails if the grant path reads a read-only space the browser path refuses, or
+      // refuses one it reads.
+      await lifecycle(enter);
+      const kept = { ...people };
+      // An owner archive revokes every grant; an app reads an archived space only through a
+      // read-only pairing made after it. A hold keeps them.
+      if (state === 'archived')
+        for (const role of ROLES)
+          people[role] = {
+            ...people[role],
+            grant: await pairInstall(h, communityId, people[role].cookie, ['read']),
+          };
+      try {
+        for (const role of ROLES) {
+          for (const path of ['/settings', '/members']) {
+            const byCookie = await read(path, role, 'cookie');
+            const byGrant = await read(path, role, 'grant');
+            expect(byGrant.status, `${role} ${path}`).toBe(byCookie.status);
+          }
+        }
+        // The settings stay readable; the directory follows the role check's lifecycle rule.
+        expect((await read('/settings', 'member', 'grant')).status).toBe(200);
+        expect((await read('/members', 'member', 'grant')).status).toBe(423);
+      } finally {
+        await lifecycle(leave);
+        Object.assign(people, kept);
+      }
+    });
+  }
 });

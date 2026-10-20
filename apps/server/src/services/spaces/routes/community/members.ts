@@ -190,19 +190,25 @@ export function registerMemberRoutes(
   // owner or admin sees when someone joined; only in their own browser, who is muted. Without
   // `include` an owner's or admin's page is exactly as before: installed apps parse it strictly.
   app.get('/members', async (c) => {
-    const { member: actor, credential } = await requirePerson(c, auth, pool, 'read');
+    const { member: actor, credential, recheck } = await requirePerson(c, auth, pool, 'read');
     const { cursor, limit, include } = CommunityWireMemberDirectoryQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const withAgents = include.has('agents');
-    const { role, rows } = await transaction(pool, async (client) => ({
-      role: await requireLiveRole(client, actor, ['owner', 'admin', 'member']),
-      rows: await readMemberDirectory(client, actor.community_id, {
-        cursor: cursor ?? null,
-        limit: limit ?? 50,
-        withAgents,
-      }),
-    }));
+    const { role, rows } = await transaction(pool, async (client) => {
+      // The role check first, so a read-only space answers a grant as it answers the browser.
+      const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      // A grant revoked, or a member gone, since the request began reads nothing.
+      await recheck(client);
+      return {
+        role,
+        rows: await readMemberDirectory(client, actor.community_id, {
+          cursor: cursor ?? null,
+          limit: limit ?? 50,
+          withAgents,
+        }),
+      };
+    });
     const moderator = role === 'owner' || role === 'admin';
     return json(
       c,
