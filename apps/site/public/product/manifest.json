@@ -3,7 +3,7 @@
   "generatedAt": "2026-10-11T06:18:29.541Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
   "runId": "20261011-011041",
-  "totalBytes": 16454270,
+  "totalBytes": 16622659,
   "count": 50,
   "shots": [
     {
@@ -208,9 +208,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 85879,
-      "runId": "20261011-011041",
-      "capturedAt": "2026-10-11T06:16:02.263Z"
+      "bytes": 135504,
+      "runId": "20261020-085213",
+      "capturedAt": "2026-10-20T14:10:00.000Z"
     },
     {
       "source": "auto",
@@ -220,10 +220,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 283238,
-      "durationMs": 3165,
-      "runId": "20261011-011041",
-      "capturedAt": "2026-10-11T06:16:02.263Z"
+      "bytes": 365787,
+      "durationMs": 2600,
+      "runId": "20261020-085213",
+      "capturedAt": "2026-10-20T14:10:00.000Z"
     },
     {
       "source": "auto",
@@ -233,9 +233,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 70484,
-      "runId": "20261011-011041",
-      "capturedAt": "2026-10-11T06:16:02.263Z"
+      "bytes": 106699,
+      "runId": "20261020-085213",
+      "capturedAt": "2026-10-20T14:10:00.000Z"
     },
     {
       "source": "auto",

@@ -530,11 +530,15 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
  */
 async function driveImportProjects(page: Page): Promise<void> {
   await page.goto(url('/team'));
-  await page.keyboard.press('ControlOrMeta+k');
+  // ⌘K pressed before the shortcut listener mounts is dropped, so press again
+  // until the palette opens rather than waiting on a single press.
   const search = page.getByTestId('command-palette-input');
-  await search.waitFor({ state: 'visible', timeout: WAIT_MS });
+  await expect(async () => {
+    await page.keyboard.press('ControlOrMeta+k');
+    await search.waitFor({ state: 'visible', timeout: 2_000 });
+  }).toPass({ timeout: WAIT_MS });
   await search.fill('Bring in existing projects');
-  await page.getByRole('option', { name: /bring in existing projects/i }).click();
+  await page.getByRole('option', { name: 'Bring in existing projects', exact: true }).click();
   await page.getByRole('button', { name: /search for projects/i }).click({ timeout: WAIT_MS });
   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
   await sleep(800); // let the remaining candidate cards animate in
