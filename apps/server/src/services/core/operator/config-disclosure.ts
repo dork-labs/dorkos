@@ -374,6 +374,10 @@ export const CONFIG_DISCLOSURE = {
   // code this machine runs without asking.
   'extensions.trustedSources[].source': 'withhold',
   'extensions.trustedSources[].trustedAt': 'withhold',
+  // The rooms each mini app may read and reply in as the person (DOR-3017). A
+  // person's own decision no agent task reads: a mini app refused a room says
+  // so in a sentence, which is all an agent can act on.
+  'extensions.roomAccess': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

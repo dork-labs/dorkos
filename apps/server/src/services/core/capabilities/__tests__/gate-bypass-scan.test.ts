@@ -172,7 +172,9 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/mesh/seed-open-mesh.ts':
         'a boot step no request reaches: once per install it opens the mesh between our own agents and stamps `permissions.trustedStoresAppliedAt`, a bookkeeping leaf that grants nothing (spec `trusted-by-default-flip` §5.3)',
       'services/extensions/extension-manager.ts':
-        'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+        'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval and the rooms granted with it (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+      'services/extensions/rooms/extension-room-access.ts':
+        'one write into `extensions.roomAccess` (operator-only, DOR-3017): `setAllowedRooms`, reached only from `PUT /api/extensions/:id/room-access` in `routes/extensions-rooms.ts`, which runs `refusedNotAPerson` (the extensions person bar) before it, and only accepts rooms the caller is a member of (logConfigWrite: "choosing the rooms a mini app may use")',
     },
   },
   {

@@ -17139,7 +17139,8 @@
         "enum": [
           "room",
           "session",
-          "inbox"
+          "inbox",
+          "room-thread"
         ]
       },
       "SetReadCursorPositionRequest": {

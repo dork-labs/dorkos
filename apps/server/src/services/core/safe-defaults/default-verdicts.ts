@@ -295,6 +295,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // stricter, never looser.
   'extensions.trustedSources[].source',
   'extensions.trustedSources[].trustedAt',
+  // The rooms each mini app may read and reply in as the person (DOR-3017).
+  // Ships ABSENT, which means none: no mini app reaches any room until a
+  // person picks one. A wipe empties it, which is stricter, never looser.
+  'extensions.roomAccess',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

@@ -124,6 +124,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     ],
   'Read-ish marks: read cursors, dismissals, views and previews that change no power': [
     'PUT /api/read-cursors/:kind/:id',
+    'PUT /api/extensions/:id/rooms/:roomId/threads/:entryId/read',
     'PATCH /api/notifications/:id/read',
     'POST /api/notifications/read-all',
     'POST /api/diff/baseline/advance',
@@ -180,6 +181,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'PATCH /api/sessions/:id/queue/:messageId',
       'POST /api/rooms/:id/entries',
       'POST /api/rooms/:id/threads',
+      // A mini app's reply as the person, in a room picked at the computer (DOR-3017).
+      'POST /api/extensions/:id/rooms/:roomId/threads/:entryId/replies',
       'POST /api/extensions/:id/start-work',
       'POST /api/relay/messages',
     ],

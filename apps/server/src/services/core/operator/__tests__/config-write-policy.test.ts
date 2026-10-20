@@ -20,10 +20,10 @@ import { PROTECTIVE_CARRYOVERS } from '../../safe-defaults/protected-state.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
-  OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { OPERATOR_ONLY_STAKES } from '../operator-only-stakes.js';
 import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
@@ -103,6 +103,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',

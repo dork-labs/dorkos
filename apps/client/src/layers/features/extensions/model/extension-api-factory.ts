@@ -50,6 +50,8 @@ import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
 import { applyPageBadge } from './page-badge';
+import { createExtensionRoomsApi } from './extension-rooms-api';
+import { requestError } from './request-error';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
 const DEFAULT_PRIORITY = 50;
@@ -491,6 +493,8 @@ export function createExtensionAPI(
         if (!res.ok) throw await requestError(res, 'projectSettings.set');
       },
     },
+
+    rooms: createExtensionRoomsApi(extId, cleanups),
   };
 
   return { api, cleanups };
@@ -501,27 +505,6 @@ export function createExtensionAPI(
 /** Whether a refusal's code is one `api.startWork` throws as a {@link StartWorkError}. */
 function isStartWorkCode(code: string | undefined): code is StartWorkErrorCode {
   return (START_WORK_ERROR_CODES as readonly string[]).includes(code ?? '');
-}
-
-/**
- * An Error carrying the server's own sentence and code, so an extension can
- * tell "not running" from "already settled" (`err.code`).
- *
- * @param res - The refused response.
- * @param method - Which API member asked, for the fallback message.
- */
-async function requestError(
-  res: Response,
-  method: string
-): Promise<Error & { code?: string; status: number }> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-  const error = new Error(body.error ?? `${method} failed: ${res.status}`) as Error & {
-    code?: string;
-    status: number;
-  };
-  error.status = res.status;
-  if (body.code) error.code = body.code;
-  return error;
 }
 
 /**

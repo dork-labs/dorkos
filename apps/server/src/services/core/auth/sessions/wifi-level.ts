@@ -206,7 +206,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     surface: 'host',
     methods: 'writes',
     pattern:
-      /^\/api\/extensions\/(?:reload|[^/]+\/(?:enable|disable|init-server|approve|revoke|dismiss-approval|secrets|settings|project-settings))(?:\/|$)/,
+      /^\/api\/extensions\/(?:reload|[^/]+\/(?:enable|disable|init-server|approve|revoke|dismiss-approval|secrets|settings|project-settings|room-access))(?:\/|$)/,
     reason: `Turn on and set up extensions ${ON_THE_COMPUTER}`,
   },
   {

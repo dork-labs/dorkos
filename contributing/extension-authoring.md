@@ -253,6 +253,34 @@ api.navigate(`/session?session=${sessionId}`);
 - **Accounts.** A start picks an account the same way any new chat does. When no account may work in the project it is refused with `account_not_allowed_here`; until account rules exist, this cannot happen, but handle it now.
 - **A refusal throws `StartWorkError`** with `code` and a plain `message` you can show as it is. Nothing was started. Match on `err.code` rather than `instanceof`: your bundle carries its own copy of the class. It sits behind the person bar with the residual the bar documents, so the chat is always recorded as started by your extension, click or not.
 
+### Discussing an item in a room thread
+
+`api.rooms` lets a mini app read a room thread and reply to it **as the person signed in** (DOR-3017): "discuss this post" without leaving the page. Declare it in the manifest, and the person picks the rooms it may use in Settings → Extensions:
+
+```json
+{ "capabilities": { "rooms": true } }
+```
+
+```typescript
+const thread = await api.rooms.readThread(roomId, post.threadId);
+// thread.root, thread.replies (oldest first, newest 200), thread.unreadCount
+const stop = api.rooms.subscribeThread(roomId, post.threadId, (reply) => add(reply));
+await api.rooms.reply(roomId, post.threadId, 'Looks good');
+await api.rooms.markRead(roomId, post.threadId);
+const counts = await api.rooms.unreadCounts(
+  roomId,
+  posts.map((p) => p.threadId)
+);
+```
+
+- **Scoped twice.** Only rooms the person picked for your mini app (`api.rooms.listRooms()` lists them), and inside those only what the person can read. With none picked, every call is refused with `room_not_allowed`, and so is every call from a mini app whose manifest does not ask for rooms. Rooms bridged to another chat app can't be picked, and a reply into one is refused. Turning a mini app's code off, or replacing it with another copy, drops its rooms.
+- **Replies are the person's.** A reply is stored under the person's own author id, shows under their name, and wakes mentioned agents as if they had typed it. Nothing in the call names an author. Every reply, and every refused one, is in the audit trail as `extension.room_reply`, with the mini app named.
+- **Only from the person's own window.** A reply or mark-read needs DorkOS's own page origin, the window's client id, and the person's browser session (or, with no password on this computer, no credential at all). An agent that names itself, a script, another site, anything relayed and a server half that runs in its own process (`"runtime": "subprocess"`) are refused with `person_required`.
+- **What it cannot stop, stated.** Your page code runs in the person's window, with their access: it can reply without a click, call any room route directly, and change its own room list, so the room choice bounds a well-behaved mini app and is not a sandbox, and the mini app named in the audit is the one the request claimed to be (the `startWork` residual). A server half that runs inside DorkOS (the default) has DorkOS's own access and can do the same. With no password on this computer, a program on it that copies the app's headers reads as the person (DOR-505); turning on "Ask for a password on this computer too" closes that.
+- **Unread** counts replies from anyone but the person, above the higher of where they read the room and where `markRead` left the thread.
+- **Live replies** arrive through `subscribeThread`, yours included, and replies written while the connection was down arrive once it is back. The stream stops when the person takes the room away. It closes when your mini app deactivates.
+- **A refusal throws `RoomAccessError`** with `code` (`room_not_allowed`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -265,7 +293,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`.
 
 ### Events
 
