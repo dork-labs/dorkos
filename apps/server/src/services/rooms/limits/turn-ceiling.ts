@@ -9,7 +9,13 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { entryLevelOf, entryMarksOf } from '../../core/turn-power/turn-levels.js';
-import { ceilingCarrying, hasMarks } from '../../core/turn-power/turn-marks.js';
+import {
+  ceilingCarrying,
+  hasMarks,
+  marksOfLevel,
+  mergeMarks,
+  NO_MARKS,
+} from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
 import { isTeammateEntry, isUnknownSpaceAgentPost } from './space-teammates.js';
 import type { OwnCircle } from './own-circle.js';
@@ -92,7 +98,18 @@ export function ceilingForEntry(
     }
   }
   const level = entryLevelOf(entry.id);
-  if (level !== undefined) return { permissionCeiling: level };
+  if (level !== undefined) {
+    // A marked post caps what it wakes on top of its poster's level (DOR-3141): the level
+    // alone is the poster's own power, Full for an own agent, so the mark has to ride as
+    // a bound of its own, as it does after a restart when only the row's marks are left.
+    const marks = mergeMarks(
+      marksOfLevel(level),
+      entryMarksOf(entry.id, roomId || undefined) ?? NO_MARKS
+    );
+    const carried = ceilingCarrying(marks);
+    if (carried === undefined) return { permissionCeiling: level };
+    return { permissionCeiling: [level, ...(Array.isArray(carried) ? carried : [carried])] };
+  }
   // The level is gone (a restart) or was never kept: the post's row still says what it carried.
   if (isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId || undefined)) {
     const origin = { roomId, authorId: entry.authorId };

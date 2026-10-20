@@ -142,11 +142,17 @@ describe('a teammate wakes Ana, and Ana’s post wakes Bo (DOR-3036)', () => {
     ]);
 
     const bo = turnsOf('/agents/bo')[0]!;
-    expect(bo.permissionCeiling).toMatchObject({
+    // Ana's level first, then the caps her post's marks carry (DOR-3141).
+    const boCeiling = bo.permissionCeiling as unknown[];
+    expect(boCeiling[0]).toMatchObject({
       reach: 'read',
       outsider: true,
       teammate: [origin],
     });
+    expect(boCeiling).toContain('runtime-default');
+    expect(boCeiling).toContainEqual(
+      expect.objectContaining({ reach: 'read', teammate: [origin] })
+    );
     expect(lastTurnLevelOf(sessionOf.get('/agents/bo')!)).toMatchObject({
       outsider: true,
       teammate: [origin],

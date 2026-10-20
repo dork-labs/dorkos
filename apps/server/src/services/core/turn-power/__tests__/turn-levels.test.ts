@@ -213,8 +213,9 @@ describe('the ceiling a room entry puts on the turn it starts', () => {
     const runtime = wrapped({ [session]: 'bypassPermissions' });
     await send(runtime, session, ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
     noteEntryLevel(entry, postLevelFor([session]));
+    // Ana's level, and the cap her post's mark carries on top of it (DOR-3141).
     expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
-      permissionCeiling: DEFAULT_OUTSIDER,
+      permissionCeiling: [DEFAULT_OUTSIDER, 'runtime-default'],
     });
   });
 });
