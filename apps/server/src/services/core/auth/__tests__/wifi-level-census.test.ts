@@ -21,6 +21,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Chat: sending, steering and answering inside a chat, at the chat’s own level': [
     'POST /api/direct-chats',
     'POST /api/sessions/:id/opened',
+    'POST /api/sessions/:id/stream-health',
     'POST /api/sessions/:id/interrupt',
     'POST /api/sessions/:id/wait',
     'POST /api/sessions/:id/fork',
