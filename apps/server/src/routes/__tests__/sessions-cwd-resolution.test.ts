@@ -50,6 +50,8 @@ vi.mock('../../lib/boundary.js', () => ({
 let fakeRuntime: FakeAgentRuntime;
 /** What the manifest reader answers for the agent directory under test. */
 let manifestBinding: AgentWorkspaceBinding | null = null;
+/** How the agent's manifest says it answers in a room (DOR-3074's mention-only row). */
+let manifestResponseMode: 'always' | 'mention-only' = 'always';
 /** What `session_metadata.agent_path` says this session was bound with. */
 let sessionAgentPath: string | null = null;
 let sessionBound = true;
@@ -130,7 +132,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
           description: '',
           runtime: 'claude-code',
           capabilities: [],
-          behavior: { responseMode: 'always' },
+          behavior: { responseMode: manifestResponseMode },
           registeredAt: '2026-08-27T00:00:00.000Z',
           registeredBy: 'test',
           personaEnabled: true,
@@ -250,6 +252,7 @@ async function sendAndCapture(
 beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime('claude-code');
   manifestBinding = null;
+  manifestResponseMode = 'always';
   sessionAgentPath = null;
   sessionBound = true;
   ensuredWorkspacePath = CHECKOUT;
@@ -529,6 +532,28 @@ describe('POST /:id/messages — a room-bound session', () => {
     await sendAndCapture();
 
     expect(asked).toHaveBeenCalledWith('Ana the Reviewer');
+  });
+
+  // An agent's Direct chat is its seat in the person's one-to-one DM (rule S12,
+  // DOR-2997). A message there goes straight into the session: how the agent
+  // answers in a ROOM never gates it, so an agent that only answers when it is
+  // mentioned answers every message in its own DM, no @ needed (DOR-3074).
+  it('runs every message in a Direct chat, even for an agent that answers only when mentioned', async () => {
+    manifestBinding = { mode: 'home' };
+    manifestResponseMode = 'mention-only';
+    sessionAgentPath = AGENT;
+    roomBinding = { roomId: 'dm-1', authorId: 'author-1', sessionId: S1 };
+    ensureWorktree = () =>
+      Promise.reject(
+        new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.')
+      );
+
+    const { status } = await send({ content: 'what changed today?' });
+
+    expect(status).toBe(202);
+    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalled());
+    expect(fakeRuntime.sendMessage.mock.calls[0]?.[1]).toBe('what changed today?');
+    expect(fakeRuntime.sendMessage.mock.calls[0]?.[2]?.forAgent).toBe(AGENT);
   });
 
   it('leaves a session no room answers with exactly as it was', async () => {

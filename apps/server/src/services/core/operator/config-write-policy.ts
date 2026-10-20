@@ -336,6 +336,12 @@ export const CONFIG_WRITE_POLICY = {
   // nothing by itself, which is why it is `no-risk` in the safe-defaults table;
   // a record of what a person was told is still not an agent's to forge.
   'ui.trustNoticeSeenAt': 'operator-only',
+  // How a chat with one agent is drawn, and whether its working session can be
+  // opened (DOR-3074). Both only change what the person sees: neither widens
+  // what an agent may do or who can reach this computer, so a person may ask
+  // their agent to flip either, like `ui.composer.richText` above.
+  'ui.dmView': 'agent-writable',
+  'ui.showSessions': 'agent-writable',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing

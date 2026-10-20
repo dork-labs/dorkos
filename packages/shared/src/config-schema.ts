@@ -588,6 +588,17 @@ export const UserConfigSchema = z.object({
        * to write, so an agent cannot dismiss a notice meant for a person.
        */
       trustNoticeSeenAt: z.string().datetime().nullable().default(null),
+      /**
+       * Whether a chat with one agent reads like a direct message: the room's
+       * header, messages and composer over the agent's Direct chat (DOR-3074).
+       * An experiment, off until a person turns it on.
+       */
+      dmView: z.boolean().default(false),
+      /**
+       * Whether the working session behind a chat can be opened: its model,
+       * account, permissions and context. A person's own setting, off by default.
+       */
+      showSessions: z.boolean().default(false),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -615,6 +626,8 @@ export const UserConfigSchema = z.object({
       // on, this literal is what an install with no stored `ui` block lands on,
       // and a field declared in only one of the two is a silent disagreement.
       trustNoticeSeenAt: null,
+      dmView: false,
+      showSessions: false,
     })),
   /**
    * How DorkOS gets your attention, and how hard it tries.

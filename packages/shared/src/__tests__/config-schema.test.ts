@@ -94,6 +94,8 @@ describe('UserConfigSchema', () => {
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         trustNoticeSeenAt: null,
+        dmView: false,
+        showSessions: false,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -515,6 +517,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         trustNoticeSeenAt: null,
+        dmView: false,
+        showSessions: false,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -875,6 +879,13 @@ describe('per-field and section-literal defaults agree', () => {
   it('ui.trustNoticeSeenAt is null either way', () => {
     expect(fromFactory.ui.trustNoticeSeenAt).toBeNull();
     expect(fromFields.ui.trustNoticeSeenAt).toBeNull();
+  });
+
+  it('ui.dmView and ui.showSessions are off either way (DOR-3074)', () => {
+    for (const config of [fromFactory, fromFields]) {
+      expect(config.ui.dmView).toBe(false);
+      expect(config.ui.showSessions).toBe(false);
+    }
   });
 
   it('runtimes.defaultTrustStop is Full autonomy either way (ADR 261006-225605)', () => {

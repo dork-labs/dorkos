@@ -387,6 +387,10 @@ router.get('/', async (c) => {
       // notice (ADR 261006-225605). The app decides from it whether to show
       // the notice at all. `?? null` covers the pre-migration read window only.
       trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
+      // Whether this person can open the working session behind a chat
+      // (DOR-3074): Settings shows it back as a switch and the chat header
+      // reads it. `?? false` covers the pre-migration read window only.
+      showSessions: configManager.get('ui')?.showSessions ?? false,
     },
     // The permission preset, so the app can tell a Trusted install from a
     // Careful one without a second request (`trustPosture`), and the apps the
