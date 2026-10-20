@@ -77,6 +77,37 @@ export interface LevelReachDeps {
 /** How many chats that rose the line names before "+N more" (PM, 2026-10-20). */
 export const NAMED_RISE_LIMIT = 10;
 
+/** The longest a chat's title runs in the line before it is cut. */
+export const TITLE_MAX = 60;
+
+/** What a level change adds to its history entry. */
+export interface LevelReach {
+  /** The words added to the history line, plain text. */
+  line: string;
+  /** The chats that rose, by id, for the linked list (DOR-3184); never in the text. */
+  rose: string[];
+}
+
+/**
+ * A chat's title as inert plain text for the history line (Security,
+ * 2026-10-20). A title can come from an outsider's first message, and agents
+ * read the Activity feed, so line breaks, markdown and link syntax and web
+ * addresses are removed, spaces folded, and the result cut to
+ * {@link TITLE_MAX} characters.
+ *
+ * @param raw - The chat's title, or `null` when it has none.
+ */
+export function plainTitle(raw: string | null): string {
+  const flat = (raw ?? '')
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S*/gi, ' ')
+    .replace(/[\r\n\t\u2028\u2029]+/g, ' ')
+    .replace(/[[\]()`*_#<>!|~\\{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (flat === '') return 'Untitled chat';
+  return flat.length > TITLE_MAX ? `${flat.slice(0, TITLE_MAX - 1).trimEnd()}…` : flat;
+}
+
 /** Chats on another computer, which this one cannot vouch for. */
 const COMPUTER_LOCAL_RUNTIME = 'computer-local';
 
@@ -113,7 +144,8 @@ function looser(declared: DeclaredModes, a: string, b: string): boolean {
  * rose are named, the first {@link NAMED_RISE_LIMIT} then "+N more", so a
  * person can find and set back any of them (PM, 2026-10-20).
  *
- * @param rose - The titles of the chats whose next turn now runs higher.
+ * @param rose - The titles of the chats whose next turn now runs higher, already
+ *   made plain by {@link plainTitle}.
  * @param fell - How many chats' next turn now runs lower.
  * @param heldByHand - How many chats set by hand a raise leaves lower.
  */
@@ -138,16 +170,16 @@ export function levelReachSentence(
  * Build the note reader the permission service records with.
  *
  * @param deps - The chats, modes, levels and facts.
- * @returns The note for a change that moves a level, else `undefined`.
+ * @returns What a change that moves a chat adds to its history entry, else `undefined`.
  */
 export function createLevelReachNote(
   deps: LevelReachDeps
-): (changes: readonly PermissionChange[]) => Promise<string | undefined> {
+): (changes: readonly PermissionChange[]) => Promise<LevelReach | undefined> {
   return async (changes) => {
     const moves = changes.filter((c) => c.key.kind === 'files');
     if (moves.length === 0) return undefined;
     const defaults = deps.defaultStops();
-    const rose: string[] = [];
+    const rose: { sessionId: string; title: string }[] = [];
     let fell = 0;
     let heldByHand = 0;
     for (const chat of deps.chats()) {
@@ -209,13 +241,21 @@ export function createLevelReachNote(
       const after = effectiveMode(declared, stored, modeAt(now), follows);
       if (looser(declared, before, after)) fell += 1;
       else if (looser(declared, after, before) && !marked) {
-        rose.push((await deps.titleOf(chat.sessionId)) ?? 'Untitled chat');
+        rose.push({
+          sessionId: chat.sessionId,
+          title: plainTitle(await deps.titleOf(chat.sessionId)),
+        });
       } else if (byHand && !marked) {
         // Set by hand and left lower by a raise that would have lifted it.
         const lifted = effectiveMode(declared, stored, modeAt(now), true);
         if (looser(declared, lifted, after)) heldByHand += 1;
       }
     }
-    return levelReachSentence(rose, fell, heldByHand);
+    const line = levelReachSentence(
+      rose.map((r) => r.title),
+      fell,
+      heldByHand
+    );
+    return line ? { line, rose: rose.map((r) => r.sessionId) } : undefined;
   };
 }

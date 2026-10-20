@@ -106,7 +106,9 @@ describe("an agent's own Files & commands stop", () => {
       preset: 'balanced',
       agents: TWO_AGENTS,
       levelReach: async (changes) =>
-        changes.some((c) => c.key.kind === 'files') ? '2 chats follow it' : undefined,
+        changes.some((c) => c.key.kind === 'files')
+          ? { line: '2 chats follow it', rose: [] }
+          : undefined,
     });
     await world.service.setAgent(
       'agent-test',

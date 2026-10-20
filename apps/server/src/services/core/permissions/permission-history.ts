@@ -18,6 +18,7 @@
  *
  * @module services/core/permissions/permission-history
  */
+import type { LevelReach } from './level-reach-note.js';
 import {
   PERMISSION_ANSWERED_EVENT,
   PERMISSION_CHANGED_EVENT,
@@ -259,11 +260,11 @@ export interface PermissionChangeRecord {
   /** A sentence the history shows beside the change, when it alone would mislead. */
   note?: string;
   /**
-   * How many existing chats a level change reached, and which rose (DOR-3175),
-   * added to the summary line itself: "Files & commands set to Ask · 14 chats
-   * follow it".
+   * How many existing chats a level change reached, and which rose (DOR-3175):
+   * its line is added to the summary itself ("Files & commands set to Ask · 14
+   * chats follow it"), and the ids of the chats that rose ride the metadata.
    */
-  reach?: string;
+  reach?: LevelReach;
 }
 
 /**
@@ -299,6 +300,7 @@ export async function recordPermissionChange(
     ...(record.origin ? { origin: record.origin } : {}),
     ...(record.presetSnapshot ? { presetSnapshot: record.presetSnapshot } : {}),
     ...(record.note ? { note: record.note } : {}),
+    ...(record.reach && record.reach.rose.length > 0 ? { roseChats: record.reach.rose } : {}),
   };
   await activity.emit({
     actorType: record.writer.actorType,
@@ -313,7 +315,7 @@ export async function recordPermissionChange(
       (record.surface === 'undo' && record.undoOf
         ? `Undo: ${describePermissionChanges(record.changes, record.actionTitle)}`
         : describePermissionChanges(record.changes, record.actionTitle)) +
-      (record.reach ? ` · ${record.reach}` : ''),
+      (record.reach ? ` · ${record.reach.line}` : ''),
     linkPath: null,
     metadata: metadata as unknown as Record<string, unknown>,
   });

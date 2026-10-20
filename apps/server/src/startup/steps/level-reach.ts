@@ -23,8 +23,18 @@ import { createLevelReachNote } from '../../services/core/permissions/level-reac
 import { resolveLevelAgent } from '../../services/core/turn-power/agent-level-bound.js';
 import { chatRiseFacts } from '../../services/core/turn-power/chat-rise-facts.js';
 
+/** A chat's folder as its runtime holds it live, when the runtime has it. */
+function liveCwdOf(sessionId: string, runtime: string | null): string | null {
+  if (!runtime || !runtimeRegistry.has(runtime)) return null;
+  try {
+    return runtimeRegistry.get(runtime).getSessionCwd?.(sessionId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Build the note reader over the live database, config and registry.
+ * Build the reach reader over the live database, config and registry.
  *
  * @param db - The consolidated database.
  * @param config - The config manager the stored stops are read from.
@@ -48,7 +58,12 @@ export function levelReachFor(
           sessionNativeBindings,
           eq(sessionNativeBindings.sessionId, sessionMetadata.sessionId)
         )
-        .all(),
+        .all()
+        // Where the chat stands, as its turn would read it: the runtime's live
+        // record first (a direct chat started with a folder and no recorded agent
+        // is found only there), then the native binding.
+        .map((chat) => ({ ...chat, cwd: liveCwdOf(chat.sessionId, chat.runtime) ?? chat.cwd })),
+    // The same lookup the turn uses, so the count and the bound cannot disagree.
     agentOf: (chat) =>
       resolveLevelAgent(chat.cwd ?? chat.agentPath ?? undefined, undefined, chat.agentPath),
     modes: (runtime) =>

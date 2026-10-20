@@ -244,6 +244,11 @@ export const PermissionChangedMetadataSchema = z.object({
    * used to be limited to reading says the conversation verbs still work.
    */
   note: z.string().max(500).optional(),
+  /**
+   * The chats a level change raised, by id (DOR-3175), for the history's list
+   * of them. Never shown as text; the summary names them in plain text.
+   */
+  roseChats: z.array(z.string()).optional(),
   /** What the preset, the defaults and the trust stop were BEFORE a preset write. */
   presetSnapshot: z
     .object({

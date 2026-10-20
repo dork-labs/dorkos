@@ -12,6 +12,7 @@ import type {
 } from '@dorkos/shared/permissions';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { PermissionActionInfo, PermissionAgentRef } from './permission-service.js';
+import type { LevelReach } from './level-reach-note.js';
 
 /** The stored Files & commands stops: the global one, and each runtime's own. */
 export interface StoredTrustStops {
@@ -62,5 +63,5 @@ export interface PermissionServiceDeps {
    * it reaches, and which rose (DOR-3175). Absent, or `undefined` for a change
    * that moves no chat, and the line is as it was.
    */
-  levelReach?: (changes: readonly PermissionChange[]) => Promise<string | undefined>;
+  levelReach?: (changes: readonly PermissionChange[]) => Promise<LevelReach | undefined>;
 }
