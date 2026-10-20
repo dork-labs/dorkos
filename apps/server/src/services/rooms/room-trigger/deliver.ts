@@ -13,6 +13,7 @@ import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.
 import { usageLimitNow } from '../notices/usage-limit.js';
 import { type LateRoomReply, type RoomTurnReply } from '../room-turn-port.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { takeContinuation } from './reseat.js';
 
 /**
  * Put one turn's outcome into the room: what it chose to say, or why there is
@@ -153,6 +154,9 @@ export function deliver(
     return 'answered';
   }
   if (self.takeReactedViaTool(room.id, target.authorId)) return 'answered';
+  // A re-run on a moved seat finishing what the old seat already posted may
+  // rightly add nothing: the answer is already in the room (re-seat).
+  if (takeContinuation(self, room.id, target.authorId, entry.id)) return 'answered';
   const displayName = self.deps.authors.getById(target.authorId)?.displayName ?? 'An agent';
   self.notices.reportDeclined(
     room,

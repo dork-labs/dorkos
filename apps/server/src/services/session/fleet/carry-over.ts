@@ -48,7 +48,7 @@ import {
   writePlan,
 } from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
-import { crossRuntimePermissionMode } from './carry-over-power.js';
+import { carriedSettings } from './carry-over-power.js';
 import { episodeKey } from './continue-in-flight.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
@@ -412,29 +412,22 @@ async function launchCarriedSession(
   } = launched;
   // Before the send: the row is the new session's power, and the
   // `account-handoff` origin claims it without adding the operator's stop.
-  if (crossRuntime) {
-    // The target runtime's own model and effort defaults (the bind seeds them);
-    // the source's stop, capped at `act`, in the target's vocabulary.
-    const permissionMode = crossRuntimePermissionMode(
-      settings.permissionMode,
-      capabilities[sourceRuntime]?.permissionModes,
-      capabilities[targetRuntime]?.permissionModes
-    );
-    await runtimeRegistry.saveSessionSettings(newId, {
+  // Across runtimes the target picks its own model and effort defaults (the
+  // bind seeds them) and the source's stop is capped at `act`.
+  await runtimeRegistry.saveSessionSettings(
+    newId,
+    carriedSettings(settings, {
       ...(request.model ? { model: request.model } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-    });
-  } else {
-    await runtimeRegistry.saveSessionSettings(newId, {
-      ...(request.model
-        ? { model: request.model }
-        : settings.model
-          ? { model: settings.model }
-          : {}),
-      ...(settings.effort ? { effort: settings.effort } : {}),
-      ...(settings.permissionMode ? { permissionMode: settings.permissionMode } : {}),
-    });
-  }
+      ...(crossRuntime
+        ? {
+            crossRuntime: {
+              source: capabilities[sourceRuntime]?.permissionModes,
+              target: capabilities[targetRuntime]?.permissionModes,
+            },
+          }
+        : {}),
+    })
+  );
   const { seedContext, prompt } = await seedFor(source, cwd, targetAccountId);
   const agentPath = await verifiedAgentPath(source.sessionId, launch.meshCore);
   // Nobody is watching a move the advisor's plan made: it runs like a timer-

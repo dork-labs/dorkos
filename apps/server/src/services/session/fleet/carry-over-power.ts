@@ -18,6 +18,7 @@
  * @module services/session/fleet/carry-over-power
  */
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import type { SessionSettings } from '@dorkos/shared/schemas';
 import {
   resolveStopMode,
   resolveTrustStops,
@@ -59,4 +60,67 @@ export function crossRuntimePermissionMode(
   if (!target) return undefined;
   const stop = carriedStop(sourceMode, source);
   return resolveStopMode(stop, target.values) ?? resolveTrustStops(target.values)[0]?.mode.id;
+}
+
+/** The settings a moved session copies: preference and power, never anything else. */
+export type CarriedSettings = Pick<SessionSettings, 'model' | 'effort' | 'permissionMode'>;
+
+/**
+ * The settings row a carried-over session starts with (spec D9 step 4c): on the
+ * same runtime, the source's model (unless one was chosen), effort and mode, so
+ * it has no more power than the session it continues; on ANOTHER runtime, only
+ * a chosen model, and the source's stop capped at `act` in the target's
+ * vocabulary ({@link crossRuntimePermissionMode}). The one computation every
+ * move writes, so no mover has its own idea of power.
+ *
+ * @param source - The source session's stored settings.
+ * @param opts.model - A model chosen for the new session.
+ * @param opts.crossRuntime - Both runtimes' declared modes, for a move across runtimes.
+ */
+export function carriedSettings(
+  source: CarriedSettings,
+  opts: {
+    model?: string;
+    crossRuntime?: {
+      source: DeclaredPermissionModes | undefined;
+      target: DeclaredPermissionModes | undefined;
+    };
+  }
+): CarriedSettings {
+  if (opts.crossRuntime) {
+    const permissionMode = crossRuntimePermissionMode(
+      source.permissionMode,
+      opts.crossRuntime.source,
+      opts.crossRuntime.target
+    );
+    return {
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+    };
+  }
+  const model = opts.model ?? source.model;
+  return {
+    ...(model ? { model } : {}),
+    ...(source.effort ? { effort: source.effort } : {}),
+    ...(source.permissionMode ? { permissionMode: source.permissionMode } : {}),
+  };
+}
+
+/**
+ * The settings row a room seat moved to a fresh session starts with: the old
+ * seat's, through {@link carriedSettings}, with the mode PINNED to the
+ * runtime's own default when the old seat stored none. An unset mode ran at
+ * that default; left unset, the room's first-turn seed (the agent's default or
+ * the operator's level) would decide the new seat's power instead.
+ *
+ * @param source - The old seat's stored settings, or `null` for no row.
+ * @param declared - The runtime's declared modes.
+ */
+export function reseatSettings(
+  source: CarriedSettings | null,
+  declared: DeclaredPermissionModes | undefined
+): CarriedSettings {
+  const carried = carriedSettings(source ?? {}, {});
+  const permissionMode = carried.permissionMode ?? declared?.default;
+  return { ...carried, ...(permissionMode ? { permissionMode } : {}) };
 }

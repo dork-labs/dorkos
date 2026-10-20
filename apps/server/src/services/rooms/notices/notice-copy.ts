@@ -388,22 +388,25 @@ const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> 
  * @param subjectAuthorId - Author id of that agent, for rendering.
  * @param outOfUsageUntil - Set when the agent's account ran out of usage.
  * @param refusal - Why the runtime refused the turn before it started, if it did.
+ * @param noOtherAccount - Set when no other account had usage to move the agent to.
  */
 export function buildTurnFailedNotice(
   agentName: string,
   subjectAuthorId: string,
   outOfUsageUntil?: string | null,
-  refusal?: string
+  refusal?: string,
+  noOtherAccount?: boolean
 ): RoomEntryBody {
   // A usage limit is not a problem to go and look at: it says when it ends
   // (DOR-2823). `undefined` is an ordinary failure; `null` is a limit with no
-  // known reset.
+  // known reset. When the room tried to move the agent to another account and
+  // none had usage left, it says that too, and the time is the soonest any
+  // account is back. No account is named, so the line is safe in any room.
   if (outOfUsageUntil !== undefined) {
+    const until = outOfUsageUntil === null ? '' : ` until ${clockTime(outOfUsageUntil)}`;
+    const others = noOtherAccount === true ? ', and no other account has any left' : '';
     return {
-      text:
-        outOfUsageUntil === null
-          ? `${agentName} is out of usage, so it couldn't answer here.`
-          : `${agentName} is out of usage until ${clockTime(outOfUsageUntil)}, so it couldn't answer here.`,
+      text: `${agentName} is out of usage${until}${others}, so it couldn't answer here.`,
       notice: 'turn_failed',
       subjectAuthorId,
     };
@@ -432,6 +435,58 @@ const REFUSAL_LINES: Partial<Record<string, (agentName: string) => string>> = {
   'crash-loop': (agentName) =>
     `${agentName} keeps stopping, so it couldn't answer here. Open ${agentName}'s chat to see why.`,
 };
+
+/** Why a room seat moved to a fresh session, as its room line says it. */
+export type ReseatNoticeReason =
+  | { kind: 'limit'; from: string | null; to: string }
+  | { kind: 'nearly-out'; from: string | null; to: string }
+  | { kind: 'by-hand'; by: string; to: string }
+  | { kind: 'stranded' };
+
+/**
+ * The quiet `agent_reseated` line for a room seat that moved to a fresh
+ * session: onto another account because its own ran out or nearly did, moved
+ * there by somebody, or restarted because its earlier session expired.
+ *
+ * **No account names where outsiders can read it.** An account's name is the
+ * owner's own business; in a room with anyone from outside (a bridged chat, a
+ * Wi-Fi sign-in, an outside author) every move reads the same plain line.
+ *
+ * @param agentName - Display name of the agent whose seat moved.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param reason - Why it moved, with the account names when known.
+ * @param hideAccounts - The room has outsiders, so no account is named.
+ */
+export function buildAgentReseatedNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  reason: ReseatNoticeReason,
+  hideAccounts: boolean
+): RoomEntryBody {
+  const body = (text: string): RoomEntryBody => ({
+    text,
+    notice: 'agent_reseated',
+    subjectAuthorId,
+  });
+  if (reason.kind === 'stranded') {
+    return body(`${agentName} started a fresh chat here. Its earlier one had expired.`);
+  }
+  if (hideAccounts) return body(`${agentName} switched accounts to keep answering.`);
+  switch (reason.kind) {
+    case 'limit':
+      return body(
+        reason.from === null
+          ? `${agentName} ran out of usage, so it's continuing on ${reason.to}.`
+          : `${agentName} ran out of usage on ${reason.from}, so it's continuing on ${reason.to}.`
+      );
+    case 'nearly-out':
+      return body(
+        `${agentName} is continuing on ${reason.to}, because ${reason.from ?? 'its account'} is almost out of usage.`
+      );
+    case 'by-hand':
+      return body(`${reason.by} moved ${agentName} to ${reason.to}.`);
+  }
+}
 
 /**
  * A reset time as a person reads a clock on this machine ("4:10 PM"), with the

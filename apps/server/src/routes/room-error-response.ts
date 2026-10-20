@@ -53,6 +53,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the answer. The remedy is in the message, not in who asks.
   OWNER_MUST_BE_PRESENT: 403,
   PEOPLE_ONLY: 403,
+  // Re-seat refusals: nothing is wrong with the request, the state is.
+  NO_ACCOUNT_LEFT: 409,
+  AGENT_WORKING: 409,
+  NOTHING_TO_MOVE: 409,
   // `post_to_room` is an MCP verb with no HTTP route, so this code reaches a
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.

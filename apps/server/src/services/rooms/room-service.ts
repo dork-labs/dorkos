@@ -21,6 +21,7 @@
  *
  * @module server/services/rooms/room-service
  */
+import type { ReseatOptions } from '@dorkos/shared/room-schemas';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -223,6 +224,19 @@ export class RoomService {
   /** Stop everything running in one room. See {@link RoomTurnControl.haltRoom}. */
   haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {
     return this.parts.turnControl.haltRoom(roomId, viewerAuthorId);
+  }
+  /** Move an agent's seat to another account. See {@link RoomTurnControl.reseatAgent}. */
+  reseatAgent(
+    roomId: string,
+    authorId: string,
+    viewerAuthorId: string,
+    opts?: { accountId?: string; markedTurn?: boolean }
+  ): Promise<{ sessionId: string }> {
+    return this.parts.turnControl.reseatAgent(roomId, authorId, viewerAuthorId, opts);
+  }
+  /** The accounts an agent's seat may move to. See {@link RoomTurnControl.reseatOptions}. */
+  reseatOptions(roomId: string, authorId: string, viewerAuthorId: string): Promise<ReseatOptions> {
+    return this.parts.turnControl.reseatOptions(roomId, authorId, viewerAuthorId);
   }
   /** Stop one agent in a room. See {@link RoomTurnControl.haltAgent}. */
   haltAgent(roomId: string, authorId: string, viewerAuthorId: string): Promise<number> {

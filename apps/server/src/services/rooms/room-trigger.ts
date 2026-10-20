@@ -128,6 +128,7 @@ import { outsideAuditScope } from '../audit/audit-context.js';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
   AuthorKind,
+  ReseatOptions,
   Room,
   RoomEntry,
   RoomHeldBehind,
@@ -175,6 +176,7 @@ import * as aside from './room-trigger/aside.js';
 import * as claims from './room-trigger/claims.js';
 import * as holds from './room-trigger/holds.js';
 import * as halting from './room-trigger/halt.js';
+import * as reseating from './room-trigger/reseat.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -1484,5 +1486,23 @@ export class RoomTriggerDispatcher {
    */
   haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
     return halting.haltAgent(this, room, authorId, byAuthorId);
+  }
+
+  /** Move an agent's seat by hand. See {@link reseating.reseatByHand}. */
+  reseatByHand(
+    room: Room,
+    agent: { authorId: string; agentPath: string; displayName: string },
+    byAuthorId: string,
+    accountId: string | undefined
+  ): Promise<{ sessionId: string }> {
+    return reseating.reseatByHand(this, room, agent, byAuthorId, accountId);
+  }
+
+  /** The accounts a seat may move to. See {@link reseating.reseatOptionsFor}. */
+  reseatOptions(
+    room: Room,
+    agent: { authorId: string; agentPath: string }
+  ): Promise<ReseatOptions> {
+    return reseating.reseatOptionsFor(this, room, agent);
   }
 }

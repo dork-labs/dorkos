@@ -72,6 +72,7 @@ import {
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
+  continueActivity,
 } from '../../services/session/index.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -93,6 +94,10 @@ import {
 } from '../../services/tasks/approvals/marked-schedules.js';
 import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
 import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
+import {
+  createRoomSeatMover,
+  setRoomSeatMover,
+} from '../../services/rooms/reseat/create-seat-mover.js';
 
 /** What {@link wireRooms} reads from the startup steps before it. */
 export interface WireRoomsInput {
@@ -563,6 +568,19 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       );
     }
   }
+
+  // Re-seating: a room seat whose account runs out moves to another account and
+  // keeps answering, and one whose transcript expired starts a fresh session.
+  // After the transcript probe above, which is how an expired seat is found;
+  // without Claude Code in this process no seat reads as expired, and no other
+  // runtime's accounts run out.
+  setRoomSeatMover(
+    createRoomSeatMover({
+      store: roomStore,
+      transcripts: refs.roomBindingTranscripts,
+      activity: continueActivity,
+    })
+  );
 
   // The local community (spec `community-adapter` §8) — this machine's own rooms
   // behind the `CommunityAdapter` port. Registered unconditionally and first,

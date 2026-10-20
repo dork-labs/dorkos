@@ -158,6 +158,12 @@ export interface SilenceContext {
    */
   pausedAt?: string;
   /**
+   * For a `failed` reason with a usage limit: the room tried to move the agent
+   * to another account and none had usage left, so the line says so and
+   * `outOfUsageUntil` is the soonest any account is back. Ignored otherwise.
+   */
+  noOtherAccount?: boolean;
+  /**
    * This message named this agent, even though no stored mention says so.
    *
    * The third route into {@link RoomNoticeLog.directlyAsked}, and it exists
@@ -610,6 +616,33 @@ export class RoomNoticeLog {
     const written = this.writeNotice(room, entry, null, buildBudgetNotice(scope));
     record(written ? 'shown' : 'silent');
     if (written) this.noticedBudget.add(room.id);
+  }
+
+  /**
+   * A person's name as a room line names them: never the registry's 'You',
+   * because the next turn reads the line back (DOR-2458).
+   *
+   * @param authorId - The person.
+   */
+  nameOf(authorId: string): string {
+    return this.deps.nameForAgents(authorId) ?? 'Somebody';
+  }
+
+  /**
+   * Say in the room that an agent's seat moved to a fresh session (the
+   * `agent_reseated` line). One line per move and never damped: each move is
+   * its own news, and a seat moves at most once per message it answers.
+   *
+   * @param room - The room.
+   * @param entry - The message the move was made to answer, for the cascade
+   *   stamp and the thread; `null` for a move nobody's message caused (by hand).
+   * @param body - The line, from `buildAgentReseatedNotice`.
+   * @returns Whether it landed.
+   */
+  reportReseat(room: Room, entry: RoomEntry | null, body: RoomEntryBody): boolean {
+    const about = body.subjectAuthorId ?? null;
+    if (entry !== null) return this.writeNotice(room, entry, about, body);
+    return this.write(room.id, body, about, { cascade: { root: room.id, depth: 0 } });
   }
 
   /**
@@ -1075,8 +1108,14 @@ const SILENCE_BODIES: Record<
   (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
   busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
-  failed: (agent, { outOfUsageUntil, failure }) =>
-    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil, failure?.refusal),
+  failed: (agent, { outOfUsageUntil, failure, noOtherAccount }) =>
+    buildTurnFailedNotice(
+      agent.displayName,
+      agent.authorId,
+      outOfUsageUntil,
+      failure?.refusal,
+      noOtherAccount
+    ),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),

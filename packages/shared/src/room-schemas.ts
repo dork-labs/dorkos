@@ -181,6 +181,11 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  *   `agent-permissions` D12). Written just before the archive lands, because an
  *   archived room takes no new entries; it names who did it and says the person
  *   can bring the room back.
+ * - `agent_reseated` — an agent's seat here moved to a fresh session and it
+ *   carried on: its account ran out or nearly did and it continued on another
+ *   one, somebody moved it, or its earlier session had expired. Quiet, with the
+ *   agent as subject; in a room with outsiders it names no account. Nothing is
+ *   wrong and nobody needs to act, which is why it is not `turn_failed`.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -215,6 +220,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_agent_swapped',
     'bridge_history_note',
     'room_archived',
+    'agent_reseated',
   ])
   .openapi('RoomNoticeCode');
 
@@ -1824,6 +1830,39 @@ export const UpdateMembershipRequestSchema = z
   .openapi('UpdateMembershipRequest');
 
 export type UpdateMembershipRequest = z.infer<typeof UpdateMembershipRequestSchema>;
+
+/**
+ * Move an agent's seat to another account (`POST /api/rooms/:id/members/:authorId/reseat`):
+ * the account to move to, or none for the one with the most usage left.
+ */
+export const ReseatSeatRequestSchema = z
+  .object({ account: z.string().min(1).optional() })
+  .openapi('ReseatSeatRequest');
+
+export type ReseatSeatRequest = z.infer<typeof ReseatSeatRequestSchema>;
+
+/**
+ * Where an agent's seat could move (`GET /api/rooms/:id/members/:authorId/reseat-options`):
+ * the account it runs on now, and every Claude account it may move to, best
+ * first. `eligible` says which can take it now; `reason` says why not. DorkOS
+ * credits are never listed.
+ */
+export const ReseatOptionsSchema = z
+  .object({
+    current: z.object({ id: z.string(), label: z.string().nullable() }).nullable(),
+    accounts: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string().nullable(),
+        color: z.string(),
+        eligible: z.boolean(),
+        reason: z.string(),
+      })
+    ),
+  })
+  .openapi('ReseatOptions');
+
+export type ReseatOptions = z.infer<typeof ReseatOptionsSchema>;
 
 /**
  * Set (or clear) an author's handle.

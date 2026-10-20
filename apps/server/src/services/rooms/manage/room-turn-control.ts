@@ -23,6 +23,8 @@ import { RoomError } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import { mayReseatByHand } from '../reseat/seat-mover.js';
+import type { ReseatOptions } from '@dorkos/shared/room-schemas';
 
 /** What a room is working on, and the three ways a person steers it. */
 export class RoomTurnControl {
@@ -181,6 +183,85 @@ export class RoomTurnControl {
       throw new RoomError('MEMBER_NOT_FOUND', 'No such agent in this room.');
     }
     return this.triggers.haltAgent(room, authorId, viewerAuthorId);
+  }
+
+  /**
+   * The agent member a by-hand move is about, refusing anything else.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  private agentMember(roomId: string, authorId: string) {
+    const record = this.authors.getById(authorId);
+    if (this.store.getMember(roomId, authorId) === null || record?.kind !== 'agent') {
+      throw new RoomError('MEMBER_NOT_FOUND', 'No such agent in this room.');
+    }
+    return { authorId, agentPath: record.naturalKey, displayName: record.displayName };
+  }
+
+  /**
+   * Move an agent's seat here to another account by hand (`rooms.reseat`).
+   * Only a person may, until agents are allowed (Security Must 5): the one
+   * check is {@link mayReseatByHand}, and the caller says whether its turn is
+   * marked, since only the capability knows the calling session.
+   *
+   * @param roomId - The room, which the caller must be able to see.
+   * @param authorId - The agent whose seat moves.
+   * @param viewerAuthorId - Who asks.
+   * @param opts.accountId - The account to move to; the best when absent.
+   * @param opts.markedTurn - The calling turn carries a mark.
+   * @returns The seat's new session.
+   */
+  async reseatAgent(
+    roomId: string,
+    authorId: string,
+    viewerAuthorId: string,
+    opts: { accountId?: string; markedTurn?: boolean } = {}
+  ): Promise<{ sessionId: string }> {
+    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
+    const allowed = mayReseatByHand({
+      callerIsPerson: this.authors.getById(viewerAuthorId)?.kind === 'human',
+      callerId: viewerAuthorId,
+      seatAuthorId: authorId,
+      markedTurn: opts.markedTurn === true,
+    });
+    if (!allowed) {
+      throw new RoomError('PEOPLE_ONLY', 'Only a person can move an agent to another account.');
+    }
+    return this.triggers.reseatByHand(
+      room,
+      this.agentMember(roomId, authorId),
+      viewerAuthorId,
+      opts.accountId
+    );
+  }
+
+  /**
+   * The accounts an agent's seat here may move to, for the picker. Gated like
+   * the move itself.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent.
+   * @param viewerAuthorId - Who asks.
+   */
+  async reseatOptions(
+    roomId: string,
+    authorId: string,
+    viewerAuthorId: string
+  ): Promise<ReseatOptions> {
+    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
+    // Who may move a seat is who may see where it could go: the accounts and
+    // their usage are the owner's business, not every caller's.
+    const allowed = mayReseatByHand({
+      callerIsPerson: this.authors.getById(viewerAuthorId)?.kind === 'human',
+      callerId: viewerAuthorId,
+      seatAuthorId: authorId,
+      markedTurn: false,
+    });
+    if (!allowed) {
+      throw new RoomError('PEOPLE_ONLY', 'Only a person can move an agent to another account.');
+    }
+    return this.triggers.reseatOptions(room, this.agentMember(roomId, authorId));
   }
 
   /**

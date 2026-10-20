@@ -61,6 +61,7 @@ import roomAttachmentRoutes from './room-attachments.js';
 import roomFileRoutes from './room-files.js';
 import roomCanvasRoutes from './room-canvas.js';
 import roomFollowRoutes from './room-follow.js';
+import roomReseatRoutes from './room-reseat.js';
 import { parseOrRefuse, roomRoute } from './room-route.js';
 
 const router = new Hono<ApiEnv>();
@@ -608,5 +609,6 @@ router.route('/', roomAttachmentRoutes);
 router.route('/', roomFileRoutes);
 router.route('/:id/canvas', roomCanvasRoutes);
 router.route('/:id/follow', roomFollowRoutes);
+router.route('/:id/members/:authorId', roomReseatRoutes);
 
 export default router;

@@ -26,6 +26,7 @@ import type { CollectWindow } from '../room-collect.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRunner } from '../room-turn-port.js';
+import type { RoomSeatMover } from '../reseat/seat-mover.js';
 
 /**
  * How a post gets written back into the room.
@@ -125,6 +126,19 @@ export interface RoomTriggerDeps {
   usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   /** The operator's profile name — see `RoomContextDeps.operatorName`. */
   operatorName?(): string | null;
+  /**
+   * The server's room seat mover (re-seat): moves a seat whose account ran out,
+   * or nearly did, to another account, and restarts a seat whose transcript
+   * expired. Read per turn, since it is built after the rooms graph. Absent or
+   * `null`: seats never move, exactly as before.
+   */
+  seatMover?(): RoomSeatMover | null;
+  /**
+   * Whether anyone from outside can read this room (a bridged chat, a Wi-Fi
+   * sign-in, an outside author), so a move's line names no account. Absent
+   * reads as yes.
+   */
+  roomHasOutsiders?(roomId: string): boolean;
   /**
    * What a room's turn is told about the chat it projects, or `null` when
    * unbridged. Read only by `buildRoomContext` — the dispatcher itself never

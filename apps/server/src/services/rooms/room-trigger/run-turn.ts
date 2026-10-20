@@ -19,6 +19,7 @@ import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import { type LateRoomReply, type RoomTurnReply } from '../room-turn-port.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { prepareSeat, reseatAfterLimit, settleSeatLaunch } from './reseat.js';
 
 /** The body of {@link RoomTriggerDispatcher.runOne}, already inside its scope. */
 export async function runOneInDispatch(
@@ -100,6 +101,9 @@ export async function runOneInDispatch(
           posterCap: await posterCapsFor(self.deps.authors, answered, self.deps.posterLevel),
         }
       : { ownCircle };
+    // The seat this turn runs on: moved first when its transcript expired or
+    // its account is nearly out, and carrying a move's one-shot launch.
+    const launch = await prepareSeat(self, room, entry, target);
     const result = await self.deps.runner.run({
       room,
       authorId: target.authorId,
@@ -111,6 +115,7 @@ export async function runOneInDispatch(
       worktree: place.worktree,
       ...roomLaunchStepFor(self.deps, room.id, target.authorId, target.agentPath, place),
       sessionId: target.sessionId,
+      ...launch,
       entry,
       // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
       // off the author's stored key, and read HERE because this is where the
@@ -181,6 +186,9 @@ export async function runOneInDispatch(
     // again when Ana is free") invites a message that would land ABOVE the
     // advanced cursor and arrive with no context at all.
     if (result.unanswered === 'busy') self.rewindClaimCursor(room, entry, target);
+    // Anything but a busy refusal launched on this session, so a moved seat's
+    // one-shot launch is spent.
+    else settleSeatLaunch(self, room.id, target.authorId, target.sessionId);
 
     // The turn ran on a session; that session is the one this agent must
     // resume here next time. It is not always the one the room asked with —
@@ -232,6 +240,10 @@ export async function runOneInDispatch(
         // now on carries `working_late` because it reads the same flag.
         self.publishPresence(claim, 'working_late');
       }
+    } else if (await reseatAfterLimit(self, room, entry, target, result)) {
+      // Its account ran out and the seat moved (or nothing had usage left):
+      // that path wrote the room's line and queued the re-run, claim held.
+      outcome = 'failed';
     } else {
       outcome = self.deliver({ room, entry, target, reply: result });
     }

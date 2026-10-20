@@ -327,9 +327,29 @@ export function launchFallbackOrder(
   project: ProjectRef | null,
   config: EligibilityConfigReader = configManager
 ): string[] {
-  return defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project, config)
-    .accounts.filter((row) => row.runtime === runtime)
-    .map((row) => row.id);
+  return coreRanking(runtime, project, config).map((row) => row.id);
+}
+
+/**
+ * Core's own ranking of one runtime's accounts that may work in the project,
+ * as full rows, in {@link launchFallbackOrder}'s order. Never asks the advisor.
+ * What an automatic move picks from (a room seat whose account ran out), so
+ * it never waits on an extension. Empty with no usage store.
+ *
+ * @param runtime - The runtime.
+ * @param project - The folder's project, or null for no project.
+ * @param config - Where the rules live.
+ */
+export function coreRanking(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): RankedAccount[] {
+  return defaultRanking(
+    { purpose: 'launch', caller: 'person', cwd: '', runtime },
+    project,
+    config
+  ).accounts.filter((row) => row.runtime === runtime);
 }
 
 /**

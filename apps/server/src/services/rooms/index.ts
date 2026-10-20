@@ -66,6 +66,8 @@ import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { storedUsageLimit } from './notices/usage-limit.js';
+import { getRoomSeatMover } from './reseat/create-seat-mover.js';
+import { roomOutsidersReader } from './reseat/room-outsiders.js';
 import { clearStaleReceipts } from './receipts/turn-receipts.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
@@ -552,6 +554,15 @@ export function createRoomSubsystem(opts: {
     // A failed turn whose account ran out of usage says when it can answer
     // again (DOR-2823). Read at the moment of failure, never cached.
     usageLimitFor: storedUsageLimit,
+    // Re-seating: a seat whose account runs out moves to another account and
+    // keeps answering. The mover is built by the rooms startup step, after
+    // this graph, so it is read per turn.
+    seatMover: getRoomSeatMover,
+    // Whether a room's lines may name the owner's accounts (Security Must 7):
+    // anything outside or marked in its posts, and any member who is not the
+    // owner's own (an outside author, or a person who is not the owner) even
+    // before they have said a word.
+    roomHasOutsiders: roomOutsidersReader(opts.db, store, authors),
     bridges,
     agents: agentLookup,
     turns:

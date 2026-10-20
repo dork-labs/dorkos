@@ -9,6 +9,7 @@
  *
  * @module server/services/rooms/__tests__/room-test-harness
  */
+import type { RoomSeatMover } from '../reseat/seat-mover.js';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
@@ -129,6 +130,10 @@ export interface RecordedTurn {
   permissionCeiling?: RoomTurnRequest['permissionCeiling'];
   /** Set when a teammate's message started the turn (DOR-2955). */
   teammate?: true;
+  /** A moved seat's launch hint (re-seat), when the turn carried one. */
+  accountHint?: string;
+  /** A moved seat's summary of the session it replaces, when the turn carried one. */
+  seedContext?: string;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
   /**
@@ -313,6 +318,8 @@ export function outcomeRunner(
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
         ...(request.teammate ? { teammate: request.teammate } : {}),
+        ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
+        ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -727,6 +734,10 @@ export function createRoomHarness(opts: {
   engagedWindow?: EngagedWindow;
   /** The usage limit a chat's account hit, for the out-of-usage notice (DOR-2823). */
   usageLimitFor?: (sessionId: string) => { resetsAt: string | null } | null;
+  /** The room seat mover (re-seat). Absent: seats never move. */
+  seatMover?: () => RoomSeatMover | null;
+  /** Whether a room has outsiders, so a move's line names no account. */
+  roomHasOutsiders?: (roomId: string) => boolean;
   /**
    * `rooms.responseGate`. Defaults to the SHIPPED value, so a test that says
    * nothing measures what an install does — a harness pinned to `'off'` would
@@ -932,6 +943,8 @@ export function createRoomHarness(opts: {
     limitsFor,
     engagedWindow: () => engagedWindow,
     ...(opts.usageLimitFor ? { usageLimitFor: opts.usageLimitFor } : {}),
+    ...(opts.seatMover ? { seatMover: opts.seatMover } : {}),
+    ...(opts.roomHasOutsiders ? { roomHasOutsiders: opts.roomHasOutsiders } : {}),
     responseGate: () => responseGate,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
