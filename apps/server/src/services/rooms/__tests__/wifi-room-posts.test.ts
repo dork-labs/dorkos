@@ -101,11 +101,11 @@ describe('a room post from Wi-Fi', () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
 
     expect(turnsOf('/agents/ana')[1]!.permissionCeiling).toBe('runtime-default');
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual({
-      asks: 'always',
-      reach: 'edit',
-      outsider: true,
-    });
+    // Ana's level, then the cap her post's mark carries on top of it (DOR-3141).
+    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual([
+      { asks: 'always', reach: 'edit', outsider: true },
+      'runtime-default',
+    ]);
   });
 });
 

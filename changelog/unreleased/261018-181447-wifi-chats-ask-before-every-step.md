@@ -15,6 +15,7 @@ covers:
   - "test(server): Wi-Fi holds read through DOR-3107's sender bound and own circle (DOR-3037)"
   - 'test(server): an extension-started chat is capped from here as well as from Wi-Fi (DOR-3037)'
   - 'test(e2e): the status-line stress items shrink like any item with a value (DOR-3037)'
+  - "test(server): a Wi-Fi hold reads through DOR-3141's carried cap (DOR-3037)"
 ---
 
 ### Security
