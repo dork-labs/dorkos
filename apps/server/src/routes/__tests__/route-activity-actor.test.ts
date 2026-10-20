@@ -134,7 +134,7 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
       reason:
         'A person replaying or clearing unfinished document work. The same person bars as ' +
         'the route controls (`decideAsPerson` refuses an agent identity or approval token), ' +
-        'the same permission writer (`writerForPosture`), the same honesty rule.',
+        'the same permission writer (`writerFor` from the route controls), the same honesty rule.',
     },
   ],
   'relay-delivery-receipts.ts': [

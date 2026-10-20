@@ -130,9 +130,13 @@ describe('CanvasDocWork', () => {
     expect(
       within(confirm).getByText('It may repeat what the agent already did.')
     ).toBeInTheDocument();
+    // The safe choice takes focus, never the one that repeats work.
+    await waitFor(() => expect(within(confirm).getByText('Cancel')).toHaveFocus());
     expect(transport.replayCanvasDocWork).not.toHaveBeenCalled();
     fireEvent.click(within(confirm).getByText('Cancel'));
     expect(within(panel).queryByTestId('doc-work-confirm-batch-1')).toBeNull();
+    // Focus returns to the button that opened the step.
+    await waitFor(() => expect(within(panel).getByTestId('doc-work-replay-batch-1')).toHaveFocus());
     expect(transport.replayCanvasDocWork).not.toHaveBeenCalled();
 
     fireEvent.click(within(panel).getByTestId('doc-work-replay-batch-1'));
@@ -177,6 +181,16 @@ describe('CanvasDocWork', () => {
     );
     // Clearing stays open: it starts nothing.
     expect(within(panel).getByTestId('doc-work-clear-batch-b')).toBeEnabled();
+  });
+
+  it('neither replays nor clears uncertain work that may still be running', async () => {
+    show([item({ status: 'in_doubt', replay: 'still_running' })]);
+    const panel = await openPanel();
+    expect(within(panel).getByTestId('doc-work-replay-batch-1')).toBeDisabled();
+    expect(within(panel).getByTestId('doc-work-clear-batch-1')).toBeDisabled();
+    expect(within(panel).getByTestId('doc-work-blocked-batch-1')).toHaveTextContent(
+      'It may still be running. Check back once it stops.'
+    );
   });
 
   it('shows the server’s refusal in plain words and keeps the work listed', async () => {

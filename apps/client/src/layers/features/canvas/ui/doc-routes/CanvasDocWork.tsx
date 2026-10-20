@@ -2,13 +2,14 @@
  * The canvas header's review of a document's unfinished work, beside its routes.
  *
  * Draws nothing until there is work to review: work that waited a day and never
- * started, or work that started before a restart with an unknown result. Each
+ * started, or work that reached the agent but whose result is unknown. Each
  * piece can run again or be cleared, and only by the person's choice. Running
  * uncertain work again asks first, since the agent may already have acted on it.
+ * Uncertain work whose attempt may still finish can do neither until it stops.
  *
  * @module features/canvas/ui/doc-routes/CanvasDocWork
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { History } from 'lucide-react';
 import type { CanvasDocRoute, CanvasDocWorkItem } from '@dorkos/shared/canvas-doc-routes';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
@@ -42,12 +43,32 @@ interface WorkItemProps {
 /** One piece of work: where it was going, what happened, and the two choices. */
 function WorkItem({ documentId, item, route, online, onAnnounce }: WorkItemProps) {
   const [confirming, setConfirming] = useState(false);
+  // Where focus goes after the confirm step opens or closes; null before either.
+  const [focusAfter, setFocusAfter] = useState<'cancel' | 'replay' | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const replayRef = useRef<HTMLButtonElement>(null);
   const { replay, clear } = useCanvasDocWorkActions(documentId);
   const busy = replay.isPending || clear.isPending;
+  const running = item.replay === 'still_running';
   const blocked = workReplayBlocked(item);
   const destination = route ? routeDestinationLabel(route.destination) : item.routeId;
   const uncertain = item.status === 'in_doubt';
   const error = replay.error ?? clear.error;
+
+  // The safe choice takes focus when the confirm step opens, and focus returns
+  // to the button that opened it when it closes.
+  useEffect(() => {
+    if (focusAfter === 'cancel') cancelRef.current?.focus();
+    if (focusAfter === 'replay') replayRef.current?.focus();
+  }, [focusAfter, confirming]);
+  const openConfirm = () => {
+    setConfirming(true);
+    setFocusAfter('cancel');
+  };
+  const closeConfirm = () => {
+    setConfirming(false);
+    setFocusAfter('replay');
+  };
 
   // Each choice clears the other's refusal, so the message shown is the latest one.
   const runAgain = (confirmRepeat?: true) => {
@@ -112,7 +133,7 @@ function WorkItem({ documentId, item, route, online, onAnnounce }: WorkItemProps
           <p className="text-sm font-medium">Run this again?</p>
           <p className="text-muted-foreground text-xs">It may repeat what the agent already did.</p>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+            <Button ref={cancelRef} type="button" variant="ghost" size="sm" onClick={closeConfirm}>
               Cancel
             </Button>
             <Button
@@ -133,18 +154,19 @@ function WorkItem({ documentId, item, route, online, onAnnounce }: WorkItemProps
             variant="ghost"
             size="sm"
             data-testid={`doc-work-clear-${item.batchId}`}
-            disabled={!online || busy}
+            disabled={!online || busy || running}
             onClick={setAside}
           >
             {clear.isPending ? 'Clearing…' : 'Clear'}
           </Button>
           <Button
+            ref={replayRef}
             type="button"
             variant="outline"
             size="sm"
             data-testid={`doc-work-replay-${item.batchId}`}
             disabled={!online || busy || blocked !== null}
-            onClick={() => (uncertain ? setConfirming(true) : runAgain())}
+            onClick={() => (uncertain ? openConfirm() : runAgain())}
           >
             {replay.isPending ? 'Starting…' : 'Run again'}
           </Button>

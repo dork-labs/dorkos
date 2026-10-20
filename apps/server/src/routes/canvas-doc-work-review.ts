@@ -8,10 +8,14 @@
  * The same bars as the route controls beside it (`canvas-doc-route-controls.ts`):
  * the operator principal for every route, and for the writes the person bars an
  * approval decision needs, minted by `decideAsPerson`. An agent cannot replay its
- * own work here. Each write records one `doc_work.reviewed` Activity line.
+ * own work here. Each write records one `doc_work.reviewed` Activity line, in
+ * the `permissions` category beside the route controls' own lines: it is a
+ * person's decision about what an agent is asked to do, and that history is
+ * kept past the retention prune.
  *
- * Wi-Fi keeps both writes: a replay is one run under a route a person already
- * allowed at this computer, and allowing routes stays refused there.
+ * Wi-Fi keeps both writes: a replay is one run under a route that is already
+ * allowed (by a person, or the opener's own route), clearing only narrows, and
+ * allowing a route stays refused there.
  *
  * @module routes/canvas-doc-work-review
  */
@@ -33,7 +37,7 @@ import {
   type DocRoutePersonDecision,
 } from '../services/canvas/doc-channel/route-controls/person-decision.js';
 import { logger } from '../lib/logger.js';
-import { writerForPosture } from './permissions.js';
+import { writerFor } from './canvas-doc-route-controls.js';
 import type { DocChannelHttpSource } from './canvas-doc-events.js';
 
 const IdSchema = z.string().min(1).max(200);
@@ -45,11 +49,12 @@ const CODE_MESSAGES: Record<string, string> = {
   WORK_NOT_FOUND: 'That work is not on this document.',
   WORK_NOT_REVIEWABLE: 'That work is not waiting on review.',
   WORK_ALREADY_REVIEWED: 'That work was already run again or cleared.',
+  WORK_STILL_RUNNING: 'This work may still be running. Try again once it stops.',
   CONFIRM_REPEAT_REQUIRED: 'This may already have run. Confirm before running it again.',
   GRANT_REQUIRED: 'This route is off. Allow it before running the work again.',
   ROUTE_CHANGED: 'The route changed. It no longer takes this work.',
   INPUTS_GONE: 'Some of this work’s events are no longer kept.',
-  ROUTE_BUSY: 'Newer work is waiting on this route. Try again after it runs.',
+  ROUTE_BUSY: 'Newer work is waiting on this route, so this can’t run again now.',
   GRANT_REVOKED: 'This route is off. Allow it before running the work again.',
   GRANT_EXPIRED: 'This route’s approval ended. Allow it again first.',
   MANIFEST_CHANGED: 'The document’s app changed. Allow the route again first.',
@@ -127,8 +132,7 @@ export function createCanvasDocWorkReviewRoutes(
   ): void {
     const feed = activity();
     if (!feed) return;
-    const writer = writerForPosture(decision.posture, decision.user);
-    const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
+    const { writer, who } = writerFor(decision);
     const metadata: DocWorkReviewedMetadata = {
       documentId,
       routeId: change.routeId,
@@ -149,7 +153,7 @@ export function createCanvasDocWorkReviewRoutes(
       actorType: writer.actorType,
       actorLabel: writer.actorLabel,
       ...(writer.actorId ? { actorId: writer.actorId } : {}),
-      category: 'agent',
+      category: 'permissions',
       eventType: DOC_WORK_REVIEWED_EVENT,
       resourceType: 'canvas_document',
       resourceId: documentId,

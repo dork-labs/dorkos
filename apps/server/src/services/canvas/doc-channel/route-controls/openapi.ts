@@ -123,9 +123,9 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
     tags: ['Canvas'],
     summary: 'List a document’s expired and in-doubt work',
     description:
-      'Operator only. Work that expired unadmitted after 24 hours, or was claimed or started ' +
-      'before a restart with its outcome unknown, oldest first. Nothing here replays on its ' +
-      'own. Event payloads are never returned.',
+      'Operator only. Work that expired unadmitted after 24 hours, or reached the agent with ' +
+      'its result unknown, oldest first. Nothing here replays on its own. Event payloads are ' +
+      'never returned.',
     request: { params: z.object({ id }) },
     responses: {
       200: {
@@ -155,7 +155,7 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
       },
       ...failures,
       409: refusal(
-        'Already reviewed, not reviewable, no current grant, newer work waiting, inputs gone, or confirmation missing'
+        'Already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing'
       ),
     },
   });
@@ -178,7 +178,7 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
         content: { 'application/json': { schema: CanvasDocWorkChangeSchema } },
       },
       ...failures,
-      409: refusal('Already reviewed, or not reviewable'),
+      409: refusal('Already reviewed, not reviewable, or still running'),
     },
   });
 }

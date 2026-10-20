@@ -2,13 +2,17 @@
  * A person's review of document work that expired or ended in doubt.
  *
  * Nothing here runs on its own: the pump only marks work `expired` (unadmitted
- * after 24 hours) and boot recovery only marks it `in_doubt` (claimed or started
- * before a restart, outcome unknown). A person then either replays it, which
+ * after 24 hours), and work becomes `in_doubt` when it reached the agent (claimed
+ * or started) and its result was then lost: a restart, a dispatch whose outcome
+ * nobody saw, or the session changing identity mid-turn. A person then either
+ * replays it, which
  * queues the same inputs as a NEW batch and generation under the route's current
  * grant, or clears it. Replaying in-doubt work needs `confirmRepeat`, because
- * the agent may already have acted on it. Either way the reviewed batch leaves
- * the review list once, inside one SQLite transaction, so a second submit is
- * refused rather than replayed twice.
+ * the agent may already have acted on it. In-doubt work whose attempt is still
+ * live (its receipt not yet settled, cancelled or `outcome_unknown`) cannot be
+ * reviewed at all: that attempt may still finish or be quarantined later. Either
+ * way the reviewed batch leaves the review list once, inside one SQLite
+ * transaction, so a second submit is refused rather than replayed twice.
  *
  * @module services/canvas/doc-channel/delivery/replay
  */
@@ -20,6 +24,8 @@ import {
   isNull,
   canvasDocBatches,
   canvasDocDeliveries,
+  sessionMessageAcceptanceReceipts,
+  type Db,
   type DbTransaction,
 } from '@dorkos/db';
 import {
@@ -28,6 +34,7 @@ import {
 } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelNotFoundError } from '../authorization.js';
 import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
+import type { DocChannelAuthorization } from '../authorization.js';
 import type { DocGrantActor } from '../grant-policy.js';
 import type { DocChannelGrants } from '../grants.js';
 import type { DocBatchRow, DocChannelStore } from '../store.js';
@@ -51,6 +58,7 @@ export type DocWorkRefusalCode =
   | 'WORK_NOT_FOUND'
   | 'WORK_NOT_REVIEWABLE'
   | 'WORK_ALREADY_REVIEWED'
+  | 'WORK_STILL_RUNNING'
   | 'CONFIRM_REPEAT_REQUIRED'
   | 'ROUTE_CHANGED'
   | 'INPUTS_GONE'
@@ -94,6 +102,50 @@ export function docWorkReviewState(
   return 'other';
 }
 
+/** Receipt states where the attempt is over and nothing will move the batch again. */
+const SETTLED_RECEIPT_STATES: readonly string[] = ['settled', 'cancelled', 'outcome_unknown'];
+
+/**
+ * Whether in-doubt work's own attempt may still move: its receipt is accepted,
+ * dispatching or turn started. Such work is marked in doubt (by a session
+ * identity change, say) while the attempt itself can still settle, or be
+ * quarantined at the next boot, which would put the batch back in doubt after
+ * a review. A batch with no receipt, or a missing one, has nothing left to move.
+ *
+ * @param db - The database or the caller's transaction.
+ * @param batch - The in-doubt batch.
+ */
+export function docWorkStillRunning(
+  db: Db | DbTransaction,
+  batch: Pick<DocBatchRow, 'admissionReceiptId'>
+): boolean {
+  if (!batch.admissionReceiptId) return false;
+  const receipt = db
+    .select({ state: sessionMessageAcceptanceReceipts.state })
+    .from(sessionMessageAcceptanceReceipts)
+    .where(eq(sessionMessageAcceptanceReceipts.id, batch.admissionReceiptId))
+    .get();
+  return !!receipt && !SETTLED_RECEIPT_STATES.includes(receipt.state);
+}
+
+/**
+ * Whether the route a batch was accepted under is the route its current grant
+ * names: same id is not enough, the declared route itself must be unchanged.
+ *
+ * @param store - The channel store.
+ * @param batch - The reviewed batch.
+ * @param currentRouteHash - The current grant's route hash.
+ * @param tx - The caller's transaction, when there is one.
+ */
+export function docWorkRouteUnchanged(
+  store: DocChannelStore,
+  batch: Pick<DocBatchRow, 'grantId'>,
+  currentRouteHash: string,
+  tx?: DbTransaction
+): boolean {
+  return store.getGrant(batch.grantId, tx)?.routeHash === currentRouteHash;
+}
+
 /** What a person asks of one piece of work. */
 interface DocWorkTarget {
   documentId: string;
@@ -135,16 +187,21 @@ function reviewable(
   const state = docWorkReviewState(batch);
   if (state === 'reviewed') refuse('WORK_ALREADY_REVIEWED');
   if (state === 'other') refuse('WORK_NOT_REVIEWABLE');
+  if (state === 'in_doubt' && docWorkStillRunning(tx, batch)) refuse('WORK_STILL_RUNNING');
   return batch as DocBatchRow & { status: 'expired' | 'in_doubt' };
 }
 
-/** Move the reviewed batch out of review, once: the CAS is the double-submit guard. */
+/**
+ * Move the reviewed batch out of review, once: the CAS is the double-submit guard.
+ *
+ * @returns The error code written, which is also the reason its records carry.
+ */
 function settleReviewed(
   tx: DbTransaction,
   batch: DocBatchRow,
   action: 'replayed' | 'cleared',
   now: string
-): void {
+): string {
   const inDoubt = batch.status === 'in_doubt';
   const errorCode = inDoubt
     ? action === 'replayed'
@@ -169,6 +226,7 @@ function settleReviewed(
     )
     .run().changes;
   if (moved !== 1) refuse('WORK_ALREADY_REVIEWED');
+  return errorCode;
 }
 
 /**
@@ -198,7 +256,14 @@ export function replayDocBatch(
       refuse('CONFIRM_REPEAT_REQUIRED');
     const grant = grants.revalidateGrant(documentId, grantId, actor, tx);
     const route = CanvasChannelRouteSchema.safeParse(grant.normalizedRoute);
-    if (!route.success || grant.routeId !== old.routeId || route.data.turn.mode === 'none')
+    // The same route id is not the same route: one redeclared since the work was
+    // accepted (another target, say) would otherwise take it silently.
+    if (
+      !route.success ||
+      grant.routeId !== old.routeId ||
+      route.data.turn.mode === 'none' ||
+      !docWorkRouteUnchanged(store, old, grant.routeHash, tx)
+    )
       refuse('ROUTE_CHANGED');
     for (const eventId of old.inputEventIds) {
       const event = store.getEvent(documentId, eventId, tx);
@@ -278,24 +343,31 @@ export function replayDocBatch(
 }
 
 /**
- * Set reviewed work aside without running it. Needs no grant: clearing starts
- * nothing. In-doubt deliveries become `cancelled` with reason `in_doubt_cleared`,
- * so they stop holding the document's backlog; the shared receipt keeps its
- * `outcome_unknown`, the record of what nobody knows.
+ * Set reviewed work aside without running it. Needs no grant, since clearing
+ * starts nothing, but current access to the document is checked again inside
+ * the transaction. In-doubt deliveries become `cancelled` with reason
+ * `in_doubt_cleared`, so they stop holding the document's backlog; the shared
+ * receipt keeps its `outcome_unknown`, the record of what nobody knows.
  *
  * @param store - The channel store.
+ * @param authorization - The final in-transaction access gate.
  * @param target - The work and who is clearing it.
  * @returns What was reviewed.
  */
-export function clearDocBatch(store: DocChannelStore, target: DocWorkTarget): DocWorkReviewed {
+export function clearDocBatch(
+  store: DocChannelStore,
+  authorization: Pick<DocChannelAuthorization, 'requireCurrent'>,
+  target: DocWorkTarget
+): DocWorkReviewed {
   const { documentId, batchId, actor, now } = target;
   if (!isServerPrincipal(actor.principal)) throw new DocChannelNotFoundError();
   return store.transaction((tx) => {
+    authorization.requireCurrent(documentId, actor, true, tx);
     const old = reviewable(store, tx, documentId, batchId);
-    settleReviewed(tx, old, 'cleared', now);
+    const reason = settleReviewed(tx, old, 'cleared', now);
     if (old.status === 'in_doubt')
       tx.update(canvasDocDeliveries)
-        .set({ status: 'cancelled', reason: DOC_WORK_CODES.inDoubtCleared, updatedAt: now })
+        .set({ status: 'cancelled', reason, updatedAt: now })
         .where(
           and(
             eq(canvasDocDeliveries.batchId, old.batchId),
@@ -313,7 +385,8 @@ export function clearDocBatch(store: DocChannelStore, target: DocWorkTarget): Do
         routeId: old.routeId,
         status: old.status === 'in_doubt' ? 'cancelled' : 'expired',
         previousStatus: old.status,
-        reason: 'review_cleared',
+        // The same word the batch and its deliveries carry.
+        reason,
       },
       now
     );

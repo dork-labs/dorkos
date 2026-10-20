@@ -184,13 +184,16 @@ export interface DocRouteTurnedOffMetadata {
 
 /**
  * Why a piece of work can or cannot run again right now. Only `ready` lets a
- * person replay it; clearing it is always open.
+ * person replay it; clearing it is open in every state but `still_running`.
  *
  * - `ready` — the route has a current grant and every input is still kept.
  * - `no_grant` — the route has no current grant. Allow it first.
- * - `route_changed` — the document no longer declares the route, or it starts no work.
+ * - `route_changed` — the document no longer declares the route, the route was
+ *   redeclared since the work was accepted, or it starts no work.
  * - `inputs_gone` — retention removed an input this work needs.
  * - `route_busy` — newer work is already waiting on the same route.
+ * - `still_running` — in-doubt work whose attempt may still finish. Neither
+ *   replay nor clear until it stops.
  */
 export const CanvasDocWorkReplaySchema = z.enum([
   'ready',
@@ -198,6 +201,7 @@ export const CanvasDocWorkReplaySchema = z.enum([
   'route_changed',
   'inputs_gone',
   'route_busy',
+  'still_running',
 ]);
 /** Whether one piece of work can run again. */
 export type CanvasDocWorkReplay = z.infer<typeof CanvasDocWorkReplaySchema>;
@@ -206,8 +210,9 @@ export type CanvasDocWorkReplay = z.infer<typeof CanvasDocWorkReplaySchema>;
  * One piece of document work a person should look at.
  *
  * - `expired` — it waited 24 hours and never started. Nothing ran.
- * - `in_doubt` — it was handed to an agent before a restart, and nobody knows
- *   whether it ran. Running it again may repeat what the agent did.
+ * - `in_doubt` — it reached the agent, but its result is unknown: a restart, a
+ *   dispatch nobody saw finish, or the session changing identity mid-turn.
+ *   Running it again may repeat what the agent did.
  */
 export const CanvasDocWorkItemSchema = z
   .object({
@@ -216,7 +221,7 @@ export const CanvasDocWorkItemSchema = z
     status: z.enum(['expired', 'in_doubt']),
     /** How many document events the work carries. */
     eventCount: z.number().int().min(1),
-    /** When it expired or became uncertain. */
+    /** When it last changed: when it expired or became uncertain. */
     since: TimestampSchema,
     replay: CanvasDocWorkReplaySchema,
   })

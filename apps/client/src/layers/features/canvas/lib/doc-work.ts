@@ -15,7 +15,7 @@ export function workStatusLabel(status: CanvasDocWorkItem['status']): string {
 export function workStatusDetail(status: CanvasDocWorkItem['status']): string {
   return status === 'expired'
     ? 'It waited a day and never started.'
-    : 'It started before a restart. Its result is unknown.';
+    : 'It reached the agent, but its result is unknown.';
 }
 
 /** Why the work can't run again right now, or null when it can. */
@@ -29,6 +29,8 @@ export function workReplayBlocked(item: CanvasDocWorkItem): string | null {
       return 'The route changed, so this can’t run again.';
     case 'inputs_gone':
       return 'Some of its events are no longer kept.';
+    case 'still_running':
+      return 'It may still be running. Check back once it stops.';
     case 'route_busy':
       return item.status === 'in_doubt'
         ? 'Newer work is waiting behind this. Clear it to continue.'
@@ -50,6 +52,7 @@ const NOT_A_PERSON = 'Only a signed-in person can change this.';
 const STALE = 'This work changed. The list is up to date now.';
 const REFUSALS: Record<string, string> = {
   WORK_ALREADY_REVIEWED: 'This was already run again or cleared.',
+  WORK_STILL_RUNNING: 'It may still be running. Try again once it stops.',
   WORK_NOT_FOUND: STALE,
   WORK_NOT_REVIEWABLE: STALE,
   CONFIRM_REPEAT_REQUIRED: 'Confirm before running this again.',

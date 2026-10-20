@@ -2,7 +2,7 @@
  * A person's review of one document's unfinished work (spec `doc-channel` task 2.5).
  *
  * Lists work that expired (never admitted within 24 hours) or ended in doubt
- * (claimed or started before a restart, outcome unknown), and lets a person
+ * (it reached the agent, but its result is unknown), and lets a person
  * replay or clear one piece. Nothing here runs by itself and nothing repeats
  * on a timer: the pump and boot recovery only mark work, and only these writes
  * move it. Like the route controls beside it, every write needs the operator
@@ -29,6 +29,8 @@ import {
   DocWorkReviewError,
   clearDocBatch,
   docWorkReviewState,
+  docWorkRouteUnchanged,
+  docWorkStillRunning,
   replayDocBatch,
   type DocWorkReviewed,
 } from '../delivery/replay.js';
@@ -47,7 +49,7 @@ export interface DocWorkReviewDeps {
   db: Db;
   channels: DocChannelStore;
   grants: DocChannelGrants;
-  authorization: Pick<DocChannelAuthorization, 'require'>;
+  authorization: Pick<DocChannelAuthorization, 'require' | 'requireCurrent'>;
   /** The authorized live channel row; refuses a closed or unreachable document. */
   readChannel(documentId: string, actor: DocGrantActor): Promise<DocChannelRow>;
   /** Called after a replay or clear commits, so delivery looks at the route again. */
@@ -115,9 +117,14 @@ export class DocWorkReview {
         .map((row) => row.routeId)
     );
     const replay = (row: DocBatchRow): CanvasDocWorkReplay => {
+      if (row.status === 'in_doubt' && docWorkStillRunning(this.deps.db, row))
+        return 'still_running';
       const route = routes.get(row.routeId);
       if (!route || route.turn.mode === 'none') return 'route_changed';
-      if (!current.has(row.routeId)) return 'no_grant';
+      const grantId = current.get(row.routeId);
+      const grant = grantId ? this.deps.channels.getGrant(grantId) : undefined;
+      if (!grant) return 'no_grant';
+      if (!docWorkRouteUnchanged(this.deps.channels, row, grant.routeHash)) return 'route_changed';
       const kept = row.inputEventIds.every((id) => {
         const event = this.deps.channels.getEvent(channel.documentId, id);
         return !!event && !event.payloadPrunedAt;
@@ -200,7 +207,7 @@ export class DocWorkReview {
     requirePersonDecision(decision);
     CanvasDocWorkClearRequestSchema.parse(body);
     await this.requireOwner(documentId, actor);
-    const reviewed = clearDocBatch(this.deps.channels, {
+    const reviewed = clearDocBatch(this.deps.channels, this.deps.authorization, {
       documentId,
       batchId,
       actor,

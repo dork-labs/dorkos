@@ -266,6 +266,7 @@ describe('document work review over the mounted app', () => {
     expect(emit).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         eventType: DOC_WORK_REVIEWED_EVENT,
+        category: 'permissions',
         actorType: 'user',
         resourceId: documentId,
         summary: expect.stringContaining('ran expired document work again on route tasks'),
@@ -429,5 +430,83 @@ describe('document work review over the mounted app', () => {
       .run();
     const cleared = await act(pending, 'clear').set('x-test-ingress', 'wifi').set('Cookie', wifi);
     expect(cleared.status).toBe(200);
+  });
+
+  it('runs in-doubt work again from Wi-Fi once the person confirms it may repeat', async () => {
+    allowTasks();
+    const uncertain = await work('in_doubt');
+    const signIn = await request(server)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', origin)
+      .set('x-test-ingress', 'wifi')
+      .send(ACCOUNT);
+    expect(signIn.status).toBe(200);
+    const wifi = signIn.headers['set-cookie'] as unknown as string[];
+    const unconfirmed = await act(uncertain, 'replay')
+      .set('x-test-ingress', 'wifi')
+      .set('Cookie', wifi);
+    expect(unconfirmed.status).toBe(409);
+    expect(unconfirmed.body.code).toBe('CONFIRM_REPEAT_REQUIRED');
+    const confirmed = await act(uncertain, 'replay', { confirmRepeat: true })
+      .set('x-test-ingress', 'wifi')
+      .set('Cookie', wifi);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body).toMatchObject({ action: 'replayed', previousStatus: 'in_doubt' });
+    expect(batchRow(uncertain)).toMatchObject({
+      status: 'cancelled',
+      errorCode: 'in_doubt_replayed',
+    });
+  });
+
+  it('refuses a replay while newer work holds the route, and says so truthfully', async () => {
+    allowTasks();
+    const uncertain = await work('in_doubt');
+    // Newer input on the same route waits behind the uncertain work.
+    await request(server)
+      .post(`${endpoint()}/events`)
+      .send({ v: 1, id: randomUUID(), type: 'task.changed', payload: {} });
+    const refused = await act(uncertain, 'replay', { confirmRepeat: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({
+      code: 'ROUTE_BUSY',
+      error: 'Newer work is waiting on this route, so this can’t run again now.',
+    });
+    expect(batchRow(uncertain)!.status).toBe('in_doubt');
+    expect(batchCount()).toBe(2);
+  });
+
+  it('shows work as route_changed once its route was redeclared under the same id', async () => {
+    allowTasks();
+    const expired = await work('expired');
+    http.grants.revokeRoute(documentId, 'tasks', operator());
+    http.grants.configure(
+      documentId,
+      {
+        routes: [
+          {
+            id: 'tasks',
+            on: 'task.*',
+            to: 'agent:owner',
+            turn: { mode: 'immediate', maxBatch: 10 },
+          },
+        ],
+      },
+      operator(),
+      agentId
+    );
+    const input = {
+      documentId,
+      routeId: 'tasks',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    };
+    const pending = http.grants.grant(input, operator());
+    if (pending.kind !== 'approval_required') throw new Error('Expected approval');
+    approvals.grant(pending.ticket.approvalId);
+    expect(http.grants.grant(input, operator(), pending.ticket.token).kind).toBe('granted');
+    expect((await list()).body.items[0].replay).toBe('route_changed');
+    const refused = await act(expired, 'replay');
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ROUTE_CHANGED');
+    expect(batchCount()).toBe(1);
   });
 });
