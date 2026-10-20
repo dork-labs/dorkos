@@ -1,6 +1,8 @@
 import { createFileSaveRecoveryRoutes } from './file-saves/recovery.js';
 import { createCanvasDocRouteControlRoutes } from './canvas-doc-route-controls.js';
+import { createCanvasDocWorkReviewRoutes } from './canvas-doc-work-review.js';
 import type { DocRouteControls } from '../services/canvas/doc-channel/route-controls/controls.js';
+import type { DocWorkReview } from '../services/canvas/doc-channel/route-controls/work-review.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 /** Private document event endpoints, behind the app's host, origin and session gates. */
@@ -62,6 +64,8 @@ export interface DocChannelHttp {
   metrics?: DocChannelMetrics;
   /** A person's route controls (`routes/canvas-doc-route-controls.ts`). */
   routeControls?: DocRouteControls;
+  /** A person's review of expired and in-doubt work (`routes/canvas-doc-work-review.ts`). */
+  workReview?: DocWorkReview;
   actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
 }
 
@@ -232,6 +236,7 @@ export function createCanvasDocEventRoutes(
     createFileSaveRecoveryRoutes(() => source()?.fileWrites)
   );
   router.route('/', createCanvasDocRouteControlRoutes(source, activity));
+  router.route('/', createCanvasDocWorkReviewRoutes(source, activity));
   router.all('*', (c) => c.notFound());
   return router;
 }

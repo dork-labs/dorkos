@@ -217,6 +217,11 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'POST /api/canvas/docs/:id/routes/:routeId/approve',
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
     ],
+  'Document work review: one run under a route a person already allowed at the computer, or clearing it, which only narrows':
+    [
+      'POST /api/canvas/docs/:id/work/:batchId/replay',
+      'POST /api/canvas/docs/:id/work/:batchId/clear',
+    ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/desktop/sign-in',
     'POST /api/onboarding/first-run',

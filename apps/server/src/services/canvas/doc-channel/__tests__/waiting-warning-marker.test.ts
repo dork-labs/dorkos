@@ -8,7 +8,7 @@ import { afterEach, expect, it } from 'vitest';
 import { createDb, eq, canvasDocBatches, runMigrations, type Db } from '@dorkos/db';
 import { DocChannelStore } from '../store.js';
 import { appendDocStatus } from '../status.js';
-import { replayExpiredDocBatch } from '../delivery/replay.js';
+import { replayDocBatch } from '../delivery/replay.js';
 import { batchFixture, FROM, TO, NOW } from './batch-fixtures.js';
 
 const connections = new Set<Db>();
@@ -143,10 +143,16 @@ it('preserves the physical marker across rekey and gives explicit replay a fresh
   });
   f.db
     .update(canvasDocBatches)
-    .set({ status: 'expired' })
+    .set({ status: 'expired', errorCode: 'manual_replay_required' })
     .where(eq(canvasDocBatches.batchId, f.batchId))
     .run();
-  const replayId = replayExpiredDocBatch(f.store, f.grants, f.batchId, f.grantId, f.actor, NOW);
+  const replayId = replayDocBatch(f.store, f.grants, {
+    documentId: f.documentId,
+    batchId: f.batchId,
+    grantId: f.grantId,
+    actor: f.actor,
+    now: NOW,
+  }).nextBatchId!;
   const replay = f.store.getBatch(replayId)!;
   expect(replayId).not.toBe(f.batchId);
   expect(replay.generation).not.toBe(f.generation);

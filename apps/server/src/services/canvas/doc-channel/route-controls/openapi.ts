@@ -1,4 +1,7 @@
-/** API documentation for a person's document route controls (`routes/canvas-doc-route-controls.ts`). */
+/**
+ * API documentation for a person's document route controls
+ * (`routes/canvas-doc-route-controls.ts`) and work review (`routes/canvas-doc-work-review.ts`).
+ */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
@@ -8,6 +11,10 @@ import {
   CanvasDocRouteReviewSchema,
   CanvasDocRouteRevokeRequestSchema,
   CanvasDocRoutesSchema,
+  CanvasDocWorkChangeSchema,
+  CanvasDocWorkClearRequestSchema,
+  CanvasDocWorkReplayRequestSchema,
+  CanvasDocWorkSchema,
 } from '@dorkos/shared/canvas-doc-routes';
 
 const RefusalSchema = z.object({ error: z.string(), code: z.string() });
@@ -20,7 +27,7 @@ const PERSON =
   'Operator only. Writes also refuse an agent identity or approval token in every posture, ' +
   'and with login on accept only a signed-in session cookie, as approval decisions do.';
 
-/** Register the four route-control paths. */
+/** Register the four route-control paths and the three work review paths. */
 export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void {
   const failures = {
     400: refusal('Invalid path, query or body'),
@@ -108,6 +115,70 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
         content: { 'application/json': { schema: CanvasDocRouteChangeSchema } },
       },
       ...failures,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/canvas/docs/{id}/work',
+    tags: ['Canvas'],
+    summary: 'List a document’s expired and in-doubt work',
+    description:
+      'Operator only. Work that expired unadmitted after 24 hours, or was claimed or started ' +
+      'before a restart with its outcome unknown, oldest first. Nothing here replays on its ' +
+      'own. Event payloads are never returned.',
+    request: { params: z.object({ id }) },
+    responses: {
+      200: {
+        description: 'The work waiting on a person',
+        content: { 'application/json': { schema: CanvasDocWorkSchema } },
+      },
+      ...failures,
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/canvas/docs/{id}/work/{batchId}/replay',
+    tags: ['Canvas'],
+    summary: 'Run reviewed work again as new work',
+    description: `${PERSON} Needs current ownership and the route's current grant, both checked again now. Queues the same inputs as a new batch and generation, once. In-doubt work also needs confirmRepeat: true, since it may already have run.`,
+    request: {
+      params: z.object({ id, batchId: id }),
+      body: {
+        required: true,
+        content: { 'application/json': { schema: CanvasDocWorkReplayRequestSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'What was replayed, with the new batch',
+        content: { 'application/json': { schema: CanvasDocWorkChangeSchema } },
+      },
+      ...failures,
+      409: refusal(
+        'Already reviewed, not reviewable, no current grant, newer work waiting, inputs gone, or confirmation missing'
+      ),
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/canvas/docs/{id}/work/{batchId}/clear',
+    tags: ['Canvas'],
+    summary: 'Set reviewed work aside without running it',
+    description: `${PERSON} Needs current ownership; no grant, since it starts nothing. In-doubt work frees its route.`,
+    request: {
+      params: z.object({ id, batchId: id }),
+      body: {
+        required: true,
+        content: { 'application/json': { schema: CanvasDocWorkClearRequestSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'What was cleared',
+        content: { 'application/json': { schema: CanvasDocWorkChangeSchema } },
+      },
+      ...failures,
+      409: refusal('Already reviewed, or not reviewable'),
     },
   });
 }

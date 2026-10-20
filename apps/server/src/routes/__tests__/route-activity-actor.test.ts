@@ -128,6 +128,15 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
         'the same honesty rule.',
     },
   ],
+  'canvas-doc-work-review.ts': [
+    {
+      contains: 'DOC_WORK_REVIEWED_EVENT',
+      reason:
+        'A person replaying or clearing unfinished document work. The same person bars as ' +
+        'the route controls (`decideAsPerson` refuses an agent identity or approval token), ' +
+        'the same permission writer (`writerForPosture`), the same honesty rule.',
+    },
+  ],
   'relay-delivery-receipts.ts': [
     {
       contains: "'relay.message_delivered'",

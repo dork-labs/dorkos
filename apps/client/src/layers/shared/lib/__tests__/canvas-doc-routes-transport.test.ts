@@ -70,3 +70,37 @@ describe('document route controls over HTTP', () => {
     await expect(transport.revokeCanvasDocRoute('doc', 'other')).rejects.toThrow('another route');
   });
 });
+
+describe('document work review over HTTP', () => {
+  const change = {
+    batchId: 'batch 1',
+    routeId: 'helper',
+    action: 'replayed',
+    previousStatus: 'in_doubt',
+    nextBatchId: 'batch-2',
+  };
+
+  it('reads one document’s work and refuses a list for another document', async () => {
+    const transport: Transport = new HttpTransport('/api');
+    vi.mocked(fetch).mockResolvedValueOnce(json({ documentId: 'doc 1', items: [] }));
+    expect((await transport.getCanvasDocWork('doc 1')).items).toEqual([]);
+    expect(String(call()[0])).toContain('/api/canvas/docs/doc%201/work');
+    vi.mocked(fetch).mockResolvedValueOnce(json({ documentId: 'other', items: [] }));
+    await expect(transport.getCanvasDocWork('doc 1')).rejects.toThrow('another document');
+  });
+
+  it('sends only the confirmation when replaying, nothing when clearing, and checks the answer', async () => {
+    const transport: Transport = new HttpTransport('/api');
+    vi.mocked(fetch).mockImplementation(async () => json(change));
+    await transport.replayCanvasDocWork('doc', 'batch 1', { confirmRepeat: true });
+    expect(String(call(0)[0])).toContain('/api/canvas/docs/doc/work/batch%201/replay');
+    expect(call(0)[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ confirmRepeat: true }),
+    });
+    await transport.clearCanvasDocWork('doc', 'batch 1');
+    expect(String(call(1)[0])).toContain('/work/batch%201/clear');
+    expect(call(1)[1]).toMatchObject({ method: 'POST', body: '{}' });
+    await expect(transport.clearCanvasDocWork('doc', 'other')).rejects.toThrow('other work');
+  });
+});

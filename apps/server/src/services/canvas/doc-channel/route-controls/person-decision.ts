@@ -16,7 +16,7 @@ import {
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
 } from '../../../../lib/caller-authority.js';
-import { DocRouteGrantError } from '../grant-policy.js';
+import { DocRouteGrantError, type DocGrantActor } from '../grant-policy.js';
 
 /** The request facts the person bars read. */
 export type DocRoutePersonFacts = Parameters<typeof readCallerAuthority>[0] &
@@ -45,14 +45,16 @@ const minted = new WeakSet<object>();
  * Run both person bars and, when they clear, mint the decision the service needs.
  *
  * @param facts - The request's facts, with the session gate's resolved user.
+ * @param subject - What the person is changing, for the login-on refusal sentence.
  */
 export function decideAsPerson(
-  facts: DocRoutePersonFacts
+  facts: DocRoutePersonFacts,
+  subject = 'which document routes are on'
 ): { decision: DocRoutePersonDecision } | { refusal: DocRoutePersonRefusal } {
   const authority = resolveDecisionAuthority(readCallerAuthority(facts));
   if (!authority.allowed)
     return { refusal: { status: authority.status, code: authority.code, error: authority.error } };
-  const notAPerson = requireOperatorCookieUnderLogin(facts, 'which document routes are on');
+  const notAPerson = requireOperatorCookieUnderLogin(facts, subject);
   if (notAPerson) return { refusal: notAPerson };
   const decision: DocRoutePersonDecision = Object.freeze({
     posture: authority.posture,
@@ -70,5 +72,16 @@ export function decideAsPerson(
  */
 export function requirePersonDecision(value: unknown): asserts value is DocRoutePersonDecision {
   if (typeof value !== 'object' || value === null || !minted.has(value))
+    throw new DocRouteGrantError('PERSON_REQUIRED', 403);
+}
+
+/**
+ * Refuse any caller but the operator principal: an agent, however it
+ * authenticated, never reaches the controls.
+ *
+ * @param actor - The verified caller.
+ */
+export function requireOperatorActor(actor: DocGrantActor): void {
+  if (actor.principal.claims.kind !== 'operator')
     throw new DocRouteGrantError('PERSON_REQUIRED', 403);
 }
