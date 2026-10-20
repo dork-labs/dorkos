@@ -19,4 +19,4 @@ covers:
 
 ### Removed
 
-- Heads up, Today and the Agents list are gone from the sidebar. Earlier chats are in ⌘K and on each agent's profile, threads are on the Threads page, approvals are in the Inbox, and scheduled runs are in Tasks and Activity
+- Heads up, Today and the Agents list are gone from the sidebar. Earlier chats are in ⌘K and on each agent's profile, threads are on the Threads page, approvals are in the Inbox, and scheduled runs are in Schedules and Activity
