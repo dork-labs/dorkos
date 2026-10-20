@@ -13,7 +13,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ChatMessage } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
 import { SessionTranscript } from '../ui/SessionTranscript';
-import { useWorkPanelFocusStore, WORK_PANEL_ID } from '../model/work-panel-focus';
+import { WORK_PANEL_ID } from '@/layers/shared/lib';
+import { useWorkPanelFocusStore } from '../model/work-panel-focus';
 import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
@@ -152,6 +153,42 @@ describe('SessionTranscript folding a DM reply’s work', () => {
       turn: 'live',
     });
     expect(useAppStore.getState().activeRightPanelTab).toBe(WORK_PANEL_ID);
+  });
+
+  it('draws the live line only under the segment still being written after a steer', () => {
+    const steered: ChatMessage[] = [
+      MESSAGES[0]!,
+      { ...MESSAGES[1]!, id: 'seg-1', timestamp: '', _streaming: true },
+      {
+        id: 'steer',
+        role: 'user',
+        content: 'Check the footer too',
+        parts: [{ type: 'text', text: 'Check the footer too' }],
+        timestamp: '',
+        _streaming: true,
+      },
+      {
+        id: '__in_progress_turn__',
+        role: 'assistant',
+        content: '',
+        parts: [tool('t9', 'Read')],
+        timestamp: '',
+        _streaming: true,
+      },
+    ];
+    draw(steered);
+
+    expect(screen.getAllByTestId('dm-working-line')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Watch' })).toHaveLength(1);
+    // The closed segment folds its work like any finished reply.
+    expect(screen.getByTestId('dm-worked-line')).toHaveTextContent('Worked · 3 steps');
+  });
+
+  it('describes each Show work by the reply it opens', () => {
+    draw(MESSAGES);
+    const button = screen.getByRole('button', { name: 'Show work' });
+    const described = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(described).toHaveTextContent('Three causes.');
   });
 
   it('keeps an approval inline as a card with its buttons', () => {

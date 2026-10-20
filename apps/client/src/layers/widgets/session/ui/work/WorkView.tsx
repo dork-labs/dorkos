@@ -3,7 +3,15 @@
  *
  * @module widgets/session/ui/work/WorkView
  */
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { ArrowUpRight, Terminal } from 'lucide-react';
 import type { ChatMessage } from '@/layers/shared/model';
 import { activityVerb, useLatest } from '@/layers/shared/lib';
@@ -13,6 +21,12 @@ import { statusModelLabel, useSessionDiagnostics } from '@/layers/features/statu
 import { AssistantMessageContent, MessageProvider } from '@/layers/features/chat';
 import { buildWorkTurns, type WorkTurn } from '../../lib/work-turns';
 import { useWorkPanelFocusStore } from '../../model/work-panel-focus';
+
+/** How near the end still counts as at the end, in pixels. */
+const FOLLOW_SLACK_PX = 48;
+
+/** The heading of the turn running now: it may answer a task or another chat. */
+const LIVE_HEADING = 'Now · working';
 
 /** Everything the Work tab draws for one session. */
 export interface WorkViewProps {
@@ -57,15 +71,33 @@ export function WorkView({
   const consume = useWorkPanelFocusStore((s) => s.consume);
   const hasLive = turns.some((turn) => turn.live);
   const latestTurns = useLatest(turns);
-  // Scroll once per request and per new turn, never per streamed word: the
-  // turns are read from the slot, and only their shape is a dependency.
-  const shape = `${turns.length}|${hasLive}`;
-
-  useEffect(() => {
+  // Whether the view follows the newest step: true until the person scrolls
+  // up, and again once they scroll back to the end.
+  const following = useRef(true);
+  const onScroll = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    if (!request || request.sessionId !== sessionId) {
-      scroller.scrollTop = scroller.scrollHeight;
+    following.current =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= FOLLOW_SLACK_PX;
+  }, []);
+
+  // Each step that lands keeps a following reader at the end, and leaves one
+  // who has scrolled up exactly where they are, including when the running
+  // turn's stand-in id is swapped for the saved one.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller && following.current) scroller.scrollTop = scroller.scrollHeight;
+  });
+
+  // A Show work or Watch press: scroll to its turn and put focus there, so a
+  // keyboard or screen-reader user lands on what they asked for. Acted on once
+  // per request; a request for another session is let go.
+  const shape = `${turns.length}|${hasLive}`;
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !request) return;
+    if (request.sessionId !== sessionId) {
+      consume();
       return;
     }
     const current = latestTurns.read();
@@ -76,14 +108,21 @@ export function WorkView({
     const node = Array.from(scroller.querySelectorAll<HTMLElement>('[data-work-turn]')).find(
       (candidate) => candidate.dataset.workTurn === target
     );
-    if (node) node.scrollIntoView?.({ block: 'start' });
-    else scroller.scrollTop = scroller.scrollHeight;
+    // Nothing read yet: wait for the turns rather than spend the request.
+    if (!node && current.length === 0 && request.turn !== 'live') return;
+    if (node) {
+      node.scrollIntoView?.({ block: 'start' });
+      node.focus({ preventScroll: true });
+    }
+    following.current = request.turn === 'live' || !node;
+    if (following.current) scroller.scrollTop = scroller.scrollHeight;
     consume();
   }, [request, sessionId, shape, latestTurns, consume]);
 
   return (
     <div
       ref={scrollerRef}
+      onScroll={onScroll}
       data-testid="work-panel"
       className="flex h-full min-w-0 flex-col gap-3 overflow-y-auto p-3"
     >
@@ -165,37 +204,57 @@ function SessionLine({
 function WorkTurnCard({ turn, sessionId }: { turn: WorkTurn; sessionId: string }) {
   const time = turn.startedAt ? formatTime(turn.startedAt) : '';
   const heading = turn.live
-    ? 'Now · replying to you'
+    ? LIVE_HEADING
     : [time, turn.prompt ? `“${turn.prompt}”` : ''].filter(Boolean).join(' · ') || 'A turn';
   return (
     <section
       data-work-turn={turn.key}
       data-live={turn.live || undefined}
       aria-label={heading}
-      className="rounded-lg border px-3 py-2"
+      tabIndex={-1}
+      className="focus-ring rounded-lg border px-3 py-2"
     >
       <h3 className="text-foreground line-clamp-2 text-xs font-medium">{heading}</h3>
       {turn.replies.map((reply) => (
-        <MessageProvider
-          key={reply.id}
-          value={{
-            sessionId,
-            isStreaming: reply._streaming === true,
-            isLatestWidgetMessage: true,
-            isFinalMessage: false,
-            activeToolCallId: null,
-            onToolRef: undefined,
-            focusedOptionIndex: -1,
-            onToolDecided: undefined,
-            inputZoneToolCallId: null,
-          }}
-        >
-          <AssistantMessageContent message={reply} show="work" />
-        </MessageProvider>
+        <WorkReply key={reply.id} reply={reply} sessionId={sessionId} />
       ))}
     </section>
   );
 }
+
+/**
+ * One reply's steps. Memoized on the reply itself: a finished reply keeps its
+ * object while the running one streams, so past turns are not drawn again on
+ * every update.
+ */
+const WorkReply = memo(function WorkReply({
+  reply,
+  sessionId,
+}: {
+  reply: ChatMessage;
+  sessionId: string;
+}) {
+  const isStreaming = reply._streaming === true;
+  const context = useMemo(
+    () => ({
+      sessionId,
+      isStreaming,
+      isLatestWidgetMessage: true,
+      isFinalMessage: false,
+      activeToolCallId: null,
+      onToolRef: undefined,
+      focusedOptionIndex: -1,
+      onToolDecided: undefined,
+      inputZoneToolCallId: null,
+    }),
+    [sessionId, isStreaming]
+  );
+  return (
+    <MessageProvider value={context}>
+      <AssistantMessageContent message={reply} show="work" />
+    </MessageProvider>
+  );
+});
 
 /** A turn that has started and not done anything yet: what the agent is doing. */
 function StartingTurn({ sessionId }: { sessionId: string }) {
@@ -204,10 +263,11 @@ function StartingTurn({ sessionId }: { sessionId: string }) {
     <section
       data-work-turn="live"
       data-live
-      aria-label="Now · replying to you"
-      className="rounded-lg border px-3 py-2"
+      aria-label={LIVE_HEADING}
+      tabIndex={-1}
+      className="focus-ring rounded-lg border px-3 py-2"
     >
-      <h3 className="text-foreground text-xs font-medium">Now · replying to you</h3>
+      <h3 className="text-foreground text-xs font-medium">{LIVE_HEADING}</h3>
       <p className="text-muted-foreground mt-1 text-xs">{activityVerb('streaming', activity)}</p>
     </section>
   );

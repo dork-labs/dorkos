@@ -8,13 +8,8 @@
  * @module widgets/session/model/work-panel-focus
  */
 import { create } from 'zustand';
+import { WORK_PANEL_ID } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
-
-/**
- * The Work tab's contribution id, shared by its registration in
- * `init-extensions.ts` and by {@link openWorkPanel}, which selects it.
- */
-export const WORK_PANEL_ID = 'work';
 
 /** A request to show one turn in the Work tab. */
 export interface WorkPanelFocusRequest {

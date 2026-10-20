@@ -232,6 +232,9 @@ function SessionMessageRow({
   const at = showTime ? writtenAt : undefined;
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
   const foldsReply = foldWork && message.role === 'assistant';
+  // Only the turn's newest segment is still being written. A steer closes the
+  // segment before it, which keeps its in-progress mark until history reloads.
+  const liveTail = message._streaming === true && isFinalMessage;
 
   return (
     <MessageProvider
@@ -288,13 +291,14 @@ function SessionMessageRow({
               ? renderReplyBody(message)
               : renderSessionBody(message, { rowId: message.id, isStreaming })}
           </Message.Content>
-          {foldsReply && message._streaming && <WorkingLine sessionId={sessionId} />}
-          {foldsReply && !message._streaming && hasWork(message.parts ?? []) && (
+          {foldsReply && liveTail && <WorkingLine sessionId={sessionId} />}
+          {foldsReply && !liveTail && hasWork(message.parts ?? []) && (
             <WorkedLine
               sessionId={sessionId}
               messageId={message.id}
               steps={countWorkSteps(message.parts ?? [])}
               duration={turnDuration(turnStartedAt, message.timestamp)}
+              describedBy={contentId}
             />
           )}
           {showRunWith && (

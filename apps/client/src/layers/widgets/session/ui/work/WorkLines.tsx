@@ -24,6 +24,11 @@ export interface WorkedLineProps {
   steps: number;
   /** How long its turn took, already worded, or `null` when unknown. */
   duration: string | null;
+  /**
+   * The id of the reply's own content, which describes Show work, so each of
+   * a transcript's many Show work buttons says which reply it opens.
+   */
+  describedBy?: string;
 }
 
 /**
@@ -32,14 +37,25 @@ export interface WorkedLineProps {
  *
  * @param props - See {@link WorkedLineProps}.
  */
-export function WorkedLine({ sessionId, messageId, steps, duration }: WorkedLineProps) {
+export function WorkedLine({
+  sessionId,
+  messageId,
+  steps,
+  duration,
+  describedBy,
+}: WorkedLineProps) {
   const words = ['Worked'];
   if (steps > 0) words.push(`${steps} ${steps === 1 ? 'step' : 'steps'}`);
   if (duration) words.push(duration);
   return (
     <div className={LINE} data-testid="dm-worked-line">
       <span>{words.join(' · ')}</span>
-      <button type="button" className={ACTION} onClick={() => openWorkPanel(sessionId, messageId)}>
+      <button
+        type="button"
+        className={ACTION}
+        aria-describedby={describedBy}
+        onClick={() => openWorkPanel(sessionId, messageId)}
+      >
         <Eye className="size-3.5" aria-hidden />
         Show work
       </button>

@@ -25,9 +25,5 @@ export { useSessionTarget } from './model/session-target';
  * this surface differs from a channel's.
  */
 export { SESSION_CAPABILITIES } from './model/session-capabilities';
-/**
- * The Work tab (DOR-3075): the turn-by-turn view of the session behind a DM,
- * and its id, which `init-extensions.ts` registers it under.
- */
+/** The Work tab (DOR-3075): the turn-by-turn view of the session behind a DM. */
 export { WorkPanel } from './ui/work/WorkPanel';
-export { WORK_PANEL_ID, openWorkPanel } from './model/work-panel-focus';

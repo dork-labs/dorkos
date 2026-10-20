@@ -91,7 +91,7 @@ const MESSAGES: ChatMessage[] = [
 function draw(props: Partial<React.ComponentProps<typeof WorkView>> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenSession = vi.fn();
-  render(
+  const tree = (over: Partial<React.ComponentProps<typeof WorkView>>) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={createMockTransport()}>
         <TooltipProvider>
@@ -101,13 +101,33 @@ function draw(props: Partial<React.ComponentProps<typeof WorkView>> = {}) {
             agentName="Scout"
             showSessions={false}
             onOpenSession={onOpenSession}
-            {...props}
+            {...over}
           />
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { onOpenSession };
+  const view = render(tree(props));
+  return {
+    onOpenSession,
+    redraw: (over: Partial<React.ComponentProps<typeof WorkView>>) =>
+      view.rerender(tree({ ...props, ...over })),
+  };
+}
+
+/** Give the scroller a size jsdom cannot measure, and a scroll position it keeps. */
+function sizeScroller(height: { value: number }) {
+  const scroller = screen.getByTestId('work-panel');
+  let top = 0;
+  Object.defineProperty(scroller, 'scrollHeight', { get: () => height.value });
+  Object.defineProperty(scroller, 'clientHeight', { get: () => 200 });
+  Object.defineProperty(scroller, 'scrollTop', {
+    get: () => top,
+    set: (value: number) => {
+      top = value;
+    },
+  });
+  return scroller;
 }
 
 describe('WorkView', () => {
@@ -137,7 +157,50 @@ describe('WorkView', () => {
     expect(within(turns[1] as HTMLElement).queryByText('Three causes.')).toBeNull();
   });
 
-  it('scrolls to the turn Show work asked for, once', () => {
+  it('follows the running turn while the reader is at the end, and stays put once they scroll up', () => {
+    const height = { value: 1000 };
+    const live = (n: number): ChatMessage[] => [
+      ...MESSAGES.slice(0, 3),
+      {
+        ...MESSAGES[3]!,
+        id: '__in_progress_turn__',
+        _streaming: true,
+        parts: Array.from({ length: n }, (_, i) => tool(`s${i}`, 'Read')),
+      },
+    ];
+    const { redraw } = draw({ messages: live(1), working: true });
+    const scroller = sizeScroller(height);
+
+    redraw({ messages: live(2) });
+    expect(scroller.scrollTop).toBe(1000);
+
+    // The reader scrolls up: the next step does not pull them back down,
+    // nor does the running turn's id being swapped for the saved one.
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+    height.value = 1400;
+    redraw({ messages: live(3) });
+    expect(scroller.scrollTop).toBe(100);
+    redraw({
+      messages: [...MESSAGES.slice(0, 3), { ...live(3)[3]!, id: 'saved', _streaming: false }],
+    });
+    expect(scroller.scrollTop).toBe(100);
+
+    // Back at the end, it follows again.
+    scroller.scrollTop = 1200;
+    fireEvent.scroll(scroller);
+    height.value = 1600;
+    redraw({ messages: live(4) });
+    expect(scroller.scrollTop).toBe(1600);
+  });
+
+  it('lets go of a request for another session', () => {
+    useWorkPanelFocusStore.setState({ request: { sessionId: 'someone-else', turn: 'a1' } });
+    draw();
+    expect(useWorkPanelFocusStore.getState().request).toBeNull();
+  });
+
+  it('scrolls to the turn Show work asked for, once, and puts focus on it', () => {
     const scrolled: string[] = [];
     Element.prototype.scrollIntoView = function (this: Element) {
       scrolled.push(this.getAttribute('data-work-turn') ?? '');
@@ -145,6 +208,7 @@ describe('WorkView', () => {
     useWorkPanelFocusStore.setState({ request: { sessionId: 'scout-direct', turn: 'a1' } });
     draw();
     expect(scrolled).toEqual(['a1']);
+    expect(document.querySelector('[data-work-turn="a1"]')).toHaveFocus();
     expect(useWorkPanelFocusStore.getState().request).toBeNull();
   });
 
@@ -155,13 +219,11 @@ describe('WorkView', () => {
       { ...MESSAGES[3]!, id: '__in_progress_turn__', _streaming: true },
     ];
     draw({ messages: live, working: true });
-    expect(screen.getByRole('region', { name: 'Now · replying to you' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Now · working' })).toBeInTheDocument();
 
     cleanup();
     draw({ messages: MESSAGES.slice(0, 5), working: true });
-    expect(screen.getByRole('region', { name: 'Now · replying to you' })).toHaveTextContent(
-      'Working…'
-    );
+    expect(screen.getByRole('region', { name: 'Now · working' })).toHaveTextContent('Working…');
   });
 
   it('says so when there is nothing yet', () => {

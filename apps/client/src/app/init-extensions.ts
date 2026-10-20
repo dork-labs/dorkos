@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
+import { WORK_PANEL_ID } from '@/layers/shared/lib';
 
 /** The extension registry's `register` action (idempotent per slot + id). */
 type RegisterFn = ReturnType<typeof useExtensionRegistry.getState>['register'];
@@ -25,7 +26,6 @@ import { PROFILE_PANEL_ID, ProfileTabIcon } from '@/layers/features/profile';
 import { ROOM_PANEL_ID } from '@/layers/features/room-management';
 import { routeShowsRoom } from '@/layers/entities/room';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
-import { WORK_PANEL_ID } from '@/layers/widgets/session';
 
 /**
  * Register all built-in features into the extension registry.
