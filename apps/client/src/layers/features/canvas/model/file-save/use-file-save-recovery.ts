@@ -6,11 +6,17 @@ import type { FileSaveBinding } from './receipt-operation';
 type Observation = 'pending' | 'ready' | 'unavailable';
 type State = {
   identity: object;
-  phase: 'pending' | 'ready' | 'unavailable' | 'local_uncertain';
+  phase: 'pending' | 'ready' | 'unavailable' | 'refused' | 'local_uncertain';
   discovery?: FileSaveDiscovery;
   historical?: FileSaveRecoveryEntry;
   busy: boolean;
 };
+/** The phase a call that observed nothing leaves behind. */
+function failed(result: { status: string }): State['phase'] {
+  return result.status === 'refused' || result.status === 'local_uncertain'
+    ? result.status
+    : 'unavailable';
+}
 /** Observe explicit receipt recovery through the existing committed save owner. */
 export function useFileSaveRecovery(
   actions: FileSaveRecoveryActions,
@@ -62,7 +68,8 @@ export function useFileSaveRecovery(
         if (disposed) return;
         if (result.status === 'observed')
           publish(identity, { phase: 'ready', discovery: result.value, busy: false });
-        else if (result.status !== 'idle') publish(identity, { phase: 'unavailable', busy: false });
+        else if (result.status !== 'idle')
+          publish(identity, { phase: failed(result), busy: false });
         else settleIdle(identity);
       });
     }
@@ -87,7 +94,7 @@ export function useFileSaveRecovery(
     const result = await action.discover(true);
     if (result.status === 'observed')
       publish(identity, { phase: 'ready', discovery: result.value, busy: false });
-    else if (result.status !== 'idle') publish(identity, { phase: 'unavailable', busy: false });
+    else if (result.status !== 'idle') publish(identity, { phase: failed(result), busy: false });
     else settleIdle(identity);
   }, [publish, settleIdle]);
   const recover = useCallback(
@@ -111,11 +118,7 @@ export function useFileSaveRecovery(
           historical: result.value.result.entry,
           busy: false,
         });
-      else if (result.status !== 'idle')
-        publish(identity, {
-          phase: result.status === 'local_uncertain' ? 'local_uncertain' : 'unavailable',
-          busy: false,
-        });
+      else if (result.status !== 'idle') publish(identity, { phase: failed(result), busy: false });
       else settleIdle(identity);
     },
     [publish, settleIdle]
@@ -144,12 +147,7 @@ export function useFileSaveRecovery(
         previous.identity === identity
           ? {
               ...previous,
-              phase:
-                result.status === 'observed'
-                  ? 'ready'
-                  : result.status === 'local_uncertain'
-                    ? 'local_uncertain'
-                    : 'unavailable',
+              phase: result.status === 'observed' ? 'ready' : failed(result),
               busy: false,
             }
           : previous

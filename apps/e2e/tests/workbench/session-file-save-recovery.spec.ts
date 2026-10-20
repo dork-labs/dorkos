@@ -77,9 +77,8 @@ test('refresh discovers the original committed UUID without restoring a disposed
       page.getByRole('button', { name: 'Retry original save', exact: true })
     ).toBeEnabled();
     const panel = await remountRecovery(page);
-    await expect(
-      panel.getByText(`${eventId}: Historical save recorded`, { exact: true })
-    ).toBeVisible();
+    // Settled history needs nothing from the person, so the healthy file shows no notice.
+    await expect(panel).toHaveCount(0);
     const found = await discovery(page, f.documentId);
     expect(found.incarnation).toEqual(birth);
     expect(found.entries).toHaveLength(1);
@@ -249,8 +248,14 @@ test('a durable prepared phase without replacement proof stays manual and never 
     expect(found.entries).toEqual([
       expect.objectContaining({ eventId, state: 'review', reason: 'prepared_without_replacement' }),
     ]);
-    await panel.getByRole('button', { name: 'Check previous saves', exact: true }).click();
-    await expect(panel.getByText('Checking previous saves…', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Check previous saves', exact: true }).click();
+    await expect(page.getByText('Checking previous saves…', { exact: true })).toHaveCount(0);
+    await expect(
+      panel.getByText('This save needs manual review. These controls won’t write the file.', {
+        exact: true,
+      })
+    ).toBeVisible();
     expect(wire.recoveries).toHaveLength(0);
     expect(wire.puts).toHaveLength(1);
     expect(intent(db, f.documentId, eventId)).toEqual(before);
@@ -317,7 +322,8 @@ test('an old hidden view’s held current-file read cannot replace the reopened 
       }
     };
     await page.route('**/api/files/content?*', handler);
-    await panel.getByRole('button', { name: 'Load current file', exact: true }).click();
+    await page.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Load current file', exact: true }).click();
     await started;
     await expect(page.getByRole('button', { name: 'Edit file', exact: true })).toBeDisabled();
     // X hides the view; it is deliberately NOT the Remove document/DELETE action.
@@ -332,7 +338,9 @@ test('an old hidden view’s held current-file read cannot replace the reopened 
     await page.getByRole('menuitem', { name: 'Ordinary save receipt', exact: true }).click();
     const reopened = page.getByRole('region', { name: 'Previous file saves' });
     await expect(page.getByRole('button', { name: 'Edit file', exact: true })).toBeEnabled();
-    await reopened.getByRole('button', { name: 'Load current file', exact: true }).click();
+    await expect(reopened).toHaveCount(0);
+    await page.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Load current file', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Edit file', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Edit file', exact: true }).click();
     await expect(page.locator('.cm-content[contenteditable="true"]')).toHaveText(fresh);
@@ -355,9 +363,10 @@ test('an old hidden view’s held current-file read cannot replace the reopened 
     if (failure) throw failure;
     await page.unroute('**/api/files/content?*', handler);
     handler = undefined;
-    await expect(
-      reopened.getByRole('button', { name: 'Load current file', exact: true })
-    ).toBeDisabled();
+    // Mid-edit the ··· menu, and its Load current file, is not offered at all.
+    await expect(page.getByRole('button', { name: 'More file actions', exact: true })).toHaveCount(
+      0
+    );
     await expect(editor).toHaveText('A newer local draft retains its own selection.');
     expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(selected);
   } finally {
@@ -367,7 +376,7 @@ test('an old hidden view’s held current-file read cannot replace the reopened 
   }
 });
 
-test('hiding and reopening an uncertain view shows original history but does not clear the retained local removal barrier', async ({
+test('hiding and reopening an uncertain view keeps original history but does not clear the retained local removal barrier', async ({
   page,
   request,
 }) => {
@@ -390,9 +399,11 @@ test('hiding and reopening an uncertain view shows original history but does not
     await expect(page.getByRole('region', { name: 'Previous file saves' })).toHaveCount(0);
     await views.header.getByRole('button', { name: 'Add view', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Ordinary save receipt', exact: true }).click();
-    await expect(
-      page.getByText(`${input.documentSave!.eventId}: Historical save recorded`, { exact: true })
-    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit file', exact: true })).toHaveAttribute(
+      'data-document-save-observation',
+      'ready'
+    );
+    await expect(page.getByText('Checking previous saves…', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Add view', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Remove document', exact: true }).click();
     // The async refusal must finish, rather than only asserting the already-present tab.

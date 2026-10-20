@@ -19,6 +19,17 @@ export interface FileSaveRecoveryRecord<Owner> {
   recoveryBusy?: boolean;
   recoveryWork?: object;
 }
+/**
+ * A 404 from DISCOVERY is the server saying this document's file cannot be saved
+ * from here at all. A 404 from recovery or a file read is not: the server also
+ * answers 404 for a stale incarnation or a source that changed underneath, and a
+ * fresh discovery (Check again, or the next binding) is what settles those.
+ */
+function refusedByServer(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404
+  );
+}
 /** Build serialized proof-only actions for one committed file-save owner. */
 export function createFileSaveRecoveryActions<Owner extends object>({
   owner,
@@ -66,7 +77,8 @@ export function createFileSaveRecoveryActions<Owner extends object>({
   const enqueue = <T>(
     call: () => Promise<T>,
     expectedObservation?: FileSaveBinding,
-    readOnlyInspection = false
+    readOnlyInspection = false,
+    refusable = false
   ): Promise<RecoveryCall<T>> => {
     if (!port || !current()) return Promise.resolve({ status: 'idle' });
     const record = getOwner()!;
@@ -91,10 +103,11 @@ export function createFileSaveRecoveryActions<Owner extends object>({
           if (readOnlyInspection) record.recoveryGate = 'observed_clear';
           observed = true;
           return { status: 'observed', value };
-        } catch {
+        } catch (error) {
           if (!requestCurrent()) return { status: 'idle' };
           record.recoveryGate = 'unavailable';
-          return { status: 'unavailable' };
+          // Saves stay blocked either way; a 404 only changes what the person is told.
+          return { status: refusable && refusedByServer(error) ? 'refused' : 'unavailable' };
         } finally {
           // An old observed cache cannot satisfy a recheck after work lost currentness.
           if (!observed && record.discovery === priorDiscovery) record.discovery = undefined;
@@ -121,12 +134,17 @@ export function createFileSaveRecoveryActions<Owner extends object>({
         (!fresh && record.recoveryGate === 'observed_clear'))
     )
       return record.discovery;
-    const request = enqueue(async () => {
-      const value = observeDiscovery(await port.discover(documentId!));
-      if (getOwner() === record && record.recoveryBinding === observation && current())
-        record.recoveryGate = value.admission === 'blocked' ? 'blocked' : 'observed_clear';
-      return value;
-    }, observation);
+    const request = enqueue(
+      async () => {
+        const value = observeDiscovery(await port.discover(documentId!));
+        if (getOwner() === record && record.recoveryBinding === observation && current())
+          record.recoveryGate = value.admission === 'blocked' ? 'blocked' : 'observed_clear';
+        return value;
+      },
+      observation,
+      false,
+      true
+    );
     record.discoveryBinding = observation;
     record.discovery = request;
     record.pendingDiscovery = request;

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, Pencil, RotateCw } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types';
 import { sameCanvasDocIncarnation } from '@dorkos/shared/canvas-doc-frame-wire';
@@ -11,7 +11,8 @@ import { useCanvasDocumentClosePreparation } from '../../model/file-save/use-doc
 import type { FileSaveBinding } from '../../model/file-save/receipt-operation';
 import { fileContentQueryKey } from '../../model/file-save/content-query';
 import { useFileSaveRecovery } from '../../model/file-save/use-file-save-recovery';
-import { FileSaveRecoveryPanel } from './FileSaveRecoveryPanel';
+import { FileSaveMoreMenu, FileSaveTopBar } from './FileSaveRecoveryPanel';
+import { EditToggle } from './EditToggle';
 // Lazy: the CodeMirror chunk (editor core + on-demand language grammar) and the
 // Blintz chunk load only when a file document first renders — never for the main
 // bundle. Named exports mapped to default for React.lazy.
@@ -320,55 +321,55 @@ export function FileEditor({
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="sticky top-0 z-10 flex h-0 items-start justify-end gap-2 pr-2">
-        {editable && statusLabel && (
-          <span
-            className={cn(
-              'mt-3 text-xs',
-              // A failed save must not read as ambient status — it is the only
-              // signal that the checkmark refused to leave edit mode.
-              fileSave.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
-            )}
-            aria-live="polite"
-          >
-            {statusLabel}
-          </span>
-        )}
-        {!isEditing && fileSaveObservation === 'pending' && (
-          <span role="status">Checking document…</span>
-        )}
-        {!isEditing && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-md"
-            className="text-muted-foreground hover:text-foreground mt-2"
-            onClick={handleRefresh}
-            aria-label="Refresh from disk"
-          >
-            <RotateCw className="size-4" />
-          </Button>
-        )}
-        {editable && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-md"
-            className="text-muted-foreground hover:text-foreground mt-2"
-            onClick={isEditing ? () => void exitEdit() : enterEdit}
-            aria-label={isEditing ? 'Finish editing' : 'Edit file'}
-            disabled={!isEditing && (fileSaveObservation === 'pending' || recovery.editBlocked)}
-            data-document-save-observation={fileSaveObservation}
-          >
-            {isEditing ? <Check className="size-4" /> : <Pencil className="size-4" />}
-          </Button>
-        )}
-      </div>
-
-      <FileSaveRecoveryPanel
+      <FileSaveTopBar
         recovery={recovery}
         editing={isEditing}
         loadCurrent={() => void loadRecoveredCurrent()}
+        toolbar={
+          <>
+            {editable && statusLabel && (
+              <span
+                className={cn(
+                  'mr-1 text-xs',
+                  // A failed save must not read as ambient status — it is the only
+                  // signal that the checkmark refused to leave edit mode.
+                  fileSave.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+                )}
+                aria-live="polite"
+              >
+                {statusLabel}
+              </span>
+            )}
+            {!isEditing && fileSaveObservation === 'pending' && (
+              <span role="status">Checking document…</span>
+            )}
+            {!isEditing && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-md"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={handleRefresh}
+                aria-label="Refresh from disk"
+              >
+                <RotateCw className="size-4" />
+              </Button>
+            )}
+            {editable && (
+              <EditToggle
+                editing={isEditing}
+                off={!isEditing && (fileSaveObservation === 'pending' || recovery.editBlocked)}
+                observation={fileSaveObservation}
+                onClick={isEditing ? () => void exitEdit() : enterEdit}
+              />
+            )}
+            <FileSaveMoreMenu
+              recovery={recovery}
+              editing={isEditing}
+              loadCurrent={() => void loadRecoveredCurrent()}
+            />
+          </>
+        }
       />
 
       {fileSave.status === 'uncertain' && (
