@@ -25,6 +25,10 @@ import { env } from '../../env.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/index.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { describeHookProjectionCapability } from '../../services/harness/hook-approval.js';
+import {
+  describeFolderAllowCapability,
+  setFolderAllowApprovalGateway,
+} from '../../services/runtimes/claude-code/folder-settings/folder-allow-approval.js';
 import { describeGlobalActivationCapability } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
 import {
   describeTemplateCreationCapability,
@@ -176,6 +180,7 @@ export async function wireConnectorEventsAndApprovals(
       // would show the raw id.
       return (
         describeHookProjectionCapability(capabilityId) ??
+        describeFolderAllowCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
         describeTemplateCreationCapability(capabilityId) ??
         describeWorkspaceCreationCapability(capabilityId)
@@ -240,6 +245,9 @@ export async function wireConnectorEventsAndApprovals(
   // nothing but hand off, because `eventFanOut` runs listeners synchronously on
   // the broadcast write path (spec `approval-verdict-delivery`).
   startApprovalVerdictDelivery(approvalService);
+  // The card that lets an agent's own folder allow list apply (DOR-3039). The
+  // runtime starts before this step, so the launch is handed the service here.
+  setFolderAllowApprovalGateway(approvalService);
   // Hand back the delivery claims that only a hold in a DEAD process could still
   // hold. A hold lives in process memory and holds a turn open, so none survives
   // a restart — and without this sweep, a restart while somebody was deciding

@@ -265,6 +265,9 @@ describe('UserConfigSchema', () => {
         trustedStoresAppliedAt: null,
         sharedAppsAppliedAt: null,
         sharedAtUpgrade: [],
+        approvedFolderAllows: [],
+        refusedFolderAllows: [],
+        approvedFolderAllowRules: {},
       },
       cloud: {
         instanceToken: null,
@@ -686,6 +689,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         trustedStoresAppliedAt: null,
         sharedAppsAppliedAt: null,
         sharedAtUpgrade: [],
+        approvedFolderAllows: [],
+        refusedFolderAllows: [],
+        approvedFolderAllowRules: {},
       },
       cloud: {
         instanceToken: null,
@@ -2233,6 +2239,9 @@ describe('permissions section (spec agent-permissions D4)', () => {
     trustedStoresAppliedAt: null,
     sharedAppsAppliedAt: null,
     sharedAtUpgrade: [],
+    approvedFolderAllows: [],
+    refusedFolderAllows: [],
+    approvedFolderAllowRules: {},
   };
 
   it('defaults the whole section from the object-literal default', () => {
