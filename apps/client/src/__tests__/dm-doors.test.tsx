@@ -136,11 +136,9 @@ function mountDoors(options: { owner?: boolean } = {}) {
             agentPath: WARDEN_PATH,
           }),
     // Anyone but the owner gets the agent's latest chat with them.
-    listSessions: vi
-      .fn()
-      .mockResolvedValue({
-        sessions: [{ id: 'latest-with-warden', cwd: WARDEN_PATH, title: 'Hi' }],
-      }),
+    listSessions: vi.fn().mockResolvedValue({
+      sessions: [{ id: 'latest-with-warden', cwd: WARDEN_PATH, title: 'Hi' }],
+    }),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const searchSchema = mergeDialogSearch(
