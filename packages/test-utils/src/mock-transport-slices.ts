@@ -6,7 +6,8 @@
  * succeeds, sign-in landing pages, where no landing is held, a canvas
  * document's route controls, where no document declares a route, a space's
  * docs, where there are none, signed-in devices, where there are none, and an
- * account's automatic moves, where every change succeeds.
+ * account's automatic moves, where every change succeeds, and a framed page's
+ * script decision, which is never known.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -39,7 +40,8 @@ type SliceMethods =
   | 'listSignedInDevices'
   | 'signOutDevice'
   | 'signOutEverywhereElse'
-  | 'setAccountNoAutoMove';
+  | 'setAccountNoAutoMove'
+  | 'getFrameBridgeStatus';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -86,5 +88,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     setAccountNoAutoMove: vi
       .fn()
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
+    // DorkOS has served no page into a frame, so the canvas says nothing.
+    getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
   };
 }

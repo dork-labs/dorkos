@@ -133,6 +133,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/workspaces/ports',
     'POST /api/workspaces/:id/pin',
     'POST /api/workbench/probe',
+    'POST /api/workbench/bridge',
     'POST /api/workbench/sign',
     'POST /api/marketplace/packages/:name/preview',
     'POST /api/marketplace/packages/:name/check-files',

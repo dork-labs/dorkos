@@ -48,7 +48,6 @@ describe('one fixed frame SDK insertion decision', () => {
     '<script>early()</script><html><head></head></html>',
     '<html><head><meta http-equiv="Content-Security-Policy" content="script-src *"></head></html>',
     '<html><head><script>first()</script><meta http-equiv="content-security-policy" content="script-src none"></head></html>',
-    '<html><head></head><body><meta http-equiv="content-security-policy" content="script-src none"></body></html>',
     '<html><head><meta http-equiv="content&#45;security-policy" content="script-src none"></head></html>',
     '<html><head><meta charset="iso-8859-1"></head></html>',
     '<html><head><meta charset="utf-8"><meta charset="utf8"></head></html>',
@@ -58,13 +57,19 @@ describe('one fixed frame SDK insertion decision', () => {
     '<html><head></head><head></head></html>',
     '<html><head><title>never closed</head></html>',
     '<!DOCTYPE html PUBLIC "unknown"><html><head></head></html>',
-    '<html><head></head><body><svg><head></head></svg></body></html>',
-    '<html><head></head><body><template><head></head></template></body></html>',
     '<html><head><noscript><meta charset="utf8"></noscript></head></html>',
     '<html><head><script><!-- <script>double escaped</script></script></head></html>',
     '<html><head>implicit head closing<script>page()</script></head></html>',
     '<html><head data-x="never closed></head></html>',
     '<html><head/></html>',
+    '<svg><path d="M0 0"/></svg><html><head></head><body></body></html>',
+    '<html><svg></svg><head></head><body></body></html>',
+    '<html><head><svg><path/></svg></head><body></body></html>',
+    '<html><head><template><script>early()</script></template></head><body></body></html>',
+    '<html><head><script>const s = "</head><body>";</script><noscript></noscript></head><body></body></html>',
+    '<html><head></head><meta http-equiv="content-security-policy" content="script-src \'none\'"><body></body></html>',
+    '<html><head></head><template><p>x</p></template><body></body></html>',
+    '<html><head></head><script/><body></body></html>',
   ])('refuses uncertain markup/metadata and keeps the original Buffer: %s', (value) => {
     const raw = Buffer.from(value);
     const result = inject(raw);
@@ -184,5 +189,113 @@ describe('complete ASCII policy/meta refusal boundaries', () => {
           `<head><script>${DOC_FRAME_SHIM_SCRIPT}</script><script>${DEVTOOLS_AGENT_SCRIPT}</script>`
         )
       );
+  });
+});
+
+describe('the body is the page’s own business (DOR-3131)', () => {
+  const ADDITION = `<script>${DOC_FRAME_SHIM_SCRIPT}</script><script>${DEVTOOLS_AGENT_SCRIPT}</script>`;
+  const page = (body: string, headExtra = '') =>
+    `<!doctype html><html><head><meta charset="utf-8"><title>Icons</title>${headExtra}</head><body>${body}</body></html>`;
+
+  it('adds the scripts right after <head> on a page with hundreds of inline SVG icons', () => {
+    const icon = (n: number) =>
+      `<svg viewBox="0 0 24 24" width="24" height="24"><path d="M${n} 0L24 24"/><circle cx="12" cy="12" r="4" /><use href="#i${n}"/></svg>`;
+    const value = page(Array.from({ length: 300 }, (_, n) => icon(n)).join('\n'));
+    const result = inject(value);
+    expect(result.instrumented).toBe(true);
+    expect(result.reason).toBeNull();
+    expect(result.bytes.toString()).toBe(value.replace('<head>', `<head>${ADDITION}`));
+  });
+
+  it.each([
+    ['an iframe', '<iframe src="https://example.com"><head></head></iframe>'],
+    ['a template', '<template><head></head><script>later()</script></template>'],
+    ['MathML', '<math><mi>x</mi><mspace width="1em"/></math>'],
+    ['noscript', '<noscript><img src="pixel.gif"><head></head></noscript>'],
+    ['plaintext', '<plaintext><head></head>'],
+    ['xmp, noembed and noframes', '<xmp><b></xmp><noembed>x</noembed><noframes>y</noframes>'],
+    ['a stray </head> and a second <head>', '</head><head></head>'],
+    [
+      'a body <meta> policy, which browsers ignore outside the head',
+      '<meta http-equiv="content-security-policy" content="script-src \'none\'">',
+    ],
+    ['a body charset that the header already overrides', '<meta charset="iso-8859-1">'],
+    ['malformed tags', '<div class="unterminated><svg/><p>'],
+    ['a script whose string names </head>', '<script>const s = "</head><svg>";</script>'],
+  ])('adds the scripts when the body holds %s', (_label, body) => {
+    const value = page(body);
+    const result = inject(value);
+    expect(result.instrumented).toBe(true);
+    expect(result.bytes.toString()).toBe(value.replace('<head>', `<head>${ADDITION}`));
+  });
+
+  it.each([
+    ['text right after </head>', '<html><head></head>Hello <svg/></html>'],
+    ['an implicit body opened by <svg>', '<html><head></head><svg><path/></svg></html>'],
+    ['an implicit body opened by <noscript>', '<html><head></head><noscript></noscript></html>'],
+    [
+      'a head-bound <script> between </head> and <body>',
+      '<html><head></head><script>x()</script><body><svg/></body></html>',
+    ],
+  ])('adds the scripts with %s', (_label, value) => {
+    expect(inject(value).instrumented).toBe(true);
+  });
+
+  it('never moves the insertion point: the scripts are the first thing in the head', () => {
+    const value = page(
+      '<svg><head></head><script>/* svg script */</script></svg>',
+      '<script>user()</script>'
+    );
+    const out = inject(value).bytes.toString();
+    expect(out.indexOf(ADDITION)).toBe(value.indexOf('<head>') + '<head>'.length);
+    expect(out.indexOf(ADDITION)).toBeLessThan(out.indexOf('user()'));
+  });
+
+  it.each([
+    ['<html><body>headless</body></html>', 'no-head'],
+    ['<div>fragment</div>', 'no-head'],
+    ['', 'no-head'],
+    ['<svg></svg><html><head></head><body></body></html>', 'markup'],
+    ['<html><head><noscript></noscript></head><body></body></html>', 'markup'],
+    ['<html><head><template></template></head><body></body></html>', 'markup'],
+    ['<html><head><title>never closed</head></html>', 'markup'],
+    [
+      '<html><head><script>var s = "</head><body>";</script><noscript></noscript></head><body></body></html>',
+      'markup',
+    ],
+    // Read as markup, the script text would close the head and open the body.
+    [
+      '<html><head><script></head><body></script><noscript></noscript></head><body></body></html>',
+      'markup',
+    ],
+    [
+      '<html><head><style></head><body></style><template></template></head><body></body></html>',
+      'markup',
+    ],
+    ['<html><head><meta http-equiv="refresh" content="0;url=/x"></head></html>', 'markup'],
+    ['<html><head></head><head></head></html>', 'markup'],
+    [
+      '<html><head><meta http-equiv="Content-Security-Policy" content="script-src *"></head></html>',
+      'csp',
+    ],
+    [
+      '<html><head></head><meta http-equiv="content-security-policy" content="x"><body></body></html>',
+      'csp',
+    ],
+    ['<html><head><meta charset="iso-8859-1"></head></html>', 'encoding'],
+  ])('names the refusal with a stable code: %s → %s', (value, code) => {
+    const raw = Buffer.from(value);
+    const result = inject(raw);
+    expect(result.instrumented).toBe(false);
+    expect(result.reason).toBe(code);
+    expect(result.bytes).toBe(raw);
+  });
+
+  it('names a header policy, an encoding and the size cap with their own codes', () => {
+    expect(inject(html, ["script-src 'self'"]).reason).toBe('csp');
+    expect(inject(html, [], 'text/html; charset=latin1').reason).toBe('encoding');
+    expect(inject(Buffer.alloc(WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES + 1, 0x20)).reason).toBe(
+      'oversize'
+    );
   });
 });

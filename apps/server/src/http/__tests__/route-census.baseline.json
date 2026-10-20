@@ -614,6 +614,7 @@
     "POST /api/tunnel/start",
     "POST /api/tunnel/stop",
     "POST /api/uploads",
+    "POST /api/workbench/bridge",
     "POST /api/workbench/probe",
     "POST /api/workbench/sign",
     "POST /api/workspaces",

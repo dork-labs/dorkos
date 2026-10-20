@@ -74,6 +74,8 @@ import {
   WorkbenchSignResponseSchema,
   WorkbenchProbeRequestSchema,
   WorkbenchProbeResponseSchema,
+  WorkbenchBridgeStatusRequestSchema,
+  WorkbenchBridgeStatusResponseSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -1865,6 +1867,33 @@ registry.registerPath({
     200: {
       description: 'Whether something accepted a connection on that port',
       content: { 'application/json': { schema: WorkbenchProbeResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/workbench/bridge',
+  tags: ['Workbench'],
+  summary: 'Why a framed page has no DorkOS scripts',
+  description:
+    'Reports whether DorkOS added its frame scripts (the page channel and the DevTools ' +
+    'shim) the last time it served this page into the embedded browser, and the stable ' +
+    'reason when it did not. Names a file under a `cwd` the way the sign route does, or a ' +
+    'path on a dev server port. `unknown` when DorkOS has not served that page as HTML.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: WorkbenchBridgeStatusRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The recorded decision for that page',
+      content: { 'application/json': { schema: WorkbenchBridgeStatusResponseSchema } },
     },
     400: {
       description: 'Invalid body',
