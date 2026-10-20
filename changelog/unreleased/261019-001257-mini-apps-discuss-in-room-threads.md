@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(extensions): a mini app's reply from Wi-Fi is held to the default on its row, like a person's own post (DOR-3017)"
   - "fix(extensions): a mini app's reply keeps its outsider mark across a restart and in later turns (DOR-3017)"
   - "fix(extensions): a mini app's reply wakes agents at the default level, and rooms can't be granted from Wi-Fi (DOR-3017)"
   - 'feat(extensions): mini apps read and reply in room threads as you (DOR-3017)'
