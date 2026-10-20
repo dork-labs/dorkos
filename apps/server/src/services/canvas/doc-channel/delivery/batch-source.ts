@@ -1,4 +1,5 @@
 /** Fixed document source for the existing protected session-message coordinator. */
+import { DOC_WORK_CODES } from './replay.js';
 import {
   and,
   eq,
@@ -394,6 +395,11 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       batch.admissionReceiptId !== receipt.id
     )
       refuseDocBatch('document_batch_changed');
+    // A person already replayed or cleared this in-doubt batch: its old attempt
+    // can still settle or be quarantined, but nothing puts the batch back in
+    // review. Left untouched rather than refused, because a throw here would
+    // roll back boot recovery for every other receipt in the same transaction.
+    if (REVIEWED_IN_DOUBT.has(batch.errorCode ?? '')) return;
     const recorded = tx
       .select()
       .from(sessionMessageAcceptanceReceipts)
@@ -483,6 +489,10 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     return batch;
   }
 }
+const REVIEWED_IN_DOUBT: ReadonlySet<string> = new Set([
+  DOC_WORK_CODES.inDoubtReplayed,
+  DOC_WORK_CODES.inDoubtCleared,
+]);
 function receiptRef(receipt: SessionMessageAcceptanceReceipt): DocBatchSourceRef {
   if (receipt.sourceKind !== 'document_event_batch') refuseDocBatch('document_batch_changed');
   return {

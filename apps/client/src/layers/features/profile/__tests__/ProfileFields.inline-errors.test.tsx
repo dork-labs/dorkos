@@ -77,9 +77,7 @@ describe('Settings › Profile refusals: inline while shown, toast once gone', (
     );
     submit('handle', 'ana');
 
-    expect(
-      await screen.findByText('@ana belongs to someone else. Pick a different one.')
-    ).toBeTruthy();
+    expect(await screen.findByText('@ana is taken. Pick a different one.')).toBeTruthy();
     expect(toast.error).not.toHaveBeenCalled();
   });
 

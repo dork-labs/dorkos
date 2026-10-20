@@ -23,18 +23,20 @@ function messageOf(error: unknown): string | undefined {
 }
 
 /**
- * What went wrong with a handle, said three different ways.
+ * What went wrong with a handle, said a different way for each refusal.
  *
- * **Three refusals, three sentences, because they are three different things to
- * do about it** (spec §W3.3): somebody else has it, it is spoken for, or it is
- * not a spellable handle at all. One shared "couldn't save that" would tell a
- * person to try again with no idea what to change.
+ * **A sentence per refusal, because each is a different thing to do about
+ * it** (spec §W3.3): somebody else has it, it is spoken for, it looks like
+ * somebody else's, or it is not a spellable handle at all. One shared "couldn't
+ * save that" would tell a person to try again with no idea what to change.
  *
- * `INVALID_HANDLE` deliberately passes the server's own sentence through rather
- * than replacing it. The grammar has five separate rules (`packages/shared/src/handle.ts`)
- * and the server knows WHICH one broke — "a handle is all lowercase" is a fix
- * the person can make in one keystroke, where any sentence written here would
- * have to describe all five and help with none. The written fallback is there
+ * `INVALID_HANDLE`, `HANDLE_RESERVED` and `HANDLE_LOOKALIKE` pass the server's
+ * own sentence through, because only the server knows which rule broke, whose
+ * handle it looks like, or whether a reserved word is DorkOS's or somebody's
+ * old handle. The grammar alone has five rules (`packages/shared/src/handle.ts`)
+ * and "a handle is all lowercase" is a fix the person can make in one
+ * keystroke, where any sentence written here would have to describe all five
+ * and help with none. Each written fallback is there
  * for the case where the refusal arrived without a message.
  *
  * @param error - Whatever the transport threw.
@@ -44,9 +46,17 @@ export function handleErrorMessage(error: unknown, attempted: string): string {
   const at = `@${attempted}`;
   switch (codeOf(error)) {
     case 'HANDLE_TAKEN':
-      return `${at} belongs to someone else. Pick a different one.`;
+      return `${at} is taken. Pick a different one.`;
+    // The server knows whether it is a word DorkOS keeps or somebody's old
+    // handle, and says which; the fallback covers a refusal with no message.
     case 'HANDLE_RESERVED':
-      return `${at} is spoken for. Either you used it before, or it is a word DorkOS uses to reach everyone. Pick a different one.`;
+      return (
+        messageOf(error) ??
+        `${at} used to belong to someone else and stays theirs. Pick a different one.`
+      );
+    // The server names whose handle it looks like, which no sentence here can.
+    case 'HANDLE_LOOKALIKE':
+      return messageOf(error) ?? `${at} looks too much like another handle. Pick a different one.`;
     case 'INVALID_HANDLE':
       return (
         messageOf(error) ??

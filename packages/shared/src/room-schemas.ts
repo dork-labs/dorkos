@@ -186,6 +186,9 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  *   one, somebody moved it, or its earlier session had expired. Quiet, with the
  *   agent as subject; in a room with outsiders it names no account. Nothing is
  *   wrong and nobody needs to act, which is why it is not `turn_failed`.
+ * - `handle_changed` — a person gave an agent here a new handle (DOR-3156).
+ *   Quiet, with the agent as subject; it names the old handle and the new one,
+ *   because the reader's next mention is what changes. A bridge never sends it.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -221,6 +224,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_history_note',
     'room_archived',
     'agent_reseated',
+    'handle_changed',
   ])
   .openapi('RoomNoticeCode');
 
@@ -1907,7 +1911,7 @@ export const SetAuthorHandleRequestSchema = z
       .string()
       .max(64)
       .describe(
-        'The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED.'
+        'The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN, HANDLE_RESERVED or HANDLE_LOOKALIKE.'
       ),
   })
   .openapi('SetAuthorHandleRequest');

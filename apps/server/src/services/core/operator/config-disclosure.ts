@@ -203,6 +203,10 @@ export const CONFIG_DISCLOSURE = {
   // When the person saw the "agents now work without asking" notice: a date
   // that names nothing and unlocks nothing on being read.
   'ui.trustNoticeSeenAt': 'expose',
+  // How chats with one agent are drawn, and whether the session behind a chat
+  // can be opened (DOR-3074). Plain booleans about the view.
+  'ui.dmView': 'expose',
+  'ui.showSessions': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an

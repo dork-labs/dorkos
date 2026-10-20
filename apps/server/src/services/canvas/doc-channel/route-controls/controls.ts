@@ -19,7 +19,6 @@
  * @module services/canvas/doc-channel/route-controls/controls
  */
 import { eq, inArray, agents, canvasDocGrants, type Db } from '@dorkos/db';
-import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
 import {
   CanvasChannelDeclarationSchema,
   type CanvasChannelRoute,
@@ -38,11 +37,15 @@ import {
 } from '@dorkos/shared/canvas-doc-routes';
 import type { ApprovalService } from '../../../core/approvals/approval-service.js';
 import type { DocChannelAuthorization } from '../authorization.js';
-import { DocChannelNotFoundError } from '../authorization.js';
 import type { DocChannelGrants, PreparedDocGrant } from '../grants.js';
 import { DocRouteGrantError, type DocGrantActor } from '../grant-policy.js';
 import type { DocChannelRow, DocChannelStore, DocGrantRow } from '../store.js';
-import { requirePersonDecision, type DocRoutePersonDecision } from './person-decision.js';
+import {
+  requireOperatorActor,
+  requirePersonDecision,
+  type DocRoutePersonDecision,
+} from './person-decision.js';
+import { currentRouteGrants, isDocAuthorityRefusal } from './current-grants.js';
 import { APPROVE_DOC_ROUTE, findOpenApprovals } from './waiting.js';
 
 /** What the controls are composed from: the channel's own services, never copies. */
@@ -67,20 +70,6 @@ export interface DocRouteTurnedOff extends CanvasDocRouteChange {
   revokedGrantIds: string[];
   /** Agent requests and unused yeses for the route that this answered or spent. */
   cancelledApprovalIds: string[];
-}
-
-function requirePerson(actor: DocGrantActor): void {
-  if (actor.principal.claims.kind !== 'operator')
-    throw new DocRouteGrantError('PERSON_REQUIRED', 403);
-}
-
-/** An expected refusal while classifying a grant, never a storage fault. */
-function isAuthorityRefusal(error: unknown): error is Error {
-  return (
-    error instanceof DocRouteGrantError ||
-    error instanceof DocChannelNotFoundError ||
-    error instanceof CanvasAppManifestError
-  );
 }
 
 /** Why the newest grant no longer admits events, in the controls' words. */
@@ -130,15 +119,8 @@ export class DocRouteControls {
 
   /** Grant ids that currently admit events, by route; empty when authority cannot be read. */
   private currentGrants(documentId: string, actor: DocGrantActor): Map<string, string> {
-    const current = new Map<string, string>();
-    try {
-      for (const route of this.deps.grants.getCurrentRoutes(documentId, undefined, actor))
-        if (route.grantId && !route.reason) current.set(route.route.id, route.grantId);
-    } catch (error) {
-      // A changed or unreadable app manifest suspends every grant; the rows say so below.
-      if (!isAuthorityRefusal(error)) throw error;
-    }
-    return current;
+    // A changed or unreadable app manifest suspends every grant; the rows say so below.
+    return currentRouteGrants(this.deps.grants, documentId, actor);
   }
 
   private grantView(row: DocGrantRow): NonNullable<CanvasDocRoute['grant']> {
@@ -161,7 +143,7 @@ export class DocRouteControls {
    * @param actor - The verified operator.
    */
   async list(documentId: string, actor: DocGrantActor): Promise<CanvasDocRoutes> {
-    requirePerson(actor);
+    requireOperatorActor(actor);
     const channel = await this.deps.readChannel(documentId, actor);
     const declaration = CanvasChannelDeclarationSchema.safeParse(channel.declaration);
     const routes = declaration.success ? declaration.data.routes : [];
@@ -218,7 +200,7 @@ export class DocRouteControls {
       );
       return 'granted' as const; // Became current between the two reads.
     } catch (error) {
-      if (!isAuthorityRefusal(error)) throw error;
+      if (!isDocAuthorityRefusal(error)) throw error;
       return classifyRefusal(error);
     }
   }
@@ -252,7 +234,7 @@ export class DocRouteControls {
     actor: DocGrantActor,
     decision: DocRoutePersonDecision
   ): Promise<CanvasDocRouteReview> {
-    requirePerson(actor);
+    requireOperatorActor(actor);
     requirePersonDecision(decision);
     const { expiresAt } = CanvasDocRouteReviewRequestSchema.parse(body);
     const prepared = await this.prepare(documentId, routeId, expiresAt, actor);
@@ -293,7 +275,7 @@ export class DocRouteControls {
     actor: DocGrantActor,
     decision: DocRoutePersonDecision
   ): Promise<DocRouteAllowed> {
-    requirePerson(actor);
+    requireOperatorActor(actor);
     requirePersonDecision(decision);
     const { expiresAt, reviewHash } = CanvasDocRouteApproveRequestSchema.parse(body);
     const prepared = await this.prepare(documentId, routeId, expiresAt, actor);
@@ -369,7 +351,7 @@ export class DocRouteControls {
     actor: DocGrantActor,
     decision: DocRoutePersonDecision
   ): Promise<DocRouteTurnedOff> {
-    requirePerson(actor);
+    requireOperatorActor(actor);
     requirePersonDecision(decision);
     CanvasDocRouteRevokeRequestSchema.parse(body);
     await this.deps.authorization.require(documentId, actor, true);

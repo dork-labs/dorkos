@@ -7,6 +7,9 @@
  * server returned for exactly the details it showed, and the server refuses an
  * approval whose current binding no longer hashes to it.
  *
+ * The same module carries the review of document work that expired or ended in
+ * doubt: a person sees it, and runs it again or clears it. Nothing replays itself.
+ *
  * @module shared/canvas-doc-routes
  */
 import { z } from 'zod';
@@ -175,6 +178,102 @@ export interface DocRouteTurnedOffMetadata {
   revokedGrants: number;
   /** How many agent requests or unused yeses for the route this answered or spent. */
   cancelledApprovals: number;
+  /** The decision posture the person bars reported: login on or off. */
+  posture: 'signed-in-operator' | 'local-trust';
+}
+
+/**
+ * Why a piece of work can or cannot run again right now. Only `ready` lets a
+ * person replay it; clearing it is open in every state but `still_running`.
+ *
+ * - `ready` — the route has a current grant and every input is still kept.
+ * - `no_grant` — the route has no current grant. Allow it first.
+ * - `route_changed` — the document no longer declares the route, the route was
+ *   redeclared since the work was accepted, or it starts no work.
+ * - `inputs_gone` — retention removed an input this work needs.
+ * - `route_busy` — newer work is already waiting on the same route.
+ * - `still_running` — in-doubt work whose attempt may still finish. Neither
+ *   replay nor clear until it stops.
+ */
+export const CanvasDocWorkReplaySchema = z.enum([
+  'ready',
+  'no_grant',
+  'route_changed',
+  'inputs_gone',
+  'route_busy',
+  'still_running',
+]);
+/** Whether one piece of work can run again. */
+export type CanvasDocWorkReplay = z.infer<typeof CanvasDocWorkReplaySchema>;
+
+/**
+ * One piece of document work a person should look at.
+ *
+ * - `expired` — it waited 24 hours and never started. Nothing ran.
+ * - `in_doubt` — it reached the agent, but its result is unknown: a restart, a
+ *   dispatch nobody saw finish, or the session changing identity mid-turn.
+ *   Running it again may repeat what the agent did.
+ */
+export const CanvasDocWorkItemSchema = z
+  .object({
+    batchId: IdentifierSchema,
+    routeId: IdentifierSchema,
+    status: z.enum(['expired', 'in_doubt']),
+    /** How many document events the work carries. */
+    eventCount: z.number().int().min(1),
+    /** When it last changed: when it expired or became uncertain. */
+    since: TimestampSchema,
+    replay: CanvasDocWorkReplaySchema,
+  })
+  .strict();
+/** One piece of work to review. */
+export type CanvasDocWorkItem = z.infer<typeof CanvasDocWorkItemSchema>;
+
+/** `GET /api/canvas/docs/:id/work`: the work waiting on a person, oldest first. */
+export const CanvasDocWorkSchema = z
+  .object({ documentId: IdentifierSchema, items: z.array(CanvasDocWorkItemSchema).max(50) })
+  .strict();
+/** Every piece of work on one document a person should look at. */
+export type CanvasDocWork = z.infer<typeof CanvasDocWorkSchema>;
+
+/**
+ * `POST /api/canvas/docs/:id/work/:batchId/replay` body. In-doubt work runs again
+ * only with `confirmRepeat: true`: the person accepts it may repeat what already ran.
+ */
+export const CanvasDocWorkReplayRequestSchema = z
+  .object({ confirmRepeat: z.literal(true).optional() })
+  .strict();
+/** A person asking for one piece of work to run again. */
+export type CanvasDocWorkReplayRequest = z.infer<typeof CanvasDocWorkReplayRequestSchema>;
+
+/** `POST /api/canvas/docs/:id/work/:batchId/clear` body: empty, the work is the subject. */
+export const CanvasDocWorkClearRequestSchema = z.object({}).strict();
+/** A person setting one piece of work aside without running it. */
+export type CanvasDocWorkClearRequest = z.infer<typeof CanvasDocWorkClearRequestSchema>;
+
+/** What a replay or clear did. `nextBatchId` is the new work a replay queued. */
+export const CanvasDocWorkChangeSchema = z
+  .object({
+    batchId: IdentifierSchema,
+    routeId: IdentifierSchema,
+    action: z.enum(['replayed', 'cleared']),
+    previousStatus: CanvasDocWorkItemSchema.shape.status,
+    nextBatchId: IdentifierSchema.nullable(),
+  })
+  .strict();
+/** One reviewed piece of work. */
+export type CanvasDocWorkChange = z.infer<typeof CanvasDocWorkChangeSchema>;
+
+/** The Activity event a person replaying or clearing document work writes, once each. */
+export const DOC_WORK_REVIEWED_EVENT = 'doc_work.reviewed';
+
+/** The metadata a {@link DOC_WORK_REVIEWED_EVENT} line carries. Never an event payload. */
+export interface DocWorkReviewedMetadata {
+  documentId: string;
+  routeId: string;
+  batchId: string;
+  action: CanvasDocWorkChange['action'];
+  previousStatus: CanvasDocWorkChange['previousStatus'];
   /** The decision posture the person bars reported: login on or off. */
   posture: 'signed-in-operator' | 'local-trust';
 }

@@ -593,6 +593,7 @@ function agentRow(
   const isSystem = agent.isSystem === true;
   const facts: TeamAgentFacts = {
     manifestId: agent.id,
+    ...(author ? { authorId: author.id } : {}),
     runtime: agent.runtime,
     ...(agent.model ? { model: agent.model } : {}),
     healthStatus: agent.healthStatus,

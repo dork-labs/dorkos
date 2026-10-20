@@ -98,6 +98,18 @@ function failure(c: Context<ApiEnv>, error: unknown): Response {
   return c.json({ error: message, code }, status as ContentfulStatusCode);
 }
 
+/**
+ * Who an Activity line about a person's document decision names, by the
+ * permission honesty rule, and the word its summary starts with.
+ *
+ * @param decision - The person bars' proof, from `decideAsPerson`.
+ */
+export function writerFor(decision: DocRoutePersonDecision) {
+  const writer = writerForPosture(decision.posture, decision.user);
+  const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
+  return { writer, who };
+}
+
 /** Where a route's events go, for the Activity line. */
 function destinationWords(route: CanvasDocRoute): string {
   const d = route.destination;
@@ -140,13 +152,6 @@ export function createCanvasDocRouteControlRoutes(
     if ('decision' in result) return result.decision;
     const { status, error, code } = result.refusal;
     return c.json({ error, code }, status as ContentfulStatusCode);
-  }
-
-  /** Who the Activity line names, by the permission honesty rule. */
-  function writerFor(decision: DocRoutePersonDecision) {
-    const writer = writerForPosture(decision.posture, decision.user);
-    const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
-    return { writer, who };
   }
 
   /** One `permission.answered` line for a person's allow, as `/api/approvals` writes. */

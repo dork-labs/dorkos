@@ -51,6 +51,12 @@ interface SessionMessageProps {
    * post from that room is from this chat, so its "in <room>" mark is dropped.
    */
   directRoomId?: string | null;
+  /**
+   * When this message arrived in this window, for a live message that has no
+   * server time yet (DOR-3074). Never set for history: a history row shows the
+   * time the server recorded, or none.
+   */
+  fallbackAt?: string;
   isNew?: boolean;
   isStreaming?: boolean;
   /**
@@ -171,6 +177,7 @@ function SessionMessageRow({
   runtimeLabel,
   allowsDenyReason,
   directRoomId,
+  fallbackAt,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -201,11 +208,12 @@ function SessionMessageRow({
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
 
-  const time = message.timestamp ? formatTime(message.timestamp) : '';
+  const writtenAt = message.timestamp || fallbackAt || '';
+  const time = writtenAt ? formatTime(writtenAt) : '';
   const showTime = time.length > 0;
   // One timestamp for the whole row: the author line draws it on a group start
   // and the gutter draws it on hover for a continuation.
-  const at = showTime ? message.timestamp : undefined;
+  const at = showTime ? writtenAt : undefined;
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
 
   return (

@@ -120,6 +120,29 @@ describe('goBack / goForward', () => {
   });
 });
 
+describe('a DM and the session behind it (DOR-3074)', () => {
+  it('walks Back and Forward between the two as separate pages of one tab', async () => {
+    // Purpose: `?view=session` is a real param, so opening the session view is
+    // a page in the tab's history and Back returns to the DM, never past it.
+    const dm = '/session?session=scout-direct';
+    const session = '/session?session=scout-direct&view=session';
+    setHistory(['/', dm]);
+    await act(async () => {
+      await navigate({ href: session });
+    });
+    expect(trail()).toEqual(['/', dm, `[${session}]`]);
+
+    goBack(router);
+    await settle();
+    expect(locationHref).toBe(dm);
+    expect(trail()).toEqual(['/', `[${dm}]`, session]);
+
+    goForward(router);
+    await settle();
+    expect(locationHref).toBe(session);
+  });
+});
+
 describe('goToHistoryEntry', () => {
   it('jumps to any entry and keeps Forward available', async () => {
     // Purpose: the History menu's jump is a cursor move, not a new page.

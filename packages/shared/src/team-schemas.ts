@@ -101,6 +101,13 @@ export const TeamAgentFactsSchema = z
      * emoji hash `resolveAgentVisual` falls back to).
      */
     manifestId: z.string().min(1),
+    /**
+     * The agent's room author id, the one its handle is changed by
+     * (`PATCH /api/rooms/authors/:authorId/handle`, DOR-3156). Absent until the
+     * agent has been in a room, because only then does it have an author row,
+     * and so a handle, at all.
+     */
+    authorId: z.string().min(1).optional(),
     runtime: AgentRuntimeSchema,
     effectiveRuntimeId: z.string().min(1).max(128).optional(),
     /** The model new sessions start on. Absent = inherit the server default. */

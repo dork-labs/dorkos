@@ -33,5 +33,7 @@ export function useSessionSearch(): Partial<SessionSearch> {
     // is passed through as typed and narrowed nowhere: one that names no
     // message lands nowhere, which is the ordinary outcome and not an error.
     message: typeof search.message === 'string' ? search.message : undefined,
+    // The session behind an agent's DM (DOR-3074). Narrowed to the one value.
+    view: search.view === 'session' ? 'session' : undefined,
   };
 }

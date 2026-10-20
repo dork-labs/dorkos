@@ -141,6 +141,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // that notice and nothing else: no capability, no bound, nothing sent. A wipe
   // that lands it back on `null` shows the notice once more.
   'ui.trustNoticeSeenAt',
+  // How a chat with one agent is drawn, and whether its working session can be
+  // opened (DOR-3074). Views only: nothing is sent, granted or bounded.
+  'ui.dmView',
+  'ui.showSessions',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',

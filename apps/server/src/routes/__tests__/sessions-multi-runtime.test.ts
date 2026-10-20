@@ -783,7 +783,12 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // ahead of the turn (the steerability announcement) shifts the numbers
       // without changing a thing about the history.
       expect(snapshot.messages).toEqual([
-        { id: expect.stringMatching(/^user-\d+$/), role: 'user', content: 'Hello' },
+        {
+          id: expect.stringMatching(/^user-\d+$/),
+          role: 'user',
+          content: 'Hello',
+          timestamp: expect.any(String),
+        },
         { id: expect.stringMatching(/^assistant-\d+$/), role: 'assistant', content: 'Echo: Hello' },
       ]);
       expect(snapshot.inProgressTurn).toBeNull();

@@ -18,6 +18,9 @@ export { BarMembersChip } from './ui/BarMembersChip';
 export { RoomLeadChip } from './ui/RoomLeadChip';
 export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
+// What `/session` declares: the DM bar on an agent's Direct chat with the DM
+// view on, else the session bar (DOR-3074).
+export { SessionRouteHeader } from './ui/SessionRouteHeader';
 export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';
 // `useOneBarState` is deliberately NOT exported: the route bars that read it
 // all live in this module, and the state it hands out is only meaningful to a

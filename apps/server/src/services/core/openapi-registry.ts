@@ -6542,7 +6542,7 @@ registry.registerPath({
     },
     409: {
       description:
-        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)',
+        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`HANDLE_RESERVED`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`HANDLE_LOOKALIKE`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

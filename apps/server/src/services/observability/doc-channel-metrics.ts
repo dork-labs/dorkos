@@ -40,6 +40,11 @@ export interface DocChannelMetricSnapshot {
   oldestUnclaimedWaitMs: number | null;
   revokedGrants: number;
   inDoubtBatches: number;
+  /**
+   * A person's review of expired and in-doubt work: how much still waits on
+   * them, and how much they ran again or cleared, among retained batches.
+   */
+  reviewedWork: { awaiting: number; replayed: number; cleared: number };
   correlatedTurnLatency: {
     samples: number;
     sumMs: number | null;
@@ -98,6 +103,13 @@ const LATENCY_QUERY = `WITH samples AS (
   WHERE r.state='settled'
 ) SELECT count(duration) AS samples, sum(duration) AS sumMs, max(duration) AS maxMs,
   count(*)-count(duration) AS invalidSamples FROM samples`;
+// The review's own error codes (`doc-channel/delivery/replay.ts`, DOC_WORK_CODES).
+const REVIEW_QUERY = `SELECT
+  count(CASE WHEN status='in_doubt' OR (status='expired' AND error_code='manual_replay_required'
+    AND admission_receipt_id IS NULL) THEN 1 END) AS awaiting,
+  count(CASE WHEN error_code IN ('manual_replay_consumed','in_doubt_replayed') THEN 1 END) AS replayed,
+  count(CASE WHEN error_code IN ('manual_review_cleared','in_doubt_cleared') THEN 1 END) AS cleared
+  FROM canvas_doc_batches`;
 const STATUS_QUERY = `SELECT ${STATUSES.map(
   (status) => `count(CASE WHEN status='${status}' THEN 1 END) AS ${status}`
 ).join(',')}, count(CASE WHEN status NOT IN (${STATUSES.map((s) => `'${s}'`).join(',')})
@@ -144,6 +156,9 @@ export class DocChannelMetrics {
           maxMs: number | null;
           invalidSamples: number;
         }>(sql.raw(LATENCY_QUERY))!;
+        const review = tx.get<{ awaiting: number; replayed: number; cleared: number }>(
+          sql.raw(REVIEW_QUERY)
+        )!;
         const revoked = tx.get<{ total: number }>(
           sql`SELECT count(*) AS total FROM canvas_doc_grants WHERE revoked_at IS NOT NULL`
         )!;
@@ -156,6 +171,11 @@ export class DocChannelMetrics {
             total === 0 ? null : count(Math.max(0, at.getTime() - count(waiting.oldest))),
           revokedGrants: count(revoked.total),
           inDoubtBatches: batchesByStatus.in_doubt,
+          reviewedWork: {
+            awaiting: count(review.awaiting),
+            replayed: count(review.replayed),
+            cleared: count(review.cleared),
+          },
           correlatedTurnLatency: {
             samples: count(latency.samples),
             invalidSamples: count(latency.invalidSamples),

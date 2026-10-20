@@ -257,6 +257,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].ownerKey',
+      // How a chat with one agent is drawn, and whether its session shows
+      // (DOR-3074): an experiment, and the readings about an agent's own work.
+      'ui.dmView',
+      'ui.showSessions',
       'ui.trustNoticeSeenAt',
       // Three uploads.* leaves a person can tighten past the shipped default,
       // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
@@ -879,6 +883,15 @@ describe('describeOperatorOnlyRefusal', () => {
     expect(message).not.toMatch(/who can reach this instance/i);
     expect(message).not.toMatch(/credentials/i);
     expect(message).not.toMatch(/speak on their own/i);
+  });
+
+  it('names the DM view and Show sessions as what the chat shows you (DOR-3074)', () => {
+    const message = describeOperatorOnlyRefusal(['ui.dmView', 'ui.showSessions']);
+    expect(message).toContain(
+      'How your chats are drawn, and what they show you about the work behind them: ' +
+        'ui.dmView, ui.showSessions.'
+    );
+    expect(operatorOnlyAreasForPatch({ ui: { showSessions: false } })).toEqual(['safety']);
   });
 
   it('stays honest about a path with no stake on file', () => {

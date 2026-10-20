@@ -14,15 +14,20 @@
  *
  * @module widgets/room-view/ui/MentionPillRenderer
  */
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import type { Components } from 'streamdown';
-import { IdentityHoverCard, MentionPill } from '@/layers/shared/ui';
+import {
+  IdentityHoverCard,
+  MentionPill,
+  type IdentityHoverCardDescriptor,
+} from '@/layers/shared/ui';
 import { resolveIdentityFace } from '@/layers/shared/lib';
 import { useProfileDeepLink } from '@/layers/shared/model';
 import { profileMemberIdOf } from '@/layers/entities/room';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
 import { useAgentInfo } from '../model/agent-info-context';
 import { useMentionAuthor } from '../model/mention-roster-context';
+import { useRoomAgentCard } from './identity/room-agent-card';
 
 interface MentionPillRendererProps {
   /** The `author_id` Streamdown read off the tag, or `undefined` if it was missing. */
@@ -36,6 +41,9 @@ interface MentionPillRendererProps {
    */
   children?: ReactNode;
 }
+
+/** The identity handed to the card hook when the mention names nobody. */
+const NO_IDENTITY: IdentityHoverCardDescriptor = { kind: 'human', displayName: '' };
 
 /** The mention's own text with its leading `@` trimmed — `MentionPill` adds one back. */
 function handleLabel(children: ReactNode): string {
@@ -81,79 +89,104 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
   // here: draw no chip.
   const agent = useAgentInfo(author?.agentRef);
   const { open: openProfile } = useProfileDeepLink();
-
-  if (!author) {
-    // `kind` is ignored on this path — `MentionPill` returns plain text for
-    // any kind once `resolved` is false — but the type still asks for one.
-    return <MentionPill kind="human" label={handleLabel(children)} resolved={false} />;
-  }
-
   // The same ladder the gutter climbs, with the same override — `agent.visual`
   // is the face resolved off this agent's own manifest, and the card opens off
   // a message whose disc is already wearing it. Reading `author.color` and
   // `author.emoji` straight off the render cache is what left the two
   // disagreeing: 🦊 in the gutter, a grey letter in the card describing it.
-  const face = resolveIdentityFace({ record: author, override: agent?.visual });
-  const memberId = profileMemberIdOf(author, agent?.memberId);
-  const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
+  const face = author ? resolveIdentityFace({ record: author, override: agent?.visual }) : null;
+  const memberId = author ? profileMemberIdOf(author, agent?.memberId) : undefined;
+  const viewProfile = useMemo(
+    () => (memberId === undefined ? undefined : () => openProfile(memberId)),
+    [memberId, openProfile]
+  );
+  // Memoized so the card's wrappers keep their identity across re-renders.
+  const faceColor = face?.color;
+  const faceEmoji = face?.emoji;
+  const faceImage = face?.imageUrl;
+  const identity = useMemo<IdentityHoverCardDescriptor | null>(
+    () =>
+      author
+        ? {
+            kind: author.kind,
+            displayName: author.displayName,
+            handle: author.handle ?? undefined,
+            color: faceColor,
+            emoji: faceEmoji,
+            // The card and the message gutter draw the same person, so they
+            // climb the same ladder. Omitting this is how a photo would show
+            // beside somebody's message and an emoji inside the card.
+            imageUrl: faceImage,
+            origin: author.origin,
+            // A chip per fact the card is handed and nothing for one it is not,
+            // so an agent whose manifest never resolved reads as name and handle
+            // alone. Spelled out because `memberId` is a routing fact.
+            agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
+          }
+        : null,
+    [author, faceColor, faceEmoji, faceImage, agent]
+  );
+  // With the DM view on, an agent's pill opens its card on a click, and the
+  // card's Message opens its DM (DOR-3074). `null` otherwise.
+  const agentCard = useRoomAgentCard({
+    agentRef: author?.agentRef,
+    identity: identity ?? NO_IDENTITY,
+    onViewProfile: viewProfile,
+  });
+
+  if (!author || !identity) {
+    // `kind` is ignored on this path — `MentionPill` returns plain text for
+    // any kind once `resolved` is false — but the type still asks for one.
+    return <MentionPill kind="human" label={handleLabel(children)} resolved={false} />;
+  }
   // A `<span>` that acts like a button has to say so and be reachable: Radix's
   // hover card gives the trigger focus already, and this is what makes that
   // focus mean something. `Space` as well as `Enter` because a role of button
   // promises both.
-  const pillControl = viewProfile
-    ? {
-        role: 'button',
-        tabIndex: 0,
-        // Names the ACTION, the same way the Team card and the sidebar face do
-        // — the visible text is only who, which is the half a reader can
-        // already see. The name stays inside the label, so this still satisfies
-        // "label in name" for anyone driving by voice.
-        'aria-label': `View ${author.displayName}’s profile`,
-        onClick: viewProfile,
-        onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          viewProfile();
-        },
-      }
-    : {};
+  // With the DM view on, an agent's pill opens its card by click, tap, Enter
+  // or Space, and says so: named for who it is, announced as opening a
+  // dialog, and the card's Profile is the profile door (DOR-3074).
+  const cardControl = { role: 'button', tabIndex: 0, 'aria-haspopup': 'dialog' as const };
+  const pillControl = agentCard
+    ? cardControl
+    : viewProfile
+      ? {
+          role: 'button',
+          tabIndex: 0,
+          // Names the ACTION, the same way the Team card and the sidebar face do
+          // — the visible text is only who, which is the half a reader can
+          // already see. The name stays inside the label, so this still satisfies
+          // "label in name" for anyone driving by voice.
+          'aria-label': `View ${author.displayName}’s profile`,
+          onClick: viewProfile,
+          onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            viewProfile();
+          },
+        }
+      : {};
 
+  const pill = (
+    <MentionPill
+      kind={author.kind}
+      label={author.displayName}
+      handle={author.handle ?? undefined}
+      // The raw cache on purpose, where the CARD above takes the resolved
+      // face. A pill tints a run of text rather than drawing a face, and it
+      // falls to `currentColor` for everyone today; giving it a fleet colour
+      // is its own decision about inline text, tracked separately.
+      color={author.color}
+      origin={author.origin}
+      resolved
+      interactive={viewProfile !== undefined}
+      {...pillControl}
+    />
+  );
+  if (agentCard) return agentCard.wrap(pill, { openOnClick: true });
   return (
-    <IdentityHoverCard
-      onViewProfile={viewProfile}
-      identity={{
-        kind: author.kind,
-        displayName: author.displayName,
-        handle: author.handle ?? undefined,
-        color: face.color,
-        emoji: face.emoji,
-        // The card and the message gutter draw the same person, so they climb
-        // the same ladder. Omitting this is how a photo would show beside
-        // somebody's message and an emoji inside the card that describes them.
-        imageUrl: face.imageUrl,
-        origin: author.origin,
-        // The card draws a chip per fact it is handed and nothing at all for
-        // one it is not, so an agent whose manifest never resolved reads as
-        // name and handle alone rather than as an invented runtime. Spelled
-        // out rather than passed whole because `memberId` is a routing fact,
-        // not something the card should be able to draw.
-        agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
-      }}
-    >
-      <MentionPill
-        kind={author.kind}
-        label={author.displayName}
-        handle={author.handle ?? undefined}
-        // The raw cache on purpose, where the CARD above takes the resolved
-        // face. A pill tints a run of text rather than drawing a face, and it
-        // falls to `currentColor` for everyone today; giving it a fleet colour
-        // is its own decision about inline text, tracked separately.
-        color={author.color}
-        origin={author.origin}
-        resolved
-        interactive={viewProfile !== undefined}
-        {...pillControl}
-      />
+    <IdentityHoverCard onViewProfile={viewProfile} identity={identity}>
+      {pill}
     </IdentityHoverCard>
   );
 }

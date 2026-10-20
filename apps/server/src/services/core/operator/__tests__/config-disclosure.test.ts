@@ -156,6 +156,8 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         },
       ],
       trustNoticeSeenAt: '2026-10-07T11:15:00.000Z',
+      dmView: true,
+      showSessions: true,
       communityNavigation: {
         version: 1,
         owners: [
