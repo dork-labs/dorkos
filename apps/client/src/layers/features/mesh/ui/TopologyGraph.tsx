@@ -242,7 +242,9 @@ function TopologyGraphInner({
           setIsLayouting(false);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // A refused layout leaves the map with no nodes, so say why (DOR-3154).
+        console.warn('[topology] layout failed; the map has no nodes to draw', err);
         if (!cancelled) setIsLayouting(false);
       });
     return () => {

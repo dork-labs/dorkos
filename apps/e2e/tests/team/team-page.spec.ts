@@ -347,6 +347,45 @@ test.describe('Team — the roster @smoke', () => {
     await expect(page).toHaveURL(/[?&]view=topology/);
   });
 
+  test('the topology draws agents while every agent may talk to every other (DOR-3154)', async ({
+    page,
+    basePage,
+    roomsApi,
+    request,
+  }) => {
+    // The open-mesh switch (`*` -> `*`) is on by default on Trusted installs.
+    // It once became an edge to a group that does not exist, the layout engine
+    // refused the graph, and the map drew its legend with no agents in it.
+    // The registered agent lands in this run's namespace and DorkBot in
+    // `system`, so the map draws namespace groups, the case that broke.
+    await roomsApi.registerAgent(`E2E Map ${roomsApi.runId}`, '🗺️', '#0ea5e9');
+    const topology = await request.get('/api/mesh/topology');
+    expect(topology.ok()).toBe(true);
+    const { accessRules } = (await topology.json()) as {
+      accessRules: { sourceNamespace: string; targetNamespace: string; origin: string }[];
+    };
+    const wasOpen = accessRules.some(
+      (r) => r.sourceNamespace === '*' && r.targetNamespace === '*' && r.origin === 'explicit'
+    );
+    const setOpenMesh = (action: 'allow' | 'deny') =>
+      request.put('/api/mesh/topology/access', {
+        data: { sourceNamespace: '*', targetNamespace: '*', action },
+      });
+    if (!wasOpen) expect((await setOpenMesh('allow')).ok()).toBe(true);
+
+    try {
+      await page.goto('/team?view=topology');
+      await basePage.waitForAppReady();
+
+      // A zoomed-out map draws compact nodes without names, so count nodes
+      // rather than look for this agent's label.
+      await expect(page.locator('.react-flow__node-agent').first()).toBeVisible();
+    } finally {
+      // Leave the mesh as this test found it for every spec after it.
+      if (!wasOpen) await setOpenMesh('deny');
+    }
+  });
+
   test('the Denied view reports having blocked nothing', async ({ page, basePage }) => {
     await page.goto('/team?view=denied');
     await basePage.waitForAppReady();
