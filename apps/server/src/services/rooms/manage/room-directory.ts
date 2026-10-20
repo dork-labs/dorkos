@@ -99,7 +99,8 @@ export class RoomDirectory {
    * caught-up sidebar pays nothing for it.
    *
    * `lastLine` is the newest top-level message's text, one query for the whole
-   * list (`RoomListReads.lastLines`).
+   * list (`RoomListReads.lastLines`). For anyone but the owner it is read above
+   * their `joinedSeq`, so it never quotes what was said before they joined.
    *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
@@ -123,7 +124,8 @@ export class RoomDirectory {
     filter: { kind?: RoomKind; includeArchived?: boolean } = {}
   ): RoomSummary[] {
     const cursors = this.cursorsFor(viewerAuthorId);
-    const visible = this.visibility.seesEveryRoom(viewerAuthorId)
+    const seesEveryRoom = this.visibility.seesEveryRoom(viewerAuthorId);
+    const visible = seesEveryRoom
       ? this.store
           .listRooms(filter)
           // Cached remote rows share this table, but remote membership is not
@@ -153,7 +155,16 @@ export class RoomDirectory {
     // the log is right here and it has been read.
     const postedIn = this.store.listReads.roomsPostedInBy(viewerAuthorId);
     const bridges = this.bridges.findBridgesByRooms(visible.map((room) => room.id));
-    const lastLines = this.store.listReads.lastLines(visible.map((room) => room.id));
+    // What a non-owner may be shown starts where they joined: the same floor
+    // the room's history reads hold them to (`RoomVisibility.requireHistoryFloor`),
+    // so a row's last line can never quote what was said before they arrived.
+    // The owner reads the whole log of every room on their own machine.
+    const joinedAt = seesEveryRoom
+      ? new Map<string, number>()
+      : new Map(this.store.listMembershipsFor(viewerAuthorId).map((m) => [m.roomId, m.joinedSeq]));
+    const lastLines = this.store.listReads.lastLines(
+      visible.map((room) => ({ roomId: room.id, floor: joinedAt.get(room.id) ?? 0 }))
+    );
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
       const unreadCount = cursor === undefined ? null : this.store.countUnread(room.id, cursor);

@@ -608,6 +608,12 @@ export type Room = z.infer<typeof RoomSchema>;
 export const ROOM_LAST_LINE_MAX_CHARS = 120;
 
 /**
+ * The most @mentions a {@link RoomSummary} counts in one room. The sidebar draws
+ * anything past nine as `9+`, so ten is enough to know it is past nine.
+ */
+export const ROOM_MENTION_COUNT_CAP = 10;
+
+/**
  * A room as the sidebar reads it: the room, this viewer's unread count, and —
  * for a direct message — who it is with.
  *
@@ -645,9 +651,10 @@ export const RoomSummarySchema = RoomSchema.extend({
     .number()
     .int()
     .min(0)
+    .max(ROOM_MENTION_COUNT_CAP)
     .optional()
     .describe(
-      "How many entries above the viewer's read cursor @mention the viewer, thread replies included. Counted from the room log, never from notifications, so clearing a notification does not clear it and reading the room does. Absent when the viewer is not a member (there is no cursor to count above, exactly as `unreadCount` is `null`) and from a source that cannot count it. A person naming themselves is not counted."
+      `How many entries above the viewer's read cursor @mention the viewer, thread replies included, counted up to ${ROOM_MENTION_COUNT_CAP}: ${ROOM_MENTION_COUNT_CAP} means "${ROOM_MENTION_COUNT_CAP} or more", since a sidebar draws anything past nine as 9+ and counting further would only cost reads. Counted from the room log, never from notifications, so clearing a notification does not clear it and reading the room does. Absent when the viewer is not a member (there is no cursor to count above, exactly as \`unreadCount\` is \`null\`) and from a source that cannot count it. A person naming themselves is not counted.`
     ),
   lastLine: z
     .string()
@@ -655,7 +662,7 @@ export const RoomSummarySchema = RoomSchema.extend({
     .nullable()
     .optional()
     .describe(
-      `The newest top-level message's text, whitespace collapsed to single spaces and cut to ${ROOM_LAST_LINE_MAX_CHARS} characters with no ellipsis added. \`null\` when the room has no top-level message with text; absent from a source that cannot say. Thread replies are skipped: the room's own last line is what its row stands for.`
+      `The newest top-level message's text as one plain line: basic markdown (code fences, inline code, bold, links) taken out, whitespace collapsed, and cut to ${ROOM_LAST_LINE_MAX_CHARS} characters with no ellipsis added. \`null\` when there is no top-level message with text the viewer may read — a member who is not the owner is never shown a message from before they joined; absent from a source that cannot say. Thread replies are skipped: the room's own last line is what its row stands for.`
     ),
 }).openapi('RoomSummary');
 

@@ -1075,6 +1075,24 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
       expect(lines.get(quiet.id)).toBeNull();
     });
 
+    it('never shows a member who is not the owner a line from before they joined', () => {
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
+      service.post(room.id, { authorId: human, text: 'said before Ana arrived' });
+      const ana = service.addMember(room.id, human, { agentPath: '/agents/ana' }).authorId;
+      const lineFor = (viewer: string) =>
+        service.listRooms(viewer).find((r) => r.id === room.id)?.lastLine;
+
+      // The owner reads the whole log; Ana's starts where she joined.
+      expect(lineFor(human)).toBe('said before Ana arrived');
+      expect(lineFor(ana)).toBeNull();
+
+      service.post(room.id, { authorId: human, text: 'welcome, Ana' });
+      expect(lineFor(ana)).toBe('welcome, Ana');
+    });
+
     it('reads every last line in one statement, however many rooms there are', () => {
       const lineReads = (roomCount: number): number => {
         const harness = createRoomHarness({ agents: agentLookup });
@@ -1089,7 +1107,7 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
         const prepare = vi.spyOn(sqlite, 'prepare');
         harness.service.listRooms(harness.human);
         const reads = prepare.mock.calls.filter(([sql]) =>
-          String(sql).includes('room_entries AS newest')
+          String(sql).includes('json_each(?) AS wanted')
         ).length;
         prepare.mockRestore();
         return reads;
