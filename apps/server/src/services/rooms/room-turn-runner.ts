@@ -67,7 +67,7 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
-import { RoomTurnRuntimeGoneError } from './room-turn-port.js';
+import { RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { configManager } from '../core/config-manager.js';
 import {
@@ -87,12 +87,6 @@ import type {
   RoomTurnRunner,
   RoomTurnWaiting,
 } from './room-trigger.js';
-
-/**
- * Lock identity every room-triggered turn takes — see {@link ROOMS.CLIENT_ID},
- * which owns it because the message dispatcher has to recognise it too.
- */
-const ROOM_CLIENT_ID = ROOMS.CLIENT_ID;
 
 /**
  * The two bounds on how long a room pays attention to one turn.
@@ -872,7 +866,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
 
       const result = await dispatchMessage({
         sessionId,
-        clientId: ROOM_CLIENT_ID,
+        // The lock identity every room turn takes; `ROOMS.CLIENT_ID` owns it
+        // because the message dispatcher has to recognise it too.
+        clientId: ROOMS.CLIENT_ID,
         content: prompt,
         cwd: request.cwd,
         // The agent this turn is dispatched AS, in the runtime-neutral field
@@ -908,6 +904,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
         },
         roomContext,
+        ...seatLaunchOf(request),
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
         // shared canvas rather than on this agent's private session stream

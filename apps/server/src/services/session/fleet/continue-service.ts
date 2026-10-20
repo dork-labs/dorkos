@@ -668,6 +668,14 @@ async function markContinuedOnce(
 }
 
 /**
+ * The Activity writer moves are recorded with, once the service is installed.
+ * Shared with the room seat mover, so every move lands in the same feed.
+ */
+export function continueActivity(): ActivityService | undefined {
+  return activity;
+}
+
+/**
  * Install the continue service: the Activity writer it records moves with,
  * the recorder behind `accounts.markContinued`, and core's automatic handoff
  * for unclaimed `auto` plans.

@@ -724,6 +724,12 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
       type: 'string[] | null',
       default: 'null',
     },
+    'runtimes.claudeCode.accounts[].noAutoMove': {
+      description:
+        "`true` means DorkOS never moves an agent to this account on its own. When an agent's account runs out in a room, DorkOS picks another account to keep it going, and skips this one. You can still move an agent here yourself by choosing the account.",
+      type: 'boolean',
+      default: 'false',
+    },
     'runtimes.claudeCode.defaultAccountOnlyProjects': {
       description:
         "The same rule for this computer's own Claude sign-in (Main): the projects it may work in, or `null` for any project.",

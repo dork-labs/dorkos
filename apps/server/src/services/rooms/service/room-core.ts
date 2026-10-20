@@ -225,6 +225,8 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
       });
     },
     ...(deps.usageLimitFor ? { usageLimitFor: deps.usageLimitFor } : {}),
+    ...(deps.seatMover ? { seatMover: deps.seatMover } : {}),
+    ...(deps.roomHasOutsiders ? { roomHasOutsiders: deps.roomHasOutsiders } : {}),
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather

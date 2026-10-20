@@ -378,6 +378,22 @@ export function aliasTurnLevel(from: string, to: string): void {
 }
 
 /**
+ * Carry a conversation's level onto a DIFFERENT conversation that replaces it
+ * (a room seat moved to a fresh session). Unlike {@link aliasTurnLevel}, the
+ * target may already have a level of its own, so the two are merged by
+ * `stricterLevel`: the lower power and every mark of both. Nothing is lifted.
+ *
+ * @param from - The conversation being replaced.
+ * @param to - The conversation replacing it.
+ */
+export function carryTurnLevel(from: string, to: string): void {
+  const level = turnLevels.get(from);
+  if (level === undefined || from === to) return;
+  const existing = turnLevels.get(to);
+  remember(turnLevels, to, existing === undefined ? level : stricterLevel(existing, level));
+}
+
+/**
  * The level a room post was written at, or `undefined` when nothing was kept.
  *
  * @param entryId - The post's id.

@@ -25,6 +25,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/sessions/:id/wait',
     'POST /api/sessions/:id/fork',
     'POST /api/sessions/:id/continue/cancel',
+    // Moving a room agent to another account (re-seat): the room twin of
+    // continuing a chat on another account, two lines up, so the same level.
+    'POST /api/rooms/:id/members/:authorId/reseat',
     'POST /api/sessions/:id/command-intents/:intent',
     'POST /api/sessions/:id/process/switch',
     'POST /api/sessions/:id/reload-plugins',

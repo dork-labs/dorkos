@@ -17,6 +17,7 @@ import { agentKey, type ClaimOutcome } from '../room-claims.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
+import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 
 /**
@@ -207,6 +208,8 @@ export async function runAsideInDispatch(
       worktree: place.worktree,
       ...roomLaunchStepFor(self.deps, room.id, authorId, input.agentPath, place),
       sessionId: input.sessionId,
+      // A moved seat's launch, when its first turn back is this aside.
+      ...pendingSeatLaunch(self, room.id, authorId, input.sessionId),
       entry,
       // Never external: `entry` here is the greeter's own status post, written
       // by this machine, and nobody off it can ask for an aside turn.
@@ -221,6 +224,7 @@ export async function runAsideInDispatch(
       onActivity: (activity) => self.noteActivity(key, activity),
       onSessionBound: (id) => self.noteSessionBound(room.id, authorId, id),
     });
+    if (result.unanswered !== 'busy') settleSeatLaunch(self, room.id, authorId, input.sessionId);
     if (result.sessionId !== input.sessionId) {
       self.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
     }

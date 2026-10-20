@@ -50,6 +50,8 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { heldProcesses } from './held-process.js';
 import { ScenarioAborted, interactionGate } from './interaction-gate.js';
 import { declaredInterruptOutcome, scenarioStore } from './scenario-store.js';
+import { forcedLimitScenario } from '../../rooms/reseat/forced-limit-turn.js';
+import { setTestAccountWorld } from '../../rooms/reseat/test-account-world.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
@@ -156,6 +158,8 @@ export class TestModeRuntime implements AgentRuntime {
    * could take — or its rename.
    */
   resetTrackedSessions(): void {
+    // And the forced-limit seam's world (DOR-3143), so no test inherits one.
+    setTestAccountWorld(null, true);
     heldProcesses.reset();
     // Declared first-turn renames go too: a session id reused after a reset must
     // not inherit a rename the previous test asked for.
@@ -219,7 +223,8 @@ export class TestModeRuntime implements AgentRuntime {
     // racing one into existence, and after the turn has already STARTED under
     // the id the client minted (see `declareCanonicalSessionId`).
     this.revealCanonicalSessionId(sessionId);
-    const scenario = scenarioStore.getScenario(sessionId);
+    // The forced-limit seam (DOR-3143) first: `undefined` unless a test set a world.
+    const scenario = forcedLimitScenario(sessionId, opts) ?? scenarioStore.getScenario(sessionId);
     // The gate is what makes an interactive scenario possible: it hands the
     // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
     // `submitElicitation`/`interruptQuery` something real to resolve.

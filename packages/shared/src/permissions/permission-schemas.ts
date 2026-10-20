@@ -192,6 +192,18 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
    * raise of existing chats writes it (DOR-3107), and its Undo sets each chat back.
    */
   z.object({ kind: z.literal('chat'), sessionId: z.string() }),
+  /**
+   * Whether one Claude account is kept out of automatic moves (its
+   * `noAutoMove` flag): `before` and `after` are `'on'` (kept out) or `null`
+   * (may be picked). Recorded for everyone; only the upgrade that keeps an
+   * account out writes it, and its Undo lets agents move there again.
+   */
+  z.object({
+    kind: z.literal('account'),
+    accountId: z.string(),
+    /** What the person calls the account, for the history's sentence. */
+    accountName: z.string(),
+  }),
 ]);
 
 /** One change inside a `permission.changed` event. */
@@ -360,4 +372,18 @@ const CHAT_MODE_WORD: Record<string, string> = {
 export function chatModeWord(modeId: string | null): string {
   if (modeId === null) return 'the default';
   return CHAT_MODE_WORD[modeId] ?? modeId;
+}
+
+/** The value an `account` change records for an account kept out of automatic moves. */
+export const KEPT_FROM_AUTO_MOVES = 'on';
+
+/**
+ * An `account` change's value as the permission history says it.
+ *
+ * @param value - `'on'` for kept out of automatic moves, `null` for not.
+ */
+export function autoMoveWord(value: string | null): string {
+  return value === KEPT_FROM_AUTO_MOVES
+    ? 'Not used for automatic moves'
+    : 'Used for automatic moves';
 }

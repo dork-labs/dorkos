@@ -61,6 +61,7 @@
     "DELETE /api/tasks/:id",
     "DELETE /api/templates/:id",
     "DELETE /api/terminal/:id",
+    "DELETE /api/test/account-world",
     "DELETE /api/workspaces/:id",
     "DELETE /mcp",
     "GET /.well-known/agent-card.json",
@@ -256,6 +257,7 @@
     "GET /api/rooms/:id/export",
     "GET /api/rooms/:id/files",
     "GET /api/rooms/:id/files/content",
+    "GET /api/rooms/:id/members/:authorId/reseat-options",
     "GET /api/rooms/:id/repo/status",
     "GET /api/rooms/:id/sessions",
     "GET /api/rooms/threads",
@@ -518,6 +520,7 @@
     "POST /api/rooms/:id/halt/:authorId",
     "POST /api/rooms/:id/holds/:authorId/promote",
     "POST /api/rooms/:id/members",
+    "POST /api/rooms/:id/members/:authorId/reseat",
     "POST /api/rooms/:id/repo",
     "POST /api/rooms/:id/repo/main/repair",
     "POST /api/rooms/:id/repo/merge",
@@ -638,6 +641,7 @@
     "PUT /api/rooms/:id/follow",
     "PUT /api/runtimes/claude-code/accounts/:id/only-projects",
     "PUT /api/runtimes/claude-code/project-accounts",
-    "PUT /api/runtimes/doe/inference"
+    "PUT /api/runtimes/doe/inference",
+    "PUT /api/test/account-world"
   ]
 }

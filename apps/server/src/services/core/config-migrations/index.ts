@@ -99,6 +99,7 @@ import {
   seedLanAccess,
   seedMaxWarmProcesses,
   raiseEngagedWindowDefaults,
+  keepAccountOutOfAutoMoves,
 } from './v0-90-onward.js';
 
 /**
@@ -1322,4 +1323,11 @@ export const CONFIG_MIGRATIONS = {
   // section lacks it, and touches nothing else (DOR-3012). See
   // `seedMaxWarmProcesses`.
   '0.123.0': seedMaxWarmProcesses,
+  // v0.124.0 is the newest tag, and this ships in the 0.124.1 patch, so it
+  // opens 0.124.1. Frozen from merge; anything further opens `'0.125.0'`.
+  //
+  // Sets `noAutoMove: true` on one registered Claude account row that lacks
+  // the field, and touches nothing else (Re-seat P0). See
+  // `keepAccountOutOfAutoMoves`; the history line it owes is written at boot.
+  '0.124.1': keepAccountOutOfAutoMoves,
 } as const;

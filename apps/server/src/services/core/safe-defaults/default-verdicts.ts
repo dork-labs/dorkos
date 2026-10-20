@@ -280,6 +280,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // `PERMISSIVE_DEFAULTS` because a wipe carries them; this one rides on its
   // registry row, which a wipe does not carry, so there is nothing to lose.
   'runtimes.claudeCode.accounts[].onlyProjects',
+  // An account a person kept out of automatic moves (Re-seat P0). Absent reads
+  // as "may be picked", exactly how every account behaved before the flag
+  // existed, and it rides on its registry row, which a wipe does not carry.
+  'runtimes.claudeCode.accounts[].noAutoMove',
   // The extension copies a person said "Not now" to in the Activity inbox
   // (DOR-2517). Ships EMPTY, so every extension waiting to run is asked about;
   // an entry only stops the inbox asking again. It approves, runs and grants

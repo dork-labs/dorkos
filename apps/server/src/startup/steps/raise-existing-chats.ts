@@ -51,30 +51,32 @@ function agentsOf(mesh: ServerRefs['meshCore']): PermissionAgentRef[] {
   }));
 }
 
-/** How far back the history is searched for an earlier raise. */
-const PRIOR_RAISE_DEPTH = 2_000;
+/** How far back the history is searched for an earlier one-time line. */
+const PRIOR_LINE_DEPTH = 2_000;
 
 /**
- * Whether the permission history already holds a raise of existing chats: the
- * second half of the done flag, for an install whose done file was lost.
+ * Whether the permission history already holds a one-time upgrade line, found
+ * by its note: the second half of a done flag, for an install whose done file
+ * was lost. The raise of existing chats and the accounts kept out of automatic
+ * moves both ask it.
  *
  * @param activity - The Activity reader.
- * @param raiseNote - The note that raise's history event carries.
+ * @param note - The note the line carries.
  */
-async function historyHoldsRaise(
+export async function historyHoldsNote(
   activity: Pick<ActivityService, 'list'>,
-  raiseNote: string
+  note: string
 ): Promise<boolean> {
   let cursor: string | undefined;
-  for (let seen = 0; seen < PRIOR_RAISE_DEPTH;) {
+  for (let seen = 0; seen < PRIOR_LINE_DEPTH;) {
     const page = await activity.list({
       limit: 100,
       categories: 'permissions',
       ...(cursor ? { before: cursor } : {}),
     });
     for (const row of page.items) {
-      const note = (row.metadata as { note?: unknown } | null)?.note;
-      if (row.eventType === PERMISSION_CHANGED_EVENT && note === raiseNote) return true;
+      const found = (row.metadata as { note?: unknown } | null)?.note;
+      if (row.eventType === PERMISSION_CHANGED_EVENT && found === note) return true;
       cursor = row.occurredAt;
     }
     seen += page.items.length;
@@ -193,7 +195,7 @@ async function runRaise(
           : undefined,
       port,
       activity: input.activity,
-      priorRaise: () => historyHoldsRaise(input.activity, raise.note),
+      priorRaise: () => historyHoldsNote(input.activity, raise.note),
       logger,
     });
   } catch (err) {

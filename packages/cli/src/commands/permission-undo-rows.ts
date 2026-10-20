@@ -4,7 +4,7 @@
  *
  * @module commands/permission-undo-rows
  */
-import { chatModeWord, type PermissionUndoSkip } from '@dorkos/shared/permissions';
+import { autoMoveWord, chatModeWord, type PermissionUndoSkip } from '@dorkos/shared/permissions';
 
 /** The words a recorded value is read with, by what its key is. */
 export interface UndoRowLabels {
@@ -26,6 +26,7 @@ function valueText(
   labels: UndoRowLabels
 ): string {
   if (key.kind === 'chat') return chatModeWord(value);
+  if (key.kind === 'account') return autoMoveWord(value);
   if (value === null) return 'not set';
   const words =
     key.kind === 'files' ? labels.stop : key.kind === 'preset' ? labels.preset : labels.state;
@@ -43,6 +44,8 @@ function settingText(key: PermissionUndoSkip['change']['key']): string {
       return `files${key.runtime ? ` (${key.runtime})` : ''}`;
     case 'chat':
       return `chat ${key.sessionId.slice(0, 8)}`;
+    case 'account':
+      return `account ${key.accountName}`;
     case 'preset':
       return 'preset';
   }

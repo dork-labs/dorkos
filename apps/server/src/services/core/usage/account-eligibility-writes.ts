@@ -1,7 +1,8 @@
 /**
  * The only writers of the account rules (spec `flow-multiproject` §8.1, §8.6):
- * a project's allow list, an account's `onlyProjects`, and the rename that
- * carries an account id through every allow list.
+ * a project's allow list, an account's `onlyProjects`, the rename that
+ * carries an account id through every allow list, and an account's
+ * `noAutoMove` flag (Re-seat P0).
  *
  * **Never a dotted key path.** `projectAccounts` is keyed by absolute project
  * roots, and roots contain dots (`/Users/x/client.app`), which `conf` would
@@ -11,8 +12,9 @@
  * by id with every other field kept, so a field a newer flow wrote survives.
  *
  * Only a person reaches these: the two `PUT /api/runtimes/claude-code/...`
- * routes sit behind the person bar, and no extension `ctx` member calls them
- * (invariant 9).
+ * routes sit behind the person bar, the `noAutoMove` write is reached only by
+ * a permission-history Undo (whose route clears the person bar), and no
+ * extension `ctx` member calls them (invariant 9).
  *
  * @module services/core/usage/account-eligibility-writes
  */
@@ -94,6 +96,31 @@ export function writeOnlyProjects(
     if (found || !isRecord(row) || row.id !== accountId) return row;
     found = true;
     return { ...row, onlyProjects: value };
+  });
+  if (!found) return false;
+  writeBlock(store, runtimes, { ...block, accounts: next });
+  return true;
+}
+
+/**
+ * Keep an account out of automatic moves, or let it back in: its `noAutoMove`
+ * flag (Re-seat P0). Written as `true` or `false`, never removed, so a row
+ * says what a person last chose. The first row with the id is the one every
+ * reader lists, so it is the one written.
+ *
+ * @param store - The config.
+ * @param accountId - A registry id.
+ * @param on - `true` to keep it out of automatic moves.
+ * @returns False when `accountId` names no registry row.
+ */
+export function writeNoAutoMove(store: RuntimesStore, accountId: string, on: boolean): boolean {
+  const { runtimes, block } = readBlock(store);
+  const rows = Array.isArray(block.accounts) ? block.accounts : [];
+  let found = false;
+  const next = rows.map((row: unknown) => {
+    if (found || !isRecord(row) || row.id !== accountId) return row;
+    found = true;
+    return { ...row, noAutoMove: on };
   });
   if (!found) return false;
   writeBlock(store, runtimes, { ...block, accounts: next });

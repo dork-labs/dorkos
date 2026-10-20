@@ -125,6 +125,7 @@ import {
   type UnclaimedChatsRouterDeps,
 } from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
+import { createTestAccountWorldRoutes } from '../routes/test-account-world.js';
 import tunnelRoutes from '../routes/tunnel.js';
 import { createLanAccessRoutes } from '../routes/lan-access.js';
 import eventsRoutes from '../routes/events.js';
@@ -403,6 +404,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.admin) app.route('/api/admin', createAdminRoutes(deps.admin));
   // Test-only surfaces, imported always (no vitest or SDK deps) but mounted only
   // in test mode, so none of their paths exist in production.
+  // The forced-limit seam for re-seating (DOR-3143), test runtime only.
+  if (env.DORKOS_TEST_RUNTIME) app.route('/api/test/account-world', createTestAccountWorldRoutes());
   if (env.DORKOS_TEST_RUNTIME || deps.testControl) {
     app.route('/api/test', createTestControlRoutes(deps.testControl));
   }

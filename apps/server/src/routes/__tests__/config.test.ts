@@ -664,6 +664,50 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('an account kept out of automatic moves (Re-seat P0)', () => {
+    const row = { id: 'claude-ab1', path: '/Users/me/.claude-ab1', label: 'AB1', color: null };
+
+    async function storedFlag(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const accounts = configManager.getDot('runtimes.claudeCode.accounts') as Array<{
+        id: string;
+        noAutoMove?: unknown;
+      }>;
+      return accounts.find((a) => a.id === 'claude-ab1')?.noAutoMove;
+    }
+
+    beforeEach(async () => {
+      // The person keeps the account out, which is the state the upgrade leaves.
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: true }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('refuses an agent clearing the flag, and keeps it on', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.accounts[].noAutoMove');
+      expect(await storedFlag()).toBe(true);
+    });
+
+    it('lets the person clear it through the same door', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+        .expect(200);
+      expect(await storedFlag()).toBe(false);
+    });
+  });
+
   describe('the account rules in a PATCH (spec flow-multiproject §8.1)', () => {
     // Purpose: a write that states a rule in the wrong shape is refused, never
     // stored as the wider "no rule" the tolerant read would make of it.

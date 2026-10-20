@@ -70,14 +70,17 @@ function hasHeldToDefaultColumn(db: Db): boolean {
 export type ChatLaunchMarked = (sessionId: string, launchOrigin: string | null) => boolean;
 
 /**
- * Build the reader over a database.
+ * Whether a room is outside or holds a marked or outside post: bridged to a
+ * chat app, a space's copy, holding a post from an author outside this
+ * computer (or with no author record), a post whose kept marks carry one, or a
+ * post held to the runtime's default (a Wi-Fi sign-in's). What a room turn's
+ * chat is judged by, and what decides whether a room's own lines may name the
+ * owner's accounts (re-seat, Security Must 7).
  *
  * @param db - The database.
- * @param cacheRooms - Keep each room's answer for the reader's life: right for
- *   the one-time raise, which reads many chats of one room at once; wrong for a
- *   live check, where a room can gain a post at any moment.
+ * @param cacheRooms - Keep each room's answer for the reader's life (see {@link chatLaunchMarks}).
  */
-export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
+export function roomMarkedReader(db: Db, cacheRooms = false): (roomId: string) => boolean {
   const rooms = new Map<string, boolean>();
   let heldColumn: boolean | undefined;
 
@@ -136,6 +139,19 @@ export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
     if (cacheRooms) rooms.set(roomId, answer);
     return answer;
   };
+  return roomMarked;
+}
+
+/**
+ * Build the reader over a database.
+ *
+ * @param db - The database.
+ * @param cacheRooms - Keep each room's answer for the reader's life: right for
+ *   the one-time raise, which reads many chats of one room at once; wrong for a
+ *   live check, where a room can gain a post at any moment.
+ */
+export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
+  const roomMarked = roomMarkedReader(db, cacheRooms);
 
   /** Whether a room turn's chat is marked: its room, found through its seat. */
   const roomChatMarked = (sessionId: string): boolean => {
