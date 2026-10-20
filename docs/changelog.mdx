@@ -5,6 +5,41 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.124.1] - 2026-10-20
+
+> DorkOS 0.124.1 lets chats your agents start work at their agent's level, keeps room agents answering when a Claude account runs out, and makes chats from your Wi-Fi ask before every step.
+
+### Added
+
+- An agent in a channel or DM whose Claude account runs out now moves to the account with the most usage left and answers the same message, on its own. The room gets one short line saying so. If no account has usage left, the room says when the soonest one is back.
+- An agent whose account is almost out (95% of its 5-hour or weekly limit) moves before it starts, so its answer isn't cut off.
+- An agent whose earlier chat in a room has expired starts a fresh one there and says so, instead of quietly forgetting.
+- Keep an account out of these automatic moves: turn off **Move agents here automatically** on it in Settings → Runtimes. If you had an account named `claude-ab1`, kept for other projects, the update turns this off for it. The change shows in your permission history, with an Undo.
+- Move an agent in a channel or DM to another Claude account yourself: open its menu in the room's member list and choose **Continue on another account…**. Pick an account and its next answer starts there, with a summary of where it was. If no account has usage left, the picker says so. You can also do it through the DorkOS MCP server or the app's API.
+- Agents now know what it means when their room seat moves to another account, so they finish what they started instead of answering twice.
+- When a canvas document can send events to an agent, a Routes button now appears above it. Open it to see where each kind of event would go, whether it is on, when it ends and how often it may start work. Review the exact details, then allow a route for an hour, a day or a week, or turn one off. A route does nothing until it is allowed: the agent that opened a document can allow its own routes, and a route to another agent or to the room always needs a person. (DOR-2665)
+- You can add a passkey for approving from the web. In Settings, under Chat from the web, a linked computer now lists its approval passkeys, adds one, and removes one. Adding or removing one needs your password, and works only in the app on the computer DorkOS runs on, never from Wi-Fi or another device. Each passkey is made for this one computer, separate from the passkey you sign in to DorkOS with. This sits behind the same switch as the rest of using DorkOS from anywhere, which is off by default, and approving from the web itself isn't turned on yet.
+
+### Fixed
+
+- A chat at Full autonomy now starts its own chats at Full too, unless it asks for less. Before, those chats started lower, so they kept asking you to approve routine work. A new chat never goes above the level you set for its agent. Chats your agents already started below their level move up once, on the next start, with an Undo in Activity. Chats that read outside content stay where they are. (DOR-3147)
+- If `dorkos auth enable` can't end the sign-in it made while setting up, the password still turns on, and DorkOS ends that sign-in the next time it starts. A leftover one from an earlier setup is ended the same way, not hidden from Signed-in devices. (DOR-3097)
+- Security updates for bundled dependencies.
+
+### Security
+
+- A chat you start or message from a phone or laptop on your Wi-Fi now runs at Default at most, even for an agent set to Full autonomy. The agent asks before every file change or command, and from Wi-Fi the answer is Allow once or Deny. The same limit follows anything that chat sets off: other agents it mentions or messages, chats it starts, a message waiting in line, and every turn that picks the chat up on its own: an approval's answer, a resume after a usage limit, a nudge after a sign-in. That holds even after DorkOS restarts. A schedule an agent makes during that chat waits for your approval, and the agent can't change its instructions or make a promise from it. An agent's check-ins skip messages written from Wi-Fi. (DOR-3037)
+- From Wi-Fi you can lower permissions but not raise them. Picking Careful, blocking something, or setting a chat or schedule to ask more all work there. Loosening any of them, undoing a permission change, approving an agent's request that could change permissions, safety limits, packages, agents or tool servers, editing an agent's instructions (SOUL.md, NOPE.md, MEMORY.md, HEARTBEAT.md, persona, personality), recording an agent's promise, or running a schedule set above Default happens on the computer DorkOS runs on, and the app says so calmly. (DOR-3037)
+- From Wi-Fi, answering a chat that runs above Default means picking one of the answers it offers. Typed answers, and a reason with any Deny, work only on the computer DorkOS runs on. (DOR-3037)
+- On Wi-Fi the chat's status line says "On Wi-Fi · agents ask or only read", and the permissions chip shows "Default (Wi-Fi)". (DOR-3037)
+- A chat that an extension starts always asks before acting, whatever limit the request that started it carried. Before, a looser limit passed along with the request could replace that one. (DOR-3037)
+- When one of your agents posts in a room after reading something from outside (a stranger's message, a Wi-Fi sign-in, a teammate), the agent it mentions now asks before acting, even if the first agent runs at Full autonomy. Before, that limit only held after DorkOS restarted. (DOR-3141)
+- The guard that stops agents from editing your permission settings now holds when your DorkOS data folder is reached through a shortcut (a symlink) or set with a relative path. (DOR-2969)
+
+### Note for people upgrading
+
+- Rooms have one new kind of notice line, for an agent that moved to another account. An older app reading a newer server will not understand it, so update both together.
+
 ## [0.124.0] - 2026-10-19
 
 > DorkOS 0.124.0 stops your own agents from asking you about routine work, adds a list of your signed-in devices, and fixes the side panel showing the wrong agent.
@@ -295,39 +330,4 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 - An extension's server half now starts when DorkOS's data folder sits inside a project set up for modern JavaScript modules. Before, it could stop at startup with "module is not defined".
 
-## [0.115.0] - 2026-10-15
-
-> DorkOS 0.115.0 lets your agents work without asking first, opens long chats on their newest messages, and keeps your computer awake while background helpers work.
-
-### Added
-
-- The Terms for DorkOS Cloud are now on the website at dorkos.ai/cloud/terms. They cover the paid services: who can use them, refunds, and what happens if something goes wrong. The pricing page, the site footer and the main Terms of Service link to them.
-
-### Changed
-
-- Agents now work on their own. A new install starts on **Trusted**: every area is Allowed except Safety limits and Reach & secrets, which still ask, and a chat edits files and runs commands without stopping to check with you. **Careful**, for anyone who would rather approve things by hand, is the other choice. Updating an existing install moves you to Trusted once and shows a one-time note, "Agents now work without asking," unless you had already chosen Careful or told DorkOS to keep asking you (DOR-2739)
-- Removing a package, deleting a scheduled task, and removing an agent now run and land in your activity feed on Trusted, instead of waiting for a card. Changing an agent's safety boundaries or what it runs on, and running a package from a folder, still always ask (DOR-2739)
-- On Trusted, your agents can message each other across projects by default. DorkOS turns this on once, the first time it starts; turning it off in Team → Access keeps it off from then on. A Careful install is left as it was (DOR-2739)
-- A schedule one of your agents proposes for itself starts running right away on Trusted, with a notification and a **Pause** button, instead of waiting for your approval. On Careful it still waits (DOR-2739)
-- A mini app your agent builds for you with `create_extension` turns on by itself on Trusted, bound to the exact folder and the permissions it asked for at the time. On Careful it still waits for you (DOR-2739)
-- On Trusted, your agents can change permissions too, and each change lands in the history with the agent's name. To keep a setting no agent can undo, set the Permissions area itself to Ask or Blocked. Installing or updating a package still asks, on any preset (DOR-2739)
-- A tool or script DorkOS can't place as one of your agents, and an agent whose turn someone outside your team started, still have to ask before an action with no undo or any change to permissions, on any preset (DOR-2739)
-- A new Telegram or Slack connection now lets its agent start conversations by default on Trusted (DOR-2739)
-- Every page of DorkOS starts with a smaller download. Settings and Scheduled tasks now load when you first open them instead of with the app, which trims about 7% off what each page downloads first. They are fetched quietly once the app is idle, so they usually still open at once.
-- A long chat now opens on its newest 150 messages, so it shows up fast however long it is. Press **Earlier messages** at the top to read older ones, 100 at a time. A link to an older message, from search or another chat, reads back until it finds it, up to about 2,000 messages back. The "New messages" line still lands in the right place.
-
-### Fixed
-
-- Agents can build extensions again. In a chat they only had the extension guide, not the tools to create, test or reload one, so asking an agent for a mini app went nowhere.
-- When DorkOS Cloud had a brief outage just as your credits token was due to renew, DorkOS stopped trying. Your next chat on credits then had to wait for a new token, or failed. Now DorkOS keeps trying, waiting a little longer each time.
-- Sorting the Tasks list by **Last run** now puts the task that ran most recently first. It used to sort by when each task was last edited instead. Tasks that never ran go last.
-- Your computer now stays awake while an agent's background helper is still working, and while the agent writes up what the helper found. Before, it could fall asleep as soon as the agent said "I'll report back". Other background work, like a server left running, keeps it awake for at most 20 minutes.
-- Your computer now stays awake for 3 minutes after the last piece of work ends, up from 30 seconds, so it no longer dozes off in the gap between one reply and the next.
-- If your computer refuses to stay awake, DorkOS now tries again on its own, and switching the Sleep setting off and on tries again right away. Before, the switch was greyed out until you restarted DorkOS.
-- The Sleep setting now says plainly that closing the lid usually still puts the computer to sleep, and that the screen still locks.
-
-### Note for people upgrading
-
-- If you see the "Agents now work without asking" note, **Got it** keeps your agents working the new way; **Keep asking me** switches you to Careful and keeps anything you set to Blocked, so your agents keep asking first. Either answer, the note shows once and does not come back (DOR-2739)
-
-Older releases (v0.1.0 – v0.114.1) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.115.0) live in the [Changelog archive](/changelog-archive).

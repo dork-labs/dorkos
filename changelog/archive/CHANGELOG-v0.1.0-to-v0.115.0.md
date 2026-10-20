@@ -1,7 +1,42 @@
-# Changelog archive: v0.1.0 – v0.114.1
+# Changelog archive: v0.1.0 – v0.115.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.115.0] - 2026-10-15
+
+> DorkOS 0.115.0 lets your agents work without asking first, opens long chats on their newest messages, and keeps your computer awake while background helpers work.
+
+### Added
+
+- The Terms for DorkOS Cloud are now on the website at dorkos.ai/cloud/terms. They cover the paid services: who can use them, refunds, and what happens if something goes wrong. The pricing page, the site footer and the main Terms of Service link to them.
+
+### Changed
+
+- Agents now work on their own. A new install starts on **Trusted**: every area is Allowed except Safety limits and Reach & secrets, which still ask, and a chat edits files and runs commands without stopping to check with you. **Careful**, for anyone who would rather approve things by hand, is the other choice. Updating an existing install moves you to Trusted once and shows a one-time note, "Agents now work without asking," unless you had already chosen Careful or told DorkOS to keep asking you (DOR-2739)
+- Removing a package, deleting a scheduled task, and removing an agent now run and land in your activity feed on Trusted, instead of waiting for a card. Changing an agent's safety boundaries or what it runs on, and running a package from a folder, still always ask (DOR-2739)
+- On Trusted, your agents can message each other across projects by default. DorkOS turns this on once, the first time it starts; turning it off in Team → Access keeps it off from then on. A Careful install is left as it was (DOR-2739)
+- A schedule one of your agents proposes for itself starts running right away on Trusted, with a notification and a **Pause** button, instead of waiting for your approval. On Careful it still waits (DOR-2739)
+- A mini app your agent builds for you with `create_extension` turns on by itself on Trusted, bound to the exact folder and the permissions it asked for at the time. On Careful it still waits for you (DOR-2739)
+- On Trusted, your agents can change permissions too, and each change lands in the history with the agent's name. To keep a setting no agent can undo, set the Permissions area itself to Ask or Blocked. Installing or updating a package still asks, on any preset (DOR-2739)
+- A tool or script DorkOS can't place as one of your agents, and an agent whose turn someone outside your team started, still have to ask before an action with no undo or any change to permissions, on any preset (DOR-2739)
+- A new Telegram or Slack connection now lets its agent start conversations by default on Trusted (DOR-2739)
+- Every page of DorkOS starts with a smaller download. Settings and Scheduled tasks now load when you first open them instead of with the app, which trims about 7% off what each page downloads first. They are fetched quietly once the app is idle, so they usually still open at once.
+- A long chat now opens on its newest 150 messages, so it shows up fast however long it is. Press **Earlier messages** at the top to read older ones, 100 at a time. A link to an older message, from search or another chat, reads back until it finds it, up to about 2,000 messages back. The "New messages" line still lands in the right place.
+
+### Fixed
+
+- Agents can build extensions again. In a chat they only had the extension guide, not the tools to create, test or reload one, so asking an agent for a mini app went nowhere.
+- When DorkOS Cloud had a brief outage just as your credits token was due to renew, DorkOS stopped trying. Your next chat on credits then had to wait for a new token, or failed. Now DorkOS keeps trying, waiting a little longer each time.
+- Sorting the Tasks list by **Last run** now puts the task that ran most recently first. It used to sort by when each task was last edited instead. Tasks that never ran go last.
+- Your computer now stays awake while an agent's background helper is still working, and while the agent writes up what the helper found. Before, it could fall asleep as soon as the agent said "I'll report back". Other background work, like a server left running, keeps it awake for at most 20 minutes.
+- Your computer now stays awake for 3 minutes after the last piece of work ends, up from 30 seconds, so it no longer dozes off in the gap between one reply and the next.
+- If your computer refuses to stay awake, DorkOS now tries again on its own, and switching the Sleep setting off and on tries again right away. Before, the switch was greyed out until you restarted DorkOS.
+- The Sleep setting now says plainly that closing the lid usually still puts the computer to sleep, and that the screen still locks.
+
+### Note for people upgrading
+
+- If you see the "Agents now work without asking" note, **Got it** keeps your agents working the new way; **Keep asking me** switches you to Careful and keeps anything you set to Blocked, so your agents keep asking first. Either answer, the note shows once and does not come back (DOR-2739)
 
 ## [0.114.1] - 2026-10-14
 
@@ -7145,6 +7180,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
 [0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
 [0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
 [0.111.0]: https://github.com/dork-labs/dorkos/compare/v0.110.0...v0.111.0

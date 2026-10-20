@@ -1,0 +1,62 @@
+---
+title: DorkOS 0.124.1
+description: Chats your agents start work at their agent's level, room agents keep answering when an account runs out, and chats from your Wi-Fi ask before every step.
+date: 2026-10-20
+author: DorkOS Team
+category: release
+tags: [release, agents, permissions, rooms]
+---
+
+DorkOS 0.124.1 lets chats your agents start work at their agent's level, keeps room agents answering when a Claude account runs out, and makes chats from your Wi-Fi ask before every step.
+
+## Highlights
+
+### Fewer approval requests from your agents' own chats
+
+When an agent at Full autonomy starts a new chat, that chat now starts at Full too. It never goes above the level you set. Chats that started too low move up once, with an Undo in Activity.
+
+### Room agents keep answering when an account runs out
+
+If an agent's Claude account runs out in a channel or DM, it moves to the account with the most usage left and answers the same message. You can also move it yourself from its menu: **Continue on another account…**
+
+### Chats from your Wi-Fi ask first
+
+A chat you start from a phone or laptop on your Wi-Fi runs at Default at most. The agent asks before every file change or command, and anything that chat sets off stays limited the same way.
+
+## Known issues
+
+- Approving tool calls from the web isn't turned on yet. This release adds the passkey for it; the switch comes later.
+- Update the app and the server together. An older app can't read the new "moved to another account" line in a room.
+
+## All Changes
+
+### Added
+
+- An agent in a channel or DM whose Claude account runs out now moves to the account with the most usage left and answers the same message, on its own. The room gets one short line saying so. If no account has usage left, the room says when the soonest one is back.
+- An agent whose account is almost out (95% of its 5-hour or weekly limit) moves before it starts, so its answer isn't cut off.
+- An agent whose earlier chat in a room has expired starts a fresh one there and says so, instead of quietly forgetting.
+- Keep an account out of these automatic moves: turn off **Move agents here automatically** on it in Settings → Runtimes. If you had an account named `claude-ab1`, kept for other projects, the update turns this off for it. The change shows in your permission history, with an Undo.
+- Move an agent in a channel or DM to another Claude account yourself: open its menu in the room's member list and choose **Continue on another account…**. Pick an account and its next answer starts there, with a summary of where it was. If no account has usage left, the picker says so. You can also do it through the DorkOS MCP server or the app's API.
+- Agents now know what it means when their room seat moves to another account, so they finish what they started instead of answering twice.
+- When a canvas document can send events to an agent, a Routes button now appears above it. Open it to see where each kind of event would go, whether it is on, when it ends and how often it may start work. Review the exact details, then allow a route for an hour, a day or a week, or turn one off. A route does nothing until it is allowed: the agent that opened a document can allow its own routes, and a route to another agent or to the room always needs a person. (DOR-2665)
+- You can add a passkey for approving from the web. In Settings, under Chat from the web, a linked computer now lists its approval passkeys, adds one, and removes one. Adding or removing one needs your password, and works only in the app on the computer DorkOS runs on, never from Wi-Fi or another device. Each passkey is made for this one computer, separate from the passkey you sign in to DorkOS with. This sits behind the same switch as the rest of using DorkOS from anywhere, which is off by default, and approving from the web itself isn't turned on yet.
+
+### Fixed
+
+- A chat at Full autonomy now starts its own chats at Full too, unless it asks for less. Before, those chats started lower, so they kept asking you to approve routine work. A new chat never goes above the level you set for its agent. Chats your agents already started below their level move up once, on the next start, with an Undo in Activity. Chats that read outside content stay where they are. (DOR-3147)
+- If `dorkos auth enable` can't end the sign-in it made while setting up, the password still turns on, and DorkOS ends that sign-in the next time it starts. A leftover one from an earlier setup is ended the same way, not hidden from Signed-in devices. (DOR-3097)
+- Security updates for bundled dependencies.
+
+### Security
+
+- A chat you start or message from a phone or laptop on your Wi-Fi now runs at Default at most, even for an agent set to Full autonomy. The agent asks before every file change or command, and from Wi-Fi the answer is Allow once or Deny. The same limit follows anything that chat sets off: other agents it mentions or messages, chats it starts, a message waiting in line, and every turn that picks the chat up on its own: an approval's answer, a resume after a usage limit, a nudge after a sign-in. That holds even after DorkOS restarts. A schedule an agent makes during that chat waits for your approval, and the agent can't change its instructions or make a promise from it. An agent's check-ins skip messages written from Wi-Fi. (DOR-3037)
+- From Wi-Fi you can lower permissions but not raise them. Picking Careful, blocking something, or setting a chat or schedule to ask more all work there. Loosening any of them, undoing a permission change, approving an agent's request that could change permissions, safety limits, packages, agents or tool servers, editing an agent's instructions (SOUL.md, NOPE.md, MEMORY.md, HEARTBEAT.md, persona, personality), recording an agent's promise, or running a schedule set above Default happens on the computer DorkOS runs on, and the app says so calmly. (DOR-3037)
+- From Wi-Fi, answering a chat that runs above Default means picking one of the answers it offers. Typed answers, and a reason with any Deny, work only on the computer DorkOS runs on. (DOR-3037)
+- On Wi-Fi the chat's status line says "On Wi-Fi · agents ask or only read", and the permissions chip shows "Default (Wi-Fi)". (DOR-3037)
+- A chat that an extension starts always asks before acting, whatever limit the request that started it carried. Before, a looser limit passed along with the request could replace that one. (DOR-3037)
+- When one of your agents posts in a room after reading something from outside (a stranger's message, a Wi-Fi sign-in, a teammate), the agent it mentions now asks before acting, even if the first agent runs at Full autonomy. Before, that limit only held after DorkOS restarted. (DOR-3141)
+- The guard that stops agents from editing your permission settings now holds when your DorkOS data folder is reached through a shortcut (a symlink) or set with a relative path. (DOR-2969)
+
+### Note for people upgrading
+
+- Rooms have one new kind of notice line, for an agent that moved to another account. An older app reading a newer server will not understand it, so update both together.
