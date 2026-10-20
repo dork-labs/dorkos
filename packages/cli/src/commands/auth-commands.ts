@@ -228,14 +228,24 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
     return 1;
   }
 
+  // Only flip the flag after the account exists — a failed sign-up must leave
+  // config untouched. And before anything else can fail: with the account
+  // made and the flag unset, a re-run refuses (an owner exists) and the
+  // password would never be asked for.
+  configStore.setDot('auth.enabled', true);
+
   // Sign-up also signs in, and nothing here ever uses that sign-in: kept, it
   // shows in Signed-in devices as a device nobody holds (DOR-3097). Only that
-  // one ends, through Better Auth, so its own delete hooks run.
-  if (signUpToken) await (await auth.$context).internalAdapter.deleteSession(signUpToken);
-
-  // Only flip the flag after the account exists — a failed sign-up must leave
-  // config untouched.
-  configStore.setDot('auth.enabled', true);
+  // one ends, through Better Auth, so its own delete hooks run. Best effort:
+  // the server sweeps a leftover one on start.
+  if (signUpToken) {
+    try {
+      await (await auth.$context).internalAdapter.deleteSession(signUpToken);
+    } catch (err) {
+      io.error(`Could not end the sign-in made during setup: ${errorMessage(err)}`);
+      io.error('It ends the next time DorkOS starts.');
+    }
+  }
 
   io.log(`Owner account created for ${email}.`);
   io.log('This computer now asks for a password too. Other devices always do.');

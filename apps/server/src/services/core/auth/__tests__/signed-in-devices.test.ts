@@ -1,6 +1,7 @@
 /**
- * Signing out everywhere else counts only sign-ins really gone, and the audit
- * row a devices sign-out writes (F4 part 2, DOR-2969).
+ * Signing out everywhere else counts only sign-ins really gone, the audit row a
+ * devices sign-out writes (F4 part 2, DOR-2969), and the setup sign-in that
+ * ends at start rather than hiding in the list (DOR-3097).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +9,7 @@ import type { Auth } from '../index.js';
 import { markSignedOutFromDevices, sessionEndReason } from '../auth-audit.js';
 import {
   deviceNameOf,
+  endSetupSignIns,
   listSignedInDevices,
   signOutOtherSessions,
 } from '../sessions/signed-in-devices.js';
@@ -87,13 +89,13 @@ describe('deviceNameOf', () => {
   });
 });
 
-describe('listSignedInDevices', () => {
+describe('listSignedInDevices and endSetupSignIns', () => {
   const SIGNED_UP = new Date(Date.now() - 3_600_000);
   const UA =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129.0.0.0 Safari/537.36';
-  /** A Better Auth stand-in: an account made at `SIGNED_UP`, listing `rows`. */
-  function authOver(rows: object[]): Auth {
-    const full = rows.map((row, i) => ({
+  /** A Better Auth stand-in: an account made at `SIGNED_UP`, listing `rows`, whose deletes stick. */
+  function authOver(rows: object[]) {
+    let full = rows.map((row, i) => ({
       token: `tok-${i}`,
       userId: 'u',
       expiresAt: LATER,
@@ -101,30 +103,53 @@ describe('listSignedInDevices', () => {
       updatedAt: SIGNED_UP,
       ...row,
     }));
-    return {
+    const deleteSession = vi.fn(async (token: string) => {
+      full = full.filter((row) => row.token !== token);
+    });
+    const auth = {
       $context: Promise.resolve({
         internalAdapter: {
           listSessions: async () => full,
           findUserById: async () => ({ id: 'u', createdAt: SIGNED_UP }),
+          deleteSession,
         },
       }),
     } as unknown as Auth;
+    return { auth, deleteSession };
   }
 
-  it('leaves out only the sign-in the sign-up made; a later one with no browser is listed', async () => {
-    const later = new Date(SIGNED_UP.getTime() + 60_000);
-    const auth = authOver([
+  it('lists every live sign-in, the setup one included, until it is ended', async () => {
+    const { auth } = authOver([
       { id: 'sign-up', userAgent: '', createdAt: new Date(SIGNED_UP.getTime() + 3) },
-      { id: 'script', userAgent: '', createdAt: later, updatedAt: later },
-      { id: 'browser', userAgent: UA, createdAt: later, updatedAt: new Date() },
+      { id: 'browser', userAgent: UA, updatedAt: new Date() },
     ]);
     const list = await listSignedInDevices(auth, 'u', 'browser');
     expect(list.map((device) => device.name)).toEqual(['Chrome on Mac', 'A web browser']);
   });
 
-  it('keeps the asking sign-in, however it was made', async () => {
-    const auth = authOver([{ id: 'sign-up', userAgent: null }]);
-    const list = await listSignedInDevices(auth, 'u', 'sign-up');
-    expect(list).toEqual([expect.objectContaining({ current: true, name: 'A web browser' })]);
+  it('ends only the sign-in the sign-up made; a later one with no browser stays', async () => {
+    const later = new Date(SIGNED_UP.getTime() + 60_000);
+    const { auth, deleteSession } = authOver([
+      { id: 'sign-up', userAgent: '', createdAt: new Date(SIGNED_UP.getTime() + 3) },
+      { id: 'script', userAgent: '', createdAt: later, updatedAt: later },
+      { id: 'browser', userAgent: UA, createdAt: later, updatedAt: new Date() },
+    ]);
+    expect(await endSetupSignIns(auth, 'u')).toBe(1);
+    expect(deleteSession).toHaveBeenCalledExactlyOnceWith('tok-0');
+    const list = await listSignedInDevices(auth, 'u', 'browser');
+    expect(list.map((device) => device.name)).toEqual(['Chrome on Mac', 'A web browser']);
+  });
+
+  it('finds nothing the second time', async () => {
+    const { auth, deleteSession } = authOver([{ id: 'sign-up', userAgent: null }]);
+    expect(await endSetupSignIns(auth, 'u')).toBe(1);
+    expect(await endSetupSignIns(auth, 'u')).toBe(0);
+    expect(deleteSession).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a sign-in with a browser alone, even one made at sign-up', async () => {
+    const { auth, deleteSession } = authOver([{ id: 'web-sign-up', userAgent: UA }]);
+    expect(await endSetupSignIns(auth, 'u')).toBe(0);
+    expect(deleteSession).not.toHaveBeenCalled();
   });
 });

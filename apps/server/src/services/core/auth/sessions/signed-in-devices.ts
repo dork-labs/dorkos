@@ -72,7 +72,7 @@ const SIGN_UP_SLACK_MS = 1000;
  * and made the moment the account was. `dorkos auth enable` signed up from the
  * command line and kept that one on every install before DOR-3097, unused by
  * any device. No sign-in can be made at that moment later, so this never
- * hides one a person made.
+ * names one a person made.
  */
 function isSignUpSignIn(row: SessionRow, accountCreatedAt: number | undefined): boolean {
   if (row.userAgent || accountCreatedAt === undefined) return false;
@@ -110,8 +110,6 @@ async function liveRowsOf(auth: Auth, userId: string): Promise<SessionRow[]> {
 
 /**
  * A person's live sign-ins: the asking one first, then most recently used.
- * The sign-in the account's own sign-up made is left out (DOR-3097): no
- * device holds it. Signing out everywhere else still ends it.
  *
  * @param auth - The Better Auth instance.
  * @param userId - Whose.
@@ -123,9 +121,7 @@ export async function listSignedInDevices(
   currentSessionId: string | undefined
 ): Promise<SignedInDevice[]> {
   const rows = await liveRowsOf(auth, userId);
-  const accountCreatedAt = await accountCreatedAtOf(auth, userId);
   return rows
-    .filter((row) => row.id === currentSessionId || !isSignUpSignIn(row, accountCreatedAt))
     .map((row): SignedInDevice & { sort: number } => ({
       id: deviceIdOf(row.id),
       route: routeOf(row.route),
@@ -137,6 +133,30 @@ export async function listSignedInDevices(
     }))
     .sort((a, b) => Number(b.current) - Number(a.current) || b.sort - a.sort)
     .map(({ sort: _sort, ...device }) => device);
+}
+
+/**
+ * End the sign-in the account's own sign-up made, if it is still there
+ * (DOR-3097). No device holds it, so nobody is signed out, and ending it beats
+ * hiding it: a list that leaves a live sign-in out could one day leave out a
+ * real one. Run at every start, so it also catches one `dorkos auth enable`
+ * could not end itself; after that it finds nothing.
+ *
+ * Through Better Auth's own adapter, so the session-delete hook runs as for
+ * any sign-out.
+ *
+ * @param auth - The Better Auth instance.
+ * @param userId - The account whose sign-up it was.
+ * @returns How many it ended: 0 or 1.
+ */
+export async function endSetupSignIns(auth: Auth, userId: string): Promise<number> {
+  const accountCreatedAt = await accountCreatedAtOf(auth, userId);
+  const setup = (await liveRowsOf(auth, userId)).filter((row) =>
+    isSignUpSignIn(row, accountCreatedAt)
+  );
+  const context = await auth.$context;
+  for (const row of setup) await context.internalAdapter.deleteSession(row.token);
+  return setup.length;
 }
 
 /**
