@@ -69,6 +69,7 @@ import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { useNoticeSessionLink } from '../model/use-notice-session-link';
 import { makeRoomBodyRenderer } from './render-room-body';
+import { useRoomAgentCard } from './identity/room-agent-card';
 import { fileChangeLine } from '../lib/file-change-line';
 
 /**
@@ -248,6 +249,20 @@ export function RoomMessage({
     viewerAuthorId,
     onViewProfile: viewAuthorProfile,
   });
+  // An agent's card over its face and name while the DM view is on (DOR-3074):
+  // a click opens it, and its Message opens the agent's DM. `null` otherwise.
+  const agentCard = useRoomAgentCard({
+    agentRef: authorRef?.agentRef,
+    identity: {
+      kind: author.kind,
+      displayName: author.displayName,
+      handle: authorRef?.handle ?? undefined,
+      color: author.color,
+      emoji: author.emoji,
+      imageUrl: author.imageUrl,
+    },
+    onViewProfile: viewAuthorProfile,
+  });
   const handleKeyDown = useEntryRowKeys({
     barRef,
     pillsRef,
@@ -363,8 +378,9 @@ export function RoomMessage({
       <Message.Gutter
         author={author}
         at={entry.createdAt}
-        onViewProfile={viewAuthorProfile}
+        onViewProfile={agentCard ? undefined : viewAuthorProfile}
         isSelf={entry.authorId === viewerAuthorId}
+        renderAvatar={agentCard?.wrapAvatar}
       />
       <Message.Body>
         <Message.Author
@@ -372,6 +388,7 @@ export function RoomMessage({
           author={author}
           at={entry.createdAt}
           origin={authorRef?.origin}
+          renderName={agentCard?.wrapName}
         />
         {orphanedReply === true && (
           <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">

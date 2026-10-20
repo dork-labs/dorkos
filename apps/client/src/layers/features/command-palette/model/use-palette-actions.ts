@@ -19,6 +19,7 @@ import {
   useCopyFeedback,
   toSession,
   newSessionTarget,
+  readDmViewEnabled,
 } from '@/layers/shared/lib';
 import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
@@ -28,7 +29,7 @@ import {
   resolveSessionForCwd,
   notifySessionLookupFailed,
 } from '@/layers/entities/session';
-import type { RoomSummary } from '@/layers/entities/room';
+import { useOpenDirectChat, type RoomSummary } from '@/layers/entities/room';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { composeCommandDraft } from './palette-command-draft';
@@ -120,8 +121,19 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     useInteractionStore.getState().recordOpened('agent', projectPath);
   }, []);
 
+  const openDirectChat = useOpenDirectChat();
+
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
+      // With the DM view on, picking an agent opens its DM, the same chat every
+      // other door to it opens (DOR-3074), rather than its newest session.
+      if (readDmViewEnabled(queryClient)) {
+        closePalette();
+        void openDirectChat({ agentPath: agent.projectPath }).then((opened) => {
+          if (opened) recordAgentOpened(agent.projectPath);
+        });
+        return;
+      }
       // The palette closes at once — it has done its job either way — but the
       // frecency bump waits until the agent actually opens. `setDir` resolves
       // which conversation that is, which can fail or be overtaken; recording
@@ -133,7 +145,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       });
       closePalette();
     },
-    [recordAgentOpened, setDir, closePalette]
+    [queryClient, openDirectChat, recordAgentOpened, setDir, closePalette]
   );
 
   const startNewSession = useStartNewSession();
