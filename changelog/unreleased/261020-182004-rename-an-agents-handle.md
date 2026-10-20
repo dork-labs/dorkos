@@ -6,7 +6,7 @@ covers:
 
 ### Added
 
-- You can now change an agent's @handle from its profile, the same way you change your own. Each room the agent is in gets one quiet line saying who renamed it, and messages you already sent still reach it.
+- You can now change an agent's @handle from its profile, the same way you change your own. Each room the agent is in gets one quiet line saying who renamed it, and messages you already sent still reach it. Renaming an agent needs a secure connection, so a phone on plain Wi-Fi can't do it yet.
 
 ### Changed
 
