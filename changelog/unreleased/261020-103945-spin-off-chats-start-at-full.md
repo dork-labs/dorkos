@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a chat at Full autonomy starts its own chats at Full (DOR-3147)'
+  - "fix(server): hold inherited Full to Security's scope (DOR-3147)"
 ---
 
 ### Fixed
