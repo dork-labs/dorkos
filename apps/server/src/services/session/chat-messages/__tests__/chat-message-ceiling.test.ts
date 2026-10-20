@@ -31,5 +31,13 @@ describe('a chat a message opens', () => {
   it('reads a stored bound back', () => {
     expect(parseCeiling(JSON.stringify(LEVEL))).toEqual(LEVEL);
     expect(isMarkedBound(parseCeiling('{}'))).toBe(true);
+    // Any mark counts, a teammate's chain too (DOR-3107), and a list holds if any bound is marked.
+    expect(
+      isMarkedBound(
+        parseCeiling(JSON.stringify({ ...LEVEL, teammate: [{ roomId: 'r', authorId: 'a' }] }))
+      )
+    ).toBe(true);
+    expect(isMarkedBound(parseCeiling(JSON.stringify([LEVEL, 'runtime-default'])))).toBe(true);
+    expect(isMarkedBound(parseCeiling(JSON.stringify(LEVEL)))).toBe(false);
   });
 });

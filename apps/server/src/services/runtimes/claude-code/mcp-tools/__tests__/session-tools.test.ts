@@ -9,7 +9,7 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
-import { setChatMessageService } from '../../../../session/chat-messages/chat-message-service.js';
+import { setChatMessageService } from '../../../../session/chat-messages/chat-message-current.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

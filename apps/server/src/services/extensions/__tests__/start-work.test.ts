@@ -32,6 +32,7 @@ const launches = vi.hoisted(
       origin: { kind: string };
       request: { content: string; cwd?: string; runtime?: string };
       clientId: string;
+      permissionCeiling?: unknown;
       countsTowardLaunchCap?: boolean;
       onSettled?: (outcome: 'ok' | 'failed') => void;
     }>
@@ -173,6 +174,9 @@ describe('a start', () => {
         seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
       },
       clientId: 'extension:flow',
+      // An extension's prompt is not the owner's words: it runs at the runtime
+      // default with the outsider mark (DOR-3036).
+      permissionCeiling: 'runtime-default',
       countsTowardLaunchCap: true,
     });
     expect(renamed).toEqual([

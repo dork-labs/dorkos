@@ -1,26 +1,26 @@
 /**
- * Reproduces the teammate tier laundering (DOR-3036) on every path a turn passes work on by,
- * past the room mention (that one, through the real room service, is
- * `rooms/__tests__/room-teammate-hop.test.ts`).
+ * The teammate's mark follows every path a turn passes work on by (DOR-3036), past the room
+ * mention (that one, through the real room service, is `rooms/__tests__/room-teammate-hop.test.ts`).
  *
  * A teammate's turn itself cannot reach these paths: the teammate tier refuses `chat_send`,
- * `session_start`, `tasks_create` and `memory_write` (`teammate-tier.ts`), pinned below as the
- * part that is already safe. But one mention later the teammate is gone. Ana's teammate turn
- * posts `@bo`; Bo's turn answers Ana, so it is no teammate turn, and every path is open to him:
+ * `session_start`, `tasks_create` and `memory_write` (`teammate-tier.ts`). Before the mark, one
+ * mention later the teammate was gone: Ana's teammate turn posted `@bo`, Bo's turn answered Ana,
+ * and every path was open to him. Now Bo's level carries the teammate's mark, so:
  *
- * | Path from Bo's turn            | Carries today                      | Teammate mark |
- * | ------------------------------ | ---------------------------------- | ------------- |
- * | `chat_send` to another chat    | his level, read-only + outsider    | lost          |
- * | `session_start` spin-off       | his bound, read-only + outsider    | lost          |
- * | a schedule he creates          | nothing at all                     | lost          |
+ * | Path from Bo's turn            | What the next turn gets                               |
+ * | ------------------------------ | ----------------------------------------------------- |
+ * | `chat_send` to another chat    | the mark, the tier, and the space's monthly limit     |
+ * | `session_start` spin-off       | the mark, the tier, and the space's monthly limit     |
+ * | a schedule he creates or edits | parks for a person, the mark shown, approval clears it |
  *
- * "Carries" is read through the real level-recording seam and the real teammate meter, wrapped
- * the way the runtime registry wraps every runtime. Each `it.fails` is the bug: the downstream
- * turn should be held to the teammate tier and counted against the teammate's monthly limit.
- * {@link teammateMarkOf} is the one line the fix aligns with the mark's final shape.
+ * Read through the real level-recording seam and the real teammate meter, wrapped the way the
+ * runtime registry wraps every runtime, and the real in-session task tools over a real store.
  *
  * @vitest-environment node
  */
+import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -44,16 +44,27 @@ import { TEAMMATE_TIER_DENIAL, teammateTierRefusal } from '../teammate-tier.js';
 import { ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import { teammateOf } from '../../../rooms/limits/space-teammates.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
-import { senderCeiling } from '../../../session/chat-messages/chat-message-service.js';
-import { initBoundary } from '../../../../lib/boundary.js';
-import {
-  singleRuntimeSource,
-  TaskSchedulerService,
-  type SchedulerAgentManager,
-} from '../../../tasks/task-scheduler-service.js';
+import { senderBound } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { TaskStore } from '../../../tasks/task-store.js';
+import { originLabelerFrom, setOriginLabeler } from '../../../tasks/approvals/marked-schedules.js';
+import {
+  createCreateScheduleHandler,
+  createUpdateScheduleHandler,
+} from '../../../runtimes/claude-code/mcp-tools/task-tools.js';
+import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 
-vi.mock('../../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => false) }));
+/** A real, empty data directory: `tasks_create` writes a SKILL.md before the row. */
+const tasksHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-tasks-'));
+
+/** What the in-session task tools need, over a real store. */
+function scheduleDeps(store: TaskStore): McpToolDeps {
+  return {
+    transcriptReader: { listSessions: async () => [] },
+    defaultCwd: tasksHome,
+    dorkHome: tasksHome,
+    taskStore: store,
+  } as unknown as McpToolDeps;
+}
 
 const SPACE_ROOM = 'space-room';
 const TURN_COST = 0.25;
@@ -117,7 +128,7 @@ async function teammateThenMention(runtime: AgentRuntime): Promise<string> {
   const anaTeammate = teammateOf(AUTHORS, [priyaEntry]);
   expect(anaTeammate).toEqual({ teammate: true });
   await run(runtime, ana, {
-    ...ceilingForEntry(AUTHORS, priyaEntry),
+    ...ceilingForEntry(AUTHORS, priyaEntry, false, SPACE_ROOM),
     unattended: true,
     roomTurn: { roomId: SPACE_ROOM, authorId: 'ana', turnId: 't-ana', ...anaTeammate },
   });
@@ -127,7 +138,7 @@ async function teammateThenMention(runtime: AgentRuntime): Promise<string> {
   const anaEntry = { id: post, authorId: 'ana' };
   const bo = fresh('bo');
   await run(runtime, bo, {
-    ...ceilingForEntry(AUTHORS, anaEntry),
+    ...ceilingForEntry(AUTHORS, anaEntry, false, SPACE_ROOM),
     roomTurn: {
       roomId: SPACE_ROOM,
       authorId: 'bo',
@@ -148,10 +159,11 @@ beforeEach(() => {
 
 afterEach(() => {
   setTeammateTurnCostSink(null);
+  setOriginLabeler(() => ({ name: null, room: null }));
   resetLiveOutsiderTurns();
 });
 
-describe('already safe: a teammate’s own turn cannot pass work on', () => {
+describe('a teammate’s own turn cannot pass work on, and one mention later', () => {
   it.each(['chat_send', 'session_start', 'tasks_create', 'memory_write'])(
     'the teammate tier refuses %s',
     (name) => {
@@ -164,24 +176,33 @@ describe('already safe: a teammate’s own turn cannot pass work on', () => {
     }
   );
 
-  it('Bo, one mention later, is already held to read access and marked outsider', async () => {
+  it('Bo, one mention later, is held to read access and carries both marks', async () => {
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
     expect(lastTurnLevelOf(bo)).toMatchObject({ reach: READ_ONLY_LEVEL.reach, outsider: true });
-    // ...but nothing says a teammate started this chain, and nothing counted Bo's turn.
-    expect(teammateMarkOf(lastTurnLevelOf(bo))).toBeUndefined();
-    expect(sink).toHaveBeenCalledTimes(1);
+    expect(teammateMarkOf(lastTurnLevelOf(bo))).toEqual([
+      { roomId: SPACE_ROOM, authorId: 'priya' },
+    ]);
+    // Ana's turn and Bo's, each counted against the space.
+    expect(sink).toHaveBeenCalledTimes(2);
   });
 });
 
-describe('one mention later, the teammate mark is lost (DOR-3036)', () => {
-  // DOR-3036: flips to it() when the turn mark carries.
-  it.fails('chat_send: the chat Bo writes to runs as the teammate’s, and is counted', async () => {
+describe('one mention later, the teammate mark still carries (DOR-3036)', () => {
+  it('chat_send: the chat Bo writes to runs as the teammate’s, and is counted', async () => {
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
     sink.mockClear();
     // What `chat_send` stores as the queue row's ceiling; the dispatcher launches under it.
-    const stored = JSON.parse(JSON.stringify(senderCeiling(lastTurnLevelOf(bo))));
+    const stored = JSON.parse(
+      JSON.stringify(
+        await senderBound(
+          lastTurnLevelOf(bo),
+          { sessionId: bo, agentPath: '/agents/bo' },
+          undefined
+        )
+      )
+    );
     const cy = fresh('cy');
     await run(runtime, cy, { permissionCeiling: stored });
 
@@ -189,62 +210,82 @@ describe('one mention later, the teammate mark is lost (DOR-3036)', () => {
     expect(sink).toHaveBeenCalledWith(expect.objectContaining({ costUsd: TURN_COST }));
   });
 
-  // DOR-3036: flips to it() when the turn mark carries.
-  it.fails(
-    'session_start: the chat Bo spins off runs as the teammate’s, and is counted',
-    async () => {
-      const { runtime } = decorated();
-      const bo = await teammateThenMention(runtime);
-      sink.mockClear();
-      // What `session_start` sends as the new chat's first-turn ceiling (`outsiderStartCeiling`).
-      const bound = markedBoundOf(bo, '/agents/bo');
-      expect(bound).toBeDefined();
-      const child = fresh('child');
-      await run(runtime, child, { permissionCeiling: bound! });
-
-      expect(teammateMarkOf(lastTurnLevelOf(child))).toBeDefined();
-      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ costUsd: TURN_COST }));
-    }
-  );
-
-  // DOR-3036: flips to it() when the turn mark carries.
-  it.fails('a schedule Bo creates: its runs are the teammate’s, and are counted', async () => {
-    await initBoundary('/');
-    const { runtime, sent } = decorated({
-      ensureSession: vi.fn(),
-      interruptQuery: vi.fn().mockResolvedValue({ outcome: 'not-running' }),
-      getInternalSessionId: vi.fn(() => undefined),
-      acquireLock: vi.fn(() => true),
-      releaseLock: vi.fn(),
-    });
-    await teammateThenMention(runtime);
+  it('session_start: the chat Bo spins off runs as the teammate’s, and is counted', async () => {
+    const { runtime } = decorated();
+    const bo = await teammateThenMention(runtime);
     sink.mockClear();
-    const before = new Set(sent.keys());
+    // What `session_start` sends as the new chat's first-turn ceiling (`outsiderStartCeiling`).
+    const bound = markedBoundOf(bo, '/agents/bo');
+    expect(bound).toBeDefined();
+    const child = fresh('child');
+    await run(runtime, child, { permissionCeiling: bound! });
 
-    // Bo's `tasks_create` lands here; nothing about the turn that wrote it reaches the row.
+    expect(teammateMarkOf(lastTurnLevelOf(child))).toBeDefined();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ costUsd: TURN_COST }));
+  });
+
+  it('a schedule Bo creates parks with the teammate’s mark, and only a person’s approval clears it', async () => {
+    const { runtime } = decorated();
+    const bo = await teammateThenMention(runtime);
     const store = new TaskStore(createTestDb());
-    const task = store.createTask({
-      name: 'Nightly build check',
-      description: 'created in Bo’s turn',
+    // The labeler the server runs, over this test's one teammate and room.
+    setOriginLabeler(
+      originLabelerFrom({
+        authorName: (id) => (id === 'priya' ? 'Priya' : null),
+        roomTitle: (id) => (id === SPACE_ROOM ? 'launch' : null),
+      })
+    );
+    const create = createCreateScheduleHandler(scheduleDeps(store), () => ({
+      sessionId: bo,
+      agentPath: '/agents/bo',
+    }));
+
+    const reply = JSON.parse(
+      (
+        await create({
+          name: 'Nightly build check',
+          prompt: 'check the build',
+          cron: '0 3 * * *',
+          target: 'global',
+          reason: 'Priya asked for a nightly check.',
+        })
+      ).content[0]!.text
+    ) as { schedule: { id: string } };
+    const parked = store.getTask(reply.schedule.id)!;
+    // Parked whatever the preset (an unread preset is Trusted, which would arm it otherwise).
+    expect(parked.status).toBe('pending_approval');
+    expect(parked.originMarks).toEqual({
+      outsider: true,
+      teammate: [{ roomId: SPACE_ROOM, authorId: 'priya', name: 'Priya', room: '#launch' }],
+    });
+
+    store.approvals.recordApproval(parked.id);
+    expect(store.getTask(parked.id)!.originMarks).toBeNull();
+  });
+
+  it('an edit from a marked turn parks an armed schedule, whatever it changed', async () => {
+    const { runtime } = decorated();
+    const bo = await teammateThenMention(runtime);
+    const store = new TaskStore(createTestDb());
+    const armed = store.createTask({
+      name: 'nightly-build-check',
+      description: 'armed by the owner',
       prompt: 'check the build',
       cron: '0 3 * * *',
-      filePath: '/tmp/tasks/nightly-build-check/SKILL.md',
+      filePath: path.join(tasksHome, 'nightly-build-check', 'SKILL.md'),
     });
-    const scheduler = new TaskSchedulerService({
-      store,
-      runtimes: singleRuntimeSource(runtime as unknown as SchedulerAgentManager),
-      config: { maxConcurrentRuns: 1, retentionCount: 10, mayFire: true, firingReason: 'test' },
+    expect(store.getTask(armed.id)!.status).toBe('active');
+    const update = createUpdateScheduleHandler(scheduleDeps(store), () => ({
+      sessionId: bo,
+      agentPath: '/agents/bo',
+    }));
+    const reply = JSON.parse((await update({ id: armed.id, enabled: true })).content[0]!.text) as {
+      needsReapproval?: boolean;
+    };
+    expect(reply.needsReapproval).toBe(true);
+    expect(store.getTask(armed.id)).toMatchObject({
+      status: 'pending_approval',
+      originMarks: { outsider: true },
     });
-    try {
-      // Run now, which starts the same stored run a timer fire does, without a clock to fake.
-      await scheduler.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(sent.size).toBe(before.size + 1));
-      const runSession = [...sent.keys()].find((id) => !before.has(id));
-
-      expect(teammateMarkOf(lastTurnLevelOf(runSession!))).toBeDefined();
-      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ costUsd: TURN_COST }));
-    } finally {
-      await scheduler.stop();
-    }
   });
 });

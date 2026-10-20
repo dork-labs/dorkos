@@ -9768,6 +9768,9 @@
             ],
             "default": null
           },
+          "originMarks": {
+            "$ref": "#/components/schemas/ScheduleOriginMarks"
+          },
           "nextRun": {
             "type": [
               "string",
@@ -9834,6 +9837,52 @@
           "paused",
           "pending_approval"
         ]
+      },
+      "ScheduleOriginMarks": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "outsider": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "teammate": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "roomId": {
+                  "type": "string"
+                },
+                "authorId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                },
+                "room": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "roomId",
+                "authorId"
+              ]
+            }
+          }
+        }
       },
       "CreateTaskRequest": {
         "type": "object",
@@ -13510,6 +13559,24 @@
                           "required": [
                             "kind"
                           ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat"
+                              ]
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sessionId"
+                          ]
                         }
                       ]
                     },
@@ -13739,6 +13806,24 @@
                       "required": [
                         "kind"
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat"
+                          ]
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "sessionId"
+                      ]
                     }
                   ]
                 },
@@ -13902,6 +13987,24 @@
                     },
                     "required": [
                       "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "chat"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sessionId"
                     ]
                   }
                 ]

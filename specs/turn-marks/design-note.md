@@ -30,7 +30,7 @@ The outsider mark already half-solves this shape: a stranger's words ride the tu
 
 The outsider mark has two readings, kept apart as today. **Direct** (a stranger started this turn) is decided by the origin bookkeeping in `session/origin/outsider-turns.ts` and read through `startedByOutsider`. **Carried** (the turn read an outsider's words) is the `outsider` field and read through `marksOf`. Only the direct reading drives the post and note cap, `commitments_list` and the failure wake, exactly as today.
 
-`TeammateMark = { communityRef, ownerKey, teammateAuthorId, roomId }`, taken where the teammate entry is read. `roomId` is the space room the chain began in; the first two are the space connection the monthly limit is keyed on (`TeammateSpend.allows(ref, ownerKey)`), resolved through `RemoteMirrorStore.connectionOf(roomId)` at the start, so a downstream turn outside the space can still be counted.
+`TeammateOrigin = { roomId, authorId }` (on the level as `teammate: TeammateOrigin[]`), taken where the teammate entry is read (`ceilingForEntry`, which now puts it on the read-only bound). `roomId` is the local copy of the space room the chain began in; the space connection the monthly limit is keyed on (`TeammateSpend.allows(ref, ownerKey)`) is resolved from it through `RemoteMirrorStore.connectionOf(roomId)` when a marked turn is gated and when it is counted, so a downstream turn outside the space can still be counted. Built that way in PR B rather than storing the connection on the mark: one resolver, already wired, and nothing about a pairing kept on a level that outlives it.
 
 ## What carries them
 
@@ -125,6 +125,23 @@ One per carrying path, each flipping an existing `it.fails`: room mention (tier 
 - **PR A (mechanism, no behaviour change):** `TurnMarks` on the level, `marksOf`/`markedBoundOf`/`startedByOutsider`, the ten readers moved as tabled, `applyTurnMarks` at the seam applying only today's effects, the seam census. The nullable columns come with the kind that first needs them (PR B). Opens with `hold` for Security.
 - **PR B (teammate kind, plus one named behaviour change):** `TeammateMark` minted at `teammateOf`, carried by every path above, the tier and meter keyed on it, the per-agent fallback counting teammate turns too. Named behaviour change: a schedule created or edited in any marked turn, outsider included, parks for a person. Flips the five `it.fails`. Opens with `hold`.
 - **Later (tool-read, #3038):** minted by tool and connector results; its own PR.
+
+## What PR B built (DOR-3036)
+
+- **The mark:** minted by `ceilingForEntry` on a teammate's entry; carried by every level hop (room posts, `chat_send` ceilings in `chat_messages.ceiling_json`, `session_start` bounds), merged by `stricterLevel`, read by `teammateOf` so a room turn answering a marked post is a teammate turn.
+- **The seam** (`applyTurnMarks` with `teammate-mark.ts`): a teammate-marked turn is refused on a runtime outside `TEAMMATE_TURN_RUNTIMES` (Codex, OpenCode, the agent computer: fail closed) and when any space in its chain is at its limit; otherwise it is sent `teammate: true`, `unattended`, no folder grants, a read-only bound, and `roomTurn.teammate` when it answers a room. Claude Code holds it to the tier with the room it answers, or no room (`TeammateTierScope.roomId: null`): it replies in its own chat only.
+- **Spend:** `meterTeammateTurns` counts the turn against every space room in its chain, once each.
+- **Command intents** carry and are gated like turns (`executeCommandIntent` is wrapped). **Steers and stages** (`deliverIntoTurn`) join a running turn, which cannot gain marks; their one marked sender, another chat, is held by `mayJoinRunningTurn`, and a person's steer carries none.
+- **Schedules:** created or edited in any marked turn (in-session tools, and an agent's HTTP call read through its agent) they park with `pulse_schedules.origin_marks`, and the approval card names each mark with the teammate's name and room as DorkOS knew them, offering no raise. A person's approval clears the marks. The Wi-Fi limit on approving is not built yet: it depends on DOR-3037.
+- **Commitments** keep `commitments.origin_marks`; a beat reading a marked open promise carries them as its ceiling.
+- **Persona edits** (`operator.update_agent`: `SOUL.md`, `HEARTBEAT.md`, persona) always ask in a marked turn.
+- **Extension messages** (`ctx.agent.send`) carry the outsider mark: an app's code is not the owner's words.
+- **Memory:** a teammate mark always rides with the outsider mark (minted on a `runtime-default` bound), so today's stamp and `outsider-held` rule apply; the tier refuses `memory_write` anyway.
+- **Not built, because the surface does not exist yet:** the agent computer's `turn.start` (part 6) and the mini-app room APIs (DOR-3017). Both must carry the full mark set when built; the census fails if a new runtime skips the seam.
+- **Room posts on disk:** a post's marks are kept in `room_entries.turn_marks` (`{}` for a known unmarked turn, NULL when nobody knows), so a restart still reads a teammate-marked post as marked. In a space's room copy, an agent post nobody knows the marks of is read as a teammate's chain (fail closed).
+- **Heartbeats:** a marked post never wakes a beat on a refused room turn, a marked turn's failure never wakes one, and a beat that gathers a marked post (or reads a marked promise) runs with those marks as its ceiling: tier, limit and runtime refusal included.
+- **External `/mcp` callers:** read through their agent's running turns; a caller DorkOS cannot identify carries the outsider mark, so its schedule's card says so.
+- **Spend:** command intents and turns a runtime starts on its own are counted too.
 
 ## Open questions, answered by Security (2026-10-18)
 

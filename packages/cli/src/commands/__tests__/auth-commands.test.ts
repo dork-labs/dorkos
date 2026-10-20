@@ -173,6 +173,28 @@ describe('auth-commands', () => {
       expect(deleteSession).toHaveBeenCalledWith(made);
     });
 
+    it('still turns the password on when ending its sign-in fails, and says so', async () => {
+      const context = await auth.$context;
+      vi.spyOn(context.internalAdapter, 'deleteSession').mockRejectedValueOnce(
+        new Error('database is locked')
+      );
+      const configStore = createFileConfigStore(tmpDir);
+      const captured = captureIo();
+      const code = await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore,
+        prompt: throwingPrompt,
+        io: captured.io,
+      });
+      expect(code).toBe(0);
+      const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
+      expect(persisted.auth.enabled).toBe(true);
+      expect(captured.errors.join('\n')).toContain('database is locked');
+      expect(captured.errors.join('\n')).toContain('next time DorkOS starts');
+    });
+
     it('keeps no sign-in of its own, so a first browser sign-in is the only one (DOR-3097)', async () => {
       await runAuthEnable({
         options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },

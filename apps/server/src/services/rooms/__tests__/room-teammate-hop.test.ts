@@ -1,5 +1,5 @@
 /**
- * Reproduces the one-hop teammate laundering (DOR-3036), through the REAL room service, store,
+ * Pins the fix for the one-hop teammate laundering (DOR-3036), through the REAL room service, store,
  * author registry and trigger dispatcher; only the turn runner stands in, and it builds the
  * runtime's options with the same functions the production runner calls (`turnBoundsOf`,
  * `roomTurnMarksOf`).
@@ -10,9 +10,9 @@
  * tool fence, it may raise cards, it gets folder grants and its notes, and it is not counted
  * against the teammate's monthly limit.
  *
- * What already carries is pinned in the first test: Bo IS held to Ana's read-only level and IS
- * marked as having read an outsider's words, because her post keeps her turn's level. The
- * `it.fails` cases are the bug; each flips to `it` when the turn mark carries.
+ * The fix (the teammate turn mark): Ana's post keeps her turn's level, which now carries the
+ * teammate's mark beside the outsider mark, so Bo's turn is a teammate turn too: fenced, nobody
+ * asked, no folders, and counted against the space's monthly limit.
  *
  * The teammate here is a space member posting into a plain channel: a `community` author is a
  * teammate anywhere (`space-teammates.ts`), so the harness needs no space mirror.
@@ -131,31 +131,37 @@ describe('a teammate wakes Ana, and Ana’s post wakes Bo (DOR-3036)', () => {
 
   afterEach(() => setTeammateTurnCostSink(null));
 
-  it('today: Ana’s turn is a teammate turn, and Bo carries her read-only level and outsider mark', async () => {
+  it('Ana’s turn is a teammate turn, and Bo carries her read-only level and both marks', async () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
     const ana = turnsOf('/agents/ana')[0]!;
     expect(ana.teammate).toBe(true);
-    expect(ana.permissionCeiling).toEqual(['runtime-default', READ_ONLY_LEVEL]);
+    const origin = { roomId: channel.id, authorId: ana.entry.authorId };
+    expect(ana.permissionCeiling).toEqual([
+      'runtime-default',
+      { ...READ_ONLY_LEVEL, teammate: [origin] },
+    ]);
 
     const bo = turnsOf('/agents/bo')[0]!;
-    expect(bo.permissionCeiling).toMatchObject({ reach: 'read', outsider: true });
-    expect(lastTurnLevelOf(sessionOf.get('/agents/bo')!)?.outsider).toBe(true);
+    expect(bo.permissionCeiling).toMatchObject({
+      reach: 'read',
+      outsider: true,
+      teammate: [origin],
+    });
+    expect(lastTurnLevelOf(sessionOf.get('/agents/bo')!)).toMatchObject({
+      outsider: true,
+      teammate: [origin],
+    });
   });
 
-  // DOR-3036: flips to it() when the turn mark carries.
-  it.fails(
-    'Bo’s turn is capped at the teammate tier: fenced to this room, nobody asked, no folders',
-    async () => {
-      await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-      const opts = optsFor(turnsOf('/agents/bo')[0]!);
-      expect(opts.roomTurn?.teammate).toBe(true);
-      expect(opts.unattended).toBe(true);
-      expect(opts.additionalDirectories).toBeUndefined();
-    }
-  );
+  it('Bo’s turn is capped at the teammate tier: fenced to this room, nobody asked, no folders', async () => {
+    await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
+    const opts = optsFor(turnsOf('/agents/bo')[0]!);
+    expect(opts.roomTurn?.teammate).toBe(true);
+    expect(opts.unattended).toBe(true);
+    expect(opts.additionalDirectories).toBeUndefined();
+  });
 
-  // DOR-3036: flips to it() when the turn mark carries.
-  it.fails('Bo’s turn counts against the teammate’s monthly limit', async () => {
+  it('Bo’s turn counts against the teammate’s monthly limit', async () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
     const sink = vi.fn();
     setTeammateTurnCostSink(sink);

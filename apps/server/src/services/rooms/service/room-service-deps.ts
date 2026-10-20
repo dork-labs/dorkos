@@ -8,6 +8,7 @@
  *
  * @module server/services/rooms/service/room-service-deps
  */
+import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { DbTransaction } from '@dorkos/db';
 import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
@@ -126,6 +127,12 @@ export interface RoomServiceDeps {
   store: RoomStore;
   /** Persisted access control for native remote-community mirror rows. */
   mirrorAccess?: RoomMirrorAccess;
+  /**
+   * The level a person set a poster agent to, by its folder (DOR-3107). Absent
+   * reads the agent's own settings and runtime (`own-circle.ts`); a test
+   * passes its own.
+   */
+  posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
   /** Atomically enqueue local agent output in remote mirrors and suppress recursive dispatch. */
   mirrorWrites?: RoomMirrorWritePolicy;
   /** Reactions on this room's entries — durable state, never a turn. */

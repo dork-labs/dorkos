@@ -59,7 +59,8 @@ export function personSetFromHistory(items: readonly HistoryItem[]): Map<string,
     const meta = item.metadata as Partial<PermissionChangedMetadata> | null;
     if (!meta?.changes || !meta.attribution || UNTRUSTED.has(meta.attribution)) continue;
     for (const change of meta.changes) {
-      if (change.target.kind !== 'agent') continue;
+      // A chat's mode is not the agent's setting (the raise of existing chats, DOR-3107).
+      if (change.target.kind !== 'agent' || change.key.kind === 'chat') continue;
       const agentId = change.target.agentId;
       const next: AgentPermissions = { ...byAgent.get(agentId) };
       const key = change.key;

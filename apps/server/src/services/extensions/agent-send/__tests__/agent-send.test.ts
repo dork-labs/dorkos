@@ -467,6 +467,8 @@ describe('ctx.agent.send — it cannot shape the turn', () => {
     expect(dispatched[0]).toMatchObject({
       origin: { kind: 'extension-message' },
       clientId: `extension:${EXT}`,
+      // An app's code is not the owner's words: the turn carries the outsider mark (DOR-3036).
+      permissionCeiling: 'runtime-default',
     });
     expect(dispatched[0]).not.toHaveProperty('forAgent');
     expect(Object.keys(dispatched[0]!.request).sort()).toEqual(['content', 'cwd']);

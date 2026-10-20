@@ -31,7 +31,7 @@ import type {
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
-import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
+import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
 import * as historyWindow from '../services/session/history/history-window.js';

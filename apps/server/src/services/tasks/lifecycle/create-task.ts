@@ -61,6 +61,7 @@ import type { NotificationPayload } from '../../notifications/notification-regis
 import { agentSchedulesArmWithoutAsking } from '../approvals/agent-trust.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
+import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -111,6 +112,12 @@ export interface CreateScheduledTaskOptions {
    * request body. Absent means no.
    */
   callerIsOurAgent?: boolean;
+  /**
+   * The marks of the turn that asked for it (DOR-3036), read from the caller's own turn record,
+   * never the body. A marked turn's schedule parks for a person whatever the trust preset, and
+   * keeps the marks for its approval card. Absent or empty means an unmarked turn.
+   */
+  originMarks?: TurnMarks;
   /** Who to credit the proposal to. Ignored for a trusted caller — nobody proposed it. */
   proposal?: TaskProposal;
 }
@@ -270,7 +277,11 @@ export async function createScheduledTask(
   const { trusted } = options;
   // An untrusted caller parks unless it is one of our agents on a Trusted
   // install (ADR 261006-225605). Read once, so the park and the reply agree.
-  const parks = !trusted && !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true);
+  // A marked turn's schedule always parks: words from outside the owner's circle must not come
+  // back later as a run nobody marked (DOR-3036).
+  const marked = !trusted && options.originMarks !== undefined && hasMarks(options.originMarks);
+  const parks =
+    !trusted && (marked || !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -512,6 +523,7 @@ export async function createScheduledTask(
   if (parks) {
     deps.store.updateTask(schedule.id, { status: 'pending_approval' });
   }
+  if (marked) deps.store.approvals.markOrigin(schedule.id, options.originMarks!);
   if (!trusted) {
     // Stamped from what the SERVER resolved, never from the body: a caller that
     // could name its own agent path could credit its proposal to any agent the

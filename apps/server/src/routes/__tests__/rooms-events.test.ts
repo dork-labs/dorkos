@@ -78,6 +78,20 @@ function openRoomStream(
 // app, the rooms routes from Express behind it.
 const testServer = listeningServer(composedListener(admission));
 
+/**
+ * The ids of the durable frames a stream carried, in order.
+ *
+ * A replay is the durable log's gap, and only durable frames carry an `id:`.
+ * Ephemeral frames (signals such as typing and progress) carry none, and can
+ * land on the stream at any moment, so a slow CI runner may see one inside the
+ * window a test reads. They are never part of a replay, so they are left out.
+ *
+ * @param frames - Every frame the stream delivered.
+ */
+function durableIds(frames: SseFrame[]): string[] {
+  return frames.flatMap((f) => (f.id === undefined ? [] : [f.id]));
+}
+
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {
   return (testServer.address() as AddressInfo).port;
@@ -151,7 +165,7 @@ describe('GET /api/rooms/:id/events', () => {
     const frames = await stream.frames;
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
-    expect(frames.map((f) => f.id)).toEqual([
+    expect(durableIds(frames)).toEqual([
       `${roomId}-${STREAM_EPOCH}-g0-2`,
       `${roomId}-${STREAM_EPOCH}-g0-3`,
     ]);
@@ -169,7 +183,7 @@ describe('GET /api/rooms/:id/events', () => {
     const frames = await stream.frames;
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
-    expect(frames.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
+    expect(durableIds(frames)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
   });
 
   it('treats a cursor from a dead process as a cold connect rather than mis-replaying', async () => {
@@ -305,7 +319,7 @@ describe('GET /api/rooms/:id/events', () => {
     const replayed = await resumed.frames;
 
     expect(replayed.some((f) => f.event === 'signal')).toBe(false);
-    expect(replayed.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
+    expect(durableIds(replayed)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
   });
 
   it('ignores an out-of-range ?after= instead of going deaf for the connection', async () => {

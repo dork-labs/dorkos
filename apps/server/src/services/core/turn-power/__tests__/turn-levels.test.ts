@@ -23,6 +23,7 @@ import {
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
 import { ceilingForEntries, ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
+import { noteTurnOrigin } from '../../../session/origin/outsider-turns.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 
 const DEFAULT = { asks: 'always', reach: 'edit' };
@@ -146,6 +147,16 @@ describe('the level a post is kept with', () => {
     await send(runtime, inR1, { permissionCeiling: 'runtime-default' });
     await send(runtime, inR2);
     expect(postLevelFor([inR1, inR2])).toEqual(DEFAULT_OUTSIDER);
+  });
+
+  // DOR-3107 review: a turn a connector event started (an email arriving) has
+  // no ceiling, so its level alone would read as unmarked. Its post carries the
+  // outsider mark, so the turn it wakes is capped.
+  it('marks a post from a turn an outsider started, even with no ceiling', async () => {
+    const started = fresh('connector-turn');
+    noteTurnOrigin(started, { kind: 'connector-event' });
+    await send(wrapped({ [started]: 'bypassPermissions' }), started);
+    expect(postLevelFor([started])).toMatchObject({ outsider: true });
   });
 
   it('vouches for nothing when a session is unknown or none is named', async () => {

@@ -13,6 +13,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
+  agentMarksRunning,
   carriesAllMarks,
   hasMarks,
   marksForTurn,
@@ -22,15 +23,13 @@ import {
   NO_MARKS,
   TURN_MARK_KINDS,
   withMarks,
+  type TurnMarkKind,
   type TurnMarks,
 } from '../turn-marks.js';
 import { markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
-import {
-  agentMarksRunning,
-  countWhileRunning,
-  resetLiveOutsiderTurns,
-} from '../live-outsider-turns.js';
+import { countWhileRunning, resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
+import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import {
   initPermissionGate,
   resetPermissionGate,
@@ -108,9 +107,15 @@ describe('reading marks', () => {
 
 // Every kind runs through every helper, so a kind added to TURN_MARK_KINDS (teammate, tool-read)
 // cannot be dropped by a helper that only knows the kinds that existed when it was written.
+/** One value of each kind; a kind added to TURN_MARK_KINDS without one is a type error here. */
+const SAMPLE: { [K in TurnMarkKind]-?: NonNullable<TurnMarks[K]> } = {
+  outsider: true,
+  teammate: [{ roomId: 'space-room', authorId: 'priya' }],
+};
+
 describe.each(TURN_MARK_KINDS)('the %s mark, through every helper', (kind) => {
-  const only = { [kind]: true } as TurnMarks;
-  const levelWith = { ...LEVEL, [kind]: true } as TurnPermissionLevel;
+  const only = { [kind]: SAMPLE[kind] } as TurnMarks;
+  const levelWith = { ...LEVEL, [kind]: SAMPLE[kind] } as TurnPermissionLevel;
 
   it('is read off a level and off a ceiling holding that level', () => {
     expect(marksOfLevel(levelWith)).toEqual(only);
@@ -197,6 +202,30 @@ describe('the readers', () => {
     // Trusted runs a destructive action of our own agents, recorded; a marked turn still asks.
     expect(forPlain).toMatchObject({ area: 'tasks', state: 'allowed' });
     expect(forMarked).toMatchObject({ area: 'tasks', state: 'ask' });
+  });
+
+  it('hold an edit to who the agent is for a person in a marked turn (DOR-3036)', async () => {
+    initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => undefined,
+    });
+    const identity = {
+      agentPath: '/agents/scout',
+      displayName: 'Scout',
+      createdAt: new Date().toISOString(),
+    };
+    const action = composeCapabilityRegistryForDocs().capabilities.find(
+      (capability) => capability.id === 'operator.update_agent'
+    )!;
+    const plain = fresh();
+    const marked = fresh();
+    await ran(plain);
+    await ran(marked, { permissionCeiling: 'runtime-default' });
+
+    const forPlain = await resolveCallPermission({ action, identity, sessionId: plain });
+    const forMarked = await resolveCallPermission({ action, identity, sessionId: marked });
+    expect(forPlain).toMatchObject({ state: 'allowed' });
+    expect(forMarked).toMatchObject({ state: 'ask' });
   });
 
   it('keep the destructive hold from a chat known by a second id while its agent reads an outsider', async () => {

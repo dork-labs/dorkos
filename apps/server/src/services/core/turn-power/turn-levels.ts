@@ -34,12 +34,14 @@ import type {
   AgentRuntime,
   MessageOpts,
   TurnPermissionBound,
+  TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { agentMarksRunning } from './live-outsider-turns.js';
 import {
+  agentMarksRunning,
   applyTurnMarks,
+  ceilingCarrying,
   hasMarks,
   marksForTurn,
   marksOfLevel,
@@ -48,6 +50,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
+import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -65,12 +68,14 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
+/** Marks kept for posts whose level is unknown (`noteEntryMarks`). */
+const entryMarks = new Map<string, TurnMarks>();
 /** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
 const turnSerials = new Map<string, number>();
 let nextTurnSerial = 0;
 
 /** Set a key as the newest, dropping the oldest past the bound. */
-function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
+function remember<T>(map: Map<string, T>, key: string, level: T) {
   map.delete(key);
   map.set(key, level);
   if (map.size > TURN_LEVEL_MEMORY) {
@@ -87,6 +92,44 @@ function remember(map: Map<string, TurnPermissionLevel>, key: string, level: Tur
  */
 export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
   return turnLevels.get(sessionId);
+}
+
+/**
+ * The level a conversation hands on to what its turn causes: a room post, a
+ * chat message, a spin-off. Its latest turn's level, carrying the outsider mark
+ * whenever a stranger's words may be in the chat (`chatHeardOutsider`): one
+ * started this turn, an earlier one, or the chat itself (DOR-3107). The one
+ * read every hand-off makes, so no path passes on a stranger's words unmarked.
+ * `undefined` when this process ran no turn on it.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
+  const level = turnLevels.get(sessionId);
+  if (level === undefined) return undefined;
+  return chatHeardOutsider(sessionId) ? { ...level, outsider: true } : level;
+}
+
+/**
+ * The marks a sender carries when its level is NOT known (a restart, a turn
+ * this process never recorded): the outsider mark if a stranger reached any of
+ * these chats (`chatHeardOutsider`, which also reads a chat's stored launch
+ * origin), plus the marks of the agent's marked turns running now. Under trust
+ * first (DOR-3107, Dorian 2026-10-19) an unknown sender of the owner's own is
+ * trusted, so this is what still tells a stranger's chat apart.
+ *
+ * @param sessionIds - The sending chats.
+ * @param agentPath - The sending agent, when known.
+ */
+export function unknownLevelMarks(
+  sessionIds: readonly (string | null | undefined)[],
+  agentPath?: string
+): TurnMarks {
+  const heard = sessionIds.some(
+    (id) => typeof id === 'string' && id !== '' && chatHeardOutsider(id)
+  );
+  const running = agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  return heard ? { ...running, outsider: true } : running;
 }
 
 /**
@@ -112,6 +155,11 @@ export function turnSerialOf(sessionId: string): number | undefined {
  * post must not borrow a looser turn's level. Never a session id a request
  * body supplied; that would let anybody name a Full autonomy conversation.
  *
+ * A chat a stranger reached (a connector event, a bridged chat, a stranger's
+ * DM, now or in an earlier turn) is marked even when no ceiling said so
+ * (DOR-3107, {@link passedOnLevelOf}): its post carries the outsider mark, so
+ * the turn it wakes is capped, never trusted as unmarked.
+ *
  * @param sessionIds - The sessions that vouch for the post.
  */
 export function postLevelFor(
@@ -119,7 +167,7 @@ export function postLevelFor(
 ): TurnPermissionLevel | undefined {
   const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
   if (named.length === 0) return undefined;
-  const levels = named.map((id) => turnLevels.get(id));
+  const levels = named.map(passedOnLevelOf);
   if (levels.some((level) => level === undefined)) return undefined;
   return (levels as TurnPermissionLevel[]).reduce(stricterLevel);
 }
@@ -152,8 +200,9 @@ export function marksOf(
  *
  * Its own level when this process recorded the caller's turn, which bounds no
  * tighter than the turn already ran; otherwise, while one of its agent's
- * marked turns runs, the runtime default, the bound a stranger's own message
- * carries.
+ * marked turns runs, a ceiling carrying those marks (`ceilingCarrying`): the
+ * runtime default, and a read-only level holding every teammate origin. A
+ * chat a stranger reached is marked here too ({@link passedOnLevelOf}).
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -161,21 +210,101 @@ export function marksOf(
 export function markedBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
-): TurnPermissionBound | undefined {
-  if (!hasMarks(marksOf(sessionId, agentPath))) return undefined;
-  return (sessionId ? turnLevels.get(sessionId) : undefined) ?? 'runtime-default';
+): TurnPermissionCeiling | undefined {
+  const heard = sessionId ? chatHeardOutsider(sessionId) : false;
+  const marks = heard
+    ? { ...marksOf(sessionId, agentPath), outsider: true as const }
+    : marksOf(sessionId, agentPath);
+  if (!hasMarks(marks)) return undefined;
+  return (sessionId ? passedOnLevelOf(sessionId) : undefined) ?? ceilingCarrying(marks);
+}
+
+/**
+ * Where a post's marks are kept across a restart (DOR-3036): the `room_entries.turn_marks`
+ * column, set at startup by the rooms layer, which owns the table. `read` answers `null` for a
+ * post whose author's level was never known (an unverified caller, a row from before the column),
+ * so a reader can tell "unmarked" from "nobody knows".
+ */
+export interface EntryMarksStore {
+  /** Keep the marks a post was written under. */
+  write(roomId: string, entryId: string, marks: TurnMarks): void;
+  /** The marks a post was written under; `null` when unknown, `undefined` when there is no row. */
+  read(roomId: string, entryId: string): TurnMarks | null | undefined;
+}
+
+let entryMarksStore: EntryMarksStore | null = null;
+
+/**
+ * Set where post marks are kept, or `null` to keep them in memory only (tests).
+ *
+ * @param next - The store over `room_entries.turn_marks`.
+ */
+export function setEntryMarksStore(next: EntryMarksStore | null): void {
+  entryMarksStore = next;
 }
 
 /**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
- * cannot change it.
+ * cannot change it. Its marks are also kept on the row, so a restart does not
+ * read a teammate-marked post as merely an outsider's.
  *
  * @param entryId - The post's id.
  * @param level - The level from {@link postLevelFor}; `undefined` keeps nothing.
+ * @param roomId - The post's room, to keep its marks on its row; absent keeps them in memory only.
  */
-export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | undefined): void {
-  if (level !== undefined) remember(entryLevels, entryId, level);
+export function noteEntryLevel(
+  entryId: string,
+  level: TurnPermissionLevel | undefined,
+  roomId?: string
+): void {
+  if (level === undefined) return;
+  remember(entryLevels, entryId, level);
+  try {
+    if (roomId) entryMarksStore?.write(roomId, entryId, marksOfLevel(level));
+  } catch {
+    // The level is kept in memory; a failed write leaves the row unknown, which readers treat
+    // as marked in a space room and as the runtime default everywhere else.
+  }
+}
+
+/**
+ * Keep marks on a post whose author's level is not known but whose source is
+ * (DOR-3107): a post from a caller DorkOS could not verify (an external `/mcp`
+ * client naming no session) is kept as an outsider's, so it stays capped even
+ * though an unknown post from the owner's own agent no longer is.
+ *
+ * @param entryId - The post's id.
+ * @param marks - The marks to keep.
+ * @param roomId - The post's room.
+ */
+export function noteEntryMarks(entryId: string, marks: TurnMarks, roomId: string): void {
+  remember(entryMarks, entryId, marks);
+  try {
+    entryMarksStore?.write(roomId, entryId, marks);
+  } catch {
+    // Kept in memory; a failed write leaves the row unknown after a restart.
+  }
+}
+
+/**
+ * The marks a room post was written under: from its kept level, else from its row. `null` when
+ * nobody knows (no level was kept and the row records none), `undefined` when the post is not
+ * stored here at all.
+ *
+ * @param entryId - The post's id.
+ * @param roomId - The post's room, to read its row; absent reads the kept level only.
+ */
+export function entryMarksOf(entryId: string, roomId?: string): TurnMarks | null | undefined {
+  const level = entryLevels.get(entryId);
+  if (level !== undefined) return marksOfLevel(level);
+  const marks = entryMarks.get(entryId);
+  if (marks !== undefined) return marks;
+  try {
+    return entryMarksStore && roomId ? entryMarksStore.read(roomId, entryId) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -271,8 +400,18 @@ export function recordTurnLevels(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
-  return applyTurnMarks(recordLevels(runtime, storedModeOf), (sessionId) =>
-    marksOfLevel(turnLevels.get(sessionId))
+  return applyTurnMarks(
+    recordLevels(runtime, storedModeOf),
+    (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+    (sessionId, opts) => {
+      let stored: string | null | undefined;
+      try {
+        stored = storedModeOf(sessionId);
+      } catch {
+        stored = undefined;
+      }
+      remember(turnLevels, sessionId, levelForTurn(runtime, stored, opts));
+    }
   );
 }
 
@@ -283,10 +422,21 @@ function recordLevels(
 ): AgentRuntime {
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
+      // A command intent is a turn too (`CommandIntentOpts` extends `MessageOpts`), recorded alike.
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
         return (
           sessionId: string,
-          content: string,
+          content: unknown,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> => {
           let stored: string | null | undefined;
@@ -306,7 +456,7 @@ function recordLevels(
           while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
           }
-          return target.sendMessage(sessionId, content, opts);
+          return start(sessionId, content, opts);
         };
       }
       const value = Reflect.get(target, prop, target);
