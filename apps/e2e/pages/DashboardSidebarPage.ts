@@ -631,10 +631,25 @@ export class DashboardSidebarPage {
       'Space on the focused row picked nothing up'
     ).toHaveCount(1);
 
+    // **One press, then WAIT for its answer** — the same rule the section walk
+    // below follows, and for the same reason. A key pressed in the instant after
+    // the lift is held until dnd-kit is listening and handed over a task or two
+    // later (DOR-3151), and every later step lands on React's next commit. A
+    // loop that re-read the live region the moment it sent a key read the
+    // PREVIOUS step, pressed again, and walked straight past the section —
+    // measured, it reported "Over Threads and Directory" with the target behind
+    // it. So each press waits for the commentary to change before it is read.
     const overGroup = `Over ${groupName}`;
     for (let press = 0; press < KEYBOARD_DRAG_PRESSES; press++) {
-      if ((await this.dndLiveRegion.textContent())?.includes(overGroup)) break;
+      const said = (await this.dndLiveRegion.textContent()) ?? '';
+      if (said.includes(overGroup)) break;
       await this.page.keyboard.press(key);
+      await expect
+        .poll(async () => (await this.dndLiveRegion.textContent()) ?? '', {
+          timeout: DROP_RING_SETTLE_MS,
+        })
+        .not.toBe(said)
+        .catch(() => undefined);
     }
     await expect(
       this.dndLiveRegion,
