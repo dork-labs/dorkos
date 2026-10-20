@@ -14,6 +14,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import { modeRaises, wifiRaiseRefusal } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import type { SessionLaunchRefusal } from '../services/session/launch/launch-session.js';
+import { chatRiseFacts } from '../services/core/turn-power/chat-rise-facts.js';
 
 /**
  * The answer to a message whose chat could not start.
@@ -58,4 +59,16 @@ export async function wifiModeRaiseReply(
   const declared = runtime.getCapabilities().permissionModes;
   if (!modeRaises(declared, stored?.permissionMode, requested)) return undefined;
   return c.json(wifiRaiseRefusal(), 403);
+}
+
+/**
+ * Note that a chat's mode was set on the chat itself, after the change landed:
+ * a cap the chat's agent's level never lifts at a turn's start (DOR-3175). An
+ * agent setting its own chat lower is noted too, which only keeps it lower.
+ *
+ * @param sessionId - The chat.
+ * @param requested - The mode the change set, or `undefined` when it set none.
+ */
+export function notePersonChatMode(sessionId: string, requested: string | undefined): void {
+  if (requested !== undefined) chatRiseFacts()?.notePersonSetMode(sessionId);
 }

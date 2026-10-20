@@ -32,13 +32,19 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
-import { resolveModeDecision } from '../../../runtimes/claude-code/turn-permission.js';
+import {
+  resolveModeDecision,
+  turnPermissionMode,
+} from '../../../runtimes/claude-code/turn-permission.js';
 import {
   registerTestHomes,
   clearTestHomes,
 } from '../../agent-identity/__tests__/agent-home-fixture.js';
+import { roomBridges, roomSessions, rooms, sessionMetadata } from '@dorkos/db';
 import { lastTurnLevelOf } from '../turn-levels.js';
 import { levelBinds } from '../agent-level-bound.js';
+import { createChatRiseFacts, setChatRiseFacts } from '../chat-rise-facts.js';
+import { setContinuationHoldDb } from '../continuation-hold.js';
 
 /** What a person set each agent's Files & commands to; absent = nothing configured. */
 const agentStops = new Map<string, PermissionStop>();
@@ -84,11 +90,21 @@ function launchingRuntime(
   const launch = (sessionId: string, opts: MessageOpts | undefined) => {
     const chosen = opts?.permissionMode ?? storedModeOf(sessionId) ?? declared.default!;
     const ceiling = opts?.permissionCeiling;
-    launches.push({
-      sessionId,
-      mode: ceiling === undefined ? chosen : clampModeToCeiling(declared, chosen, ceiling),
-      ceiling,
-    });
+    // Claude Code's own launch read; Codex's is the same rule over its own modes.
+    const mode =
+      type === 'claude-code'
+        ? turnPermissionMode({
+            permissionMode: chosen,
+            ...(opts?.levelPermissionMode !== undefined
+              ? { turnLevelMode: opts.levelPermissionMode }
+              : {}),
+            ...(ceiling !== undefined ? { turnPermissionCeiling: ceiling } : {}),
+          })
+        : ((start: string) =>
+            ceiling === undefined ? start : clampModeToCeiling(declared, start, ceiling))(
+            opts?.levelPermissionMode ?? chosen
+          );
+    launches.push({ sessionId, mode, ceiling });
   };
   const runtime = {
     type,
@@ -155,13 +171,57 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
     return registry.get(type);
   }
 
+  /** A chat as its launch left it: an own origin, not held, stored at `mode`. */
+  function seedChat(
+    sessionId: string,
+    mode: string | null,
+    extra: Partial<typeof sessionMetadata.$inferInsert> = {}
+  ) {
+    db.insert(sessionMetadata)
+      .values({
+        sessionId,
+        runtime: 'claude-code',
+        agentPath: ANA,
+        launchOrigin: 'interactive',
+        lastTurnHeld: false,
+        permissionMode: mode,
+        createdAt: new Date().toISOString(),
+        ...extra,
+      })
+      .run();
+  }
+
+  /** A room seat of Ana's, in a room of this computer. */
+  function seedSeat(sessionId: string, mode: string | null, roomId = ROOM) {
+    db.insert(rooms)
+      .values({
+        id: roomId,
+        kind: 'channel',
+        title: 'Build',
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      } as typeof rooms.$inferInsert)
+      .onConflictDoNothing()
+      .run();
+    db.insert(roomSessions)
+      .values({ roomId, authorId: 'author-ana', sessionId, createdAt: new Date().toISOString() })
+      .run();
+    seedChat(sessionId, mode, { launchOrigin: 'room' });
+  }
+
   beforeEach(() => {
     db = createTestDb();
     agentStops.clear();
     unreadable.clear();
     registerTestHomes([ANA, BOB]);
+    setContinuationHoldDb(db);
+    setChatRiseFacts(createChatRiseFacts(db));
   });
-  afterEach(() => clearTestHomes());
+  afterEach(() => {
+    clearTestHomes();
+    setContinuationHoldDb(undefined);
+    setChatRiseFacts(null);
+  });
 
   describe('the lower (QA rows)', () => {
     it('a seat stored at Full, its agent then capped at Ask: the same room’s next Write cards', async () => {
@@ -289,6 +349,153 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
     });
   });
 
+  describe('the raise (QA rows)', () => {
+    it('a seat stored at Ask, its agent then uncapped to Full: the same room writes with 0 cards', async () => {
+      const runtime = boot();
+      seedSeat('seat-up', 'default');
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('seat-up', 'write it', seatOpts(ANA)));
+      expect(writeCards(launches.at(-1)!.mode)).toBe(true);
+
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-up', 'write it again', seatOpts(ANA)));
+
+      expect(launches.at(-1)!.mode).toBe('bypassPermissions');
+      expect(writeCards(launches.at(-1)!.mode)).toBe(false);
+      // Never written: the stored mode is still the one it was born with.
+      expect(registry.storedPermissionModeOf('seat-up')).toBe('default');
+      // And the level it hands on is the one it ran at.
+      expect(lastTurnLevelOf('seat-up')).toMatchObject({ asks: 'never' });
+    });
+
+    it('then a cap again: the same seat asks on its next turn', async () => {
+      const runtime = boot();
+      seedSeat('seat-both', 'default');
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-both', 'go', seatOpts(ANA)));
+      expect(launches.at(-1)!.mode).toBe('bypassPermissions');
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('seat-both', 'go', seatOpts(ANA)));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a new room follows the uncap too', async () => {
+      const runtime = boot();
+      agentStops.set(ANA, 'autonomy');
+      // A new seat is born at its agent's level (its seed names the mode).
+      await run(
+        runtime.sendMessage(
+          'seat-new-up',
+          'hi',
+          seatOpts(ANA, { permissionMode: 'bypassPermissions' })
+        )
+      );
+      expect(launches.at(-1)!.mode).toBe('bypassPermissions');
+    });
+
+    it('a marked seat stays capped after the uncap: a bridged room', async () => {
+      const runtime = boot();
+      seedSeat('seat-bridged', 'default', 'room-bridged');
+      db.insert(roomBridges)
+        .values({
+          roomId: 'room-bridged',
+          adapterId: 'telegram-1',
+          chatId: '42',
+          platformChatType: 'group',
+          bindingId: 'binding-1',
+          deliverNotices: false,
+          createdAt: new Date().toISOString(),
+        } as typeof roomBridges.$inferInsert)
+        .run();
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-bridged', 'hi', seatOpts(ANA)));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a marked turn stays capped after the uncap: a stranger’s words in view', async () => {
+      const runtime = boot();
+      seedSeat('seat-heard', 'default');
+      agentStops.set(ANA, 'autonomy');
+      await run(
+        runtime.sendMessage(
+          'seat-heard',
+          'hi',
+          seatOpts(ANA, {
+            roomTurn: { roomId: ROOM, agentPath: ANA, outsiderInView: true },
+          } as never)
+        )
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a held seat stays capped after the uncap', async () => {
+      const runtime = boot();
+      seedSeat('seat-held', 'default');
+      db.update(sessionMetadata).set({ lastTurnHeld: true }).run();
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-held', 'hi', seatOpts(ANA)));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a chat a person set to Ask stays at Ask: a per-chat cap', async () => {
+      const runtime = boot();
+      seedChat('chat-capped', 'default', { permissionModeByPerson: true });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-capped', 'hi', { cwd: ANA }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a chat from outside (a relay origin) stays capped', async () => {
+      const runtime = boot();
+      seedChat('chat-relay', 'default', { launchOrigin: 'relay' });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-relay', 'hi', { cwd: ANA }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a chat in Plan keeps Plan', async () => {
+      const runtime = boot();
+      seedChat('chat-plan', 'plan');
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-plan', 'hi', { cwd: ANA }));
+      expect(launches.at(-1)!.mode).toBe('plan');
+    });
+
+    it('never raises a scheduled run', async () => {
+      const runtime = boot();
+      seedChat('run-2', 'default', { launchOrigin: 'interactive' });
+      agentStops.set(ANA, 'autonomy');
+      await run(
+        runtime.sendMessage('run-2', 'nightly', {
+          cwd: ANA,
+          permissionMode: 'default',
+          unattended: true,
+        })
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('raises nothing with no facts wired', async () => {
+      const runtime = boot();
+      seedSeat('seat-nofacts', 'default');
+      setChatRiseFacts(null);
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-nofacts', 'hi', seatOpts(ANA)));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('still holds a raised turn to an unmarked poster’s level', async () => {
+      const runtime = boot();
+      seedSeat('seat-poster', 'default');
+      agentStops.set(ANA, 'autonomy');
+      const poster = { asks: 'when-risky', reach: 'edit' } as const;
+      await run(
+        runtime.sendMessage('seat-poster', 'hi', seatOpts(ANA, { permissionCeiling: poster }))
+      );
+      expect(launches.at(-1)!.mode).toBe('acceptEdits');
+    });
+  });
+
   describe('what it leaves alone', () => {
     it('sends a turn its level admits exactly as asked', async () => {
       const runtime = boot();
@@ -296,14 +503,6 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
       agentStops.set(ANA, 'autonomy');
       await run(runtime.sendMessage('seat-ok', 'hi', seatOpts(ANA)));
       expect(launches.at(-1)!.ceiling).toBeUndefined();
-    });
-
-    it('never raises: a seat at Ask stays at Ask under a Full agent (the raise is its own change)', async () => {
-      const runtime = boot();
-      await registry.saveSessionSettings('seat-ask', { permissionMode: 'default' });
-      agentStops.set(ANA, 'autonomy');
-      await run(runtime.sendMessage('seat-ask', 'hi', seatOpts(ANA)));
-      expect(launches.at(-1)!.mode).toBe('default');
     });
 
     it('leaves a chat with no agent as it was', async () => {

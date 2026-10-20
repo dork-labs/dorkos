@@ -19,7 +19,7 @@
  * {@link resolveAgentLaunchLevel}, the same function a new chat launches at and
  * the profile's Level row reports, so the three cannot drift.
  *
- * ## Only ever lowers
+ * ## Lowering: every turn
  *
  * The bound is the agent's level as a turn ceiling, added beside whatever
  * ceiling the turn already carries, and a ceiling can only hold a turn down
@@ -30,14 +30,34 @@
  * stranger's or a teammate's; it does lower the level the turn hands on, which
  * is the point.
  *
+ * ## Raising: only a chat that follows its agent
+ *
+ * The one place the stored mode stops being a ceiling. A turn starts from its
+ * agent's level instead (`MessageOpts.levelPermissionMode`, never stored) only
+ * when all of these hold, and keeps its stored mode otherwise:
+ *
+ * - the send names no mode of its own (a schedule's, a new chat's seed) and is
+ *   not unattended: schedules are never raised (DOR-3153);
+ * - the turn carries no outsider or teammate mark and is not held to the
+ *   runtime's default; a plain level ceiling (another of the owner's agents)
+ *   still holds the raised turn down;
+ * - the chat follows its agent (`chat-rise-facts.ts`): a person never set its
+ *   mode, nothing outside launched or marked it, and no stranger reached it;
+ * - its stored mode is not one a person picks on purpose (Plan, Never ask), it
+ *   is not on another computer, and its agent is not one kept as it is;
+ * - the level is looser than the stored mode.
+ *
+ * Only a person moves the level a chat rises to: it is read through the
+ * permission gate, which never lets an agent's own file rise past what a
+ * person set (`person-set-permissions.ts`).
+ *
  * ## Fails closed
  *
  * When the turn's agent is known but its level cannot be read, the turn is held
  * to the runtime's own default mode. A turn with no agent (a plain chat in a
  * folder that belongs to nobody) has no agent level, and runs as before.
  *
- * Out of scope: a turn already running when the level changes (DOR-3177), and
- * raising a stored mode to a looser level (the raise is its own change).
+ * Out of scope: a turn already running when the level changes (DOR-3177).
  *
  * @module services/core/turn-power/agent-level-bound
  */
@@ -50,6 +70,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import {
+  ceilingCarriesOutsider,
   clampModeToCeiling,
   levelOfMode,
   type DeclaredModes,
@@ -65,7 +86,13 @@ import {
   resolveAgentLaunchLevel,
   type AgentLaunchLevel,
 } from '../../session/resolution/agent-launch-level.js';
+import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
+import { chatRiseFacts } from './chat-rise-facts.js';
+import { hasMarks, marksForTurn } from './turn-marks.js';
 import { logger } from '../../../lib/logger.js';
+
+/** Chats on another computer, which this one cannot vouch for. */
+const COMPUTER_LOCAL_RUNTIME = 'computer-local';
 
 /** What the bound reads about a session, beside the turn's own options. */
 export interface AgentLevelBoundDeps {
@@ -95,7 +122,7 @@ function withBound(
 /**
  * Whether a level holds down any mode this turn could launch at: the stored
  * mode and a mode the send names (a schedule's mode, or a new chat's first-turn
- * seed). Each is read after the turn's own ceiling, so the bound is added only
+ * seed), or the agent's level a raised turn starts from in place of both. Each is read after the turn's own ceiling, so the bound is added only
  * where it changes the answer. With neither known, the runtime may hold a mode
  * in memory this seam cannot see, so every mode it declares is a candidate:
  * unknown binds, never the other way round.
@@ -111,9 +138,11 @@ export function levelBinds(
   stored: string | null | undefined,
   opts: MessageOpts | undefined
 ): boolean {
-  const named = [stored, opts?.permissionMode].filter(
-    (mode): mode is string => typeof mode === 'string' && mode !== ''
-  );
+  const named = (
+    opts?.levelPermissionMode !== undefined
+      ? [opts.levelPermissionMode]
+      : [stored, opts?.permissionMode]
+  ).filter((mode): mode is string => typeof mode === 'string' && mode !== '');
   const candidates = named.length > 0 ? named : declared.values.map((mode) => mode.id);
   return candidates.some((mode) => {
     const ceiling = opts?.permissionCeiling;
@@ -143,9 +172,52 @@ async function agentOfTurn(
   return chatAgentOf(await recordedAgentOf(sessionId), cwd);
 }
 
+/** Whether the turn carries a mark or is held: an outsider's, a teammate's, or the runtime's default. */
+function turnIsMarked(opts: MessageOpts | undefined): boolean {
+  const ceiling = opts?.permissionCeiling;
+  if (ceiling !== undefined && ceilingCarriesOutsider(ceiling)) return true;
+  if (opts?.teammate === true || opts?.roomTurn?.teammate === true) return true;
+  return hasMarks(marksForTurn(opts));
+}
+
+/**
+ * Whether this turn starts from its agent's level rather than its stored mode;
+ * every condition is in the module doc.
+ *
+ * @param runtime - The runtime the turn runs on.
+ * @param sessionId - The session.
+ * @param agentPath - The turn's agent.
+ * @param stored - The session's stored mode.
+ * @param levelMode - The agent's level as this runtime's mode.
+ * @param opts - The send's options.
+ */
+function rises(
+  runtime: AgentRuntime,
+  sessionId: string,
+  agentPath: string,
+  stored: string | null | undefined,
+  levelMode: string,
+  opts: MessageOpts | undefined
+): boolean {
+  if (opts?.permissionMode !== undefined || opts?.unattended === true) return false;
+  if (turnIsMarked(opts)) return false;
+  if (runtime.type === COMPUTER_LOCAL_RUNTIME) return false;
+  if (isKept({ projectPath: agentPath, name: '', displayName: '' })) return false;
+  const declared = runtime.getCapabilities().permissionModes;
+  const current = stored ?? declared.default;
+  if (!current || isChosenMode(declared, current)) return false;
+  const currentLevel = levelOfMode(declared, current);
+  // Only up: a level the stored mode would not hold down is no looser than it.
+  if (!currentLevel || clampModeToCeiling(declared, levelMode, currentLevel) === levelMode) {
+    return false;
+  }
+  return chatRiseFacts()?.mayRise(sessionId) === true;
+}
+
 /**
  * The send's options with the agent's level added to its ceiling when that
- * level holds the turn down; the options unchanged otherwise.
+ * level holds the turn down, and the level as the mode it starts from when the
+ * chat follows its agent up; the options unchanged otherwise.
  *
  * @param runtime - The runtime the turn runs on.
  * @param sessionId - The session.
@@ -174,11 +246,13 @@ export async function boundTurnOpts<O extends MessageOpts | undefined>(
   if (!agentPath) return opts;
 
   let level: TurnPermissionLevel | undefined;
+  let levelMode: string | undefined;
   try {
     const read = deps.levelOf ?? resolveAgentLaunchLevel;
     const { mode } = await read({ agentPath, capabilities });
     // Nothing configured anywhere: the runtime's own default decides, as for a new chat.
     if (mode === undefined) return opts;
+    levelMode = mode;
     level = levelOfMode(declared, mode);
   } catch (err) {
     logger.warn('[agent-level] could not read the agent’s level; holding the turn to the default', {
@@ -195,13 +269,18 @@ export async function boundTurnOpts<O extends MessageOpts | undefined>(
   } catch {
     stored = undefined;
   }
-  if (!levelBinds(declared, level, stored, opts)) return opts;
-  return { ...(opts ?? {}), permissionCeiling: withBound(opts?.permissionCeiling, level) };
+  const sent: O | MessageOpts =
+    levelMode !== undefined && rises(runtime, sessionId, agentPath, stored, levelMode, opts)
+      ? { ...(opts ?? {}), levelPermissionMode: levelMode }
+      : opts;
+  if (!levelBinds(declared, level, stored, sent)) return sent;
+  return { ...(sent ?? {}), permissionCeiling: withBound(sent?.permissionCeiling, level) };
 }
 
 /**
  * Wrap a runtime so every turn, and every command intent (a summary is a turn
- * too), starts no looser than its agent's current level.
+ * too), starts no looser than its agent's current level, and a chat that
+ * follows its agent starts at it.
  *
  * The level is read before the turn starts, so the wrapped generator starts the
  * runtime's own on its first `next()`. Sits outside the turn-level record

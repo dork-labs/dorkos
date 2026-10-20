@@ -22,18 +22,37 @@ import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/sche
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
 /**
- * The mode this turn runs at: the session's own mode, held to the turn's
- * ceiling when it carries one.
+ * The mode this turn runs at: the session's own mode (or, for a chat that
+ * follows its agent up, the agent's level this turn starts from, DOR-3175),
+ * held to the turn's ceiling when it carries one.
  *
- * @param session - The session's chosen mode and the current turn's ceiling.
+ * @param session - The session's chosen mode, this turn's level, and its ceiling.
  */
 export function turnPermissionMode<M extends string | undefined>(session: {
   permissionMode: M;
+  turnLevelMode?: string;
   turnPermissionCeiling?: TurnPermissionCeiling;
 }): M | string {
+  const mode: M | string = session.turnLevelMode ?? session.permissionMode;
   const ceiling = session.turnPermissionCeiling;
-  if (ceiling === undefined || session.permissionMode === undefined) return session.permissionMode;
-  return clampClaudeMode(session.permissionMode, ceiling);
+  if (ceiling === undefined || mode === undefined) return mode;
+  return clampClaudeMode(mode, ceiling);
+}
+
+/**
+ * Set the mode a person chose for the conversation. It replaces the agent's
+ * level a running turn started from (DOR-3175): the chat runs at the person's
+ * choice from here.
+ *
+ * @param session - The session.
+ * @param mode - The mode the person chose.
+ */
+export function setChosenMode(
+  session: { permissionMode: string; turnLevelMode?: string },
+  mode: string
+): void {
+  session.permissionMode = mode;
+  delete session.turnLevelMode;
 }
 
 /**
@@ -86,6 +105,8 @@ export function neverAsks(session: CeilingedMode<string | undefined>): boolean {
 export interface CeilingedMode<M extends string | undefined> {
   /** The mode a person chose for the conversation. */
   permissionMode: M;
+  /** The agent's level this turn starts from instead, when it follows its agent up (DOR-3175). */
+  turnLevelMode?: string;
   /** This turn's ceiling, assigned on every send. */
   turnPermissionCeiling?: TurnPermissionCeiling;
   /** The ceiling background work an earlier ceilinged turn left running carries. */

@@ -35,7 +35,7 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
+import { gatePermissionMode, isPersonOnlyMode, setChosenMode } from '../turn-permission.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -655,7 +655,8 @@ export class SessionStore {
     let permissionModePendingUntilNextTurn = false;
     if (opts.permissionMode) {
       const prevMode = session.permissionMode;
-      session.permissionMode = opts.permissionMode;
+      // A person's choice replaces the agent's level a running turn started from (DOR-3175).
+      setChosenMode(session, opts.permissionMode);
       if (session.activeQuery) {
         const query = session.activeQuery;
         // Bounded (DOR-1301): on a session winding down, DorkOS has already

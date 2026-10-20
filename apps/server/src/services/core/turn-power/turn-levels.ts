@@ -438,9 +438,13 @@ function powerForTurn(
   }
   const read = (id: string | null | undefined) =>
     levelOfMode(declared, id === AUTO_MODE_ID ? AUTO_FALLBACK_MODE_ID : id);
-  const known = [read(stored), read(opts?.permissionMode)].filter(
-    (level): level is TurnPermissionLevel => level !== undefined
-  );
+  // A chat that follows its agent up starts from the agent's level in place of
+  // the stored mode (DOR-3175), which is then what it runs at.
+  const starts =
+    opts?.levelPermissionMode !== undefined
+      ? [read(opts.levelPermissionMode)]
+      : [read(stored), read(opts?.permissionMode)];
+  const known = starts.filter((level): level is TurnPermissionLevel => level !== undefined);
   const base =
     known.length > 0
       ? known.reduce(stricterLevel)

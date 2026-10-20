@@ -21,6 +21,7 @@ import {
   type NarrowingContext,
 } from './arrival-narrowing.js';
 import type { PersonSetPermissions } from './person-set-permissions.js';
+import type { PermissionServiceDeps } from './permission-service-deps.js';
 import { seedPersonSetPermissions } from './person-set-seed.js';
 import { PERMISSION_CHANGED_EVENT } from '@dorkos/shared/permissions';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
@@ -114,6 +115,8 @@ export interface PermissionServiceWiring {
   arrivals: ArrivalRecord;
   /** What a person set for each agent, the floor under its own file. */
   personSet: PersonSetPermissions;
+  /** How many existing chats a change to agents' levels reaches (DOR-3175). */
+  levelReachNote?: PermissionServiceDeps['levelReachNote'];
 }
 
 /**
@@ -322,6 +325,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
     actions: () => permissionActions(wiring.registry()),
     arrivalsHealthy: () => wiring.arrivals.isHealthy(),
     activity: wiring.activity,
+    ...(wiring.levelReachNote ? { levelReachNote: wiring.levelReachNote } : {}),
   });
 }
 

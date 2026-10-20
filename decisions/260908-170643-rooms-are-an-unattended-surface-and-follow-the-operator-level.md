@@ -48,6 +48,17 @@ already exists. (The first cut of that change lost the promise by dropping the
 condition along with the caller that held it; the review caught it, and the
 policy is the fix.)
 
+**Amended 2026-10-20 by DOR-3175** (an agent's level reaches the chats it
+already has). The stored row is still never rewritten, but it no longer decides
+a turn alone. At every turn's start, on every runtime, the registry's seam
+(`turn-power/agent-level-bound.ts`) holds the turn to its agent's current level,
+so lowering an agent reaches every existing room seat and chat on its next turn.
+And a chat that follows its agent (no mode a person set on the chat, nothing
+outside launched, marked or held it) starts from the agent's level when that is
+looser than its stored mode. So "a room conversation that already has settings
+is untouched" now means its STORED settings: what its next turn runs at follows
+its agent's level, down always and up when it follows.
+
 ## Context
 
 ADR `260822-235802` moved scheduled tasks and relay bindings onto the operator's
