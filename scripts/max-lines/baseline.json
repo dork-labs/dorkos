@@ -14,7 +14,6 @@
     "apps/client/src/dev/showcases/OneBarShowcases.tsx": 646,
     "apps/client/src/dev/showcases/RoomsShowcases.tsx": 598,
     "apps/client/src/dev/showcases/SettingsShowcases.tsx": 742,
-    "apps/client/src/dev/showcases/SidebarModelShowcases.tsx": 547,
     "apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx": 517,
     "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts": 719,
     "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts": 976,

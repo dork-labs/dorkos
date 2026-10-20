@@ -33,9 +33,8 @@
  * @module dev/showcases/SidebarModelShowcases
  */
 import { useId, useState } from 'react';
-import { Hash, Moon, Sun } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { SectionHeader, SidebarMenu, SidebarRow, Switch } from '@/layers/shared/ui';
+import { SectionHeader, SidebarMenu, SidebarRow, Switch, statusDotClass } from '@/layers/shared/ui';
 import type {
   SidebarModel,
   SidebarRowModel,
@@ -50,17 +49,15 @@ import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixt
 import { SidebarZone } from '@/layers/features/dashboard-sidebar/ui/SidebarZone';
 import { RowGlyph } from './sidebar-model-row-glyph';
 import { anchorKey } from '@/layers/features/dashboard-sidebar/model/rules/targets';
+import { rollUpCollapsedSection } from '@/layers/features/dashboard-sidebar/model/rules/roll-up-collapsed-section';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
-
-/**
- * The visible panel width the redesign builds to (design-system §Sidebar).
- *
- * Spelled here rather than as `w-68` so the number a reviewer measures on this
- * page is the number the guide names, and a browser test can assert it.
- */
-const PANEL_WIDTH = 272;
+import {
+  DirectedBadge,
+  PANEL_WIDTH,
+  SidebarUnreadTiersShowcase,
+} from './SidebarUnreadTiersShowcase';
 
 /**
  * One node's provenance, drawn where the node is.
@@ -99,34 +96,6 @@ function ReasonChip({
 }
 
 /**
- * The numbered amber badge the `directed` tier draws, and the only mark either
- * unread tier is allowed (design-decisions §18).
- *
- * The class string is the cockpit's existing unread pill (`RoomRow`), not a new
- * one — the point of the page is to show what the sidebar draws, so an invented
- * badge here would be showing nothing.
- *
- * **axe cannot judge it, and that is expected.** A one-digit label trips
- * axe-core's "content is too short to determine if it is actual text" heuristic,
- * so every one of these lands in the run's `incomplete` bucket rather than its
- * violations. The browser spec asserts that they are the ONLY thing in there, so
- * the hole stays exactly this size.
- *
- * @param count - How many messages are addressed to you here.
- */
-function DirectedBadge({ count }: { count: number | undefined }) {
-  return (
-    <span
-      data-slot="sidebar-model-directed-badge"
-      className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
-      aria-label={`${count ?? 0} unread`}
-    >
-      {count}
-    </span>
-  );
-}
-
-/**
  * The trailing meta a row carries: its unread mark and its live-session count.
  *
  * **The `activity` tier draws nothing here on purpose.** Bold label only — no
@@ -148,7 +117,9 @@ function RowTrailing({ row }: { row: SidebarRowModel }) {
           {row.liveCount} live
         </span>
       )}
-      {row.unread.tier === 'directed' && <DirectedBadge count={row.unread.count} />}
+      {row.unread.tier === 'directed' && row.unread.count !== undefined && (
+        <DirectedBadge count={row.unread.count} />
+      )}
     </>
   );
 }
@@ -186,7 +157,7 @@ function ModelRow({
       reservesVerbLine={row.reservesVerbLine}
       preview={row.preview ?? null}
       isActive={row.key === activeKey}
-      emphasized={row.unread.tier !== 'none'}
+      emphasized={row.unread.tier !== 'none' && !row.muted}
       muted={row.muted}
       dataSlot="sidebar-model-row"
       expansion={
@@ -197,34 +168,20 @@ function ModelRow({
 }
 
 /**
- * What a folded section says about what it is hiding, as one line of text
- * (BC-31, `specs/sidebar-simplification` D1).
- *
- * **Words, not marks.** It used to be a dot and a numbered pill — two shapes
- * borrowed from the row vocabulary, drawn on a header where no row was, which is
- * a third weight the two-tier system deliberately does not have. Now that every
- * header in the panel folds, folding is an ordinary act and its receipt is an
- * ordinary sentence.
+ * The one mark a folded header carries: a dot while something inside is
+ * working, never a number (BC-31).
  *
  * Kept in step with `features/dashboard-sidebar/ui/SidebarSection.tsx`, which is
  * what the cockpit really draws.
- *
- * @param rollup - The section's rolled-up signal.
  */
-function sectionRollupText(rollup: NonNullable<SidebarSectionModel['rollup']>): string {
-  const parts: string[] = [];
-  parts.push(
-    rollup.needsYouCount !== undefined && rollup.needsYouCount > 0
-      ? `${rollup.needsYouCount} need you`
-      : `${rollup.count}`
+function FoldedWorkingDot() {
+  return (
+    <span
+      role="img"
+      aria-label="Agents working"
+      className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
+    />
   );
-  if (rollup.unread.tier === 'directed' && (rollup.unread.count ?? 0) > 0) {
-    parts.push(`${rollup.unread.count} unread`);
-  } else if (rollup.unread.tier === 'activity') {
-    parts.push('unread');
-  }
-  if (rollup.workingCount > 0) parts.push(`${rollup.workingCount} working`);
-  return parts.join(' · ');
 }
 
 /**
@@ -257,6 +214,10 @@ function ModelSection({
 }) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
   const listId = `${useId()}-list`;
+  // The model rolls up only what it was told is folded; a section folded here,
+  // on the page, is rolled up the same way so it keeps the same rows.
+  const rollup = section.rollup ?? rollUpCollapsedSection(section.rows, () => false);
+  const shownRows = collapsed ? rollup.keptRows : section.rows;
 
   return (
     <div data-slot="sidebar-model-section" data-section={section.id} data-reason={section.reason}>
@@ -269,13 +230,9 @@ function ModelSection({
               collapsed={collapsed}
               onToggle={() => setCollapsed((previous) => !previous)}
               controlsId={listId}
-              // Folded, and holding unread: the label goes bold. Either tier
-              // earns it — `directed` also draws its badge in `trailing`, but
-              // `activity` has nowhere else to go (BC-31, §18).
-              emphasized={collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
-              {...(collapsed && section.rollup
-                ? { trailing: sectionRollupText(section.rollup) }
-                : {})}
+              // Never a count, and never bold: the rows still asking for
+              // something stay on screen below a folded header (BC-31).
+              {...(collapsed && rollup.workingCount > 0 ? { trailing: <FoldedWorkingDot /> } : {})}
             />
           </div>
           <ReasonChip reason={section.reason} show={showReasons} className="mr-1 shrink-0" />
@@ -288,9 +245,13 @@ function ModelSection({
           <ReasonChip reason={section.reason} show={showReasons} />
         </div>
       )}
-      {!collapsed && (
-        <SidebarMenu id={listId} className="gap-0">
-          {section.rows.map((row) => (
+      {shownRows.length > 0 && (
+        <SidebarMenu
+          id={collapsed ? undefined : listId}
+          data-slot={collapsed ? 'sidebar-model-kept-rows' : undefined}
+          className="gap-0"
+        >
+          {shownRows.map((row) => (
             <ModelRow
               key={row.key}
               row={row}
@@ -464,66 +425,6 @@ export function SidebarModelJourneysShowcase() {
           ))}
         </div>
       </div>
-    </PlaygroundSection>
-  );
-}
-
-/**
- * The two unread tiers, on the sidebar's own row, in one place.
- *
- * Two tiers and no more (design-decisions §18): something happened here is a
- * **bold label and nothing else**, and something is addressed to you is a
- * numbered amber badge. The tier that draws nothing is the one that keeps
- * getting a dot added back, which is why it is showcased beside the one that
- * does draw something rather than left to a table in a document.
- */
-export function SidebarUnreadTiersShowcase() {
-  return (
-    <PlaygroundSection
-      title="Sidebar Unread Tiers"
-      description="Two tiers, and no third weight. Activity — something happened here — is a bold label with no badge and no dot. Directed at you — a DM, or an @mention anywhere — is a numbered amber badge. Muting kills both, except that an @mention pierces it."
-    >
-      <ShowcaseLabel>Activity, directed, read, muted</ShowcaseLabel>
-      <div className="border-border/50 bg-muted/30 rounded-lg border border-dashed p-4">
-        <nav
-          aria-label="Sidebar (unread tiers)"
-          style={{ width: PANEL_WIDTH }}
-          className="bg-sidebar text-sidebar-foreground rounded-lg p-2"
-        >
-          <SidebarMenu className="gap-0">
-            <SidebarRow
-              glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
-              title="releases"
-              emphasized
-              dataSlot="sidebar-unread-activity"
-            />
-            <SidebarRow
-              glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
-              title="design"
-              emphasized
-              trailing={<DirectedBadge count={2} />}
-              dataSlot="sidebar-unread-directed"
-            />
-            <SidebarRow
-              glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
-              title="noise"
-              dataSlot="sidebar-unread-none"
-            />
-            <SidebarRow
-              glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
-              title="archive"
-              muted
-              dataSlot="sidebar-unread-muted"
-            />
-          </SidebarMenu>
-        </nav>
-      </div>
-      <p className="text-muted-foreground text-xs">
-        Both themes matter here: switch the theme in the playground footer (
-        <Sun className="inline size-3" /> / <Moon className="inline size-3" />) — the tint ramp
-        moves away from the panel in the same direction in both, which is why{' '}
-        <code className="text-foreground">--muted</code> is banned in this panel.
-      </p>
     </PlaygroundSection>
   );
 }

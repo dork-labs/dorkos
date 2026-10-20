@@ -467,34 +467,34 @@ test.describe('Sidebar model showcase @smoke', () => {
   test('a folded section keeps the signal folding it hid', async ({ page }) => {
     await openShowcase(page);
 
-    // `power` folds Library → Channels with a rollup of `{ activity, working: 3 }`.
-    // Both halves have to survive the fold (BC-31), and they survive in two
-    // different places: the working count is a dot in the trailing slot, and the
-    // `activity` tier is the label going bold — no badge, no dot, because a
-    // third weight is exactly what the two-tier system refuses (§18). The page
-    // showed only the dot until `SectionHeader` gained `emphasized`.
+    // `power` folds Library → Channels while some of its rooms are unread and
+    // some of its agents are working. Both have to survive the fold (BC-31),
+    // and neither does it as a number: the unread rows stay on screen under
+    // the header, drawn as they are when the section is open, and the header
+    // carries one working dot and no count.
     const channels = page.locator(
       '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-slot="sidebar-model-section"][data-section="channels"]'
     );
-    const header = channels.getByRole('button', { name: 'Channels' });
+    const header = channels.getByRole('button', { name: /^Channels/ });
     await expect(header).toHaveAttribute('aria-expanded', 'false');
-    await expect(header, 'a folded section holding unread activity reads as quiet').toHaveClass(
-      /font-semibold/
+    await expect(header, 'a folded header is never bold').not.toHaveClass(/font-semibold/);
+    await expect(header, 'a folded header carries no count').not.toHaveText(/\d/);
+    await expect(header.getByRole('img', { name: 'Agents working' })).toBeVisible();
+
+    // The unread rows are still there, and every one of them is bold.
+    const kept = channels.locator('[data-slot="sidebar-model-kept-rows"] [data-sidebar-row]');
+    await expect(kept.first()).toBeVisible();
+    const states = await kept.evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute('data-row-state'))
     );
-    // The roll-up is TEXT now, not a dot and a pill (`sidebar-simplification`
-    // D1): every header in the panel folds, so a fold's receipt is an ordinary
-    // sentence rather than two marks borrowed from the row vocabulary.
-    await expect(header).toContainText('3 working');
+    expect(states.length).toBeGreaterThan(0);
+    expect(states.every((state) => state === 'emphasized')).toBe(true);
 
-    // And the tier really is `activity`, so the absence of a badge is the
-    // decision rather than an oversight.
-    await expect(channels.locator('[data-slot="sidebar-model-directed-badge"]')).toHaveCount(0);
-
-    // Expanding gives the signal back to the rows, so the header stops carrying
-    // it — the rollup is a stand-in for what folding hid, not a second badge.
+    // Expanding gives the section all its rows back, and the dot goes.
     await header.click();
     await expect(header).toHaveAttribute('aria-expanded', 'true');
-    await expect(header).not.toHaveClass(/font-semibold/);
+    await expect(header.getByRole('img', { name: 'Agents working' })).toHaveCount(0);
+    await expect(channels.locator('[data-slot="sidebar-model-kept-rows"]')).toHaveCount(0);
   });
 
   // The R1 gate. A `for` loop rather than two copies so neither theme can be
@@ -550,10 +550,10 @@ test.describe('Sidebar model showcase @smoke', () => {
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
       //
-      // **Matched on what makes it an unread badge, not on which component
+      // **Matched on what makes it a count pill, not on which component
       // drew it, and read off the node axe reported rather than off a selector
       // resolved again.** The allowance used to name the showcase's own
-      // stand-in (`sidebar-model-directed-badge`) and look it up by
+      // stand-in and look it up by
       // `querySelector` — which silently answers `null` for a target axe
       // reports as more than one selector, so the filter counted nothing and
       // the gate failed with no explanation. `node.html` is the element itself,
@@ -581,8 +581,8 @@ test.describe('Sidebar model showcase @smoke', () => {
       // page grew past its first fold — so a `closest()` filter counted nothing
       // and the gate failed naming elements it had in fact been handed.
       const isCountBadge = (text: string) =>
-        /data-slot="sidebar-model-directed-badge"/.test(text) ||
-        /aria-label="\d+ unread"/.test(text) ||
+        /data-slot="count-pill"/.test(text) ||
+        /aria-label="\d+ (mentions?|new messages?)"/.test(text) ||
         /data-testid="mobile-tab-badge-/.test(text) ||
         /data-slot="catch-up-count"/.test(text);
       const badges = undecided.filter(
@@ -601,11 +601,9 @@ test.describe('Sidebar model showcase @smoke', () => {
       // That is not hypothetical: the mobile badge shipped white-on-amber at
       // 2.15:1 and this list is where it hid.
       //
-      // **Scoped to the badge this task pinned**, not to both families. The
-      // panel's own directed badge is translucent (`bg-brand/15`), so judging it
-      // means compositing it over whatever is behind it — a different and
-      // larger job, and it is no less guarded than it was before P4 touched
-      // this pin.
+      // **Scoped to the mobile badge here.** The panel's own count pill has a
+      // translucent tint, so it is judged further down, composited over the
+      // panel behind it.
       //
       // **Colours are read as pixels, never parsed as text.** Tailwind v4 emits
       // `oklch()`, and a regex pulling the first three numbers out of
@@ -710,6 +708,53 @@ test.describe('Sidebar model showcase @smoke', () => {
       expect(
         countContrast.filter((count) => count.ratio < 4.5),
         `Catch up's count is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
+
+      // **The sidebar's count pill, paid back the same way.** Neutral ink on a
+      // translucent neutral tint: the tint is composited over the first solid
+      // backdrop behind the pill, and the ink is read against that.
+      const pillContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        const over = (top: number[], under: number[]) =>
+          [0, 1, 2].map((i) => top[i]! * top[3]! + under[i]! * (1 - top[3]!));
+        const backdrop = (node: Element): [number, number, number, number] => {
+          for (let el: Element | null = node.parentElement; el !== null; el = el.parentElement) {
+            const painted = pixel(getComputedStyle(el).backgroundColor);
+            if (painted[3] === 1) return painted;
+          }
+          return [255, 255, 255, 1];
+        };
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const style = getComputedStyle(node);
+          const tint = over(pixel(style.backgroundColor), backdrop(node));
+          const ink = over(pixel(style.color), tint);
+          const [a, b] = [luminance(ink), luminance(tint)];
+          return {
+            text: node.textContent ?? '',
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-slot="count-pill"]');
+
+      expect(pillContrast.length, 'no count pills on the page to check').toBeGreaterThan(0);
+      expect(
+        pillContrast.filter((pill) => pill.ratio < 4.5),
+        `a sidebar count pill is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
     });
   }

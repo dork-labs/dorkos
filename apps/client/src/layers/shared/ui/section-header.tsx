@@ -93,24 +93,12 @@ export interface SectionHeaderProps {
   /** Width class for the menus. */
   menuWidth?: string;
   /**
-   * The section is asking to be read — the same unread emphasis
-   * {@link SidebarRow} wears, on a header.
+   * The one mark a folded header carries — a working dot.
    *
-   * **This is how a folded section keeps its `activity` tier.** Collapsing may
-   * never lose signal (BC-31), and the two-tier system says `activity` is a
-   * bold label and NOTHING else — no badge, no dot (design-decisions §18). So
-   * `trailing` cannot carry it: a mark there would be the third weight the
-   * system deliberately does not have. Without this prop a collapsed section
-   * holding unread activity was indistinguishable from a quiet one.
-   */
-  emphasized?: boolean;
-  /**
-   * What a folded header says about what it is hiding — "12 · 3 unread".
-   *
-   * Sits at the right of the label, inboard of the chevron, and is the whole of
-   * BC-31 now that headers fold everywhere: folding Heads up must not be a way
-   * to make a permission prompt disappear quietly, so its roll-up carries the
-   * needs-you count.
+   * **Never a count.** A folded section keeps its unread rows on screen below
+   * the header (BC-31), so the header has no unread to report; what is left is
+   * whether anything inside is working, which has no row of its own to stay
+   * behind. Sits at the right of the label, inboard of the chevron.
    */
   trailing?: ReactNode;
   /** Rendered immediately after the label — a smart group's rule glyph. */
@@ -191,7 +179,6 @@ export function SectionHeader({
   nodes = [],
   actionsLabel,
   menuWidth = 'w-48',
-  emphasized = false,
   trailing,
   adornment,
   editor,
@@ -211,30 +198,26 @@ export function SectionHeader({
   const line = cn(
     'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 text-2xs font-medium',
     SECTION_HEADER_INSET,
-    height,
-    emphasized && 'text-sidebar-foreground font-semibold'
+    height
   );
-  // The right cluster inside the label line: what the fold is hiding, then the
-  // chevron that unhides it. `ml-auto` on the group rather than on either piece,
-  // so a header with no roll-up still parks its chevron at the right edge.
+  // The right cluster inside the label line: the trailing mark, then the
+  // chevron. `ml-auto` on the group rather than on either piece, so a header
+  // with no mark still parks its chevron at the right edge.
   const rightCluster = (
-    // **Capped at half the line, and the cap is the priority rule.** `flex-none`
-    // here put every pixel of shortfall on the label, so a 272px panel folded
-    // "Channels" into "Chann…" to make room for "12 · 3 unread · 1 working". The
-    // section's NAME is what a person navigates by; the roll-up is what they
-    // read once they are looking, and it truncates from its own half. Same
-    // budget-in-CSS idiom the row uses for `who › title` (`row-grammar.ts`).
+    // **Capped at half the line, and the cap is the priority rule.** The
+    // section's NAME is what a person navigates by; whatever sits beside it
+    // gives way first. Same budget-in-CSS idiom the row uses for
+    // `who › title` (`row-grammar.ts`).
     <span className="ml-auto flex max-w-[50%] min-w-0 items-center gap-1.5 pl-1.5">
       {trailing !== undefined && (
-        // `/70` rather than `/50`: this is 11px text and owes 4.5:1 like every
-        // other label in the panel, and `/50` measures 3.2:1 on the light
-        // theme's zone tint. It reads as secondary because it is not `medium`
-        // and the label is.
+        // `/70` rather than `/50`: anything written here is 11px text and owes
+        // 4.5:1 like every other label in the panel, and `/50` measures 3.2:1
+        // on the light theme's zone tint.
         <span
           // It fades in over 120 ms rather than appearing (spec D5). The fold
-          // that produced it is a spring, and a count snapping into existence
+          // that produced it is a spring, and a mark snapping into existence
           // halfway through one reads as a second, unrelated event. `motion-safe`
-          // and nothing else: under a reduced-motion preference the count is
+          // and nothing else: under a reduced-motion preference the mark is
           // simply there, which is the same rule the chevron beside it follows.
           className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in text-2xs truncate font-normal tabular-nums"
         >

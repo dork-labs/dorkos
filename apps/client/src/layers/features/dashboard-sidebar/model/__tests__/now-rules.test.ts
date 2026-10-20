@@ -6,7 +6,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
-import { busyFixture, firstRunFixture, hoursAgo, powerFixture, quietFixture } from '../fixtures';
+import {
+  busyFixture,
+  firstRunFixture,
+  hoursAgo,
+  powerFixture,
+  prefs,
+  quietFixture,
+} from '../fixtures';
 import { buildWorkingRollup } from '../rules/build-working-rollup';
 import { NOW_OVERFLOW_HREF, capNowItems } from '../rules/cap-now-items';
 import { rankNowItems } from '../rules/rank-now-items';
@@ -422,5 +429,21 @@ describe('BC-4 — Heads up and Getting started share one slot', () => {
   it('still shows the working rollup when there is nothing left to suggest', () => {
     const state = { ...quietFixture, workingSessionIds: ['ses-morning'] };
     expect(zoneRows(state, 'now').map((row) => row.reason)).toEqual(['rollup:working']);
+  });
+});
+
+describe('BC-31 — a folded Heads up hides nothing that needs you', () => {
+  it('keeps every row that needs answering, and folds away only the working report', () => {
+    const state: SidebarState = {
+      ...powerFixture,
+      prefs: prefs({ ...powerFixture.prefs, sections: { now: { collapsed: true } } }),
+    };
+    const body = buildSidebarModel(state).zones.find((zone) => zone.id === 'now')?.sections[0];
+    expect(body?.collapsed).toBe(true);
+    const kept = body?.rollup?.keptRows.map((row) => row.reason) ?? [];
+    // Three attention rows and the "+ N more" that leads to the rest.
+    expect(kept).toHaveLength(4);
+    expect(kept).toContain('rollup:now-overflow');
+    expect(kept).not.toContain('rollup:working');
   });
 });
