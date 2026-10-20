@@ -31,7 +31,9 @@ import {
   moveToGroup,
   muteItem,
   unmuteItem,
+  ungroupKeepingInReach,
 } from '@/layers/entities/config';
+import { useHasDirectMessage } from '../model/has-direct-message';
 
 /**
  * Single source of truth for an agent row's menu, expressed as data so the
@@ -235,6 +237,7 @@ export function useAgentRowMenuNodes({
 }: AgentRowMenuParams): RowMenuNode[] {
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
+  const hasDirectMessage = useHasDirectMessage();
 
   const ref: SidebarItemRef = { kind: 'agent', path };
   const isPinned = prefs.pinned.some((p) => sameSidebarItem(p, ref));
@@ -252,7 +255,14 @@ export function useAgentRowMenuNodes({
     onOpenSessions,
     onViewProfile,
     onNewSession,
-    onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, ref, groupId)),
+    // "Remove from section" pins an agent that would otherwise vanish, the
+    // same rule a drag out of a section and deleting the section follow.
+    onMoveToGroup: (groupId) =>
+      update((prev) =>
+        groupId === null
+          ? ungroupKeepingInReach(prev, { kind: 'item', ref }, hasDirectMessage)
+          : moveToGroup(prev, ref, groupId)
+      ),
     onNewGroup: () => onRequestNewGroup(ref),
   });
 }

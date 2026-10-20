@@ -21,7 +21,13 @@
  */
 import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { sameSidebarItem } from '@dorkos/shared/config-schema';
-import { moveToGroup, pinItem, reorderGroup, reorderWithinGroup } from '@/layers/entities/config';
+import {
+  moveToGroup,
+  reorderGroup,
+  reorderWithinGroup,
+  ungroupKeepingInReach,
+  type HasDirectMessage,
+} from '@/layers/entities/config';
 
 /**
  * What a drop onto the top items is answered with (R3). Threads and Directory
@@ -348,8 +354,13 @@ export function classifySidebarDrop(
  *
  * @param prev - Current sidebar prefs.
  * @param op - The operation from {@link classifySidebarDrop}.
+ * @param hasDirectMessage - Whether an agent is drawn without a pin.
  */
-function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs {
+function applySidebarDropOp(
+  prev: SidebarPrefs,
+  op: SidebarDropOp,
+  hasDirectMessage: HasDirectMessage
+): SidebarPrefs {
   switch (op.kind) {
     case 'none':
     case 'reject-smart-group':
@@ -357,16 +368,10 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
       return prev;
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
-    case 'remove-from-group': {
-      const ungrouped = moveToGroup(prev, op.ref, null);
-      // **An agent taken out of a section is pinned on the way** (DOR-3092).
-      // Outside a section the sidebar draws an agent only once you have a
-      // direct message with it or have pinned it, so an agent you never wrote
-      // to would otherwise vanish from the panel at the moment you dropped it
-      // where you can see it. Pinning is idempotent, and harmless for one that
-      // already has a direct message.
-      return op.ref.kind === 'agent' ? pinItem(ungrouped, op.ref) : ungrouped;
-    }
+    case 'remove-from-group':
+      // Pins the agent on the way when it has no direct message, or it would
+      // vanish from the panel the moment you dropped it where you can see it.
+      return ungroupKeepingInReach(prev, { kind: 'item', ref: op.ref }, hasDirectMessage);
     case 'reorder-within-group':
       return reorderWithinGroup(prev, op.groupId, op.from, op.to);
     case 'move-to-group': {
@@ -387,13 +392,16 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
  * @param prev - Current sidebar prefs.
  * @param drag - What is being dragged.
  * @param drop - What it was dropped on, or `null`.
+ * @param hasDirectMessage - Whether an agent is drawn without a pin, so one
+ *   taken out of a section is pinned only when it would otherwise vanish.
  */
 export function resolveSidebarDrop(
   prev: SidebarPrefs,
   drag: SidebarDragDescriptor,
-  drop: SidebarDropDescriptor | null
+  drop: SidebarDropDescriptor | null,
+  hasDirectMessage: HasDirectMessage
 ): SidebarPrefs {
-  return applySidebarDropOp(prev, classifySidebarDrop(prev, drag, drop));
+  return applySidebarDropOp(prev, classifySidebarDrop(prev, drag, drop), hasDirectMessage);
 }
 
 // ---------------------------------------------------------------------------

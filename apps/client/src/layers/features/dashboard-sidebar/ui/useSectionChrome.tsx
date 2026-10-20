@@ -41,7 +41,6 @@ import {
 } from '@/layers/shared/ui';
 import {
   convertSmartGroupToManual,
-  deleteGroup,
   renameGroup,
   setGroupCollapsed,
   setGroupDisplayFilter,
@@ -50,9 +49,11 @@ import {
   setGroupSortMode,
   setSectionCollapsed,
   setSectionSortMode,
+  ungroupKeepingInReach,
   useSidebarPrefs,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
+import { useHasDirectMessage } from '../model/has-direct-message';
 import { persistedSectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
@@ -100,6 +101,9 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   const chrome = useSidebarChrome();
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
+  // Deleting a section pins any agent in it that would otherwise vanish, so
+  // the dialog's "members move back where they came from" stays true.
+  const hasDirectMessage = useHasDirectMessage();
   const markRoomsRead = useMarkRoomsRead();
   const openNewMenu = useCreateFlowStore((s) => s.openMenu);
   // Touch has no hover, so the `+` is drawn at rest there instead — the same
@@ -290,7 +294,9 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           ),
         onDelete: () => {
           if (section.rows.length === 0) {
-            update((prev) => deleteGroup(prev, groupId));
+            update((prev) =>
+              ungroupKeepingInReach(prev, { kind: 'section', groupId }, hasDirectMessage)
+            );
             return;
           }
           setDeleteOpen(true);
@@ -348,7 +354,9 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => {
-                    update((prev) => deleteGroup(prev, groupId));
+                    update((prev) =>
+                      ungroupKeepingInReach(prev, { kind: 'section', groupId }, hasDirectMessage)
+                    );
                     setDeleteOpen(false);
                   }}
                 >

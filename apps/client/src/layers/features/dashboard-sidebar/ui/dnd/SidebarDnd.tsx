@@ -28,6 +28,7 @@ import {
   type SidebarDndData,
   type SidebarDropOp,
 } from '../../model/use-sidebar-dnd';
+import { hasDirectMessageIn } from '../../model/has-direct-message';
 import { DragLiftChip } from '../motion/DragLiftChip';
 import { SidebarDndEnabledProvider, sidebarRowDndId } from './SidebarDndPrimitives';
 import { focusRowOnArrival } from './restore-drop-focus';
@@ -144,6 +145,10 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     [rooms]
   );
   const latestRoomTitles = useLatest(roomTitles);
+  // Which agents Direct messages draws without a pin, so a drop out of a section
+  // pins only an agent that would otherwise vanish.
+  const hasDirectMessage = useMemo(() => hasDirectMessageIn(rooms), [rooms]);
+  const latestHasDirectMessage = useLatest(hasDirectMessage);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -201,7 +206,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // effort; from the keyboard it is one Space away, and the reflex of lifting
     // a row and putting it straight back down should cost the server nothing.
     if (op.kind === 'none') return;
-    update((prev) => resolveSidebarDrop(prev, drag, drop));
+    update((prev) => resolveSidebarDrop(prev, drag, drop, latestHasDirectMessage.current));
 
     // **A keyboard drop that relocates the row has to hand the keyboard back**
     // (DOR-1790). The row is about to be unmounted and drawn again under a new

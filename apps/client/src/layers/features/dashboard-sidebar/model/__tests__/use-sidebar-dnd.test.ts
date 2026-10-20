@@ -3,7 +3,7 @@ import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/
 import {
   ADD_ONS_REJECTION,
   classifySidebarDrop,
-  resolveSidebarDrop,
+  resolveSidebarDrop as resolveDrop,
   TOP_ITEMS_REJECTION,
   buildSidebarAnnouncements,
   readSidebarDndData,
@@ -23,6 +23,17 @@ import {
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 /** A room member reference — the reducer treats it exactly like an agent. */
 const room = (roomId: string): SidebarItemRef => ({ kind: 'room', roomId });
+
+/** No agent has a direct message — the case where ungrouping must pin. */
+const NO_DIRECT_MESSAGES = (): boolean => false;
+
+/** The reducer, with no direct messages unless a case says otherwise. */
+const resolveSidebarDrop = (
+  prev: SidebarPrefs,
+  drag: SidebarDragDescriptor,
+  drop: SidebarDropDescriptor | null,
+  hasDirectMessage: (agentPath: string) => boolean = NO_DIRECT_MESSAGES
+): SidebarPrefs => resolveDrop(prev, drag, drop, hasDirectMessage);
 
 function grp(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
@@ -186,6 +197,18 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
     // Pinned on the way: outside a section an agent is drawn only once it has a
     // direct message or a pin, so without this it would vanish (DOR-3092).
     expect(next.pinned).toEqual([agent('/a')]);
+  });
+
+  it('does not pin an agent its direct message already keeps on the panel', () => {
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/a')] })] });
+    const next = resolveSidebarDrop(
+      p,
+      dragAgent('/a', inGroup('g1')),
+      dropContainer(UNGROUPED),
+      (path) => path === '/a'
+    );
+    expect(next.groups[0]!.items).toEqual([]);
+    expect(next.pinned).toEqual([]);
   });
 
   it('pins an agent it takes out of a section only once', () => {
