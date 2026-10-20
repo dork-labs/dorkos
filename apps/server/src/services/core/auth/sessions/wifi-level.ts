@@ -283,6 +283,13 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     reason: `Change sign-ins and keys ${ON_THE_COMPUTER}`,
   },
   {
+    // A promise's due beat runs at the agent's own level (DOR-3037).
+    surface: 'host',
+    methods: 'writes',
+    pattern: /^\/api\/agents\/[^/]+\/commitments$/,
+    reason: `Record an agent's promises ${ON_THE_COMPUTER}`,
+  },
+  {
     surface: 'sign-out-all',
     methods: 'writes',
     pattern: /^\/api\/devices\/sign-out-all(?:\/|$)/,

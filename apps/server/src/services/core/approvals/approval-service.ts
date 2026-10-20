@@ -62,7 +62,6 @@ import {
 } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
-  ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
   type ApprovalServiceAction,
@@ -80,6 +79,7 @@ import {
   storableServiceAction,
   storableSummary,
   ownAnswerInput,
+  withServiceAction,
 } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
@@ -222,6 +222,8 @@ export interface ApprovalRequestInput {
    * (spec `agent-permissions` D8): the reason it gave, which the card quotes.
    */
   blockedRequest?: { reason: string };
+  /** Whether granting it could raise what agents may do (DOR-3037); see the column. */
+  raisesPermissions?: boolean;
   /**
    * The thing this would act on, already named by its own registry (DOR-1929).
    *
@@ -435,30 +437,8 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-/**
- * Read a stored connected-app action back, or nothing when the row has none or
- * it no longer parses — a card without it still has its summary.
- *
- * @param stored - The column's JSON.
- */
-function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
-  if (stored === null) return undefined;
-  try {
-    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
-    return parsed.success ? parsed.data : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
-
-/** The stored connected-app action as a spreadable field, or nothing. */
-function withServiceAction(stored: string | null): { serviceAction?: ApprovalServiceAction } {
-  const serviceAction = storedServiceAction(stored);
-  return serviceAction ? { serviceAction } : {};
-}
 
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */
 function recordedArea(area: string | null): PermissionAreaId | null {
@@ -548,6 +528,8 @@ export interface ApprovalAnswerScope {
   alwaysOffered: boolean;
   /** Whether the agent asked past a Blocked permission. */
   blockedRequest: boolean;
+  /** Whether granting it could raise what agents may do (DOR-3037). */
+  raisesPermissions: boolean;
   /** Where the request stands right now. */
   state: 'pending' | 'granted' | 'denied';
   /** Whether it is spent, written off, or past its window. */
@@ -741,6 +723,7 @@ export class ApprovalService {
       requestedByPath: input.requestedByPath ?? null,
       area: input.area ?? null,
       blockedRequest: input.blockedRequest !== undefined,
+      raisesPermissions: input.raisesPermissions === true,
       requestReason: input.blockedRequest ? storableReason(input.blockedRequest.reason) : null,
       // Capped HERE as well as in the resolver, for the reason `storableSummary`
       // gives two lines up: `ApprovalRequestInput` is public API, not private to
@@ -1306,6 +1289,7 @@ export class ApprovalService {
       area: recordedArea(row.area),
       alwaysOffered: isAlwaysOffered(row),
       blockedRequest: row.blockedRequest,
+      raisesPermissions: row.raisesPermissions,
       state: row.state,
       closed: row.consumedAt !== null || this.isExpired(row),
       tier: row.tier,

@@ -30,6 +30,8 @@ import { callAdvisor, validateCarryOverSeed } from '../../core/usage/account-adv
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { configManager } from '../../core/config-manager.js';
 import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { ceilingForContinuation } from '../../core/turn-power/continuation-hold.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../extensions/start-work.js';
@@ -97,7 +99,12 @@ export interface CarryOverRequest {
    */
   targetRuntime?: string;
   /** What starting a session needs from the app. */
-  launch: { meshCore: MeshCore | undefined; roomSessionPlace: RoomSessionPlacePort | undefined };
+  launch: {
+    meshCore: MeshCore | undefined;
+    roomSessionPlace: RoomSessionPlacePort | undefined;
+    /** The new session's first turn's ceiling; see `CarryOverLaunchDeps.permissionCeiling`. */
+    permissionCeiling?: TurnPermissionCeiling;
+  };
   /** The Activity feed writer, when the server has one. */
   activity: ActivityService | undefined;
 }
@@ -452,6 +459,14 @@ async function launchCarriedSession(
     roomSessionPlace: launch.roomSessionPlace,
     ...(automatic ? { countsTowardLaunchCap: true, unattended: true } : {}),
     ...(reservation ? { onSettled: () => reservation.settle() } : {}),
+    // Held to the default when asked from Wi-Fi, or, for the advisor's own move,
+    // when the chat's latest turn was (DOR-3037): nobody asked, and the seed
+    // carries that turn's words on. A person's own continue here runs as asked.
+    ...(launch.permissionCeiling !== undefined
+      ? { permissionCeiling: launch.permissionCeiling }
+      : automatic
+        ? ceilingForContinuation(source.sessionId)
+        : {}),
   });
   if (isSessionLaunchRefusal(result)) {
     if (result.accountError) throw result.accountError;

@@ -3,6 +3,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { buildConversations } from '../relay.js';
 import { relayRoutesListener } from './relay-routes-listener.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { TraceStore } from '../../services/relay/trace-store.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
@@ -87,6 +88,49 @@ describe('Relay routes', () => {
         { hello: 'world' },
         expect.objectContaining({ from: 'relay.agent.sender' })
       );
+    });
+
+    it.each(['relay.human.console', 'relay.human.telegram.tg1.chat-42'])(
+      'refuses %s from Wi-Fi, which would run the turn at the agent’s own level (DOR-3037)',
+      async (from) => {
+        target.mount(
+          relayRoutesListener(
+            { relayCore },
+            {
+              before: async (c, next) => {
+                markIngress(c.env.incoming, 'wifi');
+                c.set('user', { userId: 'owner', credential: 'cookie' });
+                await next();
+              },
+            }
+          )
+        );
+        const res = await request(server)
+          .post('/api/relay/messages')
+          .send({ subject: 'relay.agent.ana', payload: { text: 'run the deploy' }, from });
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('NOT_FROM_WIFI');
+        expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+      }
+    );
+
+    it('publishes from Wi-Fi as any other sender, which the agent already holds to its default', async () => {
+      target.mount(
+        relayRoutesListener(
+          { relayCore },
+          {
+            before: async (c, next) => {
+              markIngress(c.env.incoming, 'wifi');
+              c.set('user', { userId: 'owner', credential: 'cookie' });
+              await next();
+            },
+          }
+        )
+      );
+      const res = await request(server)
+        .post('/api/relay/messages')
+        .send({ subject: 'relay.agent.ana', payload: { text: 'hi' }, from: 'relay.agent.sender' });
+      expect(res.status).toBe(200);
     });
 
     it('returns 400 for missing required fields', async () => {

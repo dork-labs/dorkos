@@ -32,8 +32,10 @@ import type { MiddlewareHandler } from 'hono';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import {
   NOT_FROM_WIFI,
+  WIFI_ACTION_REFUSAL,
   WIFI_STANDING_YES_REFUSAL,
 } from '../../services/core/auth/sessions/wifi-level.js';
+import { WIFI_DENY_REASON_REFUSAL } from '../session-answer-wifi.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -481,6 +483,38 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     const allowed = await request(server).post(`/api/approvals/${act.approvalId}/grant`);
     expect(allowed.status).toBe(200);
     const denied = await request(server).post(`/api/approvals/${destructive.approvalId}/deny`);
+    expect(denied.status).toBe(200);
+  });
+
+  it('refuses a Deny with a reason, and takes a bare Deny (DOR-3037)', async () => {
+    const card = approvals.request({
+      capabilityId: 'tiers.act',
+      inputHash: hashApprovalInput({}),
+      summary: 'x',
+    });
+    const server = fixtureTarget.mount(wifiApp());
+    const typed = await request(server)
+      .post(`/api/approvals/${card.approvalId}/deny`)
+      .send({ reason: 'do the other thing instead' });
+    expect(typed.status).toBe(403);
+    expect(typed.body).toEqual({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI });
+    const bare = await request(server).post(`/api/approvals/${card.approvalId}/deny`);
+    expect(bare.status).toBe(200);
+  });
+
+  it('refuses even Allow once on an act card that could raise permissions (DOR-3037)', async () => {
+    const raising = approvals.request({
+      capabilityId: 'tiers.act',
+      inputHash: hashApprovalInput({}),
+      summary: 'Change a permission',
+      raisesPermissions: true,
+    });
+    const server = fixtureTarget.mount(wifiApp());
+    const once = await request(server).post(`/api/approvals/${raising.approvalId}/grant`);
+    expect(once.status).toBe(403);
+    expect(once.body).toEqual({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI });
+    expect(approvals.answerScope(raising.approvalId)?.state).toBe('pending');
+    const denied = await request(server).post(`/api/approvals/${raising.approvalId}/deny`);
     expect(denied.status).toBe(200);
   });
 });

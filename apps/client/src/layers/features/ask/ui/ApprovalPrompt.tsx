@@ -13,7 +13,13 @@ import { useTransport } from '@/layers/shared/model';
 import { useOnWifi } from '@/layers/entities/config';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import type { AlwaysAllowScope } from '@dorkos/shared/types';
-import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
+import {
+  ToolArgumentsDisplay,
+  awayFromTheComputerSentence,
+  cn,
+  getToolLabel,
+  getMcpServerBadge,
+} from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
@@ -317,7 +323,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Approval failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -339,7 +345,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Always Allow failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -363,7 +369,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Deny failed:', err);
-        setError('Couldn’t send your answer. Try again.');
+        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -523,7 +529,7 @@ export function ApprovalPrompt({
             and the agent gets it with the refusal. Withheld entirely on a
             runtime with no channel for one (DOR-825) — the field would
             otherwise take a person's words and deliver them nowhere. */}
-        {allowsDenyReason && reasonOpen && (
+        {allowsDenyReason && !onWifi && reasonOpen && (
           <div className="mb-2">
             <Input
               autoFocus
@@ -604,7 +610,7 @@ export function ApprovalPrompt({
             <X className="size-(--size-icon-xs)" /> {onWifi ? 'Deny' : 'Don’t allow'}
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
           </Button>
-          {allowsDenyReason && !reasonOpen && (
+          {allowsDenyReason && !onWifi && !reasonOpen && (
             <button
               type="button"
               onClick={() => setReasonOpen(true)}

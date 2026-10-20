@@ -83,15 +83,22 @@ export function getMessageQueueStore(): MessageQueueStore | undefined {
 }
 
 /**
- * A stored queue row: the {@link QueuedMessage} every client sees, plus the two
- * fields that stay server-side — its ordering key and the client context
- * captured when it was accepted.
+ * A stored queue row: the {@link QueuedMessage} every client sees, plus the
+ * fields that stay server-side — its ordering key, the client context captured
+ * when it was accepted, and whether its turn is held to the runtime's default.
  */
 export interface QueuedMessageRecord extends QueuedMessage {
   /** Sparse ordering key within the session. Never exposed on the wire. */
   position: number;
   /** The `ClientContext` captured at enqueue time; `null` when none was sent. */
   context: ClientContext | null;
+  /**
+   * Whether the turn this row starts runs at the runtime's default level at
+   * most: its words came from somewhere DorkOS cannot vouch for, such as a
+   * Wi-Fi sign-in (DOR-3037). The dispatcher reads it at launch, so the hold
+   * survives a restart. Never exposed on the wire.
+   */
+  heldToDefault: boolean;
 }
 
 /**
@@ -155,6 +162,8 @@ export interface EnqueueInput {
    * somebody. Absent mints a fresh uuid here.
    */
   id?: string;
+  /** See {@link QueuedMessageRecord.heldToDefault}. Absent means not held. */
+  heldToDefault?: boolean;
 }
 
 /**
@@ -192,6 +201,7 @@ function toRecord(row: SessionMessageQueueRow): QueuedMessageRecord {
     enqueuedBy: row.clientId,
     position: row.position,
     context: parseContext(row),
+    heldToDefault: row.heldToDefault,
   };
 }
 
@@ -223,6 +233,7 @@ export class MessageQueueStore {
       clientId: input.clientId,
       enqueuedAt: Date.now(),
       contextJson: input.context ? JSON.stringify(input.context) : null,
+      heldToDefault: input.heldToDefault === true,
     };
     executor.insert(sessionMessageQueue).values(row).run();
     return toRecord(row);
@@ -271,16 +282,24 @@ export class MessageQueueStore {
    *
    * @param messageId - The server-minted message id
    * @param content - The replacement text, stored pristine
+   * @param opts.holdToDefault - The new words came from somewhere DorkOS cannot
+   *   vouch for, so the row's turn is held to the runtime's default from now on.
+   *   An edit never lifts a hold.
    */
-  updateContent(messageId: string, content: string): QueuedMessageRecord | undefined {
+  updateContent(
+    messageId: string,
+    content: string,
+    opts?: { holdToDefault?: boolean }
+  ): QueuedMessageRecord | undefined {
     const row = this.row(messageId);
     if (!row) return undefined;
+    const heldToDefault = row.heldToDefault || opts?.holdToDefault === true;
     this.db
       .update(sessionMessageQueue)
-      .set({ content })
+      .set({ content, heldToDefault })
       .where(eq(sessionMessageQueue.id, messageId))
       .run();
-    return toRecord({ ...row, content });
+    return toRecord({ ...row, content, heldToDefault });
   }
 
   /**

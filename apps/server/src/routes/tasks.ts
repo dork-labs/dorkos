@@ -35,6 +35,7 @@ import type { TaskSchedulerService } from '../services/tasks/task-scheduler-serv
 import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
+import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
@@ -346,6 +347,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const trusted = clearsTheAgentBar(caller);
     const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
     if (operatorOnly) return c.json(operatorOnly, 403);
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal = namesCredits(body)
       ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
       : undefined;
@@ -438,6 +442,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!existing) {
       return c.json({ error: 'Scheduled task not found' }, 404);
     }
+    // From Wi-Fi a schedule runs at Default at most (DOR-3037).
+    const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -884,6 +891,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       );
     }
 
+    const wifiRefusal = wifiRunNowRefusal(caller, store.getTask(id) ?? undefined);
+    if (wifiRefusal) return c.json(wifiRefusal, 403);
     const creditsRefusal =
       store.getTask(id)?.account === CREDITS_ACCOUNT_ID
         ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)

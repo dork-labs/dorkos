@@ -45,8 +45,14 @@ export interface NarrowingContext {
 /** One dropped setting, before it is given a target. */
 export type DroppedKey = Pick<PermissionChange, 'key' | 'before'>;
 
-const STATE_RANK: Record<PermissionState, number> = { allowed: 0, ask: 1, blocked: 2 };
-const STOP_RANK: Record<PermissionStop, number> = { autonomy: 0, act: 1, ask: 2 };
+/** How strict a permission state is: a higher rank asks more, or refuses. */
+export const STATE_RANK: Readonly<Record<PermissionState, number>> = {
+  allowed: 0,
+  ask: 1,
+  blocked: 2,
+};
+/** How strict a Files & commands stop is: a higher rank asks more often. */
+export const STOP_RANK: Readonly<Record<PermissionStop, number>> = { autonomy: 0, act: 1, ask: 2 };
 
 /**
  * Narrow an arriving agent's settings to what is strictly stricter than the

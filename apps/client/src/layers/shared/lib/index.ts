@@ -166,6 +166,10 @@ export {
   // semantics rather than compared as ids, for the reason that module exists:
   // an id table is right until a runtime ships a mode nobody added to it.
   isTightening,
+  // Whether one level is no looser than another: the chip reads it to show
+  // the level a Wi-Fi turn actually runs at (DOR-3037).
+  isNoLooserThan,
+  levelOfMode,
   actsWithoutAsking,
   isSilentReadOnly,
   isWorkingMode,

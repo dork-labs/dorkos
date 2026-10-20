@@ -51,6 +51,7 @@ import {
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
+import { noteTurnHold } from './continuation-hold.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -70,6 +71,8 @@ const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
 /** Marks kept for posts whose level is unknown (`noteEntryMarks`). */
 const entryMarks = new Map<string, TurnMarks>();
+/** Posts whose turns are held to the runtime's default (a Wi-Fi sign-in's, DOR-3037); insertion-ordered. */
+const heldEntries = new Set<string>();
 /** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
 const turnSerials = new Map<string, number>();
 let nextTurnSerial = 0;
@@ -308,6 +311,59 @@ export function entryMarksOf(entryId: string, roomId?: string): TurnMarks | null
 }
 
 /**
+ * Hold the turns a room post starts to the runtime's default: the post came
+ * from somewhere DorkOS cannot vouch for, such as a Wi-Fi sign-in (DOR-3037).
+ * Called as the post is written, before anything it triggers is dispatched.
+ *
+ * Kept in memory like the levels: a room's pending replies do not outlive the
+ * process, so neither does the mark.
+ *
+ * @param entryId - The post's id.
+ */
+export function noteEntryHeldToDefault(entryId: string): void {
+  heldEntries.delete(entryId);
+  heldEntries.add(entryId);
+  if (heldEntries.size > TURN_LEVEL_MEMORY) {
+    const oldest = heldEntries.values().next().value;
+    if (oldest !== undefined) heldEntries.delete(oldest);
+  }
+}
+
+/** Reads a post's stored hold, for a post this process did not write; set by the rooms domain. */
+let storedEntryHold: ((roomId: string, entryId: string) => boolean) | undefined;
+
+/**
+ * Wire (or clear) how a post's stored hold is read, so the hold outlives a
+ * restart (the `held_to_default` column on `room_entries`).
+ *
+ * @param reader - Reads one post's hold; `undefined` clears it.
+ */
+export function setStoredEntryHoldReader(
+  reader: ((roomId: string, entryId: string) => boolean) | undefined
+): void {
+  storedEntryHold = reader;
+}
+
+/**
+ * Whether the turns a room post starts are held to the runtime's default:
+ * noted in memory when this process wrote it, else read from the post's row
+ * when its room is known.
+ *
+ * @param entryId - The post's id.
+ * @param roomId - The post's room, so a post from before a restart is read from its row.
+ */
+export function entryHeldToDefault(entryId: string, roomId?: string): boolean {
+  if (heldEntries.has(entryId)) return true;
+  if (roomId === undefined || !storedEntryHold) return false;
+  try {
+    return storedEntryHold(roomId, entryId);
+  } catch {
+    // An unreadable row holds the turn: the strict answer.
+    return true;
+  }
+}
+
+/**
  * Carry a conversation's level to the id a runtime renamed it to mid-turn, so
  * a post made under the new id finds the turn it belongs to.
  *
@@ -445,7 +501,10 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
-          remember(turnLevels, sessionId, levelForTurn(target, stored, opts));
+          const level = levelForTurn(target, stored, opts);
+          remember(turnLevels, sessionId, level);
+          // Kept on the chat's row, for the turns that later pick it up on their own.
+          noteTurnHold(sessionId, level.outsider === true);
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

@@ -68,24 +68,36 @@ function add(sessionId: string, what: string) {
 }
 
 describe('a promise made in a marked turn', () => {
-  it('keeps the turn’s marks, and an agent’s open promises carry them to its beat', async () => {
+  it('is refused, so no marked promise reaches the agent’s beat (DOR-3037)', async () => {
     await ran('owner-turn');
     await ran('teammate-hop', ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [PRIYA] }]);
 
     await add('owner-turn', 'Send the owner the report');
     expect(service.openMarks('agent-bo')).toEqual({});
 
-    await add('teammate-hop', 'Send Priya the numbers');
+    expect(await add('teammate-hop', 'Send Priya the numbers')).toMatchObject({
+      ok: false,
+      code: 'OUTSIDER_TURN',
+    });
+    expect(service.openMarks('agent-bo')).toEqual({});
+  });
+
+  it('keeps the marks a promise was recorded with, and an agent’s open promises carry them to its beat', () => {
+    service.create('agent-bo', { what: 'Send the owner the report' });
+    service.create('agent-bo', {
+      what: 'Send Priya the numbers',
+      originMarks: { outsider: true, teammate: [PRIYA] },
+    });
     expect(service.openMarks('agent-bo')).toEqual({ outsider: true, teammate: [PRIYA] });
   });
 
-  it('stops marking the beat once the marked promise is closed', async () => {
-    await ran('stranger-turn', 'runtime-default');
-    const made = (await add('stranger-turn', 'Quote the stranger a price')) as {
-      commitment: { id: string };
-    };
+  it('stops marking the beat once the marked promise is closed', () => {
+    const made = service.create('agent-bo', {
+      what: 'Quote the stranger a price',
+      originMarks: { outsider: true },
+    });
     expect(service.openMarks('agent-bo')).toEqual({ outsider: true });
-    service.update({ kind: 'agent', agentId: 'agent-bo' } as never, made.commitment.id, {
+    service.update({ kind: 'agent', agentId: 'agent-bo' } as never, made.id, {
       state: 'dropped',
     });
     expect(service.openMarks('agent-bo')).toEqual({});

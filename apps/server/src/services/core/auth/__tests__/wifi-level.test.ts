@@ -105,6 +105,7 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['api-keys', 'POST', '/api/config/mcp/reveal-token'],
   ['api-keys', 'POST', '/api/config/mcp/rotate-token'],
   ['front-door', 'PUT', '/api/connectors/providers/composio/credential'],
+  ['host', 'POST', '/api/agents/agent-1/commitments'],
   ['sign-out-all', 'POST', '/api/devices/sign-out-all'],
   ['sign-out-all', 'POST', '/api/auth/revoke-sessions'],
   ['sign-out-all', 'POST', '/api/auth/revoke-other-sessions'],

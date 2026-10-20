@@ -31,6 +31,8 @@ import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
@@ -105,6 +107,8 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
     // turn it was rendered in; run minutes later against whatever a different
     // turn left behind, it is not the action the person clicked.
     whenBusy: 'refuse',
+    // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
+    ...wifiTurnCeiling(honoRequestFacts(c)),
     onError: (err) => {
       logger.warn('[POST /ui-action] detached turn error', {
         sessionId,

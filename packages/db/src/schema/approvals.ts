@@ -180,6 +180,14 @@ export const approvals = sqliteTable(
     blockedRequest: integer('blocked_request', { mode: 'boolean' }).notNull().default(false),
 
     /**
+     * Whether granting it could raise what agents may do: the call reaches the
+     * Permissions, Safety limits or Reach & secrets areas (DOR-3037). Set when
+     * the card is made, from the call's input, which the row does not keep. A
+     * Wi-Fi sign-in may not grant such a card, even once.
+     */
+    raisesPermissions: integer('raises_permissions', { mode: 'boolean' }).notNull().default(false),
+
+    /**
      * The reason the agent gave with a blocked request, capped and swept for
      * secrets like the summary. Null on every other approval.
      */

@@ -451,17 +451,27 @@ export class RoomService {
    * Write a post. See {@link RoomPosting.post}.
    *
    * @param roomId - The room.
-   * @param input - The post.
+   * @param input - The post itself.
    * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP routes).
+   * @param authorBound - `'runtime-default'` holds the turns it starts to the
+   *   runtime's default: a post from Wi-Fi (DOR-3037).
    */
-  post(roomId: string, input: RoomPostInput, unverifiedAgent = false): PostedEntry {
+  post(
+    roomId: string,
+    input: RoomPostInput,
+    unverifiedAgent = false,
+    authorBound?: 'runtime-default'
+  ): PostedEntry {
     // An agent posting over HTTP names itself with a header nothing verifies:
     // its post is kept as an outsider's (DOR-3107, trust first covers only a
-    // verified own agent's unknown marks).
+    // verified own agent's unknown marks). From Wi-Fi it is held to the
+    // default as well, so neither reading can loosen the other.
     return this.parts.posting.post(
       roomId,
       input,
-      unverifiedAgent ? { marks: { outsider: true } } : undefined
+      unverifiedAgent
+        ? { marks: { outsider: true }, ...(authorBound ? { heldToDefault: true as const } : {}) }
+        : authorBound
     );
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */

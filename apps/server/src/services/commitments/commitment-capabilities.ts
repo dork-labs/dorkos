@@ -32,9 +32,15 @@
  * own words, not secrets, but trust never extends to strangers (PRINCIPLES §1),
  * and a stranger's turn runs under the binding's grant, not the space's.
  *
+ * `commitment_add` refuses on a turn that read such words, a Wi-Fi sign-in's
+ * included (DOR-3037): the promise's due beat would run at the agent's own
+ * level on words the turn was held back from acting on.
+ *
  * @module services/commitments/commitment-capabilities
  */
 import { z } from 'zod';
+import { marksOf } from '../core/turn-power/turn-levels.js';
+import { hasMarks } from '../core/turn-power/turn-marks.js';
 import {
   COMMITMENT_LIST_MAX,
   COMMITMENT_NOTE_MAX,
@@ -54,7 +60,6 @@ import {
   type CommitmentActor,
   type CommitmentService,
 } from './commitment-service.js';
-import { marksOf } from '../core/turn-power/turn-levels.js';
 
 /** The MCP tool names, exported so prose that names them reads them from here. */
 export const COMMITMENT_ADD_TOOL = 'commitment_add';
@@ -118,6 +123,19 @@ const OUTSIDER_TURN: Refusal = {
   error:
     'Promises are read by the team, and this turn was started by someone outside it, so ' +
     'nothing was listed.',
+};
+
+/**
+ * What `commitment_add` answers from a turn that read words DorkOS cannot
+ * vouch for (DOR-3037): a promise's due beat runs at the agent's own level, so
+ * a promise made from such a turn would carry those words past its cap.
+ */
+const OUTSIDER_PROMISE: Refusal = {
+  ok: false,
+  code: 'OUTSIDER_TURN',
+  error:
+    "This turn read words DorkOS can't vouch for, such as a Wi-Fi sign-in's, so it can't " +
+    'make a promise. Tell the person instead; they can record it at the computer.',
 };
 
 /**
@@ -236,6 +254,9 @@ export const commitmentsDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
+        if (hasMarks(marksOf(context.sessionId, context.identity?.agentPath))) {
+          return OUTSIDER_PROMISE;
+        }
         const commitmentDeps = requireCommitmentDeps(deps);
         const agentId = callingAgentId(commitmentDeps, context);
         if (typeof agentId !== 'string') return agentId;

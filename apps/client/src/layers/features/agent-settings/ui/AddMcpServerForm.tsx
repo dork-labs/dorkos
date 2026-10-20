@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus, ShieldAlert } from 'lucide-react';
+import { Lock, Plus, ShieldAlert } from 'lucide-react';
 import {
   Button,
   FieldCard,
@@ -16,6 +16,7 @@ import {
   Textarea,
 } from '@/layers/shared/ui';
 import { useAddAgentMcpServer } from '@/layers/entities/agent';
+import { useOnWifi } from '@/layers/entities/config';
 import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type {
   AddAgentMcpServerInput,
@@ -148,7 +149,10 @@ export function AddMcpServerForm({
 
   const nameValid = NAME_PATTERN.test(name) && name.length <= 64;
   const connectionValid = kind === 'stdio' ? command.trim().length > 0 : url.trim().length > 0;
-  const canSubmit = nameValid && connectionValid && !addServer.isPending;
+  // Adding a server runs a command or reaches an address from this computer,
+  // which a Wi-Fi sign-in may not do: say so up front instead of after a try.
+  const onWifi = useOnWifi();
+  const canSubmit = nameValid && connectionValid && !addServer.isPending && !onWifi;
 
   const buildConnection = useCallback((): McpServerTransport => {
     if (kind === 'stdio') {
@@ -314,6 +318,14 @@ export function AddMcpServerForm({
   return (
     <FieldCard>
       <FieldCardContent className="space-y-3">
+        {onWifi && (
+          <Notice tone="info" role="status" className="text-xs">
+            <span className="flex items-center gap-1.5">
+              <Lock className="size-3.5 shrink-0" aria-hidden />
+              Adding a server only works at this computer. You’re on Wi-Fi.
+            </span>
+          </Notice>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="mcp-name">Name</Label>
           <Input
@@ -405,6 +417,7 @@ export function AddMcpServerForm({
         )}
 
         {error &&
+          !(onWifi && errorIsCalm) &&
           (errorIsCalm ? (
             <Notice tone="info" role="status" className="text-xs">
               {error}

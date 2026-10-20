@@ -2,8 +2,15 @@ import { useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useOnWifi } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
-import { cn, permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
+import {
+  cn,
+  isNoLooserThan,
+  levelOfMode,
+  permissionModeLabel,
+  resolveTrustStops,
+} from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 import { useSessionPermissionPicker } from '../model/permission-picker-store';
@@ -21,6 +28,23 @@ import {
   TrustModeIcon,
   trustToneAccent,
 } from '@/layers/shared/ui';
+
+/**
+ * Whether one mode runs looser than another, by the rule the server holds a
+ * Wi-Fi turn to (`modeRaises`, DOR-3037): it asks less or reaches further, or
+ * it is Auto where the other is not and still asks.
+ */
+function looserThan(
+  declared: Parameters<typeof levelOfMode>[0],
+  mode: string,
+  than: string
+): boolean {
+  const level = levelOfMode(declared, mode);
+  const bound = levelOfMode(declared, than);
+  if (!level || !bound) return false;
+  if (!isNoLooserThan(bound, level)) return true;
+  return level.auto === true && bound.auto !== true && bound.asks !== 'never';
+}
 
 /** Copy shown in the tooltip when a refinement is hidden because the model can't run it. */
 const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode needs Opus 4.6+ or Sonnet 4.6';
@@ -140,6 +164,8 @@ export function PermissionModeItem({
   // where a person opens up power for new sessions (spec `full-power-defaults`
   // §6). Read unconditionally, before the early returns below.
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
+  // From Wi-Fi a turn runs at the runtime's default at most (DOR-3037).
+  const onWifi = useOnWifi();
 
   // The picker's panel state lives in a store so a surface that is not the
   // status line can ask for it — see `permission-picker-store`. Read here, above
@@ -190,12 +216,30 @@ export function PermissionModeItem({
   // sees it, so it can offer neither the refinement nor a stop built on it.
   const autoFiltered = !modelSupportsAutoMode && allDescriptors.some((d) => d.id === 'auto');
   const descriptors = autoFiltered ? allDescriptors.filter((d) => d.id !== 'auto') : allDescriptors;
-  const currentDescriptor = descriptors.find((d) => d.id === mode);
+  const chosenDescriptor = descriptors.find((d) => d.id === mode);
+  // From Wi-Fi the line shows the level a turn sent from here really runs at:
+  // the runtime's default, when the chat's own mode is looser (DOR-3037). The
+  // dial below still shows, and changes, the chat's own mode.
+  const wifiDescriptor = onWifi
+    ? allDescriptors.find((d) => d.id === caps?.permissionModes.default)
+    : undefined;
+  const wifiCapped =
+    wifiDescriptor !== undefined &&
+    chosenDescriptor !== undefined &&
+    caps !== undefined &&
+    looserThan(caps.permissionModes, chosenDescriptor.id, wifiDescriptor.id);
+  const currentDescriptor = wifiCapped ? wifiDescriptor : chosenDescriptor;
   // No descriptor (capabilities still loading, or a mode the runtime does not
   // enumerate) falls back to the shared names, so the line and the session row
   // never call the same mode two different things.
-  const fullLabel = currentDescriptor?.label ?? permissionModeLabel(mode);
-  const currentLabel = compact ? compactStatusValue(fullLabel) : fullLabel;
+  const fullLabel = wifiCapped
+    ? `${wifiDescriptor.label} (Wi-Fi)`
+    : (currentDescriptor?.label ?? permissionModeLabel(mode));
+  // At phone width the Wi-Fi pill beside it is an icon already, so the chip
+  // drops its "(Wi-Fi)" and keeps a word that fits.
+  const currentLabel = compact
+    ? compactStatusValue(wifiCapped ? wifiDescriptor.label : fullLabel)
+    : fullLabel;
   // Green when the session is at full power, and nothing otherwise: the word
   // keeps the line's own colour at every other stop, and the padlock on the
   // stop icon is what marks the limited ones. Divergence is deliberately silent
@@ -311,7 +355,7 @@ export function PermissionModeItem({
         )}
         {/* Sits under the dial, so it reads as a note about the choice just made
             rather than as part of any one stop. */}
-        <PermissionModeScopeNote mode={mode} descriptor={currentDescriptor} className="mt-2 px-1" />
+        <PermissionModeScopeNote mode={mode} descriptor={chosenDescriptor} className="mt-2 px-1" />
       </ResponsivePopoverContent>
     </ResponsivePopover>
   );

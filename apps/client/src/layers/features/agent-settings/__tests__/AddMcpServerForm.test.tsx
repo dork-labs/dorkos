@@ -130,6 +130,27 @@ describe('AddMcpServerForm', () => {
     expect(screen.queryByText(/NOT_FROM_WIFI/)).toBeNull();
   });
 
+  it('on Wi-Fi says no up front and never sends the add (DOR-2969)', async () => {
+    const add = vi.fn();
+    const transport = createMockTransport({
+      addAgentMcpServer: add,
+      getConfig: vi.fn().mockResolvedValue({ callerRoute: 'wifi' }),
+    });
+    renderForm(transport, TRANSPORTS);
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    expect(
+      await screen.findByText('Adding a server only works at this computer. You’re on Wi-Fi.')
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: /http/i }));
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://mcp.granola.ai/mcp' },
+    });
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
   /** The roster `mcp.add` returns for a server it could tell needs OAuth. */
   function oauthRoster() {
     return [

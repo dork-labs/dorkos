@@ -119,6 +119,15 @@ describe('addressed', () => {
     expect(JSON.stringify(changes)).not.toContain('SECRET-BODY-TEXT');
   });
 
+  it('never counts a post written from Wi-Fi, read from its row after a restart (DOR-3037)', async () => {
+    room('r-dm', 'dm', 'Dorian', ['a-juno', 'h-dorian']);
+    const held = post('r-dm', 'h-dorian', '2026-10-12T09:10:00Z');
+    db.update(roomEntries).set({ heldToDefault: true }).where(eq(roomEntries.id, held)).run();
+    const plain = post('r-dm', 'h-dorian', '2026-10-12T09:20:00Z');
+    const changes = await createAddressedGatherer(db)(ctx());
+    expect(changes.map((c) => c.key)).toEqual([`room-entry:${plain}`]);
+  });
+
   it("never counts a stranger's message, even naming the agent", async () => {
     room('r-bridged', 'channel', 'telegram', ['a-juno', 'x-stranger']);
     post('r-bridged', 'x-stranger', '2026-10-12T09:10:00Z', ['a-juno']);

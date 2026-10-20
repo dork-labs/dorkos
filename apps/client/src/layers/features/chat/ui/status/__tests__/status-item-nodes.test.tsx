@@ -52,6 +52,11 @@ const mockCapabilitiesForRuntime = vi.fn<
   (runtimeType: string | null | undefined) => RuntimeCapabilities | undefined
 >(() => undefined);
 
+// At this computer, not over Wi-Fi: the chip shows the chat's own level (DOR-3037).
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOnWifi: () => false,
+}));
 vi.mock('@/layers/entities/runtime', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/runtime')>();
   return {

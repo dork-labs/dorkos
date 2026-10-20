@@ -12,6 +12,7 @@ import { resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
 import { noteEntryLevel, setEntryMarksStore } from '../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { createEntryMarksStore } from '../limits/entry-marks-store.js';
+import { storedEntryHoldReader } from '../limits/stored-entry-hold.js';
 import { ceilingForEntry } from '../limits/turn-ceiling.js';
 import { isOwnCircle, posterCapsFor } from '../limits/own-circle.js';
 import { agentLookupFor, createRoomHarness, type RoomHarness } from './room-test-harness.js';
@@ -105,6 +106,40 @@ describe('own-circle room turns', () => {
     expect(createEntryMarksStore(harness.db).read(channel.id, entry.id)).toEqual({
       outsider: true,
     });
+  });
+
+  // DOR-3037 on DOR-3107: a hold from Wi-Fi only lowers. The own circle never
+  // reads a held post as trusted, whoever wrote it.
+  it('keeps a person’s post from Wi-Fi at the default inside the circle', () => {
+    const entry = harness.service.post(
+      channel.id,
+      { authorId: harness.human, text: 'from the phone' },
+      false,
+      'runtime-default'
+    );
+    expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({
+      permissionCeiling: 'runtime-default',
+    });
+  });
+
+  it('holds AND marks an unverified agent’s post from Wi-Fi, both on its row', () => {
+    setEntryMarksStore(null);
+    const entry = harness.service.post(
+      channel.id,
+      { authorId: bo, text: 'from curl on the phone' },
+      true,
+      'runtime-default'
+    );
+    expect(createEntryMarksStore(harness.db).read(channel.id, entry.id)).toEqual({
+      outsider: true,
+    });
+    expect(storedEntryHoldReader(harness.db)(channel.id, entry.id)).toBe(true);
+    expect(
+      ceilingForEntry(harness.authors, entry, false, channel.id, {
+        ...OWN,
+        posterCap: () => ACT,
+      })
+    ).toEqual({ permissionCeiling: 'runtime-default' });
   });
 
   // Security's Should (DOR-3107): Codex and OpenCode call over the external

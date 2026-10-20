@@ -115,6 +115,7 @@ import { isTrustedCaller } from './trusted-caller.js';
 import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
+  callRaisesPermissions,
   resolveCallPermission,
   type CallPermission,
 } from './permission-enforcement.js';
@@ -234,6 +235,7 @@ export interface GatedAction {
 
 /** Where a retry carries its token (`approval-wording.ts`), re-exported for every surface. */
 export { APPROVAL_TOKEN_ARGUMENT, APPROVAL_TOKEN_HEADER };
+export { splitApprovalToken } from './approval-wording.js';
 
 /**
  * Why a destructive call is not running yet, where the answer is "a BRAND-NEW
@@ -1022,6 +1024,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         // the same answer to "may this be allowed always?".
         area: permission?.area ?? null,
         ...(blockedAsk && blockedRequest ? { blockedRequest } : {}),
+        ...(callRaisesPermissions(action, input) ? { raisesPermissions: true } : {}),
         // Where to tell the answer, when the surface had a session at all. Not
         // read by any decision here — see the field's own docblock.
         ...(requestingSession ? { requestingSession } : {}),
@@ -1227,23 +1230,4 @@ export async function authorizeCapability(
     ...(options.change !== undefined ? { change: options.change } : {}),
     retryChannel: context.retryChannel ?? 'http-header',
   });
-}
-
-/**
- * Split a presented approval token out of a surface's raw arguments.
- *
- * The token travels alongside a capability's input, never inside it: the approval
- * binds to a hash of the input, so a token carried as an input field would change
- * the very hash it is being checked against. Destructive capabilities advertise
- * {@link APPROVAL_TOKEN_ARGUMENT} as an extra MCP argument, and this is where it
- * comes back off.
- *
- * @param args - Raw arguments from an MCP client.
- * @returns The token (when present) and the arguments with it removed.
- */
-export function splitApprovalToken(args: unknown): { approvalToken?: string; input: unknown } {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return { input: args };
-  const { [APPROVAL_TOKEN_ARGUMENT]: token, ...rest } = args as Record<string, unknown>;
-  if (typeof token !== 'string' || token.length === 0) return { input: rest };
-  return { approvalToken: token, input: rest };
 }
