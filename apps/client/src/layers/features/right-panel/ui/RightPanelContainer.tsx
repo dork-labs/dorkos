@@ -18,7 +18,7 @@ import {
   PanelResourceVisible,
   useVisualViewportBounds,
 } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn, WORK_PANEL_ID } from '@/layers/shared/lib';
 import { effectivePlacement, placementShows } from '@dorkos/shared/mini-app-placement';
 import { useConfig, usePanelTabPlacements } from '@/layers/entities/config';
 import { GroupDmMemberPicker, useDirectMessagePanel } from '@/layers/features/direct-message';
@@ -61,6 +61,20 @@ function panelTransition(property: 'flex-grow' | 'opacity', opening: boolean): s
  * same measurement this comment cites, not an assumption.
  */
 const CONTENT_SIZED_MOBILE_TABS = new Set(['pulse', 'files']);
+
+/**
+ * Keep the sheet's opening focus on the panel body, never on a tab.
+ *
+ * The sheet's default focuses its first control, the first tab, which then
+ * opens wearing its focus ring and tooltip. Show work and Watch open the Work
+ * tab to read a turn, so focus goes to the body instead, and stays on a turn
+ * the Work tab already focused. Tab still starts at the tabs (DOR-3075).
+ */
+function focusPanelBody(event: Event): void {
+  event.preventDefault();
+  const body = document.getElementById(RIGHT_PANEL_PANEL_ID);
+  if (body && !body.contains(document.activeElement)) body.focus({ preventScroll: true });
+}
 
 /** How the container presents itself within its host shell. */
 export interface RightPanelContainerProps {
@@ -294,7 +308,9 @@ export function RightPanelContainer({
         <GroupDmMemberPicker members={dmPanel.members} />
       )}
       <div
-        className="min-h-0 flex-1 overflow-hidden"
+        className="min-h-0 flex-1 overflow-hidden outline-none"
+        // The Work tab's body takes focus when Show work or Watch opens it.
+        {...(activeTab === WORK_PANEL_ID ? { tabIndex: -1 } : {})}
         {...(views.activeId &&
         // A route/transport change can transiently leave activeTab pointing at
         // a filtered-out contribution (until the auto-select effect corrects
@@ -347,6 +363,7 @@ export function RightPanelContainer({
       <ResponsiveSheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
         <ResponsiveSheetContent
           showCloseButton={false}
+          {...(activeTab === WORK_PANEL_ID ? { onOpenAutoFocus: focusPanelBody } : {})}
           style={{
             top: viewport.top,
             bottom: 'auto',

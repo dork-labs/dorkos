@@ -119,7 +119,7 @@ export function WorkView({
     if (node) {
       node.scrollIntoView?.({ block: 'start' });
       node.focus({ preventScroll: true });
-    }
+    } else scroller.focus({ preventScroll: true });
     following.current = request.turn === 'live' || !node;
     if (following.current) scroller.scrollTop = scroller.scrollHeight;
     consume();
@@ -129,8 +129,9 @@ export function WorkView({
     <div
       ref={scrollerRef}
       onScroll={onScroll}
+      tabIndex={-1}
       data-testid="work-panel"
-      className="flex h-full min-w-0 flex-col gap-3 overflow-y-auto p-3"
+      className="flex h-full min-w-0 flex-col gap-3 overflow-y-auto p-3 outline-none"
     >
       <WorkTopLine
         sessionId={sessionId}
