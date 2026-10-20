@@ -21,7 +21,7 @@
  */
 import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { sameSidebarItem } from '@dorkos/shared/config-schema';
-import { moveToGroup, reorderGroup, reorderWithinGroup } from '@/layers/entities/config';
+import { moveToGroup, pinItem, reorderGroup, reorderWithinGroup } from '@/layers/entities/config';
 
 /**
  * What a drop onto the top items is answered with (R3). Threads and Directory
@@ -357,8 +357,16 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
       return prev;
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
-    case 'remove-from-group':
-      return moveToGroup(prev, op.ref, null);
+    case 'remove-from-group': {
+      const ungrouped = moveToGroup(prev, op.ref, null);
+      // **An agent taken out of a section is pinned on the way** (DOR-3092).
+      // Outside a section the sidebar draws an agent only once you have a
+      // direct message with it or have pinned it, so an agent you never wrote
+      // to would otherwise vanish from the panel at the moment you dropped it
+      // where you can see it. Pinning is idempotent, and harmless for one that
+      // already has a direct message.
+      return op.ref.kind === 'agent' ? pinItem(ungrouped, op.ref) : ungrouped;
+    }
     case 'reorder-within-group':
       return reorderWithinGroup(prev, op.groupId, op.from, op.to);
     case 'move-to-group': {
@@ -421,9 +429,9 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
       return `Moved ${ctx.itemName(op.ref)} to ${ctx.groupName(op.groupId)}.`;
     case 'remove-from-group':
       // Names no destination section on purpose. The row lands back wherever it
-      // belongs — a channel in Channels, a conversation in Direct messages, an
-      // agent in Direct messages or the Directory — and which section received
-      // the drop does not decide that.
+      // belongs — a channel in Channels, a conversation or an agent (pinned on
+      // the way, so it stays on the panel) in Direct messages — and which
+      // section received the drop does not decide that.
       return `Moved ${ctx.itemName(op.ref)} out of its section.`;
     case 'reorder-within-group':
       return `Reordered ${ctx.itemName(op.ref)} in ${ctx.groupName(op.groupId)}.`;

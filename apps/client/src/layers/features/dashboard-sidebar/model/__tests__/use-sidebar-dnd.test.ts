@@ -183,6 +183,18 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
     expect(op).toEqual({ kind: 'remove-from-group', ref: agent('/a') });
     const next = resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
     expect(next.groups[0]!.items).toEqual([agent('/b')]);
+    // Pinned on the way: outside a section an agent is drawn only once it has a
+    // direct message or a pin, so without this it would vanish (DOR-3092).
+    expect(next.pinned).toEqual([agent('/a')]);
+  });
+
+  it('pins an agent it takes out of a section only once', () => {
+    const p = prefs({
+      pinned: [agent('/a')],
+      groups: [grp({ id: 'g1', items: [agent('/a')] })],
+    });
+    const next = resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
+    expect(next.pinned).toEqual([agent('/a')]);
   });
 
   it('moves an agent between two groups (disjointness preserved)', () => {
