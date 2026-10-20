@@ -98,6 +98,11 @@ export interface RoomMemberRowProps {
   roomTitle: string;
   /** Ask to take this member out. The list decides which row is asking. */
   onRemoveRequested: () => void;
+  /**
+   * Open "Continue on another account…" for this agent, or absent where its
+   * seat cannot move (an archived room). Only an agent's row offers it.
+   */
+  onReseatRequested?: () => void;
   /** Whether this row is the one waiting to be confirmed. */
   confirmingRemoval: boolean;
   /** Take this member out for real. */
@@ -278,6 +283,7 @@ export function RoomMemberRow({
   rungError,
   roomTitle,
   onRemoveRequested,
+  onReseatRequested,
   confirmingRemoval,
   onConfirmRemoval,
   onCancelRemoval,
@@ -483,6 +489,11 @@ export function RoomMemberRow({
                 confirmRef.current.focus();
               }}
             >
+              {onReseatRequested && (
+                <DropdownMenuItem onSelect={onReseatRequested}>
+                  Continue on another account…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem variant="destructive" onSelect={onRemoveRequested}>
                 Remove from this room
               </DropdownMenuItem>
@@ -533,6 +544,17 @@ export function RoomMemberRow({
                 disabledReasonId={dormantReasonId}
                 isLead={isLead}
               />
+              {isMobile && dormantReasonId === null && onReseatRequested && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={onReseatRequested}
+                  className="mt-1 h-11 w-full justify-start px-3"
+                >
+                  Continue on another account…
+                </Button>
+              )}
               {isMobile && dormantReasonId === null && (
                 <Button
                   type="button"

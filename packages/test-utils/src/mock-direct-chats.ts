@@ -1,17 +1,21 @@
 /**
- * Transport mocks for the Direct chat calls (rule S12, DOR-2997) and the
- * reaction toggle beside them, kept out of `mock-factories.ts`, which may only
- * shrink.
+ * Transport mocks for the Direct chat calls (rule S12, DOR-2997), the
+ * reaction toggle beside them, and moving a room agent to another account
+ * (re-seat), kept out of `mock-factories.ts`, which may only shrink.
  *
  * @module test-utils/mock-direct-chats
  */
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
 
-/** The Direct chat and reaction methods of a mock transport. */
+/** The Direct chat, reaction and re-seat methods of a mock transport. */
 export function directChatTransportMocks(): Pick<
   Transport,
-  'openDirectChat' | 'findDirectChat' | 'toggleReaction'
+  | 'openDirectChat'
+  | 'findDirectChat'
+  | 'toggleReaction'
+  | 'getRoomReseatOptions'
+  | 'reseatRoomAgent'
 > {
   return {
     // No Direct chat unless a test opens one: an ordinary chat is the default.
@@ -26,5 +30,9 @@ export function directChatTransportMocks(): Pick<
       reacted: true,
       frequents: ['👍', '❤️', '🎉'],
     }),
+    // Re-seat: nowhere to move by default, so a test about the picker says
+    // which accounts it offers.
+    getRoomReseatOptions: vi.fn().mockResolvedValue({ current: null, accounts: [] }),
+    reseatRoomAgent: vi.fn().mockResolvedValue({ sessionId: 'reseated-session' }),
   };
 }

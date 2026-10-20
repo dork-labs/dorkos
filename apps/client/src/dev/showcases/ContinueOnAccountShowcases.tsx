@@ -26,6 +26,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
 import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
+import { ReseatAgentVariants } from './ReseatAgentShowcases';
 
 /** The Claude account at `n` (from 1) in {@link MOCK_ACCOUNT_USAGE}. */
 function claudeUsage(n: number): AccountUsage {
@@ -233,6 +234,7 @@ export function ContinueOnAccountShowcases() {
         trackerItems={FLOW_ITEMS}
         continueError={refusal('Flow could not be reached, so this was not changed.', 503)}
       />
+      <ReseatAgentVariants />
     </PlaygroundSection>
   );
 }

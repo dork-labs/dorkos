@@ -60,7 +60,7 @@ is running. The documentation exists for exactly this.
 Three places, and only the last one costs a request.
 
 **Your sibling skills.** operating-dorkos, managing-agents, scheduling-tasks,
-using-the-marketplace, reading-activity, working-in-room-repos, using-the-agent-browser, working-with-spin-off-chats and working-on-a-heartbeat are seeded beside this one and give
+using-the-marketplace, reading-activity, working-in-room-repos, using-the-agent-browser, working-with-spin-off-chats, working-on-a-heartbeat and continuing-on-another-account are seeded beside this one and give
 exact tool names, tiers and gates. When one of them covers the question, answer
 from it: more precise than the docs, and free.
 

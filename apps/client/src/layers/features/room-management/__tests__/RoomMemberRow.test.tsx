@@ -283,6 +283,40 @@ describe('RoomMemberRow', () => {
     });
   });
 
+  describe('Continue on another account…', () => {
+    it('is in the "…" menu on desktop when the seat can move, and opens the picker', async () => {
+      const onReseatRequested = vi.fn();
+      renderRow({ onReseatRequested });
+
+      fireEvent.pointerDown(screen.getByLabelText('Ana actions'), { button: 0, ctrlKey: false });
+      fireEvent.click(
+        await screen.findByRole('menuitem', { name: 'Continue on another account…' })
+      );
+
+      expect(onReseatRequested).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not offered where the seat cannot move', async () => {
+      renderRow();
+
+      fireEvent.pointerDown(screen.getByLabelText('Ana actions'), { button: 0, ctrlKey: false });
+      await screen.findByRole('menuitem', { name: 'Remove from this room' });
+      expect(
+        screen.queryByRole('menuitem', { name: 'Continue on another account…' })
+      ).not.toBeInTheDocument();
+    });
+
+    it('sits above Remove in the opened row on a phone', () => {
+      viewport('phone');
+      const onReseatRequested = vi.fn();
+      renderRow({ expanded: true, onReseatRequested });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continue on another account…' }));
+
+      expect(onReseatRequested).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('where Remove lives', () => {
     it('is behind the "…" on desktop', () => {
       renderRow();
