@@ -39,6 +39,8 @@ import type {
   DirectChat,
   OpenDirectChatRequest,
   HaltRoomResponse,
+  ReseatOptions,
+  ReseatSeatRequest,
   PromoteHoldResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
@@ -434,6 +436,30 @@ export interface RoomTransport {
    *   running one here. `0` is a success.
    */
   haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse>;
+  /**
+   * Where an agent's seat in this room could move: the account it runs on now
+   * and every Claude account it may move to, best first, each saying whether it
+   * can take the agent now (re-seat). Only a person may ask.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   */
+  getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions>;
+  /**
+   * Move an agent's seat in this room to another account, so it keeps
+   * answering there. Its next turn starts fresh on that account with a summary
+   * of where it was. Only a person may.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   * @param request - The account to move to; none for the best one.
+   * @returns The seat's new session.
+   */
+  reseatRoomAgent(
+    id: string,
+    authorId: string,
+    request: ReseatSeatRequest
+  ): Promise<{ sessionId: string }>;
   /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.

@@ -1845,11 +1845,13 @@ export type ReseatSeatRequest = z.infer<typeof ReseatSeatRequestSchema>;
  * Where an agent's seat could move (`GET /api/rooms/:id/members/:authorId/reseat-options`):
  * the account it runs on now, and every Claude account it may move to, best
  * first. `eligible` says which can take it now; `reason` says why not. DorkOS
- * credits are never listed.
+ * credits are never listed. `seated` is false until the agent has answered in
+ * this room, when there is nothing to move yet.
  */
 export const ReseatOptionsSchema = z
   .object({
     current: z.object({ id: z.string(), label: z.string().nullable() }).nullable(),
+    seated: z.boolean(),
     accounts: z.array(
       z.object({
         id: z.string(),

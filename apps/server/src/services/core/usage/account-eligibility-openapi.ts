@@ -8,6 +8,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
   AccountEligibilityQuerySchema,
   AccountEligibilityResponseSchema,
+  NoAutoMoveSchema,
   OnlyProjectsRequestSchema,
   OnlyProjectsResponseSchema,
   ProjectAccountsRequestSchema,
@@ -124,6 +125,31 @@ export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): vo
       400: error('The body is not valid, or a folder is not a project'),
       403: error('Not a person'),
       404: error('There is no such account'),
+      500: error('The change could not be saved'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/runtimes/claude-code/accounts/{id}/no-auto-move',
+    tags: ['Runtimes'],
+    summary: 'Keep room agents off a Claude account in automatic moves',
+    description:
+      'With `noAutoMove: true`, DorkOS never moves a room agent whose account ran out to this ' +
+      'registered account on its own; a person may still move one there. `false` lets it be ' +
+      'picked again. Recorded in the permission history with an Undo, rather than as a config ' +
+      `change. Main (\`default\`) has no registry row, so it answers \`404\`. ${PERSON_BAR}`,
+    request: {
+      body: { content: { 'application/json': { schema: NoAutoMoveSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'The flag as it is now',
+        content: { 'application/json': { schema: NoAutoMoveSchema } },
+      },
+      400: error('The body is not valid'),
+      403: error('Not a person'),
+      404: error('There is no such registered account'),
       500: error('The change could not be saved'),
     },
   });

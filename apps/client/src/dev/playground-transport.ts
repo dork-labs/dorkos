@@ -283,6 +283,16 @@ export function createPlaygroundTransport(): Transport {
       // page is the honest answer for a playground with no server: a quiet bell.
       // The community list also mounts in Messaging; no server means no connections.
       if (prop === 'listCommunityConnections') return async () => [];
+      // Re-seat: an agent that has answered, with one other account to move to.
+      if (prop === 'getRoomReseatOptions') {
+        return async () => ({
+          current: { id: 'claude4', label: 'Claude4' },
+          accounts: [
+            { id: 'claude3', label: 'Claude3', color: '#64748b', eligible: true, reason: '' },
+          ],
+          seated: true,
+        });
+      }
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }
@@ -380,6 +390,9 @@ export function createPlaygroundTransport(): Transport {
         return async () => ({ project: null, allow: null, accounts: [] });
       }
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
+      if (prop === 'setAccountNoAutoMove') {
+        return async (_id: string, noAutoMove: boolean) => ({ noAutoMove });
+      }
       // The DorkOS model form (the first run's "Other service" row) reads what
       // is saved before it draws; nothing saved and no credits is the honest
       // answer, and `null` is neither.

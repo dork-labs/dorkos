@@ -894,6 +894,9 @@ export function describeClaudeCodeAccounts(
         account.onlyProjects == null
           ? null
           : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
+      // Sent only when on, so Settings' "Move agents here automatically" switch
+      // reads it, and a row without it reads the same wire as before.
+      ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
     })),
     ...describeAccountRules(config, unavailable),
     credits,

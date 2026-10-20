@@ -639,6 +639,7 @@
     "PUT /api/rooms/:id/canvas/:documentId/diff",
     "PUT /api/rooms/:id/files/content",
     "PUT /api/rooms/:id/follow",
+    "PUT /api/runtimes/claude-code/accounts/:id/no-auto-move",
     "PUT /api/runtimes/claude-code/accounts/:id/only-projects",
     "PUT /api/runtimes/claude-code/project-accounts",
     "PUT /api/runtimes/doe/inference",

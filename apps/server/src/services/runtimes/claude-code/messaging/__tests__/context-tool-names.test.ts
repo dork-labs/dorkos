@@ -1021,6 +1021,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     const advertised = await advertisedToolNames();
     expect(OPERATING_SKILLS_PACK.map((skill) => skill.name).sort()).toEqual([
       'answering-dorkos-questions',
+      'continuing-on-another-account',
       'managing-agents',
       'operating-dorkos',
       'reading-activity',

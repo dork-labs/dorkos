@@ -15,9 +15,10 @@
  * Config migrations run before the Activity service exists, so the migration
  * cannot write the line itself. This runs once, at startup, and records every
  * account whose stored flag is on, as ONE `permission.changed` event. The flag
- * did not exist before the migration and no Settings control sets it yet, so
- * on the first boot after the migration every account with the flag on is one
- * the migration flipped (short of a hand edit made before that boot).
+ * did not exist before the migration, and the Settings switch that sets it
+ * records its own line, so on the first boot after the migration every account
+ * with the flag on is one the migration flipped (short of a hand edit made
+ * before that boot).
  *
  * ## Once
  *

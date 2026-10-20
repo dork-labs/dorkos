@@ -479,11 +479,18 @@ describe('by hand (rooms.reseat)', () => {
       turn: () => 'answer',
     });
     const options = await w.harness.service.reseatOptions(w.room.id, w.ana, w.harness.human);
+    expect(options.seated).toBe(true);
     expect(options.current).toEqual({ id: 'claude4', label: 'Claude4' });
     expect(options.accounts.map((a) => [a.id, a.eligible, a.reason])).toEqual([
       ['claude3', true, ''],
       ['claude2', false, 'Almost out of usage'],
     ]);
+  });
+
+  it('says the agent has no seat yet when it has not answered in the room', async () => {
+    const w = open({ accounts: [{ id: 'claude4' }, { id: 'claude3' }], turn: () => 'answer' });
+    const options = await w.harness.service.reseatOptions(w.room.id, w.ana, w.harness.human);
+    expect(options).toEqual({ current: null, accounts: [], seated: false });
   });
 });
 

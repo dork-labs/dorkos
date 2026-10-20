@@ -208,6 +208,21 @@ export const OnlyProjectsResponseSchema = z
 export type OnlyProjectsResponse = z.infer<typeof OnlyProjectsResponseSchema>;
 
 /**
+ * Body of `PUT /api/runtimes/claude-code/accounts/:id/no-auto-move`, and its
+ * response: whether DorkOS keeps room agents off the account when it moves
+ * them on its own (Re-seat P0). A person may still move one there by hand.
+ */
+export const NoAutoMoveSchema = z
+  .object({
+    /** `true` to keep agents off the account in automatic moves, `false` to allow them. */
+    noAutoMove: z.boolean(),
+  })
+  .openapi('NoAutoMove');
+
+/** Body and response of `PUT /api/runtimes/claude-code/accounts/:id/no-auto-move`. */
+export type NoAutoMove = z.infer<typeof NoAutoMoveSchema>;
+
+/**
  * The machine-readable code of every account-eligibility refusal. A launch
  * refused this way answers HTTP `409` with `{ error, message, code, project,
  * accountId }` (spec `flow-multiproject` §8.3).
