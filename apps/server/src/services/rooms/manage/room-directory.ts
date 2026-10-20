@@ -88,9 +88,18 @@ export class RoomDirectory {
    * still costs two.
    *
    * `viewerHasPosted` says whether this viewer has ever written in the room
-   * themselves — one query for the whole list ({@link RoomStore.roomsPostedInBy}),
+   * themselves — one query for the whole list (`RoomListReads.roomsPostedInBy`),
    * and the fact that tells a room somebody has merely joined from one they have
    * taken part in.
+   *
+   * `mentionCount` is how many of the unread entries name this viewer, counted
+   * above the same cursor as `unreadCount` and absent wherever that is `null`.
+   * It is asked only of a room that has unread at all — a room with nothing
+   * above the cursor has nothing above it that could name anybody — so a
+   * caught-up sidebar pays nothing for it.
+   *
+   * `lastLine` is the newest top-level message's text, one query for the whole
+   * list (`RoomListReads.lastLines`).
    *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
@@ -139,16 +148,27 @@ export class RoomDirectory {
       visible.filter((room) => room.kind === 'dm').map((room) => room.id)
     );
     // One query for the whole list, asked once here rather than per room — see
-    // `RoomStore.roomsPostedInBy`. A room absent from the set is one this viewer
+    // `RoomListReads.roomsPostedInBy`. A room absent from the set is one this viewer
     // has never written in, which is a real `false` and not a missing answer:
     // the log is right here and it has been read.
-    const postedIn = this.store.roomsPostedInBy(viewerAuthorId);
+    const postedIn = this.store.listReads.roomsPostedInBy(viewerAuthorId);
     const bridges = this.bridges.findBridgesByRooms(visible.map((room) => room.id));
+    const lastLines = this.store.listReads.lastLines(visible.map((room) => room.id));
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
+      const unreadCount = cursor === undefined ? null : this.store.countUnread(room.id, cursor);
       return {
         ...room,
-        unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
+        unreadCount,
+        ...(cursor === undefined
+          ? {}
+          : {
+              mentionCount:
+                unreadCount === 0
+                  ? 0
+                  : this.store.listReads.countUnreadMentions(room.id, cursor, viewerAuthorId),
+            }),
+        lastLine: lastLines.get(room.id) ?? null,
         participants: participants.get(room.id) ?? null,
         bridge: bridgeInfo(bridges.get(room.id)),
         viewerHasPosted: postedIn.has(room.id),

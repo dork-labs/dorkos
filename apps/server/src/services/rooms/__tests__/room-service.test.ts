@@ -1026,6 +1026,79 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     expect(authorReads(25)).toBe(1);
   });
 
+  describe('mentionCount and lastLine', () => {
+    it('counts the unread entries that name the viewer, and clears when they read', () => {
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+      authors.setHandle(human, 'dorian');
+      service.post(room.id, { authorId: ana, text: '@dorian can you look?' });
+      const last = service.post(room.id, { authorId: ana, text: 'nobody named here' });
+      const listed = () => service.listRooms(human).find((r) => r.id === room.id)!;
+
+      expect(listed().unreadCount).toBe(2);
+      expect(listed().mentionCount).toBe(1);
+      // The agent was not named, so its own count is zero.
+      expect(service.listRooms(ana).find((r) => r.id === room.id)?.mentionCount).toBe(0);
+
+      service.setReadCursor(room.id, human, last.seq);
+      expect(listed().mentionCount).toBe(0);
+    });
+
+    it('carries no mention count for a room the viewer is not in', () => {
+      const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+      const room = service.createRoom(
+        { kind: 'dm', title: 'Ana and Bo', members: [ana], agentPaths: [] },
+        ana
+      );
+      const listed = service.listRooms(human).find((r) => r.id === room.id)!;
+      expect(listed.unreadCount).toBeNull();
+      expect(listed).not.toHaveProperty('mentionCount');
+    });
+
+    it("carries each room's newest top-level line, and null for an empty room", () => {
+      const spoken = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
+      const quiet = service.createRoom(
+        { kind: 'channel', title: 'Design', members: [], agentPaths: [] },
+        human
+      );
+      service.post(spoken.id, { authorId: human, text: 'first' });
+      service.post(spoken.id, { authorId: human, text: 'ship it\non Friday' });
+
+      const lines = new Map(service.listRooms(human).map((r) => [r.id, r.lastLine]));
+      expect(lines.get(spoken.id)).toBe('ship it on Friday');
+      expect(lines.get(quiet.id)).toBeNull();
+    });
+
+    it('reads every last line in one statement, however many rooms there are', () => {
+      const lineReads = (roomCount: number): number => {
+        const harness = createRoomHarness({ agents: agentLookup });
+        for (let i = 0; i < roomCount; i++) {
+          harness.service.createRoom(
+            { kind: 'channel', title: `Room ${i}`, members: [], agentPaths: [] },
+            harness.human
+          );
+        }
+        const sqlite = (harness.db as unknown as { $client: { prepare: (sql: string) => unknown } })
+          .$client;
+        const prepare = vi.spyOn(sqlite, 'prepare');
+        harness.service.listRooms(harness.human);
+        const reads = prepare.mock.calls.filter(([sql]) =>
+          String(sql).includes('room_entries AS newest')
+        ).length;
+        prepare.mockRestore();
+        return reads;
+      };
+      expect(lineReads(2)).toBe(1);
+      expect(lineReads(25)).toBe(1);
+    });
+  });
+
   it("carries a direct message's roster, so the sidebar can draw who it is with", () => {
     const dm = service.createRoom(
       { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },

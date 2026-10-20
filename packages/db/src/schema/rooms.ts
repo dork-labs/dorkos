@@ -776,7 +776,7 @@ export const roomEntries = sqliteTable(
     index('idx_room_entries_thread_root')
       .on(table.roomId, table.threadRootEntryId, table.seq)
       .where(sql`"thread_root_entry_id" IS NOT NULL`),
-    // "Which rooms has this author written in?" — `RoomStore.roomsPostedInBy`,
+    // "Which rooms has this author written in?" — `RoomListReads.roomsPostedInBy`,
     // one query for a whole room list (`RoomSummary.viewerHasPosted`).
     //
     // **It leads with `author_id` because the question does.** Every other index
