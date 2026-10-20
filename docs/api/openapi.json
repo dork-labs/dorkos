@@ -6133,6 +6133,9 @@
               },
               "roomMessage": {
                 "$ref": "#/components/schemas/RoomMessageStamp"
+              },
+              "at": {
+                "type": "number"
               }
             },
             "required": [
@@ -35441,6 +35444,9 @@
                         },
                         "roomMessage": {
                           "$ref": "#/components/schemas/RoomMessageStamp"
+                        },
+                        "at": {
+                          "type": "number"
                         }
                       },
                       "required": [

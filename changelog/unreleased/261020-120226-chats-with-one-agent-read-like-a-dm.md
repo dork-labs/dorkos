@@ -7,6 +7,7 @@ covers:
   - 'fix(config): only a person turns the DM view or Show sessions on or off (DOR-3074)'
   - 'fix(chat): a DM keeps the model picker, safety readings and times, with no flash (DOR-3074)'
   - 'fix(rooms): every door falls back for non-owners, and the card works by keyboard (DOR-3074)'
+  - 'fix(history): messages carry the times they were sent, never the time they were read (DOR-3074)'
 ---
 
 ### Added
