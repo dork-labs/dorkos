@@ -542,7 +542,7 @@
     },
     {
       "guide": "sidebar-model.md",
-      "description": "The sidebar's pure model: zone/section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
+      "description": "The sidebar's pure model: section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
       "patterns": [
         "features/dashboard-sidebar/model/",
         "entities/interactions/"
@@ -646,7 +646,7 @@
     },
     {
       "doc": "docs/concepts/sidebar.mdx",
-      "description": "Sidebar concepts: Heads up, Today, sections, one door, and the phone tabs",
+      "description": "Sidebar concepts: places not sessions, Threads and Directory, sections, and the phone tabs",
       "patterns": [
         "apps/client/src/layers/features/dashboard-sidebar/",
         "apps/client/src/layers/widgets/mobile-tabs/"
