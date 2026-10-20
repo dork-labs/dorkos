@@ -21,7 +21,7 @@ const { version } = JSON.parse(readFileSync(path.join(CLI_PKG, 'package.json'), 
 
 // The id every release manifest also carries; one function computes both.
 const communityMigrationId = communityMigrationCompatibilityId(
-  path.join(ROOT, 'apps/community/migrations')
+  path.join(ROOT, 'apps/space/migrations')
 );
 
 // --- Vintage-consistency invariant -----------------------------------------

@@ -99,18 +99,18 @@
         "$TURBO_ROOT$/contributing/capabilities/runtimes.md",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
         "$TURBO_ROOT$/scripts/lib/community-migration-id.mjs",
-        "$TURBO_ROOT$/apps/community/package.json",
+        "$TURBO_ROOT$/apps/space/package.json",
         "$TURBO_ROOT$/Dockerfile",
         "$TURBO_ROOT$/.dockerignore",
-        "$TURBO_ROOT$/apps/community/tsconfig.json",
-        "$TURBO_ROOT$/apps/community/tsconfig.build.json",
+        "$TURBO_ROOT$/apps/space/tsconfig.json",
+        "$TURBO_ROOT$/apps/space/tsconfig.build.json",
         "$TURBO_ROOT$/.github/workflows/publish-community.yml",
         "$TURBO_ROOT$/ci/space-server.env",
         "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/apps/community/migrations/**",
-        "$TURBO_ROOT$/apps/community/browser-tests/**",
-        "$TURBO_ROOT$/apps/community/load/**",
-        "$TURBO_ROOT$/apps/community/scripts/**",
+        "$TURBO_ROOT$/apps/space/migrations/**",
+        "$TURBO_ROOT$/apps/space/browser-tests/**",
+        "$TURBO_ROOT$/apps/space/load/**",
+        "$TURBO_ROOT$/apps/space/scripts/**",
         "$TURBO_ROOT$/apps/client/src/space/**",
         "$TURBO_ROOT$/apps/client/vite.space.config.ts"
       ]
@@ -122,9 +122,9 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
         "$TURBO_ROOT$/scripts/lib/community-migration-id.mjs",
-        "$TURBO_ROOT$/apps/community/browser-tests/**",
-        "$TURBO_ROOT$/apps/community/load/**",
-        "$TURBO_ROOT$/apps/community/scripts/**",
+        "$TURBO_ROOT$/apps/space/browser-tests/**",
+        "$TURBO_ROOT$/apps/space/load/**",
+        "$TURBO_ROOT$/apps/space/scripts/**",
         "$TURBO_ROOT$/apps/client/src/space/**",
         "$TURBO_ROOT$/apps/client/vite.space.config.ts"
       ]
@@ -199,7 +199,7 @@
     "@dorkos/server#lint": {
       "dependsOn": ["^lint"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/community/package.json"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/space/package.json"]
     },
     "pack": {
       "dependsOn": ["^build"],

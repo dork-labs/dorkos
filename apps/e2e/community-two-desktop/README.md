@@ -219,6 +219,6 @@ behind. The throwaway container and its volume are labelled, and
 `scripts/sweep-ephemeral-docker.sh` removes them on the next run. The temporary
 homes are `dorkos-two-desktop-homes-*` folders in the system temp folder. With
 a borrowed container, drop any leftover `two_desktop_*` databases by hand. The
-two Community servers (`apps/community/dist-server/main.js`) and the two DorkOS
+two Community servers (`apps/space/dist-server/main.js`) and the two DorkOS
 apps may also still be running. Stop those by their process IDs, never by name,
 because other people's copies may be running on the same machine.

@@ -51,7 +51,7 @@ Not every deliberate hold belongs in the override map. When the repo declares th
 
 ### `better-auth` family — exact, and moved together
 
-`better-auth`, `@better-auth/api-key`, `@better-auth/core` and `@better-fetch/fetch` are declared exact in `apps/server`, `apps/site` and `packages/cli` (`apps/community` declares `better-auth` alone, at the same version), and they only ever move as one.
+`better-auth`, `@better-auth/api-key`, `@better-auth/core` and `@better-fetch/fetch` are declared exact in `apps/server`, `apps/site` and `packages/cli` (`apps/space` declares `better-auth` alone, at the same version), and they only ever move as one.
 
 **Why together.** `better-auth` depends on `@better-auth/core` at an exact version, while `@better-auth/api-key` takes core as a `^` peer and `@better-fetch/fetch` is a peer of core. Moving any one of them alone mints a second `@better-auth/core`, the api-key plugin stops being assignable to `BetterAuthPlugin`, and every plugin endpoint (`verifyApiKey`, `createApiKey`, `listUsers`) vanishes from the inferred API across server, site and cli. That was PR #1977. Dependabot's one catch-all group moves all four in one PR, which is why `.github/dependabot.yml` needs no entry for them; #1977 only happened because `better-auth` itself was being ignored.
 

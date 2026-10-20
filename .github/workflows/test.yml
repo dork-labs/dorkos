@@ -379,7 +379,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/decisions build
       # The space server's code lives in apps/server and its package, web page
-      # and image in apps/community (server-merge step 7d). Each half's tests
+      # and image in apps/space (server-merge step 7d). Each half's tests
       # read the other's files, but an affected-only run picks packages by the
       # files a change touched, so a change to one half alone would skip the
       # other half's checks until the merge queue. This job runs on every pull

@@ -28,7 +28,7 @@
 #                                        acceptance/{Dockerfile,run.sh,run.mjs,
 #                                        driver.spec.ts}. The three folders come
 #                                        from ci/space-server.env (DOR-3007):
-#                                        all apps/community today, and after the
+#                                        all apps/space today, and after the
 #                                        program merge the space's own folders
 #                                        inside apps/server and apps/client, so
 #                                        the rest of apps/server stays out

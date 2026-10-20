@@ -15,8 +15,8 @@
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !apps
-!apps/community
-!apps/community/**
+!apps/space
+!apps/space/**
 !apps/server
 !apps/server/src
 !apps/server/src/services

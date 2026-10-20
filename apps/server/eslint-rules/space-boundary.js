@@ -4,7 +4,7 @@
  * The space server's code lives in `src/services/spaces/` but ships alone, in its own image,
  * which must never carry the machine store, a runtime SDK or anything else of the server's.
  * So its code imports only itself, Node's own modules and the packages the space image
- * installs (`apps/community/package.json` `dependencies`), and nothing else in the server
+ * installs (`apps/space/package.json` `dependencies`), and nothing else in the server
  * imports it. Type-only imports carry no code and are allowed. Tests are not checked: the
  * cross-program conformance tests run the server's code against a real space server on purpose.
  */
@@ -19,7 +19,7 @@ const BUILTINS = new Set(builtinModules);
 /** The packages the space image installs, read from the package it is deployed from. */
 const IMAGE_PACKAGES = new Set(
   Object.keys(
-    JSON.parse(readFileSync(resolve(SERVER, '../community/package.json'), 'utf8')).dependencies
+    JSON.parse(readFileSync(resolve(SERVER, '../space/package.json'), 'utf8')).dependencies
   )
 );
 
@@ -64,7 +64,7 @@ export default {
           outside:
             "'{{specifier}}' is outside the space server. Its code ships alone in the space image; import only from src/services/spaces/.",
           package:
-            "'{{specifier}}' is not a package the space image installs. Add it to apps/community/package.json dependencies, or keep it out of the space server.",
+            "'{{specifier}}' is not a package the space image installs. Add it to apps/space/package.json dependencies, or keep it out of the space server.",
         },
       },
       create(context) {

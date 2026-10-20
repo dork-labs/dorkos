@@ -27,11 +27,11 @@ function pgReport(assertions: [string, string][]) {
 describe('runnerFor', () => {
   it('refuses files no receipt runner executes', () => {
     expect(runnerFor(file)).toBe('pg');
-    expect(runnerFor('apps/community/browser-tests/switching.spec.ts')).toBe('browser');
+    expect(runnerFor('apps/space/browser-tests/switching.spec.ts')).toBe('browser');
     expect(runnerFor('apps/server/src/a/__tests__/b.test.ts')).toBe('unit');
     for (const outside of [
       'apps/server/src/services/spaces/__tests__/attachments.s3.test.ts',
-      'apps/community/acceptance/driver.spec.ts',
+      'apps/space/acceptance/driver.spec.ts',
       // The space server's tests ran from apps/community/src before server-merge step 7.
       'apps/community/src/__tests__/example.integration.test.ts',
       'packages/shared/src/__tests__/x.test.ts',
@@ -110,7 +110,7 @@ describe('assertProofsPassed', () => {
       {
         id: 'M11',
         requirement: 'x',
-        proofs: [{ file: 'apps/community/browser-tests/switching.spec.ts', title: 'switches' }],
+        proofs: [{ file: 'apps/space/browser-tests/switching.spec.ts', title: 'switches' }],
       },
     ];
     const report = (results: { status: string }[]) => ({

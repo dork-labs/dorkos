@@ -16,7 +16,7 @@ import { FakeCommunityAdapter } from '../fake-community-adapter.js';
 // CommunityAdapter conformance suite. Running it across the whole flag matrix —
 // not only the profiles our own two backends use — is what proves the suite
 // bakes in no backend assumptions, so the same assertions must pass against the
-// local rooms adapter, a read-only Buzz relay, and apps/community.
+// local rooms adapter, a read-only Buzz relay, and apps/space.
 
 /** The credential every fake in this file holds and none may return. */
 const PLANTED = 'planted-credential-do-not-leak';
@@ -79,7 +79,7 @@ function hooks(capabilities: Partial<Omit<CommunityCapabilities, 'type'>> = {}) 
 }
 
 // 1. Everything on — the local rooms shape, plus the roles and invites
-//    apps/community adds.
+//    apps/space adds.
 communityConformance(make(), {
   name: 'FakeCommunityAdapter (everything on) — conformance',
   ...hooks(),
@@ -169,7 +169,7 @@ communityConformance(make(AGENT_ACTING), {
   ...hooks(AGENT_ACTING),
 });
 
-// 7. A moderated space, as apps/community is: a person reads their standing,
+// 7. A moderated space, as apps/space is: a person reads their standing,
 //    accepts the rules, picks their name and reports messages.
 const MODERATED: Partial<Omit<CommunityCapabilities, 'type'>> = {
   credential: 'browser-approved',

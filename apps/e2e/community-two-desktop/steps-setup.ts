@@ -88,7 +88,7 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     await page.getByLabel('Email', { exact: true }).fill(o.email);
     await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     // The space server's own setup form, by its field id: its label is the server's copy
-    // (apps/community), which the app-side rename (DOR-2631) leaves for DOR-2653.
+    // (apps/space), which the app-side rename (DOR-2631) leaves for DOR-2653.
     await page.locator('#community-name').fill(o.community);
     await page.getByLabel('First channel').fill('general');
     await page.getByRole('button', { name: 'Create space', exact: true }).click();

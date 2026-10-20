@@ -40,7 +40,7 @@ Turborepo monorepo:
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
-│   ├── community/        # @dorkos/community - Independent Hono/Postgres community service
+│   ├── space/            # @dorkos/community - The space server's package: image manifest, migrations, test tiers (code in server/src/services/spaces, pages in client/src/space)
 │   ├── design-system/    # @dorkos/design-system - Standalone shared UI catalog
 │   ├── server/           # @dorkos/server - Hono API on Node (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)

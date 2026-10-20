@@ -17,7 +17,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout } from 'node:timers';
 
 const root = resolve(import.meta.dirname, '../../..');
-const community = join(root, 'apps/community');
+const community = join(root, 'apps/space');
 const token = randomBytes(9).toString('hex');
 const sourceContainer = `dorkos-community-backup-source-${token}`;
 const restoreContainer = `dorkos-community-backup-restore-${token}`;

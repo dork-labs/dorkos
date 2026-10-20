@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { startReaders } from '../../../../../community/load/readers.js';
-import { summarizeReaders } from '../../../../../community/load/report.js';
-import { loadClock } from '../../../../../community/load/sse.js';
-import { runWriters } from '../../../../../community/load/writer.js';
+import { startReaders } from '../../../../../space/load/readers.js';
+import { summarizeReaders } from '../../../../../space/load/report.js';
+import { loadClock } from '../../../../../space/load/sse.js';
+import { runWriters } from '../../../../../space/load/writer.js';
 import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE } from '../config.js';
 import { expectStatus, startTenancyHarness, type TenancyHarness } from './tenancy-test-harness.js';
 
@@ -13,10 +13,10 @@ afterEach(async () => {
 });
 
 /**
- * Purpose: `apps/community/load` seeds its throwaway community through this endpoint, never
+ * Purpose: `apps/space/load` seeds its throwaway community through this endpoint, never
  * through invites or Better Auth sign-up (too slow at the thousands of principals a load run
  * needs). This proves the endpoint is unreachable without the test runtime, and that what it
- * seeds really authenticates a stream and a post the way `apps/community/load` depends on.
+ * seeds really authenticates a stream and a post the way `apps/space/load` depends on.
  */
 describe('POST /api/test/load-fixture', () => {
   it('is not there when the test runtime is off', async () => {

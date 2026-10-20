@@ -209,7 +209,7 @@ RUN corepack enable
 WORKDIR /work
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches patches
-COPY apps/community/package.json apps/community/package.json
+COPY apps/space/package.json apps/space/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/relay/package.json packages/relay/package.json
 COPY packages/shared/package.json packages/shared/package.json
@@ -229,18 +229,18 @@ COPY packages/icons packages/icons
 COPY packages/cloud-api packages/cloud-api
 COPY packages/connector-providers packages/connector-providers
 COPY packages/typescript-config packages/typescript-config
-COPY apps/community apps/community
+COPY apps/space apps/space
 # The space server's code lives in the DorkOS server package (server-merge step 7); its build
-# (apps/community/tsconfig.build.json) still compiles it into apps/community/dist-server/. The
+# (apps/space/tsconfig.build.json) still compiles it into apps/space/dist-server/. The
 # link lets that code find the space server's own packages without installing the DorkOS
 # server's, so nothing of the server's reaches this image.
 COPY apps/server/src/services/spaces apps/server/src/services/spaces
-RUN ln -s ../community/node_modules apps/server/node_modules
+RUN ln -s ../space/node_modules apps/server/node_modules
 # Its web pages are in apps/client (step 7e), built by their own Vite config into
-# apps/community/dist/; the same link gives them the space package's own packages.
+# apps/space/dist/; the same link gives them the space package's own packages.
 COPY apps/client/vite.space.config.ts apps/client/vite.space.config.ts
 COPY apps/client/src/space apps/client/src/space
-RUN ln -s ../community/node_modules apps/client/node_modules
+RUN ln -s ../space/node_modules apps/client/node_modules
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build
 # This image copies only the community's slice of the workspace, so a root patch for a
 # package it never installs (when-exit, which the server reaches through conf) is
@@ -252,7 +252,7 @@ RUN pnpm --config.allow-unused-patches=true --filter @dorkos/community deploy --
 # runtime SDK, a terminal or the DorkOS server.
 COPY scripts/space-image scripts/space-image
 RUN node scripts/space-image/runtime-packages.mjs /runtime --prune
-RUN cp -R apps/community/dist apps/community/dist-server apps/community/migrations /runtime/
+RUN cp -R apps/space/dist apps/space/dist-server apps/space/migrations /runtime/
 
 FROM node:24-bookworm-slim AS space
 WORKDIR /app

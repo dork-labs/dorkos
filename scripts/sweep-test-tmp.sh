@@ -132,7 +132,7 @@ ALLOWLIST=(
   'harness-gitignore-home'
   'harness-gitignore-repo'
   'harness-claudeonly'
-  # apps/community integration tests.
+  # apps/space integration tests.
   'erasure-journal'
   'erasure-backup'
   'community-admin-blobs'
