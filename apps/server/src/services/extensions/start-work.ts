@@ -36,7 +36,7 @@ import {
   type StartWorkRequest,
 } from '@dorkos/shared/extension-decision-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -129,6 +129,19 @@ async function renameNowOrLater(
       );
     });
   }
+}
+
+/**
+ * The runtime default, plus a caller's own bound when there is one: a list
+ * ceiling, which the runtime resolves to the strictest of its bounds.
+ *
+ * @param extra - The caller's bound, if any.
+ */
+function withRuntimeDefault(extra: TurnPermissionCeiling | undefined): TurnPermissionCeiling {
+  const bounds = (extra === undefined ? [] : Array.isArray(extra) ? extra : [extra]).filter(
+    (bound) => bound !== 'runtime-default'
+  ) as TurnPermissionBound[];
+  return bounds.length === 0 ? 'runtime-default' : ['runtime-default', ...bounds];
 }
 
 /** The start-work seam. See the module documentation. */
@@ -238,11 +251,11 @@ export class StartWorkService {
         // An extension's prompt is not the owner's words, and the route cannot tell
         // a click from page code: the chat carries the outsider mark and runs no
         // looser than the runtime default (DOR-3036, `specs/turn-marks`).
-        permissionCeiling: 'runtime-default',
+        // A caller's own bound (a Wi-Fi sign-in's, DOR-3037) is added to that cap,
+        // never put in its place: a list holds every bound at once, so a looser one
+        // cannot lift the runtime default.
+        permissionCeiling: withRuntimeDefault(opts.permissionCeiling),
         countsTowardLaunchCap: true,
-        ...(opts.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
         onSettled: () => {
           settled = true;
           reservation.settle();
