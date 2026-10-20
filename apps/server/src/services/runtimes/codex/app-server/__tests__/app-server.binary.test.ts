@@ -17,6 +17,8 @@
  * - the throwaway home's trust list is not written by a writable-mode turn;
  * - a command Codex must ask about raises a card; approved, it runs; denied,
  *   it does not (spec §10);
+ * - a thread started at Full and resumed cold after the person lowered it to
+ *   Ask still asks: the lowered level wins over the thread's saved one;
  * - a steer mid-turn reaches the open turn, and no new turn starts (§11);
  * - a command left running in the background finishes after `turn/completed`
  *   and wakes the chat exactly once; one that never ends never wakes it, and
@@ -663,6 +665,49 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const ends = events.filter((e) => e.type === 'tool_call_end');
       expect(ends.at(-1)).toMatchObject({ data: { status: 'error' } });
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    });
+
+    // Codex now restores a thread's saved permissions on a cold resume
+    // (openai/codex#53150, #53419). A level a person lowered in DorkOS must
+    // still win over the higher one the thread was started at.
+    it('asks again after a person lowers Full to Ask and the thread resumes cold', async () => {
+      fs.rmSync(made(), { force: true });
+      scripted.push((res) => res.end(sse('started at full')));
+      const bound: string[] = [];
+      const first = makeTransport();
+      for await (const event of first.runTurn(
+        request('lowered-1', undefined, {
+          settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+          onThreadBound: (threadId) => bound.push(threadId),
+        })
+      )) {
+        void event;
+      }
+      expect(bound).toHaveLength(1);
+      // Cold: the process that knew the thread is gone.
+      await pools.at(-1)!.shutdown();
+
+      askToWrite();
+      const second = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of second.runTurn(
+        request('lowered-1', undefined, {
+          boundThreadId: bound[0],
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        })
+      )) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          expect(fs.existsSync(made()), 'nothing runs before a person answers').toBe(false);
+          const id = (event.data as { toolCallId: string }).toolCallId;
+          expect(second.answerApproval('lowered-1', id, false)).toBe(true);
+        }
+      }
+      expect(
+        events.some((e) => e.type === 'approval_required'),
+        JSON.stringify(events)
+      ).toBe(true);
+      expect(fs.existsSync(made())).toBe(false);
     });
 
     it('steers a running turn: the words reach that turn, and no new turn starts', async () => {
