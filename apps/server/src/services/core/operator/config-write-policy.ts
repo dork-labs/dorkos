@@ -767,6 +767,10 @@ export const CONFIG_WRITE_POLICY = {
   // account the person kept out of that project. Written by a person through
   // the two `PUT /api/runtimes/claude-code/...` routes behind the person bar.
   'runtimes.claudeCode.accounts[].onlyProjects': 'operator-only',
+  // An account a person kept out of automatic moves (Re-seat P0). Clearing it
+  // would let an agent's seat move onto an account the person reserved, which
+  // is moving spend, so only a person changes it.
+  'runtimes.claudeCode.accounts[].noAutoMove': 'operator-only',
   'runtimes.claudeCode.defaultAccountOnlyProjects': 'operator-only',
   'runtimes.claudeCode.projectAccounts': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
@@ -1075,6 +1079,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.defaultAccountColor',
       'runtimes.claudeCode.dismissedFolders',
       'runtimes.claudeCode.accounts[].onlyProjects',
+      // Whether a room agent whose account ran out may be moved to this one on
+      // its own (re-seat). Which account the work runs on: an agent clearing it
+      // would move itself onto an account a person kept it off.
+      'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.defaultAccountOnlyProjects',
       'runtimes.claudeCode.projectAccounts',
     ],

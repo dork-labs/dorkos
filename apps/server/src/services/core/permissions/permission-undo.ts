@@ -45,6 +45,7 @@ import {
   ownState,
 } from './permission-values.js';
 import { chatModeNow, setChatsBack } from './existing-chats-raise.js';
+import { autoMoveFlagNow, setAutoMoveFlagsBack } from './kept-from-auto-moves.js';
 
 /** What the service lends an Undo. */
 export interface UndoContext {
@@ -173,6 +174,7 @@ export async function undoPermissionChange(
   /** The value a recorded key holds now, or `gone` when its target no longer exists. */
   const currentOf = (change: PermissionChange): string | null | 'gone' => {
     if (change.key.kind === 'chat') return chatModeNow(change.key.sessionId);
+    if (change.key.kind === 'account') return autoMoveFlagNow(change.key.accountId);
     if (change.target.kind === 'default') {
       switch (change.key.kind) {
         case 'preset':
@@ -275,6 +277,7 @@ export async function undoPermissionChange(
   const runtimeStops = new Map<string, PermissionStop | null>();
   const agentNext = new Map<string, AgentPermissions>();
   const chatsBack: PermissionChange[] = [];
+  const accountsBack: PermissionChange[] = [];
   const setKey = (
     record: Record<string, PermissionState>,
     key: string,
@@ -287,6 +290,10 @@ export async function undoPermissionChange(
     for (const change of unit) {
       if (change.key.kind === 'chat') {
         chatsBack.push(change);
+        continue;
+      }
+      if (change.key.kind === 'account') {
+        accountsBack.push(change);
         continue;
       }
       if (change.target.kind === 'default') {
@@ -423,8 +430,9 @@ export async function undoPermissionChange(
     await deps.agents.writePermissions(id, compact(next));
   }
   const chats = await setChatsBack(chatsBack);
-  changes.push(...chats.made);
-  skipped.push(...chats.skipped);
+  const flags = setAutoMoveFlagsBack(accountsBack);
+  changes.push(...chats.made, ...flags.made);
+  skipped.push(...chats.skipped, ...flags.skipped);
 
   await ctx.record({
     changes,

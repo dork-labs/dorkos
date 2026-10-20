@@ -8,6 +8,7 @@
  *
  * @module services/rooms/reseat/create-seat-mover
  */
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { sessionPath } from '@dorkos/shared/session-link';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
@@ -16,6 +17,10 @@ import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { resolveTurnRuntimeType } from '../../runtimes/shared/resolve-agent-runtime-type.js';
 import { accountUsageForSession } from '../../session/fleet/session-account.js';
+import {
+  readAgentExecutionDefaults,
+  resolveUnattendedPermissionMode,
+} from '../../session/resolution/resolve-session-defaults.js';
 import {
   claudeTranscriptPath,
   gatherCarryOverSummary,
@@ -106,6 +111,22 @@ function asWorldRuntime(type: string): string {
 }
 
 /**
+ * A runtime's capability profile as the mover reads it: the runtime's own, or
+ * under the forced-limit seam's test world the test runtime's, which stands in
+ * for Claude Code there. `undefined` for a runtime this server lacks.
+ *
+ * @param runtime - The seat's runtime.
+ */
+function capabilitiesOf(runtime: string): RuntimeCapabilities | undefined {
+  const type = runtimeRegistry.has(runtime)
+    ? runtime
+    : hasTestAccountWorld() && runtimeRegistry.has(TEST_RUNTIME)
+      ? TEST_RUNTIME
+      : null;
+  return type === null ? undefined : runtimeRegistry.get(type).getCapabilities();
+}
+
+/**
  * Build the production mover.
  *
  * @param opts.store - The room store, whose bindings are the seats.
@@ -129,15 +150,15 @@ export function createRoomSeatMover(opts: {
       asWorldRuntime(await resolveTurnRuntimeType({ sessionId: null, agentPath })),
     settingsOf: (sessionId) => runtimeRegistry.getSessionSettings(sessionId),
     saveSettings: (sessionId, settings) => runtimeRegistry.saveSessionSettings(sessionId, settings),
-    declaredModes: (runtime) => {
-      const type = runtimeRegistry.has(runtime)
-        ? runtime
-        : hasTestAccountWorld() && runtimeRegistry.has(TEST_RUNTIME)
-          ? TEST_RUNTIME
-          : null;
-      return type === null
-        ? undefined
-        : runtimeRegistry.get(type).getCapabilities().permissionModes;
+    declaredModes: (runtime) => capabilitiesOf(runtime)?.permissionModes,
+    // The same question the room runner asks for a new seat's first turn, so a
+    // seat with no stored mode moves at exactly the level it ran at.
+    effectiveModeOf: async (seat, runtime) => {
+      const agentStop = (await readAgentExecutionDefaults(seat.agentPath)).filesAndCommands;
+      return resolveUnattendedPermissionMode({
+        capabilities: capabilitiesOf(runtime),
+        ...(agentStop ? { agent: { filesAndCommands: agentStop } } : {}),
+      });
     },
     accountOf: async (runtime, sessionId, cwd) => {
       // The forced-limit seam (DOR-3143), set only under the test runtime.

@@ -19,15 +19,27 @@ describe('reseatSettings', () => {
     ).toEqual({ model: 'opus', effort: 'high', permissionMode: 'acceptEdits' });
   });
 
-  it('pins the runtime’s own default when the old seat stored no mode', () => {
-    // An unset mode ran at the runtime default. Leaving it unset on the new
-    // row would let the room's first-turn seed (agent default or the
-    // operator's level, possibly Full) decide instead.
-    expect(reseatSettings({ model: 'sonnet' }, CLAUDE)).toEqual({
+  it('pins the mode the old seat ran at when it stored none, never the runtime’s bare default', () => {
+    // An unset mode ran at the agent's effective level (the room's unattended
+    // resolver). Leaving it unset on the new row would let the room's
+    // first-turn seed decide instead; the runtime's own default would drop it.
+    expect(reseatSettings({ model: 'sonnet' }, CLAUDE, 'bypassPermissions')).toEqual({
       model: 'sonnet',
-      permissionMode: CLAUDE!.default,
+      permissionMode: 'bypassPermissions',
     });
-    expect(reseatSettings(null, CLAUDE)).toEqual({ permissionMode: CLAUDE!.default });
+    expect(reseatSettings(null, CLAUDE, 'acceptEdits')).toEqual({ permissionMode: 'acceptEdits' });
+  });
+
+  it('falls back to the runtime’s own default only when the seat’s level is unknown', () => {
+    expect(reseatSettings(null, CLAUDE, undefined)).toEqual({ permissionMode: CLAUDE!.default });
+  });
+
+  it('keeps a person-set level below Full where it was, whatever the agent’s level', () => {
+    for (const mode of ['default', 'acceptEdits', 'plan']) {
+      expect(reseatSettings({ permissionMode: mode }, CLAUDE, 'bypassPermissions')).toEqual({
+        permissionMode: mode,
+      });
+    }
   });
 
   it('never starts at a higher trust stop than the old seat, for every declared mode', () => {

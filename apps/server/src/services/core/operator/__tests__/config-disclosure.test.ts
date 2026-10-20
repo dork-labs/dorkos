@@ -236,7 +236,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         defaultAccount: '/Users/me/.claude2',
         accounts: [
           { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: '#12ab9f' },
-          { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
+          {
+            id: 'claude2',
+            path: '/Users/me/.claude2',
+            label: null,
+            color: null,
+            noAutoMove: true,
+          },
         ],
         defaultAccountColor: '#0d9488',
         dismissedFolders: ['/Users/me/.claude-old'],

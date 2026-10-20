@@ -19,7 +19,10 @@ import {
   type SeatMoverDeps,
 } from '../seat-mover.js';
 
-function row(id: string, opts: { limited?: boolean; fiveHour?: number } = {}): RankedAccount {
+function row(
+  id: string,
+  opts: { limited?: boolean; fiveHour?: number; noAutoMove?: true } = {}
+): RankedAccount {
   return {
     runtime: 'claude-code',
     id,
@@ -27,6 +30,7 @@ function row(id: string, opts: { limited?: boolean; fiveHour?: number } = {}): R
     color: '#000000',
     eligible: !opts.limited,
     reason: '',
+    ...(opts.noAutoMove ? { noAutoMove: true as const } : {}),
     usage: {
       accountId: id,
       label: id,
@@ -66,6 +70,7 @@ function mover(overrides: Partial<SeatMoverDeps> = {}) {
       settings.set(id, value);
     },
     declaredModes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
+    effectiveModeOf: async () => undefined,
     accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: ranking[0]!.usage }),
     ranking: async () => ranking,
     transcriptState: async () => 'present',
@@ -106,7 +111,34 @@ describe('RoomSeatMover', () => {
     expect(postLevelFor(['new-seat'])).toMatchObject({ asks: 'always', outsider: true });
   });
 
-  it('pins the runtime default on the new seat when the old one stored no mode (Must 1)', async () => {
+  it('moves a seat that stored no mode at the level it ran at: an agent at Full stays Full (Must 1)', async () => {
+    const asked: Array<[string, string]> = [];
+    const { m, settings } = mover({
+      effectiveModeOf: async (seat, runtime) => {
+        asked.push([seat.agentPath, runtime]);
+        return 'bypassPermissions';
+      },
+    });
+    await m.afterLimit(SEAT, 'entry-1', OPTS);
+    expect(asked).toEqual([['/agents/ana', 'claude-code']]);
+    expect(settings.get('new-seat')).toEqual({ permissionMode: 'bypassPermissions' });
+  });
+
+  it('keeps a person-set level below Full, never asking the agent’s level (Must 1)', async () => {
+    let asked = false;
+    const { m, settings } = mover({
+      settingsOf: async (id) => (id === 'old-seat' ? { permissionMode: 'acceptEdits' } : null),
+      effectiveModeOf: async () => {
+        asked = true;
+        return 'bypassPermissions';
+      },
+    });
+    await m.afterLimit(SEAT, 'entry-1', OPTS);
+    expect(settings.get('new-seat')).toEqual({ permissionMode: 'acceptEdits' });
+    expect(asked).toBe(false);
+  });
+
+  it('pins the runtime default only when the seat’s level is unknown (Must 1)', async () => {
     const { m, settings } = mover();
     await m.afterLimit(SEAT, 'entry-1', OPTS);
     expect(settings.get('new-seat')).toEqual({
@@ -201,6 +233,53 @@ describe('RoomSeatMover', () => {
     const move = await m.byHand(SEAT, { accountId: 'claude3', by: 'Dorian', hideAccounts: false });
     expect(move).toMatchObject({ reason: { kind: 'by-hand', by: 'Dorian', to: 'claude3' } });
     expect(activity).toEqual([expect.objectContaining({ trigger: 'person', by: 'Dorian' })]);
+  });
+
+  it('never moves a seat onto a kept-out account on its own, before a turn or after a limit', async () => {
+    const ranking = [
+      row('claude4', { fiveHour: 97 }),
+      row('claude-ab1', { noAutoMove: true, fiveHour: 0 }),
+      row('claude3', { fiveHour: 60 }),
+    ];
+    const { m } = mover({
+      ranking: async () => ranking,
+      accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: ranking[0]!.usage }),
+    });
+    await m.beforeTurn(SEAT, 'entry-1', { hideAccounts: false });
+    expect(m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({ accountHint: 'claude3' });
+
+    const only = mover({
+      ranking: async () => [
+        row('claude4', { limited: true }),
+        row('claude-ab1', { noAutoMove: true }),
+      ],
+    });
+    expect((await only.m.afterLimit(SEAT, 'entry-2', OPTS)).kind).toBe('none');
+  });
+
+  it('by hand: moves to a kept-out account a person names, but never picks it as the best', async () => {
+    const ranking = [
+      row('claude4', { limited: true }),
+      row('claude-ab1', { noAutoMove: true }),
+      row('claude3'),
+    ];
+    const named = mover({ ranking: async () => ranking });
+    const move = await named.m.byHand(SEAT, {
+      accountId: 'claude-ab1',
+      by: 'Dorian',
+      hideAccounts: false,
+    });
+    expect(move).toMatchObject({ reason: { kind: 'by-hand', to: 'claude-ab1' } });
+
+    const best = mover({ ranking: async () => ranking });
+    await best.m.byHand(SEAT, { by: 'Dorian', hideAccounts: false });
+    expect(best.m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({
+      accountHint: 'claude3',
+    });
+
+    // And the picker still lists it, so a person can choose it.
+    const { accounts } = await best.m.options(SEAT);
+    expect(accounts.map((a) => a.id)).toContain('claude-ab1');
   });
 
   it('offers every allowed account but the seat’s own, marking which can take work', async () => {

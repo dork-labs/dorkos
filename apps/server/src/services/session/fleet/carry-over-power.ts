@@ -108,19 +108,25 @@ export function carriedSettings(
 
 /**
  * The settings row a room seat moved to a fresh session starts with: the old
- * seat's, through {@link carriedSettings}, with the mode PINNED to the
- * runtime's own default when the old seat stored none. An unset mode ran at
- * that default; left unset, the room's first-turn seed (the agent's default or
- * the operator's level) would decide the new seat's power instead.
+ * seat's, through {@link carriedSettings}. A stored mode always wins: it is the
+ * level a person set, or the one the seat was seeded with. When the old seat
+ * stored none, the mode is PINNED to the one it actually ran at, `ranAt` (what
+ * the room's unattended resolver gives its agent: the agent's own Files &
+ * commands stop, else the operator's level), and only when that is unknown to
+ * the runtime's own default. Left unset, the room's first-turn seed would decide
+ * the new seat's power instead.
  *
  * @param source - The old seat's stored settings, or `null` for no row.
  * @param declared - The runtime's declared modes.
+ * @param ranAt - The mode the old seat ran at with no stored mode, or
+ *   `undefined` when nothing is configured.
  */
 export function reseatSettings(
   source: CarriedSettings | null,
-  declared: DeclaredPermissionModes | undefined
+  declared: DeclaredPermissionModes | undefined,
+  ranAt?: string
 ): CarriedSettings {
   const carried = carriedSettings(source ?? {}, {});
-  const permissionMode = carried.permissionMode ?? declared?.default;
+  const permissionMode = carried.permissionMode ?? ranAt ?? declared?.default;
   return { ...carried, ...(permissionMode ? { permissionMode } : {}) };
 }

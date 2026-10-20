@@ -67,6 +67,11 @@ export interface RankedAccount {
   badge?: 'recommended' | 'reserved';
   /** `true` for an account that may not work in the project ({@link notAllowedAccounts}). */
   notAllowed?: true;
+  /**
+   * `true` for an account a person kept out of automatic moves: a room seat
+   * whose account runs out never moves here on its own (`reseat-accounts.ts`).
+   */
+  noAutoMove?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -212,6 +217,7 @@ function defaultRanking(
           usage,
           eligible,
           reason: defaultReason(usage, eligible),
+          ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
         } satisfies RankedAccount,
       };
     });
@@ -290,6 +296,7 @@ async function advisedRanking(
         eligible: row.eligible,
         reason: row.reason,
         ...(row.badge ? { badge: row.badge } : {}),
+        ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
       };
     }),
     recommendedId: validated.recommendedId,

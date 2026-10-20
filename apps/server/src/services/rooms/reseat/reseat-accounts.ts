@@ -7,7 +7,9 @@
  * account advisor, so a move never waits on an extension, and nothing from the
  * agent's own folder. From those this takes the first that is on the same
  * runtime, is not the seat's own, is not DorkOS credits (credits spend money,
- * and only a person picks them), and is neither out nor nearly out.
+ * and only a person picks them), is not kept out of automatic moves (a
+ * person's `noAutoMove` on the account; only a person naming it may move a
+ * seat there), and is neither out nor nearly out.
  *
  * Pure: the ranking is an input.
  *
@@ -44,19 +46,28 @@ export function nearlyOut(usage: AccountUsage): boolean {
 }
 
 /**
- * The accounts a seat on this runtime may ever move to: the same runtime,
- * never DorkOS credits, never one the project does not allow. The seat's own
+ * The accounts a seat on this runtime may move to: the same runtime, never
+ * DorkOS credits, never one the project does not allow, and never one a person
+ * kept out of automatic moves unless `opts.keptOut` says a person is choosing.
+ * The one filter every pick and every offer goes through. The seat's own
  * account is still in the list; callers that offer a move leave it out.
  *
  * @param ranking - Core's ranking for the folder's project, best first.
  * @param runtime - The seat's runtime.
+ * @param opts.keptOut - `true` to keep accounts kept out of automatic moves in
+ *   the list: only for a person's own pick, never for a move DorkOS makes.
  */
 export function reseatCandidates(
   ranking: readonly RankedAccount[],
-  runtime: string
+  runtime: string,
+  opts: { keptOut?: boolean } = {}
 ): RankedAccount[] {
   return ranking.filter(
-    (row) => row.runtime === runtime && row.id !== CREDITS_ACCOUNT_ID && !row.notAllowed
+    (row) =>
+      row.runtime === runtime &&
+      row.id !== CREDITS_ACCOUNT_ID &&
+      !row.notAllowed &&
+      (opts.keptOut === true || !row.noAutoMove)
   );
 }
 
@@ -86,20 +97,24 @@ function usableAgainAt(usage: AccountUsage): string | null {
 }
 
 /**
- * Pick the account a seat moves to.
+ * Pick the account a seat moves to. An account kept out of automatic moves is
+ * never picked, however much room it has, unless `opts.keptOut` says a person
+ * named it.
  *
  * @param ranking - Core's ranking for the folder's project, best first.
  * @param seat.runtime - The seat's runtime; a move never crosses runtimes.
  * @param seat.currentAccountId - The account the seat runs on now, or `null` when unknown.
+ * @param opts.keptOut - `true` only when a person named the one account in `ranking`.
  * @returns The account to move to; or, when none qualifies, the earliest time
- *   any project-eligible account on the runtime (the seat's own included) is
- *   usable again, `null` when no reset time is known.
+ *   any account the move could use (the seat's own included) is usable again,
+ *   `null` when no reset time is known.
  */
 export function pickReseatAccount(
   ranking: readonly RankedAccount[],
-  seat: { runtime: string; currentAccountId: string | null }
+  seat: { runtime: string; currentAccountId: string | null },
+  opts: { keptOut?: boolean } = {}
 ): ReseatPick {
-  const candidates = reseatCandidates(ranking, seat.runtime);
+  const candidates = reseatCandidates(ranking, seat.runtime, opts);
   const account = candidates.find((row) => row.id !== seat.currentAccountId && canTakeWork(row));
   if (account) return { kind: 'move', account };
   const resets = candidates

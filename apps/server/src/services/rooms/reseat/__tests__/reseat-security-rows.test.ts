@@ -132,6 +132,7 @@ function mover(overrides: Partial<SeatMoverDeps> = {}) {
       settings.set(id, value);
     },
     declaredModes: () => MODES,
+    effectiveModeOf: async () => undefined,
     accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: usage('claude4', true) }),
     ranking: async () => [rankedRow('claude4', true), rankedRow('claude3')],
     transcriptState: async () => 'present',

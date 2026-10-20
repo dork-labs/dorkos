@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  autoMoveWord,
   chatModeWord,
   type PermissionHistoryEntry,
   type PermissionUndoSkip,
@@ -31,6 +32,7 @@ export interface PermissionHistoryProps {
  */
 function valueWord(value: string | null, change: PermissionUndoSkip['change']): string {
   if (change.key.kind === 'chat') return chatModeWord(value);
+  if (change.key.kind === 'account') return autoMoveWord(value);
   if (value === null) return change.target.kind === 'agent' ? 'the default' : 'the preset';
   switch (change.key.kind) {
     case 'files':

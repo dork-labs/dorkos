@@ -133,6 +133,7 @@ function open(setup: Setup) {
       settings.set(id, value);
     },
     declaredModes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
+    effectiveModeOf: async () => undefined,
     accountOf: async (_runtime, sessionId) => {
       const id = accountOfSession(sessionId);
       const row = ranked(

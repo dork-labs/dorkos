@@ -13577,6 +13577,28 @@
                             "kind",
                             "sessionId"
                           ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "account"
+                              ]
+                            },
+                            "accountId": {
+                              "type": "string"
+                            },
+                            "accountName": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "accountId",
+                            "accountName"
+                          ]
                         }
                       ]
                     },
@@ -13824,6 +13846,28 @@
                         "kind",
                         "sessionId"
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "account"
+                          ]
+                        },
+                        "accountId": {
+                          "type": "string"
+                        },
+                        "accountName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "accountId",
+                        "accountName"
+                      ]
                     }
                   ]
                 },
@@ -14005,6 +14049,28 @@
                     "required": [
                       "kind",
                       "sessionId"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "account"
+                        ]
+                      },
+                      "accountId": {
+                        "type": "string"
+                      },
+                      "accountName": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "accountId",
+                      "accountName"
                     ]
                   }
                 ]

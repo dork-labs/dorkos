@@ -17,6 +17,8 @@
  *
  * 1. The old seat's settings row, through `reseatSettings` (Security Must 1),
  *    written BEFORE the first turn so the room's new-session seed never applies.
+ *    A seat that stored no mode moves at the mode it ran at
+ *    ({@link SeatMoverDeps.effectiveModeOf}), never the runtime's bare default.
  * 2. The old seat's marks (`carrySessionMarks`, Must 2), so a stranger's words in
  *    the summary stay marked.
  * 3. A one-shot pending launch for the seat: the account to start on (a launch
@@ -145,6 +147,13 @@ export interface SeatMoverDeps {
   saveSettings(sessionId: string, settings: SessionSettings): Promise<void>;
   /** A runtime's declared permission modes. */
   declaredModes(runtime: string): DeclaredPermissionModes | undefined;
+  /**
+   * The mode a seat that stored none ran at: what the room's unattended
+   * resolver gives its agent on this runtime (the agent's own Files & commands
+   * stop, else the operator's level). `undefined` when nothing is configured,
+   * and the runtime's own default stands.
+   */
+  effectiveModeOf(seat: Seat, runtime: string): Promise<string | undefined>;
   /** The account a session bills now. */
   accountOf(runtime: string, sessionId: string, cwd: string): Promise<SeatAccount>;
   /** Core's ranking of a runtime's accounts allowed in the folder's project. */
@@ -346,7 +355,8 @@ export class RoomSeatMover {
     const ranking = await this.deps.ranking(runtime, seat.agentPath);
     return {
       current,
-      accounts: reseatCandidates(ranking, runtime)
+      // A person may name an account kept out of automatic moves, so it is offered.
+      accounts: reseatCandidates(ranking, runtime, { keptOut: true })
         .filter((row) => row.id !== current.id)
         .map((row) => {
           const eligible = canTakeWork(row);
@@ -360,7 +370,8 @@ export class RoomSeatMover {
 
   /**
    * Move a seat by hand. The account must be one {@link options} offers and
-   * can take work now; with none named, the best one.
+   * can take work now; with none named, the best one DorkOS would pick itself,
+   * so an account kept out of automatic moves is used only when named.
    *
    * @param seat - The seat.
    * @param opts.accountId - The account to move to; the best when absent.
@@ -379,9 +390,13 @@ export class RoomSeatMover {
     if (!(await this.mayMoveOn(runtime, seat))) return null;
     const current = await this.deps.accountOf(runtime, seat.sessionId, seat.agentPath);
     const ranking = await this.deps.ranking(runtime, seat.agentPath);
-    const offered =
-      opts.accountId === undefined ? ranking : ranking.filter((row) => row.id === opts.accountId);
-    const pick = pickReseatAccount(offered, { runtime, currentAccountId: current.id });
+    const named = opts.accountId !== undefined;
+    const offered = named ? ranking.filter((row) => row.id === opts.accountId) : ranking;
+    const pick = pickReseatAccount(
+      offered,
+      { runtime, currentAccountId: current.id },
+      { keptOut: named }
+    );
     if (pick.kind === 'none') return null;
     return this.reseat(seat, {
       trigger: 'person',
@@ -425,9 +440,14 @@ export class RoomSeatMover {
     const old = seat.sessionId;
     // Power first (Must 1): the row exists before anything can launch on it.
     const settings = old === null ? null : await this.deps.settingsOf(old);
+    // A stored mode is the person-set level and wins; with none, the seat ran
+    // at its agent's effective level, so that is what it keeps.
+    const ranAt = settings?.permissionMode
+      ? undefined
+      : await this.deps.effectiveModeOf(seat, plan.runtime);
     await this.deps.saveSettings(
       newSessionId,
-      reseatSettings(settings, this.deps.declaredModes(plan.runtime))
+      reseatSettings(settings, this.deps.declaredModes(plan.runtime), ranAt)
     );
     // Marks next (Must 2), before the first turn.
     if (old !== null) carrySessionMarks(old, newSessionId);

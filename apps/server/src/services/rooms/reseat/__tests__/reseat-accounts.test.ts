@@ -35,6 +35,7 @@ function row(
     fiveHourResets?: string;
     runtime?: string;
     notAllowed?: true;
+    noAutoMove?: true;
   } = {}
 ): RankedAccount {
   const limited = opts.limited !== undefined;
@@ -46,6 +47,7 @@ function row(
     eligible: !limited,
     reason: '',
     ...(opts.notAllowed ? { notAllowed: true as const } : {}),
+    ...(opts.noAutoMove ? { noAutoMove: true as const } : {}),
     usage: {
       runtime: 'claude-code',
       accountId: id,
@@ -108,6 +110,39 @@ describe('pickReseatAccount', () => {
       { runtime: 'claude-code', currentAccountId: 'claude4' }
     );
     expect(pick).toMatchObject({ kind: 'move', account: { id: 'claude5' } });
+  });
+
+  it('never picks an account kept out of automatic moves, even first and with the most room', () => {
+    const pick = pickReseatAccount(
+      [
+        row('claude-ab1', { noAutoMove: true, weekly: 0, fiveHour: 0 }),
+        row('claude3', { weekly: 80, fiveHour: 70 }),
+      ],
+      { runtime: 'claude-code', currentAccountId: 'claude4' }
+    );
+    expect(pick).toMatchObject({ kind: 'move', account: { id: 'claude3' } });
+  });
+
+  it('moves nowhere rather than onto a kept-out account, and names no reset time for it', () => {
+    const pick = pickReseatAccount(
+      [
+        row('claude-ab1', { noAutoMove: true, limited: '2026-10-20T15:00:00.000Z' }),
+        row('claude-ab2', { noAutoMove: true }),
+        row('claude4', { limited: '2026-10-20T18:00:00.000Z' }),
+      ],
+      { runtime: 'claude-code', currentAccountId: 'claude4' }
+    );
+    expect(pick).toEqual({ kind: 'none', earliestResetAt: '2026-10-20T18:00:00.000Z' });
+  });
+
+  it('takes a kept-out account only when a person named it', () => {
+    const named = [row('claude-ab1', { noAutoMove: true })];
+    const seat = { runtime: 'claude-code', currentAccountId: 'claude4' };
+    expect(pickReseatAccount(named, seat).kind).toBe('none');
+    expect(pickReseatAccount(named, seat, { keptOut: true })).toMatchObject({
+      kind: 'move',
+      account: { id: 'claude-ab1' },
+    });
   });
 
   it('never moves to another runtime', () => {
