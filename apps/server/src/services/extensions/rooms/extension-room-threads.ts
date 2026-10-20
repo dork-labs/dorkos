@@ -142,6 +142,8 @@ export class ExtensionRoomThreads {
    * @param roomId - The room.
    * @param rootEntryId - The thread's root entry.
    * @param text - The reply.
+   * @param heldToDefault - The reply came from Wi-Fi (DOR-3037): it says so on
+   *   its row beside the outsider mark, as a person's own post from Wi-Fi does.
    * @returns The reply as stored.
    * @throws {ExtensionRoomError} When the room is not allowed, cannot be read,
    *   or is a room whose messages leave this computer.
@@ -151,7 +153,8 @@ export class ExtensionRoomThreads {
     viewer: AuthorRecord,
     roomId: string,
     rootEntryId: string,
-    text: string
+    text: string,
+    heldToDefault = false
   ): RoomThreadEntry {
     const { room } = this.load(extensionId, viewer, roomId, rootEntryId);
     // A bridged room delivers what is posted to people on another app, and a
@@ -167,12 +170,10 @@ export class ExtensionRoomThreads {
     try {
       posted = this.deps
         .rooms()
-        .post(
-          roomId,
-          { authorId: viewer.id, text, replyTo: rootEntryId },
-          false,
-          { marks: MINI_APP_REPLY_MARKS }
-        );
+        .post(roomId, { authorId: viewer.id, text, replyTo: rootEntryId }, false, {
+          marks: MINI_APP_REPLY_MARKS,
+          ...(heldToDefault ? { heldToDefault: true as const } : {}),
+        });
     } catch (err) {
       fromRoomError(err);
     }

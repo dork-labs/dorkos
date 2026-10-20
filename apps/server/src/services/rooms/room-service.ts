@@ -50,7 +50,6 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
-import { NO_MARKS, type TurnMarks } from '../core/turn-power/turn-marks.js';
 import { nameForAgents } from './room-context.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
@@ -61,7 +60,11 @@ import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
 import type { RoomFollowService } from './follow/room-follow-service.js';
-import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
+import {
+  postAuthorBound,
+  type PersonPostBound,
+  type RoomExternalPostInput,
+} from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
   MemberRoomSummary,
@@ -467,30 +470,18 @@ export class RoomService {
    *
    * @param roomId - The room.
    * @param input - The post itself.
-   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP routes).
-   * @param authorBound - `'runtime-default'` holds the turns it starts to the
-   *   runtime's default: a post from Wi-Fi (DOR-3037). `{ marks }` keeps marks
-   *   with a person's post on its row, in the insert's own transaction: a mini
-   *   app's reply carries the outsider mark (DOR-3017).
+   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP
+   *   routes): kept marked as an outsider's ({@link postAuthorBound}).
+   * @param authorBound - What the post hands on to the turns it starts; see
+   *   {@link PersonPostBound}.
    */
   post(
     roomId: string,
     input: RoomPostInput,
     unverifiedAgent = false,
-    authorBound?: 'runtime-default' | { marks: TurnMarks }
+    authorBound?: PersonPostBound
   ): PostedEntry {
-    // An agent posting over HTTP names itself with a header nothing verifies:
-    // its post is kept as an outsider's (DOR-3107, trust first covers only a
-    // verified own agent's unknown marks). From Wi-Fi it is held to the
-    // default as well, so neither reading can loosen the other.
-    if (unverifiedAgent) {
-      const marks = typeof authorBound === 'object' ? authorBound.marks : NO_MARKS;
-      return this.parts.posting.post(roomId, input, {
-        marks: { ...marks, outsider: true },
-        ...(authorBound === 'runtime-default' ? { heldToDefault: true as const } : {}),
-      });
-    }
-    return this.parts.posting.post(roomId, input, authorBound);
+    return this.parts.posting.post(roomId, input, postAuthorBound(unverifiedAgent, authorBound));
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(

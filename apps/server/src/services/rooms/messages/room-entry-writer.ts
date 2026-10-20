@@ -15,7 +15,7 @@ import {
   noteEntryLevel,
   noteEntryMarks,
 } from '../../core/turn-power/turn-levels.js';
-import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
 import { and, eq } from 'drizzle-orm';
@@ -110,6 +110,33 @@ export interface RoomExternalPostInput {
  * ever lowers: a held post is never read as the owner's own circle.
  */
 export type PostAuthorBound = TurnPermissionBound | { marks: TurnMarks; heldToDefault?: true };
+
+/**
+ * What a person's post hands on to the turns it starts, as `RoomService.post`
+ * takes it: `'runtime-default'` from Wi-Fi (DOR-3037), or marks kept on its row
+ * in the insert's own transaction, with that hold beside them from Wi-Fi. A
+ * mini app's reply carries the outsider mark (DOR-3017).
+ */
+export type PersonPostBound = 'runtime-default' | { marks: TurnMarks; heldToDefault?: true };
+
+/**
+ * The bound `RoomService.post` hands its post. A post from an agent named by a
+ * header nothing verifies is kept as an outsider's (DOR-3107; trust first
+ * covers only a verified own agent's unknown marks), with any marks and Wi-Fi
+ * hold it came with, so neither reading can loosen the other.
+ *
+ * @param unverifiedAgent - The post is from an agent nothing verified.
+ * @param bound - What the post came with.
+ */
+export function postAuthorBound(
+  unverifiedAgent: boolean,
+  bound?: PersonPostBound
+): PostAuthorBound | undefined {
+  if (!unverifiedAgent) return bound;
+  const kept =
+    bound === 'runtime-default' ? { marks: NO_MARKS, heldToDefault: true as const } : bound;
+  return { ...kept, marks: { ...kept?.marks, outsider: true } };
+}
 
 /** The shared write half of every post that reaches a room's log. */
 export class RoomEntryWriter {
