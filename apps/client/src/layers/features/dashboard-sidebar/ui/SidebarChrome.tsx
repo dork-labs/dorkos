@@ -1,4 +1,3 @@
-import { newSessionTarget } from '@/layers/shared/lib';
 import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a row LOOKS and what pressing it DOES — the half of the sidebar the model
@@ -52,7 +51,7 @@ import {
   clearPendingSessionTarget,
   usePendingSessionTarget,
   notifySessionLookupFailed,
-  resolveSessionForCwd,
+  agentChatTarget,
   useStartNewSession,
 } from '@/layers/entities/session';
 import { useProfileStore } from '@/layers/features/profile';
@@ -398,37 +397,19 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // The row shows the click landed while the lookup is out (DOR-2891).
       const clearPending = markPendingSessionTarget(agentPath);
       useInteractionStore.getState().recordOpened('agent', agentPath);
-      void transport
-        .openDirectChat({ agentPath })
-        .then(async (chat) => {
-          if (!isStillWanted()) return;
-          // A Direct chat made just now has no transcript yet, so it opens the
-          // way a new chat does; the session route drops the draft flag again
-          // for one that already exists.
-          const target = await newSessionTarget(transport, {
-            session: chat.sessionId,
-            dir: agentPath,
-          });
-          if (isStillWanted()) await navigate(target);
+      // The Direct chat, or for anyone but the owner the agent's latest chat
+      // with them: one rule, shared with every other door (`agentChatTarget`).
+      void agentChatTarget({ queryClient, transport }, agentPath)
+        .then(async (target) => {
+          if (target && isStillWanted()) await navigate(target);
         })
-        .catch(async (error: unknown) => {
-          // Only the owner has Direct chats; anyone else still gets the
-          // agent's latest chat with them, as before.
-          if ((error as { status?: number }).status === 403) {
-            const resolved = await resolveSessionForCwd({ queryClient, transport }, agentPath);
-            if (!resolved || !isStillWanted()) return;
-            if (!resolved.isNew) return void (await openSession(resolved.sessionId, agentPath));
-            await navigate(
-              await newSessionTarget(transport, { session: resolved.sessionId, dir: agentPath })
-            );
-            return;
-          }
+        .catch((error: unknown) => {
           reportClientError(transport, error);
           if (isStillWanted()) notifySessionLookupFailed(agentPath);
         })
         .finally(clearPending);
     },
-    [navigate, openSession, queryClient, router, transport]
+    [navigate, queryClient, router, transport]
   );
 
   // DorkBot, found the only way the client can: `isSystem` is the flag on the

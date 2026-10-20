@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChevronRight, Folder } from 'lucide-react';
 import { AgentAvatar } from '@/layers/entities/agent';
 import { DIRECT_CHAT_TITLE, useDirectChat } from '@/layers/entities/room';
@@ -38,7 +39,15 @@ import { OneBar } from './OneBar';
  * which does not truncate anything: it overflows the row and paints the
  * identity straight through the chip.
  */
-export function SessionHeader() {
+export function SessionHeader({
+  behindDm,
+}: {
+  /**
+   * Said in place of the title when this is the working session behind an
+   * agent's DM (DOR-3074): what it is, and the way back to the DM.
+   */
+  behindDm?: ReactNode;
+} = {}) {
   const {
     sessionId,
     agentName,
@@ -113,13 +122,15 @@ export function SessionHeader() {
             {name}
           </span>
           <ChevronRight className="text-muted-foreground/50 size-3 shrink-0" aria-hidden />
-          <span
-            className="text-muted-foreground min-w-[3rem] shrink-[9999] truncate"
-            data-testid="session-title"
-            title={title}
-          >
-            {title}
-          </span>
+          {behindDm ?? (
+            <span
+              className="text-muted-foreground min-w-[3rem] shrink-[9999] truncate"
+              data-testid="session-title"
+              title={title}
+            >
+              {title}
+            </span>
+          )}
         </div>
       }
       chips={

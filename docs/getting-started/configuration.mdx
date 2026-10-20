@@ -1413,3 +1413,26 @@ Settings → Advanced → Experiments lists **Docs**, off by default. Turn it on
 Click a link while reading to open that doc in the canvas. While editing, Cmd-click it (Ctrl-click on Windows and Linux). A link to a doc that does not exist yet looks different from the others. It starts working the next time DorkOS reads the folder's docs: when you create or rename a file in the Files panel, when you save a doc whose title changed, or when you come back to the DorkOS window or open a doc again after half a minute. A link to a heading in the same doc, like `[[#Goals]]`, does not open.
 
 Links find the `.md` files in the folder your chat works in and every folder inside it, skipping hidden folders and folders such as `node_modules`. In a very large folder, the `[[` list holds only the docs nearest the top: it stops after 2,000 docs, 2,000 folders, or 8 folders deep. A link to a doc past that is still looked for across the whole folder. If even that takes too long, the link says the folder is too big to check, rather than calling the doc missing. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.
+
+### Chats with one agent
+
+<TypeTable
+  type={{
+    'ui.dmView': {
+      description:
+        'A chat with one agent looks like a direct message, with the agent’s face and name on every reply. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'ui.showSessions': {
+      description:
+        'Lets you open the working session behind a chat, with its model, account and context. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Chats with one agent read like a DM**, off by default. Turn it on, and talking to one agent looks like talking to a teammate: the agent's face and name at the top, its replies with its face, name and time, and a message box like a channel's. Everything the chat shows today stays: replies as they are written, tool steps, thinking and to-dos. Clicking the agent in the sidebar, Message on its card, its profile, the New menu and the agent in Cmd+K all open this same chat.
+
+The model, account, permissions and context move out of the chat. To get to them, turn on **Show sessions** on the same page. The chat's header then shows a session chip with how full its context is, and clicking it opens the working session behind your chat, exactly as chats look today. Both settings apply to everyone using this DorkOS. Agents can read them but cannot change them.

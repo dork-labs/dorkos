@@ -56,6 +56,61 @@ beforeEach(() => {
 });
 
 describe('useTabIdentity', () => {
+  describe('an agent’s Direct chat (DOR-3074)', () => {
+    /** The config answer, with the DM view on or off. */
+    function dmView(enabled: boolean) {
+      vi.mocked(transport.getConfig).mockResolvedValue({
+        experiments: [
+          { key: 'ui.dmView', title: '', description: '', enabled, lockedByEnv: false },
+        ],
+      } as never);
+    }
+
+    beforeEach(() => {
+      setSessionRouteContext('direct-1', { cwd: '/somewhere/else', draft: false });
+      vi.mocked(transport.getSession).mockResolvedValue({
+        id: 'direct-1',
+        cwd: '/somewhere/else',
+        title: 'Direct',
+        updatedAt: '2026-10-09T09:00:00.000Z',
+      } as unknown as Session);
+      vi.mocked(transport.findDirectChat).mockResolvedValue({
+        sessionId: 'direct-1',
+        sessionIds: ['direct-1'],
+        roomId: 'dm-scout',
+        agentPath: '/Users/kai/api',
+      });
+    });
+
+    it('is named for the agent alone with the DM view on', async () => {
+      dmView(true);
+      const { result } = renderHook(() => useTabIdentity('/session?session=direct-1'), {
+        wrapper,
+      });
+      await waitFor(() => expect(result.current.primary).toBe('Scout'));
+      expect(result.current.secondary).toBeUndefined();
+    });
+
+    it('says Session on the session view behind the DM', async () => {
+      dmView(true);
+      const { result } = renderHook(
+        () => useTabIdentity('/session?session=direct-1&view=session'),
+        { wrapper }
+      );
+      await waitFor(() => expect(result.current.secondary).toBe('Session'));
+      expect(result.current.primary).toBe('Scout');
+    });
+
+    it('reads exactly as before, and never asks, with the DM view off', async () => {
+      dmView(false);
+      const { result } = renderHook(() => useTabIdentity('/session?session=direct-1'), {
+        wrapper,
+      });
+      await waitFor(() => expect(result.current.secondary).toBe('Direct'));
+      expect(transport.findDirectChat).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a chat', () => {
     beforeEach(() => {
       setSessionRouteContext('chat-1', { cwd: '/Users/kai/api', draft: false });

@@ -23,6 +23,13 @@ export const SPACES_EXPERIMENT = 'spaces.enabled';
 export const DOCS_EXPERIMENT = 'docs.enabled';
 
 /**
+ * The experiment the DM view reads (DOR-3074): a chat with one agent drawn like
+ * a direct message, and every door to an agent opening that one chat. Off by
+ * default; while it is off every chat looks and opens exactly as before.
+ */
+export const DM_VIEW_EXPERIMENT = 'ui.dmView';
+
+/**
  * Whether one Settings → Experiments switch is on, read from a config answer.
  *
  * The server resolves every registered experiment into `config.experiments`

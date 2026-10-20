@@ -15,6 +15,7 @@ import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
+import { useDmViewEnabled } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useOpenDirectChat, useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
@@ -115,6 +116,9 @@ export function ProfileView({
   // route that is not a room — resolving exactly as it always did.
   const resolveRoomSession = useRoomBoundSession();
   const openDirectChat = useOpenDirectChat();
+  // With the DM view on, Message is always the DM (DOR-3074): the agent's
+  // session in this room moved to its card, behind Show sessions.
+  const dmView = useDmViewEnabled();
 
   const ctx: ProfileRowsContext = {
     relationship,
@@ -151,7 +155,7 @@ export function ProfileView({
     // — a mention pill, the face beside a message, a roster row — arrives
     // through this one button, so naming the room's session here is what fixes
     // all of them at once.
-    const inRoom = await resolveRoomSession(target.projectPath);
+    const inRoom = dmView ? null : await resolveRoomSession(target.projectPath);
     if (inRoom !== null) {
       // The session id ALONE, no `dir` — the same shape the live lane's own
       // link uses. A room turn does not necessarily run in the agent's own

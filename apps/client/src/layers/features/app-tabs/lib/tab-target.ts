@@ -22,6 +22,12 @@ export interface TabTarget {
   dir: string | null;
   /** Whether a chat tab's href is a draft (`?draft=1`): a chat with no row on the server yet. */
   draft: boolean;
+  /**
+   * Whether a chat tab shows the working session behind an agent's DM
+   * (`?view=session`, DOR-3074). Present only when it does, so every other
+   * tab's target reads exactly as before.
+   */
+  sessionView?: true;
   /** The `?id=` room id for a channel tab, else `null`. */
   roomId: string | null;
   /**
@@ -90,6 +96,7 @@ export function parseTabHref(href: string): TabTarget {
       sessionId: read('session'),
       dir: read('dir'),
       draft: params.get('draft') === '1',
+      ...(params.get('view') === 'session' && { sessionView: true as const }),
     };
   }
   if (pathname === '/channels') {

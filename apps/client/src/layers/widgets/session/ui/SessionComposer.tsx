@@ -64,6 +64,12 @@ import {
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 
 interface SessionComposerProps {
+  /**
+   * Draw the box the way a room's is (DOR-3074): no status line under it and
+   * no rotating hints in it. Slash commands, files, the queue and Steer stay.
+   * The model, account and context live in the session view behind the DM.
+   */
+  asDirectMessage?: boolean;
   chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
@@ -154,6 +160,7 @@ function getPlaceholder(
  *   decides that a channel's does not.
  */
 export function SessionComposer({
+  asDirectMessage = false,
   chatInputRef,
   input,
   autocomplete,
@@ -556,7 +563,7 @@ export function SessionComposer({
   const rotatingPlaceholder = useRotatingPlaceholder({
     defaultText: defaultPlaceholder,
     hints: placeholderHints,
-    enabled: isIdle && input === '',
+    enabled: !asDirectMessage && isIdle && input === '',
   });
 
   // Whether the message box formats as you type (`ui.composer.richText`,
@@ -709,6 +716,7 @@ export function SessionComposer({
             agentColor={agentVisual.color}
             agentEmoji={agentVisual.emoji}
             agentPath={selectedCwd ?? undefined}
+            lineHidden={asDirectMessage}
           />
         </Conversation.Footer>
       }
@@ -773,7 +781,7 @@ export function SessionComposer({
             defaultPlaceholder
           ),
         placeholderOverlay:
-          isIdle && limitComposer.canSubmit ? (
+          !asDirectMessage && isIdle && limitComposer.canSubmit ? (
             <AnimatedPlaceholder
               text={rotatingPlaceholder.text}
               animationKey={rotatingPlaceholder.key}

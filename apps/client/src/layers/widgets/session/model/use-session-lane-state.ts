@@ -59,6 +59,12 @@ export interface SessionLaneInput {
   systemStatus?: SystemStatusState | null;
   /** What this session is doing, from the fleet-wide reading. */
   activity: SessionActivity | null;
+  /**
+   * Leave the turn's time and tokens out (DOR-3074): a chat drawn as a DM
+   * says it is working and nothing more, and drops the finished turn's summary.
+   * Both are session detail, there behind Show sessions.
+   */
+  quietNumbers?: boolean;
 }
 
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
@@ -144,7 +150,7 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
     return () => clearTimeout(timer);
   }, [showComplete]);
 
-  return deriveLaneState({
+  const state = deriveLaneState({
     capabilities: SESSION_CAPABILITIES,
     asks: input.asks ?? NO_ASKS,
     // Never from here: `SESSION_CAPABILITIES.streamHealth` is false, and the
@@ -178,4 +184,21 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
       lastTokens: formatTokens(lastTokensRef.current),
     },
   });
+  return input.quietNumbers ? withoutTurnNumbers(state) : state;
+}
+
+/** The lane with nothing to say. */
+const QUIET_LANE: LaneState = { kind: 'empty' };
+
+/**
+ * A DM's lane: "Working" while the agent works, without the clock and the
+ * token estimate, and no summary when it finishes (DOR-3074). Every other rung,
+ * a wait for the person included, is left exactly as it was.
+ *
+ * @param state - The lane as a session draws it.
+ */
+export function withoutTurnNumbers(state: LaneState): LaneState {
+  if (state.kind === 'turn-streaming') return { ...state, elapsed: '', tokens: '' };
+  if (state.kind === 'turn-complete') return QUIET_LANE;
+  return state;
 }

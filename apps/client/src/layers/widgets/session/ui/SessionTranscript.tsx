@@ -16,7 +16,7 @@
  *
  * @module widgets/session/ui/SessionTranscript
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
@@ -54,6 +54,7 @@ import {
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
 import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
+import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
@@ -162,6 +163,12 @@ interface SessionTranscriptProps {
    * Its pings are drawn where they landed. Absent for an ordinary chat.
    */
   directLog?: DirectChatLog;
+  /**
+   * Set while this chat reads as a direct message with one agent (DOR-3074):
+   * every reply wears that agent's face and name, and the person's own
+   * messages their name, the way a room draws them. Absent for a session.
+   */
+  directMessage?: DirectMessageSurface | null;
 }
 
 /**
@@ -197,6 +204,7 @@ export function SessionTranscript({
   landOnRow,
   foldFirstPrompt = false,
   directLog,
+  directMessage = null,
 }: SessionTranscriptProps) {
   // Row handlers keep one identity, so a row whose message did not change can
   // skip its render: `onRetry` alone used to change on every streamed word, and
@@ -279,18 +287,52 @@ export function SessionTranscript({
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const runtime = useSessionRuntime(sessionId);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
+  const dmAgent = directMessage?.agent ?? null;
+  // A DM names a message's time the way a room does (DOR-3074), and only a
+  // time that is true. History carries the server's own; a row with none shows
+  // none. The one exception is a message arriving LIVE in this window (the
+  // person's words on their way, a reply still being written): it has no
+  // server time yet, and the moment it arrived here is its time. Once the turn
+  // ends the transcript reloads, and the server's time replaces it.
+  const stampsLive = directMessage?.settled === true;
+  const [arrivedAt] = useState(() => new Map<string, string>());
+  const untimedAt = useCallback(
+    (message: ChatMessage): string | undefined => {
+      if (!stampsLive || message.timestamp || !message._streaming) return undefined;
+      const known = arrivedAt.get(message.id);
+      if (known) return known;
+      const now = new Date().toISOString();
+      arrivedAt.set(message.id, now);
+      return now;
+    },
+    [stampsLive, arrivedAt]
+  );
+  // A live row that has left the transcript (its turn ended and the history
+  // reloaded) forgets its arrival: live rows reuse ids from turn to turn, and
+  // the next turn's must be its own.
+  useEffect(() => {
+    const present = new Set(messages.map((message) => message.id));
+    for (const id of arrivedAt.keys()) {
+      if (!present.has(id)) arrivedAt.delete(id);
+    }
+  }, [messages, arrivedAt]);
+  const humanName = directMessage?.humanName ?? null;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
-      agent: currentAgent
-        ? {
-            id: currentAgent.id,
-            displayName: getAgentDisplayName(currentAgent),
-            ...resolveAgentVisual(currentAgent),
-          }
-        : null,
+      // A DM names the agent it is with, whatever folder is selected.
+      agent:
+        dmAgent ??
+        (currentAgent
+          ? {
+              id: currentAgent.id,
+              displayName: getAgentDisplayName(currentAgent),
+              ...resolveAgentVisual(currentAgent),
+            }
+          : null),
       runtime,
+      ...(humanName ? { humanName } : {}),
     }),
-    [currentAgent, runtime]
+    [currentAgent, runtime, dmAgent, humanName]
   );
 
   // The turn happening NOW, mirrored into a live region below. The feed itself
@@ -456,6 +498,7 @@ export function SessionTranscript({
           author={row.author}
           sessionId={sessionId}
           directRoomId={directLog?.roomId}
+          fallbackAt={untimedAt(message)}
           isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
@@ -491,6 +534,7 @@ export function SessionTranscript({
       foldedPromptIndex,
       sessionId,
       directLog?.roomId,
+      untimedAt,
       historyCount,
       isTextStreaming,
       activeToolCallId,

@@ -179,9 +179,11 @@ test.describe('TestModeRuntime — mock browser tests', () => {
       });
     }
 
-    // Every virtualizer row is rendered (6 messages, overscan 5).
+    // Every virtualizer row is rendered (6 messages, overscan 5), plus the day
+    // divider now that log-backed history carries the time each message was sent.
+    await expect(chatPage.messageList.getByTestId('day-divider')).toHaveCount(1);
     const rows = chatPage.messageList.locator('[data-index]');
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(7);
 
     /** Viewport boxes of every rendered row, sorted by message index. */
     const collectBoxes = async () => {
