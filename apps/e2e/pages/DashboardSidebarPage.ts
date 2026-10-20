@@ -117,8 +117,13 @@ export class DashboardSidebarPage {
     options: { holdMs?: number; driftPx?: number } = {}
   ): Promise<void> {
     const { holdMs = 800, driftPx = 0 } = options;
-    const box = await target.boundingBox();
-    if (box === null) throw new Error('Cannot press an element with no box on screen');
+    // **On screen and still, before the finger lands.** A raw CDP touch goes
+    // to a point, not to an element, so a row scrolled out of view is pressed
+    // as empty space. A drifted press really scrolls the list, and on a list
+    // long enough (a neighbour's rooms make it longer) that carries the row
+    // past the top, so the next press on it opened nothing.
+    await target.scrollIntoViewIfNeeded();
+    const box = await this.stableBox(target, 'press target');
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
     const cdp = await this.page.context().newCDPSession(this.page);
