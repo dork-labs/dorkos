@@ -4675,6 +4675,10 @@ export const ServerConfigSchema = z
                 description:
                   'The projects this account may work in ("Only for client-app"), or null for any project (spec flow-multiproject §8). Change it with PUT /api/runtimes/claude-code/accounts/:id/only-projects, never by writing it back through PATCH /api/config. Absent on a server too old to report it',
               }),
+              noAutoMove: z.boolean().optional().openapi({
+                description:
+                  'True when DorkOS never moves a room agent to this account on its own (a person still may). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
+              }),
             })
           )
           .openapi({ description: 'The Claude accounts the operator has registered' }),

@@ -5,7 +5,6 @@
  */
 
 import { useState } from 'react';
-import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
@@ -56,7 +55,8 @@ import { useAccountIdentityGate } from '@/layers/entities/runtime';
 import { AccountColorControl } from './AccountColorControl';
 import { AccountUsageBars } from './AccountUsageBars';
 import { FoundAccountsGroup } from './FoundAccountsGroup';
-import { LimitToProjectsDialog, OnlyForLine, ProjectLimitsList } from './AccountProjectRules';
+import { ProjectLimitsList } from './AccountProjectRules';
+import { AccountRowRules, type AccountRule } from './AccountRowRules';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -480,7 +480,11 @@ export function ClaudeAccountsSection() {
           onChooseColor={(color) => chooseColor(account.path, color)}
           rule={
             account.id
-              ? { accountId: account.id, onlyProjects: account.onlyProjects ?? null }
+              ? {
+                  accountId: account.id,
+                  onlyProjects: account.onlyProjects ?? null,
+                  noAutoMove: account.noAutoMove === true,
+                }
               : null
           }
           disabled={updateConfig.isPending}
@@ -694,15 +698,15 @@ function AccountRow({
   onRemove?: () => void;
   onChooseColor: (color: string | null) => void;
   /**
-   * The account's project rule (spec `flow-multiproject` §8.5): its id and the
-   * projects it is kept to (null for any). Absent for a row nothing can name.
+   * The account's rules (spec `flow-multiproject` §8.5, Re-seat P0): its id,
+   * the projects it is kept to, and its automatic moves. Absent for a row
+   * nothing can name.
    */
-  rule?: { accountId: string; onlyProjects: readonly ProjectRef[] | null } | null;
+  rule?: AccountRule | null;
   disabled: boolean;
   /** The account's identity and usage, present only while the identity gate is open. */
   identity: { usage: AccountUsage | undefined } | null;
 }) {
-  const [limiting, setLimiting] = useState(false);
   return (
     <div className="flex items-start gap-3" data-testid="claude-account-row">
       {identity && (
@@ -724,30 +728,7 @@ function AccountRow({
         <p className="text-muted-foreground truncate font-mono text-xs" title={account.path}>
           {shortenHomePath(account.path)}
         </p>
-        {rule && (
-          <>
-            <OnlyForLine onlyProjects={rule.onlyProjects} />
-            <Button
-              variant="link"
-              size="sm"
-              className="text-muted-foreground h-auto px-0 py-0.5 text-xs"
-              onClick={() => setLimiting(true)}
-              disabled={disabled}
-            >
-              Limit to projects…
-            </Button>
-            {/* Mounted only while open, so it starts from the rule as it is now. */}
-            {limiting && (
-              <LimitToProjectsDialog
-                open
-                onOpenChange={setLimiting}
-                accountId={rule.accountId}
-                accountName={name}
-                current={rule.onlyProjects}
-              />
-            )}
-          </>
-        )}
+        {rule && <AccountRowRules name={name} rule={rule} disabled={disabled} />}
         {!account.isAccountRoot && (
           <p
             className="text-muted-foreground mt-1 flex items-start gap-1.5 text-xs"

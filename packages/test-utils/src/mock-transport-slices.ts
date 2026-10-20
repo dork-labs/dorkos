@@ -5,7 +5,8 @@
  * pause or resume succeeds, held connected-app actions, where every cancel
  * succeeds, sign-in landing pages, where no landing is held, a canvas
  * document's route controls, where no document declares a route, a space's
- * docs, where there are none, and signed-in devices, where there are none.
+ * docs, where there are none, signed-in devices, where there are none, and an
+ * account's automatic moves, where every change succeeds.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -37,7 +38,8 @@ type SliceMethods =
   | 'resolveDocLink'
   | 'listSignedInDevices'
   | 'signOutDevice'
-  | 'signOutEverywhereElse';
+  | 'signOutEverywhereElse'
+  | 'setAccountNoAutoMove';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -81,5 +83,8 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     revokeCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
     getDocIndex: vi.fn().mockResolvedValue({ root: '/', docs: [], truncated: false }),
     resolveDocLink: vi.fn().mockResolvedValue({ doc: null, complete: true }),
+    setAccountNoAutoMove: vi
+      .fn()
+      .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
   };
 }

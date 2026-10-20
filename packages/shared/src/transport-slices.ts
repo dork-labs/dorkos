@@ -4,7 +4,7 @@ import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.j
  * community connections, remote communities, commitments, heartbeats, the first
  * run, message history, held connected-app actions, a hub's linked computers,
  * a canvas document's route controls, a space's docs, a person's signed-in
- * devices), joined here so `transport.ts` extends one name. Nothing consuming
+ * devices, an account's automatic moves), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -27,6 +27,7 @@ import type { SignInLandingTransport } from './transport-sign-in-landing.js';
 import type { CanvasDocRouteTransport } from './transport-canvas-doc-routes.js';
 import type { SignedInDevicesTransport } from './signed-in-devices.js';
 import type { DocLinksTransport } from './transport-doc-links.js';
+import type { AccountAutoMoveTransport } from './transport-account-auto-move.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -50,4 +51,5 @@ export interface TransportSlices
     SignInLandingTransport,
     CanvasDocRouteTransport,
     SignedInDevicesTransport,
-    DocLinksTransport {}
+    DocLinksTransport,
+    AccountAutoMoveTransport {}

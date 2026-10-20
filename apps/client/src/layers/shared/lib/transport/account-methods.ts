@@ -1,8 +1,9 @@
 /**
  * Account Transport methods (spec `claude-account-ui` §6.0, §6.9): how much of
  * each account is used, carrying a session whose account ran out over to
- * another one, the Claude account folders found on this computer, and which
- * accounts may work in which projects (spec `flow-multiproject` §8.6).
+ * another one, the Claude account folders found on this computer, which
+ * accounts may work in which projects (spec `flow-multiproject` §8.6), and
+ * which accounts agents are kept off in automatic moves (Re-seat P0).
  *
  * Every refusal rejects through {@link fetchJSON}'s error, which carries the
  * server's message and the HTTP `status`: the picker and the banner show that
@@ -18,6 +19,7 @@ import type {
 } from '@dorkos/shared/account-usage';
 import type {
   AccountEligibilityResponse,
+  NoAutoMove,
   OnlyProjectsResponse,
 } from '@dorkos/shared/project-schemas';
 import { fetchJSON, fetchNoContent } from './http-client';
@@ -125,6 +127,14 @@ export function createAccountMethods(baseUrl: string) {
         baseUrl,
         `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/only-projects`,
         { method: 'PUT', body: JSON.stringify({ projects }) }
+      );
+    },
+
+    setAccountNoAutoMove(accountId: string, noAutoMove: boolean): Promise<NoAutoMove> {
+      return fetchJSON<NoAutoMove>(
+        baseUrl,
+        `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/no-auto-move`,
+        { method: 'PUT', body: JSON.stringify({ noAutoMove }) }
       );
     },
   };

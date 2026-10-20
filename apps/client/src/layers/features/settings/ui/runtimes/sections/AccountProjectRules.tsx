@@ -43,13 +43,17 @@ function joinNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** The server's sentence for a refused write, else a plain fallback. */
-function messageOf(err: unknown): string {
+/**
+ * The server's sentence for a refused write, else a plain fallback.
+ *
+ * @param err - What the write rejected with.
+ */
+export function messageOf(err: unknown): string {
   return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
 }
 
 /** After a rule changes: the config block, every eligibility read and the pickers. */
-function useInvalidateRules() {
+export function useInvalidateRules() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: configKeys.all });

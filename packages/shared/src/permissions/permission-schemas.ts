@@ -195,8 +195,9 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
   /**
    * Whether one Claude account is kept out of automatic moves (its
    * `noAutoMove` flag): `before` and `after` are `'on'` (kept out) or `null`
-   * (may be picked). Recorded for everyone; only the upgrade that keeps an
-   * account out writes it, and its Undo lets agents move there again.
+   * (may be picked). Recorded for everyone, by the upgrade that keeps an
+   * account out and by the Settings switch (`PUT /api/runtimes/claude-code/
+   * accounts/:id/no-auto-move`); its Undo flips the flag back.
    */
   z.object({
     kind: z.literal('account'),

@@ -380,6 +380,9 @@ export function createPlaygroundTransport(): Transport {
         return async () => ({ project: null, allow: null, accounts: [] });
       }
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
+      if (prop === 'setAccountNoAutoMove') {
+        return async (_id: string, noAutoMove: boolean) => ({ noAutoMove });
+      }
       // The DorkOS model form (the first run's "Other service" row) reads what
       // is saved before it draws; nothing saved and no credits is the honest
       // answer, and `null` is neither.

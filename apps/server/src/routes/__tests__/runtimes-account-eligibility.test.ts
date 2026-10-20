@@ -406,6 +406,98 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
   });
 });
 
+describe('PUT /api/runtimes/claude-code/accounts/:id/no-auto-move', () => {
+  const put = (id: string) =>
+    request(server).put(`/api/runtimes/claude-code/accounts/${id}/no-auto-move`);
+  const rows = () => claudeCode().accounts as Record<string, unknown>[];
+
+  // Purpose: a person's switch writes the flag on the one row, keeps every
+  // other field, and lands in the permission history the Undo reads.
+  it("keeps agents off a registry row, keeping the row's other fields, and records it", async () => {
+    const res = await put('work').send({ noAutoMove: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ noAutoMove: true });
+    expect(rows()[0]).toEqual({
+      id: 'work',
+      path: '/claude-work',
+      label: 'Work',
+      onlyProjects: null,
+      noAutoMove: true,
+    });
+    expect(rows()[1]).not.toHaveProperty('noAutoMove');
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'permissions',
+        eventType: 'permission.changed',
+        actorLabel: 'Someone on this computer',
+        metadata: expect.objectContaining({
+          surface: 'settings',
+          attribution: 'local-trust',
+          changes: [
+            {
+              target: { kind: 'default' },
+              key: { kind: 'account', accountId: 'work', accountName: 'Work' },
+              before: null,
+              after: 'on',
+            },
+          ],
+        }),
+      })
+    );
+  });
+
+  it('lets agents back with false, recording the change', async () => {
+    rows()[0].noAutoMove = true;
+    const res = await put('work').send({ noAutoMove: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ noAutoMove: false });
+    expect(rows()[0].noAutoMove).toBe(false);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          changes: [expect.objectContaining({ before: 'on', after: null })],
+        }),
+      })
+    );
+  });
+
+  it('records no history line when the flag already says so', async () => {
+    const res = await put('work').send({ noAutoMove: false });
+    expect(res.status).toBe(200);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown account, and for Main, which has no row', async () => {
+    for (const id of ['ghost', 'default']) {
+      const res = await put(id).send({ noAutoMove: true });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('unknown_account');
+    }
+    expect(state.sets).toBe(0);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 for a body without a boolean and writes nothing', async () => {
+    const res = await put('work').send({ noAutoMove: 'yes' });
+    expect(res.status).toBe(400);
+    expect(state.sets).toBe(0);
+  });
+
+  it('refuses an agent with 403 and writes nothing', async () => {
+    const res = await put('work')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ noAutoMove: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('operator_only_config');
+    expect(state.sets).toBe(0);
+    expect(rows()[0]).not.toHaveProperty('noAutoMove');
+    expect(emit).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/runtimes/claude-code/project-accounts/without-credits', () => {
   afterEach(() => vi.restoreAllMocks());
 

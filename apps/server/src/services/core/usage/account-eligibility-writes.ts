@@ -11,9 +11,9 @@
  * back, as `planClaudeAccountWrite` does for accounts. A registry row is edited
  * by id with every other field kept, so a field a newer flow wrote survives.
  *
- * Only a person reaches these: the two `PUT /api/runtimes/claude-code/...`
- * routes sit behind the person bar, the `noAutoMove` write is reached only by
- * a permission-history Undo (whose route clears the person bar), and no
+ * Only a person reaches these: the `PUT /api/runtimes/claude-code/...` routes
+ * sit behind the person bar, the `noAutoMove` write is otherwise reached only
+ * by a permission-history Undo (whose route clears the person bar), and no
  * extension `ctx` member calls them (invariant 9).
  *
  * @module services/core/usage/account-eligibility-writes
