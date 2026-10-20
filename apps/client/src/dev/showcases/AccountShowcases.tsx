@@ -36,8 +36,12 @@ function refusal(code: string, message: string) {
  * cannot drift into sentences DorkOS no longer says.
  */
 const HANDLE_REFUSALS: { code: string; server: string }[] = [
-  { code: 'HANDLE_TAKEN', server: "@scout is already somebody else's handle." },
-  { code: 'HANDLE_RESERVED', server: '@scout is reserved.' },
+  { code: 'HANDLE_TAKEN', server: '@scout is taken. Pick a different one.' },
+  { code: 'HANDLE_RESERVED', server: '@scout is reserved for DorkOS. Pick a different one.' },
+  {
+    code: 'HANDLE_LOOKALIKE',
+    server: '@sc0ut looks too much like @scout. Pick a different one.',
+  },
   { code: 'INVALID_HANDLE', server: 'A handle is all lowercase.' },
 ];
 

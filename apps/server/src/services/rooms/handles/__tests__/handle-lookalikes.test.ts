@@ -8,7 +8,12 @@ import { agents, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AuthorRegistry } from '../../author-registry.js';
 import { ensureHandles } from '../ensure-handles.js';
-import { CONFUSABLE_PROTOTYPES, CONFUSABLES_VERSION, handleSkeleton } from '../handle-skeleton.js';
+import {
+  CONFUSABLE_PROTOTYPES,
+  CONFUSABLES_VERSION,
+  DORKOS_EXTRA_FOLDS,
+  handleSkeleton,
+} from '../handle-skeleton.js';
 
 const ANA_PATH = '/agents/ana';
 const BO_PATH = '/agents/bo';
@@ -36,11 +41,22 @@ describe('handleSkeleton', () => {
     expect(CONFUSABLE_PROTOTYPES).toEqual({ '0': 'O', '1': 'l', m: 'rn' });
   });
 
+  it('keeps DorkOS’s own folds in their own table', () => {
+    expect(DORKOS_EXTRA_FOLDS).toEqual({ i: 'l', '0': 'o', '.': '-', _: '-' });
+  });
+
   it.each([
     ['d0rian', 'dorian'],
     ['rnia', 'mia'],
     ['ana1', 'anal'],
     ['D0RIAN', 'dorian'],
+    // DORKOS_EXTRA_FOLDS: `1`, `i`, `l` and `I` together; `.`, `_`, `-` together.
+    ['dor1an', 'dorian'],
+    ['adm1n', 'admin'],
+    ['wr1ter-ops', 'writer-ops'],
+    ['dorkos_pm', 'dorkos-pm'],
+    ['dorkos.pm', 'dorkos-pm'],
+    ['writer_ops', 'writer.ops'],
   ])('reads %s as %s', (a, b) => {
     expect(handleSkeleton(a)).toBe(handleSkeleton(b));
   });
@@ -77,6 +93,53 @@ describe('claiming a look-alike handle', () => {
       })
     );
     expect(registry.getById(ana.id)?.handle).toBe('ana');
+  });
+
+  it.each([
+    ['writer-ops', ['wr1ter-ops', 'writer_ops', 'writer.ops', 'wrlter-ops']],
+    ['dorkos-pm', ['dorkos_pm', 'dorkos.pm']],
+    ['dorian', ['dor1an', 'dorlan']],
+    ['admin', ['adm1n']],
+  ])('refuses every look-alike of a live @%s', (live, attempts) => {
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_BO', BO_PATH, 'bo');
+    const ana = registry.resolveAgent(ANA_PATH, 'Ana');
+    const bo = registry.resolveAgent(BO_PATH, 'Bo');
+    registry.setHandle(ana.id, live);
+
+    for (const wanted of attempts) {
+      expect(() => registry.setHandle(bo.id, wanted), wanted).toThrow(
+        expect.objectContaining({ code: 'HANDLE_LOOKALIKE' })
+      );
+    }
+    expect(registry.getById(bo.id)?.handle).toBe('bo');
+  });
+
+  it('says whether a held handle is a DorkOS word or somebody’s old one', () => {
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_BO', BO_PATH, 'bo');
+    const ana = registry.resolveAgent(ANA_PATH, 'Ana');
+    const bo = registry.resolveAgent(BO_PATH, 'Bo');
+    registry.setHandle(ana.id, 'ana-pm');
+
+    expect(() => registry.setHandle(bo.id, 'room')).toThrow(
+      expect.objectContaining({
+        code: 'HANDLE_RESERVED',
+        message: '@room is reserved for DorkOS. Pick a different one.',
+      })
+    );
+    expect(() => registry.setHandle(bo.id, 'ana')).toThrow(
+      expect.objectContaining({
+        code: 'HANDLE_RESERVED',
+        message: '@ana used to belong to someone else and stays theirs. Pick a different one.',
+      })
+    );
+    expect(() => registry.setHandle(bo.id, 'ana-pm')).toThrow(
+      expect.objectContaining({
+        code: 'HANDLE_TAKEN',
+        message: '@ana-pm is taken. Pick a different one.',
+      })
+    );
   });
 
   it('refuses a person a handle that reads as an agent’s', () => {

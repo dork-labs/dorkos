@@ -201,7 +201,7 @@ export class AuthorHandleStore {
       .where(and(sql`lower(${authors.handle}) = ${wanted}`, ne(authors.id, claimant.id)))
       .get();
     if (live) {
-      throw new RoomError('HANDLE_TAKEN', `@${wanted} is already somebody else's handle.`);
+      throw new RoomError('HANDLE_TAKEN', `@${wanted} is taken. Pick a different one.`);
     }
 
     const lineage = this.lineageOf(claimant);
@@ -210,10 +210,16 @@ export class AuthorHandleStore {
       .from(handleTombstones)
       .where(sql`lower(${handleTombstones.handle}) = ${wanted}`)
       .all();
-    if (tombstoned.some((row) => !lineage.has(row.authorId))) {
+    const owners = tombstoned.filter((row) => !lineage.has(row.authorId));
+    if (owners.length > 0) {
+      // A seeded word (`room`, `everyone`, `dorkos`) is held by the system
+      // author; anything else is a handle somebody gave up. Two sentences,
+      // because "you used it before" reads oddly for `room` (designer, 18:43).
       throw new RoomError(
         'HANDLE_RESERVED',
-        `@${wanted} belonged to somebody else and stays reserved to them.`
+        owners.some((row) => this.isSystemAuthor(row.authorId))
+          ? `@${wanted} is reserved for DorkOS. Pick a different one.`
+          : `@${wanted} used to belong to someone else and stays theirs. Pick a different one.`
       );
     }
 
@@ -224,6 +230,14 @@ export class AuthorHandleStore {
         `@${wanted} looks too much like @${lookalike}. Pick a different one.`
       );
     }
+  }
+
+  /** Whether an author row is the system author, which holds the seeded words. */
+  private isSystemAuthor(authorId: string): boolean {
+    return (
+      this.db.select({ kind: authors.kind }).from(authors).where(eq(authors.id, authorId)).get()
+        ?.kind === 'system'
+    );
   }
 
   /**

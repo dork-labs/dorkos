@@ -16,7 +16,9 @@
  *
  * The skeleton follows TR39 §4 (map each character to its prototype), then
  * folds case, because the standard's prototype for `0` is a capital `O` while a
- * handle is always lowercase.
+ * handle is always lowercase. Then {@link DORKOS_EXTRA_FOLDS} adds the few
+ * look-alikes TR39 leaves apart, kept in their own named table so the
+ * standard's rows stay generated.
  *
  * @module server/services/rooms/handles/handle-skeleton
  */
@@ -36,6 +38,25 @@ export const CONFUSABLE_PROTOTYPES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Look-alikes TR39 does not join, folded on top of it (DOR-3156, Security and
+ * PM 18:43). Hand-written on purpose, and only here.
+ *
+ * - `i` with `l` (and so with `1`, which TR39 already maps to `l`, and `I`,
+ *   once case is folded): in most fonts `dor1an`, `dorian` and `dorlan` read
+ *   the same, and TR39 maps `1` to `l` but not to `i`.
+ * - `0` with `o`: TR39 maps `0` to capital `O`, which case folding already
+ *   joins to `o`; stated here so the pair is visible beside the others.
+ * - `.` and `_` with `-`: `@writer_ops`, `@writer.ops` and `@writer-ops` are
+ *   one address to a reader, and to a model writing a mention from memory.
+ */
+export const DORKOS_EXTRA_FOLDS: Readonly<Record<string, string>> = {
+  i: 'l',
+  '0': 'o',
+  '.': '-',
+  _: '-',
+};
+
+/**
  * The look-alike key of a handle: two handles with the same skeleton read as
  * the same address.
  *
@@ -44,5 +65,7 @@ export const CONFUSABLE_PROTOTYPES: Readonly<Record<string, string>> = {
 export function handleSkeleton(handle: string): string {
   let mapped = '';
   for (const char of handle.toLowerCase()) mapped += CONFUSABLE_PROTOTYPES[char] ?? char;
-  return mapped.toLowerCase();
+  let folded = '';
+  for (const char of mapped.toLowerCase()) folded += DORKOS_EXTRA_FOLDS[char] ?? char;
+  return folded;
 }

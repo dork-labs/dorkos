@@ -64,6 +64,8 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
+import { ActivityService } from '../../services/activity/activity-service.js';
+import { setHandleRenameActivity } from '../../services/rooms/handles/rename-author-handle.js';
 
 const admission = new MainRequestAdmission();
 const testServer = listeningServer(composedListener(admission));
@@ -160,6 +162,33 @@ describe('a person renaming an agent (DOR-3156)', () => {
 
   afterEach(() => {
     resetAgentIdentityService();
+    setHandleRenameActivity(undefined);
+  });
+
+  it('records one Activity row per rename: who, which agent, old and new handle', async () => {
+    const activity = new ActivityService(db);
+    setHandleRenameActivity(activity);
+    const { me, ana } = await channelWithAgents('History');
+
+    await request(testServer).patch(`/api/rooms/authors/${ana}/handle`).send({ handle: 'ana-pm' });
+    // A person renaming themselves is not an agent rename, so it adds no row.
+    await request(testServer).patch(`/api/rooms/authors/${me}/handle`).send({ handle: 'dorian' });
+
+    await vi.waitFor(async () => {
+      const { items } = await activity.list({ limit: 10 });
+      const rows = items.filter((row) => row.eventType === 'agent.handle_changed');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        actorType: 'user',
+        actorId: me,
+        category: 'agent',
+        resourceType: 'agent',
+        resourceId: 'ULID_ANA',
+        resourceLabel: 'Ana',
+        summary: 'The operator renamed Ana from @ana to @ana-pm.',
+        metadata: { authorId: ana, from: 'ana', to: 'ana-pm' },
+      });
+    });
   });
 
   it('renames the agent and writes one quiet line in each room it is in', async () => {

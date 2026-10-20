@@ -63,7 +63,7 @@ function saveButtonBeside(field: HTMLElement): HTMLElement {
 
 afterEach(cleanup);
 
-describe('ProfilePanel — the handle’s three refusals', () => {
+describe('ProfilePanel — the handle’s refusals', () => {
   /** Drive one refusal through the form and return the sentence it showed. */
   async function messageFor(code: string, serverSays: string): Promise<string> {
     renderPanel(SELF, {
@@ -74,19 +74,29 @@ describe('ProfilePanel — the handle’s three refusals', () => {
     return note.textContent ?? '';
   }
 
-  it('says three different things for HANDLE_TAKEN, HANDLE_RESERVED and INVALID_HANDLE', async () => {
-    const taken = await messageFor('HANDLE_TAKEN', '@taken is already somebody else’s handle.');
+  it('says a different thing for each handle refusal', async () => {
+    const taken = await messageFor('HANDLE_TAKEN', '@taken is taken. Pick a different one.');
     cleanup();
-    const reserved = await messageFor('HANDLE_RESERVED', '@taken is reserved.');
+    const reserved = await messageFor(
+      'HANDLE_RESERVED',
+      '@taken is reserved for DorkOS. Pick a different one.'
+    );
+    cleanup();
+    const lookalike = await messageFor(
+      'HANDLE_LOOKALIKE',
+      '@taken looks too much like @t4ken. Pick a different one.'
+    );
     cleanup();
     const invalid = await messageFor('INVALID_HANDLE', 'A handle is all lowercase.');
 
-    expect(new Set([taken, reserved, invalid]).size).toBe(3);
+    expect(new Set([taken, reserved, lookalike, invalid]).size).toBe(4);
     // And each one has to say something about ITS refusal, not just differ.
-    expect(taken).toMatch(/someone else/i);
-    expect(reserved).toMatch(/spoken for/i);
-    // The server knows WHICH of five grammar rules broke; the form does not, so
-    // it passes that sentence through rather than inventing a vaguer one.
+    expect(taken).toBe('@taken is taken. Pick a different one.');
+    // The server knows whether a held handle is DorkOS's word or somebody's old
+    // one, whose handle a look-alike resembles, and which of five grammar rules
+    // broke; the form does not, so it passes those sentences through.
+    expect(reserved).toBe('@taken is reserved for DorkOS. Pick a different one.');
+    expect(lookalike).toContain('looks too much like @t4ken');
     expect(invalid).toContain('A handle is all lowercase.');
   });
 

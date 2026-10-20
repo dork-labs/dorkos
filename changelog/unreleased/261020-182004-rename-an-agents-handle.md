@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(rooms): a person can change an agent's @handle (DOR-3156)"
+  - 'fix(rooms): handle look-alike folds, a history row, and clearer refusals (DOR-3156)'
 ---
 
 ### Added
@@ -9,4 +10,4 @@ covers:
 
 ### Changed
 
-- DorkOS now turns down a handle that looks like someone else's, like `@d0rian` next to `@dorian`, and `@room` joins the reserved words.
+- DorkOS now turns down a handle that looks like someone else's, like `@d0rian` or `@dor1an` next to `@dorian`, or `@writer_ops` next to `@writer-ops`, and `@room` joins the reserved words.

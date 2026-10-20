@@ -213,9 +213,7 @@ describe('IdentityPromptCard', () => {
 
     fireEvent.click(screen.getByTestId('confirm-identity'));
 
-    expect(
-      await screen.findByText('@kai belongs to someone else. Pick a different one.')
-    ).toBeTruthy();
+    expect(await screen.findByText('@kai is taken. Pick a different one.')).toBeTruthy();
     expect(screen.getByTestId('confirm-identity').textContent).toBe('Try again');
     expect(screen.getByTestId('identity-prompt-card')).toBeTruthy();
     expect(dismissalWrites()).toHaveLength(0);
