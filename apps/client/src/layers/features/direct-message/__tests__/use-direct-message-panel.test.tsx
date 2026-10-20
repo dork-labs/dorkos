@@ -33,6 +33,7 @@ vi.mock('@/layers/entities/session', () => ({
 }));
 vi.mock('@/layers/entities/room', () => ({
   routeShowsRoom: (pathname: string) => pathname === '/channels' || pathname === '/',
+  useRoomWorking: (_roomId: string, listed: number | undefined) => listed ?? 0,
   useRooms: ({ enabled }: { enabled: boolean }) => {
     state.roomsAsked.push(enabled);
     return { data: enabled ? state.rooms : undefined };

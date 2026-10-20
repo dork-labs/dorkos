@@ -8,7 +8,7 @@ import { SESSION_ROUTE } from '@dorkos/shared/session-link';
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
 import { useDmViewEnabled, useShowSessions } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { routeShowsRoom, useRooms } from '@/layers/entities/room';
+import { routeShowsRoom, useRooms, useRoomWorking } from '@/layers/entities/room';
 import { useSessionId } from '@/layers/entities/session';
 import { groupDmMembers, isGroupDm, type GroupDmMember } from '../lib/group-dm';
 import { useDirectMessageView } from './use-direct-message-view';
@@ -65,6 +65,8 @@ export function useDirectMessagePanel(): DirectMessagePanel | null {
   const group = room !== undefined && isGroupDm(room) ? room : undefined;
   const { data: fleet } = useMeshAgentPaths({ enabled: group !== undefined });
   const fleetAgents = fleet?.agents;
+  // Live presence, not the list's snapshot: it is what says a turn has ended.
+  const working = useRoomWorking(group?.id ?? '', group?.working) > 0;
   const chat = view.mode === 'dm' ? view.chat : null;
 
   return useMemo<DirectMessagePanel | null>(() => {
@@ -81,10 +83,10 @@ export function useDirectMessagePanel(): DirectMessagePanel | null {
         kind: 'group',
         roomId: group.id,
         members: groupDmMembers(group, fleetAgents),
-        working: (group.working ?? 0) > 0,
+        working,
         showSessions,
       };
     }
     return null;
-  }, [onSession, chat, routeSessionId, showSessions, group, fleetAgents]);
+  }, [onSession, chat, routeSessionId, showSessions, group, fleetAgents, working]);
 }

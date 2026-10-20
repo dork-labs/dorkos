@@ -3,7 +3,8 @@
  *
  * @module features/chat/model/stream/use-session-readout
  */
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { QUERY_TIMING } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import type { ChatMessage } from '../chat-types';
@@ -23,7 +24,8 @@ const NO_MESSAGES: readonly ChatMessage[] = [];
 
 /**
  * Read the newest page of a session that is not on screen, and read it again
- * every few seconds while `polling` holds.
+ * every few seconds while `polling` holds, and once more when it stops, so a
+ * turn's last steps arrive after the room says nobody is working.
  *
  * For a surface that only looks at another session's work, the Work tab in a
  * group DM: it binds no stream and writes nothing to the chat store, so the
@@ -34,6 +36,15 @@ const NO_MESSAGES: readonly ChatMessage[] = [];
  */
 export function useSessionReadout(sessionId: string | null, polling: boolean): SessionReadout {
   const transport = useTransport();
+  const queryClient = useQueryClient();
+  const wasPolling = useRef(polling);
+  useEffect(() => {
+    const stopped = wasPolling.current && !polling;
+    wasPolling.current = polling;
+    if (stopped && sessionId !== null) {
+      void queryClient.invalidateQueries({ queryKey: ['session-readout', sessionId] });
+    }
+  }, [polling, sessionId, queryClient]);
   const query = useQuery({
     queryKey: ['session-readout', sessionId],
     queryFn: async () => mapHistoryMessages((await transport.getMessages(sessionId!)).messages),

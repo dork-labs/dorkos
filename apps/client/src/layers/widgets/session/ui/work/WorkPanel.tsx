@@ -3,18 +3,22 @@
  *
  * @module widgets/session/ui/work/WorkPanel
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { toSession } from '@/layers/shared/lib';
 import { useAppStore, useSafeNavigate } from '@/layers/shared/model';
-import { useSessionChatStatus, useSessionMessages } from '@/layers/entities/session';
-import { useRoomBoundSession } from '@/layers/entities/room';
+import {
+  useSessionChatState,
+  useSessionRenderedStatus,
+  useSessionStreamState,
+} from '@/layers/entities/session';
+import { useRoomSessions } from '@/layers/entities/room';
 import {
   useDirectMessageAgent,
   useDirectMessagePanel,
   useSessionViewLinks,
   type GroupDmMember,
 } from '@/layers/features/direct-message';
-import { useSessionReadout } from '@/layers/features/chat';
+import { selectRenderedMessages, useSessionReadout } from '@/layers/features/chat';
 import { WorkView } from './WorkView';
 
 /**
@@ -38,6 +42,7 @@ export function WorkPanel() {
   if (panel?.kind === 'group') {
     return (
       <GroupWork
+        roomId={panel.roomId}
         members={panel.members}
         working={panel.working}
         showSessions={panel.showSessions}
@@ -61,8 +66,15 @@ function DirectWork({
   agentPath: string;
   showSessions: boolean;
 }) {
-  const messages = useSessionMessages(sessionId);
-  const working = useSessionChatStatus(sessionId) === 'streaming';
+  // The very list the chat itself draws: the live stream once it has caught
+  // up, the history read before that. So a turn running now is here as it runs.
+  const streamState = useSessionStreamState(sessionId);
+  const { messages: legacyMessages } = useSessionChatState(sessionId);
+  const messages = useMemo(
+    () => selectRenderedMessages(streamState, legacyMessages),
+    [streamState, legacyMessages]
+  );
+  const working = useSessionRenderedStatus(sessionId) === 'streaming';
   const { name } = useDirectMessageAgent(agentPath);
   const { openSessionView } = useSessionViewLinks();
   return (
@@ -80,39 +92,38 @@ function DirectWork({
 /**
  * A group DM: the session the picked member works in there.
  *
- * Which session that is moves after every turn, so it is asked again each
- * time the member changes. While anyone in the DM is working, the steps are
- * read again every few seconds.
+ * Which session that is moves after every turn, so the room's bindings are
+ * read again each time a turn starts or ends, and the steps are read again
+ * every few seconds while anyone in the DM is working.
  */
 function GroupWork({
+  roomId,
   members,
   working,
   showSessions,
 }: {
+  roomId: string;
   members: readonly GroupDmMember[];
   working: boolean;
   showSessions: boolean;
 }) {
   const picked = useAppStore((s) => s.explicitAgentPath);
   const member = members.find((candidate) => candidate.agentPath === picked) ?? null;
-  const resolve = useRoomBoundSession();
-  // The answer for one member: their session here, or `null` for none yet.
-  const [found, setFound] = useState<{ agentPath: string; sessionId: string | null } | null>(null);
-  const memberPath = member?.agentPath ?? null;
-
+  const bindings = useRoomSessions(roomId, { enabled: member !== null });
+  const { refetch } = bindings;
+  // A turn starting or ending is when a binding can move.
+  const wasWorking = useRef(working);
   useEffect(() => {
-    if (memberPath === null) return;
-    let current = true;
-    void resolve(memberPath).then((sessionId) => {
-      if (current) setFound({ agentPath: memberPath, sessionId });
-    });
-    return () => {
-      current = false;
-    };
-  }, [memberPath, resolve]);
+    if (wasWorking.current === working) return;
+    wasWorking.current = working;
+    void refetch();
+  }, [working, refetch]);
 
-  const sessionId = found !== null && found.agentPath === memberPath ? found.sessionId : null;
-  const asking = memberPath !== null && (found === null || found.agentPath !== memberPath);
+  const sessionId =
+    member === null
+      ? null
+      : (bindings.data?.bindings.find((binding) => binding.authorId === member.authorId)
+          ?.sessionId ?? null);
   const readout = useSessionReadout(sessionId, working);
   const navigate = useSafeNavigate();
   const openSession = useCallback(() => {
@@ -121,9 +132,9 @@ function GroupWork({
 
   let notice: string | null = null;
   if (member === null) notice = 'Pick a member above.';
-  else if (asking || readout.isLoading) notice = 'Loading steps…';
+  else if (bindings.isError || readout.isError) notice = 'Couldn’t load these steps.';
+  else if (bindings.isPending || readout.isLoading) notice = 'Loading steps…';
   else if (sessionId === null) notice = `${member.displayName} hasn’t worked in this DM yet.`;
-  else if (readout.isError) notice = 'Couldn’t load these steps.';
 
   return (
     <WorkView
