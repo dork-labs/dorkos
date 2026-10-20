@@ -206,7 +206,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // effort; from the keyboard it is one Space away, and the reflex of lifting
     // a row and putting it straight back down should cost the server nothing.
     if (op.kind === 'none') return;
-    update((prev) => resolveSidebarDrop(prev, drag, drop, latestHasDirectMessage.current));
+    update((prev) => resolveSidebarDrop(prev, drag, drop, latestHasDirectMessage.read()));
 
     // **A keyboard drop that relocates the row has to hand the keyboard back**
     // (DOR-1790). The row is about to be unmounted and drawn again under a new
