@@ -46,7 +46,8 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { openSseStream } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { agents, auditEvents, type Db } from '@dorkos/db';
+import { agents, auditEvents, roomEntries, type Db } from '@dorkos/db';
+import { and, eq } from 'drizzle-orm';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { scriptedRunner } from '../../services/rooms/__tests__/room-test-harness.js';
@@ -64,6 +65,7 @@ import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 import { matchWifiRefusedRoute } from '../../services/core/auth/sessions/wifi-level.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { RoomTurnRequest } from '../../services/rooms/room-turn-port.js';
 import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
 import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
@@ -187,6 +189,7 @@ beforeEach(async () => {
       {
         before: async (c, next) => {
           if (signedInUser) c.set('user', signedInUser as never);
+          if (c.req.header('x-test-via') === 'wifi') markIngress(c.env.incoming, 'wifi');
           await next();
         },
       }
@@ -338,6 +341,37 @@ describe('replying as the person', () => {
     const res = await request(server).post(`${base()}/replies`).set(APP).send({ text: 'kept' });
     expect(res.status).toBe(201);
     expect(createEntryMarksStore(db).read(roomId, res.body.id)).toMatchObject({ outsider: true });
+  });
+
+  it('from Wi-Fi, keeps the hold to the default on the row beside the outsider mark', async () => {
+    const heldOf = (id: string) =>
+      db
+        .select({ held: roomEntries.heldToDefault })
+        .from(roomEntries)
+        .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, id)))
+        .get()?.held;
+    // Wi-Fi always asks for a password: a signed-in person who is in the room,
+    // on a thread started after they joined.
+    state.authEnabled = true;
+    signedInUser = { userId: 'acct-wifi', credential: 'cookie' };
+    const member = service.authorRegistry.human('acct-wifi').id;
+    service.addMember(roomId, personId, { authorId: member });
+    const thread = service.post(roomId, { authorId: anaId, text: 'Wed post' }).id;
+    const wifi = await request(server)
+      .post(`${base(roomId, thread)}/replies`)
+      .set(APP)
+      .set('x-test-via', 'wifi')
+      .send({ text: 'from the phone' });
+    expect(wifi.status).toBe(201);
+    expect(heldOf(wifi.body.id)).toBe(true);
+    expect(createEntryMarksStore(db).read(roomId, wifi.body.id)).toMatchObject({ outsider: true });
+
+    const here = await request(server)
+      .post(`${base(roomId, thread)}/replies`)
+      .set(APP)
+      .send({ text: 'at the computer' });
+    expect(here.status).toBe(201);
+    expect(heldOf(here.body.id)).toBe(false);
   });
 
   it('after a restart, a person post whose row carries the mark still wakes agents capped', () => {
