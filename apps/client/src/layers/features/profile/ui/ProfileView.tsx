@@ -212,11 +212,15 @@ export function ProfileView({
   // on. Gated on the same condition rather than waved through, because it is an
   // editor and `?profilePage=appearance` is an address anyone can type.
   const canEditAppearance = relationship === 'managed';
+  // The Handle page has a row on your own profile; on an agent you manage its
+  // control is the pencil beside the @handle, gated the same way.
+  const canEditHandle = relationship === 'managed';
   const reachable =
     page !== null &&
     (page === 'appearance'
       ? canEditAppearance
-      : groups.some((group) => group.rows.some((row) => row.kind === 'nav' && row.page === page)));
+      : (page === 'handle' && canEditHandle) ||
+        groups.some((group) => group.rows.some((row) => row.kind === 'nav' && row.page === page)));
   // What is actually on screen, which is what the frame is keyed on — a page
   // the gate turned away is the root, and must animate and remount like one.
   const shown = reachable ? page : null;
@@ -289,6 +293,10 @@ export function ProfileView({
                 }
                 actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
                 runningChats={runningChats}
+                // An agent you manage: a person may rename it (DOR-3156).
+                onEditHandle={
+                  canEditHandle ? () => onPush({ kind: 'page', page: 'handle' }) : undefined
+                }
               />
               <ProfileRows member={member} ctx={ctx} onPush={onPush} viewerId={viewerId} />
             </div>

@@ -201,6 +201,40 @@ describe('the portrait, in one fixed order', () => {
     expect(screen.queryByRole('button', { name: 'Copy @handle' })).toBeNull();
   });
 
+  it('puts a pencil beside an agent’s @handle that opens the Handle page', async () => {
+    const onPush = vi.fn();
+    await renderProfile(MANAGED, { onPush });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change @handle' }));
+
+    expect(onPush).toHaveBeenCalledWith({ kind: 'page', page: 'handle' });
+    // The handle itself still copies.
+    expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
+  });
+
+  it('draws no pencil where the handle is not yours to change', async () => {
+    await renderProfile(OTHERS_AGENT);
+    expect(screen.queryByRole('button', { name: 'Change @handle' })).toBeNull();
+    cleanup();
+
+    await renderProfile(DORKBOT);
+    expect(screen.queryByRole('button', { name: 'Change @handle' })).toBeNull();
+  });
+
+  it('lets a link open an agent’s Handle page, since the pencil is its control', async () => {
+    await renderProfile(MANAGED, {
+      stack: { ...profileStack(MANAGED.id), entries: [{ kind: 'page', page: 'handle' }] },
+    });
+    expect(await screen.findByRole('heading', { name: 'Handle' })).toBeInTheDocument();
+    cleanup();
+
+    // Not on someone else's agent: the gate turns the page away.
+    await renderProfile(OTHERS_AGENT, {
+      stack: { ...profileStack(OTHERS_AGENT.id), entries: [{ kind: 'page', page: 'handle' }] },
+    });
+    expect(screen.queryByRole('heading', { name: 'Handle' })).toBeNull();
+  });
+
   it('copies the handle when you tap it, inline — no toast beside it', async () => {
     await renderProfile(MANAGED);
 
@@ -396,7 +430,6 @@ describe('the rows', () => {
     await openProfileFolds();
     expect(rowLabels()).toEqual([
       'about',
-      'handle',
       'runs-on',
       'level',
       'reports-to',

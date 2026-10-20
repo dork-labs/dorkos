@@ -138,9 +138,9 @@ describe('an agent you manage', () => {
       'Files',
     ]);
     expect(shape(groups)).toEqual([
+      // No Handle row: on an agent the pencil beside the @handle opens that
+      // page (DOR-3156), so the row would say the header twice.
       'About nav',
-      // A person may rename an agent they manage (DOR-3156).
-      'Handle nav',
       'Runs on pick',
       'Level nav',
       'Reports to pick',

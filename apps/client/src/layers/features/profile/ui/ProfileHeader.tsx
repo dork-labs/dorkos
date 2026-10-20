@@ -8,7 +8,7 @@
  * @module features/profile/ui/ProfileHeader
  */
 import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Pencil } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP, PRESS_MARK } from '@/layers/shared/ui';
@@ -46,11 +46,8 @@ export interface ProfileHeaderProps {
   actionsMenu?: ReactNode;
   /** How many of an agent's chats are mid-turn right now, for the status line. */
   runningChats?: number;
-  /**
-   * What stands where the `@handle` is drawn — the in-place handle editor, which
-   * ships in its own change. Omitted, the handle is the copy button.
-   */
-  handleSlot?: ReactNode;
+  /** Open the Handle page. Passed only where the viewer may rename this identity. */
+  onEditHandle?: () => void;
 }
 
 /**
@@ -70,7 +67,7 @@ export function ProfileHeader({
   onFaceActivate,
   actionsMenu,
   runningChats = 0,
-  handleSlot,
+  onEditHandle,
 }: ProfileHeaderProps) {
   const { copied, failed, copy } = useCopyFeedback();
   const status = profileStatusText(member, new Date(), runningChats);
@@ -150,22 +147,46 @@ export function ProfileHeader({
         )}
       </div>
 
-      {/* The handle editor's slot (its own PR); the copy button until then.
+      {/* The handle, which copies on tap, and beside it a quiet pencil that
+          opens the Handle page on an agent you manage (DOR-3156). The pencil
+          is absolutely placed so the handle stays optically centred; it
+          shows on hover and focus, and always where touch is the pointer.
           Absent rather than a bare `@` — an empty handle reaches nobody. */}
-      {handleSlot ??
-        (member.handle !== null && (
-          <button
-            type="button"
-            onClick={copyHandle}
-            aria-label={failed ? 'Couldn’t copy @handle. Try again' : 'Copy @handle'}
-            className={cn(
-              'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
-              failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {handleButtonLabel()}
-          </button>
-        ))}
+      {(member.handle !== null || onEditHandle) && (
+        <span className="group/handle relative inline-flex max-w-full items-center">
+          {member.handle !== null && (
+            <button
+              type="button"
+              onClick={copyHandle}
+              aria-label={failed ? 'Couldn’t copy @handle. Try again' : 'Copy @handle'}
+              className={cn(
+                'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
+                failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {handleButtonLabel()}
+            </button>
+          )}
+          {onEditHandle && (
+            <button
+              type="button"
+              onClick={onEditHandle}
+              aria-label={member.handle === null ? 'Add a handle' : 'Change @handle'}
+              // Focus comes back here when the Handle page is popped, as a
+              // nav row's does (`ProfileStack`).
+              data-profile-return="handle"
+              className={cn(
+                'focus-ring text-muted-foreground hover:text-foreground hover:bg-accent grid size-6 place-items-center rounded-md',
+                'opacity-0 transition-opacity duration-150 group-hover/handle:opacity-100 focus-visible:opacity-100',
+                'motion-reduce:transition-none pointer-coarse:size-11 pointer-coarse:opacity-100',
+                member.handle !== null && 'absolute top-1/2 left-full -translate-y-1/2'
+              )}
+            >
+              <Pencil aria-hidden className="size-3.5" />
+            </button>
+          )}
+        </span>
+      )}
 
       <p className="mt-1 flex max-w-full items-center gap-1.5 text-xs">
         <span
