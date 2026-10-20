@@ -28,7 +28,13 @@ import {
 import { clearQueuedMessages } from '../../session/queued-message-edits.js';
 import { resolveSessionCwdOrNull } from '../../session/resolution/resolve-read-cwd.js';
 import { resolveSettingsKey } from '../../session/resolution/session-settings-overlay.js';
+import { peekProjector } from '../../session/session-state-projector.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
+import type { PendingApprovalCard } from './approval-challenges.js';
+import { bumpSignCount, readApprovalKeys } from './approval-key-store.js';
+import { readRelayPin } from './pin-store.js';
+import { relayApprovableCard } from './relay-approvable.js';
+import { relayProtectedRoots } from './relay-protected-roots.js';
 import type { RelayRequestServerDeps } from './relay-request-server.js';
 import type { RelayAgent, RelaySessionFacts } from './relay-serves.js';
 
@@ -169,5 +175,36 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
       recordAudit(input);
     },
     owner: relayOwnerActor,
+
+    approvalKeys: () => readApprovalKeys(),
+    approvalPin: () => {
+      const pin = readRelayPin();
+      return pin
+        ? { computerId: pin.computerId, computerName: pin.computerName, hubOrigin: pin.hubOrigin }
+        : null;
+    },
+    pendingApproval: (sessionId, toolCallId): PendingApprovalCard | null => {
+      const card = peekProjector(sessionId)
+        ?.getPendingInteractions()
+        .find((pending) => pending.type === 'approval' && pending.id === toolCallId);
+      if (card?.type !== 'approval') return null;
+      return {
+        toolName: card.toolName,
+        input: card.input,
+        ...(card.displayName !== undefined ? { displayName: card.displayName } : {}),
+        ...(card.blockedPath !== undefined ? { blockedPath: card.blockedPath } : {}),
+      };
+    },
+    approvableCard: (card, cwd) =>
+      relayApprovableCard(card, { cwd, protectedRoots: relayProtectedRoots() }),
+    approveTool: async (sessionId, toolCallId, approved, options) =>
+      (await runtimeRegistry.resolveForSession(sessionId)).approveTool(
+        sessionId,
+        toolCallId,
+        approved,
+        options
+      ),
+    bumpSignCount: (credentialId, expected, signCount) =>
+      bumpSignCount(credentialId, expected, signCount),
   };
 }
