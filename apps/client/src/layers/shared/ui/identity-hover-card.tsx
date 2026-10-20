@@ -11,6 +11,12 @@ import { cn } from '@/layers/shared/lib/utils';
 import { useLongPress } from '../model';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
+import {
+  IdentityHoverCardAboutLines,
+  IdentityHoverCardActionRow,
+  type IdentityHoverCardAbout,
+  type IdentityHoverCardActions,
+} from './identity-hover-card-actions';
 import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
 
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
@@ -84,6 +90,27 @@ export interface IdentityHoverCardProps {
    * name, for one).
    */
   onViewProfile?: () => void;
+  /**
+   * The role and status lines under the name (DOR-3074). Omitted, the card
+   * draws exactly what it always did.
+   */
+  about?: IdentityHoverCardAbout;
+  /**
+   * The card's actions (DOR-3074): Message, Profile and a session. Handed, they
+   * replace the single "View profile" footer; omitted, that footer stays.
+   */
+  actions?: IdentityHoverCardActions;
+  /**
+   * Told whenever the card opens or closes, so a caller can wait to read what
+   * the card shows until somebody actually looks.
+   */
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Open the card on a click of the trigger too, for a trigger whose own click
+   * has nothing else to do (DOR-3074): an agent's face or name in a room. A
+   * keyboard keeps the trigger's own door; this is the pointer's and finger's.
+   */
+  openOnClick?: boolean;
   /** Extra classes for the popover content. */
   className?: string;
 }
@@ -176,6 +203,10 @@ function IdentityHoverCard({
   identity,
   children,
   onViewProfile,
+  about,
+  actions,
+  onOpenChange,
+  openOnClick = false,
   className,
 }: IdentityHoverCardProps) {
   const { kind, displayName, handle, color, emoji, imageUrl, origin, agent } = identity;
@@ -203,7 +234,14 @@ function IdentityHoverCard({
   // `document` (see the doc above), so Radix's own `DismissableLayer` closes
   // this card the normal way the moment a press lands outside it — including
   // a press on a different card's trigger.
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange]
+  );
   // Which pointer is currently down on the trigger, read back when the long
   // press timer fires. A `PointerEvent` isn't available inside the timer
   // callback itself, so this is captured at `pointerdown` time instead.
@@ -250,6 +288,7 @@ function IdentityHoverCard({
             event.pointerType === 'touch' || event.pointerType === 'pen';
           longPress.onPointerDown(event);
         }}
+        {...(openOnClick ? { onClick: () => setOpen(true) } : {})}
       >
         {children}
       </HoverCardTrigger>
@@ -281,6 +320,8 @@ function IdentityHoverCard({
           </div>
         </div>
 
+        {about && <IdentityHoverCardAboutLines kind={kind} about={about} />}
+
         <div className="flex flex-wrap gap-1.5 px-3 pb-3 empty:hidden">
           {kind === 'agent' && (agent?.runtime || agent?.model) && (
             <InfoChip>{[agent.runtime, agent.model].filter(Boolean).join(' · ')}</InfoChip>
@@ -304,7 +345,17 @@ function IdentityHoverCard({
           )}
         </div>
 
-        {onViewProfile ? (
+        {actions ? (
+          <IdentityHoverCardActionRow
+            actions={actions}
+            onAct={() => {
+              // Same reason as the footer below: focus goes back to the
+              // trigger before whatever opens next captures it.
+              triggerRef.current?.focus();
+              setOpen(false);
+            }}
+          />
+        ) : onViewProfile ? (
           <button
             type="button"
             data-slot="identity-hover-card-profile"

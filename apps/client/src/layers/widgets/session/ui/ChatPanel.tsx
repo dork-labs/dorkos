@@ -31,7 +31,6 @@ import {
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useCurrentAgent } from '@/layers/entities/agent';
-import { getAgentDisplayName } from '@/layers/shared/lib';
 import {
   ReadOnlyModeNotice,
   useReadOnlyModeHint,
@@ -72,6 +71,7 @@ import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 import { clickModelTrigger } from '../model/model-trigger';
 import { useDirectChatLog } from '../model/use-direct-chat-notes';
 import { useSessionLaneState } from '../model/use-session-lane-state';
+import { useSessionSurface } from '../model/use-session-surface';
 import { useSessionTarget } from '../model/session-target';
 import { SessionErrorNotice } from './SessionErrorNotice';
 import { SessionComposer } from './SessionComposer';
@@ -591,18 +591,16 @@ export function ChatPanel({
     submitContent,
     resumeClaim,
   ]);
-  // What the empty box says. The agent registered at the working directory
-  // names it; without one it is the generic invitation.
-  const defaultPlaceholder = composerAgent
-    ? `Message ${getAgentDisplayName(composerAgent)}…`
-    : 'Send a message…';
+  // Drawn as a session, or as a DM with one agent (DOR-3074), and what the
+  // empty box says: the agent it reaches, or the generic invitation.
+  const surface = useSessionSurface(sessionId, composerAgent);
 
   // Where this session's words go, and the files staged against them. Built
   // here rather than inside the composer so the whole conversation can publish
   // it — the lane reads the queue's depth off the same object.
   const sessionTarget = useSessionTarget({
     sessionId: sessionId ?? '',
-    placeholder: defaultPlaceholder,
+    placeholder: surface.placeholder,
     submit: sendMessage,
     enqueue: enqueueContent,
     files: fileUpload,
@@ -747,6 +745,7 @@ export function ChatPanel({
           {...(landOnRow === undefined ? {} : { landOnRow })}
           foldFirstPrompt={startedBy !== null}
           directLog={directLog}
+          directMessage={surface.directMessage}
         />
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />
@@ -826,6 +825,7 @@ export function ChatPanel({
         )}
 
         <SessionComposer
+          asDirectMessage={surface.directMessage !== null}
           chatInputRef={chatInputRef}
           input={input}
           autocomplete={autocomplete}

@@ -32,17 +32,30 @@ export const DIRECT_CHAT_TITLE = 'Direct';
 /** Query key for the Direct chat a session is. */
 export const directChatKey = (sessionId: string) => ['direct-chat', sessionId] as const;
 
+/** How {@link useDirectChat} reads. */
+export interface UseDirectChatOptions {
+  /**
+   * Whether to ask now. Defaults to `true`; a surface that only needs the
+   * answer while a setting is on (a desktop tab's title) passes that setting.
+   */
+  enabled?: boolean;
+}
+
 /**
  * The Direct chat this session is, or `null` when it is an ordinary chat.
  *
  * @param sessionId - The session on screen, or null for none.
+ * @param options - See {@link UseDirectChatOptions}.
  */
-export function useDirectChat(sessionId: string | null): UseQueryResult<DirectChat | null> {
+export function useDirectChat(
+  sessionId: string | null,
+  options?: UseDirectChatOptions
+): UseQueryResult<DirectChat | null> {
   const transport = useTransport();
   return useQuery({
     queryKey: directChatKey(sessionId ?? ''),
     queryFn: () => transport.findDirectChat(sessionId!),
-    enabled: sessionId !== null,
+    enabled: sessionId !== null && (options?.enabled ?? true),
     retry: false,
     // Which session is a Direct chat changes only when its DM gains a member.
     staleTime: 60_000,

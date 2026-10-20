@@ -54,6 +54,7 @@ import {
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
 import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
+import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
@@ -162,6 +163,12 @@ interface SessionTranscriptProps {
    * Its pings are drawn where they landed. Absent for an ordinary chat.
    */
   directLog?: DirectChatLog;
+  /**
+   * Set while this chat reads as a direct message with one agent (DOR-3074):
+   * every reply wears that agent's face and name, and the person's own
+   * messages their name, the way a room draws them. Absent for a session.
+   */
+  directMessage?: DirectMessageSurface | null;
 }
 
 /**
@@ -197,6 +204,7 @@ export function SessionTranscript({
   landOnRow,
   foldFirstPrompt = false,
   directLog,
+  directMessage = null,
 }: SessionTranscriptProps) {
   // Row handlers keep one identity, so a row whose message did not change can
   // skip its render: `onRetry` alone used to change on every streamed word, and
@@ -279,18 +287,24 @@ export function SessionTranscript({
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const runtime = useSessionRuntime(sessionId);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
+  const dmAgent = directMessage?.agent ?? null;
+  const humanName = directMessage?.humanName ?? null;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
-      agent: currentAgent
-        ? {
-            id: currentAgent.id,
-            displayName: getAgentDisplayName(currentAgent),
-            ...resolveAgentVisual(currentAgent),
-          }
-        : null,
+      // A DM names the agent it is with, whatever folder is selected.
+      agent:
+        dmAgent ??
+        (currentAgent
+          ? {
+              id: currentAgent.id,
+              displayName: getAgentDisplayName(currentAgent),
+              ...resolveAgentVisual(currentAgent),
+            }
+          : null),
       runtime,
+      ...(humanName ? { humanName } : {}),
     }),
-    [currentAgent, runtime]
+    [currentAgent, runtime, dmAgent, humanName]
   );
 
   // The turn happening NOW, mirrored into a live region below. The feed itself

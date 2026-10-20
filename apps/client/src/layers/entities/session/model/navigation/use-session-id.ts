@@ -127,6 +127,9 @@ export function useSessionId(): [
           prompt: undefined,
           send: undefined,
           seed: undefined,
+          // The session view belongs to the chat it was opened on: a rename
+          // keeps it, a different chat opens as itself (DOR-3074).
+          view: options?.replace ? prev.view : undefined,
         })),
         replace: options?.replace,
       });

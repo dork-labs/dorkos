@@ -9,6 +9,8 @@ import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-eve
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { activityClause, formatResetTime, getAgentDisplayName } from '@/layers/shared/lib';
 import { useAgentVisual, useCurrentAgent } from '@/layers/entities/agent';
+import { useDmViewEnabled } from '@/layers/entities/config';
+import { useDirectChat } from '@/layers/entities/room';
 import { useTransport } from '@/layers/shared/model';
 import { pendingInteractionsQueryOptions } from '@/layers/entities/attention';
 import {
@@ -63,7 +65,14 @@ export function useChatTabInput(target: TabTarget | null): ChatTabInput | null {
       limit: session.status?.limit ?? null,
     }),
   });
-  const dir = target ? (routeContext?.cwd ?? target.dir ?? row?.cwd ?? null) : null;
+  // With the DM view on, an agent's Direct chat is named for the agent
+  // (DOR-3074), whichever folder its session happens to stand in.
+  const dmView = useDmViewEnabled();
+  const { data: directChat } = useDirectChat(sessionId, { enabled: dmView && target !== null });
+  const direct = dmView && directChat ? directChat : null;
+  const dir = target
+    ? (direct?.agentPath ?? routeContext?.cwd ?? target.dir ?? row?.cwd ?? null)
+    : null;
   const { data: agent } = useCurrentAgent(dir);
   const visual = useAgentVisual(agent ?? null, dir ?? '');
 
@@ -119,5 +128,6 @@ export function useChatTabInput(target: TabTarget | null): ChatTabInput | null {
       activity: activityClause(activity),
     },
     lastActiveAt: row ? Date.parse(row.updatedAt) : undefined,
+    ...(direct && { direct: target.sessionView ? ('session' as const) : ('dm' as const) }),
   };
 }

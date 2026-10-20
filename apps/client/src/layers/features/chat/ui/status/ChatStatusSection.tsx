@@ -80,6 +80,12 @@ interface ChatStatusSectionProps {
   agentEmoji?: string;
   /** Agent working directory path (used for context menu actions). */
   agentPath?: string;
+  /**
+   * Draw no status line (DOR-3074): a chat drawn as a direct message keeps the
+   * model, account and context behind its session view instead. What a typed
+   * command opens (`/context`, the Full-autonomy question) still opens.
+   */
+  lineHidden?: boolean;
 }
 
 /**
@@ -105,6 +111,7 @@ export function ChatStatusSection({
   agentColor,
   agentEmoji,
   agentPath,
+  lineHidden = false,
 }: ChatStatusSectionProps) {
   // The real width of the bar, not a viewport breakpoint — see `useStatusBudget`.
   const { ref: barRef, budget } = useStatusBudget();
@@ -432,49 +439,51 @@ export function ChatStatusSection({
     // shrink the box that decides how much the line may hold.
     // `relative` for the offer overlay below, which floats above this strip
     // rather than taking a row in it — see `MakeDefaultStopLine`'s `placement`.
-    <div ref={barRef} className="relative pt-2">
+    <div ref={barRef} className={lineHidden ? 'relative' : 'relative pt-2'}>
       {/* The offer, when the dial's popover is shut. Floating, so the composer
           never gains a blank line for a remark that is usually not there. */}
-      {!pickerOpen && makeDefault.line && (
+      {!lineHidden && !pickerOpen && makeDefault.line && (
         <MakeDefaultStopLine {...makeDefault.line} placement="overlay" />
       )}
-      <StatusLine
-        items={items}
-        nameFirst={isPhoneDensity(budget.density)}
-        trailing={
-          <span className="flex items-center gap-2">
-            {/* From Wi-Fi every turn asks before acting (DOR-3037): outside the
+      {!lineHidden && (
+        <StatusLine
+          items={items}
+          nameFirst={isPhoneDensity(budget.density)}
+          trailing={
+            <span className="flex items-center gap-2">
+              {/* From Wi-Fi every turn asks before acting (DOR-3037): outside the
                 budget, so a busy line never hides it. */}
-            <WifiTurnCapPill compact={budget.density !== 'full'} />
-            <SessionPopover
-              open={sessionOpen}
-              onOpenChange={setSessionOpen}
-              diagnostics={diagnostics}
-              controls={{
-                // The same switch the line's chip carries, so a bar too narrow to
-                // hold the chip cannot take planning away.
-                plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
-              }}
-              promotionContext={promotionContext}
-              overflowCount={overflow}
-              addOns={
-                extensionItems.visible.length > 0 ? (
-                  <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
-                ) : undefined
-              }
-              urgentAction={
-                promotedCompactAction
-                  ? {
-                      label: `Compact chat · ${compaction.percent}% full`,
-                      onAction: compaction.onCompact,
-                      pending: compaction.pending,
-                    }
-                  : null
-              }
-            />
-          </span>
-        }
-      />
+              <WifiTurnCapPill compact={budget.density !== 'full'} />
+              <SessionPopover
+                open={sessionOpen}
+                onOpenChange={setSessionOpen}
+                diagnostics={diagnostics}
+                controls={{
+                  // The same switch the line's chip carries, so a bar too narrow to
+                  // hold the chip cannot take planning away.
+                  plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
+                }}
+                promotionContext={promotionContext}
+                overflowCount={overflow}
+                addOns={
+                  extensionItems.visible.length > 0 ? (
+                    <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
+                  ) : undefined
+                }
+                urgentAction={
+                  promotedCompactAction
+                    ? {
+                        label: `Compact chat · ${compaction.percent}% full`,
+                        onAction: compaction.onCompact,
+                        pending: compaction.pending,
+                      }
+                    : null
+                }
+              />
+            </span>
+          }
+        />
+      )}
       {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
       <UsageRevealPopover
         usage={usage ?? null}
