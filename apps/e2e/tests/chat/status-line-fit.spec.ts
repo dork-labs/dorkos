@@ -308,6 +308,13 @@ test.describe('Chat — status line fits its row', () => {
         for (let i = 0; i < 6; i++) {
           const clone = template.cloneNode(true) as HTMLElement;
           clone.setAttribute('data-testid', `status-item-stress-${i}`);
+          // At phone width the runtime item is snug (its icon alone, never squeezed,
+          // DOR-3037). A stress item carries a value, so it is laid out like every
+          // item that does: shrinkable, with the row's 40px floor.
+          clone.removeAttribute('data-snug');
+          clone.classList.remove('shrink-0');
+          clone.classList.add('min-w-10');
+          clone.style.flexShrink = '1';
           // At phone width the runtime item is its icon alone, with no value to
           // overwrite, so the clone is given one.
           const value =
