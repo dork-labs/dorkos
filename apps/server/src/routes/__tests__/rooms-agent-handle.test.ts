@@ -56,6 +56,26 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
+vi.mock('../../services/core/auth/sessions/wifi-level.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../services/core/auth/sessions/wifi-level.js')>();
+  return { ...actual, isFromWifi: vi.fn(() => via.wifi) };
+});
+
+vi.mock('../../http/request-facts.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../http/request-facts.js')>();
+  return {
+    ...actual,
+    honoRequestFacts: (...args: Parameters<typeof actual.honoRequestFacts>) => ({
+      ...actual.honoRequestFacts(...args),
+      connectionEncrypted: via.encrypted,
+    }),
+  };
+});
+
+/** How the next request arrives: from Wi-Fi or not, over an encrypted socket or not. */
+const via = { wifi: false, encrypted: false };
+
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
@@ -152,6 +172,8 @@ describe('a person renaming an agent (DOR-3156)', () => {
     fakeRuntime = new FakeAgentRuntime();
     vi.clearAllMocks();
     resetAgentIdentityService();
+    via.wifi = false;
+    via.encrypted = false;
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
     registerAgent(db, 'bo', BO_PATH);
@@ -286,6 +308,40 @@ describe('a person renaming an agent (DOR-3156)', () => {
       error: '@d0rian looks too much like @dorian. Pick a different one.',
       code: 'HANDLE_LOOKALIKE',
     });
+  });
+
+  it('refuses renaming an agent over plain-http Wi-Fi, and keeps your own handle open there', async () => {
+    const { roomId, me, ana } = await channelWithAgents('Plain Wi-Fi');
+    via.wifi = true;
+
+    const agent = await request(testServer)
+      .patch(`/api/rooms/authors/${ana}/handle`)
+      .send({ handle: 'ana-pm' });
+    expect(agent.status).toBe(403);
+    expect(agent.body).toEqual({
+      error: 'Renaming an agent needs a secure connection.',
+      code: 'NOT_FROM_WIFI',
+    });
+    expect(getRoomService().authorRegistry.getById(ana)?.handle).toBe('ana');
+    expect((await entries(roomId)).filter((e) => e.body.notice === 'handle_changed')).toEqual([]);
+
+    const own = await request(testServer)
+      .patch(`/api/rooms/authors/${me}/handle`)
+      .send({ handle: 'dorian' });
+    expect(own.status).toBe(200);
+  });
+
+  it('renames an agent from Wi-Fi once the connection is encrypted (DOR-3173)', async () => {
+    const { ana } = await channelWithAgents('Secure Wi-Fi');
+    via.wifi = true;
+    via.encrypted = true;
+
+    const res = await request(testServer)
+      .patch(`/api/rooms/authors/${ana}/handle`)
+      .send({ handle: 'ana-pm' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.handle).toBe('ana-pm');
   });
 
   it('never renames the room’s own voice', async () => {
