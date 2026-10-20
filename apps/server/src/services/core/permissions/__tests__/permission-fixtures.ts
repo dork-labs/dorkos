@@ -65,7 +65,7 @@ export function createPermissionWorld(
     /** Extra actions beside the fixture ones, e.g. a running extension's tools. */
     extraActions?: PermissionActionInfo[];
     /** The note a change to agents' levels carries (DOR-3175). */
-    levelReachNote?: PermissionServiceDeps['levelReachNote'];
+    levelReach?: PermissionServiceDeps['levelReach'];
   } = {}
 ) {
   const config = {
@@ -158,7 +158,7 @@ export function createPermissionWorld(
     actions: () => [...FIXTURE_ACTIONS, ...(options.extraActions ?? [])],
     arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
-    ...(options.levelReachNote ? { levelReachNote: options.levelReachNote } : {}),
+    ...(options.levelReach ? { levelReach: options.levelReach } : {}),
   });
 
   return {

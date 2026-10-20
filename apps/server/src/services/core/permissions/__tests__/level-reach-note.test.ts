@@ -52,6 +52,7 @@ function world(opts: {
     defaultStops: () => ({ global: opts.global ?? 'autonomy', perRuntime: {} }),
     marked: (id) => (opts.marked ?? []).includes(id),
     personSet: (id) => (opts.byHand ?? []).includes(id),
+    titleOf: async (id) => (id === 'untitled' ? null : id),
   });
 }
 
@@ -84,7 +85,11 @@ describe('the level-reach note (DOR-3175)', () => {
       agents: QA_AGENTS,
       marked: ['room-marked'],
     });
-    expect(await note([agentChange('ask', 'autonomy')])).toBe('3 chats rose');
+    // G stands in a subfolder (a folder match): it never rises past its stored
+    // mode, but its stored mode is Full, so lifting the cap lifts it too.
+    expect(await note([agentChange('ask', 'autonomy')])).toBe(
+      '3 chats rose (room-a, chat-g, chat-h)'
+    );
   });
 
   it('a raise names the chats set by hand that stay lower', async () => {
@@ -94,8 +99,29 @@ describe('the level-reach note (DOR-3175)', () => {
       byHand: ['by-hand'],
     });
     expect(await note([agentChange('ask', 'autonomy')])).toBe(
-      '1 chat rose, 1 set by hand stay lower'
+      '1 chat rose (seeded), 1 set by hand stay lower'
     );
+  });
+
+  it('names the first ten that rose, then how many more', async () => {
+    const chats = Array.from({ length: 12 }, (_, i) => chat(`c${i + 1}`, 'default'));
+    chats.push(chat('untitled', 'default'));
+    const note = world({ chats, own: { [ANA]: 'autonomy' } });
+    expect(await note([agentChange('ask', 'autonomy')])).toBe(
+      '13 chats rose (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 +3 more)'
+    );
+  });
+
+  it('holds a chat in another agent’s folder to the stricter of both', async () => {
+    const note = world({
+      chats: [chat('a-in-b', 'bypassPermissions')],
+      own: { [ANA]: 'autonomy', [BOB]: 'ask' },
+      agents: { 'a-in-b': { agentPath: ANA, exact: false, alsoBoundBy: BOB } },
+    });
+    // Ana going up changes nothing: Bob's Ask still holds the chat.
+    expect(await note([agentChange('ask', 'autonomy')])).toBeUndefined();
+    // Bob going down reaches it.
+    expect(await note([agentChange('autonomy', 'ask', BOB)])).toBe('1 chat follows it');
   });
 
   it('a global change reaches the chats of agents with no stop of their own', async () => {

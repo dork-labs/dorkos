@@ -375,6 +375,51 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
       expect(launches.at(-1)!.mode).toBe('default');
     });
 
+    it('A in B: a chat of Ana’s standing in Bob’s folder keeps Ana’s cap', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-a-in-b', { permissionMode: 'bypassPermissions' });
+      vi.spyOn(registry, 'getSessionAgentPath').mockResolvedValue(ANA);
+      agentStops.set(ANA, 'ask');
+      agentStops.set(BOB, 'autonomy');
+      await run(runtime.sendMessage('chat-a-in-b', 'write it', { cwd: `${BOB}/sub` }));
+      expect(writeCards(launches.at(-1)!.mode)).toBe(true);
+    });
+
+    it('A in B: and keeps Bob’s cap too, the stricter of both', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-a-in-b2', { permissionMode: 'bypassPermissions' });
+      vi.spyOn(registry, 'getSessionAgentPath').mockResolvedValue(ANA);
+      agentStops.set(ANA, 'autonomy');
+      agentStops.set(BOB, 'ask');
+      await run(runtime.sendMessage('chat-a-in-b2', 'write it', { cwd: `${BOB}/sub` }));
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('A in B: a turn that names Ana is held by Ana’s level', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-a-in-b3', { permissionMode: 'bypassPermissions' });
+      agentStops.set(ANA, 'ask');
+      agentStops.set(BOB, 'autonomy');
+      await run(
+        runtime.sendMessage('chat-a-in-b3', 'write it', { cwd: `${BOB}/sub`, forAgent: ANA })
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('G: born at Full, capped, uncapped: back to 0 cards, as the history line counts it', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('chat-g-cycle', { permissionMode: 'bypassPermissions' });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-g-cycle', 'go', { cwd: `${ANA}/sub/deep` }));
+      expect(writeCards(launches.at(-1)!.mode)).toBe(false);
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('chat-g-cycle', 'go', { cwd: `${ANA}/sub/deep` }));
+      expect(writeCards(launches.at(-1)!.mode)).toBe(true);
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-g-cycle', 'go', { cwd: `${ANA}/sub/deep` }));
+      expect(writeCards(launches.at(-1)!.mode)).toBe(false);
+    });
+
     it('never raises a chat found only by an enclosing folder', async () => {
       const runtime = boot();
       seedChat('chat-g-up', 'default');

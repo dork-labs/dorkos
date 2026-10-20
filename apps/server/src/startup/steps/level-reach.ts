@@ -1,12 +1,20 @@
 /**
- * The production wiring of the note a person's change to a level carries
+ * The production wiring of the line a person's change to a level adds to its history entry
  * (DOR-3175): every chat from `session_metadata` and its native binding, each
  * runtime's modes, the agent's own stop through the permission gate, the
  * stored global and per-runtime stops, and the facts the turn-start check reads.
  *
  * @module startup/steps/level-reach
  */
-import { eq, sessionMetadata, sessionNativeBindings, type Db } from '@dorkos/db';
+import {
+  eq,
+  rooms,
+  roomSessions,
+  sessionMetadata,
+  sessionNativeBindings,
+  type Db,
+} from '@dorkos/db';
+import { chatTitleOf } from '../../services/session/chat-messages/chat-message-wiring.js';
 import type { ConfigManager } from '../../services/core/config-manager.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { permissionGateSources } from '../../services/core/capabilities/index.js';
@@ -21,7 +29,7 @@ import { chatRiseFacts } from '../../services/core/turn-power/chat-rise-facts.js
  * @param db - The consolidated database.
  * @param config - The config manager the stored stops are read from.
  */
-export function levelReachNoteFor(
+export function levelReachFor(
   db: Db,
   config: Pick<ConfigManager, 'getDot'>
 ): ReturnType<typeof createLevelReachNote> {
@@ -53,5 +61,14 @@ export function levelReachNoteFor(
     // No facts wired reads as marked and not by hand: nothing is counted as rising.
     marked: (sessionId) => chatRiseFacts()?.marked(sessionId) ?? true,
     personSet: (sessionId) => chatRiseFacts()?.personSet(sessionId) ?? false,
+    titleOf: async (sessionId) => {
+      const seat = db
+        .select({ title: rooms.title })
+        .from(roomSessions)
+        .innerJoin(rooms, eq(rooms.id, roomSessions.roomId))
+        .where(eq(roomSessions.sessionId, sessionId))
+        .get();
+      return seat ? `#${seat.title}` : await chatTitleOf(sessionId);
+    },
   });
 }

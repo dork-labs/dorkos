@@ -116,7 +116,7 @@ export interface PermissionServiceWiring {
   /** What a person set for each agent, the floor under its own file. */
   personSet: PersonSetPermissions;
   /** How many existing chats a change to agents' levels reaches (DOR-3175). */
-  levelReachNote?: PermissionServiceDeps['levelReachNote'];
+  levelReach?: PermissionServiceDeps['levelReach'];
 }
 
 /**
@@ -325,7 +325,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
     actions: () => permissionActions(wiring.registry()),
     arrivalsHealthy: () => wiring.arrivals.isHealthy(),
     activity: wiring.activity,
-    ...(wiring.levelReachNote ? { levelReachNote: wiring.levelReachNote } : {}),
+    ...(wiring.levelReach ? { levelReach: wiring.levelReach } : {}),
   });
 }
 

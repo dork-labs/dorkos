@@ -352,11 +352,11 @@ export class PermissionService {
     record: Omit<PermissionChangeRecord, 'actionTitle'>,
     titles: (id: string) => string
   ) {
-    // How many existing chats a change to agents' levels reaches (DOR-3175).
-    const note = record.note ?? (await this.deps.levelReachNote?.(record.changes));
+    // How many existing chats a change to a level reaches (DOR-3175).
+    const reach = await this.deps.levelReach?.(record.changes);
     await recordPermissionChange(this.deps.activity, {
       ...record,
-      ...(note ? { note } : {}),
+      ...(reach ? { reach } : {}),
       actionTitle: titles,
     });
   }

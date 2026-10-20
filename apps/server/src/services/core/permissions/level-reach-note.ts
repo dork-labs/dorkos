@@ -1,5 +1,5 @@
 /**
- * The note a person's change to a level carries: how many existing chats the
+ * The line a person's change to a level adds to its history entry: how many existing chats the
  * change reaches, from their next turn (DOR-3175). Nothing is rewritten when a
  * level changes; each chat meets it at its next turn's start
  * (`turn-power/agent-level-bound.ts`), so this compares, per chat, the mode its
@@ -9,10 +9,14 @@
  *
  * - **Down:** every chat whose next turn now runs lower, marked ones included,
  *   since the cap reaches them too. "14 chats follow it".
- * - **Up:** only chats that really go up. A marked or held chat's turns stay
- *   capped by their marks, so it is left out; a chat a person set by hand
- *   keeps its own mode and is named as staying lower. "12 chats rose, 2 set by
- *   hand stay lower".
+ * - **Up:** only chats that really go up, each named (the first ten, then
+ *   "+N more"). A marked or held chat's turns stay capped by their marks, so it
+ *   is left out; chats a person set by hand keep their own mode and are counted
+ *   as staying lower. "12 chats rose (Build, #dorkos, …), 2 set by hand stay
+ *   lower".
+ *
+ * A chat that answers to two agents (its own, standing in another's folder) is
+ * held by the stricter of both, as its turns are.
  *
  * Covers an agent's own level and the global and per-runtime levels an agent
  * with none of its own inherits. A change that reaches no chat carries no note.
@@ -66,7 +70,12 @@ export interface LevelReachDeps {
   marked: (sessionId: string) => boolean;
   /** Whether a person set the chat's mode by hand. */
   personSet: (sessionId: string) => boolean;
+  /** A chat's title as a person reads it (a room seat's room), or `null` when it has none. */
+  titleOf: (sessionId: string) => Promise<string | null>;
 }
+
+/** How many chats that rose the line names before "+N more" (PM, 2026-10-20). */
+export const NAMED_RISE_LIMIT = 10;
 
 /** Chats on another computer, which this one cannot vouch for. */
 const COMPUTER_LOCAL_RUNTIME = 'computer-local';
@@ -100,21 +109,28 @@ function looser(declared: DeclaredModes, a: string, b: string): boolean {
 }
 
 /**
- * The note for the counts, or `undefined` when nothing changes.
+ * The line for the counts, or `undefined` when nothing changes. The chats that
+ * rose are named, the first {@link NAMED_RISE_LIMIT} then "+N more", so a
+ * person can find and set back any of them (PM, 2026-10-20).
  *
- * @param rose - Chats whose next turn now runs higher.
- * @param fell - Chats whose next turn now runs lower.
- * @param heldByHand - Chats set by hand that a raise leaves lower.
+ * @param rose - The titles of the chats whose next turn now runs higher.
+ * @param fell - How many chats' next turn now runs lower.
+ * @param heldByHand - How many chats set by hand a raise leaves lower.
  */
 export function levelReachSentence(
-  rose: number,
+  rose: readonly string[],
   fell: number,
   heldByHand: number
 ): string | undefined {
   const parts: string[] = [];
   if (fell > 0) parts.push(fell === 1 ? '1 chat follows it' : `${fell} chats follow it`);
-  if (rose > 0) parts.push(rose === 1 ? '1 chat rose' : `${rose} chats rose`);
-  if (rose > 0 && heldByHand > 0) parts.push(`${heldByHand} set by hand stay lower`);
+  if (rose.length > 0) {
+    const shown = rose.slice(0, NAMED_RISE_LIMIT).join(', ');
+    const more = rose.length > NAMED_RISE_LIMIT ? ` +${rose.length - NAMED_RISE_LIMIT} more` : '';
+    const count = rose.length === 1 ? '1 chat rose' : `${rose.length} chats rose`;
+    parts.push(`${count} (${shown}${more})`);
+  }
+  if (rose.length > 0 && heldByHand > 0) parts.push(`${heldByHand} set by hand stay lower`);
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
@@ -131,53 +147,70 @@ export function createLevelReachNote(
     const moves = changes.filter((c) => c.key.kind === 'files');
     if (moves.length === 0) return undefined;
     const defaults = deps.defaultStops();
-    let rose = 0;
+    const rose: string[] = [];
     let fell = 0;
     let heldByHand = 0;
     for (const chat of deps.chats()) {
       const agent = deps.agentOf(chat);
       if (agent === undefined || agent === 'unmatched' || !chat.runtime) continue;
-      const declared = deps.modes(chat.runtime);
+      const runtime = chat.runtime;
+      const declared = deps.modes(runtime);
       const stored = chat.permissionMode ?? declared?.default;
       if (!declared || !stored) continue;
-      const now: StopsAt = {
-        own: await deps.ownStop(agent.agentPath),
-        runtime: defaults.perRuntime[chat.runtime] ?? null,
-        global: defaults.global,
-      };
-      const then: StopsAt = { ...now };
+      // Every agent whose level holds this chat: its own, and the folder's when they differ.
+      const agents = [agent.agentPath, ...(agent.alsoBoundBy ? [agent.alsoBoundBy] : [])];
+      const now: StopsAt[] = [];
+      for (const agentPath of agents) {
+        now.push({
+          own: await deps.ownStop(agentPath),
+          runtime: defaults.perRuntime[runtime] ?? null,
+          global: defaults.global,
+        });
+      }
+      const then = now.map((stops) => ({ ...stops }));
       let touched = false;
       for (const change of moves) {
         if (change.key.kind !== 'files') continue;
         const before = (change.before as PermissionStop | null) ?? null;
-        if (change.target.kind === 'agent') {
-          if (change.target.agentPath !== agent.agentPath) continue;
-          then.own = before;
-        } else if (change.key.runtime !== undefined) {
-          if (change.key.runtime !== chat.runtime) continue;
-          then.runtime = before;
-        } else {
-          then.global = before;
+        for (const [i, agentPath] of agents.entries()) {
+          const stops = then[i]!;
+          if (change.target.kind === 'agent') {
+            if (change.target.agentPath !== agentPath) continue;
+            stops.own = before;
+          } else if (change.key.runtime !== undefined) {
+            if (change.key.runtime !== runtime) continue;
+            stops.runtime = before;
+          } else {
+            stops.global = before;
+          }
+          touched = true;
         }
-        touched = true;
       }
       if (!touched) continue;
-      const modeAt = (s: StopsAt) =>
-        resolveStopMode(s.own ?? s.runtime ?? s.global, declared.values);
+      /** The stricter of every holding agent's level, as this runtime's mode. */
+      const modeAt = (all: StopsAt[]) => {
+        const ids = all
+          .map((s) => resolveStopMode(s.own ?? s.runtime ?? s.global, declared.values))
+          .filter((id): id is string => id !== undefined);
+        if (ids.length === 0) return undefined;
+        return ids.reduce((a, b) => (looser(declared, a, b) ? b : a));
+      };
       const marked = deps.marked(chat.sessionId);
       const byHand = deps.personSet(chat.sessionId);
       const follows =
         agent.exact &&
+        !agent.alsoBoundBy &&
         !marked &&
         !byHand &&
         !isKept({ projectPath: agent.agentPath, name: '', displayName: '' }) &&
-        chat.runtime !== COMPUTER_LOCAL_RUNTIME &&
+        runtime !== COMPUTER_LOCAL_RUNTIME &&
         !isChosenMode(declared, stored);
       const before = effectiveMode(declared, stored, modeAt(then), follows);
       const after = effectiveMode(declared, stored, modeAt(now), follows);
       if (looser(declared, before, after)) fell += 1;
-      else if (looser(declared, after, before) && !marked) rose += 1;
-      else if (byHand && !marked) {
+      else if (looser(declared, after, before) && !marked) {
+        rose.push((await deps.titleOf(chat.sessionId)) ?? 'Untitled chat');
+      } else if (byHand && !marked) {
         // Set by hand and left lower by a raise that would have lifted it.
         const lifted = effectiveMode(declared, stored, modeAt(now), true);
         if (looser(declared, lifted, after)) heldByHand += 1;

@@ -58,9 +58,9 @@ export interface PermissionServiceDeps {
   /** The Activity log, absent in a process with none. */
   activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
   /**
-   * The note a change to agents' levels carries: how many of their existing
-   * chats the new level now reaches (DOR-3175). Absent, or `undefined` for a
-   * change that moves no agent's level, and the line carries no note.
+   * What a change to a level adds to its history line: how many existing chats
+   * it reaches, and which rose (DOR-3175). Absent, or `undefined` for a change
+   * that moves no chat, and the line is as it was.
    */
-  levelReachNote?: (changes: readonly PermissionChange[]) => Promise<string | undefined>;
+  levelReach?: (changes: readonly PermissionChange[]) => Promise<string | undefined>;
 }

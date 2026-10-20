@@ -77,6 +77,7 @@ import {
   ceilingCarriesOutsider,
   clampModeToCeiling,
   levelOfMode,
+  stricterLevel,
   type DeclaredModes,
 } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -153,12 +154,14 @@ export function levelBinds(
 
 /**
  * Whose level holds a turn: an agent found by identity (`exact`, which alone
- * may rise), an agent found only by an enclosing folder (it may only lower),
- * `'unmatched'` when the chat has a recorded agent that no folder can be
- * matched to (the turn is held to the runtime's default), or `undefined` for a
- * chat that belongs to no agent at all.
+ * may rise), an agent found only by a folder (it may only lower), with a
+ * second agent whose level also holds the turn when the chat's own agent and
+ * the folder's agent differ (`alsoBoundBy`), `'unmatched'` when the chat has a
+ * recorded agent that no folder can be matched to (the turn is held to the
+ * runtime's default), or `undefined` for a chat that belongs to no agent.
  */
-export type LevelAgent = { agentPath: string; exact: boolean } | 'unmatched' | undefined;
+export type LevelAgent =
+  { agentPath: string; exact: boolean; alsoBoundBy?: string } | 'unmatched' | undefined;
 
 /** The nearest folder at or above `dir` that resolves to an agent's home, by identity. */
 function enclosingAgentHome(dir: string): string | undefined {
@@ -177,7 +180,9 @@ function enclosingAgentHome(dir: string): string | undefined {
  * first (its home, a linked worktree of it, or the agent it names). Then the
  * nearest enclosing agent folder, so a chat working in a subfolder of its
  * agent's folder is held too. Then the agent recorded for the chat at launch,
- * so a chat in a sibling worktree is held too. A recorded agent nothing can be
+ * so a chat in a sibling worktree is held too. A chat whose own agent (named
+ * or recorded) differs from the agent whose folder it stands in is held by
+ * both levels, never by the folder's agent alone. A recorded agent nothing can be
  * matched to is `'unmatched'`, never "no agent": a folder outside every agent's
  * is not a way around the cap. One answer for the turn's check and the history
  * count, so the two agree.
@@ -191,15 +196,23 @@ export function resolveLevelAgent(
   opts: Pick<MessageOpts, 'forAgent' | 'roomTurn'> | undefined,
   recorded: string | null | undefined
 ): LevelAgent {
-  const identity = resolveAgentHome(cwd, turnAgentOf(opts));
+  const named = turnAgentOf(opts);
+  const identity = resolveAgentHome(cwd, named);
   const home = homeOf(identity);
   if (home) return { agentPath: home, exact: true };
-  const recordedHome = recorded ? enclosingAgentHome(recorded) : undefined;
-  const enclosing = cwd ? enclosingAgentHome(cwd) : undefined;
-  if (enclosing) return { agentPath: enclosing, exact: false };
   if (identity.kind === 'refused') return 'unmatched';
-  if (recordedHome) return { agentPath: recordedHome, exact: recordedHome === recorded };
-  return recorded ? 'unmatched' : undefined;
+  const ownPath = named ?? recorded ?? undefined;
+  const own = ownPath ? enclosingAgentHome(ownPath) : undefined;
+  const enclosing = cwd ? enclosingAgentHome(cwd) : undefined;
+  // A chat of one agent standing in ANOTHER agent's folder answers to both:
+  // never the folder's agent alone, or its looser level would lift the chat's
+  // own agent's cap (Security, #3142).
+  if (own && enclosing && own !== enclosing) {
+    return { agentPath: own, exact: false, alsoBoundBy: enclosing };
+  }
+  if (enclosing) return { agentPath: enclosing, exact: false };
+  if (own) return { agentPath: own, exact: own === ownPath };
+  return ownPath ? 'unmatched' : undefined;
 }
 
 /** The agent a turn belongs to, by {@link resolveLevelAgent}. */
@@ -304,23 +317,41 @@ export async function boundTurnOpts(
   }
   const { agentPath } = agent;
 
-  let level: TurnPermissionLevel | undefined;
-  let levelMode: string | undefined;
-  try {
-    const read = deps.levelOf ?? resolveAgentLaunchLevel;
-    const { mode } = await read({ agentPath, capabilities });
-    // Nothing configured anywhere: the runtime's own default decides, as for a new chat.
-    if (mode === undefined) return opts;
-    levelMode = mode;
-    level = levelOfMode(declared, mode);
-  } catch (err) {
-    logger.warn('[agent-level] could not read the agent’s level; holding the turn to the default', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    level = levelOfMode(declared, declared.default);
-  }
-  if (level === undefined) return opts;
+  const read = deps.levelOf ?? resolveAgentLaunchLevel;
+  /** One agent's level as this runtime's mode; `null` when nothing is set, `'unreadable'` on a failure. */
+  const modeOf = async (path: string): Promise<string | null | 'unreadable'> => {
+    try {
+      return (await read({ agentPath: path, capabilities })).mode ?? null;
+    } catch (err) {
+      logger.warn(
+        '[agent-level] could not read the agent’s level; holding the turn to the default',
+        {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
+      return 'unreadable';
+    }
+  };
+  const modes = [await modeOf(agentPath)];
+  if (agent.alsoBoundBy) modes.push(await modeOf(agent.alsoBoundBy));
+  // Nothing configured anywhere: the runtime's own default decides, as for a new chat.
+  if (modes.every((m) => m === null)) return opts;
+  const levels = modes.map((m) =>
+    m === 'unreadable'
+      ? levelOfMode(declared, declared.default)
+      : m === null
+        ? undefined
+        : levelOfMode(declared, m)
+  );
+  const known = levels.filter((l): l is TurnPermissionLevel => l !== undefined);
+  if (known.length === 0) return opts;
+  const level = known.reduce(stricterLevel);
+  // The level a chat rises to is its own agent's, read cleanly, with no second agent.
+  const levelMode =
+    !agent.alsoBoundBy && typeof modes[0] === 'string' && modes[0] !== 'unreadable'
+      ? modes[0]
+      : undefined;
 
   const stored = storedOf(deps, sessionId);
   const sent: MessageOpts | undefined =

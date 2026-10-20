@@ -258,6 +258,12 @@ export interface PermissionChangeRecord {
   origin?: PermissionChangedMetadata['origin'];
   /** A sentence the history shows beside the change, when it alone would mislead. */
   note?: string;
+  /**
+   * How many existing chats a level change reached, and which rose (DOR-3175),
+   * added to the summary line itself: "Files & commands set to Ask · 14 chats
+   * follow it".
+   */
+  reach?: string;
 }
 
 /**
@@ -304,9 +310,10 @@ export async function recordPermissionChange(
     resourceId: onlyAgent ?? null,
     resourceLabel: onlyAgent && firstAgent?.kind === 'agent' ? firstAgent.agentName : 'Everyone',
     summary:
-      record.surface === 'undo' && record.undoOf
+      (record.surface === 'undo' && record.undoOf
         ? `Undo: ${describePermissionChanges(record.changes, record.actionTitle)}`
-        : describePermissionChanges(record.changes, record.actionTitle),
+        : describePermissionChanges(record.changes, record.actionTitle)) +
+      (record.reach ? ` · ${record.reach}` : ''),
     linkPath: null,
     metadata: metadata as unknown as Record<string, unknown>,
   });
