@@ -15172,7 +15172,8 @@
           "bridge_disconnected",
           "bridge_agent_swapped",
           "bridge_history_note",
-          "room_archived"
+          "room_archived",
+          "agent_reseated"
         ]
       },
       "RoomMoment": {
@@ -91104,6 +91105,93 @@
                     "saved"
                   ]
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/{agentId}/reseat-options": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "See where an agent could move",
+        "description": "List the Claude accounts an agent in a room or DM could move to, best first, with the account it runs on now. Each says whether it can take the agent now and why not. DorkOS credits are never listed: only a person picks them, in the chat itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The room or DM, by its id — not its #name. You must be able to see it."
+            },
+            "required": true,
+            "description": "The room or DM, by its id — not its #name. You must be able to see it.",
+            "name": "roomId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The agent member whose seat moves, by its author id from the room’s roster."
+            },
+            "required": true,
+            "description": "The agent member whose seat moves, by its author id from the room’s roster.",
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See where an agent could move result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/{agentId}/reseat": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Move an agent to another account",
+        "description": "Move an agent’s seat in a room or DM to another Claude account, so it keeps answering there. Its next turn starts fresh on that account, with a summary of where it was, the same power and the same marks. Name an account from the options, or leave it out for the one with the most usage left. The room gets one line saying so. Only a person may move an agent for now.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "roomId": {
+                    "type": "string",
+                    "description": "The room or DM, by its id — not its #name. You must be able to see it."
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "description": "The agent member whose seat moves, by its author id from the room’s roster."
+                  },
+                  "account": {
+                    "type": "string",
+                    "description": "The account to move to, by id from the options. Left out: the best one."
+                  }
+                },
+                "required": [
+                  "roomId",
+                  "agentId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Move an agent to another account result",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
