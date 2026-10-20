@@ -115,3 +115,31 @@ describe('GroupDmMemberPicker', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('GroupDmMemberPicker by keyboard', () => {
+  const MEMBERS: GroupDmMember[] = [
+    { authorId: 'a2', agentPath: '/agents/designer', displayName: 'designer' },
+    { authorId: 'a1', agentPath: '/agents/qa', displayName: 'qa' },
+  ];
+
+  beforeEach(() => useAppStore.getState().setExplicitAgentPath('/agents/designer'));
+  afterEach(cleanup);
+
+  it('is one Tab stop, and the arrow keys move the pick and the focus together', async () => {
+    render(<GroupDmMemberPicker members={MEMBERS} />);
+    const designer = screen.getByRole('radio', { name: 'designer' });
+    const qa = screen.getByRole('radio', { name: 'qa' });
+    expect(designer).toHaveAttribute('tabindex', '0');
+    expect(qa).toHaveAttribute('tabindex', '-1');
+
+    designer.focus();
+    fireEvent.keyDown(designer, { key: 'ArrowRight' });
+    await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe('/agents/qa'));
+    expect(qa).toHaveFocus();
+    expect(qa).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(qa, { key: 'ArrowRight' });
+    await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe('/agents/designer'));
+    expect(designer).toHaveFocus();
+  });
+});
