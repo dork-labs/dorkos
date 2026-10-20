@@ -538,6 +538,28 @@ describe('TopologyGraph', () => {
       ).toBeInTheDocument();
     });
 
+    it('hides the drag hint on a touch screen, where dragging is not how you connect', async () => {
+      const original = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        ...original(query),
+        matches: query === '(pointer: coarse)',
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as typeof window.matchMedia;
+      try {
+        setupDefaults({ bindings: [] });
+        render(<TopologyGraph />);
+        await waitFor(() => {
+          expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+        });
+        expect(
+          screen.queryByText('Drag from a platform to an agent to connect them')
+        ).not.toBeInTheDocument();
+      } finally {
+        window.matchMedia = original;
+      }
+    });
+
     it('does not show hints when bindings exist', async () => {
       setupDefaults(); // default has adapters + bindings
       render(<TopologyGraph />);

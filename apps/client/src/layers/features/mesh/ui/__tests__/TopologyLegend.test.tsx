@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // ---------------------------------------------------------------------------
@@ -49,11 +49,34 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+/** Render the legend and open it, as a reader does with the Legend button. */
+function render(ui: React.ReactElement) {
+  const result = rtlRender(ui);
+  fireEvent.click(screen.getByRole('button', { name: 'Legend' }));
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('TopologyLegend', () => {
+  describe('folding', () => {
+    it('starts folded behind a Legend button, and the button opens and closes it', () => {
+      rtlRender(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
+      const button = screen.getByRole('button', { name: 'Legend' });
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByText('Allow rule')).not.toBeInTheDocument();
+
+      fireEvent.click(button);
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByText('Allow rule')).toBeInTheDocument();
+
+      fireEvent.click(button);
+      expect(screen.queryByText('Allow rule')).not.toBeInTheDocument();
+    });
+  });
+
   describe('rendering', () => {
     it('renders the legend panel at bottom-left', () => {
       render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
