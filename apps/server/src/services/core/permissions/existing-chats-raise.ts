@@ -37,6 +37,14 @@
  *
  * Schedules are untouched: their mode lives on the schedule, not the chat.
  *
+ * ## The second raise: spin-off chats (DOR-3147)
+ *
+ * Until DOR-3147 a chat at Full autonomy could not pass Full on to a chat it
+ * started without naming it, so agents started their chats lower, after the
+ * first raise had already run. The same raise runs once more, under its own
+ * note and done file, for chats an agent started (`session_start`,
+ * {@link SPIN_OFF_ORIGINS}) and only those, by every rule above.
+ *
  * ## Once
  *
  * The history event is written first, then a done file in DorkOS's own data
@@ -126,6 +134,14 @@ const COMPUTER_LOCAL_RUNTIME = 'computer-local';
 export const EXISTING_CHATS_NOTE =
   'Existing chats with your own agents now run at their agent’s level. Chats started ' +
   'from outside, or from a turn that read outside content, were left alone.';
+
+/** The note the history shows beside the raise of spin-off chats (DOR-3147). */
+export const SPIN_OFF_CHATS_NOTE =
+  'Chats your agents started now run at their agent’s level. Chats started from ' +
+  'outside, or from a turn that read outside content, were left alone.';
+
+/** The launch origin of a chat an agent started with `session_start`: a spin-off. */
+export const SPIN_OFF_ORIGINS: ReadonlySet<string> = new Set(['agent-launch']);
 
 /** One chat's row, as `session_metadata` holds it. */
 export interface ExistingChatRow {
@@ -282,6 +298,10 @@ export interface ExistingChatsRaiseDeps {
   activity: Pick<ActivityService, 'emit'>;
   /** Whether the history already holds this raise: done, even without the done file. */
   priorRaise: () => Promise<boolean>;
+  /** The note this raise's history event carries, which marks it as done; {@link EXISTING_CHATS_NOTE} by default. */
+  note?: string;
+  /** Only chats with one of these launch origins; every own origin by default. */
+  origins?: ReadonlySet<string>;
   /** Where the outcome and any failure are reported. */
   logger: Pick<Logger, 'info' | 'warn' | 'error'>;
 }
@@ -340,6 +360,9 @@ async function raisedModeFor(
 ): Promise<{ agent: PermissionAgentRef; mode: string; before: string } | null> {
   if (!row.runtime || !row.agentPath) return null;
   if (!isOwnLaunchOrigin(row.launchOrigin)) return null;
+  if (deps.origins && (row.launchOrigin === null || !deps.origins.has(row.launchOrigin))) {
+    return null;
+  }
   if (deps.launchMarked(row)) return null;
   if (row.runtime === COMPUTER_LOCAL_RUNTIME) return null;
   const agent = agents.get(row.agentPath);
@@ -420,7 +443,7 @@ export async function raiseExistingChats(
       changes,
       surface: 'upgrade',
       writer: UPGRADE_WRITER,
-      note: EXISTING_CHATS_NOTE,
+      note: deps.note ?? EXISTING_CHATS_NOTE,
     });
     markDone(deps.doneFile, changes.length);
   } catch (err) {

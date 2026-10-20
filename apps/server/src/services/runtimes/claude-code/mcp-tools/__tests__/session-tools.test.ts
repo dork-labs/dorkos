@@ -1046,22 +1046,16 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
     });
   });
 
-  it('never grants Full autonomy silently: it has to be asked for by name', async () => {
-    // An approval card shows only the arguments sent, so an inherited Full
-    // autonomy would be invisible to the person approving it.
-    const body = await expectRefused(fromChatAt('bypassPermissions'), BASE);
-    expect(body).toEqual({
-      error:
-        'A new chat at Bypass permissions has to be asked for by name, so the person ' +
-        'approving can see it. Pass permissionMode "bypassPermissions", or a lower mode.',
-      code: 'NAME_FULL_AUTONOMY',
+  it('gives a chat at Full autonomy its own level when no mode is asked for (DOR-3147)', async () => {
+    const result = await fromChatAt('bypassPermissions')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('bypassPermissions');
+    expect(payloadOf(result).permission).toEqual({
+      mode: 'bypassPermissions',
+      label: 'Bypass permissions',
+      callerMode: 'bypassPermissions',
+      sameAsCaller: true,
     });
-    // Named, it is granted.
-    const named = await fromChatAt('bypassPermissions')({
-      ...BASE,
-      permissionMode: 'bypassPermissions',
-    });
-    expect(payloadOf(named).permission).toMatchObject({ mode: 'bypassPermissions' });
   });
 
   it('refuses a mode above the calling chat, naming both levels, and writes nothing', async () => {

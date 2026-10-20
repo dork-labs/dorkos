@@ -26,6 +26,8 @@ import {
   openingMessageMarked,
   raiseExistingChats,
   setChatModePort,
+  SPIN_OFF_CHATS_NOTE,
+  SPIN_OFF_ORIGINS,
   type ChatModePort,
   type ExistingChatRow,
   type ExistingChatsRaiseDeps,
@@ -317,6 +319,107 @@ describe('raiseExistingChats', () => {
     expect(await raiseExistingChats(t.deps)).toEqual({ raised: 2 });
     expect(t.modes.get('broken')).toBe('default');
     expect(t.modes.get('three')).toBe(FULL);
+  });
+});
+
+describe('the raise of spin-off chats (DOR-3147)', () => {
+  /** The spin-off raise's deps over a world whose first raise already ran. */
+  async function afterFirstRaise(rows: ExistingChatRow[], marked: string[] = []) {
+    // The first raise ran at 0.124.0, before these chats existed.
+    const t = setup([], { marked });
+    cleanup.push(t.dir);
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 0 });
+    // Then agents started chats below their level.
+    const later = setup(rows, { marked });
+    cleanup.push(later.dir);
+    fs.mkdirSync(path.dirname(later.deps.doneFile), { recursive: true });
+    fs.copyFileSync(t.deps.doneFile, later.deps.doneFile);
+    const deps: ExistingChatsRaiseDeps = {
+      ...later.deps,
+      doneFile: path.join(later.dir, 'permissions', 'spin-off-chats-raised.json'),
+      note: SPIN_OFF_CHATS_NOTE,
+      origins: SPIN_OFF_ORIGINS,
+      priorRaise: async () =>
+        later.world.events.some(
+          (e) => (e.metadata as { note?: unknown } | null)?.note === SPIN_OFF_CHATS_NOTE
+        ),
+    };
+    // The first raise stays done.
+    expect(await raiseExistingChats(later.deps)).toBeNull();
+    return { ...later, deps };
+  }
+
+  it('raises an open spin-off below its agent’s level once, and only spin-offs', async () => {
+    const t = await afterFirstRaise([
+      chat('spin-auto', { launchOrigin: 'agent-launch', permissionMode: 'auto' }),
+      chat('spin-edits', { launchOrigin: 'agent-launch', permissionMode: 'acceptEdits' }),
+      chat('person-chat', { launchOrigin: 'interactive', permissionMode: 'acceptEdits' }),
+      chat('beat', { launchOrigin: 'heartbeat', permissionMode: 'acceptEdits' }),
+    ]);
+
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 2 });
+    expect(t.modes.get('spin-auto')).toBe(FULL);
+    expect(t.modes.get('spin-edits')).toBe(FULL);
+    // Not spin-offs: the first raise was theirs, and it is done.
+    expect(t.modes.get('person-chat')).toBe('acceptEdits');
+    expect(t.modes.get('beat')).toBe('acceptEdits');
+    const notes = t.world.events.map((e) => (e.metadata as { note?: unknown } | null)?.note);
+    expect(notes).toEqual([SPIN_OFF_CHATS_NOTE]);
+  });
+
+  it('runs once: a second boot changes nothing, even a spin-off a person lowered again', async () => {
+    const t = await afterFirstRaise([
+      chat('spin', { launchOrigin: 'agent-launch', permissionMode: 'acceptEdits' }),
+    ]);
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 1 });
+    t.modes.set('spin', 'acceptEdits');
+    t.writes.length = 0;
+
+    expect(await raiseExistingChats(t.deps)).toBeNull();
+    expect(t.writes).toEqual([]);
+    expect(t.modes.get('spin')).toBe('acceptEdits');
+    // The history line alone also marks it done, for a lost done file.
+    fs.rmSync(t.deps.doneFile);
+    expect(await raiseExistingChats(t.deps)).toBeNull();
+    expect(t.writes).toEqual([]);
+  });
+
+  it('leaves marked spin-offs, Plan and a person’s Never ask as they are', async () => {
+    const t = await afterFirstRaise(
+      [
+        chat('marked', { launchOrigin: 'agent-launch', permissionMode: 'acceptEdits' }),
+        chat('planned', { launchOrigin: 'agent-launch', permissionMode: 'plan' }),
+        chat('never-ask', { launchOrigin: 'agent-launch', permissionMode: 'dontAsk' }),
+        chat('kept-agent', {
+          launchOrigin: 'agent-launch',
+          agentPath: '/work/dorkos-cloud',
+          permissionMode: 'acceptEdits',
+        }),
+        chat('stranger', {
+          launchOrigin: 'agent-launch',
+          agentPath: '/not/registered',
+          permissionMode: 'acceptEdits',
+        }),
+        chat('already-full', { launchOrigin: 'agent-launch', permissionMode: FULL }),
+      ],
+      ['marked']
+    );
+
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 0 });
+    expect(t.writes).toEqual([]);
+  });
+
+  it('raises a spin-off to its agent’s level and no higher', async () => {
+    const t = await afterFirstRaise([
+      chat('spin', { launchOrigin: 'agent-launch', permissionMode: 'default' }),
+    ]);
+    const deps = {
+      ...t.deps,
+      personSet: { isSeeded: () => true, get: () => ({ filesAndCommands: 'act' as const }) },
+    };
+
+    expect(await raiseExistingChats(deps)).toEqual({ raised: 1 });
+    expect(t.modes.get('spin')).toBe(ACT);
   });
 });
 

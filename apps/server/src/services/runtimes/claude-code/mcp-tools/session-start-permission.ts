@@ -405,8 +405,8 @@ export async function chatlessCallerStop(
 /**
  * Everything `session_start` decides about the level, in one call: the ceiling,
  * the grant against the target runtime's declared modes, and the rule that Full
- * autonomy is only ever granted when asked for by name. Nothing is written here; a refusal
- * leaves nothing behind.
+ * autonomy is granted unnamed only to a chat that is itself at Full (DOR-3147).
+ * Nothing is written here; a refusal leaves nothing behind.
  *
  * @param requested - The mode the tool was asked for, if any.
  * @param chat - The calling chat, or null for a caller with none.
@@ -414,7 +414,8 @@ export async function chatlessCallerStop(
  * @param callerStop - With no chat, the calling agent's own resolved Files &
  *   commands stop (its own, then the runtime's, then the global one), which
  *   is its ceiling; `null` keeps {@link NO_CHAT_CEILING_MODE}. Ignored in a
- *   chat, whose own level is the ceiling. * @param marked - Whether the starting turn carries a mark: the new chat is
+ *   chat, whose own level is the ceiling.
+ * @param marked - Whether the starting turn carries a mark: the new chat is
  *   then also held to its runtime's default ({@link cappedForMarkedStart}).
  */
 export async function resolveStartPermission(
@@ -430,10 +431,14 @@ export async function resolveStartPermission(
   const ceiling = marked ? cappedForMarkedStart(own, runtimeType) : own;
   const grant = grantMode(requested, ceiling, runtimeType);
   if (!grant.ok) return grant;
-  // Full autonomy is never granted silently. An approval card shows only the
-  // arguments a call sent, so an inherited Full autonomy would be invisible to
-  // the person approving it: that level has to be asked for by name.
-  if (requested === undefined && actsWithoutAsking(grant.mode)) {
+  // Full autonomy is granted unnamed only to an unmarked chat that is itself at
+  // Full (DOR-3147): such a chat raises no approval card to hide it from, and
+  // making it name the level only pushed agents to start their chats lower,
+  // where every room turn they woke asked again. Anything else still has to
+  // ask for it by name, so the person approving can see it: a caller with no
+  // chat, a marked turn, or one whose level was a fallback, not its own.
+  const inheritsOwnFull = !marked && ceiling.inChat && ceiling.exact;
+  if (requested === undefined && actsWithoutAsking(grant.mode) && !inheritsOwnFull) {
     return {
       ok: false,
       error:
