@@ -380,6 +380,8 @@ test.describe('Team — the roster @smoke', () => {
       // A zoomed-out map draws compact nodes without names, so count nodes
       // rather than look for this agent's label.
       await expect(page.locator('.react-flow__node-agent').first()).toBeVisible();
+      // The rule names no namespace, so the map says it in words instead.
+      await expect(page.getByText('Everyone can message everyone')).toBeVisible();
     } finally {
       // Leave the mesh as this test found it for every spec after it.
       if (!wasOpen) await setOpenMesh('deny');
