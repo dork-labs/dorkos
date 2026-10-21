@@ -699,13 +699,12 @@ export function createSessionMethods(
       );
     },
 
+    // No catch: an empty list here reads as "this session has no tasks" and
+    // wipes the one on screen. A failed read throws, so the query keeps the
+    // last good list (DOR-3154).
     async getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }> {
-      try {
-        const qs = buildQueryString({ cwd });
-        return await fetchJSON<{ tasks: TaskItem[] }>(baseUrl, `/sessions/${sessionId}/tasks${qs}`);
-      } catch {
-        return { tasks: [] };
-      }
+      const qs = buildQueryString({ cwd });
+      return fetchJSON<{ tasks: TaskItem[] }>(baseUrl, `/sessions/${sessionId}/tasks${qs}`);
     },
   };
 }

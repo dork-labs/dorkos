@@ -52,6 +52,8 @@ export function SpaceMembers({
 }) {
   const [bans, setBans] = useState<CommunityWireBan[]>([]);
   const [mutes, setMutes] = useState<CommunityWireMute[]>([]);
+  // A failed read must not look like "nobody is muted or banned" (DOR-3154).
+  const [listsFailed, setListsFailed] = useState(false);
   // The member a ban or mute is being confirmed for, and the ban being lifted, while shown.
   const [banning, setBanning] = useState<Member | null>(null);
   const [muting, setMuting] = useState<Member | null>(null);
@@ -61,6 +63,7 @@ export function SpaceMembers({
       request<{ bans: CommunityWireBan[] }>('/api/v1/bans'),
       request<{ mutes: CommunityWireMute[] }>('/api/v1/mutes'),
     ]).catch(() => [null, null] as const);
+    setListsFailed(!banned || !muted);
     if (banned) setBans(banned.bans);
     if (muted) setMutes(muted.mutes);
   }, []);
@@ -192,6 +195,11 @@ export function SpaceMembers({
             act(() => request(`/api/v1/bans/${target.id}`, 'DELETE'), 'Ban lifted.');
           }}
         />
+      )}
+      {listsFailed && (
+        <p className="small muted" role="status">
+          Couldn't read who is muted or banned.
+        </p>
       )}
       {mutes.length > 0 && (
         <section className="panel">
