@@ -771,7 +771,7 @@ export function AppShell() {
                       // to the viewport would answer the wrong question — and
                       // answer it wrongly in the playground too, where a 390px
                       // bar sits inside a 1440px page.
-                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-1 border-b px-2 transition-[border-color] duration-300 lg:gap-2"
+                      className="app-drag-region @container/bar relative flex h-auto min-h-11 shrink-0 flex-wrap items-center gap-x-1 border-b px-2 transition-[border-color] duration-300 md:h-9 md:min-h-0 md:flex-nowrap lg:gap-x-2"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no
@@ -814,7 +814,7 @@ export function AppShell() {
                             // phone or tablet header has no width to spend on
                             // air, and the bell showing a number was enough to
                             // push the bar past its own box (DOR-2524).
-                            className="flex min-w-0 flex-1 items-center gap-1 self-stretch lg:gap-2"
+                            className="flex h-11 min-w-0 flex-1 items-center gap-1 md:h-auto md:self-stretch lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />
@@ -822,28 +822,37 @@ export function AppShell() {
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      {/* The Control Center glyph, in the persistent cluster so
+                      {/* Phone actions get their own row. That leaves the route
+                            identity a full row and gives every persistent action
+                            a 44px target without compressing tabs into initials.
+                            At `md`, `contents` restores the desktop's one row. */}
+                      <div
+                        data-slot="global-header-actions"
+                        className="flex h-11 w-full items-center justify-end gap-1 md:contents"
+                      >
+                        {/* The Control Center glyph, in the persistent cluster so
                             it is present on every route and on both desktop and
                             mobile — the honest "always visible" anchor (spec
                             D7). Outside the cross-fade like the cluster, so it
                             never blinks on navigation. */}
-                      <ControlCenter />
-                      {/* The remote-access beacon, beside it and on the same
+                        <ControlCenter />
+                        {/* The remote-access beacon, beside it and on the same
                             terms — present on every route, outside the
                             cross-fade — but only while a tunnel is actually
                             starting, up, or re-establishing itself. With remote
                             access off it draws nothing at all (DOR-1743). */}
-                      <RemoteAccessBeacon />
-                      {/* The keep-awake cup, on the same terms: machine-wide,
+                        <RemoteAccessBeacon />
+                        {/* The keep-awake cup, on the same terms: machine-wide,
                             outside the cross-fade, and drawn only while DorkOS
                             is keeping this computer awake for work. */}
-                      <KeepAwakeBeacon />
-                      {/* ── Search · inbox · right-panel toggle. Outside the
+                        <KeepAwakeBeacon />
+                        {/* ── Search · inbox · right-panel toggle. Outside the
                             cross-fade and after it, which is both halves of
                             I1: they stay mounted so the corner never blinks on
                             navigation, and the route's bar — confined to the
                             sibling above — cannot render anything past them. ── */}
-                      <BarFixedCluster />
+                        <BarFixedCluster />
+                      </div>
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the

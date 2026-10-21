@@ -42,9 +42,9 @@ export function ControlCenter() {
           type="button"
           data-testid="control-center-trigger"
           aria-label="Control Center"
-          className="focus-ring text-muted-foreground hover:text-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors"
+          className="focus-ring text-muted-foreground hover:text-foreground inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors md:size-7"
         >
-          <Zap className="size-4" aria-hidden />
+          <Zap className="size-(--size-icon-sm)" aria-hidden />
         </button>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent

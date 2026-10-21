@@ -119,6 +119,20 @@ describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
 });
 
 describe('OneBar — truncation priority (I2)', () => {
+  it('lets state chips yield before they collide with identity on a phone', () => {
+    render(
+      <BarHarness>
+        <OneBar
+          identity={<BarTitle>A long agent name</BarTitle>}
+          chips={<span>account · waiting</span>}
+        />
+      </BarHarness>
+    );
+    const chipWrapper = screen.getByText('account · waiting').parentElement;
+    expect(chipWrapper).toHaveClass('min-w-0', 'shrink');
+    expect(chipWrapper).not.toHaveClass('shrink-0');
+  });
+
   it('ellipsizes a long title and keeps the full text reachable', () => {
     // Room names are user-controlled and arrive from bridged Slack/Telegram
     // rooms too; an untruncated one blows the 36px row open on a phone.
