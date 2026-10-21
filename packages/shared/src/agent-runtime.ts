@@ -1212,6 +1212,16 @@ export interface MessageOpts extends SessionSettings {
    */
   permissionCeiling?: TurnPermissionCeiling;
   /**
+   * The `'runtime-default'` bound in {@link permissionCeiling} is a
+   * continuation's hold (DOR-3203), not a stranger's words: a turn that picks
+   * a chat up on its own while the chat's latest turn was held (an approval's
+   * answer, a resume, a wake after a restart). It clamps the turn's power and
+   * nothing more, so the turn neither records itself as held nor marks what it
+   * posts as an outsider's. Only real outsider words do either. Runtimes
+   * ignore it; the turn-level record reads it.
+   */
+  continuationHold?: true;
+  /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the
    * caller has not shown the turn yet and can put the message back in line.

@@ -402,15 +402,20 @@ describe('waiting for the reset', () => {
     recordReading('main', MOVED_ON);
     await vi.advanceTimersByTimeAsync(TO_RESET);
     const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
-    expect(opts).toMatchObject({ sessionId: 's-held', permissionCeiling: 'runtime-default' });
+    expect(opts).toMatchObject({
+      sessionId: 's-held',
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
   });
 
-  it('holds a resume whose chat has no turn on record, after a restart say', async () => {
+  it('runs a resume whose chat has no turn on record at its own level (DOR-3203)', async () => {
     await waitingSession('s-unknown');
     recordReading('main', MOVED_ON);
     await vi.advanceTimersByTimeAsync(TO_RESET);
     const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
-    expect(opts.permissionCeiling).toBe('runtime-default');
+    expect(opts.permissionCeiling).toBeUndefined();
+    expect(opts.continuationHold).toBeUndefined();
   });
 
   it('carries no ceiling for a resume whose turn was not held', async () => {

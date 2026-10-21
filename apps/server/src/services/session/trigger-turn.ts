@@ -586,6 +586,8 @@ export interface TriggerTurnOpts {
    * session, because it can only make a turn stricter, and it is never stored.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
+  continuationHold?: true;
   /**
    * The dispatcher's id for this message, handed to the runtime so a `result`
    * can be correlated back to the message that caused it.
@@ -984,6 +986,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(opts.permissionCeiling !== undefined
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
+        ...(opts.continuationHold ? { continuationHold: true as const } : {}),
         ...(dispatchHold !== undefined ? { dispatchHold } : {}),
       });
     let source: AsyncIterable<StreamEvent>;

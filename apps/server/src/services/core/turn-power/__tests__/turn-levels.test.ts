@@ -9,7 +9,8 @@
  * must be held to that default too — not to the poster's Full autonomy row,
  * which would launder the stranger's message into a shell one hop later.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -24,6 +25,12 @@ import {
 } from '../turn-levels.js';
 import { ceilingForEntries, ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import { noteTurnOrigin } from '../../../session/origin/outsider-turns.js';
+import {
+  ceilingForContinuation,
+  lastTurnHeld,
+  noteTurnHold,
+  setContinuationHoldDb,
+} from '../continuation-hold.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 
 const DEFAULT = { asks: 'always', reach: 'edit' };
@@ -245,5 +252,54 @@ describe('the ceiling of a turn answering several messages', () => {
 
   it('puts no bound on a burst only people on this machine wrote', () => {
     expect(ceilingForEntries(REGISTRY, [{ id: 'e1', authorId: 'dorian' }])).toEqual({});
+  });
+});
+
+describe('a turn a continuation’s hold clamped (DOR-3203)', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  /** A chat whose latest turn was held, read back by a new process (a restart). */
+  function heldAcrossRestart(chat: string) {
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    noteTurnHold(chat, true);
+    setContinuationHoldDb(db);
+    return db;
+  }
+
+  it('runs at the default, marks nothing it posts, and leaves the hold as it was', async () => {
+    const chat = fresh('woken-after-restart');
+    const entry = fresh('woken-post');
+    const db = heldAcrossRestart(chat);
+    const runtime = wrapped({ [chat]: 'bypassPermissions' });
+    await send(runtime, chat, ceilingForContinuation(chat));
+    expect(lastTurnLevelOf(chat)).toEqual(DEFAULT);
+    noteEntryLevel(entry, postLevelFor([chat]));
+    expect(entryLevelOf(entry)).toEqual(DEFAULT);
+    expect(entryLevelOf(entry)?.outsider).toBeUndefined();
+    // Still held: the next continuation holds too (DOR-3037).
+    setContinuationHoldDb(db);
+    expect(lastTurnHeld(chat)).toBe(true);
+  });
+
+  it('is unlike a stranger’s hold, which marks the turn and records it as held', async () => {
+    const chat = fresh('stranger-held');
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    noteTurnHold(chat, false);
+    await send(wrapped({ [chat]: 'bypassPermissions' }), chat, {
+      permissionCeiling: 'runtime-default',
+    });
+    expect(postLevelFor([chat])).toEqual(DEFAULT_OUTSIDER);
+    setContinuationHoldDb(db);
+    expect(lastTurnHeld(chat)).toBe(true);
+  });
+
+  it('still marks what a chat a stranger reached posts', async () => {
+    const chat = fresh('connector-chat');
+    heldAcrossRestart(chat);
+    noteTurnOrigin(chat, { kind: 'connector-event' });
+    await send(wrapped({ [chat]: 'bypassPermissions' }), chat, ceilingForContinuation(chat));
+    expect(postLevelFor([chat])).toMatchObject({ outsider: true });
   });
 });

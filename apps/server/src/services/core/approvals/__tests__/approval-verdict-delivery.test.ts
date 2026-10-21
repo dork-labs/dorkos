@@ -165,6 +165,30 @@ describe('deliverApprovalVerdict', () => {
     }
   });
 
+  it('holds a held chat’s answer across a restart, and never clamps a chat with no record (DOR-3203)', async () => {
+    const { approvals, deliverApprovalVerdict, dispatchMessage } = await loadWithMocks();
+    const hold = await import('../../turn-power/continuation-hold.js');
+    const db = createTestDb();
+    hold.setContinuationHoldDb(db);
+    try {
+      // Nothing recorded: a chat that ran before the hold existed.
+      await deliverApprovalVerdict(approvals, askAndAnswer(approvals));
+      expect(dispatchMessage.mock.calls[0][0].permissionCeiling).toBeUndefined();
+      expect(dispatchMessage.mock.calls[0][0].continuationHold).toBeUndefined();
+
+      hold.noteTurnHold(SESSION_ID, true);
+      // A new process: the same rows, nothing in memory.
+      hold.setContinuationHoldDb(db);
+      await deliverApprovalVerdict(approvals, askAndAnswer(approvals));
+      expect(dispatchMessage.mock.calls[1][0]).toMatchObject({
+        permissionCeiling: 'runtime-default',
+        continuationHold: true,
+      });
+    } finally {
+      hold.setContinuationHoldDb(undefined);
+    }
+  });
+
   it('carries a refusal, and the reason with it', async () => {
     const { approvals, deliverApprovalVerdict, dispatchMessage } = await loadWithMocks();
     const { approvalId } = approvals.request({
