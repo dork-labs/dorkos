@@ -67,6 +67,19 @@ describe('the held turn hook', () => {
     ).toEqual(ASK);
   });
 
+  it('holds a turn whose only bound is a level marked as having read an outsider', async () => {
+    // Security M1's belt: a marked level that reached a ceiling without the stranger bound.
+    const marked = {
+      asks: 'when-risky',
+      reach: 'workspace',
+      outsider: true,
+    } as unknown as TurnPermissionCeiling;
+    const python = call('Bash', { command: 'python3 -c 1' });
+    expect(
+      await decide({ permissionMode: 'default', turnPermissionCeiling: marked }, python)
+    ).toEqual(ASK);
+  });
+
   it('leaves a turn that is not held to the folder’s rules', async () => {
     const python = call('Bash', { command: 'python3 -c 1' });
     expect(await decide({ permissionMode: 'default' }, python)).toEqual({});

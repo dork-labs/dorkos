@@ -42,7 +42,6 @@ import {
   agentMarksRunning,
   applyTurnMarks,
   ceilingCarrying,
-  hasMarks,
   marksForTurn,
   marksOfLevel,
   NO_MARKS,
@@ -201,11 +200,14 @@ export function marksOf(
  * marked, or `undefined` when it is not. Read by `session_start`, which sends
  * it as the new session's ceiling, so the new chat carries the marks on.
  *
- * Its own level when this process recorded the caller's turn, which bounds no
- * tighter than the turn already ran; otherwise, while one of its agent's
- * marked turns runs, a ceiling carrying those marks (`ceilingCarrying`): the
- * runtime default, and a read-only level holding every teammate origin. A
- * chat a stranger reached is marked here too ({@link passedOnLevelOf}).
+ * A ceiling carrying the marks (`ceilingCarrying`): the runtime default, and a
+ * read-only level holding every teammate origin; beside the caller's own level
+ * when this process recorded its turn, so the new chat runs no looser than
+ * either. The marks ride as bounds of their own, as `chat_send` and a room post
+ * carry them (DOR-3141): a bare marked level would hold the new chat's power
+ * but not read as a stranger's turn where that decides (the held turn's hook
+ * and its cards, DOR-3204). A chat a stranger reached is marked here too
+ * ({@link passedOnLevelOf}).
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -218,8 +220,11 @@ export function markedBoundOf(
   const marks = heard
     ? { ...marksOf(sessionId, agentPath), outsider: true as const }
     : marksOf(sessionId, agentPath);
-  if (!hasMarks(marks)) return undefined;
-  return (sessionId ? passedOnLevelOf(sessionId) : undefined) ?? ceilingCarrying(marks);
+  const carried = ceilingCarrying(marks);
+  if (carried === undefined) return undefined;
+  const level = sessionId ? passedOnLevelOf(sessionId) : undefined;
+  if (level === undefined) return carried;
+  return [level, ...(Array.isArray(carried) ? carried : [carried as TurnPermissionBound])];
 }
 
 /**

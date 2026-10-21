@@ -17,7 +17,7 @@
  * @module services/runtimes/claude-code/turn-permission
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import { ceilingCarriesOutsider, clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
@@ -168,6 +168,23 @@ export function ceilingOn(session: {
   if (stranger(session.turnPermissionCeiling) || stranger(session.backgroundPermissionCeiling))
     return 'stranger';
   return heldToACeiling(session) ? 'held' : 'none';
+}
+
+/**
+ * Whether the gate is held for words DorkOS cannot vouch for (DOR-3204): this turn's ceiling, or
+ * the one background work carries, holds the `runtime-default` bound or a level marked as having
+ * read an outsider's words. Wider than `ceilingOn(…) === 'stranger'` on purpose: a marked level
+ * that reached a ceiling without the bound beside it is still a stranger's turn.
+ *
+ * @param session - This turn's ceiling and the one background work carries.
+ */
+export function heldForOutsider(session: {
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): boolean {
+  return [session.turnPermissionCeiling, session.backgroundPermissionCeiling].some(
+    (ceiling) => ceiling !== undefined && ceilingCarriesOutsider(ceiling)
+  );
 }
 
 /**

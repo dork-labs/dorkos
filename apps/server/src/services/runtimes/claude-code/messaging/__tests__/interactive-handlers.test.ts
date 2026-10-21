@@ -165,10 +165,12 @@ describe('createCanUseTool — approval gate', () => {
         destination: 'localSettings',
       },
     ] as PermissionUpdate[];
-    const raised = async (held: boolean) => {
+    const MARKED = { asks: 'always', reach: 'edit', outsider: true } as const;
+    const raised = async (held: false | 'stranger' | 'marked') => {
       const session = {
         ...makeSession('default'),
-        ...(held ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+        ...(held === 'stranger' ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+        ...(held === 'marked' ? { turnPermissionCeiling: MARKED } : {}),
       };
       void createCanUseTool(session, noopLog)(
         NON_SAFE_TOOL,
@@ -178,9 +180,14 @@ describe('createCanUseTool — approval gate', () => {
       await vi.waitFor(() => expect(session.eventQueue).toHaveLength(1));
       return [session.eventQueue[0], session.pendingInteractions.get('tool-held')] as const;
     };
-    const [heldEvent, heldPending] = await raised(true);
-    expect(heldEvent).toMatchObject({ type: 'approval_required', data: { hasSuggestions: false } });
-    expect(heldPending?.type === 'approval' && heldPending.suggestions).toEqual([]);
+    for (const held of ['stranger', 'marked'] as const) {
+      const [heldEvent, heldPending] = await raised(held);
+      expect(heldEvent).toMatchObject({
+        type: 'approval_required',
+        data: { hasSuggestions: false },
+      });
+      expect(heldPending?.type === 'approval' && heldPending.suggestions).toEqual([]);
+    }
     const [freeEvent] = await raised(false);
     expect(freeEvent).toMatchObject({ data: { hasSuggestions: true } });
   });

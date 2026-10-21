@@ -51,8 +51,8 @@ import {
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
 import {
-  ceilingOn,
   gatePermissionMode,
+  heldForOutsider,
   neverAsks,
   resolveModeDecision,
   type CeilingedMode,
@@ -545,7 +545,7 @@ export function createCanUseTool(
       });
       // A turn DorkOS cannot vouch for offers no "Always allow" (DOR-3204): a
       // stranger's turn must not write a standing rule into the folder.
-      const offered = ceilingOn(session) === 'stranger' ? { ...context, suggestions: [] } : context;
+      const offered = heldForOutsider(session) ? { ...context, suggestions: [] } : context;
       return handleToolApproval(session, context.toolUseID, toolName, input, offered);
     }
     log.debug('[canUseTool] auto-allow', {

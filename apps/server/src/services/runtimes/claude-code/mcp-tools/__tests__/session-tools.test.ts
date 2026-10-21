@@ -1585,7 +1585,10 @@ describe('a marked start from a chat at Full (DOR-3147)', () => {
     const result = await fromChat('full-parent', 'bypassPermissions')(BASE);
     expect(result.isError).toBeUndefined();
     expect(saved(0)).toBe(CLAUDE_CODE_CAPABILITIES.permissionModes.default);
-    expect(sent(0).permissionCeiling).toMatchObject({ outsider: true });
+    expect(sent(0).permissionCeiling).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
 
     const named = await fromChat(
       'full-parent',
@@ -1604,12 +1607,18 @@ describe('a marked start from a chat at Full (DOR-3147)', () => {
     const carried = sent(0).permissionCeiling;
     // The spin-off's own turn runs under what it was born with.
     await turnOn(spinOff, { permissionCeiling: carried! }, saved(0)!);
-    expect(markedBoundOf(spinOff, AGENT_HOME)).toMatchObject({ outsider: true });
+    expect(markedBoundOf(spinOff, AGENT_HOME)).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
 
     const hop = await fromChat(spinOff, saved(0)!)(BASE);
     expect(hop.isError).toBeUndefined();
     expect(saved(1)).not.toBe('bypassPermissions');
-    expect(sent(1).permissionCeiling).toMatchObject({ outsider: true });
+    expect(sent(1).permissionCeiling).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
   });
 });
 
@@ -1637,7 +1646,7 @@ describe("session_start passes on an outsider's words (DOR-2781)", () => {
   it("carries the starter's level when its turn read an outsider's words", async () => {
     await turnOn('tainted-parent', { permissionCeiling: 'runtime-default' });
     await fromChat('tainted-parent')(BASE);
-    expect(sentCeiling()).toMatchObject({ outsider: true });
+    expect(sentCeiling()).toEqual([expect.objectContaining({ outsider: true }), 'runtime-default']);
   });
 
   it('carries nothing from a turn the owner started', async () => {

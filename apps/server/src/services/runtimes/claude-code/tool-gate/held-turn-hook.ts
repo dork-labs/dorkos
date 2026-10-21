@@ -1,8 +1,8 @@
 /**
  * A held turn asks about the calls the folder's own allow rules would have run (DOR-3204).
  *
- * A turn held to the runtime's default (a stranger's message, a Wi-Fi sign-in, a teammate, a
- * continuation of one: `ceilingOn` answers `'stranger'`) runs Claude Code in Default mode. Default
+ * A turn held for words DorkOS cannot vouch for (a stranger's message, a Wi-Fi sign-in, a teammate,
+ * a chat or spin-off one of those reached: `heldForOutsider`) runs Claude Code in Default mode. Default
  * still honours the `permissions.allow` lines in the folder's `.claude/settings*.json`, so a rule
  * such as `Bash(python3 *)` would run that command without ever reaching `canUseTool`, and the
  * held turn would get no card.
@@ -22,7 +22,7 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { ceilingOn, type CeilingedMode } from '../turn-permission.js';
+import { heldForOutsider, type CeilingedMode } from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
 import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
@@ -80,9 +80,9 @@ export function createHeldTurnHook(
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
-    // The runtime-default bound always holds Claude Code to Default (or stricter), a mode that
-    // asks, so there is no mode here that would mean "do not ask".
-    if (ceilingOn(session) !== 'stranger') return {};
+    // Such a turn runs at Default or stricter, a mode that asks. Were a marked level ever to leave
+    // it at Full, the `ask` would reach `canUseTool`, which allows at Full: no card, nothing lost.
+    if (!heldForOutsider(session)) return {};
     const toolName = hookInput.tool_name;
     if (PASS_THROUGH_TOOLS.has(toolName)) return {};
     const input =
@@ -93,7 +93,7 @@ export function createHeldTurnHook(
     if (
       toolName === 'Bash' &&
       typeof input.command === 'string' &&
-      isPlainReadCommand(input.command)
+      isPlainReadCommand(input.command, folders.cwd, folders.roots)
     ) {
       return {};
     }
