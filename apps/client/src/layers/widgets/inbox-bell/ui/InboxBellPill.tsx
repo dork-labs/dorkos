@@ -96,14 +96,14 @@ export function InboxBellPill({
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 500, damping: 32 }}
       className={cn(
-        // **A 28px square below `lg`, whatever the number.** On a phone and a
-        // tablet the pill is the same square as the header's other controls,
+        // **A 44px square below `md`, whatever the number.** On a phone the
+        // pill is the same touch target as the header's other controls,
         // and the number rides its corner as a badge. A pill that grew with its
         // count ("9+ unread") spent 23 to 70px of a row that has none to give:
         // with one unread row the bar beside it painted past its own box on
         // Home, Tasks and Team (DOR-2524). From `lg` up the number and its word
         // sit inline again, where the row has room for them.
-        'focus-visible:ring-ring relative flex h-6 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
+        'focus-visible:ring-ring relative flex size-11 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 md:h-6 md:w-7 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
         tone === 'waiting'
           ? 'bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40'
           : 'text-muted-foreground border-border/60 hover:border-border hover:bg-muted active:bg-muted/70',
@@ -111,7 +111,7 @@ export function InboxBellPill({
       )}
       {...rest}
     >
-      <Glyph aria-hidden className="size-3.5 shrink-0" />
+      <Glyph aria-hidden className="size-(--size-icon-sm) shrink-0" />
       {count !== undefined && (
         <span
           data-slot="inbox-bell-count"

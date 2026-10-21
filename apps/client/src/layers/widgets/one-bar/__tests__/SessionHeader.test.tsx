@@ -162,10 +162,13 @@ describe('SessionHeader', () => {
     expect(name).not.toHaveClass('shrink-0');
   });
 
-  it('gives the title and the name each a floor, so neither collapses to nothing', () => {
+  it('lets identity yield on a phone, then gives title and name a floor in a roomy bar', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: 'A very long title' });
-    expect(screen.getByTestId('session-title')).toHaveClass('min-w-[3rem]');
-    expect(screen.getByTestId('session-agent-name')).toHaveClass('min-w-[3.5rem]');
+    expect(screen.getByTestId('session-title')).toHaveClass('min-w-0', '@sm/bar:min-w-[3rem]');
+    expect(screen.getByTestId('session-agent-name')).toHaveClass(
+      'min-w-0',
+      '@sm/bar:min-w-[3.5rem]'
+    );
   });
 
   it('caps the origin chip and lets it shrink, so it cannot shove the identity', () => {
