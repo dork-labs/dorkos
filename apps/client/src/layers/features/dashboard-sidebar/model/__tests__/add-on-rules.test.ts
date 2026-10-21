@@ -117,7 +117,7 @@ describe('the Add-ons section', () => {
       prefs: prefs({ ...busyFixture.prefs, sections: { addons: { collapsed: true } } }),
     });
     expect(folded?.collapsed).toBe(true);
-    expect(folded?.rollup).toEqual({ keptRows: [], workingCount: 0 });
+    expect(folded?.rollup).toEqual({ keptRows: [], workingCount: 0, hiddenCount: 2 });
   });
 
   it('has somewhere to store its fold', () => {

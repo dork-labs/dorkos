@@ -448,7 +448,39 @@ describe('BC-31 — a folded section keeps its signal', () => {
   });
 
   it('keeps nothing and counts nothing for a quiet section', () => {
-    expect(rollUpCollapsedSection([], () => false)).toEqual({ keptRows: [], workingCount: 0 });
+    expect(rollUpCollapsedSection([], () => false)).toEqual({
+      keptRows: [],
+      workingCount: 0,
+      hiddenCount: 0,
+    });
+  });
+});
+
+describe('DOR-3200 — a folded section says how many rows it hides', () => {
+  /** `busy` with Direct messages folded. */
+  const foldedDms: SidebarState = {
+    ...busyFixture,
+    prefs: prefs({ ...busyFixture.prefs, sections: { dms: { collapsed: true } } }),
+  };
+
+  it('counts every row the fold hides, and none it keeps', () => {
+    const dms = section(foldedDms, 'dms');
+    const kept = dms?.rollup?.keptRows.length ?? 0;
+    expect(kept).toBe(2);
+    expect(dms?.rows.length).toBeGreaterThan(kept);
+    expect(dms?.rollup?.hiddenCount).toBe((dms?.rows.length ?? 0) - kept);
+  });
+
+  it('counts zero when every row stays on screen', () => {
+    const kept = section(foldedDms, 'dms')?.rollup?.keptRows ?? [];
+    expect(kept.length).toBeGreaterThan(0);
+    expect(rollUpCollapsedSection(kept, () => false).hiddenCount).toBe(0);
+  });
+
+  it('counts nothing while the section is open', () => {
+    const dms = section(busyFixture, 'dms');
+    expect(dms?.collapsed).toBe(false);
+    expect(dms?.rollup).toBeUndefined();
   });
 });
 

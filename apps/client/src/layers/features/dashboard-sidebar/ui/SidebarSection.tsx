@@ -108,7 +108,8 @@ export interface SidebarSectionProps {
  * **The whole header row is the toggle** and every destination is a leaf row,
  * so select-versus-expand is never ambiguous (BC-29). A collapsed section keeps
  * its unread rows on screen under the header, so folding never loses signal
- * (BC-31), and the header itself never carries a count.
+ * (BC-31). The header carries no unread count — only "· N more", the rows the
+ * fold hides (DOR-3200).
  *
  * @param props - The section and the all-sections toggle.
  */
@@ -202,6 +203,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {...(chrome.adornment === undefined ? {} : { adornment: chrome.adornment })}
       {...(chrome.editor === undefined ? {} : { editor: chrome.editor })}
       {...(trailing === undefined ? {} : { trailing })}
+      {...(section.collapsed && section.rollup ? { hiddenCount: section.rollup.hiddenCount } : {})}
     />
   );
 

@@ -219,8 +219,10 @@ function ModelSection({
               collapsed={collapsed}
               onToggle={() => setCollapsed((previous) => !previous)}
               controlsId={listId}
-              // Never a count, and never bold: the rows still asking for
-              // something stay on screen below a folded header (BC-31).
+              // Never an unread count, and never bold: the rows still asking
+              // for something stay on screen below a folded header (BC-31).
+              // Only "· N more", the rows the fold hides (DOR-3200).
+              {...(collapsed ? { hiddenCount: rollup.hiddenCount } : {})}
               {...(collapsed && rollup.workingCount > 0
                 ? { trailing: <FoldedWorkingDot count={rollup.workingCount} /> }
                 : {})}

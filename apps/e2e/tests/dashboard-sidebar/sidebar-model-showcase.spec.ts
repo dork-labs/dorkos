@@ -294,14 +294,18 @@ test.describe('Sidebar model showcase @smoke', () => {
     // some of its agents are working. Both have to survive the fold (BC-31),
     // and neither does it as a number: the unread rows stay on screen under
     // the header, drawn as they are when the section is open, and the header
-    // carries one working dot and no count.
+    // carries one working dot and no unread count — only how many rows the
+    // fold hides (DOR-3200).
     const channels = page.locator(
       '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-slot="sidebar-model-section"][data-section="channels"]'
     );
     const header = channels.getByRole('button', { name: /^Channels/ });
     await expect(header).toHaveAttribute('aria-expanded', 'false');
     await expect(header, 'a folded header is never bold').not.toHaveClass(/font-semibold/);
-    await expect(header, 'a folded header carries no count').not.toHaveText(/\d/);
+    await expect(header, 'a folded header counts only what it hides').toHaveText(
+      /^Channels· \d+ more$/
+    );
+    await expect(header).toHaveAccessibleDescription(/^\d+ more$/);
     await expect(header.getByRole('img', { name: 'Agents working' })).toBeVisible();
 
     // The unread rows are still there, and every one of them is bold.
@@ -317,6 +321,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     await header.click();
     await expect(header).toHaveAttribute('aria-expanded', 'true');
     await expect(header.getByRole('img', { name: 'Agents working' })).toHaveCount(0);
+    await expect(header, 'an open header counts nothing').not.toHaveText(/more/);
     await expect(channels.locator('[data-slot="sidebar-model-kept-rows"]')).toHaveCount(0);
   });
 

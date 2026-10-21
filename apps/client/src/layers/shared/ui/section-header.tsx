@@ -14,7 +14,7 @@
  *
  * @module shared/ui/section-header
  */
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import {
@@ -104,6 +104,15 @@ export interface SectionHeaderProps {
   /** Rendered immediately after the label — a smart group's rule glyph. */
   adornment?: ReactNode;
   /**
+   * How many rows the fold hides. A collapsed header with one or more says
+   * "· 12 more" after its name, and a screen reader hears "12 more" as the
+   * toggle's description (DOR-3200).
+   *
+   * Read only while {@link collapsed}: an open section hides nothing, and a
+   * fold that hides nothing (every row stayed on screen) says nothing.
+   */
+  hiddenCount?: number;
+  /**
    * An inline editor that REPLACES the label — renaming a group. The "⋮" is
    * withdrawn while it is up, so the menu that opened the editor cannot offer a
    * second door back into itself.
@@ -181,6 +190,7 @@ export function SectionHeader({
   menuWidth = 'w-48',
   trailing,
   adornment,
+  hiddenCount = 0,
   editor,
   level = 3,
   controlsId,
@@ -192,6 +202,8 @@ export function SectionHeader({
   const isMobile = useIsMobile();
   const pointer = isMobile ? 'coarse' : 'fine';
   const height = SECTION_HEADER_HEIGHT[pointer];
+  const hiddenId = useId();
+  const showsHidden = collapsed === true && hiddenCount > 0;
   // One line, whether it comes from the label button or the plain span: 11px
   // medium at `--sidebar-header-x`, and nothing else. Spelled once so a section
   // that cannot fold cannot end up looking like a different kind of thing.
@@ -266,6 +278,10 @@ export function SectionHeader({
         // the state (`aria-expanded={false}`) where assistive tech is most
         // likely to follow it.
         aria-controls={collapsed ? undefined : controlsId}
+        // **A description, not part of the name**, so the toggle is still
+        // called by its section's name alone and reads "DorkOS, collapsed,
+        // 12 more" — the name, the `aria-expanded` state, then this.
+        aria-describedby={showsHidden ? hiddenId : undefined}
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           line,
@@ -274,6 +290,16 @@ export function SectionHeader({
       >
         <span className="truncate">{label}</span>
         {adornment}
+        {showsHidden && (
+          // Tertiary ink and regular weight: it is about the name, and quieter
+          // than it. Never truncated — the name gives way first, because a
+          // cut-off number says nothing. Hidden from the name and read back as
+          // the description: a node `aria-describedby` points at directly is
+          // read even inside `aria-hidden`, and the "·" is left out of it.
+          <span aria-hidden className="text-muted-foreground shrink-0 font-normal tabular-nums">
+            · <span id={hiddenId}>{hiddenCount} more</span>
+          </span>
+        )}
         {rightCluster}
       </button>
     ) : (

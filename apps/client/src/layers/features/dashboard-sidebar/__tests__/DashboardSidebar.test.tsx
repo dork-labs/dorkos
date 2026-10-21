@@ -1046,7 +1046,7 @@ describe('DashboardSidebar', () => {
 
   // ── BC-31: a folded section keeps its signal ──
 
-  it('BC-31 — a folded section keeps its unread rows on screen and carries no count', async () => {
+  it('BC-31 — a folded section keeps its unread rows on screen and carries no unread count', async () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ sections: { dms: { collapsed: true } } }));
     mockRooms.mockReturnValue([
       {
@@ -1062,8 +1062,11 @@ describe('DashboardSidebar', () => {
     const heading = screen.getByRole('heading', { name: /Direct messages/, level: 3 });
     // The read conversation folds away; the one with something new stays put.
     expect(screen.queryByText('Read chat')).not.toBeInTheDocument();
-    // The header carries no number at all — only a dot while a member works.
-    expect(heading.textContent).not.toMatch(/\d/);
+    // The header carries no unread number — only how many rows the fold hides
+    // (DOR-3200), and a dot while a member works.
+    expect(heading.textContent).not.toMatch(/3/);
+    expect(heading.textContent).toContain('· 2 more');
+    expect(sectionToggle('Direct messages')).toHaveAccessibleDescription('2 more');
     expect(within(heading).getByRole('img', { name: 'Agent working' })).toBeInTheDocument();
   });
 

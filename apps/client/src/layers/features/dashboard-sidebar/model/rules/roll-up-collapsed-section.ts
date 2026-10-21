@@ -17,15 +17,20 @@ function hasUnreadSignal(row: SidebarRowModel): boolean {
 
 /**
  * What a folded section still shows: the rows that are asking for the
- * operator, and whether any of its members are working.
+ * operator, how many rows it hides, and whether any of its members are working.
  *
- * **Rows, not counts.** A folded header used to say "12 · 3 unread", which put
- * a number on a header and made the reader unfold the section to learn what
- * the number was about. Now the header never carries a count: a folded
+ * **Rows, not unread counts.** A folded header used to say "12 · 3 unread",
+ * which put an unread number on a header and made the reader unfold the section
+ * to learn what the number was about. Now the header never carries one: a folded
  * section keeps its unread rows on screen beneath it, each one drawn exactly
  * as it is when the section is open — bold, with its own count pill where
  * something was aimed at you. Folding hides what is quiet and nothing else,
  * which is what "folding never loses signal" asks for.
+ *
+ * **The one number it does carry is what is hidden** (DOR-3200). With no hint,
+ * a folded section showing two unread rows read as an open section that had
+ * lost its other ten, so the header says "· 10 more" — a count of rows, not
+ * of unread, and nothing at all when the fold hides nothing.
  *
  * **The working count is asked, not inferred** — and that is the whole of
  * `isWorking`. BC-31's text is "members currently streaming", and streaming is
@@ -55,5 +60,5 @@ export function rollUpCollapsedSection(
     if (hasUnreadSignal(row)) keptRows.push(row.draggable ? { ...row, draggable: false } : row);
     if (isWorking(row)) workingCount += 1;
   }
-  return { keptRows, workingCount };
+  return { keptRows, workingCount, hiddenCount: rows.length - keptRows.length };
 }
