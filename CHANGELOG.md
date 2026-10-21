@@ -13,6 +13,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.125.0] - 2026-10-21
+
+> DorkOS 0.125.0 makes the sidebar a list of places with a new Threads page, lets you rename an agent's @handle, stops chats asking for approval on every step after an upgrade, and adds an experiment that makes a chat with one agent read like a direct message.
+
+### Added
+
+- Talk about a post or task right inside a mini app. A mini app can show a room thread and let you reply there, under your own name. You choose which rooms it uses in Settings → Extensions, and it only sees what you can see there. Agents and other websites can't reply as you through it, and an agent a mini app's reply wakes runs at the default level and asks first. Each reply is in the audit trail with the mini app named. A mini app runs with your access, so only turn on ones you trust. (DOR-3017)
+- Rest your pointer on a room in the sidebar to see its name and its last message, as plain text
+- A direct message shows a soft dot on the agent's face while it is working
+- Try talking to an agent like a teammate. In Settings, under Experiments, turn on **Chats with one agent read like a DM**. Your chat with an agent then looks like a direct message: its face and name at the top, its replies with its face, name and time, and a message box like a channel's. Nothing the chat shows today is lost: replies still appear as they are written, and the steps and to-dos behind each reply fold into one line you can open. The Wi-Fi notice and a nearly full context still show under the box. (DOR-3074)
+  - Clicking the agent anywhere opens that same chat: its row in the sidebar, Message on its card, its profile, the New menu and the agent in Cmd+K.
+  - Click an agent's face, name or @mention in a channel to see its card, with what it does, what it is working on, and Message and Profile buttons. With a keyboard, press Enter on its name.
+  - The top of the chat lists the channels you and the agent are both in.
+- Turn on **Show sessions** on the same page to keep the model, account and context one click away. A chip at the top of the chat shows how full its context is and opens the working session behind it, exactly as chats look today. Both settings apply to everyone using this DorkOS, and only a person can change them. (DOR-3074)
+- A Threads page lists every thread you are in, newest reply first. Each one shows its room, the message it started from and the two newest replies, and you can answer right there (DOR-3078)
+- On a phone, a thread opens full screen over its room, with the first message pinned at the top. Tap back or swipe right, and you are where you were in the room (DOR-3078)
+- You can now change an agent's @handle from its profile, the same way you change your own. Each room the agent is in gets one quiet line saying who renamed it, and messages you already sent still reach it. Renaming an agent needs a secure connection, so a phone on plain Wi-Fi can't do it yet.
+- See document work that never started, or that reached its agent but whose result is unknown, next to a document's Routes button. Run it again or clear it. Nothing runs again unless you choose, and work that may already have run asks you first (DOR-2665)
+- With **Chats with one agent read like a DM** turned on in Settings, under Experiments, a chat with an agent now reads like a conversation. (DOR-3075)
+  - The steps behind a reply fold into one line under it, like "Worked · 6 steps · 1m 12s". Press **Show work** to see every step.
+  - While the agent works, one line says what it is doing. Press **Watch** to follow along.
+  - Questions and approvals still show in the chat, with their buttons.
+  - The side panel has the same tabs as a chat, plus a new **Work** tab. It lists every step the agent took, one reply at a time, as it happens.
+  - In a DM with more than one member, pick who the side panel is about at its top.
+  - With **Show sessions** off, the agent's model, account and chat count stay out of sight, and so do the Terminal and Chat tabs. Turn it on to see them, and to open the session from the Work tab.
+- When DorkOS can't connect a page in the canvas to its agent, a short line above the page says why, and the agent can read the same reason (DOR-3131)
+
+### Changed
+
+- A channel with new messages now shows its name in bold, with no number beside it. A number appears only when something is meant for you: a message that @mentions you, or a new message in a direct message. The number is small and grey, and shows 9+ once it passes nine (DOR-3077)
+- Mentions are counted from the conversation itself, so reading a room clears its number on every device
+- Muting a room takes away its bold, but a message that @mentions you still shows its number
+- Folding a sidebar section keeps its unread rooms in view under the section's name, instead of adding a count to the name
+- The sidebar now lists places, never single chats or threads. From the top: your workspace and New, a search box, Threads and Directory, your sections, Channels, Direct messages and Add-ons (DOR-3092)
+- An agent shows up in Direct messages once you have messaged it or pinned it, and clicking it opens your chat with it. Every other agent is in the Directory
+- A "Message an agent or person" row at the end of Direct messages opens the Directory to pick someone
+- On a phone there are three tabs: Home, DorkBot and You. Home holds the whole list. Anything waiting on you sits at the top: approvals, questions and suggested schedules to answer there, and chats that stopped with an error
+- Codex agents now run on Codex 0.163.0, which carries upstream fixes for connected tool servers, sign-ins and resumed chats. If you never picked a model for a Codex agent, it now uses Codex's new default model.
+- Agents set to Sonnet or Haiku now run on Sonnet 5.5 and Haiku 5.5. Opus and Fable are unchanged.
+- Claude Code agents now run on Agent SDK 0.3.304.
+- A helper agent that a Claude Code agent starts can now begin with a copy of the chat so far. This is on by default, and it uses more of the context window.
+- OpenCode agents now run on OpenCode 1.19.3, which carries upstream fixes for several model providers, including usage reporting on Together AI.
+- DorkOS now turns down a handle that looks like someone else's, like `@d0rian` or `@dor1an` next to `@dorian`, or `@writer_ops` next to `@writer-ops`, and `@room` joins the reserved words.
+- Signed in on your phone or laptop over remote access or your own tunnel, you can now do everything you can at your desk: change remote access, the password, trusted package sources and the session relay, and sign your other devices out. Plain Wi-Fi keeps its lower level for now, because anyone on the same network could copy that sign-in.
+- Signing a device out now also stops the chat turn it started and removes the messages it had waiting to send. Anything started at your desk keeps going.
+- A sign-in on another device now ends after 90 days, however often you use it. Sign-ins at your desk are unchanged.
+- Chats you set to a level by hand before this update now follow their agent. Set them again to keep them where they are.
+
+### Removed
+
+- Heads up, Today and the Agents list are gone from the sidebar. Earlier chats are in ⌘K and on each agent's profile, threads are on the Threads page, approvals are in the Inbox, and scheduled runs are in Schedules and Activity
+
+### Fixed
+
+- Files opened in a chat that isn't tied to an agent can be edited and saved again. Before, the edit button stayed off and the canvas said previous saves couldn't be checked. Such a file still saves only inside the folder the chat was working in (DOR-2999)
+- When a file in the canvas can't be edited from there at all, it now says so plainly, instead of suggesting a temporary problem (DOR-2999)
+- A file in the canvas is just the file again: the notice above it only appears when something needs you, sits in one row with the refresh and edit buttons, and is one short sentence with a Check again button when previous saves can't be checked (DOR-2999)
+- An agent's row in the sidebar now shows its direct chat's new messages, in bold with a count, on a phone and on a computer
+- Codex and OpenCode chats now show when each message was sent, even after you reload the page, with a divider for each day. (DOR-3074)
+- Pressing Escape or an arrow key straight after picking up a sidebar row or section with the keyboard now works, instead of leaving it stuck in the air (DOR-3151)
+- The "Bring in existing projects" window now shows folder paths starting with `~`, like the rest of the app, so it no longer shows your computer's username when you share your screen.
+- The Team map shows your agents again. With "Let all my agents talk to each other" on, which is the default on Trusted, the map showed only its key and no agents. (DOR-3154)
+- When everyone can message everyone, the Team map now says so in one line. If the map can't be drawn, it says so and offers Retry instead of showing an empty space. (DOR-3154)
+- On a phone, the Team map now fits the screen instead of cutting off its left side. The legend folds behind a small Legend button, and the zoom buttons no longer hide behind it. (DOR-3154)
+- If the Team map can't be drawn, it now says your agents are fine and only the map failed. (DOR-3154)
+- A chat's task list no longer empties for a moment when the app briefly loses touch with DorkOS. (DOR-3154)
+- In a space, the slow mode setting, the muted and banned lists, the export panel and the notice above the message box now say when they couldn't load, instead of looking empty. (DOR-3154)
+- Changing an agent's level now reaches the chats and rooms it already has, from their next message. Before, only new chats followed it: a room the agent already worked in kept its old level, so lowering the agent left its edits going through with no approval card, and raising it left the room asking. This includes chats working in a folder inside the agent's folder.
+- A chat keeps its own level when you set one on it, and chats that outside messages reached stay where they were when the agent's level goes up. Lowering reaches every chat. Settings › Runtimes now says so: "Applies to all chats from their next turn. Chats you set by hand only follow it down."
+- The history line for a level change says how many existing chats it reached, like "14 chats follow it", and names the chats that rose, so you can find any of them and set it back.
+- A page an agent builds can talk to its agent even when its body has inline SVG icons, MathML, an embedded frame, a `<template>` or a `<noscript>`. Before, any of these quietly cut the page off (DOR-3131)
+- After an upgrade, agents could ask for approval on every step. Fixed. (DOR-3203)
+
+### Security
+
+- After you make an approvals passkey, the browser now comes back to this computer by its address, never by the name `localhost`, which another program could point somewhere else. Adding a passkey on a computer that already has many security keys now stops at the start, before a passkey is made that couldn't be saved.
+- Too many wrong passwords for one account now pause sign-ins to it for a few minutes, whichever addresses they come from.
+- The sign-in cookie can no longer be sent by another website, even through a link.
+
+### Note for people upgrading
+
+- Sonnet 5.5 and Haiku 5.5 always think a little before they answer, even when thinking is set to None.
+- If a chat or room kept asking for approval after 0.124.1, choose **Don't allow** on its waiting card, then send it a message yourself. It goes back to normal. You don't need to approve anything you didn't expect.
+
 ## [0.124.1] - 2026-10-20
 
 > DorkOS 0.124.1 lets chats your agents start work at their agent's level, keeps room agents answering when a Claude account runs out, and makes chats from your Wi-Fi ask before every step.
@@ -312,35 +396,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chats on a model with a one-million-token memory, like Opus 5.5 (1M) or Sonnet 5, showed a 200k limit. The context meter now shows the real size. Agents in those chats are no longer told their conversation is nearly full, or nudged to summarize it, at a fifth of the real limit.
 - When a message arrived in a chat while an approval was waiting, the "waiting on you" card could stay up after you answered. Its buttons did nothing and the message box stayed hidden until the agent finished. The card now clears as soon as you answer.
 
-## [0.116.0] - 2026-10-15
+Older releases (v0.1.0 – v0.116.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.116.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.116.0.md).
 
-> DorkOS 0.116.0 lets you open DorkOS on your phone or tablet over your Wi-Fi, keeps the side panel focused, and lets mini apps your agent builds use Hono with nothing installed.
-
-### Added
-
-- On a Mac, open DorkOS on your phone or tablet over your home or office Wi-Fi, with no tunnel. Turn on **Let devices on my Wi-Fi in** in Settings → Remote access, then scan the QR code it shows.
-- The switch takes effect right away, with no restart, and turning it off shuts the door at once.
-- It needs a login. If login is off, DorkOS walks you through creating your account first, and turning login off later turns Wi-Fi access off too.
-- Only devices on the same network as your computer get in.
-- The connection between your devices is not encrypted yet, so use it on a network you trust.
-- Watch the experimental agent computer beside its chat or in picture-in-picture while switching chats. Moving or closing its view keeps the computer running and returns control. (DOR-2916)
-- An extension's server half can now use Hono with nothing installed. `import { Hono } from 'hono'` used to fail to build for an extension your agent made.
-- A fetch handler now knows whether a person sent the request. Put `requirePerson()` in front of a route to keep agents and other websites out of it, or call `checkPerson()` in a handler written without Hono.
-
-### Changed
-
-- Keep the right panel focused on relevant views. Add pages, documents and shells from the + menu. (DOR-2916)
-- Close a resource view without stopping its work. Remove shared documents or stop shells through separate menu actions. (DOR-2916)
-- Use larger controls on phones. Panels stay usable when the keyboard opens. (DOR-2916)
-- A fetch handler's reply can no longer set cookies, run scripts in a page it serves, or redirect to another website. This is the same rule extensions that run in their own process already followed. A redirect to one of its own paths, like `/done`, now lands inside the extension.
-
-### Fixed
-
-- An extension's server half now starts when DorkOS's data folder sits inside a project set up for modern JavaScript modules. Before, it could stop at startup with "module is not defined".
-
-Older releases (v0.1.0 – v0.115.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.115.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.115.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.124.1...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.125.0...HEAD
+[0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
 [0.124.1]: https://github.com/dork-labs/dorkos/compare/v0.124.0...v0.124.1
 [0.124.0]: https://github.com/dork-labs/dorkos/compare/v0.123.0...v0.124.0
 [0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
@@ -350,4 +409,3 @@ Older releases (v0.1.0 – v0.115.0) are archived in [changelog/archive/CHANGELO
 [0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
 [0.118.0]: https://github.com/dork-labs/dorkos/compare/v0.117.0...v0.118.0
 [0.117.0]: https://github.com/dork-labs/dorkos/compare/v0.116.0...v0.117.0
-[0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
