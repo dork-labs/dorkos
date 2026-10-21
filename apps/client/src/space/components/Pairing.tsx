@@ -21,7 +21,8 @@ type PairingStatus = {
   pairingId: string;
   status: 'pending' | 'approved' | 'expired' | 'cancelled' | 'redeemed';
   installName: string;
-  scopes: ('read' | 'post' | 'enroll-agent')[];
+  /** `administer` is sent only to an owner or admin, who may consent to it below. */
+  scopes: ('read' | 'post' | 'enroll-agent' | 'administer')[];
   expiresAt: string;
 };
 const scopeLabel = {
@@ -29,6 +30,9 @@ const scopeLabel = {
   post: 'Post messages',
   'enroll-agent': 'Add your agents',
 };
+/** Whether a scope is one of the connection's own, listed as what it can do. */
+const listed = (scope: PairingStatus['scopes'][number]): scope is keyof typeof scopeLabel =>
+  scope !== 'administer';
 /**
  * Whether the host holds the community in this page's path. A pairing approved during a hold
  * stays read-only after release, so the page says so before anyone approves it. Any failure
@@ -66,6 +70,8 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [held, setHeld] = useState(false);
+  // An owner's or admin's consent to let the app manage the space. Off until they tick it.
+  const [manage, setManage] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
   const leadButton = useRef<HTMLButtonElement>(null);
   const signInOptions = useSignInOptionsState();
@@ -162,7 +168,11 @@ export function Pairing({ search = location.search }: { search?: string }) {
     setBusy(true);
     setError('');
     try {
-      await request(`/api/v1/pairings/${action}`, 'POST', { pairingId });
+      await request(
+        `/api/v1/pairings/${action}`,
+        'POST',
+        action === 'approve' ? { pairingId, administer: manage } : { pairingId }
+      );
       setStatus((previous) =>
         previous
           ? { ...previous, status: action === 'approve' ? 'approved' : 'cancelled' }
@@ -271,13 +281,30 @@ export function Pairing({ search = location.search }: { search?: string }) {
             </div>
             <p className="small mb-2 font-semibold">It would be able to:</p>
             <ul className="stack mb-6">
-              {status.scopes.map((scope) => (
+              {status.scopes.filter(listed).map((scope) => (
                 <li className="row" key={scope}>
                   <ShieldCheck size={16} className="text-[var(--accent)]" />
                   {scopeLabel[scope]}
                 </li>
               ))}
             </ul>
+            {status.scopes.includes('administer') && status.status === 'pending' && (
+              <Label htmlFor="pairing-manage" className="mb-6 flex items-start gap-3">
+                <input
+                  id="pairing-manage"
+                  type="checkbox"
+                  className="mt-1 size-4 shrink-0"
+                  checked={manage}
+                  onChange={(event) => setManage(event.target.checked)}
+                />
+                <span>
+                  Let this app manage this space for you
+                  <span className="small muted block">
+                    Settings, roles, rules, invitations and mutes. Your role still applies.
+                  </span>
+                </span>
+              </Label>
+            )}
             {held && status.status === 'pending' && (
               <Notice tone="info" className="mb-5">
                 The space is on hold, so this connection can only read. Connect again after the hold

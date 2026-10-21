@@ -27,6 +27,18 @@ export function projectSettings(row: SettingsRow) {
   };
 }
 
+/** The settings version an `If-Match` header names, or null when it names none. */
+export function parseIfMatch(value: string | undefined): number | null {
+  const match = value?.match(/^(?:W\/)?"?(\d+)"?$/);
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+/** The `ETag` a settings version is sent with. */
+export function settingsEtag(version: number): string {
+  return `"${version}"`;
+}
+
 /** Refuse a settings read in a lifecycle that has nothing to show. */
 export function assertReadableLifecycle(row: SettingsRow): void {
   if (row.lifecycle === 'suspended') {

@@ -28,6 +28,7 @@ import {
 import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { notifyLive } from '../../live/notices.js';
+import { requireAdministrator } from '../../moderation/administrator.js';
 import { refuseDirectMessage, registerDirectMessageRoutes } from './agents/direct-messages.js';
 
 interface ChannelRow {
@@ -320,11 +321,13 @@ export function registerChannelRoutes(
     });
   });
 
+  // Also through the `administer` credential the owner gave their paired app (DOR-3005).
   app.patch('/members/:id/role', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const body = await readJson(c, CommunityWireMemberRoleUpdateRequestSchema);
     const member = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner']);
+      await recheck(client);
       const result = await client.query<{
         id: string;
         display_name: string;
