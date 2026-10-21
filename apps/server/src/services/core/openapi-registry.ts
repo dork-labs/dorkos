@@ -6662,7 +6662,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Give a room files of its own',
   description:
-    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
+    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. An archived room answers 409 `ROOM_ARCHIVED`; bring it back before giving it files. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
   request: { params: RoomIdParams },
   responses: {
     201: {
@@ -6679,7 +6679,7 @@ registry.registerPath({
     404: roomNotFound,
     409: {
       description:
-        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
+        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), is archived (`ROOM_ARCHIVED`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
       content: {
         'application/json': {
           schema: z.object({

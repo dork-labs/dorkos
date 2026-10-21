@@ -64,6 +64,7 @@ import type {
 } from '@dorkos/shared/room-files';
 import { ROOM_UPLOAD_FILES_FIELD } from '@dorkos/shared/room-files';
 import type {
+  EnableRoomRepoResponse,
   RoomMainRepairRequest,
   RoomMainRepairResult,
   RoomMergeResult,
@@ -173,6 +174,12 @@ export function createRoomMethods(baseUrl: string) {
 
     getRoom(id: string): Promise<RoomWithRoster> {
       return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`);
+    },
+
+    enableRoomRepo(id: string): Promise<EnableRoomRepoResponse> {
+      return fetchJSON<EnableRoomRepoResponse>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo`, {
+        method: 'POST',
+      });
     },
 
     updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster> {
