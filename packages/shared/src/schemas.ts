@@ -4233,6 +4233,73 @@ export const WorkbenchProbeResponseSchema = z
 
 export type WorkbenchProbeResponse = z.infer<typeof WorkbenchProbeResponseSchema>;
 
+/**
+ * Why DorkOS served a page WITHOUT its two frame scripts (the page channel,
+ * `window.dorkos.channel`, and the DevTools shim). Stable codes: the canvas maps
+ * each to one line of copy and agents read them back.
+ *
+ * - `csp` — an enforcing Content-Security-Policy does not allow inline scripts,
+ *   or the page declares a policy in a `<meta>` tag.
+ * - `encoding` — the page is not UTF-8 (by header, `<meta charset>` or bytes).
+ * - `oversize` — the page is over {@link FRAME_SCRIPT_HTML_MAX_BYTES}.
+ * - `no-head` — the page has no explicit `<head>` tag to put the scripts in.
+ * - `markup` — something before or inside the `<head>` (or between `</head>`
+ *   and the body) is outside what the injector can place a script after safely.
+ * - `fixed-source` — the scripts themselves failed their own build-time check.
+ */
+/**
+ * The largest HTML page DorkOS adds its frame scripts to (bytes). The server's
+ * buffering cap and the `oversize` copy both read this one number.
+ */
+export const FRAME_SCRIPT_HTML_MAX_BYTES = 5 * 1024 * 1024;
+
+export const FrameBridgeRefusalSchema = z
+  .enum(['csp', 'encoding', 'oversize', 'no-head', 'markup', 'fixed-source'])
+  .openapi('FrameBridgeRefusal');
+
+export type FrameBridgeRefusal = z.infer<typeof FrameBridgeRefusalSchema>;
+
+/**
+ * Request for `POST /api/workbench/bridge` — what DorkOS decided the last time
+ * it served this page into a frame. Names the page the way the embedded browser
+ * opened it: a file under a session's `cwd`, or a path on a localhost dev
+ * server's port.
+ */
+export const WorkbenchBridgeStatusRequestSchema = z
+  .discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('serve'),
+      cwd: z.string().min(1).max(4096),
+      /** The file, relative to `cwd` or absolute inside it. */
+      path: z.string().min(1).max(4096),
+    }),
+    z.object({
+      kind: z.literal('proxy'),
+      /** The dev server's own port (1–65535), not the preview listener's. */
+      port: z.number().int().min(1).max(65535),
+      /** The path (and query, which is ignored) the frame opened. */
+      path: z.string().max(8192),
+    }),
+  ])
+  .openapi('WorkbenchBridgeStatusRequest');
+
+export type WorkbenchBridgeStatusRequest = z.infer<typeof WorkbenchBridgeStatusRequestSchema>;
+
+/**
+ * Response for `POST /api/workbench/bridge`: `added` when the frame scripts went
+ * in, `refused` with a stable `reason` when they did not, and `unknown` when
+ * DorkOS has not served that page as HTML since it started (or no longer
+ * remembers it).
+ */
+export const WorkbenchBridgeStatusResponseSchema = z
+  .object({
+    bridge: z.enum(['added', 'refused', 'unknown']),
+    reason: FrameBridgeRefusalSchema.optional(),
+  })
+  .openapi('WorkbenchBridgeStatusResponse');
+
+export type WorkbenchBridgeStatusResponse = z.infer<typeof WorkbenchBridgeStatusResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z

@@ -64,7 +64,8 @@ export const UNKNOWN_DOCUMENT_NOTE =
 export const NOT_INSTRUMENTED_NOTE =
   'That page is open but DorkOS is not instrumenting it, so it cannot be driven or read from ' +
   'here. A local file or a dev server preview can be; a page loaded straight from the internet ' +
-  'cannot.';
+  'cannot. If it is a local file or a dev server preview, read_canvas_document on it says why ' +
+  'DorkOS could not add its scripts.';
 
 /**
  * The sentence every driving tool's description carries, because it is what a

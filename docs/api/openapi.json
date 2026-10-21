@@ -9469,6 +9469,91 @@
           "port"
         ]
       },
+      "WorkbenchBridgeStatusResponse": {
+        "type": "object",
+        "properties": {
+          "bridge": {
+            "type": "string",
+            "enum": [
+              "added",
+              "refused",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FrameBridgeRefusal"
+          }
+        },
+        "required": [
+          "bridge"
+        ]
+      },
+      "FrameBridgeRefusal": {
+        "type": "string",
+        "enum": [
+          "csp",
+          "encoding",
+          "oversize",
+          "no-head",
+          "markup",
+          "fixed-source"
+        ]
+      },
+      "WorkbenchBridgeStatusRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "serve"
+                ]
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "kind",
+              "cwd",
+              "path"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proxy"
+                ]
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "kind",
+              "port",
+              "path"
+            ]
+          }
+        ]
+      },
       "CommandRegistry": {
         "type": "object",
         "properties": {
@@ -38441,6 +38526,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkbenchProbeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/bridge": {
+      "post": {
+        "tags": [
+          "Workbench"
+        ],
+        "summary": "Why a framed page has no DorkOS scripts",
+        "description": "Reports whether DorkOS added its frame scripts (the page channel and the DevTools shim) the last time it served this page into the embedded browser, and the stable reason when it did not. Names a file under a `cwd` the way the sign route does, or a path on a dev server port. `unknown` when DorkOS has not served that page as HTML.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchBridgeStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The recorded decision for that page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchBridgeStatusResponse"
                 }
               }
             }
