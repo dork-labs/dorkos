@@ -1236,6 +1236,23 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(plain?.[2]?.continuationHold).toBeUndefined();
   });
 
+  it('marks a continuation once somebody rewords it while it waits (DOR-3203)', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    await send('the answer', { permissionCeiling: 'runtime-default', continuationHold: true });
+    const [row] = listQueuedMessages(session);
+    editQueuedMessage(session, row!.id, { content: 'words from the phone', holdToDefault: true });
+    first.open();
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(
+      ([, content]) => content === 'words from the phone'
+    );
+    expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
+    expect(call?.[2]?.continuationHold).toBeUndefined();
+  });
+
   it('runs a steer on an idle session immediately, and stays quiet about it (AC3)', async () => {
     withCapabilities({ supportsSteer: true });
     // No turn is open, so the runtime reports there is nothing to join.
