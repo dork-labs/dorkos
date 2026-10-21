@@ -95,6 +95,7 @@ import { createEditBaselineCapture, detectSlashCommandName } from './message-sen
 import type { MessageSenderOpts } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
+import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
@@ -783,7 +784,7 @@ export async function resolveLaunch(args: {
   // a session may call. It does not: it auto-approves the names in it. Because the
   // list was only non-empty once a group was turned OFF, turning a group off widened
   // this agent's auto-approval instead of narrowing its access. Every DorkOS tool now
-  // goes through `canUseTool` below, which auto-approves only `DORKOS_AGENT_TOOLS`.
+  // goes through `canUseTool` below, which auto-approves only `DORKOS_AGENT_TOOLS` (`auto-allow.ts`).
   // What an agent may call is its permission, resolved by the gate on every call;
   // a Blocked area's tools are left out of the list above, and its docs out of
   // `buildSystemPromptAppend` (spec `agent-permissions` D15).
@@ -791,12 +792,8 @@ export async function resolveLaunch(args: {
   // The gate answers "does this session have an agent identity?" off the SAME
   // anchor the tool server acts as, so a call it waves through is never one the
   // tool then runs as somebody else (DOR-2091).
-  sdkOptions.canUseTool = createCanUseTool(
-    session,
-    logger,
-    editBaselineCapture,
-    createInSessionContextResolver(toolIdentity)
-  );
+  const resolveIdentity = createInSessionContextResolver(toolIdentity);
+  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity);
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -819,6 +816,9 @@ export async function resolveLaunch(args: {
       // The teammate tier (DOR-2956): every tool, every mode, before the CLI's
       // own allow rules. It answers nothing unless a teammate's turn is running.
       { hooks: [createTeammateTierHook(session)] },
+      // A held turn (DOR-3204): the folder's allow rules become cards, its deny
+      // rules still refuse. Answers nothing on any other turn.
+      { hooks: [createHeldTurnHook(session, resolveIdentity, logger)] },
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',
         hooks: [

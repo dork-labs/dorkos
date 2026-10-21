@@ -155,6 +155,36 @@ describe('createCanUseTool — approval gate', () => {
     await vi.waitFor(() => expect(session.pendingInteractions.has('tool-ceiling')).toBe(true));
   });
 
+  // DOR-3204: a stranger's turn must not write a standing rule into the folder.
+  it('offers no Always allow on a held turn’s card, and still does on any other', async () => {
+    const suggestions = [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Bash', ruleContent: 'python3 *' }],
+        behavior: 'allow',
+        destination: 'localSettings',
+      },
+    ] as PermissionUpdate[];
+    const raised = async (held: boolean) => {
+      const session = {
+        ...makeSession('default'),
+        ...(held ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+      };
+      void createCanUseTool(session, noopLog)(
+        NON_SAFE_TOOL,
+        { command: 'python3 -c 1' },
+        { ...makeContext('tool-held'), suggestions }
+      );
+      await vi.waitFor(() => expect(session.eventQueue).toHaveLength(1));
+      return [session.eventQueue[0], session.pendingInteractions.get('tool-held')] as const;
+    };
+    const [heldEvent, heldPending] = await raised(true);
+    expect(heldEvent).toMatchObject({ type: 'approval_required', data: { hasSuggestions: false } });
+    expect(heldPending?.type === 'approval' && heldPending.suggestions).toEqual([]);
+    const [freeEvent] = await raised(false);
+    expect(freeEvent).toMatchObject({ data: { hasSuggestions: true } });
+  });
+
   it('auto-allows read-only tools even in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);
