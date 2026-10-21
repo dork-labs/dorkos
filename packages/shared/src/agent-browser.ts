@@ -150,6 +150,8 @@ function takeFlag(args: readonly string[], flag: string): { values: string[]; re
 /** Flags that give the browser a sign-in, a profile or a route DorkOS cannot clean or block. */
 const UNGUARDABLE_FLAGS = [
   '--extension',
+  '--executable-path',
+  '--no-isolated',
   '--cdp-endpoint',
   '--endpoint',
   '--user-data-dir',
@@ -166,8 +168,10 @@ const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
  * rather than started unguarded. It cannot be guarded when it:
  *
  * - attaches to a browser DorkOS does not launch, or keeps a profile on disk
- *   (`--extension`, `--cdp-endpoint`, `--endpoint`, `--user-data-dir`, or no
- *   `--isolated`): its sign-ins are not the saved session DorkOS cleans;
+ *   (`--extension`, `--cdp-endpoint`, `--endpoint`, `--user-data-dir`,
+ *   `--no-isolated`, or no `--isolated`), or runs a browser binary DorkOS
+ *   did not choose (`--executable-path`): its sign-ins are not the saved
+ *   session DorkOS cleans, or the Chrome flag may not apply;
  * - sends traffic through a proxy (`--proxy-server`), which the Chrome flag
  *   that stops redirects does not reach;
  * - runs a browser other than Chrome, Chromium or Edge, for the same reason;

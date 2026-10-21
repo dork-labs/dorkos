@@ -126,6 +126,8 @@ describe('unguardableBrowserReason', () => {
 
   it.each([
     ['--extension'],
+    ['--executable-path', '/opt/browser'],
+    ['--no-isolated'],
     ['--cdp-endpoint', 'http://127.0.0.1:9222'],
     ['--endpoint=ws://x'],
     ['--user-data-dir', '/p'],

@@ -130,14 +130,27 @@ describe('the browser forms of the list', () => {
   it('blocks each host and its subdomains, on any port, in Playwright MCP', () => {
     expect(playwrightBlockedOrigins().split(';')).toEqual(
       ['cloud.dorkos.ai', 'dorkos.ai'].flatMap((host) =>
-        [host, `*.${host}`].flatMap((h) => [h, `http://${h}:*`, `https://${h}:*`])
+        [host, `*.${host}`, `${host}.`, `*.${host}.`].flatMap((h) => [
+          h,
+          `http://${h}:*`,
+          `https://${h}:*`,
+        ])
       )
     );
   });
 
   it('makes the Cloud hosts unresolvable in Chrome, and never all of localhost', () => {
     expect(chromeHostResolverRules()).toBe(
-      'MAP cloud.dorkos.ai ~NOTFOUND, MAP *.cloud.dorkos.ai ~NOTFOUND, MAP dorkos.ai ~NOTFOUND, MAP *.dorkos.ai ~NOTFOUND'
+      [
+        'MAP cloud.dorkos.ai ~NOTFOUND',
+        'MAP *.cloud.dorkos.ai ~NOTFOUND',
+        'MAP cloud.dorkos.ai. ~NOTFOUND',
+        'MAP *.cloud.dorkos.ai. ~NOTFOUND',
+        'MAP dorkos.ai ~NOTFOUND',
+        'MAP *.dorkos.ai ~NOTFOUND',
+        'MAP dorkos.ai. ~NOTFOUND',
+        'MAP *.dorkos.ai. ~NOTFOUND',
+      ].join(', ')
     );
     const local = cloudOriginEntries({ DORKOS_CLOUD_URL: 'http://localhost:3000' });
     expect(chromeHostResolverRules(local)).not.toContain('localhost');

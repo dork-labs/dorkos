@@ -186,9 +186,11 @@ export function withoutCloudOrigin<S extends StorageStateLike>(
  * entries, each of which it turns into a context-wide route that aborts every
  * matching request (pages, iframes and popups alike). A route never sees the
  * later hops of a redirect, which is what {@link chromeHostResolverRules} is
- * for. A host is
- * listed bare and with `*.` for its subdomains, and again with a wildcard
- * port, because a bare host only matches the default port.
+ * for. A host is listed bare and with `*.` for its subdomains, each also in
+ * its fully qualified form with a trailing dot (`cloud.example.`, which
+ * Chrome treats as a different host and a route glob would otherwise miss),
+ * and each again with a wildcard port, because a bare host only matches the
+ * default port.
  *
  * @param entries - The list, from {@link cloudOriginEntries}.
  */
@@ -202,7 +204,7 @@ export function playwrightBlockedOrigins(
       values.push(`${entry.protocol}//${entry.host}${port}`);
       continue;
     }
-    for (const host of [entry.host, `*.${entry.host}`]) {
+    for (const host of [entry.host, `*.${entry.host}`, `${entry.host}.`, `*.${entry.host}.`]) {
       values.push(host, `http://${host}:*`, `https://${host}:*`);
     }
   }
@@ -211,8 +213,8 @@ export function playwrightBlockedOrigins(
 
 /**
  * The list as Chrome's `--host-resolver-rules` value: every listed host and its
- * subdomains resolve to nothing, so no request reaches them by any path, the
- * hops of a redirect included. A local origin is left out on purpose: a rule
+ * subdomains resolve to nothing, in both the plain and the trailing-dot form,
+ * so no request reaches them by any path, the hops of a redirect included. A local origin is left out on purpose: a rule
  * for `localhost` would take every local server down with it, and the route
  * block still covers it.
  *
@@ -223,6 +225,10 @@ export function chromeHostResolverRules(
 ): string {
   return entries
     .filter((entry): entry is Extract<CloudOriginEntry, { kind: 'host' }> => entry.kind === 'host')
-    .flatMap((entry) => [`MAP ${entry.host} ~NOTFOUND`, `MAP *.${entry.host} ~NOTFOUND`])
+    .flatMap((entry) =>
+      [entry.host, `*.${entry.host}`, `${entry.host}.`, `*.${entry.host}.`].map(
+        (host) => `MAP ${host} ~NOTFOUND`
+      )
+    )
     .join(', ');
 }

@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): agent browsers never reach DorkOS Cloud (DOR-3196)'
   - 'fix(server): keep agent browsers off dorkos.ai and refuse unguardable ones (DOR-3196)'
+  - 'fix(server): block the trailing-dot Cloud hostnames too (DOR-3196)'
 ---
 
 ### Security

@@ -127,7 +127,9 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
     );
     // Sends every DorkOS host to the local server, so a request that got through is counted.
     const port = new URL(site).port;
-    const mapping = `MAP dorkos.ai 127.0.0.1:${port}, MAP *.dorkos.ai 127.0.0.1:${port}`;
+    const mapping = ['dorkos.ai', '*.dorkos.ai', 'dorkos.ai.', '*.dorkos.ai.']
+      .map((host) => `MAP ${host} 127.0.0.1:${port}`)
+      .join(', ');
     const mappingFile = path.join(root, 'mapping.json');
     fs.writeFileSync(
       mappingFile,
@@ -163,6 +165,17 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
       await browser.call('browser_navigate', { url: 'http://cloud.dorkos.ai/any/path' });
       await browser.call('browser_navigate', { url: 'https://app.cloud.dorkos.ai/' });
       await browser.call('browser_navigate', { url: 'http://dorkos.ai/any/path' });
+      // The fully qualified, trailing-dot spelling is a different host to Chrome.
+      for (const url of [
+        'http://cloud.dorkos.ai./',
+        'http://cloud.dorkos.ai./any/path',
+        'http://app.cloud.dorkos.ai./',
+        'http://dorkos.ai./',
+      ]) {
+        expect(await browser.call('browser_navigate', { url })).toContain(
+          'net::ERR_BLOCKED_BY_CLIENT'
+        );
+      }
       const redirected = await browser.call('browser_navigate', { url: `${site}/to-cloud` });
       expect(redirected).toContain('net::ERR_NAME_NOT_RESOLVED');
       await browser.call('browser_navigate', { url: `${site}/to-cloud-sub` });
@@ -170,7 +183,7 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
       await settle();
       await browser.call('browser_navigate', { url: `${site}/` });
       await browser.call('browser_evaluate', {
-        function: `() => { window.open('http://cloud.dorkos.ai/popup'); return fetch('http://cloud.dorkos.ai/fetch', { credentials: 'include' }).then(() => 'ok', () => 'refused'); }`,
+        function: `() => { window.open('http://cloud.dorkos.ai/popup'); return Promise.all(['http://cloud.dorkos.ai/fetch', 'http://cloud.dorkos.ai./fetch'].map((u) => fetch(u, { credentials: 'include' }).then(() => 'ok', () => 'refused'))); }`,
       });
       await settle();
       expect(cloudHits).toEqual([]);
