@@ -127,6 +127,7 @@ import {
   roomTurnsRanFor,
 } from '../oracles/rooms.js';
 import {
+  ADA,
   agentDir,
   mentionOf,
   openRoomFor,
@@ -134,20 +135,6 @@ import {
   setCollectDebounce,
 } from './rooms-setup.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
-
-/**
- * The one agent every structural case seats, in `mention-only`.
- *
- * The strictest mode that still answers, chosen so each case's trigger is
- * unambiguous: an `engaged` agent answers a mention AND anything inside its
- * window, so a green would not say which of the two fired.
- */
-const ADA: RoomAgentSpec = {
-  slug: 'ada',
-  displayName: 'Ada',
-  description: 'Answers questions about this project in the team channel.',
-  responseMode: 'mention-only',
-};
 
 /** How long the structural cases give the room to settle after a post. */
 const QUIET_MS = 2_000;
