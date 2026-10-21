@@ -288,18 +288,29 @@ export function SectionHeader({
           'hover:text-sidebar-foreground focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2'
         )}
       >
-        <span className="truncate">{label}</span>
+        {/* The name and its count share one gapless box, so the space before
+            the "·" is a typed space rather than the line's flex gap — one
+            space, "DorkOS · 12 more", never a gap plus a space. */}
+        <span className="flex min-w-0 items-center">
+          <span className="truncate">{label}</span>
+          {showsHidden && (
+            // Tertiary ink and regular weight: it is about the name, and
+            // quieter than it. Never truncated — the name gives way first,
+            // because a cut-off number says nothing. `whitespace-pre` keeps the
+            // leading space a flex item would otherwise drop. Hidden from the
+            // name and read back as the description: a node `aria-describedby`
+            // points at directly is read even inside `aria-hidden`, and the "·"
+            // is left out of it.
+            <span
+              aria-hidden
+              className="text-muted-foreground shrink-0 font-normal whitespace-pre tabular-nums"
+            >
+              {' · '}
+              <span id={hiddenId}>{hiddenCount} more</span>
+            </span>
+          )}
+        </span>
         {adornment}
-        {showsHidden && (
-          // Tertiary ink and regular weight: it is about the name, and quieter
-          // than it. Never truncated — the name gives way first, because a
-          // cut-off number says nothing. Hidden from the name and read back as
-          // the description: a node `aria-describedby` points at directly is
-          // read even inside `aria-hidden`, and the "·" is left out of it.
-          <span aria-hidden className="text-muted-foreground shrink-0 font-normal tabular-nums">
-            · <span id={hiddenId}>{hiddenCount} more</span>
-          </span>
-        )}
         {rightCluster}
       </button>
     ) : (

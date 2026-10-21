@@ -234,7 +234,8 @@ describe('SectionHeader', () => {
     it('says how many rows the fold hides, after the name', () => {
       render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
       const toggle = screen.getByRole('button', { name: 'DorkOS' });
-      expect(toggle).toHaveTextContent('DorkOS· 12 more');
+      // One space before the dot, typed rather than a flex gap (DOR-3200).
+      expect(toggle.textContent).toBe('DorkOS · 12 more');
     });
 
     it('reads "DorkOS, collapsed, 12 more" to a screen reader', () => {

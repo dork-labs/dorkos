@@ -303,7 +303,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     await expect(header).toHaveAttribute('aria-expanded', 'false');
     await expect(header, 'a folded header is never bold').not.toHaveClass(/font-semibold/);
     await expect(header, 'a folded header counts only what it hides').toHaveText(
-      /^Channels· \d+ more$/
+      /^Channels · \d+ more$/
     );
     await expect(header).toHaveAccessibleDescription(/^\d+ more$/);
     await expect(header.getByRole('img', { name: 'Agents working' })).toBeVisible();
