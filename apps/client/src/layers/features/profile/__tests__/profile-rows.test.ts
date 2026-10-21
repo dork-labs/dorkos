@@ -429,6 +429,9 @@ describe('beside a DM with Show sessions off (DOR-3075)', () => {
   it('keeps them everywhere else, exactly as before', () => {
     expect(ids(build(MANAGED))).toEqual(expect.arrayContaining(['runs-on', 'sessions']));
     expect(ids(build(MANAGED, { quietSessionDetail: false }))).toEqual(ids(build(MANAGED)));
+  });
+});
+
 describe('the Level row', () => {
   const row = (over: Partial<ProfileRowsContext>) =>
     flat(build(MANAGED, over)).find((r) => r.id === 'level')!;
