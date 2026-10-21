@@ -137,6 +137,7 @@ export function launchDispatchInner(
         );
         return ceiling !== undefined ? { permissionCeiling: ceiling } : {};
       })(),
+      ...(turn.continuationHold ? { continuationHold: true as const } : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),

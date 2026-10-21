@@ -33,7 +33,6 @@
 import type {
   AgentRuntime,
   MessageOpts,
-  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
@@ -408,7 +407,8 @@ export function entryLevelOf(entryId: string): TurnPermissionLevel | undefined {
  * stranger's message, a sender DorkOS cannot vouch for, another turn that read
  * them), or a room shows it a stranger's message it does not answer. The mark
  * changes no power; it travels with the level to every turn this one's
- * messages start, and onto every note it saves to memory.
+ * messages start, and onto every note it saves to memory. A continuation's
+ * hold bounds the power and marks nothing (`marksForTurn`, DOR-3203).
  */
 function levelForTurn(
   runtime: AgentRuntime,
@@ -519,8 +519,10 @@ function recordLevels(
           }
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
-          // Kept on the chat's row, for the turns that later pick it up on their own.
-          noteTurnHold(sessionId, level.outsider === true);
+          // Kept on the chat's row, for the turns that later pick it up on their own. A
+          // turn a continuation's hold clamped read no new words, so it leaves the answer
+          // the last real turn gave (DOR-3203).
+          if (opts?.continuationHold !== true) noteTurnHold(sessionId, level.outsider === true);
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

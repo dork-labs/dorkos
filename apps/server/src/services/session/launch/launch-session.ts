@@ -121,6 +121,8 @@ export interface DispatchSessionMessageOpts {
    * §4.7).
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
+  continuationHold?: true;
 }
 
 /**
@@ -609,7 +611,10 @@ async function launchSessionMessage(
     runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
   // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
-  if (ceilingHoldsToDefault(opts.permissionCeiling)) noteHeldMessage(messageId);
+  // A continuation's hold does not: it carries no new words (DOR-3203).
+  if (ceilingHoldsToDefault(opts.permissionCeiling) && !opts.continuationHold) {
+    noteHeldMessage(messageId);
+  }
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)
@@ -713,6 +718,7 @@ async function launchSessionMessage(
       ...(opts.permissionCeiling !== undefined
         ? { permissionCeiling: opts.permissionCeiling }
         : {}),
+      ...(opts.continuationHold ? { continuationHold: true as const } : {}),
       projector,
       runtime,
       onError: (err) => {

@@ -1,7 +1,7 @@
 /**
  * Whether a chat's latest turn was held, kept on its row (DOR-3037): written
- * by every turn, read by every turn that picks the chat up on its own, held
- * when nothing is recorded, and read the same after a restart.
+ * by every turn, read by every turn that picks the chat up on its own, NOT held
+ * when nothing is recorded (DOR-3203), and read the same after a restart.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -15,10 +15,27 @@ import {
 afterEach(() => setContinuationHoldDb(undefined));
 
 describe('the continuation hold', () => {
-  it('reads as held when nothing is recorded, or with no database', () => {
-    expect(lastTurnHeld('never-ran')).toBe(true);
+  it('reads as not held when nothing is recorded, or with no database (DOR-3203)', () => {
+    expect(lastTurnHeld('never-ran')).toBe(false);
     setContinuationHoldDb(createTestDb());
-    expect(ceilingForContinuation('never-ran')).toEqual({ permissionCeiling: 'runtime-default' });
+    expect(lastTurnHeld('never-ran')).toBe(false);
+    expect(ceilingForContinuation('never-ran')).toEqual({});
+  });
+
+  it('reads as held when the record cannot be read', () => {
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    db.$client.exec('DROP TABLE session_metadata');
+    expect(lastTurnHeld('unreadable')).toBe(true);
+  });
+
+  it('names its hold as a continuation, so the turn it clamps marks nothing', () => {
+    setContinuationHoldDb(createTestDb());
+    noteTurnHold('held', true);
+    expect(ceilingForContinuation('held')).toEqual({
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
   });
 
   it('follows the latest turn, and survives a restart', () => {
