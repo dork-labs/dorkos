@@ -119,6 +119,20 @@ export async function seedRoomAgents(
   }
 }
 
+/**
+ * The one agent every structural case seats, in `mention-only`.
+ *
+ * The strictest mode that still answers, chosen so each case's trigger is
+ * unambiguous: an `engaged` agent answers a mention AND anything inside its
+ * window, so a green would not say which of the two fired.
+ */
+export const ADA: RoomAgentSpec = {
+  slug: 'ada',
+  displayName: 'Ada',
+  description: 'Answers questions about this project in the team channel.',
+  responseMode: 'mention-only',
+};
+
 /** A room a case opened, with its live stream. */
 export interface OpenedRoom {
   /** The room and the identities it minted. */
