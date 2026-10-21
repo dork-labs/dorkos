@@ -28,6 +28,7 @@
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
+  type AgentLevelResponse,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
   PermissionHistoryQuerySchema,
@@ -170,6 +171,11 @@ export interface PermissionsRouterDeps {
   activity: Pick<ActivityService, 'list'>;
   /** In tests, a login-state lookup; the live config otherwise. */
   isLoginEnabled?: LoginEnabledLookup;
+  /**
+   * The level an agent runs at (`agent-level.ts`), or `null` for no such
+   * agent. Absent, `GET /agents/:id/level` is not served.
+   */
+  readAgentLevel?: (agentId: string) => Promise<AgentLevelResponse | null>;
 }
 
 /**
@@ -177,7 +183,7 @@ export interface PermissionsRouterDeps {
  * registered, so the group answers nothing else under `/api`.
  *
  * @param deps - See {@link PermissionsRouterDeps}.
- * @returns The routes serving `/permissions*` and `/agents/:id/permissions`.
+ * @returns The routes serving `/permissions*`, `/agents/:id/permissions` and `/agents/:id/level`.
  */
 export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
@@ -257,6 +263,18 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
       return sendPermissionError(c, err);
     }
   });
+
+  // Read-only, and the same audience as the agent's permissions above: there
+  // is no write path for a level, only for the settings it is resolved from.
+  const readAgentLevel = deps.readAgentLevel;
+  if (readAgentLevel) {
+    router.get('/agents/:id/level', async (c) => {
+      const id = c.req.param('id');
+      const level = await readAgentLevel(id);
+      if (!level) return c.json({ error: `No agent with id "${id}".`, code: 'UNKNOWN_AGENT' }, 404);
+      return c.json(level);
+    });
+  }
 
   router.patch('/agents/:id/permissions', async (c) => {
     const caller = person(c);

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Every door to an agent lands in the same DM (DOR-3074): with the DM view on,
- * the profile's Open chat, the card's Message and the ⌘K agent pick each open
+ * the profile's Message, the card's Message and the ⌘K agent pick each open
  * the agent's one Direct chat, even from inside a room where that agent has a
  * session of its own. Each is pressed on a real route, so the assertion is the
  * URL the press produced.
@@ -188,6 +188,20 @@ function mountDoors(options: { owner?: boolean } = {}) {
   };
 }
 
+/**
+ * The card's Message, not the profile's: since the profile redesign both
+ * buttons read "Message", and this page draws both.
+ */
+async function cardMessage(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const button = screen
+      .getAllByRole('button', { name: 'Message' })
+      .find((el) => !el.closest('[data-slot="profile"]'));
+    expect(button).toBeDefined();
+    return button!;
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useInteractionStore.getState().reset();
@@ -196,11 +210,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('every door to an agent opens its DM, with the DM view on', () => {
-  it('the profile’s Open chat, even from a room where it has a session', async () => {
+  it('the profile’s Message, even from a room where it has a session', async () => {
     const view = mountDoors();
     await view.ready();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Open chat' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Message' }));
 
     await waitFor(() => expect(view.where()).toEqual({ pathname: '/session', search: THE_DM }));
     expect(view.transport.openDirectChat).toHaveBeenCalledWith({ agentPath: WARDEN_PATH });
@@ -212,7 +226,7 @@ describe('every door to an agent opens its DM, with the DM view on', () => {
     await view.ready();
 
     await userEvent.click(screen.getByText('Warden’s face'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Message' }));
+    await userEvent.click(await cardMessage());
 
     await waitFor(() => expect(view.where()).toEqual({ pathname: '/session', search: THE_DM }));
     expect(view.transport.openDirectChat).toHaveBeenCalledWith({ agentPath: WARDEN_PATH });
@@ -242,7 +256,7 @@ describe('every door, for anyone but the owner', () => {
     await view.ready();
 
     await userEvent.click(screen.getByText('Warden’s face'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Message' }));
+    await userEvent.click(await cardMessage());
 
     await waitFor(() => expect(view.where()).toEqual(LATEST));
   });
@@ -256,11 +270,11 @@ describe('every door, for anyone but the owner', () => {
     await waitFor(() => expect(view.where()).toEqual(LATEST));
   });
 
-  it('the profile’s Open chat', async () => {
+  it('the profile’s Message', async () => {
     const view = mountDoors({ owner: false });
     await view.ready();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Open chat' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Message' }));
 
     await waitFor(() => expect(view.where()).toEqual(LATEST));
   });

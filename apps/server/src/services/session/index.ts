@@ -134,6 +134,7 @@ export {
   describeExecutionDefaults,
   type AgentExecutionDefaults,
 } from './resolution/resolve-session-defaults.js';
+export { resolveAgentLaunchLevel, type AgentLaunchLevel } from './resolution/agent-launch-level.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';
 export {
   adoptQueuedMessages,

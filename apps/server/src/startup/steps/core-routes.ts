@@ -25,6 +25,8 @@ import { projectRegistry } from '../../services/projects/project-registry.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { levelReachFor } from './level-reach.js';
+import { createAgentLevelReader } from '../../services/core/permissions/agent-level.js';
+import { resolveAgentRuntimeType } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import { logger } from '../../lib/logger.js';
 import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
 import { withIntegrity } from '../../services/marketplace/lib/integrity/verify-install.js';
@@ -637,7 +639,18 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  deps.permissions = { permissions: permissionService, activity: activityService };
+  deps.permissions = {
+    permissions: permissionService,
+    activity: activityService,
+    // The profile's Level row: the launch rule itself, read for one agent.
+    readAgentLevel: createAgentLevelReader({
+      agentPath: (agentId) =>
+        refs.meshCore?.listWithPaths().find((agent) => agent.id === agentId)?.projectPath,
+      runtimeType: resolveAgentRuntimeType,
+      capabilities: (type) =>
+        runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
+    }),
+  };
   mountedRouters.push('permissions');
 
   // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono

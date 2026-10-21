@@ -189,7 +189,7 @@ function mountProfile(
 
 /** Press the header's one navigating control. */
 async function pressOpenSession() {
-  const button = await screen.findByRole('button', { name: 'Open chat' });
+  const button = await screen.findByRole('button', { name: 'Message' });
   await userEvent.click(button);
 }
 

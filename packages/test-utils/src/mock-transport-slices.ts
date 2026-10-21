@@ -7,7 +7,8 @@
  * document's route controls, where no document declares a route or has work
  * to review, a space's docs, where there are none, signed-in devices, where
  * there are none, an account's automatic moves, where every change succeeds,
- * and a framed page's script decision, which is never known.
+ * a framed page's script decision, which is never known, and an agent's
+ * level, where every agent runs at Full autonomy.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -44,7 +45,8 @@ type SliceMethods =
   | 'signOutDevice'
   | 'signOutEverywhereElse'
   | 'setAccountNoAutoMove'
-  | 'getFrameBridgeStatus';
+  | 'getFrameBridgeStatus'
+  | 'getAgentLevel';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -98,5 +100,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
     // DorkOS has served no page into a frame, so the canvas says nothing.
     getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
+    getAgentLevel: vi.fn().mockResolvedValue({
+      effective: 'autonomy',
+      effectiveMode: 'bypassPermissions',
+      declared: 'autonomy',
+      cappedByPerson: false,
+    }),
   };
 }

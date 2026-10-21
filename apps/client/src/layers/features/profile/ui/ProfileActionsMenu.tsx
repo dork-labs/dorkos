@@ -18,7 +18,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MoreVertical } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { sameSidebarItem, type SidebarItemRef } from '@dorkos/shared/config-schema';
 import { useCopyFeedback } from '@/layers/shared/lib';
@@ -130,8 +130,13 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <Button size="icon-xs" variant="ghost" aria-label={`Actions for ${member.displayName}`}>
-            <MoreVertical className="size-(--size-icon-xs)" />
+          <Button
+            size="icon-sm"
+            variant="secondary"
+            className="max-md:size-11"
+            aria-label={`Actions for ${member.displayName}`}
+          >
+            <MoreHorizontal className="size-(--size-icon-sm)" />
           </Button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent align="end">

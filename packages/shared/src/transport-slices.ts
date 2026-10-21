@@ -4,7 +4,8 @@ import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.j
  * community connections, remote communities, commitments, heartbeats, the first
  * run, message history, held connected-app actions, a hub's linked computers,
  * a canvas document's route controls, a space's docs, a person's signed-in
- * devices, an account's automatic moves, a framed page's script decision), joined here so `transport.ts` extends one name. Nothing consuming
+ * devices, an account's automatic moves, a framed page's script decision, an
+ * agent's level), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -29,6 +30,7 @@ import type { SignedInDevicesTransport } from './signed-in-devices.js';
 import type { DocLinksTransport } from './transport-doc-links.js';
 import type { AccountAutoMoveTransport } from './transport-account-auto-move.js';
 import type { FrameBridgeTransport } from './transport-frame-bridge.js';
+import type { AgentLevelTransport } from './transport-agent-level.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -54,4 +56,5 @@ export interface TransportSlices
     SignedInDevicesTransport,
     DocLinksTransport,
     AccountAutoMoveTransport,
-    FrameBridgeTransport {}
+    FrameBridgeTransport,
+    AgentLevelTransport {}
