@@ -1,4 +1,3 @@
-import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a row LOOKS and what pressing it DOES — the half of the sidebar the model
  * deliberately does not carry.
@@ -6,7 +5,7 @@ import { appRoutes } from '@/layers/shared/lib';
  * `buildSidebarModel` emits semantic ids (`glyph: { kind: 'agent-avatar' }`), a
  * target, and a reason. It never emits a face, a colour, or a navigation. Those
  * are resolved here, once, and handed to every row through a context so that
- * `SidebarZone` and `SidebarSection` can stay pure model consumers with no row
+ * `SidebarSections` and `SidebarSection` can stay pure model consumers with no row
  * plumbing threaded through them.
  *
  * **This reads queries, and `useSidebarState` is still the one assembly hook.**
@@ -24,13 +23,14 @@ import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { extensionPageHref, reportClientError, toSession } from '@/layers/shared/lib';
 import {
-  useAgentCreationStore,
-  useImportProjectsStore,
-  useProfileDeepLink,
-  useTransport,
-} from '@/layers/shared/model';
+  appRoutes,
+  extensionPageHref,
+  newSessionTarget,
+  reportClientError,
+  toSession,
+} from '@/layers/shared/lib';
+import { useProfileDeepLink, useTransport } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import {
   createGroup,
@@ -44,7 +44,7 @@ import {
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useAgentPauses, useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { hasUnread, useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
+import { hasUnread, useRooms, useTeamRoom } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   markPendingSessionTarget,
@@ -55,12 +55,10 @@ import {
   useStartNewSession,
 } from '@/layers/entities/session';
 import { useProfileStore } from '@/layers/features/profile';
-import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
+import type { SidebarCommandId, SidebarTarget } from '../model/build-sidebar-model';
 import { useBootState } from '../model/boot/use-boot-state';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
-import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
 import { buildRoomVisualIndex, type SidebarItemVisual } from '../model/sidebar-item';
-import { toggleTodayAutomated } from '../model/today-reveal-store';
 
 /**
  * The mark a room draws when the index has no answer for it — a room the list
@@ -173,26 +171,25 @@ export interface SidebarChromeValue {
    * Rows arriving before this is true are the panel loading, not arrivals.
    */
   bootSettled: boolean;
-  /** What the operator has open, so the matching row (and its Library copy) tints. */
+  /** What the operator has open, so the matching row tints. */
   activeTarget: SidebarTarget | null;
   /**
    * The room `/` is showing, when `/` is what is showing — otherwise `null`.
    *
    * **Only the row tint reads this, and that narrowness is the point.** Home
    * draws #team, so that row has to look open when you are on Home; but the
-   * sidebar's `activeTarget` feeds the scroll anchor, the working rollup and
-   * Today's membership, and answering "a room is open" there pinned #team into
-   * Today on every visit to the dashboard. This carries the one fact the tint
-   * needs and reaches nothing else.
+   * sidebar's `activeTarget` also feeds the scroll anchor, which must not move
+   * on every visit to the dashboard. This carries the one fact the tint needs
+   * and reaches nothing else.
    */
   homeRoomId: string | null;
   /**
    * The agent a click is heading to while its chat is looked up, or `null`.
-   * Tint only, for the same reason as `homeRoomId`: the anchor, the rollup and
-   * Today keep following what is actually open (DOR-2891).
+   * Tint only, for the same reason as `homeRoomId`: the anchor keeps following
+   * what is actually open (DOR-2891).
    */
   pendingAgentPath: string | null;
-  /** Open whatever a row points at, and remember that it was opened (BC-16). */
+  /** Open whatever a row points at, and remember that it was opened. */
   openTarget: (target: SidebarTarget) => void;
   /** Start a session, optionally scoped to one agent's directory. */
   newSession: (dir?: string) => void;
@@ -265,7 +262,7 @@ export function useSidebarChrome(): SidebarChromeValue {
 interface SidebarChromeProps {
   /** What the operator has open, from the model's snapshot. */
   activeTarget: SidebarTarget | null;
-  /** The zones. */
+  /** The sections. */
   children: ReactNode;
 }
 
@@ -412,42 +409,25 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [navigate, queryClient, router, transport]
   );
 
-  // DorkBot, found the only way the client can: `isSystem` is the flag on the
-  // wire, and an install is free to put the directory anywhere.
-  const dorkBotPath = useMemo(
-    () => rawPaths.find((path) => manifests?.[path]?.isSystem === true) ?? null,
-    [rawPaths, manifests]
-  );
-
-  const openSuggestion = useCallback(
-    (suggestionId: SuggestionId) => {
-      switch (suggestionId) {
-        case 'suggestion:agents-found':
-          // Straight into the review-and-join dialog, which already holds the
-          // scan this suggestion is counting. Never shown on a hub: only that
-          // dialog scans, and it never opens there.
-          useImportProjectsStore.getState().open();
+  // The doors. Each is a meaning, so the address of the page it stands for is
+  // decided here, once: Threads, and the Directory — narrowed to agents for the
+  // empty Direct messages section, whose one row offers exactly that.
+  const openCommand = useCallback(
+    (commandId: SidebarCommandId) => {
+      switch (commandId) {
+        case 'open-threads':
+          void navigate({ ...appRoutes.threads() });
           return;
-        case 'suggestion:add-agent':
-          useAgentCreationStore.getState().open();
+        case 'open-directory':
+        case 'message-someone':
+          void navigate({ ...appRoutes.team() });
           return;
-        case 'suggestion:first-session':
-          startNewSession();
-          return;
-        case 'suggestion:say-hi-team':
-          // Home IS #team (team-room-home §D3.2), so this is the room, not a
-          // page about it.
-          void navigate({ ...appRoutes.home() });
-          return;
-        case 'suggestion:ask-dorkbot':
-          // A fresh session with the system agent. The seeded context BC-48
-          // describes belongs to the footer's Ask DorkBot button (P2.5); the
-          // suggestion's promise is only that a conversation opens.
-          if (dorkBotPath !== null) startNewSession(dorkBotPath);
+        case 'message-agent':
+          void navigate({ ...appRoutes.team(), search: { kind: 'agents' } });
           return;
       }
     },
-    [dorkBotPath, navigate, startNewSession]
+    [navigate]
   );
 
   // Which room is #team, so its row can go to the one address that draws it.
@@ -474,89 +454,28 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           openAgent(target.path);
           return;
         case 'room':
-          // The interaction is recorded against the room, because a thread
-          // reads the room's own cursor (ADR 260728-022013) and one place has
-          // one record.
           useInteractionStore.getState().recordOpened('room', target.roomId);
-          // **A thread row opens the PANEL, and the STORE is what opens it.**
-          // Navigating with `?thread=` alone is not enough: the room widget
-          // treats its own store as the source of truth and mirrors it back out
-          // (`use-thread-url-sync.ts`), seeding from the URL only on the way
-          // INTO a room. So a thread opened while already reading that room had
-          // its param wiped a frame later and the click did nothing. Writing
-          // the store is the same act a reply row in the timeline performs; the
-          // URL then follows from it, which is also what makes the address
-          // survive a reload. `focusComposer` stays false — clicking a row in
-          // the sidebar is a request to READ, and on a phone the difference is
-          // whether a keyboard opens over what you came to look at.
-          if (target.rootEntryId !== undefined) {
-            useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId, false);
-          }
           // **#team's row goes to Home, because Home IS #team** (spec
           // `one-bar-header` §3.5). `/channels` would redirect here anyway, so
           // this is not what makes the one door — it is what keeps the door from
           // being a bounce through an address that no longer draws anything.
           if (target.roomId === teamRoomId) {
-            void navigate({
-              ...appRoutes.home(),
-              search: target.rootEntryId ? { thread: target.rootEntryId } : {},
-            });
+            void navigate({ ...appRoutes.home() });
             return;
           }
-          navigate({
-            ...appRoutes.channels(),
-            search: {
-              id: target.roomId,
-              ...(target.rootEntryId && { thread: target.rootEntryId }),
-            },
-          });
-          return;
-        case 'attention':
-          // A raw href, because a deep link is a string the signal supplies
-          // rather than one of the router's declared routes.
-          void router.navigate({ href: target.deepLink });
+          void navigate({ ...appRoutes.channels(), search: { id: target.roomId } });
           return;
         case 'command':
-          if (target.commandId === 'new-session') startNewSession();
-          // The Agents section's last row. It stands for every agent the
-          // section is not drawing (D3), and Team is the page that lists them.
-          if (target.commandId === 'open-team') void navigate({ ...appRoutes.team() });
-          return;
-        case 'suggestion':
-          openSuggestion(target.suggestionId);
-          return;
-        case 'rollup':
-          // "+ N more" goes to the home surface's triage header, which already
-          // holds the full list — Heads up never grows a second one (BC-7). "N
-          // working" goes to the same place for now: home carries the presence
-          // strip of who is working, and P2.6's session switcher scoped to live
-          // sessions is what BC-9 actually asks for.
-          if (target.rollup === 'now-overflow' || target.rollup === 'working') {
-            void navigate({ to: NOW_OVERFLOW_HREF });
-          }
-          // Today's "+ N automated" is a fold, not a destination: the runs it
-          // stands for open underneath it (BC-19). Pressing it again puts them
-          // away.
-          if (target.rollup === 'automated') toggleTodayAutomated();
+          openCommand(target.commandId);
           return;
         case 'add-on':
-          // A raw href, like an attention row's: `/x/<id>/<path>` is matched by
-          // the extension-page route rather than declared one page at a time.
+          // A raw href: `/x/<id>/<path>` is matched by the extension-page route
+          // rather than declared one page at a time.
           void router.navigate({ href: extensionPageHref(target.extensionId, target.path) });
-          return;
-        case 'digest':
-          // "While you were away…" is a door into the welcome-back note, and
-          // that note is a post in #team — which IS the home surface
-          // (team-room-home §D3.2). So the row goes where the words already
-          // are rather than to a summary written a second time.
-          void navigate({ ...appRoutes.home() });
-          return;
-        default:
-          // Nothing else the union carries is clickable from a Today row.
           return;
       }
     },
-    [navigate, openAgent, openSession, openSuggestion, router, startNewSession, teamRoomId]
+    [navigate, openAgent, openCommand, openSession, router, teamRoomId]
   );
 
   // Sheet when the fleet can name the agent, docked panel when it cannot. Never

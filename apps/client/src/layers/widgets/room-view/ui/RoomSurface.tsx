@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
   useForgetRoomFollowOnLeave,
@@ -30,6 +30,7 @@ import { RoomApprovalCards } from './RoomApprovalCards';
 import { RoomAgentRequests } from './RoomAgentRequests';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
+import { RoomThreadSheet } from './RoomThreadSheet';
 import { RoomThreadSplit } from './RoomThreadSplit';
 
 /** What {@link RoomSurface} needs to draw a room. */
@@ -112,11 +113,11 @@ export interface RoomSurfaceProps {
  * a second kind of room, and it never changes which room is on screen.
  *
  * **Two shapes, one panel.** On a wide screen the thread is a column beside the
- * room. On a phone it is a full-screen push with a Back button, following the
- * drill-in this app already uses for master/detail (`navigation-layout.tsx`) —
- * a real push rather than a sheet over the top, because the design asks for the
- * thread to BE the screen and a drawer covering a room you cannot use is a
- * worse version of the same thing.
+ * room. On a phone it is a full-screen sheet that slides in from the right over
+ * the room, with its root pinned under the header and a Back button naming the
+ * room ({@link RoomThreadSheet}). The room stays mounted underneath, so closing
+ * the thread — Back, Escape, or a swipe to the right — lands the reader exactly
+ * where they were. A thread never opens inline on a phone.
  *
  * @param props - The room, its thread address, and the host's chrome.
  */
@@ -213,17 +214,18 @@ export function RoomSurface({
   const timelineRef = useRef<ConversationTimelineHandle>(null);
   /**
    * The row the reader was on, held HERE because this component is what
-   * survives a thread.
+   * survives the room column being mounted again.
    *
-   * On a phone the thread panel is a full-screen push: it unmounts the room
-   * column, timeline and all, and coming back mounts a brand new one at the
-   * top. Measured on a 390x844 viewport: 1148px before opening a thread, 0px
-   * after closing it — the room silently jumped to its oldest message. The
-   * timeline cannot remember this for itself, and neither can a module-level
-   * map: the answer has to be a ROW rather than an offset (the virtualizer's
-   * total height is an estimate until it settles), and it has to be forgotten
-   * when the reader switches rooms — both of which are facts this component
-   * holds and that one does not.
+   * The phone's thread sheet no longer unmounts the room, but the room column
+   * is still mounted fresh whenever the layout changes shape around it — a
+   * window crossing the phone breakpoint swaps the whole tree. A column mounted
+   * fresh starts at the top: measured on a 390x844 viewport when the thread
+   * still replaced the room, 1148px before and 0px after. The timeline cannot
+   * remember this for itself, and neither can a module-level map: the answer
+   * has to be a ROW rather than an offset (the virtualizer's total height is an
+   * estimate until it settles), and it has to be forgotten when the reader
+   * switches rooms — both of which are facts this component holds and that one
+   * does not.
    *
    * A ref rather than state: it is written on every scroll, and re-rendering
    * the room under the reader's finger to store it would be the cost the
@@ -449,51 +451,51 @@ export function RoomSurface({
     anchor: 'rail' as const,
   };
 
-  // The phone's push: the thread REPLACES the room rather than covering it, and
-  // slides in from the right the way this app's other drill-ins do. The room is
-  // unmounted while it is open, which is the honest reading of a push — there
-  // is one screen, and this is it.
-  //
-  // **One `AnimatePresence` spanning both states, not one inside the branch.**
-  // An exit animation is played by the presence wrapper that OUTLIVES the thing
-  // leaving; nested inside the `panel &&` branch it unmounted together with the
-  // panel, so the push slid in and then simply blinked out. Room and panel are
-  // siblings under one wrapper with stable keys, so `mode="wait"` gives the
-  // real drill-in both ways.
+  // The phone's sheet: the thread slides in OVER the room from the right, and
+  // the room stays mounted underneath — `inert` while it is covered, so focus
+  // and a screen reader stay in the thread — which is what keeps the reader's
+  // place in it (see `RoomThreadSheet`).
   if (isMobile) {
     return (
       <Conversation.Root {...conversation}>
-        <AnimatePresence initial={false} mode="wait">
-          <motion.div
-            key={panel ? `thread-${openThreadId}` : 'room'}
-            initial={{ opacity: 0, x: 16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 16 }}
-            transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
-            // The room ends where the software keyboard begins.
-            //
-            // A phone's keyboard shrinks the VISUAL viewport and leaves the layout
-            // viewport alone, so `h-dvh` on the shell above measures a screen that
-            // is no longer all visible — and everything this column pins to its
-            // bottom edge (the composer, the stalled notice, the presence line)
-            // sits behind the keyboard the moment you tap to type. Insetting by
-            // the difference is what puts them back above it, and it costs
-            // nothing where there is no keyboard: the hook reads 0 without
-            // `visualViewport`, under pinch-zoom, and on every desktop.
-            //
-            // One place, not two: on a phone the thread panel is a full-screen
-            // push rendered INSIDE this element, so both surfaces inherit it.
-            style={{ paddingBottom: keyboardInset }}
-            data-testid="room-surface"
-            // A flex COLUMN, not a bare `h-full` box: the room column inside is
-            // `flex-1`, which needs a flex parent to be bounded by. Without it the
-            // scroller had no height to overflow, so the room silently stopped
-            // scrolling on phones — it opened at the top and stayed there.
-            className="flex h-full flex-col overflow-hidden"
-          >
-            {panel === false ? roomColumn : panel}
-          </motion.div>
-        </AnimatePresence>
+        <div
+          // The room ends where the software keyboard begins.
+          //
+          // A phone's keyboard shrinks the VISUAL viewport and leaves the layout
+          // viewport alone, so `h-dvh` on the shell above measures a screen that
+          // is no longer all visible — and everything this column pins to its
+          // bottom edge (the composer, the stalled notice, the presence line)
+          // sits behind the keyboard the moment you tap to type. Insetting by
+          // the difference is what puts them back above it, and it costs
+          // nothing where there is no keyboard: the hook reads 0 without
+          // `visualViewport`, under pinch-zoom, and on every desktop.
+          style={{ paddingBottom: keyboardInset }}
+          data-testid="room-surface"
+          // A flex COLUMN, not a bare `h-full` box: the room column inside is
+          // `flex-1`, which needs a flex parent to be bounded by. Without it the
+          // scroller had no height to overflow, so the room silently stopped
+          // scrolling on phones — it opened at the top and stayed there.
+          className="flex h-full flex-col overflow-hidden"
+        >
+          {/* One box for both, inside the keyboard inset, so the sheet stops
+              where the room does. */}
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              inert={panel !== false}
+              data-testid="room-under-thread"
+            >
+              {roomColumn}
+            </div>
+            <AnimatePresence initial={false}>
+              {panel !== false && (
+                <RoomThreadSheet key={`thread-${openThreadId}`} onClose={closeThread}>
+                  {panel}
+                </RoomThreadSheet>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </Conversation.Root>
     );
   }

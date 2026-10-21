@@ -213,17 +213,13 @@ FILTERED_SPECS=(
 #   chat/session-read-state.ts — cross-device read state for chat sessions
 #     (DOR-1040). Registered into chat-mock.spec.ts, which is what puts it on
 #     that file's worker and out of reach of its own beforeEach resets.
-#   dashboard-sidebar/now-survives-reload.ts — the sidebar's Now zone surviving a
-#     page load (DOR-1136). Registered into chat-mock.spec.ts for both reasons at
-#     once: it drives the `error` and `demo-approval` scenarios, which exist only
-#     behind DORKOS_TEST_RUNTIME, and it needs a session to outlive that file's
-#     `POST /api/test/reset`. Its neighbours in tests/dashboard-sidebar/ are
-#     ordinary cockpit specs, which is exactly why the extension matters here.
-#   dashboard-sidebar/send-lands-in-today.ts — writing in a conversation puts it
-#     in Today (DOR-1156). Registered into chat-mock.spec.ts because it drives
-#     real sends, which are free and deterministic only against TestModeRuntime
-#     — on the cockpit leg each one would bill the machine's own `claude`
-#     sign-in. Same directory, same extension rule, same reason.
+#   dashboard-sidebar/dorkbot-seed-survives-reload.ts — the Ask DorkBot seed
+#     still naming an errored session after a page load (DOR-1136). Registered
+#     into chat-mock.spec.ts for both reasons at once: it drives the `error`
+#     scenario, which exists only behind DORKOS_TEST_RUNTIME, and it needs a
+#     session to outlive that file's `POST /api/test/reset`. Its neighbours in
+#     tests/dashboard-sidebar/ are ordinary cockpit specs, which is exactly why
+#     the extension matters here.
 #   chat/interactive-prompts.ts — the prompts a turn STOPS on: tool approvals,
 #     the batch bar, AskUserQuestion, MCP elicitation (capability rows
 #     I-01…I-04, DOR-1214). Registered into chat-mock.spec.ts because every one
@@ -263,8 +259,7 @@ REGISTERED_MODULES=(
   'connections/session-access.ts'
   'conversation/ask-anywhere.ts'
   'conversation/ask-parks.ts'
-  'dashboard-sidebar/now-survives-reload.ts'
-  'dashboard-sidebar/send-lands-in-today.ts'
+  'dashboard-sidebar/dorkbot-seed-survives-reload.ts'
 )
 
 fail() {

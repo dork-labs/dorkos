@@ -21,6 +21,7 @@ import {
   ListTodo,
   MessageCircle,
   MessageSquare,
+  MessageSquareReply,
   MessagesSquare,
   Puzzle,
   Settings,
@@ -257,6 +258,8 @@ export const ROUTE_IDENTITY: Record<string, RouteIdentity> = {
   // The page a sign-in's browser tab lands on (DOR-2985); rarely a tab, but named.
   '/signed-in': { primary: 'Signed in', Icon: KeyRound },
   '/tasks': { primary: 'Schedules', Icon: ListTodo },
+  // Matches the sidebar's Threads item, icon and all.
+  '/threads': { primary: 'Threads', Icon: MessageSquareReply },
   '/workspaces': { primary: 'Workspaces', Icon: FolderGit2 },
 };
 

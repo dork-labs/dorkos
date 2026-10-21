@@ -2,8 +2,8 @@
  * How the panel's boot phase moves (spec `sidebar-simplification` D6).
  *
  * Every entity barrel this hook reads is mocked, because the subject is the
- * hook's ARBITRATION of ten query states and not the queries themselves —
- * standing up ten real queries would test TanStack.
+ * hook's ARBITRATION of its query states and not the queries themselves —
+ * standing up the real queries would test TanStack.
  *
  * @vitest-environment jsdom
  */
@@ -25,26 +25,14 @@ const hydrated = (data?: unknown): FakeQuery => ({ status: 'success', dataUpdate
 const queries: Record<string, FakeQuery> = {
   config: pending,
   rooms: pending,
-  threads: pending,
   mesh: pending,
   manifests: pending,
   recents: pending,
   roster: pending,
 };
 
-/**
- * Heads up's three sources, which hide their query behind an `isLoading`.
- *
- * Settled by default so the cases below can move one variable at a time; the
- * gate's own truth table covers each of them individually.
- */
-const attention = { approvals: false, interactions: false, scheduleApprovals: false };
-
 vi.mock('@/layers/entities/config', () => ({ useConfig: () => queries.config }));
-vi.mock('@/layers/entities/room', () => ({
-  useRooms: () => queries.rooms,
-  useThreads: () => queries.threads,
-}));
+vi.mock('@/layers/entities/room', () => ({ useRooms: () => queries.rooms }));
 vi.mock('@/layers/entities/mesh', () => ({ useMeshAgentPaths: () => queries.mesh }));
 vi.mock('@/layers/entities/agent', () => ({ useResolvedAgents: () => queries.manifests }));
 vi.mock('@/layers/entities/session', () => ({
@@ -52,11 +40,6 @@ vi.mock('@/layers/entities/session', () => ({
   useRecentSessions: () => queries.recents,
 }));
 vi.mock('@/layers/entities/team', () => ({ useTeamRoster: () => queries.roster }));
-vi.mock('@/layers/entities/attention', () => ({
-  usePendingApprovals: () => ({ isLoading: attention.approvals }),
-  usePendingInteractions: () => ({ isLoading: attention.interactions }),
-  usePendingScheduleApprovals: () => ({ isLoading: attention.scheduleApprovals }),
-}));
 
 const { useBootState } = await import('../use-boot-state');
 const { BOOT_GATE_TIMEOUT_MS } = await import('../boot-gate');
@@ -68,7 +51,6 @@ const ONE_AGENT = { agents: [{ projectPath: '/work/scout' }] };
 const ALL_ANSWERED = {
   config: settled(),
   rooms: settled(),
-  threads: settled(),
   mesh: settled(ONE_AGENT),
   manifests: settled(),
   recents: settled(),
@@ -83,9 +65,6 @@ function seed(overrides: Partial<Record<keyof typeof queries, FakeQuery>>) {
 beforeEach(() => {
   vi.useFakeTimers();
   seed({});
-  attention.approvals = false;
-  attention.interactions = false;
-  attention.scheduleApprovals = false;
 });
 
 afterEach(() => {
@@ -118,21 +97,6 @@ describe('useBootState', () => {
     expect(result.current.phase).toBe('cold');
   });
 
-  it('still holds while Heads up’s approvals are pending', () => {
-    // Added to the gate after review: a zone arriving at the TOP of the panel a
-    // beat late pushes every row below it down, which is the second beat the
-    // gate exists to remove.
-    const { result, rerender } = renderHook(() => useBootState());
-    seed(ALL_ANSWERED);
-    attention.approvals = true;
-    rerender();
-    expect(result.current.phase).toBe('cold');
-
-    attention.approvals = false;
-    rerender();
-    expect(result.current.phase).toBe('settled');
-  });
-
   it('gives up after the timeout and paints what it has', () => {
     // Per-query degradation: a source that never answers must not be able to
     // hold the panel at a skeleton forever.
@@ -162,7 +126,6 @@ describe('useBootState', () => {
     seed({
       config: hydrated(),
       rooms: hydrated(),
-      threads: hydrated(),
       mesh: hydrated(ONE_AGENT),
       manifests: hydrated(),
       recents: hydrated(),
@@ -179,7 +142,6 @@ describe('useBootState', () => {
     seed({
       config: hydrated(),
       rooms: hydrated(),
-      threads: hydrated(),
       mesh: hydrated(ONE_AGENT),
       manifests: hydrated(),
       recents: hydrated(),
@@ -196,7 +158,6 @@ describe('useBootState', () => {
     seed({
       config: hydrated(),
       rooms: hydrated(),
-      threads: hydrated(),
       mesh: hydrated({ agents: [] }),
       manifests: pending,
       recents: hydrated(),

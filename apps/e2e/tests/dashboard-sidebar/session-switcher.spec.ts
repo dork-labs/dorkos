@@ -605,6 +605,9 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
   }) => {
     const agentName = `E2E BC34 ${Date.now()}`;
     const agent = await roomsApi.registerAgent(agentName, '🍊', '#f59e0b');
+    // The sidebar draws an agent once you have a direct message with it; the
+    // rest live in the Directory. One message with it is the row's whole reason.
+    await roomsApi.createDirectMessage(agentName, [agent]);
 
     // A room run is the NEWEST session in the directory and a human
     // conversation is older. Neither is where the row leads: an agent has one

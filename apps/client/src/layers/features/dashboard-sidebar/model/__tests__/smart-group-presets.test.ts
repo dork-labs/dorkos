@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
-import { offersGroupAffordances } from '../rules/build-library-sections';
+import { offersGroupAffordances } from '../rules/build-sections';
 import { activeNowPreset, byRuntimePresets } from '../smart-group-presets';
 
 function candidate(overrides: Partial<SmartGroupCandidate> = {}): SmartGroupCandidate {

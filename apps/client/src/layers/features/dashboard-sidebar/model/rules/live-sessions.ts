@@ -1,12 +1,10 @@
 /**
- * What "live" means, once, for every rule in this model (`design-decisions.md`
- * §18).
+ * What "live" means, once, for every rule in this model.
  *
- * Two questions and no more: which sessions are running, and whose. Before this
- * module the first was answered in `build-working-rollup.ts` and the second,
- * differently, inside `library-rows.ts` — so Heads up could say "1 working" while the
- * collapsed section that agent lives in said nothing at all (DOR-1137, audit
- * D5).
+ * Two questions and no more: which sessions are running, and whose. They used
+ * to be answered in two places, differently, so one surface could say "1
+ * working" while the folded section that agent lives in said nothing at all
+ * (DOR-1137, audit D5).
  *
  * @module features/dashboard-sidebar/model/rules/live-sessions
  */
@@ -18,26 +16,11 @@ import type { SidebarState } from '../sidebar-state';
  * chats (spec `your-activity-first` D8: a spin-off chat still counts, because a
  * person asked for it through a chat).
  *
- * **A scheduled run is not something that needs the operator, so it is not in
- * Heads up's number.** `design-decisions.md` §18 is a Signal → Rendering table, and
- * its automated row reads "Automated session activity → Nothing. No bold, no
- * badge." — directly under the line naming approval / question / wedged /
- * parked schedule as "the only things that enter Heads up". A "6 working" that quietly
- * included two nightly tasks is automated activity rendered in the one zone
- * that promises to hold nothing but what needs you.
- *
- * **This rule is a ruling, not a reading of BC-9.** BC-9's own text carries no
- * exclusion; the contract was written before the question came up, and it was
- * settled in review of P2.2 (2026-08-10) together with the identical defect in
- * the session switcher's "N live" chip and in ⌘K's Continue list. One definition
- * of live everywhere: chats that are not automated, and the definition itself lives in
- * `entities/session` so those three surfaces read the same function.
- *
- * **The blocking carve-out survives, and it is the same §18 sentence**:
- * "Blocking states go to Heads up like the rest." An automated session that is
- * waiting on an approval, asking a question or wedged still enters Heads up — as an
- * attention item, through `entities/attention`, which reads no origin at all
- * (`derive-attention-signals.ts`). Only the liveness COUNT excludes automation.
+ * **A scheduled run lights no row.** Automated activity is rendered nowhere in
+ * the panel — no bold, no badge, no dot — and a "working" dot that quietly
+ * meant a nightly task would be exactly that. One definition of live
+ * everywhere, living in `entities/session` so the session switcher's "N live"
+ * chip and ⌘K's Continue list read the same function.
  *
  * A working session the snapshot cannot see at all is counted. Ownership lives on
  * the session record, and `state.sessions` is a trimmed recent list, so an id
@@ -75,13 +58,12 @@ function cwdOf(state: SidebarState, sessionId: string): string | null {
  * **Same source as {@link liveSessionIds}, scoped by directory.** Reading the
  * recent window alone — "a working id that also appears in `state.sessions`" —
  * is what made a fresh turn invisible to a folded section for the thirty
- * seconds before the window refetched, while Heads up had been counting it since the
- * first status event. BC-31 says signal is never lost by folding, and a row that
- * cannot see the session cannot hand its section anything to roll up.
+ * seconds before the window refetched. BC-31 says signal is never lost by
+ * folding, and a row that cannot see the session cannot hand its section
+ * anything to roll up.
  *
  * A live session whose directory nothing knows belongs to no agent and so to no
- * section. It stays in Heads up's count, where it is one honest number, rather than
- * being guessed into somebody's row.
+ * section, rather than being guessed into somebody's row.
  *
  * @param state - The snapshot.
  * @param path - The agent's directory, which is its identity.

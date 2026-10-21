@@ -27,9 +27,8 @@
  * report on a day that started before this install was settled — see
  * {@link SHIFT_REPORT_SETTLE_MS}. None of the three bounds what is COUNTED;
  * the trailing 24h window above does that. Mirrored,
- * not shared, from the sidebar digest's own 4am definition
- * (`apps/client/src/layers/shared/lib/overnight-boundary.ts`,
- * `apps/client/src/layers/features/dashboard-sidebar/model/rules/build-digest-row.ts`)
+ * not shared, from the client's own 4am definition
+ * (`apps/client/src/layers/shared/lib/overnight-boundary.ts`)
  * — the server cannot import client code, and both sides are answering the
  * same question, "when does a person who works late consider today over",
  * by computing the same rule against the same host clock, independently.
@@ -114,11 +113,10 @@ export function shiftReportBoundary(now: number): number {
  *
  * Hand-formatted from local date parts, never `Intl` or `toISOString` —
  * `toISOString` answers in UTC, which would roll the report over in the
- * middle of somebody's evening. Mirrors `build-digest-row.ts`'s
- * `localDateKey`. Callers pass this the BOUNDARY, not raw `now`, so the date
- * it returns is the day a shift belongs to rather than the calendar date at
- * the moment somebody happens to be checking (1am is still yesterday's
- * shift). Used only for the dedupe date key and day-roll detection — see the
+ * middle of somebody's evening. Callers pass this the BOUNDARY, not raw
+ * `now`, so the date it returns is the day a shift belongs to rather than the
+ * calendar date at the moment somebody happens to be checking (1am is still
+ * yesterday's shift). Used only for the dedupe date key and day-roll detection — see the
  * module doc.
  *
  * @param instant - The instant, epoch ms.
@@ -159,13 +157,11 @@ function emptyCounts(): ShiftReportCounts {
  * zero.
  *
  * `null` on an empty window is the whole point: a "while you were away" that
- * reports nothing is a product inventing an event to have a moment about —
- * the same rule the sidebar digest states at `build-digest-row.ts`.
+ * reports nothing is a product inventing an event to have a moment about.
  *
  * It is also `null` on a day this install is too new for: unless it existed
  * {@link SHIFT_REPORT_SETTLE_MS} before the day's 4am boundary, nobody has
- * been away from it yet (DOR-2845). The sidebar digest has the same gate,
- * "this device has seen you before" (`use-digest-facts.ts`). The gate asks
+ * been away from it yet (DOR-2845). The gate asks
  * how old the INSTALL is, never how old the counted rows are, so a lone daily
  * 05:30 task still gets its report although yesterday's run has aged out of
  * the window.

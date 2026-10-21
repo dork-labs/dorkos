@@ -126,8 +126,8 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // on both, so these assert the glyph.
     //
     // **Asked of a GROUP message, because that is the direct message with a row
-    // now** (`sidebar-simplification` D2): a one-to-one is the agent's own
-    // session under a second name, so Library lists the agent instead. The case
+    // now** (`sidebar-simplification` D2, DOR-3092): a one-to-one is drawn as
+    // the agent's own row in Direct messages, not as a room. The case
     // below asks the same question of a one-to-one everywhere it still appears.
     const otter = await roomsApi.registerAgent(`E2E Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
     const heron = await roomsApi.registerAgent(`E2E Heron ${roomsApi.runId}`, '🪶', '#a855f7');

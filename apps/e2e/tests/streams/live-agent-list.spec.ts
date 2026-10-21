@@ -134,6 +134,25 @@ test.describe(
         const parsed = (await configBefore.json()) as { ui: { sidebar: unknown } };
         sidebarBefore = parsed.ui.sidebar;
 
+        // The sidebar draws an agent once you have a direct message with it or
+        // have pinned it; everyone else lives in the Directory. Pin the path
+        // BEFORE the agent exists, so the row that appears below is the agent
+        // list's broadcast landing, not this settings write.
+        await test.step('pin the agent-to-be, so the sidebar has a place for it', async () => {
+          const current = sidebarBefore as { pinned?: unknown[] };
+          const res = await request.patch('/api/config', {
+            data: {
+              ui: {
+                sidebar: {
+                  ...current,
+                  pinned: [...(current.pinned ?? []), { kind: 'agent', path: agentDir }],
+                },
+              },
+            },
+          });
+          expect(res.status(), await res.text()).toBe(200);
+        });
+
         // --- Register -------------------------------------------------------
         // Through `roomsApi`'s own path shape: a directory this run owns, named
         // as its scan root, so the agent lands in this run's namespace.

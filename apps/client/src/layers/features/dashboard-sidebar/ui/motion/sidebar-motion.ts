@@ -3,7 +3,7 @@
  * D5).
  *
  * **Motion here explains a state change the operator did not cause.** A section
- * folding, a row arriving in Today, a list reordering after the hold releases, a
+ * folding, a conversation arriving in Direct messages, a list reordering, a
  * row lifting under a drag — each of those moves something the eye was already
  * tracking, and the movement is what keeps it tracked. Nothing here decorates,
  * nothing loops, and every duration is ≤200 ms except the fold spring.
@@ -30,6 +30,13 @@ export const ARRIVE_SECONDS = 0.16;
 
 /** How far above its place a row starts, in pixels. It falls from its header. */
 export const ARRIVE_RISE_PX = 6;
+
+/**
+ * How long a row takes to slide to a new place — a new position in its
+ * section, or a new section altogether (DOR-3092), in seconds. Ease-out, so it
+ * starts quickly and settles.
+ */
+export const MOVE_SECONDS = 0.2;
 
 /** How long a row that is leaving takes to fade out, in seconds. */
 export const LEAVE_SECONDS = 0.12;
@@ -118,7 +125,7 @@ export const LAYOUT_KEY_SEPARATOR = '\u0000';
  *
  * **Per section, and never per panel** (D5). `layoutDependency` is what tells
  * motion when to re-measure, and handing every row in the sidebar one whole-panel
- * key would make a channel arriving in Today re-measure thirty agent rows that
+ * key would make a conversation arriving in Direct messages re-measure every row that
  * did not move. Scoped to the section, a list only re-measures when its OWN
  * membership or order changed.
  *
@@ -133,16 +140,33 @@ export function sectionLayoutKey(rows: readonly { key: string }[]): string {
   return rows.map((row) => row.key).join(LAYOUT_KEY_SEPARATOR);
 }
 
+/**
+ * The slide a row takes to its new place: 200 ms ease-out, and instant under
+ * reduced motion, where a row simply appears where it now belongs.
+ *
+ * @param reducedMotion - What `useReducedMotion()` answered.
+ */
+export function moveTransition(reducedMotion: boolean | null): Transition {
+  return reducedMotion === true ? { duration: 0 } : { duration: MOVE_SECONDS, ease: 'easeOut' };
+}
+
 /** Everything {@link buildRowMotion} needs, and every bit of it a primitive. */
 export interface RowMotionInputs {
   /** The section's row ids, from {@link sectionLayoutKey}. */
   layoutKey: string | undefined;
-  /** The section announces arrivals — Heads up and Today, and nothing else. */
+  /** The section announces arrivals — Direct messages, and nothing else. */
   arrives: boolean;
   /** This row is one of them, so it enters and tints once. */
   arrived: boolean;
   /** What `useReducedMotion()` answered. */
   reducedMotion: boolean | null;
+  /**
+   * The row's identity across sections, when it can move between them on its
+   * own — an agent, drifting between a smart section and Direct messages.
+   * Becomes motion's `layoutId`, so the row slides from its old section to its
+   * new one instead of vanishing from one and appearing in the other.
+   */
+  moveId?: string;
 }
 
 /**
@@ -156,24 +180,31 @@ export interface RowMotionInputs {
  * Dev Playground's demos call this too, so what the page shows is what the panel
  * does.
  *
- * @param inputs - The four facts about this row's motion.
+ * @param inputs - The facts about this row's motion.
  */
 export function buildRowMotion({
   layoutKey,
   arrives,
   arrived,
   reducedMotion,
+  moveId,
 }: RowMotionInputs): SidebarRowMotion {
   return {
     layout: true,
     layoutDependency: layoutKey,
+    ...(moveId === undefined ? {} : { layoutId: moveId }),
     // A row that was already there has no entrance. `false` is motion's "start
     // where you are", and it is what every row wears on the frame the panel
     // first paints — warm boot and cold reveal alike.
     initial: arrives && arrived ? ARRIVE_FROM : false,
     animate: arrives ? ARRIVE_TO : undefined,
     exit: arrives ? LEAVE_TO : undefined,
-    transition: arrived ? arriveTransition(reducedMotion) : leaveTransition(reducedMotion),
+    // The slide to a new place has its own timing (`layout`); the entrance and
+    // the fade-out keep theirs.
+    transition: {
+      ...(arrived ? arriveTransition(reducedMotion) : leaveTransition(reducedMotion)),
+      layout: moveTransition(reducedMotion),
+    },
     arrived,
   };
 }

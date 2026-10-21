@@ -170,8 +170,7 @@ function SidebarRowShowcase() {
           className="bg-sidebar group/section space-y-1 rounded-md px-2 py-1"
           style={{ width: COCKPIT_SIDEBAR_WIDTH }}
         >
-          <SectionHeader label="Heads up" collapsed onToggle={() => {}} />
-          <SectionHeader label="Today" collapsed onToggle={() => {}} />
+          <SectionHeader label="Direct messages" collapsed onToggle={() => {}} />
           <SectionHeader
             label="Channels"
             collapsed
@@ -184,7 +183,7 @@ function SidebarRowShowcase() {
               />
             }
           />
-          <SectionHeader label="Agents" collapsed onToggle={() => {}} />
+          <SectionHeader label="Release crew" collapsed onToggle={() => {}} />
         </div>
       </ShowcaseDemo>
 

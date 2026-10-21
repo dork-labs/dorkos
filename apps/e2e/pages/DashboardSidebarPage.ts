@@ -68,10 +68,8 @@ export class DashboardSidebarPage {
   /**
    * The one create surface (BC-45).
    *
-   * The Agents section's `+` used to open its own popover with New agent… /
-   * Bring in a project / New group… in it. That popover is gone: the `+` is a
-   * deep link into the New menu now, so anything this page object used to make
-   * from it, it makes from here.
+   * A section's `+` is a deep link into the New menu, so anything this page
+   * object makes, it makes from here.
    */
   readonly newMenu: NewMenuPage;
 
@@ -207,40 +205,31 @@ export class DashboardSidebarPage {
   }
 
   /**
-   * One zone's `<section>`, by the id the model gave it.
+   * One section of the list, by the id the model gave it.
    *
-   * @param id - `now`, `getting-started`, `today` or `library`.
+   * @param id - `top`, `channels`, `dms`, `addons`, or a `group:<id>`.
    */
-  zone(id: 'now' | 'getting-started' | 'today' | 'library'): Locator {
-    return this.page.locator(`[data-sidebar-zone="${id}"]`);
-  }
-
-  /** Every row inside Today, in the order it is drawn. */
-  get todayRows(): Locator {
-    return this.zone('today').locator('[data-sidebar-row]');
+  section(id: string): Locator {
+    return this.page.locator(`[data-sidebar-section="${id}"]`);
   }
 
   /**
-   * Today's anchor — the conversation the operator has open, which BC-21 pins
-   * to the top of the zone.
+   * One of the doors at the head of the list — Threads or Directory.
    *
-   * Matched on `aria-current="page"` inside Today rather than on "the first
-   * row", so the assertion is about the row the panel CLAIMS is open rather
-   * than about a position that would be true of whatever happened to sort
-   * first.
+   * @param name - The item's label.
    */
-  get todayAnchor(): Locator {
-    return this.zone('today').locator('[data-sidebar-row][aria-current="page"]');
+  topItem(name: 'Threads' | 'Directory'): Locator {
+    return this.section('top').getByRole('button', { name, exact: true });
   }
 
   /**
-   * One Library section's fold toggle, by the label on its header.
+   * One section's fold toggle, by the label on its header.
    *
-   * @param label - `Channels`, `Direct messages`, `Agents` or `Pins`.
+   * @param label - `Channels`, `Direct messages`, `Add-ons`, or a section you made.
    */
-  librarySectionToggle(label: string): Locator {
-    return this.zone('library')
-      .locator('h3')
+  sectionToggle(label: string): Locator {
+    return this.page
+      .locator('[data-slot="sidebar-content"] h3')
       .filter({ hasText: label })
       .locator('[data-sidebar-section-toggle]');
   }
@@ -264,9 +253,7 @@ export class DashboardSidebarPage {
    *
    * **Scoped by `data-sidebar-section`, not by `data-slot="sidebar-group"`.**
    * The section stamps its own model id and `group:` prefixes exactly the one
-   * wrapper meant here. It mattered more when a section rendered INSIDE Agents
-   * and a `sidebar-group` filter matched the ancestor as well as the descendant
-   * — sections are peers now (D3) — and it is still the precise handle.
+   * wrapper meant here, and it is the precise handle.
    */
   groupContainer(name: string): Locator {
     return this.page
@@ -302,7 +289,7 @@ export class DashboardSidebarPage {
   async createGroup(name: string) {
     // Two steps, and they are the product's: the New menu's "Section" is a
     // submenu — by hand, or from rules — and "Empty section" is the by-hand
-    // entry that mounts the inline editor at the top of Library (BC-45, D3).
+    // entry that mounts the inline editor under the top items (BC-45, D3).
     await this.newMenu.chooseSectionEntry('new-group-empty');
     const input = this.page.getByRole('textbox', { name: 'New section name' });
     await input.fill(name);
@@ -384,7 +371,7 @@ export class DashboardSidebarPage {
   }
 
   /**
-   * Drag ANY Library row onto a section header — the same gesture, without an
+   * Drag ANY row onto a section header — the same gesture, without an
    * opinion about what is being dragged.
    *
    * A section holds channels and conversations as well as agents (DOR-581), and
@@ -467,10 +454,10 @@ export class DashboardSidebarPage {
    * roving-tabindex list — one Tab stop per section — so the header is the stop
    * Tab is entitled to reach.
    *
-   * @param label - The section header to walk to, e.g. `Agents`.
+   * @param label - The section header to walk to, e.g. `Direct messages`.
    */
   async tabToSectionHeader(label: string) {
-    const toggle = this.librarySectionToggle(label);
+    const toggle = this.sectionToggle(label);
     await expect(toggle).toBeVisible();
 
     const onTarget = () => toggle.evaluate((node) => node === document.activeElement);
@@ -577,7 +564,7 @@ export class DashboardSidebarPage {
     // the key is sent is how a run steps straight over the one target that
     // matters: the class arrives on React's next commit, the read misses it,
     // and the loop presses again — measured, a lifted section walked all the
-    // way up into Heads up and reported "15 presses never brought it over".
+    // way past its target and reported "15 presses never brought it over".
     // The short deadline per step is what makes each press a question with an
     // answer rather than a guess.
     for (let press = 0; press < KEYBOARD_DRAG_PRESSES; press++) {
@@ -644,10 +631,25 @@ export class DashboardSidebarPage {
       'Space on the focused row picked nothing up'
     ).toHaveCount(1);
 
+    // **One press, then WAIT for its answer** — the same rule the section walk
+    // below follows, and for the same reason. A key pressed in the instant after
+    // the lift is held until dnd-kit is listening and handed over a task or two
+    // later (DOR-3151), and every later step lands on React's next commit. A
+    // loop that re-read the live region the moment it sent a key read the
+    // PREVIOUS step, pressed again, and walked straight past the section —
+    // measured, it reported "Over Threads and Directory" with the target behind
+    // it. So each press waits for the commentary to change before it is read.
     const overGroup = `Over ${groupName}`;
     for (let press = 0; press < KEYBOARD_DRAG_PRESSES; press++) {
-      if ((await this.dndLiveRegion.textContent())?.includes(overGroup)) break;
+      const said = (await this.dndLiveRegion.textContent()) ?? '';
+      if (said.includes(overGroup)) break;
       await this.page.keyboard.press(key);
+      await expect
+        .poll(async () => (await this.dndLiveRegion.textContent()) ?? '', {
+          timeout: DROP_RING_SETTLE_MS,
+        })
+        .not.toBe(said)
+        .catch(() => undefined);
     }
     await expect(
       this.dndLiveRegion,

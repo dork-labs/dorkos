@@ -22,28 +22,26 @@
 import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import {
-  pinItem,
-  unpinItem,
   moveToGroup,
   reorderGroup,
   reorderWithinGroup,
-  reorderPinned,
+  ungroupKeepingInReach,
+  type HasDirectMessage,
 } from '@/layers/entities/config';
 
 /**
- * What a drop into Heads up or Today is answered with (R3).
+ * What a drop onto the top items is answered with (R3). Threads and Directory
+ * are doors to pages, not a list a row can be filed into — and it names the
+ * way to keep a row somewhere instead.
  *
  * One spelling, read by the toast the operator sees and by the announcement a
- * screen reader hears, so the two can never drift. It names the way out rather
- * than only the refusal: the row CAN be kept in place, by pinning it.
+ * screen reader hears, so the two can never drift.
  */
-export const COMPUTED_ZONE_REJECTION =
-  'Heads up and Today fill themselves. Pin it to Library to keep it in place.';
+export const TOP_ITEMS_REJECTION = 'Threads and Directory are pages. Drop it in a section.';
 
 /**
  * What a drop into Add-ons is answered with. Add-ons lists the pages mini apps
- * add and nothing else, so a channel or an agent has no place there — and
- * "Pin it to Library" would point at the section it is already in.
+ * add and nothing else, so a channel or an agent has no place there.
  */
 export const ADD_ONS_REJECTION = 'Add-ons lists extension pages only.';
 
@@ -51,14 +49,14 @@ export const ADD_ONS_REJECTION = 'Add-ons lists extension pages only.';
  * The sentence a drop into one computed section is refused with — one source
  * for the toast and the screen-reader announcement.
  *
- * @param zone - The computed section the drop landed in.
+ * @param section - The computed section the drop landed in.
  */
-export function computedZoneRejection(zone: ComputedZone): string {
-  return zone === 'addons' ? ADD_ONS_REJECTION : COMPUTED_ZONE_REJECTION;
+export function computedSectionRejection(section: ComputedSection): string {
+  return section === 'addons' ? ADD_ONS_REJECTION : TOP_ITEMS_REJECTION;
 }
 
 /**
- * The three Library sections a row can sit in without belonging to a group.
+ * The two sections a row can sit in without belonging to a group.
  *
  * **Ids, not labels.** This travelled as the printed name ("Direct messages")
  * while the section's own id was `dms`, so a container carried a string that
@@ -66,41 +64,38 @@ export function computedZoneRejection(zone: ComputedZone): string {
  * nothing recognised. The label is looked up when a sentence needs one, in
  * {@link UNGROUPED_SECTION_LABEL}.
  */
-export type UngroupedSectionId = 'channels' | 'dms' | 'agents';
+export type UngroupedSectionId = 'channels' | 'dms';
 
 /** What each ungrouped section is called out loud, for the announcements. */
 const UNGROUPED_SECTION_LABEL: Record<UngroupedSectionId, string> = {
   channels: 'Channels',
   dms: 'Direct messages',
-  agents: 'Agents',
 };
 
 /** Where a sidebar row lives — its home section during a drag, or a drop target. */
 export type SidebarContainer =
-  | { kind: 'pinned' }
   | { kind: 'group'; groupId: string }
   /**
-   * "In no group at all", which since rooms became draggable (DOR-581) is three
-   * sections rather than one: Agents, Channels and Direct messages. They behave
-   * identically as a drop target — landing in any of them takes the row out of
-   * its group and lets it fall back to wherever it belongs — so they share the
-   * kind. `section` is the id of the one actually under the cursor, read ONLY
-   * by the ARIA announcements; nothing in the reducer branches on it.
+   * "In no group at all": Channels or Direct messages. They behave identically
+   * as a drop target — landing in either takes the row out of its group and
+   * lets it fall back to wherever it belongs — so they share the kind.
+   * `section` is the id of the one actually under the cursor, read ONLY by the
+   * ARIA announcements; nothing in the reducer branches on it.
    */
   | { kind: 'ungrouped'; section?: UngroupedSectionId }
   /**
-   * A computed zone — Heads up, Today or Getting started (R3) — or Library's
-   * Add-ons, which fills itself from the pages mini apps add.
+   * A section that fills itself: the top items, or Add-ons with the pages mini
+   * apps add.
    *
    * These are the only containers that are never a home: nothing is dragged
    * OUT of them, because the model gives every row in them `draggable: false`.
    * They exist as a container so a row dragged INTO one is rejected with a
    * sentence instead of springing back in silence.
    */
-  | { kind: 'computed'; zone: ComputedZone };
+  | { kind: 'computed'; section: ComputedSection };
 
 /** The sections that fill themselves, so nothing may be dropped into them. */
-export type ComputedZone = 'now' | 'today' | 'getting-started' | 'addons';
+export type ComputedSection = 'top' | 'addons';
 
 /**
  * The `data` object a draggable/droppable node carries. dnd-kit reuses one data
@@ -136,8 +131,6 @@ export type SidebarDropOp =
   | { kind: 'none' }
   | { kind: 'reorder-group'; groupId: string; from: number; to: number }
   | { kind: 'move-to-group'; ref: SidebarItemRef; groupId: string; toIndex: number | null }
-  | { kind: 'pin'; ref: SidebarItemRef }
-  | { kind: 'unpin'; ref: SidebarItemRef }
   | { kind: 'remove-from-group'; ref: SidebarItemRef }
   | {
       kind: 'reorder-within-group';
@@ -146,7 +139,6 @@ export type SidebarDropOp =
       from: number;
       to: number;
     }
-  | { kind: 'reorder-pinned'; ref: SidebarItemRef; from: number; to: number }
   /**
    * A drop targeted a smart group's body/header (smart-agent-groups,
    * DOR-338). Applying this op is a no-op — smart-group membership is
@@ -156,12 +148,12 @@ export type SidebarDropOp =
    */
   | { kind: 'reject-smart-group'; groupId: string; ref: SidebarItemRef }
   /**
-   * A drop landed in a computed zone (R3). Applying it is a no-op — Heads up and
-   * Today are derived, so there is no stored order for a row to take a place
-   * in — and the distinct kind is what lets `SidebarDnd` say so rather than
-   * appear to lose the gesture.
+   * A drop landed in a section that fills itself (R3). Applying it is a no-op —
+   * there is no stored order for a row to take a place in — and the distinct
+   * kind is what lets `SidebarDnd` say so rather than appear to lose the
+   * gesture.
    */
-  | { kind: 'reject-computed-zone'; ref: SidebarItemRef; zone: ComputedZone };
+  | { kind: 'reject-computed-section'; ref: SidebarItemRef; section: ComputedSection };
 
 // ---------------------------------------------------------------------------
 // Node-data ↔ descriptor conversion (used by the live dnd adapter + tests)
@@ -170,7 +162,6 @@ export type SidebarDropOp =
 function isSidebarContainer(value: unknown): value is SidebarContainer {
   if (typeof value !== 'object' || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
-  if (kind === 'pinned') return true;
   if (kind === 'ungrouped') {
     const section = (value as { section?: unknown }).section;
     return (
@@ -178,8 +169,8 @@ function isSidebarContainer(value: unknown): value is SidebarContainer {
     );
   }
   if (kind === 'computed') {
-    const zone = (value as { zone?: unknown }).zone;
-    return zone === 'now' || zone === 'today' || zone === 'getting-started' || zone === 'addons';
+    const section = (value as { section?: unknown }).section;
+    return section === 'top' || section === 'addons';
   }
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
 }
@@ -261,7 +252,7 @@ function resolveTarget(drop: SidebarDropDescriptor): {
   }
 }
 
-/** Index of `ref` in a member/pinned list, or `-1`. Union equality, never `===`. */
+/** Index of `ref` in a member list, or `-1`. Union equality, never `===`. */
 function indexOfRef(list: readonly SidebarItemRef[], ref: SidebarItemRef): number {
   return list.findIndex((entry) => sameSidebarItem(entry, ref));
 }
@@ -297,16 +288,12 @@ function moveToGroupOp(
  * Implements the full drop-semantics table:
  * - group header → group header: reorder groups
  * - item → group body/header: move to group (append, or drop index if manual)
- * - item → Pinned: pin (reference; home membership untouched)
  * - item in a manual group → same group: reorder within group
  * - item in a name/recent group → same group: no reorder (sort owns order)
- * - pinned row → within Pinned: reorder pinned
- * - pinned row → a non-pinned container (Agents or a group): unpin
- * - item in a group → Agents (ungrouped): remove from group
+ * - item in a group → Channels or Direct messages (ungrouped): remove from group
+ * - anything → the top items or Add-ons: refused with a sentence
  *
- * A `null`/void drop (released with no valid target) is always a no-op — unpin
- * fires only when a pinned row actually lands on a non-pinned container, never
- * from dropping into empty space.
+ * A `null`/void drop (released with no valid target) is always a no-op.
  *
  * @param prev - Current sidebar prefs.
  * @param drag - What is being dragged.
@@ -332,27 +319,16 @@ export function classifySidebarDrop(
   const { ref, from } = drag;
   const { container, overRef } = resolveTarget(drop);
 
-  // Heads up and Today are computed, and dragging into them would be a lie about
-  // what the operator controls (R3, design-meta rule 6). Checked FIRST, before
-  // any source branch: where the row came from does not change the answer, and
-  // putting it here is what leaves the existing table below untouched.
+  // The top items and Add-ons fill themselves, and dragging into them would be
+  // a lie about what the operator controls (R3, design-meta rule 6). Checked
+  // FIRST, before any source branch: where the row came from does not change
+  // the answer.
   if (container.kind === 'computed') {
-    return { kind: 'reject-computed-zone', ref, zone: container.zone };
-  }
-
-  // Source: a pinned reference.
-  if (from.kind === 'pinned') {
-    if (container.kind !== 'pinned') return { kind: 'unpin', ref }; // Finder drag-out.
-    if (overRef === undefined) return { kind: 'none' };
-    const fromIdx = indexOfRef(prev.pinned, ref);
-    const toIdx = indexOfRef(prev.pinned, overRef);
-    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return { kind: 'none' };
-    return { kind: 'reorder-pinned', ref, from: fromIdx, to: toIdx };
+    return { kind: 'reject-computed-section', ref, section: container.section };
   }
 
   // Source: inside a group.
   if (from.kind === 'group') {
-    if (container.kind === 'pinned') return { kind: 'pin', ref };
     if (container.kind === 'ungrouped') return { kind: 'remove-from-group', ref };
     if (container.groupId !== from.groupId) {
       return moveToGroupOp(prev, ref, container.groupId, overRef);
@@ -366,8 +342,8 @@ export function classifySidebarDrop(
     return { kind: 'reorder-within-group', groupId: from.groupId, ref, from: fromIdx, to: toIdx };
   }
 
-  // Source: ungrouped.
-  if (container.kind === 'pinned') return { kind: 'pin', ref };
+  // Source: ungrouped. A computed source never reaches here: nothing in one is
+  // a drag source.
   if (container.kind === 'group') return moveToGroupOp(prev, ref, container.groupId, overRef);
   return { kind: 'none' }; // ungrouped → ungrouped has no manual order.
 }
@@ -378,25 +354,26 @@ export function classifySidebarDrop(
  *
  * @param prev - Current sidebar prefs.
  * @param op - The operation from {@link classifySidebarDrop}.
+ * @param hasDirectMessage - Whether an agent is drawn without a pin.
  */
-function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs {
+function applySidebarDropOp(
+  prev: SidebarPrefs,
+  op: SidebarDropOp,
+  hasDirectMessage: HasDirectMessage
+): SidebarPrefs {
   switch (op.kind) {
     case 'none':
     case 'reject-smart-group':
-    case 'reject-computed-zone':
+    case 'reject-computed-section':
       return prev;
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
-    case 'pin':
-      return pinItem(prev, op.ref);
-    case 'unpin':
-      return unpinItem(prev, op.ref);
     case 'remove-from-group':
-      return moveToGroup(prev, op.ref, null);
+      // Pins the agent on the way when it has no direct message, or it would
+      // vanish from the panel the moment you dropped it where you can see it.
+      return ungroupKeepingInReach(prev, { kind: 'item', ref: op.ref }, hasDirectMessage);
     case 'reorder-within-group':
       return reorderWithinGroup(prev, op.groupId, op.from, op.to);
-    case 'reorder-pinned':
-      return reorderPinned(prev, op.from, op.to);
     case 'move-to-group': {
       const moved = moveToGroup(prev, op.ref, op.groupId);
       if (op.toIndex === null) return moved;
@@ -415,13 +392,16 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
  * @param prev - Current sidebar prefs.
  * @param drag - What is being dragged.
  * @param drop - What it was dropped on, or `null`.
+ * @param hasDirectMessage - Whether an agent is drawn without a pin, so one
+ *   taken out of a section is pinned only when it would otherwise vanish.
  */
 export function resolveSidebarDrop(
   prev: SidebarPrefs,
   drag: SidebarDragDescriptor,
-  drop: SidebarDropDescriptor | null
+  drop: SidebarDropDescriptor | null,
+  hasDirectMessage: HasDirectMessage
 ): SidebarPrefs {
-  return applySidebarDropOp(prev, classifySidebarDrop(prev, drag, drop));
+  return applySidebarDropOp(prev, classifySidebarDrop(prev, drag, drop), hasDirectMessage);
 }
 
 // ---------------------------------------------------------------------------
@@ -455,24 +435,18 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
       return `Moved section ${ctx.groupName(op.groupId)}.`;
     case 'move-to-group':
       return `Moved ${ctx.itemName(op.ref)} to ${ctx.groupName(op.groupId)}.`;
-    case 'pin':
-      return `Pinned ${ctx.itemName(op.ref)}.`;
-    case 'unpin':
-      return `Unpinned ${ctx.itemName(op.ref)}.`;
     case 'remove-from-group':
       // Names no destination section on purpose. The row lands back wherever it
-      // belongs — an agent in Agents, a channel in Channels, a conversation in
-      // Direct messages — and which of the three received the drop does not
-      // decide that, so naming one would be right only a third of the time.
+      // belongs — a channel in Channels, a conversation or an agent (pinned on
+      // the way, so it stays on the panel) in Direct messages — and which
+      // section received the drop does not decide that.
       return `Moved ${ctx.itemName(op.ref)} out of its section.`;
     case 'reorder-within-group':
       return `Reordered ${ctx.itemName(op.ref)} in ${ctx.groupName(op.groupId)}.`;
-    case 'reorder-pinned':
-      return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
       return `Can’t move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)}. Membership is rule-based. Edit rules instead.`;
-    case 'reject-computed-zone':
-      return `Can’t move ${ctx.itemName(op.ref)} there. ${computedZoneRejection(op.zone)}`;
+    case 'reject-computed-section':
+      return `Can’t move ${ctx.itemName(op.ref)} there. ${computedSectionRejection(op.section)}`;
     case 'none':
       return '';
   }
@@ -486,13 +460,10 @@ function describeSidebarDragOver(
   if (drop === null) return '';
   const { container } = resolveTarget(drop);
   switch (container.kind) {
-    case 'pinned':
-      return 'Over Pinned.';
     case 'ungrouped':
-      return `Over ${container.section === undefined ? 'Agents' : UNGROUPED_SECTION_LABEL[container.section]}.`;
+      return `Over ${UNGROUPED_SECTION_LABEL[container.section ?? 'dms']}.`;
     case 'computed':
-      if (container.zone === 'addons') return 'Over Add-ons.';
-      return container.zone === 'today' ? 'Over Today.' : 'Over Heads up.';
+      return container.section === 'addons' ? 'Over Add-ons.' : 'Over Threads and Directory.';
     case 'group':
       return `Over ${ctx.groupName(container.groupId)}.`;
   }

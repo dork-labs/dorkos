@@ -4,8 +4,7 @@
  * a new `SidebarState` (spec §H, Risk R1).
  *
  * A fleet of thirty agents emits a `session_status` roughly every two seconds
- * per working session. A new state object rebuilds every zone, every section and
- * every row — so "the values did not change" has to become "the object did not
+ * per working session. A new state object rebuilds every section and every row — so "the values did not change" has to become "the object did not
  * change", or the whole design's performance claim is a comment.
  *
  * **`useAgentAttentionMap` is deliberately NOT mocked.** It is the hook that
@@ -19,6 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
+import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { setSessionRouteContext, useSessionListStore } from '@/layers/entities/session';
 
 const FIXED_NOW = 1_786_000_000_000;
@@ -52,49 +52,15 @@ const AGENT_PATHS = [{ id: 'm1', name: 'alpha', projectPath: '/projects/alpha' }
 const MANIFESTS = { '/projects/alpha': null };
 // Mutable on purpose: one test fills the window and puts it back.
 const RECENT = { sessions: [] as Session[], agentActivity: {}, warnings: [] };
-const ROOMS: unknown[] = [];
 // Hoisted, and that matters: a mock that answered with a fresh `[]` per call
 // would move the snapshot's identity by itself and make this suite pass or fail
 // for a reason that has nothing to do with the hook. A real `useQuery` hands
 // back the same `data` reference until the query refetches.
-const THREADS = { data: [] as unknown[], isLoading: false, error: null };
+const ROOMS: unknown[] = [];
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => ({ data: { agents: AGENT_PATHS }, isSuccess: true }),
 }));
-
-// Hoisted for the same reason `THREADS` is: `useAttentionSignals` is a real
-// hook over real queries, and mounting it here would need a transport this
-// suite does not stand up. Its OWN identity-stability contract — the one that
-// matters for this file's claim — is asserted where the hook lives, in
-// `entities/attention/__tests__/use-attention-signals.test.tsx`, against the
-// same hundred injected activity events.
-const ATTENTION: unknown[] = [];
-vi.mock('@/layers/entities/attention', () => ({
-  useAttentionSignals: () => ATTENTION,
-  usePendingInteractions: () => ({ interactions: [], isLoading: false }),
-}));
-
-/** The prefs writer, hoisted so its identity never moves the snapshot's. */
-const UPDATE_PREFS = { update: vi.fn(), updateAsync: vi.fn(), isPending: false, isError: false };
-
-/**
- * The welcome-back setting, hoisted for the same reason.
- *
- * The real hook reads the shared config query, which needs a transport this
- * suite does not stand up. Only the digest reads it (BC-22), and the digest's
- * own gates are asserted where they live, in `use-digest-facts.test.tsx`.
- */
-const WELCOME_BACK = {
-  enabled: false,
-  absenceThresholdMinutes: 240,
-  maxPosts: 3,
-  offersEnabled: false,
-  setEnabled: vi.fn(),
-  setOffersEnabled: vi.fn(),
-  isAvailable: true,
-  isPending: false,
-};
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
@@ -116,9 +82,6 @@ vi.mock('@/layers/entities/session/model/query/use-recent-sessions', () => ({
 vi.mock('@/layers/entities/room', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/room')>()),
   useRooms: () => ({ data: ROOMS, isLoading: false }),
-  useThreads: () => THREADS,
-  // No session on screen is an agent's Direct chat here (rule S12).
-  useDirectChat: () => ({ data: null }),
 }));
 
 vi.mock('@/layers/entities/config', async (importOriginal) => {
@@ -131,22 +94,52 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
     gettingStarted: { retired: [] },
     digest: {},
   };
-  // The prefs WRITER is stubbed, not the readers: `useUpdateSidebarPrefs` is a
-  // TanStack mutation over the transport, and Getting started's retirement
-  // (BC-13) calls it from inside the hook under test. Its behaviour has its own
-  // suite; here it only has to exist.
-  return {
-    ...actual,
-    useSidebarPrefs: () => PREFS,
-    useUpdateSidebarPrefs: () => UPDATE_PREFS,
-    useWelcomeBack: () => WELCOME_BACK,
-  };
+  return { ...actual, useSidebarPrefs: () => PREFS };
 });
 
 import { useSidebarState } from '../use-sidebar-state';
 // Imported after the mocks like the hook itself, so the rules see the same
 // mocked module graph the hook does.
-import { buildLibrarySections } from '../rules/build-library-sections';
+import { buildSections } from '../rules/build-sections';
+import type { SidebarState } from '../sidebar-state';
+
+/**
+ * The hook's snapshot with alpha given a direct message — so alpha is a row in
+ * Direct messages — and that section folded.
+ *
+ * @param state - The real hook's snapshot.
+ */
+function withFoldedAlphaDm(state: SidebarState): SidebarState {
+  return {
+    ...state,
+    rooms: [
+      {
+        id: 'dm-alpha',
+        kind: 'dm',
+        slug: null,
+        title: 'alpha',
+        topic: null,
+        archived: false,
+        ambientMaxEntries: 50,
+        wellKnown: null,
+        createdAt: '2026-10-01T00:00:00.000Z',
+        lastActivityAt: '2026-10-01T00:00:00.000Z',
+        unreadCount: 0,
+        participants: [
+          { id: 'person:me', kind: 'human', displayName: 'Me', handle: null },
+          {
+            id: 'agent:alpha',
+            kind: 'agent',
+            displayName: 'alpha',
+            handle: null,
+            agentRef: agentAuthorRef('/projects/alpha'),
+          },
+        ],
+      },
+    ],
+    prefs: { ...state.prefs, sections: { dms: { collapsed: true } } },
+  };
+}
 
 /** A `session_status` projection with a lifecycle and, optionally, a verb. */
 function status(lifecycle: SessionStatus['lifecycle'], toolName?: string): SessionStatus {
@@ -247,13 +240,12 @@ describe('useSidebarState — referential stability (spec §H)', () => {
     const { result } = renderHook(() => useSidebarState());
     expect(result.current.sessions).toEqual([]);
 
-    const agents = buildLibrarySections({
-      ...result.current,
-      prefs: { ...result.current.prefs, sections: { agents: { collapsed: true } } },
-    }).find((entry) => entry.id === 'agents');
+    const dms = buildSections(withFoldedAlphaDm(result.current)).find(
+      (entry) => entry.id === 'dms'
+    );
 
-    expect(agents?.collapsed).toBe(true);
-    expect(agents?.rollup?.workingCount).toBe(1);
+    expect(dms?.collapsed).toBe(true);
+    expect(dms?.rollup?.workingCount).toBe(1);
   });
 
   it('says nothing about a live session the server could not place', () => {
@@ -267,21 +259,20 @@ describe('useSidebarState — referential stability (spec §H)', () => {
     expect(result.current.workingSessionIds).toEqual(['s2']);
     expect(result.current.liveSessionCwds).toEqual({});
 
-    const agents = buildLibrarySections({
-      ...result.current,
-      prefs: { ...result.current.prefs, sections: { agents: { collapsed: true } } },
-    }).find((entry) => entry.id === 'agents');
-    expect(agents?.rollup?.workingCount ?? 0).toBe(0);
+    const dms = buildSections(withFoldedAlphaDm(result.current)).find(
+      (entry) => entry.id === 'dms'
+    );
+    expect(dms?.rollup?.workingCount ?? 0).toBe(0);
   });
 
-  it('carries lifecycle and nothing else out of the status map', () => {
+  it('carries which sessions are live and nothing about what they are doing', () => {
     act(() => {
       useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Read'));
     });
     const { result } = renderHook(() => useSidebarState());
     // A verb in the snapshot is the one thing the whole design forbids.
-    expect(result.current.sessionStatuses).toEqual({ s1: 'streaming' });
-    expect(JSON.stringify(result.current.sessionStatuses)).not.toContain('Read');
+    expect(result.current.workingSessionIds).toEqual(['s1']);
+    expect(JSON.stringify(result.current)).not.toContain('Read');
   });
 });
 
@@ -318,11 +309,10 @@ describe('useSidebarState — the whole recent window (your-activity-first D10)'
     ];
     const { result } = renderHook(() => useSidebarState());
     expect(result.current.sessions.map((entry) => entry.id)).toContain('mine');
-    expect(result.current.lastTouchedByYouAt).toEqual({ 'session:mine': at });
   });
 });
 
-describe('useSidebarState — the open chat’s agent (DOR-2845)', () => {
+describe('useSidebarState — what is open (DOR-2845)', () => {
   afterEach(() => {
     route.pathname = '/';
     route.search = {};
@@ -344,6 +334,23 @@ describe('useSidebarState — the open chat’s agent (DOR-2845)', () => {
       sessionId: 'ses-brand-new',
       agentPath: '/projects/alpha',
       cwd: '/projects/alpha',
+    });
+  });
+
+  it('names the Threads page and the Directory as open, so their doors light', () => {
+    route.pathname = '/threads';
+    const threads = renderHook(() => useSidebarState());
+    expect(threads.result.current.activeTarget).toEqual({
+      kind: 'command',
+      commandId: 'open-threads',
+    });
+    threads.unmount();
+
+    route.pathname = '/team';
+    const directory = renderHook(() => useSidebarState());
+    expect(directory.result.current.activeTarget).toEqual({
+      kind: 'command',
+      commandId: 'open-directory',
     });
   });
 });

@@ -148,7 +148,7 @@ export const DISABLED_SORTABLE_BINDINGS: SortableBindings = {
 type SortableRender = (bindings: SortableBindings) => ReactNode;
 
 interface SortableProps {
-  /** Unique dnd id (e.g. `pinned::/path`, `group-header::id`). */
+  /** Unique dnd id (e.g. `ungrouped::/path`, `group-header::id`). */
   id: string;
   /** Node data read back by the drop reducer. */
   data: SidebarDndData;
@@ -182,7 +182,7 @@ function SortableInner({
   // **Memoized, because the row underneath is** (`specs/sidebar-simplification`
   // D8). `RoomRow` is `React.memo` and takes these as one prop, so a fresh
   // bindings object on every render of the panel would defeat the memo for every
-  // draggable row — which is all of them in the Library.
+  // draggable row — which is every channel, conversation and agent.
   const style = useMemo<CSSProperties>(
     () => ({
       transform: transform
@@ -249,7 +249,7 @@ export function Sortable({ id, data, children }: SortableProps) {
 }
 
 interface DroppableProps {
-  /** Unique dnd id for the container (e.g. `container::pinned`). */
+  /** Unique dnd id for the container (e.g. `container::sidebar-section-dms`). */
   id: string;
   /** Node data read back by the drop reducer. */
   data: SidebarDndData;
@@ -318,20 +318,19 @@ export function sidebarRowDndId(keyPrefix: string, ref: SidebarItemRef): string 
 
 /**
  * Build a sidebar row's node data from its section key prefix + reference. The
- * prefix (`pinned` / `ungrouped` / a group id) names the home container that the
- * drop reducer reads back as the drag source or hovered target.
+ * prefix (`ungrouped` / a group id) names the home container that the drop
+ * reducer reads back as the drag source or hovered target.
  *
  * `section` is the id of the ungrouped section this row actually sits in, for
- * the ARIA announcements only — "ungrouped" is three sections now (Agents,
- * Channels, Direct messages), and a hover that says "Over Agents." while the
- * cursor is over Channels is worse than no announcement at all.
+ * the ARIA announcements only — "ungrouped" is two sections (Channels, Direct
+ * messages), and a hover that names the wrong one is worse than no
+ * announcement at all.
  */
 export function sidebarDndData(
   keyPrefix: string,
   ref: SidebarItemRef,
   section?: UngroupedSectionId
 ): SidebarDndData {
-  if (keyPrefix === 'pinned') return { type: 'item', ref, container: { kind: 'pinned' } };
   if (keyPrefix === 'ungrouped') {
     return { type: 'item', ref, container: { kind: 'ungrouped', section } };
   }

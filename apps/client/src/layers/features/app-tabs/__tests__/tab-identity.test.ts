@@ -433,6 +433,8 @@ describe('the route map (drift guard)', () => {
       '/signed-in': 'Signed in',
       '/tasks': 'Schedules',
       '/team': 'Team',
+      // The sidebar's Threads item opens it, and the tab says the same word.
+      '/threads': 'Threads',
       '/workspaces': 'Workspaces',
     });
   });

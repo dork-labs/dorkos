@@ -3,8 +3,8 @@ import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/
 import {
   ADD_ONS_REJECTION,
   classifySidebarDrop,
-  COMPUTED_ZONE_REJECTION,
-  resolveSidebarDrop,
+  resolveSidebarDrop as resolveDrop,
+  TOP_ITEMS_REJECTION,
   buildSidebarAnnouncements,
   readSidebarDndData,
   toDragDescriptor,
@@ -23,6 +23,17 @@ import {
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 /** A room member reference — the reducer treats it exactly like an agent. */
 const room = (roomId: string): SidebarItemRef => ({ kind: 'room', roomId });
+
+/** No agent has a direct message — the case where ungrouping must pin. */
+const NO_DIRECT_MESSAGES = (): boolean => false;
+
+/** The reducer, with no direct messages unless a case says otherwise. */
+const resolveSidebarDrop = (
+  prev: SidebarPrefs,
+  drag: SidebarDragDescriptor,
+  drop: SidebarDropDescriptor | null,
+  hasDirectMessage: (agentPath: string) => boolean = NO_DIRECT_MESSAGES
+): SidebarPrefs => resolveDrop(prev, drag, drop, hasDirectMessage);
 
 function grp(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
@@ -50,12 +61,10 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
   };
 }
 
-const PINNED: SidebarContainer = { kind: 'pinned' };
 const UNGROUPED: SidebarContainer = { kind: 'ungrouped' };
 const inGroup = (groupId: string): SidebarContainer => ({ kind: 'group', groupId });
-const TODAY: SidebarContainer = { kind: 'computed', zone: 'today' };
-const NOW: SidebarContainer = { kind: 'computed', zone: 'now' };
-const ADDONS: SidebarContainer = { kind: 'computed', zone: 'addons' };
+const TOP: SidebarContainer = { kind: 'computed', section: 'top' };
+const ADDONS: SidebarContainer = { kind: 'computed', section: 'addons' };
 
 const dragItem = (ref: SidebarItemRef, from: SidebarContainer): SidebarDragDescriptor => ({
   type: 'item',
@@ -138,15 +147,6 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
     expect(next.groups[0]!.items).toEqual([agent('/a'), agent('/b'), agent('/new')]);
   });
 
-  it('pins an agent (reference; home membership unchanged) when dropped on Pinned', () => {
-    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/x')] })] });
-    const op = classifySidebarDrop(p, dragAgent('/x', inGroup('g1')), dropContainer(PINNED));
-    expect(op).toEqual({ kind: 'pin', ref: agent('/x') });
-    const next = resolveSidebarDrop(p, dragAgent('/x', inGroup('g1')), dropContainer(PINNED));
-    expect(next.pinned).toEqual([agent('/x')]);
-    expect(next.groups[0]!.items).toEqual([agent('/x')]); // still in its home group
-  });
-
   it('reorders within a manual group when a member drops over a sibling', () => {
     const p = prefs({
       groups: [
@@ -188,29 +188,36 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
     ).toBe(p);
   });
 
-  it('reorders the pinned array when a pinned row drops over another pinned row', () => {
-    const p = prefs({ pinned: [agent('/a'), agent('/b'), agent('/c')] });
-    const op = classifySidebarDrop(p, dragAgent('/c', PINNED), dropItem('/a', PINNED));
-    expect(op).toEqual({ kind: 'reorder-pinned', ref: agent('/c'), from: 2, to: 0 });
-    const next = resolveSidebarDrop(p, dragAgent('/c', PINNED), dropItem('/a', PINNED));
-    expect(next.pinned).toEqual([agent('/c'), agent('/a'), agent('/b')]);
-  });
-
-  it('unpins when a pinned row is dropped anywhere outside Pinned (home untouched)', () => {
-    const p = prefs({ pinned: [agent('/a')], groups: [grp({ id: 'g1', items: [agent('/a')] })] });
-    const op = classifySidebarDrop(p, dragAgent('/a', PINNED), dropContainer(UNGROUPED));
-    expect(op).toEqual({ kind: 'unpin', ref: agent('/a') });
-    const next = resolveSidebarDrop(p, dragAgent('/a', PINNED), dropContainer(UNGROUPED));
-    expect(next.pinned).toEqual([]);
-    expect(next.groups[0]!.items).toEqual([agent('/a')]); // membership untouched
-  });
-
-  it('removes an agent from its group when dropped on the Agents (ungrouped) section', () => {
+  it('removes an agent from its group when dropped on Direct messages (ungrouped)', () => {
     const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/a'), agent('/b')] })] });
     const op = classifySidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
     expect(op).toEqual({ kind: 'remove-from-group', ref: agent('/a') });
     const next = resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
     expect(next.groups[0]!.items).toEqual([agent('/b')]);
+    // Pinned on the way: outside a section an agent is drawn only once it has a
+    // direct message or a pin, so without this it would vanish (DOR-3092).
+    expect(next.pinned).toEqual([agent('/a')]);
+  });
+
+  it('does not pin an agent its direct message already keeps on the panel', () => {
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/a')] })] });
+    const next = resolveSidebarDrop(
+      p,
+      dragAgent('/a', inGroup('g1')),
+      dropContainer(UNGROUPED),
+      (path) => path === '/a'
+    );
+    expect(next.groups[0]!.items).toEqual([]);
+    expect(next.pinned).toEqual([]);
+  });
+
+  it('pins an agent it takes out of a section only once', () => {
+    const p = prefs({
+      pinned: [agent('/a')],
+      groups: [grp({ id: 'g1', items: [agent('/a')] })],
+    });
+    const next = resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
+    expect(next.pinned).toEqual([agent('/a')]);
   });
 
   it('moves an agent between two groups (disjointness preserved)', () => {
@@ -289,12 +296,12 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
   });
 
   it('is a no-op for a null (no valid target) drop', () => {
-    const p = prefs({ pinned: [agent('/a')] });
-    expect(classifySidebarDrop(p, dragAgent('/a', PINNED), null)).toEqual({ kind: 'none' });
-    expect(resolveSidebarDrop(p, dragAgent('/a', PINNED), null)).toBe(p);
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/a')] })] });
+    expect(classifySidebarDrop(p, dragAgent('/a', inGroup('g1')), null)).toEqual({ kind: 'none' });
+    expect(resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), null)).toBe(p);
   });
 
-  it('is a no-op when an ungrouped row is dropped back on the Agents section', () => {
+  it('is a no-op when an ungrouped row is dropped back on its own section', () => {
     const p = prefs();
     expect(classifySidebarDrop(p, dragAgent('/a', UNGROUPED), dropContainer(UNGROUPED))).toEqual({
       kind: 'none',
@@ -313,7 +320,7 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
   const smartGrp = (overrides: Partial<SidebarGroup> = {}): SidebarGroup =>
     grp({ kind: 'smart', sortMode: 'recent', rules: { statuses: ['active'] }, ...overrides });
 
-  it('rejects (does not mutate) an agent dropped on a smart group body from Agents', () => {
+  it('rejects (does not mutate) an agent dropped on a smart group body from Direct messages', () => {
     const p = prefs({ groups: [smartGrp({ id: 'g1' })] });
     const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropContainer(inGroup('g1')));
     expect(op).toEqual({ kind: 'reject-smart-group', groupId: 'g1', ref: agent('/new') });
@@ -387,15 +394,15 @@ describe('node-data conversion', () => {
   });
 
   it('reads a room item node the same way', () => {
-    const data: SidebarDndData = { type: 'item', ref: room('room-1'), container: PINNED };
+    const data: SidebarDndData = { type: 'item', ref: room('room-1'), container: UNGROUPED };
     expect(readSidebarDndData({ ...data, sortable: { index: 2 } })).toEqual(data);
-    expect(toDragDescriptor(data)).toEqual({ type: 'item', ref: room('room-1'), from: PINNED });
+    expect(toDragDescriptor(data)).toEqual({ type: 'item', ref: room('room-1'), from: UNGROUPED });
   });
 
   it('treats a container node as a drop target only (never a drag source)', () => {
-    const data: SidebarDndData = { type: 'container', container: PINNED };
+    const data: SidebarDndData = { type: 'container', container: inGroup('g1') };
     expect(toDragDescriptor(data)).toBeNull();
-    expect(toDropDescriptor(data)).toEqual({ type: 'container', container: PINNED });
+    expect(toDropDescriptor(data)).toEqual({ type: 'container', container: inGroup('g1') });
   });
 
   it('returns null for unrecognized payloads', () => {
@@ -403,10 +410,14 @@ describe('node-data conversion', () => {
     expect(readSidebarDndData({ type: 'nope' })).toBeNull();
     // A malformed ref (wrong payload field for its kind) is not a ref.
     expect(
-      readSidebarDndData({ type: 'item', ref: { kind: 'agent', path: 5 }, container: PINNED })
+      readSidebarDndData({ type: 'item', ref: { kind: 'agent', path: 5 }, container: UNGROUPED })
     ).toBeNull();
     expect(
-      readSidebarDndData({ type: 'item', ref: { kind: 'room', path: '/x' }, container: PINNED })
+      readSidebarDndData({ type: 'item', ref: { kind: 'room', path: '/x' }, container: UNGROUPED })
+    ).toBeNull();
+    // Pins is no longer a place a row can be dropped.
+    expect(
+      readSidebarDndData({ type: 'item', ref: agent('/a'), container: { kind: 'pinned' } })
     ).toBeNull();
   });
 });
@@ -416,81 +427,46 @@ describe('node-data conversion', () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// R3 — Library is the only place a row can be put
+// R3 — a section that fills itself is no place to put a row
 // ---------------------------------------------------------------------------
 
-describe('R3 — a drop into a computed zone', () => {
+describe('R3 — a drop into a section that fills itself', () => {
   it('is rejected wherever the row came from', () => {
-    const p = prefs({
-      pinned: [agent('/api')],
-      groups: [grp({ id: 'g1', items: [agent('/web')] })],
-    });
-    for (const drag of [
-      dragAgent('/api', PINNED),
-      dragAgent('/web', inGroup('g1')),
-      dragAgent('/other', UNGROUPED),
-    ]) {
-      expect(classifySidebarDrop(p, drag, dropContainer(TODAY)).kind).toBe('reject-computed-zone');
-      expect(classifySidebarDrop(p, drag, dropContainer(NOW)).kind).toBe('reject-computed-zone');
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
+    for (const drag of [dragAgent('/web', inGroup('g1')), dragAgent('/other', UNGROUPED)]) {
+      expect(classifySidebarDrop(p, drag, dropContainer(TOP)).kind).toBe('reject-computed-section');
+      expect(classifySidebarDrop(p, drag, dropContainer(ADDONS)).kind).toBe(
+        'reject-computed-section'
+      );
     }
   });
 
-  it('is rejected when the drop lands on a ROW in the zone, not only its body', () => {
-    const p = prefs({ pinned: [agent('/api')] });
-    const op = classifySidebarDrop(p, dragAgent('/api', PINNED), dropItem('/other', TODAY));
-    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/api'), zone: 'today' });
-  });
-
-  it('refuses a drop into Add-ons, which lists extension pages and nothing else', () => {
-    // Add-ons fills itself from the pages mini apps add. A channel or an agent
-    // dropped there must be refused — never quietly taken out of its section,
-    // which is what falling through to "ungrouped" would have done.
+  it('is rejected when the drop lands on a ROW in the section, not only its body', () => {
     const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
-    const op = classifySidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(ADDONS));
-    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/web'), zone: 'addons' });
+    const op = classifySidebarDrop(p, dragAgent('/web', inGroup('g1')), dropItem('/x', TOP));
+    expect(op).toEqual({ kind: 'reject-computed-section', ref: agent('/web'), section: 'top' });
+  });
+
+  it('changes nothing — a row filed in a section stays filed', () => {
+    // Falling through to "ungrouped" would quietly take it out of its section.
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
     expect(resolveSidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(ADDONS))).toBe(p);
+    expect(resolveSidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(TOP))).toBe(p);
   });
 
-  it('changes nothing — a pinned row dropped in Today stays pinned', () => {
-    // The unpin branch is one line away in the same function: a pinned row
-    // dropped on any NON-pinned container unpins. If the rejection were placed
-    // after it, this drop would silently unpin the row instead of saying no.
-    const p = prefs({ pinned: [agent('/api')] });
-    const next = resolveSidebarDrop(p, dragAgent('/api', PINNED), dropContainer(TODAY));
-    expect(next).toBe(p);
-    expect(next.pinned).toEqual([agent('/api')]);
-  });
-
-  it('says how to keep the row in place, rather than only refusing', () => {
-    expect(COMPUTED_ZONE_REJECTION).toBe(
-      'Heads up and Today fill themselves. Pin it to Library to keep it in place.'
-    );
+  it('says where a row can go, rather than only refusing', () => {
+    expect(TOP_ITEMS_REJECTION).toBe('Threads and Directory are pages. Drop it in a section.');
   });
 
   it('reads a computed container back off a node payload, and rejects a malformed one', () => {
-    expect(readSidebarDndData({ type: 'container', container: TODAY })).toEqual({
+    expect(readSidebarDndData({ type: 'container', container: TOP })).toEqual({
       type: 'container',
-      container: TODAY,
+      container: TOP,
     });
     expect(readSidebarDndData({ type: 'container', container: { kind: 'computed' } })).toBeNull();
     expect(
-      readSidebarDndData({ type: 'container', container: { kind: 'computed', zone: 'library' } })
+      readSidebarDndData({ type: 'container', container: { kind: 'computed', section: 'today' } })
     ).toBeNull();
-  });
-
-  it('leaves every Library drop the table already covered untouched', () => {
-    // The whole point of putting the check where it is: the existing semantics
-    // gain a case and lose none.
-    const p = prefs({ pinned: [agent('/api')], groups: [grp({ id: 'g1' })] });
-    expect(classifySidebarDrop(p, dragAgent('/x', UNGROUPED), dropContainer(PINNED)).kind).toBe(
-      'pin'
-    );
-    expect(classifySidebarDrop(p, dragAgent('/api', PINNED), dropContainer(UNGROUPED)).kind).toBe(
-      'unpin'
-    );
-    expect(
-      classifySidebarDrop(p, dragAgent('/x', UNGROUPED), dropContainer(inGroup('g1'))).kind
-    ).toBe('move-to-group');
   });
 });
 
@@ -529,9 +505,9 @@ describe('buildSidebarAnnouncements', () => {
     expect(msg).toBe('Moved api-server to Clients.');
   });
 
-  it('announces the ungrouped section actually under the cursor, not always Agents', () => {
-    // Rooms drag out of a group into Channels or Direct messages (DOR-581), and
-    // all three are the same `ungrouped` container to the reducer — only the
+  it('announces the ungrouped section actually under the cursor', () => {
+    // Rows drag out of a group into Channels or Direct messages (DOR-581), and
+    // both are the same `ungrouped` container to the reducer — only the
     // announcement can tell them apart, so it carries the name.
     const a = announcements(prefs());
     const node: SidebarDndData = { type: 'item', ref: room('room-1'), container: UNGROUPED };
@@ -541,13 +517,13 @@ describe('buildSidebarAnnouncements', () => {
         over: over({ type: 'container', container: { kind: 'ungrouped', section: 'channels' } }),
       })
     ).toBe('Over Channels.');
-    // No name stored: the Agents section, which is what `ungrouped` used to be.
+    // No name stored: Direct messages, where an agent taken out of a section goes.
     expect(
       a.onDragOver({
         active: active(node).active,
         over: over({ type: 'container', container: UNGROUPED }),
       })
-    ).toBe('Over Agents.');
+    ).toBe('Over Direct messages.');
   });
 
   it('names a ROOM as the subject when a room is what moved', () => {
@@ -563,9 +539,8 @@ describe('buildSidebarAnnouncements', () => {
     ).toBe('Moved #room-1 to Clients.');
   });
 
-  it('announces pin, unpin, remove-from-group, and reorder operations distinctly', () => {
+  it('announces remove-from-group and reorder operations distinctly', () => {
     const p = prefs({
-      pinned: [agent('/api'), agent('/web')],
       groups: [
         grp({
           id: 'g1',
@@ -576,22 +551,6 @@ describe('buildSidebarAnnouncements', () => {
       ],
     });
     const a = announcements(p);
-
-    // pin
-    expect(
-      a.onDragEnd({
-        ...active(agentNode('/web', inGroup('g1'))),
-        over: over({ type: 'container', container: PINNED }),
-      })
-    ).toBe('Pinned web-app.');
-
-    // unpin
-    expect(
-      a.onDragEnd({
-        ...active(agentNode('/api', PINNED)),
-        over: over({ type: 'container', container: UNGROUPED }),
-      })
-    ).toBe('Unpinned api-server.');
 
     // remove-from-group
     expect(
@@ -608,22 +567,14 @@ describe('buildSidebarAnnouncements', () => {
         over: over(agentNode('/web', inGroup('g1'))),
       })
     ).toBe('Reordered api-server in Clients.');
-
-    // reorder pinned
-    expect(
-      a.onDragEnd({
-        ...active(agentNode('/web', PINNED)),
-        over: over(agentNode('/api', PINNED)),
-      })
-    ).toBe('Reordered web-app in Pinned.');
   });
 
   it('announces a cancelled / no-op drop as returned to place', () => {
-    const a = announcements(prefs({ pinned: [agent('/api')] }));
-    expect(a.onDragEnd(active(agentNode('/api', PINNED)))).toBe(
+    const a = announcements(prefs());
+    expect(a.onDragEnd(active(agentNode('/api', UNGROUPED)))).toBe(
       'Movement cancelled. Item returned to its place.'
     );
-    expect(a.onDragCancel(active(agentNode('/api', PINNED)))).toBe(
+    expect(a.onDragCancel(active(agentNode('/api', UNGROUPED)))).toBe(
       'Movement cancelled. api-server returned to its place.'
     );
   });
@@ -644,36 +595,31 @@ describe('buildSidebarAnnouncements', () => {
     );
   });
 
-  it('announces a rejected drop into a computed zone with the same sentence as the toast', () => {
-    const a = announcements(prefs({ pinned: [agent('/api')] }));
+  it('announces a rejected drop with the same sentence as the toast', () => {
+    const a = announcements(prefs());
     expect(
       a.onDragEnd({
-        ...active(agentNode('/api', PINNED)),
-        over: over({ type: 'container', container: { kind: 'computed', zone: 'today' } }),
+        ...active(agentNode('/api', UNGROUPED)),
+        over: over({ type: 'container', container: TOP }),
       })
-    ).toBe(`Can’t move api-server there. ${COMPUTED_ZONE_REJECTION}`);
+    ).toBe(`Can’t move api-server there. ${TOP_ITEMS_REJECTION}`);
+    expect(
+      a.onDragEnd({
+        ...active(agentNode('/api', UNGROUPED)),
+        over: over({ type: 'container', container: ADDONS }),
+      })
+    ).toBe(`Can’t move api-server there. ${ADD_ONS_REJECTION}`);
   });
 
-  it('refuses a drop into Add-ons with its own sentence, not the Heads up one', () => {
-    const a = announcements(prefs({ pinned: [agent('/api')] }));
-    const overAddOns = over({ type: 'container', container: ADDONS });
-    expect(a.onDragEnd({ ...active(agentNode('/api', PINNED)), over: overAddOns })).toBe(
-      `Can’t move api-server there. ${ADD_ONS_REJECTION}`
-    );
-    expect(a.onDragOver({ ...active(agentNode('/api', PINNED)), over: overAddOns })).toBe(
-      'Over Add-ons.'
-    );
-  });
-
-  it('names Heads up and Today on drag-over', () => {
+  it('names the top items and Add-ons on drag-over', () => {
     const a = announcements(prefs());
-    const hover = (zone: 'now' | 'today') =>
+    const hover = (container: SidebarContainer) =>
       a.onDragOver({
         ...active(agentNode('/api', UNGROUPED)),
-        over: over({ type: 'container', container: { kind: 'computed', zone } }),
+        over: over({ type: 'container', container }),
       });
-    expect(hover('today')).toBe('Over Today.');
-    expect(hover('now')).toBe('Over Heads up.');
+    expect(hover(TOP)).toBe('Over Threads and Directory.');
+    expect(hover(ADDONS)).toBe('Over Add-ons.');
   });
 
   it('announces the hovered container on drag-over', () => {

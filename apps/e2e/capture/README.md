@@ -93,7 +93,7 @@ The safe parallel unit is a whole stack, so each shard gets its own:
 How a sharded record runs (`record.ts`):
 
 1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
-2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state), the **global-state flip** `trust-notice` (driven **last** in its stack — it marks the trust notice unseen, and every other shot in the same stack needs it seen; each shard's own `DORK_HOME` keeps the flip local), and the `accounts-pending`/`accounts-linked` pair (one linear device flow, so a round-robin split would break it).
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each opens its own agents' Direct chats, but which agents read as working, and the phone's answer cards, reflect every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state), the **global-state flip** `trust-notice` (driven **last** in its stack — it marks the trust notice unseen, and every other shot in the same stack needs it seen; each shard's own `DORK_HOME` keeps the flip local), and the `accounts-pending`/`accounts-linked` pair (one linear device flow, so a round-robin split would break it).
 3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
 4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would. A failed sharded record removes its partial run dir instead of leaving a `run.json`-less husk in the library.
 
@@ -241,7 +241,7 @@ the same webm + poster.
 | `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc          |
 | `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor             |
 | `subagents`       | light  | dark | Three sub-agents running concurrently, settling         |
-| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live       |
+| `multi-session`   | light  | dark | Direct messages: four agents at work at once            |
 | `personality`     | light  | dark | Personality radar morphing through presets              |
 | `agent-discovery` | light  | dark | The import dialog's scan finding a mixed existing fleet |
 | `mobile-sessions` | light  | —    | 390px Home panel: one agent working, one asking         |

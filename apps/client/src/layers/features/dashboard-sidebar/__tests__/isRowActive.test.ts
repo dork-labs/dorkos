@@ -4,11 +4,10 @@
  *
  * **The scoping is the thing under test, not just the tint.** Home IS #team, so
  * its row has to light up on `/` — but the sidebar's `activeTarget` feeds the
- * scroll anchor, the working rollup and Today's membership, and teaching it that
- * `/` means "the #team room is open" pinned #team into Today and moved the
- * anchor on every visit to the dashboard. So the highlight travels on its own
- * narrow channel (`homeRoomId`), and these cases pin both halves: the row lights,
- * and nothing else is asked to.
+ * scroll anchor, and teaching it that `/` means "the #team room is open" moved
+ * the anchor on every visit to the dashboard. So the highlight travels on its
+ * own narrow channel (`homeRoomId`), and these cases pin both halves: the row
+ * lights, and nothing else is asked to.
  */
 import { describe, it, expect } from 'vitest';
 import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
@@ -19,12 +18,6 @@ const TEAM = 'room-team';
 
 const teamRow: SidebarTarget = { kind: 'room', roomId: TEAM, roomKind: 'channel' };
 const otherRow: SidebarTarget = { kind: 'room', roomId: 'room-other', roomKind: 'channel' };
-const teamThreadRow: SidebarTarget = {
-  kind: 'room',
-  roomId: TEAM,
-  roomKind: 'thread',
-  rootEntryId: 'entry-9',
-};
 
 describe('isRowActive on Home', () => {
   it('lights #team’s row on /, where nothing is "active" at all', () => {
@@ -36,13 +29,6 @@ describe('isRowActive on Home', () => {
 
   it('leaves every other room dark on Home', () => {
     expect(isRowActive(otherRow, null, TEAM)).toBe(false);
-  });
-
-  it('lights the channel row and NOT the thread row that shares its id', () => {
-    // A thread and its channel are two rows carrying one `roomId`. Lighting both
-    // gives Home two tinted rows and an `aria-current="page"` that is no longer
-    // unique — which is the handle scroll-to-active finds its anchor by.
-    expect(isRowActive(teamThreadRow, null, TEAM)).toBe(false);
   });
 
   it('changes nothing anywhere else: off Home there is no home room to match', () => {
@@ -145,5 +131,23 @@ describe('isRowActive while an agent click is being looked up (DOR-2891)', () =>
   it('falls back to what is open once nothing is pending', () => {
     expect(isRowActive(alpha, openInAlpha, null, null)).toBe(true);
     expect(isRowActive(beta, openInAlpha, null, null)).toBe(false);
+  });
+});
+
+describe('isRowActive on a top item’s page', () => {
+  const threads: SidebarTarget = { kind: 'command', commandId: 'open-threads' };
+  const directory: SidebarTarget = { kind: 'command', commandId: 'open-directory' };
+  const messageSomeone: SidebarTarget = { kind: 'command', commandId: 'message-someone' };
+
+  it('lights the door whose page is open, and only that door', () => {
+    expect(isRowActive(threads, threads)).toBe(true);
+    expect(isRowActive(directory, threads)).toBe(false);
+    expect(isRowActive(directory, directory)).toBe(true);
+  });
+
+  it('leaves the "Message an agent or person" row dark on the Directory it opens', () => {
+    // It opens the Directory too, but it is a way to start a conversation, not
+    // the page — two lit rows would make `aria-current` ambiguous.
+    expect(isRowActive(messageSomeone, directory)).toBe(false);
   });
 });

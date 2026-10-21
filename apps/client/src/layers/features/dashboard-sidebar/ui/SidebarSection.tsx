@@ -1,9 +1,9 @@
 /**
- * One section of one zone — a header and its rows (BC-28 → BC-31).
+ * One section — a header and its rows (BC-28 → BC-31).
  *
  * It composes `SectionHeader` and `SidebarModelRow` and decides nothing:
  * membership, order, the rollup arithmetic and whether the section exists at
- * all were all settled in `buildLibrarySections`. What lives here is chrome —
+ * all were all settled in `buildSections`. What lives here is chrome —
  * the collapse write, the drop zone, the roving tab stop, and the per-section
  * create affordance.
  *
@@ -28,12 +28,13 @@ import { useSectionChrome } from './useSectionChrome';
  * The sections whose membership changes without the operator asking for it, and
  * which therefore say so when it does (spec D5, "Arrive, settle, no pulse").
  *
- * Heads up and Today, and deliberately nothing else. A Library section only ever
- * changes because somebody dragged, renamed or created something — the act is
- * its own explanation, and a row announcing an arrival the operator just caused
- * is the decoration this rule exists to keep out.
+ * Direct messages, and deliberately nothing else: an agent or a person can
+ * start a conversation with you, and its row arriving is news. Every other
+ * section only changes because somebody dragged, renamed or created something —
+ * the act is its own explanation, and a row announcing an arrival the operator
+ * just caused is the decoration this rule exists to keep out.
  */
-const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['now', 'today']);
+const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['dms']);
 
 /**
  * The section header, memoized — because a draggable one is rebuilt on every
@@ -57,46 +58,38 @@ const MemoSectionHeader = memo(SectionHeader);
  * The ungrouped section a section id names, or `undefined` for one that is not
  * an ungrouped section at all.
  *
- * Three ids and no fallback. Pins is its own container, a hand-made section is
- * its own, and Heads up / Today / Getting started / Add-ons fill themselves —
- * none of them is "ungrouped", so none of them may borrow Agents' name for a
- * drag announcement that would then say "Over Agents." about a row that is
- * nowhere near it.
+ * Two ids and no fallback. A hand-made section is its own container, and the
+ * top items and Add-ons fill themselves — none of them is "ungrouped", so none
+ * of them may borrow another section's name for a drag announcement.
  *
  * @param id - The section's id.
  */
 function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId | undefined {
-  return id === 'channels' || id === 'dms' || id === 'agents' ? id : undefined;
+  return id === 'channels' || id === 'dms' ? id : undefined;
 }
 
 /**
  * The drag container a section's rows belong to.
  *
- * Pins is its own container; Channels, Direct messages and Agents are all
- * "ungrouped" — landing in any of them takes a row out of its section — and a
- * hand-made section is its own. Heads up, Today, Getting started and Add-ons
- * fill themselves, so they are `computed`, which the drop reducer rejects with
- * a sentence rather than in silence (R3).
+ * Channels and Direct messages are both "ungrouped" — landing in either takes
+ * a row out of its section — and a hand-made section is its own. The top items
+ * and Add-ons fill themselves, so they are `computed`, which the drop reducer
+ * rejects with a sentence rather than in silence (R3).
  *
  * @param id - The section's id.
  */
 export function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
-  if (id === 'pins') return { kind: 'pinned' };
   if (id.startsWith('group:')) return { kind: 'group', groupId: id.slice('group:'.length) };
-  if (id === 'now' || id === 'today' || id === 'getting-started' || id === 'addons') {
-    return { kind: 'computed', zone: id };
-  }
-  const section = ungroupedSectionId(id);
-  // Reached only after pins, hand-made sections and the computed zones have
-  // been answered above, so the fallback is unreachable in practice — spelled
-  // out rather than defaulted so a new Library section shows up as a wrong
-  // announcement here instead of silently becoming Agents everywhere.
-  return { kind: 'ungrouped', section: section ?? 'agents' };
+  if (id === 'top' || id === 'addons') return { kind: 'computed', section: id };
+  // Reached only after hand-made sections and the computed ones have been
+  // answered above, so the fallback is unreachable in practice — spelled out
+  // rather than defaulted so a new section shows up as a wrong announcement
+  // here instead of silently becoming Direct messages everywhere.
+  return { kind: 'ungrouped', section: ungroupedSectionId(id) ?? 'dms' };
 }
 
 /** The row-key prefix a section's rows drag under. */
 function containerPrefix(id: SidebarSectionModel['id']): string {
-  if (id === 'pins') return 'pinned';
   if (id.startsWith('group:')) return id.slice('group:'.length);
   return 'ungrouped';
 }
@@ -105,7 +98,7 @@ function containerPrefix(id: SidebarSectionModel['id']): string {
 export interface SidebarSectionProps {
   /** The section the model emitted. */
   section: SidebarSectionModel;
-  /** Fold or unfold every Library section at once — Alt/Option-click (BC-30). */
+  /** Fold or unfold every section at once — Alt/Option-click (BC-30). */
   onToggleAll: () => void;
 }
 
@@ -132,9 +125,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 
   // What this section's rows measure their FLIP against, and what "a row I have
   // not seen before" is asked of. One string, so both answers come from the same
-  // walk and cannot disagree about what order the section is in — including
-  // while Today's hold has frozen it, since the held rows ARE `section.rows` by
-  // the time they reach here.
+  // walk and cannot disagree about what order the section is in.
   const layoutKey = sectionLayoutKey(section.rows);
   const announcesArrivals = ANNOUNCES_ARRIVALS.has(section.id);
   // The boot gate, not this component's mount: rows turning up while the panel
@@ -158,10 +149,10 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 
   const rows = (
     <SidebarMenu id={bodyId}>
-      {/* **`initial={false}`, so boot never animates** (D5). Only the two
-          sections that announce arrivals are wrapped: everywhere else a row has
-          no `exit`, and an `AnimatePresence` around it would be a presence
-          wrapper per row bought for nothing. */}
+      {/* **`initial={false}`, so boot never animates** (D5). Only the section
+          that announces arrivals is wrapped: everywhere else a row has no
+          `exit`, and an `AnimatePresence` around it would be a presence wrapper
+          per row bought for nothing. */}
       {announcesArrivals ? <AnimatePresence initial={false}>{list}</AnimatePresence> : list}
     </SidebarMenu>
   );
@@ -232,8 +223,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       data-sidebar-section={section.id}
       {...roving}
     >
-      {/* A headerless body — Heads up, Today, Getting started — is a zone's single
-          section and carries no label of its own; the zone's <h2> names it. */}
+      {/* A headerless body — the top items — carries no label of its own. */}
       {section.label === null ? null : groupId !== null ? (
         <Sortable id={`group-header::${groupId}`} data={{ type: 'group', groupId }}>
           {(b) => (

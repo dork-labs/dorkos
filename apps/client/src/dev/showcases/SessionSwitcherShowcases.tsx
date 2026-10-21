@@ -254,7 +254,7 @@ const SWITCHER_BLOCKED: readonly string[] = ['sw-ask', 'sw-spin-3'];
  *
  * **Counted from the fixtures rather than written down beside them.** The row
  * no longer counts for itself — `AgentListItem` draws whatever `liveCount` the
- * sidebar model hands it (`SidebarRowModel.liveCount`, `library-rows.ts`) — so
+ * sidebar model hands it (`SidebarRowModel.liveCount`, `section-rows.ts`) — so
  * the playground has to state the number the model would have produced. A
  * literal here could drift from the sessions seeded below and give a row a chip
  * whose switcher then opens on a different count; deriving it means adding a

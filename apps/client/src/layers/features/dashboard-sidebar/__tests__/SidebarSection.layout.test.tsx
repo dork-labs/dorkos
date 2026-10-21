@@ -80,22 +80,27 @@ afterEach(() => {
 });
 
 /**
- * The Direct messages section of a real build, with every one of its rooms in
- * the chrome index so the rows draw.
+ * The Channels section of a real build, with every one of its rooms in the
+ * chrome index so the rows draw.
  *
  * A real `buildSidebarModel` rather than a hand-made section: the claim is about
  * what a REBUILD does, and a fixture section written by hand would be two
  * objects this file decided were "the same" rather than two the builder decided.
  *
- * Direct messages and not Channels, for one reason worth knowing: the power
- * fixture folds Channels, and a folded section unmounts its rows — the test
- * would have measured an empty list and passed. `rows > 1` below is what says so
- * out loud.
+ * Unfolded on purpose: the power fixture folds Channels, and a folded section
+ * unmounts its rows — the test would have measured an empty list and passed.
+ * `rows > 1` below is what says so out loud. Channels rather than Direct
+ * messages because every row in it is a room, which is the one row this file
+ * stands in for.
  */
-function directMessagesAt(now: number): SidebarSectionModel {
-  const model = buildSidebarModel({ ...powerFixture, now });
-  const section = model.zones.flatMap((zone) => zone.sections).find((entry) => entry.id === 'dms');
-  if (section === undefined) throw new Error('the power fixture has no Direct messages section');
+function channelsAt(now: number): SidebarSectionModel {
+  const model = buildSidebarModel({
+    ...powerFixture,
+    now,
+    prefs: { ...powerFixture.prefs, sections: {} },
+  });
+  const section = model.sections.find((entry) => entry.id === 'channels');
+  if (section === undefined) throw new Error('the power fixture has no Channels section');
   for (const modelRow of section.rows) {
     if (modelRow.target.kind === 'room') {
       CHROME.roomsById.set(modelRow.target.roomId, { id: modelRow.target.roomId });
@@ -106,7 +111,7 @@ function directMessagesAt(now: number): SidebarSectionModel {
 
 describe('a section’s layout key', () => {
   it('reaches every row, and is the section’s own list', () => {
-    const section = directMessagesAt(powerFixture.now);
+    const section = channelsAt(powerFixture.now);
     render(<SidebarSection section={section} onToggleAll={() => {}} />);
 
     expect(handed.current.length).toBeGreaterThan(1);
@@ -114,19 +119,19 @@ describe('a section’s layout key', () => {
     for (const entry of handed.current) {
       expect(entry.motion.layout).toBe(true);
       // Scoped per section (D5): the whole panel's rows would be a longer
-      // string, and a row arriving in Today would re-measure every channel.
+      // string, and a conversation arriving would re-measure every channel.
       expect(entry.motion.layoutDependency).toBe(expected);
     }
   });
 
   it('does not move when only the clock does', () => {
-    const before = directMessagesAt(powerFixture.now);
+    const before = channelsAt(powerFixture.now);
     const { rerender } = render(<SidebarSection section={before} onToggleAll={() => {}} />);
     const first = handed.current.map((entry) => entry.motion);
     handed.current = [];
 
     // The 60 s tick: a whole new model, every row object fresh.
-    const after = directMessagesAt(powerFixture.now + 60_000);
+    const after = channelsAt(powerFixture.now + 60_000);
     expect(after).not.toBe(before);
     rerender(<SidebarSection section={after} onToggleAll={() => {}} />);
 

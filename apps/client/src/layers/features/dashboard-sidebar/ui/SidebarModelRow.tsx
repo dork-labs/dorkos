@@ -8,39 +8,26 @@
  *
  * An agent and a room keep their existing components, which carry their menus,
  * their inline rename editors and their dialogs. A mini app's page draws the
- * icon its extension registered. Everything else is a {@link SidebarRow} built
- * straight from the model's own fields.
+ * icon its extension registered. A door — Threads, Directory, "Message an agent
+ * or person" — is a {@link SidebarRow} built straight from the model's own
+ * fields.
  *
  * @module features/dashboard-sidebar/ui/SidebarModelRow
  */
 import { useCallback, useMemo } from 'react';
 import { useReducedMotion } from 'motion/react';
-import {
-  Bot,
-  CalendarClock,
-  CircleHelp,
-  Clock,
-  Hash,
-  MessageSquare,
-  MoreHorizontal,
-  ShieldQuestion,
-  Sparkles,
-  TriangleAlert,
-  Users,
-} from 'lucide-react';
+import { BookUser, MessageSquareReply, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { ContributedIcon, CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
-import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
-import { SessionVerbLine } from '@/layers/entities/session';
+import { ContributedIcon, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { useAgentVisual } from '@/layers/entities/agent';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
 import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
-import { directedCountLabel } from './rooms/directed-count-label';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { buildRowMotion } from './motion/sidebar-motion';
 import { useSidebarChrome } from './SidebarChrome';
@@ -48,10 +35,9 @@ import { useSidebarChrome } from './SidebarChrome';
 /**
  * Whether a row points at what is currently on screen.
  *
- * An agent row is active when the open conversation belongs to it, which is
- * what makes BC-33's dual presence readable: the anchor in Today and the
- * agent's own Library row both take the active tint, and the operator can see
- * they are the same thing.
+ * An agent row is active when the open conversation belongs to it — its
+ * Direct chat, or any other chat of its — so the row stands for the agent
+ * wherever you are talking to it.
  *
  * "Belongs to it" is THE canonical membership rule — the agent's directory or
  * any folder inside it, through the shared `isWithinDirectory` predicate that
@@ -62,6 +48,8 @@ import { useSidebarChrome } from './SidebarChrome';
  * stated rather than discovered: an agent nested inside another agent's
  * directory lights both rows for a session in the inner one, because from a
  * single row there is no way to see that a closer agent exists.
+ *
+ * A door lights when its page is open, and a mini app's page when it is.
  *
  * @param target - The row's target.
  * @param active - What the router says is open, or `null`.
@@ -80,17 +68,8 @@ export function isRowActive(
   if (pendingAgentPath !== null) return target.kind === 'agent' && target.path === pendingAgentPath;
   // **Home's room, lit without being "active".** `/` draws #team, so its row has
   // to look open there — but `/` has no active target and deliberately does not
-  // get one (`useActiveTarget` explains what widening it broke). A thread row
-  // carries the same `roomId` as its channel and is excluded, or Home would
-  // light two rows and leave `aria-current="page"` no longer unique.
-  if (
-    homeRoomId !== null &&
-    target.kind === 'room' &&
-    target.roomKind !== 'thread' &&
-    target.roomId === homeRoomId
-  ) {
-    return true;
-  }
+  // get one (`useActiveTarget` explains why).
+  if (homeRoomId !== null && target.kind === 'room' && target.roomId === homeRoomId) return true;
   if (active === null) return false;
   if (target.kind === 'session') {
     return active.kind === 'session' && active.sessionId === target.sessionId;
@@ -99,39 +78,21 @@ export function isRowActive(
     if (active.kind === 'agent') return active.path === target.path;
     return active.kind === 'session' && isWithinDirectory(active.cwd, target.path);
   }
-  if (target.kind === 'room') {
-    // **Compared through the row key, never through `roomId`.** A thread and
-    // the room it lives in are two rows carrying the same `roomId`, so an id
-    // comparison lights both — two active tints, and an `aria-current="page"`
-    // that is no longer unique, which is exactly the handle scroll-to-active
-    // finds the anchor by (BC-36).
-    return sameTarget(target, active);
-  }
-  // The open page already names the one listed page that holds the address
-  // (`listedPageAt`), so a key comparison lights exactly one Add-ons row.
-  if (target.kind === 'add-on') return sameTarget(target, active);
-  return false;
+  // A room, a door and an add-on page are each one row with one key, so a key
+  // comparison lights exactly one of them. The open page already names the one
+  // listed add-on page that holds the address (`listedPageAt`).
+  return sameTarget(target, active);
 }
 
 /** The mark each semantic icon id draws. */
 const ICON: Record<SidebarIconId, LucideIcon> = {
-  permission: ShieldQuestion,
-  question: CircleHelp,
-  error: TriangleAlert,
-  schedule: CalendarClock,
-  overflow: MoreHorizontal,
-  working: Sparkles,
-  automated: Clock,
-  digest: Sparkles,
-  'add-agent': Bot,
-  'first-session': MessageSquare,
-  team: Users,
-  dorkbot: Bot,
-  session: MessageSquare,
+  threads: MessageSquareReply,
+  directory: BookUser,
+  add: Plus,
 };
 
 /**
- * The stored reference a Library row drags as, or `null` for a row that never
+ * The stored reference a row drags as, or `null` for a row that never
  * does.
  *
  * Exported so a section can register exactly the ids it is about to wrap in a
@@ -150,22 +111,21 @@ export interface SidebarModelRowProps {
   /** The row to draw. */
   row: SidebarRowModel;
   /**
-   * The drag container this copy of the row lives in — `pinned`, `ungrouped`,
-   * or a group id. Also what lets a pinned copy coexist with its home copy,
-   * which is the same row twice with two different React keys.
+   * The drag container this copy of the row lives in — `ungrouped` or a group
+   * id.
    */
   keyPrefix: string;
   /** The ungrouped section the drag layer announces this row's home as. */
   sectionId?: UngroupedSectionId;
   /**
    * The section's row ids, in order — what this row's FLIP measures against
-   * (spec D5). Per section and never per panel: a channel arriving in Today must
-   * not make thirty agent rows re-measure.
+   * (spec D5). Per section and never per panel: a conversation arriving in
+   * Direct messages must not make every channel re-measure.
    */
   layoutKey?: string;
   /**
-   * The section this row is in announces arrivals — Heads up and Today, the two
-   * zones whose membership changes without the operator asking.
+   * The section this row is in announces arrivals — Direct messages, whose
+   * membership changes without the operator asking.
    */
   arrives?: boolean;
   /** This row is one of the arrivals, so it tints once. */
@@ -175,9 +135,9 @@ export interface SidebarModelRowProps {
 /**
  * Draw one row, wrapping it in a drag source when the model says it is one.
  *
- * `row.draggable` is the only gate. R3 puts that decision in the model — Heads up
- * and Today are computed, so their rows are never drag sources — precisely so
- * that no call site here can re-enable it by accident.
+ * `row.draggable` is the only gate. R3 puts that decision in the model — a door
+ * and a mini app's page are never drag sources — precisely so that no call site
+ * here can re-enable it by accident.
  *
  * @param props - The row and where it sits.
  */
@@ -195,9 +155,12 @@ export function SidebarModelRow({
   // would defeat the memo for every room in the panel — the exact regression
   // `RoomRow.render-count.test.tsx` guards. Every dependency here is a primitive,
   // so the object moves only when something about the row's motion moved.
+  // An agent is the one row that moves between sections on its own, so it is
+  // the one that carries an identity across them (DOR-3092).
+  const moveId = row.target.kind === 'agent' ? row.key : undefined;
   const rowMotion = useMemo<SidebarRowMotion>(
-    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion }),
-    [layoutKey, arrives, arrived, reducedMotion]
+    () => buildRowMotion({ layoutKey, arrives, arrived, reducedMotion, moveId }),
+    [layoutKey, arrives, arrived, reducedMotion, moveId]
   );
   const ref = dragRefOf(row.target);
   const body = <SidebarModelRowBody row={row} rowMotion={rowMotion} />;
@@ -240,12 +203,7 @@ function SidebarModelRowBody({
     );
   }
 
-  // **A thread is deliberately NOT routed here.** `RoomRow` draws the room —
-  // its `#slug`, its roster, its menu — so a thread sent through it comes out
-  // as a second copy of its channel, with the root message it hangs off
-  // nowhere on the row. It goes to the generic row instead, which draws what
-  // the model actually gave it: `general › Anything else to check?` (BC-23).
-  if (target.kind === 'room' && target.roomKind !== 'thread') {
+  if (target.kind === 'room') {
     return (
       <RoomRowFromModel
         roomId={target.roomId}
@@ -261,7 +219,7 @@ function SidebarModelRowBody({
     return <AddOnRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} />;
   }
 
-  return <GenericRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} drag={drag} />;
+  return <DoorRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} />;
 }
 
 /**
@@ -401,105 +359,32 @@ function AgentRowFromModel({
 }
 
 /**
- * Every other row — an attention item, a rollup, a suggestion, a session.
+ * A door — Threads, Directory, or the way to start a conversation — drawn
+ * straight from the model's own fields.
  *
- * Built entirely from the model's own fields, which is what makes Heads up, Today
- * and Getting started renderable before P2.2 and P2.3 land their behaviour: the
- * shape is decided already, and those tasks fill in the destinations.
+ * Never dragged, never unread, and carrying no menu: the page it opens is where
+ * all of that lives.
  */
-function GenericRowFromModel({
+function DoorRowFromModel({
   row,
   isActive,
   rowMotion,
-  drag,
 }: {
   row: SidebarRowModel;
   isActive: boolean;
   rowMotion: SidebarRowMotion;
-  drag?: React.ComponentProps<typeof SidebarRow>['drag'];
 }) {
   const chrome = useSidebarChrome();
-  const agentPath = row.glyph.kind === 'agent-avatar' ? row.glyph.agentPath : null;
-  const visual = useAgentVisual(
-    agentPath === null ? null : (chrome.manifests[agentPath] ?? null),
-    agentPath ?? row.key
-  );
-  const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : null;
-  // **No menu on a Heads up row, and there is no longer a row that could earn
-  // one.** The idle nudge was the single thing in this zone the operator could
-  // wave away (BC-10), and DOR-1391 retired the nudge; everything left here
-  // clears by being answered, allowed, refused or fixed. There is no dismiss and
-  // no snooze anywhere in Heads up (BC-42).
-  const glyph =
-    row.glyph.kind === 'agent-avatar' ? (
-      <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
-    ) : row.glyph.kind === 'hash' ? (
-      <Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />
-    ) : Icon !== null ? (
-      <Icon className="text-sidebar-foreground/60 size-3.5" aria-hidden />
-    ) : (
-      <MessageSquare className="text-sidebar-foreground/60 size-3.5" aria-hidden />
-    );
-
-  // The one row in the panel that leaves it. `All N agents` opens the Team page,
-  // so it wears the mark every "goes elsewhere" affordance in the cockpit wears
-  // — and wears it `aria-hidden`, because a direction is a picture rather than a
-  // word: "All fifteen agents right arrow" is not a sentence anybody wants read
-  // to them. `titleText` keeps the tooltip and the accessible name as the words.
-  const leavesPanel = row.target.kind === 'command' && row.target.commandId === 'open-team';
-
+  const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : Plus;
   return (
     <SidebarRow
-      glyph={glyph}
-      {...(row.secondary === undefined ? {} : { who: row.primary })}
-      title={
-        leavesPanel ? (
-          <>
-            {row.primary}
-            <span aria-hidden className="text-sidebar-foreground/50 ml-1">
-              →
-            </span>
-          </>
-        ) : (
-          (row.secondary ?? row.primary)
-        )
-      }
-      {...(leavesPanel ? { titleText: row.primary } : {})}
+      glyph={<Icon className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+      title={row.primary}
       isActive={isActive}
-      // Muted drops the bold and keeps the label at full contrast (DOR-1098);
-      // a mention's count below is the one signal that survives it.
-      emphasized={row.unread.tier !== 'none' && !row.muted}
-      muted={row.muted}
-      {...(row.reservesVerbLine ? { reservesVerbLine: true } : {})}
-      {...(row.target.kind === 'session'
-        ? {
-            // **The words, subscribed to at the leaf** (BC-37, spec R1). The
-            // model says whether there IS a second line; this node says what is
-            // in it, and it is the only thing in the panel that watches a
-            // session's tool activity. A row that reserved the line and was
-            // handed no node held an empty 16px gap open under every streaming
-            // conversation while the chat strip beside it read "Working…".
-            secondLine: (
-              <SessionVerbLine sessionId={row.target.sessionId} lifecycle={row.lifecycle} />
-            ),
-          }
-        : {})}
-      {...(row.preview === undefined ? {} : { preview: row.preview })}
+      emphasized={false}
+      muted={false}
       onSelect={() => chrome.openTarget(row.target)}
       rowMotion={rowMotion}
-      {...(drag ? { drag } : {})}
-      trailing={
-        // Mute is already in the tier: `deriveUnreadSignal` lets only a
-        // mention through it, so a directed count on a muted row is one that
-        // is meant to be seen. These rows are threads and the like, never a
-        // direct message (those are `RoomRow`), so what they count is mentions.
-        row.unread.tier === 'directed' && row.unread.count !== undefined ? (
-          <CountPill
-            count={row.unread.count}
-            label={directedCountLabel(row.unread.count, 'mentions')}
-          />
-        ) : undefined
-      }
     />
   );
 }

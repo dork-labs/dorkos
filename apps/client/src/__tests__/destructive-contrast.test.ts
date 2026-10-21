@@ -326,7 +326,7 @@ describe('bare red status text (DOR-2493)', () => {
 
 describe('bare amber status text on the session row (claude-account-ui 04 §13)', () => {
   // `STATUS_TONE_TEXT.warning` is amber painted straight on grey: the session
-  // row's context gauge at 80% and over, in the sidebar, in the Heads up zone's
+  // row's context gauge at 80% and over, in the sidebar, on its accent
   // tint, hovered and selected. At 30% lightness the light token measured
   // 4.41:1 on the sidebar and 4.21:1 on the zone tint; this fails if it goes
   // back. Dark mode clears every ground by a wide margin.
@@ -350,7 +350,7 @@ describe('bare amber status text on the session row (claude-account-ui 04 §13)'
     const secondary = hsl(theme, '--secondary');
     return {
       sidebar,
-      'Heads up zone tint (bg-sidebar-accent/40)': zone,
+      'sidebar accent tint (bg-sidebar-accent/40)': zone,
       'row hover over the sidebar (bg-secondary/60)': over(secondary, 0.6, sidebar),
       'row hover over the zone tint': over(secondary, 0.6, zone),
       'selected row (bg-secondary)': secondary,
@@ -366,7 +366,7 @@ describe('bare amber status text on the session row (claude-account-ui 04 §13)'
 
   it('discriminates: the 30% amber it replaced fails the zone tint in light mode', () => {
     expect(
-      ratios(themes.light, hslToRgb(38, 92, 30))['Heads up zone tint (bg-sidebar-accent/40)']
+      ratios(themes.light, hslToRgb(38, 92, 30))['sidebar accent tint (bg-sidebar-accent/40)']
     ).toBeLessThan(AA);
   });
 

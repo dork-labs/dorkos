@@ -57,6 +57,13 @@ export {
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
 export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';
 export { TelemetryPayloadToggle } from './ui/TelemetryPayloadToggle';
+// Taking something out of a section without taking an agent off the sidebar —
+// the one rule every ungroup path (drag, row menu, delete section) goes through.
+export {
+  ungroupKeepingInReach,
+  type HasDirectMessage,
+  type UngroupTarget,
+} from './model/ungroup-keeping-in-reach';
 export {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -70,7 +77,6 @@ export {
   deleteGroup,
   reorderGroup,
   reorderWithinGroup,
-  reorderPinned,
   setGroupSortMode,
   setGroupCollapsed,
   isSectionCollapsed,
@@ -79,10 +85,6 @@ export {
   setSectionCollapsed,
   setSectionSortMode,
   setSectionDisplayFilter,
-  GROUPS_HINT_SUGGESTION_ID,
-  isSuggestionRetired,
-  retireSuggestion,
-  markDigestShown,
   setGroupDisplayFilter,
   setGroupMuted,
   setGroupRules,

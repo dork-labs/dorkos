@@ -21,4 +21,4 @@ covers:
 
 ### Fixed
 
-- An agent's row in the sidebar now shows its direct chat's new messages, in bold with a count, on the phone's All tab and in Library on a computer
+- An agent's row in the sidebar now shows its direct chat's new messages, in bold with a count, on a phone and on a computer

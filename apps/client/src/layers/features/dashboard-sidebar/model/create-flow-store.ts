@@ -5,7 +5,7 @@
  * `AppShell` mounts OUTSIDE the `sidebar.body` swap region so a marketplace
  * takeover cannot take the way to make things with it (spec
  * `sidebar-now-today-library` R2, P2 AC-8). Everything that deep-links into it
- * — a Library section's hover `+`, an agent row's "Move to section ▸ New
+ * — a section's hover `+`, an agent row's "Move to section ▸ New
  * section" —
  * lives *inside* that body, under a different React tree. A context could not
  * span the two, so the state that both halves share lives here.
@@ -15,7 +15,7 @@
  * - **which item the menu opens on** (`preselect`), so a section's `+` is a
  *   deep link into the one menu rather than a second handler (BC-45);
  * - **the inline section-create editor** (`groupCreation`), which the menu
- *   starts and Library draws at the top, because a section's name belongs where
+ *   starts and the list draws under the top items, because a section's name belongs where
  *   the section will be (D3).
  *
  * @module features/dashboard-sidebar/model/create-flow-store

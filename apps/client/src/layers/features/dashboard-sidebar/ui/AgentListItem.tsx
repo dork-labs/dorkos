@@ -42,7 +42,7 @@ interface AgentListItemProps {
   /**
    * Whether this agent is muted — individually, or via its containing
    * group's mute lens (computed once by the orchestrator so every appearance
-   * of the same agent, home row or pinned copy, renders muted identically).
+   * of the same agent, wherever it is drawn, renders muted identically).
    * Drops the activity badge and live-work border emphasis, dims the row,
    * and shows a small mute glyph after the name; the row stays in place and
    * clickable (DOR-339).
@@ -59,7 +59,7 @@ interface AgentListItemProps {
    * to be worth saying — `SidebarRowModel.liveCount`, straight off the model.
    *
    * Absent means no chip. The model omits it below `LIVE_CHIP_MIN`
-   * (`model/rules/library-rows.ts`), so the threshold is decided in one place
+   * (`model/rules/section-rows.ts`), so the threshold is decided in one place
    * and this row cannot disagree with the number it draws. It used to count for
    * itself, which meant sixty rows each holding their own store subscription to
    * answer a question the model had already answered.
