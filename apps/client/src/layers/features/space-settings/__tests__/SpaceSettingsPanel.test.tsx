@@ -137,7 +137,7 @@ describe('an owner', () => {
     expect(within(alex).getByText('Owner')).toBeInTheDocument();
     expect(within(alex).getByText('Scout')).toBeInTheDocument();
     expect(within(alex).getByText('Available')).toBeInTheDocument();
-    expect(within(members).getByRole('button', { name: /Invite/ })).toBeDisabled();
+    expect(within(members).queryByRole('button', { name: /Invite/ })).not.toBeInTheDocument();
   });
 
   it('hands transfer, archive and delete to the web settings, and cannot leave', async () => {
@@ -171,16 +171,26 @@ describe('an admin', () => {
 });
 
 describe('a member', () => {
-  it('sees who can change each value, row by row, and no admin rows', async () => {
+  it('sees one general reason and no admin rows', async () => {
     // Purpose: fails if a member is sent to manage what they cannot change anyway.
     mount('member');
-    expect(await screen.findByText('Only the owner can rename the space.')).toBeInTheDocument();
+    expect(await screen.findByText('Owners and admins change these.')).toBeInTheDocument();
+    expect(screen.getAllByText('Owners and admins change these.')).toHaveLength(1);
+    expect(screen.queryByText('Only the owner can rename the space.')).not.toBeInTheDocument();
     expect(
       screen.getByText('Ask an owner or admin to invite or remove people.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Manage this in web settings/ })).toBeNull();
     expect(screen.queryByText('Invite links and mutes')).not.toBeInTheDocument();
     expect(await screen.findByText('You agreed to version 3.')).toBeInTheDocument();
+  });
+
+  it('draws Leave as a neutral link', async () => {
+    mount('member');
+    const danger = await screen.findByTestId('space-settings-danger');
+    const leave = within(danger).getByRole('link', { name: /Continue in web settings/ });
+    expect(leave).not.toHaveClass('text-destructive');
+    expect(leave).not.toHaveClass('bg-destructive/10');
   });
 
   it('shows the space’s own reason when it keeps its directory to owners and admins', async () => {

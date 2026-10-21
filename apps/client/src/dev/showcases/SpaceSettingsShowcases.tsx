@@ -197,7 +197,7 @@ function Demo({ state, testId }: { state: DemoState | 'private'; testId: string 
 const STATES: ReadonlyArray<{ id: string; label: string; state: DemoState | 'private' }> = [
   { id: 'owner', label: 'Owner — read-only here, told to pair again', state: { role: 'owner' } },
   { id: 'admin', label: 'Admin', state: { role: 'admin' } },
-  { id: 'member', label: 'Member — who can change each value', state: { role: 'member' } },
+  { id: 'member', label: 'Member — one read-only reason', state: { role: 'member' } },
   {
     id: 'member-directory-refused',
     label: 'Member of a space that keeps its directory to owners and admins',

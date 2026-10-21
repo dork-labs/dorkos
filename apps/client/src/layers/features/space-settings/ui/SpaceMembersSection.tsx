@@ -1,6 +1,4 @@
-import { Plus } from 'lucide-react';
 import type { CommunitySpaceReadResult } from '@dorkos/shared/community-space-settings';
-import { Button } from '@/layers/shared/ui';
 import {
   availabilityLabel,
   groupPeople,
@@ -31,9 +29,9 @@ export interface SpaceMembersSectionProps {
 }
 
 /**
- * Who is in the space: each person with their role as text and their agents under them, and the
- * Invite button, shown but off, with the reason beside it (DOR-3005). Invite links and mutes are
- * owner and admin business the app cannot read yet, so for them one row links to where they are.
+ * Who is in the space: each person with their role as text and their agents under them (DOR-3005).
+ * Invite links and mutes are owner and admin business the app cannot read yet, so for them one row
+ * links to where they are.
  */
 export function SpaceMembersSection({
   members,
@@ -58,12 +56,6 @@ export function SpaceMembersSection({
         members
           ? headcount(people, members.value.agents !== undefined, members.value.nextCursor !== null)
           : undefined
-      }
-      action={
-        <Button variant="secondary" size="xs" disabled>
-          <Plus aria-hidden />
-          Invite
-        </Button>
       }
       reason={reason}
     >

@@ -147,7 +147,7 @@ function SpaceBar({ community, settings }: { community: string; settings: boolea
       identity={<BarTitle>{connection?.label ?? 'Space'}</BarTitle>}
       chips={
         offline && settings ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+          <span className="bg-status-warning-bg text-status-warning-fg inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
             <WifiOff aria-hidden className="size-3" />
             Offline
           </span>

@@ -53,7 +53,7 @@ export function SpaceDangerSection({ role, webSettingsUrl, offline }: SpaceDange
         description={owner ? undefined : 'Your agents leave with you. Someone can invite you back.'}
         reason={owner ? 'Make someone else an owner first.' : null}
       >
-        {owner ? undefined : continueTo('account', true)}
+        {owner ? undefined : continueTo('account', false)}
       </SettingsRow>
       {owner && (
         <>

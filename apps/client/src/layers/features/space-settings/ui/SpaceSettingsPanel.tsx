@@ -36,7 +36,7 @@ export interface SpaceSettingsPanelProps {
  *
  * Read-only in this version. Every value is plain text, never a disabled input. An owner or
  * admin gets one link per section to the space's web settings, where they change it; a member
- * gets a lock and one line saying who can. Leaving, handing over, archiving and deleting continue on the space's web settings.
+ * gets one line saying who can. Leaving, handing over, archiving and deleting continue on the space's web settings.
  *
  * When the space cannot be reached, it shows what the space said last and how long ago, with one
  * amber line and Try again; no row adds a reason of its own then.
@@ -60,9 +60,11 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
   const moderator = owner || role === 'admin';
   // Once per section when it applies to every row, as the design asks; none while offline.
   // An owner or admin changes these in the space's web settings until the app can pair to manage.
-  const generalReason =
-    offline || !moderator ? null : <ManageOnWeb href={webSettingsUrl('community')} />;
-  const memberReason = (text: string) => (offline || moderator ? null : text);
+  const generalReason = offline ? null : moderator ? (
+    <ManageOnWeb href={webSettingsUrl('community')} />
+  ) : (
+    'Owners and admins change these.'
+  );
   const name = settings?.name ?? connection.label;
 
   // The role decides every reason on the page, so nothing role-shaped is drawn before it is known.
@@ -97,7 +99,7 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
               {name}
             </span>
             {offline && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              <span className="bg-status-warning-bg text-status-warning-fg inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
                 <WifiOff aria-hidden className="size-3" />
                 Offline
               </span>
@@ -130,19 +132,15 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
       )}
 
       <SettingsSection title="General" reason={generalReason} testId="space-settings-general">
-        <SettingsRow label="Icon" reason={memberReason('Owners and admins change this.')}>
+        <SettingsRow label="Icon">
           <LetterTile letter={initialOf(name)} color={tileColor(connection.ref)} />
         </SettingsRow>
-        <SettingsRow label="Name" reason={memberReason('Only the owner can rename the space.')}>
+        <SettingsRow label="Name">
           <span dir="auto" className="break-words">
             {name}
           </span>
         </SettingsRow>
-        <SettingsRow
-          label="Description"
-          reason={memberReason('Owners and admins change this.')}
-          stacked
-        >
+        <SettingsRow label="Description" stacked>
           {settings?.description ? (
             <p dir="auto" className="break-words whitespace-pre-wrap">
               {settings.description}
@@ -151,7 +149,7 @@ export function SpaceSettingsPanel({ connection }: SpaceSettingsPanelProps) {
             <p className="text-muted-foreground">No description</p>
           )}
         </SettingsRow>
-        <SettingsRow label="Who can join" reason={memberReason('Only the owner changes this.')}>
+        <SettingsRow label="Who can join">
           {settings ? admissionLabel(settings.admissionPolicy) : '…'}
         </SettingsRow>
       </SettingsSection>
