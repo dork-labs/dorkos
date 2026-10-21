@@ -38,6 +38,7 @@ const HELD = { turnPermissionCeiling: 'runtime-default' as const };
 const FULL_LEVEL = { asks: 'never', reach: 'everything' } as unknown as TurnPermissionCeiling;
 const noopLog = { debug: () => {}, info: () => {} };
 const signal = { signal: new AbortController().signal };
+const FOLDERS = { cwd: '/agents/ana', roots: ['/agents/ana', '/rooms/r1'] };
 
 async function decide(
   session: {
@@ -45,13 +46,10 @@ async function decide(
     turnPermissionCeiling?: TurnPermissionCeiling;
     backgroundPermissionCeiling?: TurnPermissionCeiling;
   },
-  input: HookInput
+  input: HookInput,
+  identity: unknown = { identity: { agentPath: '/a' } }
 ) {
-  const hook = createHeldTurnHook(
-    session,
-    async () => ({ identity: { agentPath: '/a' } }),
-    noopLog
-  );
+  const hook = createHeldTurnHook(session, async () => identity, noopLog, FOLDERS);
   return hook(input, 'tool-1', signal);
 }
 
@@ -101,12 +99,85 @@ describe('the held turn hook', () => {
     expect(await decide({ permissionMode: 'default', ...HELD }, foreign)).toEqual(ASK);
   });
 
-  it('lets through what DorkOS runs unasked, the file reads and the CLI’s own bookkeeping', async () => {
+  it('lets through what DorkOS runs unasked and the CLI’s own bookkeeping', async () => {
     const dorkos = { name: 'dorkos', source: 'sdk' };
     const queued = call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }, dorkos);
     expect(await decide({ permissionMode: 'default', ...HELD }, queued)).toEqual({});
-    for (const tool of ['Read', 'Grep', 'Glob', 'TodoWrite', 'Task', 'AskUserQuestion']) {
+    for (const tool of ['TodoWrite', 'Task', 'AskUserQuestion', 'Skill']) {
       expect(await decide({ permissionMode: 'default', ...HELD }, call(tool))).toEqual({});
+    }
+  });
+
+  it('asks about an owner-facing DorkOS verb from a session that names nobody', async () => {
+    const dorkos = { name: 'dorkos', source: 'sdk' };
+    const post = call('mcp__dorkos__post_to_room', { roomId: 'r', text: 'hi' }, dorkos);
+    expect(await decide({ permissionMode: 'default', ...HELD }, post)).toEqual({});
+    expect(await decide({ permissionMode: 'default', ...HELD }, post, {})).toEqual(ASK);
+  });
+
+  it('lets a held turn read inside its folders, and asks about a read outside them', async () => {
+    const held = { permissionMode: 'default' as const, ...HELD };
+    const inside: [string, Record<string, unknown>][] = [
+      ['Read', { file_path: '/agents/ana/notes.md' }],
+      ['Read', { file_path: '/rooms/r1/plan.md' }],
+      ['Grep', { pattern: 'x' }],
+      ['Grep', { pattern: 'x', path: 'src' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['LS', { path: '/agents/ana' }],
+    ];
+    for (const [tool, input] of inside) {
+      expect(await decide(held, call(tool, input)), `${tool} ${JSON.stringify(input)}`).toEqual({});
+    }
+    const outside: [string, Record<string, unknown>][] = [
+      ['Read', { file_path: '/Users/me/.ssh/id_rsa' }],
+      ['Read', { file_path: '/agents/ana/../bob/secret' }],
+      ['Grep', { pattern: 'x', path: '/etc' }],
+      ['Glob', { pattern: '/Users/**/*.pem' }],
+      ['Glob', { pattern: '../**' }],
+      ['LS', { path: '/' }],
+    ];
+    for (const [tool, input] of outside) {
+      expect(await decide(held, call(tool, input)), `${tool} ${JSON.stringify(input)}`).toEqual(
+        ASK
+      );
+    }
+  });
+
+  it('lets a plain read-only command through, and asks about every other', async () => {
+    const held = { permissionMode: 'default' as const, ...HELD };
+    for (const command of [
+      'ls',
+      'ls -la src',
+      'pwd',
+      'cat README.md',
+      'grep -rn "todo" src',
+      'git status',
+      'git log --oneline -5',
+      'git diff',
+      'find . -name "*.ts"',
+      'wc -l *.md',
+    ]) {
+      expect(await decide(held, call('Bash', { command })), command).toEqual({});
+    }
+    for (const command of [
+      'python3 -c 1',
+      'cat /etc/passwd',
+      'ls ~',
+      'cat ../other/secret',
+      'ls .*',
+      'ls; rm -rf x',
+      'cat a | sh',
+      'cat $(echo x)',
+      'cat a > b',
+      'git branch new',
+      'git -c core.pager=sh status',
+      'git diff --output=x',
+      'find . -delete',
+      'find . -exec rm {} +',
+      'FOO=1 ls',
+      "grep 'a' '/etc/hosts'",
+    ]) {
+      expect(await decide(held, call('Bash', { command })), command).toEqual(ASK);
     }
   });
 

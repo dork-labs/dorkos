@@ -22,22 +22,18 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { ceilingOn, gatePermissionMode, type CeilingedMode } from '../turn-permission.js';
+import { ceilingOn, type CeilingedMode } from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
+import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 /**
- * Tools that pass through untouched: the file reads, which the CLI itself asks about only when they
- * reach outside the agent's folders, and the CLI's own bookkeeping, which runs nothing on the
- * computer by itself (a helper's own calls come through this hook one by one).
+ * Tools that pass through untouched: the CLI's own bookkeeping, which runs nothing on the computer
+ * by itself. A helper's own calls, and the tools a skill uses, come through this hook one by one.
  */
 const PASS_THROUGH_TOOLS: ReadonlySet<string> = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
   'AskUserQuestion',
+  'Skill',
   'TodoWrite',
   'Task',
   'Agent',
@@ -58,32 +54,49 @@ const PASS_THROUGH_TOOLS: ReadonlySet<string> = new Set([
 export const HELD_TURN_ASK_REASON =
   'This turn came from somewhere DorkOS cannot vouch for, so the folder’s allow rules do not apply.';
 
+/** The agent's folders, as this launch granted them. */
+export interface HeldTurnFolders {
+  /** The working folder, which relative paths resolve against. */
+  cwd: string;
+  /** Every folder a read may stay inside: the working folder and this turn's grants. */
+  roots: readonly string[];
+}
+
 /**
  * The hook. Answers nothing unless the running turn (or background work an earlier one left) is
- * held to the runtime's default and the call is one DorkOS would not run unasked anyway.
+ * held to the runtime's default and the call is one DorkOS would not run unasked anyway, or a read
+ * that stays inside the agent's folders (`held-turn-reads.ts`).
  *
  * @param session - The session's chosen mode and both ceilings.
  * @param resolveIdentity - The memoized session-identity resolver `canUseTool` uses.
  * @param log - Where a failed identity lookup is reported.
+ * @param folders - The agent's folders, for the reads let through.
  */
 export function createHeldTurnHook(
   session: CeilingedMode<PermissionModeId>,
   resolveIdentity: () => Promise<unknown>,
-  log: ToolGateLogger
+  log: ToolGateLogger,
+  folders: HeldTurnFolders
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
+    // The runtime-default bound always holds Claude Code to Default (or stricter), a mode that
+    // asks, so there is no mode here that would mean "do not ask".
     if (ceilingOn(session) !== 'stranger') return {};
-    // A mode that asks nobody is not one a held turn runs at; if it ever did, it
-    // would mean "do not ask", and this hook adds no card to it.
-    const mode = gatePermissionMode(session);
-    if (mode === 'bypassPermissions' || mode === 'auto') return {};
     const toolName = hookInput.tool_name;
     if (PASS_THROUGH_TOOLS.has(toolName)) return {};
     const input =
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
+    if (fileReadStaysInside(toolName, input, folders.cwd, folders.roots)) return {};
+    if (
+      toolName === 'Bash' &&
+      typeof input.command === 'string' &&
+      isPlainReadCommand(input.command)
+    ) {
+      return {};
+    }
     if (
       await dorkosAutoAllows(session, toolName, input, hookInput.mcp_server, resolveIdentity, log)
     ) {

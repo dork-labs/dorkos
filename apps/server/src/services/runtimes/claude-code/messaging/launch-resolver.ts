@@ -818,7 +818,17 @@ export async function resolveLaunch(args: {
       { hooks: [createTeammateTierHook(session)] },
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
       // rules still refuse. Answers nothing on any other turn.
-      { hooks: [createHeldTurnHook(session, resolveIdentity, logger)] },
+      {
+        hooks: [
+          createHeldTurnHook(session, resolveIdentity, logger, {
+            cwd: effectiveCwd,
+            roots: [
+              effectiveCwd,
+              ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
+            ],
+          }),
+        ],
+      },
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',
         hooks: [

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a held turn asks before running what the folder allows (DOR-3204)'
+  - 'fix(server): a held turn still reads its own folder unasked, and only its own (DOR-3204)'
 ---
 
 ### Fixed
