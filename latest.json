@@ -1,25 +1,25 @@
 {
  "schema": 1,
- "date": "2026-10-19",
- "collected_at": "2026-10-20T09:55:52.606Z",
- "snapshot": "snapshots/2026-10-19.json",
+ "date": "2026-10-20",
+ "collected_at": "2026-10-21T09:59:15.058Z",
+ "snapshot": "snapshots/2026-10-20.json",
  "report_ref": "reports/2026-W42.md",
  "healthy": true,
  "failures": [],
  "warnings": [
-  "Thin sample: review-recovery (n=0 < 5); those SLOs read as insufficient, not as a breach or a win."
+  "Thin sample: review-recovery (n=1 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 361,
+ "api_calls": 362,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 30193,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 31507,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 1.031
+    "p95_over_timeout": 1.038
    },
    "status": "breach",
    "excess_hours": null,
@@ -28,12 +28,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 488,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 486,
    "min_n": 30,
    "stats": {
-    "share": 0.6988
+    "share": 0.6831
    },
    "status": "breach",
    "excess_hours": null
@@ -41,38 +41,38 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 488,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 486,
    "min_n": 30,
    "stats": {
-    "share": 0.1086
+    "share": 0.1111
    },
    "status": "ok",
-   "excess_hours": 111.96
+   "excess_hours": 118.8
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 4981620,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 5033161,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 139,
-    "unreported_failed_jobs": 17
+    "failed_jobs": 137,
+    "unreported_failed_jobs": 20
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 17 of 139 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 11, wf.harness-windows.harness-windows 4, wf.credential-free-build.credential-free-build 1, wf.test.community-packaged 1); share 0 is over the reported suites only"
+   "note": "coverage unknown: 20 of 137 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 12, wf.harness-windows.harness-windows 4, wf.credential-free-build.credential-free-build 3, wf.test.community-packaged 1); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-09-22",
-   "to": "2026-10-19",
-   "n": 983,
+   "from": "2026-09-23",
+   "to": "2026-10-20",
+   "n": 1017,
    "min_n": 1,
    "stats": {
     "red_episodes": 37,
@@ -84,92 +84,94 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 277,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 272,
    "min_n": 30,
    "stats": {
-    "share": 1
+    "share": 0.9669
    },
-   "status": "met",
+   "status": "ok",
    "excess_hours": null
   },
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 0,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 1,
    "min_n": 5,
-   "stats": {},
+   "stats": {
+    "p90": 119.8
+   },
    "status": "insufficient",
    "excess_hours": null
   },
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 315,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 326,
    "min_n": 30,
    "stats": {
-    "p50": 22.2,
-    "p90": 42.4
+    "p50": 22.5,
+    "p90": 42
    },
    "status": "breach",
-   "excess_hours": 71.35
+   "excess_hours": 73.42
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 179,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 178,
    "min_n": 20,
    "stats": {
     "p50": 29.9,
-    "p90": 69.9
+    "p90": 69
    },
    "status": "breach",
-   "excess_hours": 69.83
+   "excess_hours": 68.01
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 245,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 252,
    "min_n": 30,
    "stats": {
-    "p50": 105.1,
-    "p90": 688.9
+    "p50": 109.7,
+    "p90": 867.6
    },
    "status": "breach",
-   "excess_hours": 1488.8
+   "excess_hours": 1845.97
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 1306,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 1594,
    "min_n": 20,
    "stats": {
-    "p90": 146.1,
-    "killed_share": 0.0046
+    "p90": 163,
+    "killed_share": 0.005
    },
    "status": "ok",
-   "excess_hours": 19.15
+   "excess_hours": 26.5
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-10-13",
-   "to": "2026-10-19",
-   "n": 974,
+   "from": "2026-10-14",
+   "to": "2026-10-20",
+   "n": 1176,
    "min_n": 20,
    "stats": {
-    "p90": 6,
+    "p90": 5,
     "killed_share": 0
    },
    "status": "met",
@@ -179,20 +181,20 @@
  "constraint": {
   "tier": "tripwire",
   "id": "headroom",
-  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 1.031 (worst gate wf.browser-test.browser-shard) breaches its floor."
+  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 1.038 (worst gate wf.browser-test.browser-shard) breaches its floor."
  },
  "local_breaches": [],
  "machine": {
-  "n": 29154,
+  "n": 35625,
   "clones": 2,
-  "load_per_core_p90": 2.52,
-  "mem_available_mb_p10": 707.1,
-  "swap_used_mb_p50": 5642
+  "load_per_core_p90": 3.24,
+  "mem_available_mb_p10": 590,
+  "swap_used_mb_p50": 6519
  },
  "safeguards_ok": true,
  "triggers": {
   "red": 7,
-  "amber": 22,
-  "top": "wf.browser-test.browser-shard p95 uses 103.1% of its time limit (n=2964)."
+  "amber": 36,
+  "top": "wf.browser-test.browser-shard p95 uses 103.8% of its time limit (n=2952)."
  }
 }
