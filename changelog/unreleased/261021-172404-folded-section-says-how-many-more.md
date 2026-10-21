@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): a folded sidebar section says how many rows it hides (DOR-3200)'
+  - "fix(client): one space before the dot in a folded header's count (DOR-3200)"
 ---
 
 ### Changed
