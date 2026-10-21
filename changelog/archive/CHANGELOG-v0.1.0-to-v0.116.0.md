@@ -1,7 +1,33 @@
-# Changelog archive: v0.1.0 – v0.115.0
+# Changelog archive: v0.1.0 – v0.116.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.116.0] - 2026-10-15
+
+> DorkOS 0.116.0 lets you open DorkOS on your phone or tablet over your Wi-Fi, keeps the side panel focused, and lets mini apps your agent builds use Hono with nothing installed.
+
+### Added
+
+- On a Mac, open DorkOS on your phone or tablet over your home or office Wi-Fi, with no tunnel. Turn on **Let devices on my Wi-Fi in** in Settings → Remote access, then scan the QR code it shows.
+- The switch takes effect right away, with no restart, and turning it off shuts the door at once.
+- It needs a login. If login is off, DorkOS walks you through creating your account first, and turning login off later turns Wi-Fi access off too.
+- Only devices on the same network as your computer get in.
+- The connection between your devices is not encrypted yet, so use it on a network you trust.
+- Watch the experimental agent computer beside its chat or in picture-in-picture while switching chats. Moving or closing its view keeps the computer running and returns control. (DOR-2916)
+- An extension's server half can now use Hono with nothing installed. `import { Hono } from 'hono'` used to fail to build for an extension your agent made.
+- A fetch handler now knows whether a person sent the request. Put `requirePerson()` in front of a route to keep agents and other websites out of it, or call `checkPerson()` in a handler written without Hono.
+
+### Changed
+
+- Keep the right panel focused on relevant views. Add pages, documents and shells from the + menu. (DOR-2916)
+- Close a resource view without stopping its work. Remove shared documents or stop shells through separate menu actions. (DOR-2916)
+- Use larger controls on phones. Panels stay usable when the keyboard opens. (DOR-2916)
+- A fetch handler's reply can no longer set cookies, run scripts in a page it serves, or redirect to another website. This is the same rule extensions that run in their own process already followed. A redirect to one of its own paths, like `/done`, now lands inside the extension.
+
+### Fixed
+
+- An extension's server half now starts when DorkOS's data folder sits inside a project set up for modern JavaScript modules. Before, it could stop at startup with "module is not defined".
 
 ## [0.115.0] - 2026-10-15
 
@@ -7180,6 +7206,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
 [0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
 [0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
