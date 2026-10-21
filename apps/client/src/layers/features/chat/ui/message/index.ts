@@ -20,5 +20,5 @@ export { SubagentBlock } from './SubagentBlock';
 export { OutputRenderer } from './OutputRenderer';
 export { ErrorMessageBlock } from './ErrorMessageBlock';
 export { PermissionDeniedChip } from './rows/PermissionDeniedChip';
-export { AssistantMessageContent } from './AssistantMessageContent';
+export { AssistantMessageContent, type AssistantContentShow } from './AssistantMessageContent';
 export { UserMessageContent } from './UserMessageContent';

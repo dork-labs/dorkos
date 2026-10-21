@@ -261,8 +261,8 @@ export interface RightPanelContribution extends BaseContribution {
    */
   declaredPlacement?: MiniAppPlacement | null;
   /**
-   * `transport`, `agentId`, `cwd`, `explicitAgentPath`, and
-   * `isRemoteCommunityRoom` are optional so unit
+   * `transport`, `agentId`, `cwd`, `explicitAgentPath`,
+   * `isRemoteCommunityRoom` and `directMessage` are optional so unit
    * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)
    * always supplies them. `agentId` and `cwd` are `string | null` — null is the
    * honest value while no agent is registered at the selected folder, no folder
@@ -283,6 +283,12 @@ export interface RightPanelContribution extends BaseContribution {
     explicitAgentPath?: string | null;
     /** Whether the current channel address belongs to a connected community. */
     isRemoteCommunityRoom?: boolean;
+    /**
+     * The DM the panel sits beside while the DM view is on (DOR-3075), or
+     * null beside anything else: a chat with one agent (`one-to-one`) or a
+     * group DM (`group`), and whether Show sessions is on.
+     */
+    directMessage?: { kind: 'one-to-one' | 'group'; showSessions: boolean } | null;
   }) => boolean;
 }
 

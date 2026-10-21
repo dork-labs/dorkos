@@ -299,6 +299,31 @@ describe('RightPanelHeader — a tab strip that scrolls instead of clipping', ()
     }
   });
 
+  it('below desktop, snaps to a tab and keeps room past the last one, so none sits half-drawn', () => {
+    // DOR-3075: at 390px the last tab sat half under the fade beside the
+    // panel's buttons. The docked desktop strip keeps its look.
+    renderHeader(
+      ['agent', 'files', 'canvas', 'browser', 'computer', 'work', 'social'].map((id) =>
+        makeContribution(id)
+      )
+    );
+    const classes = scroller().className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'max-lg:snap-x',
+        'max-lg:snap-proximity',
+        'max-lg:scroll-px-6',
+        'max-lg:pe-6',
+      ])
+    );
+    expect(classes.filter((name) => !name.startsWith('max-lg:'))).not.toEqual(
+      expect.arrayContaining(['snap-x'])
+    );
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab.closest('.group\\/view')?.className).toContain('max-lg:snap-start');
+    }
+  });
+
   it('fades only the edge that has tabs behind it', () => {
     renderHeader(
       ['agent', 'files', 'canvas', 'terminal', 'session', 'pulse'].map((id) => makeContribution(id))

@@ -51,7 +51,9 @@ export {
   StreamingText,
   UserMessageContent,
 } from './ui/message';
-export type { InteractiveToolHandle } from './ui/message';
+export type { InteractiveToolHandle, AssistantContentShow } from './ui/message';
+// What counts as a reply's work, for the line a DM folds it into (DOR-3075).
+export { countWorkSteps, hasWork, isWorkPart } from './lib/work-parts';
 export { TaskListPanel } from './ui/tasks/TaskListPanel';
 export { BackgroundTaskBar } from './ui/tasks/BackgroundTaskBar';
 export { QueuePanel } from './ui/input/QueuePanel';
@@ -63,6 +65,7 @@ export type { InteractionProps, SyncPresenceProps } from './ui/input/composer-sl
 export { TerminalReasonChip, TurnFailedNotice } from './ui/status';
 
 export { useChatSession } from './model/use-chat-session';
+export { useSessionReadout, type SessionReadout } from './model/stream/use-session-readout';
 export type { StopOutcome } from './model/use-session-submit';
 export { stopNotice, shouldReofferStop } from './lib/stop-copy';
 export type { StopNotice } from './lib/stop-copy';

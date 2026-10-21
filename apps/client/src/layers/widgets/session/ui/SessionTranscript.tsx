@@ -56,6 +56,7 @@ import { SessionMessage } from './SessionMessage';
 import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
 import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
+import { liveReplyId, turnStartsByReply } from '../lib/work-turns';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
@@ -317,6 +318,14 @@ export function SessionTranscript({
     }
   }, [messages, arrivedAt]);
   const humanName = directMessage?.humanName ?? null;
+  // A DM folds each reply's work into one line under it, timed from the words
+  // its turn answers (DOR-3075). Nothing is worked out for a session.
+  const foldWork = directMessage?.settled === true;
+  const turnStarts = useMemo(
+    () => (foldWork ? turnStartsByReply(messages) : null),
+    [foldWork, messages]
+  );
+  const liveReply = useMemo(() => (foldWork ? liveReplyId(messages) : null), [foldWork, messages]);
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
       // A DM names the agent it is with, whatever folder is selected.
@@ -499,6 +508,9 @@ export function SessionTranscript({
           sessionId={sessionId}
           directRoomId={directLog?.roomId}
           fallbackAt={untimedAt(message)}
+          foldWork={foldWork}
+          turnStartedAt={turnStarts?.get(message.id)}
+          liveReply={liveReply === message.id}
           isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
@@ -535,6 +547,9 @@ export function SessionTranscript({
       sessionId,
       directLog?.roomId,
       untimedAt,
+      foldWork,
+      turnStarts,
+      liveReply,
       historyCount,
       isTextStreaming,
       activeToolCallId,
