@@ -13745,6 +13745,12 @@
                 "type": "string",
                 "maxLength": 500
               },
+              "roseChats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "presetSnapshot": {
                 "type": "object",
                 "properties": {

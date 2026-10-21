@@ -171,6 +171,13 @@ export interface AgentSession {
    */
   turnPermissionCeiling?: TurnPermissionCeiling;
   /**
+   * The mode THIS turn starts from in place of {@link permissionMode}: its
+   * agent's level, for a chat that follows its agent up
+   * (`MessageOpts.levelPermissionMode`, DOR-3175). Assigned on every send and
+   * never stored; read through `turnPermissionMode`, never on its own.
+   */
+  turnLevelMode?: string;
+  /**
    * The ceiling background work an earlier ceilinged turn started still runs
    * under, while it may be running in this session's warm process. Unlike
    * {@link turnPermissionCeiling} it outlives its turn; owned by the warm-process

@@ -1184,6 +1184,13 @@
       "when": 1792543778031,
       "tag": "20261021004938_dor3203_settle_turn_holds",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "6",
+      "when": 1792596808196,
+      "tag": "20261021153328_dor3175_person_chat_mode",
+      "breakpoints": true
     }
   ]
 }

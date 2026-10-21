@@ -1,12 +1,14 @@
 /**
- * "Where new chats stop for you" — the one shared trust setting,
+ * "Where chats stop for you" — the one shared trust setting,
  * beneath the cards (design decision 3, option A).
  *
  * The heading is deliberately NOT the design session's original "Where agents
  * stop for you". DOR-853 reserved the bare word "agent" for a named teammate in
  * the fleet, and this setting governs neither a teammate nor a fleet: it is
- * where a NEW CONVERSATION starts on the trust dial, whichever runtime it lands
- * on. The newer invariant outranks the older local copy, so the row says what it
+ * where a CONVERSATION stops on the trust dial, whichever runtime it lands on.
+ * Since DOR-3175 that includes chats already open, from their next turn: a
+ * lower level reaches every chat, a higher one every chat not set by hand. The
+ * newer invariant outranks the older local copy, so the row says what it
  * actually governs (design §3 addendum).
  *
  * It answers the question once for every runtime; each card's `TrustRow` is the
@@ -130,16 +132,22 @@ export function GlobalTrustRow({
           fullscreened dialog or any wider host. */}
       <div className="flex flex-col gap-3 @2xl/trust-row:flex-row @2xl/trust-row:items-center @2xl/trust-row:justify-between @2xl/trust-row:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="text-sm font-medium">Where new chats stop for you</p>
+          <p className="text-sm font-medium">Where chats stop for you</p>
           <p className="text-muted-foreground text-xs">
             Cards above use this unless set otherwise.
+          </p>
+          {/* Two sentences, two blocks: the second names the one exception,
+              which only holds on a raise (designer, DOR-3175). */}
+          <p className="text-muted-foreground text-xs" data-testid="global-trust-row-timing">
+            <span>Applies to all chats from their next turn.</span>{' '}
+            <span>Chats you set by hand only follow it down.</span>
           </p>
         </div>
 
         {/* Full width while stacked; its own width, and no squeezing, beside the
             label (design §6). */}
         <SegmentedControl
-          aria-label="Where new chats stop for you"
+          aria-label="Where chats stop for you"
           className="w-full @2xl/trust-row:w-auto @2xl/trust-row:shrink-0"
           value={selected}
           onValueChange={(next) => onChange(next as PermissionStop)}

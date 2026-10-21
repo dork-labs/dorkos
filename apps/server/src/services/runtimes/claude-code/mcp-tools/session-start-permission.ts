@@ -87,6 +87,7 @@ export function runningPermissionMode(
         | 'model'
         | 'autoModeConfirmedFor'
         | 'turnPermissionCeiling'
+        | 'turnLevelMode'
         | 'backgroundPermissionCeiling'
       >
     | undefined
@@ -97,6 +98,8 @@ export function runningPermissionMode(
   const mode = session
     ? gatePermissionMode({
         permissionMode: session.permissionMode,
+        // The agent's level a chat that follows its agent up runs at (DOR-3175).
+        ...(session.turnLevelMode !== undefined ? { turnLevelMode: session.turnLevelMode } : {}),
         ...(session.turnPermissionCeiling !== undefined
           ? { turnPermissionCeiling: session.turnPermissionCeiling }
           : {}),

@@ -917,7 +917,9 @@ export class OpenCodeRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // A chat that follows its agent up starts from the agent's level this turn
+      // (DOR-3175); the tracked mode is left as it was.
+      permissionMode: opts?.levelPermissionMode ?? opts?.permissionMode ?? tracked.permissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };

@@ -1304,7 +1304,9 @@ export class CodexRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
-    const chosen = opts?.permissionMode ?? tracked.permissionMode;
+    // A chat that follows its agent up starts from the agent's level this turn
+    // (DOR-3175); the tracked mode is left as it was.
+    const chosen = opts?.levelPermissionMode ?? opts?.permissionMode ?? tracked.permissionMode;
     return {
       // Held to the turn's ceiling, for this turn only: a turn another agent's
       // post or a stranger's message started runs no looser than its sender,

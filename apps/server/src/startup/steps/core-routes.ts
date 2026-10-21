@@ -24,6 +24,7 @@ import { startProjectRegistry } from '../../services/projects/project-feeds.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { levelReachFor } from './level-reach.js';
 import { logger } from '../../lib/logger.js';
 import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
 import { withIntegrity } from '../../services/marketplace/lib/integrity/verify-install.js';
@@ -596,6 +597,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     observer: permissionObserver,
     arrivals: arrivalRecord,
     personSet: personSetPermissions,
+    levelReach: levelReachFor(db, configManager),
   });
   // The person-set floor is seeded once, on the first boot that has it, from
   // what each agent's file holds and what the history says a person set

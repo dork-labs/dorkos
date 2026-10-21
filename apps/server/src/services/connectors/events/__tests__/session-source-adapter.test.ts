@@ -579,7 +579,10 @@ describe('event source through real durable private acceptance', () => {
     ).toBe(1);
     await settleDispatch();
 
-    expect(firstEffectState).toBe('dispatching');
+    // Claimed before the runtime is reached. The registry's seam reads the
+    // agent's level before it calls the runtime (DOR-3175), so the call may land
+    // after `turn_start` was recorded: either claimed state, never `accepted`.
+    expect(['dispatching', 'turn_started']).toContain(firstEffectState);
     expect(f.runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(f.runtime.sendMessage).toHaveBeenCalledWith(
       accepted.receipt.sessionId,

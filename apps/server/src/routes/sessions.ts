@@ -42,7 +42,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { recordAccepted } from './session-message-accepted.js';
-import { launchRefusalReply, wifiModeRaiseReply } from './session-route-replies.js';
+import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -657,8 +657,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the only definition that matters — and it travels on as the runtime-declared
     // id it is, all the way into the settings store. No narrowing happens here
     // (DOR-885): each adapter reconciles the id with its own vocabulary at its own
-    // edge, which is the only place that can.
-    const permissionMode = requestedMode;
+    // edge, which is the only place that can (`requestedMode` from here on).
     // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
     // After a session remap the client uses the SDK UUID directly; without this translation
     // runtime.updateSession would fail to find the session by client-facing ID.
@@ -667,12 +666,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the chosen mode is persisted and applies on the next turn, so there is no
     // 422 path — a failed live switch is not a request error.
     const updated = await runtime.updateSession(internalSessionId, {
-      permissionMode,
+      permissionMode: requestedMode,
       model,
       effort,
       fastMode,
     });
     if (!updated.updated) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    notePersonMode(sessionId, requestedMode);
 
     const cwd = (cwdParam as string) || vaultRoot;
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
@@ -685,7 +685,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
 
     const session = await runtime.getSession(cwd, internalSessionId);
     if (session) {
-      session.permissionMode = permissionMode ?? session.permissionMode;
+      session.permissionMode = requestedMode ?? session.permissionMode;
       session.model = model ?? session.model;
       if (effort) session.effort = effort;
       if (fastMode !== undefined) session.fastMode = fastMode;
@@ -696,7 +696,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the required `runtime` field (task 1.1) — resolved from the owning runtime.
     const loose = session ?? {
       id: sessionId,
-      permissionMode,
+      permissionMode: requestedMode,
       model,
       effort,
       runtime: runtime.type,

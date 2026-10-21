@@ -65,7 +65,7 @@ describe('decorateRuntime: keep-awake and a paused agent', () => {
     const pause = { paused: true };
     initAgentPause(stubPauses(pause));
     const { runtime, startTurn } = fakeRuntime('fake-seam-paused-late');
-    const decorated = decorateRuntime(runtime, () => undefined);
+    const decorated = decorateRuntime(runtime, { storedPermissionModeOf: () => undefined });
     const before = chats();
     const seen: number[] = [];
     let done!: Promise<void>;
@@ -84,7 +84,7 @@ describe('decorateRuntime: keep-awake and a paused agent', () => {
     const pause = { paused: false };
     initAgentPause(stubPauses(pause));
     const { runtime, state } = fakeRuntime('fake-seam-paused-background');
-    const decorated = decorateRuntime(runtime, () => undefined);
+    const decorated = decorateRuntime(runtime, { storedPermissionModeOf: () => undefined });
     const before = chats();
     state.background = true;
 

@@ -248,10 +248,7 @@ export class RuntimeRegistry {
   register(runtime: AgentRuntime): void {
     // Every decorator at this one seam, in its order and with its reasons, is
     // `decorateRuntime`'s to state (`runtime-seam/decorate-runtime.ts`).
-    this.runtimes.set(
-      runtime.type,
-      decorateRuntime(runtime, (sessionId) => this.storedPermissionModeOf(sessionId))
-    );
+    this.runtimes.set(runtime.type, decorateRuntime(runtime, this));
   }
 
   /**

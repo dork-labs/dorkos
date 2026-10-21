@@ -1222,6 +1222,19 @@ export interface MessageOpts extends SessionSettings {
    */
   continuationHold?: true;
   /**
+   * The mode THIS turn starts from in place of the session's stored one: its
+   * agent's current level, for a chat that follows its agent up (DOR-3175).
+   * Set only at the registry's seam (`agent-level-bound.ts`), only for a chat a
+   * person never set a mode on, that nothing outside reached and nothing
+   * marked, and only when the level is looser than the stored mode.
+   *
+   * Per TURN and never written to the session's stored settings: the stored
+   * mode stays what it was, and a later lower level holds the next turn down
+   * again. Still held to {@link MessageOpts.permissionCeiling}. A runtime with
+   * no per-session mode ignores it.
+   */
+  levelPermissionMode?: PermissionModeId;
+  /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the
    * caller has not shown the turn yet and can put the message back in line.
