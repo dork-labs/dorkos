@@ -224,7 +224,9 @@ export function markedBoundOf(
   if (carried === undefined) return undefined;
   const level = sessionId ? passedOnLevelOf(sessionId) : undefined;
   if (level === undefined) return carried;
-  return [level, ...(Array.isArray(carried) ? carried : [carried as TurnPermissionBound])];
+  type BoundList = Extract<TurnPermissionCeiling, readonly unknown[]>;
+  const bounds = (Array.isArray(carried) ? carried : [carried]) as BoundList;
+  return [level, ...bounds];
 }
 
 /**
