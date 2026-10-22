@@ -39,6 +39,25 @@ describe('isSurvivableNetworkFault', () => {
     expect(isSurvivableNetworkFault(systemError(code, syscall))).toBe(true);
   });
 
+  it.each(['EADDRNOTAVAIL', 'ENETDOWN', 'EHOSTDOWN'])(
+    'survives %s on connect, the link going away',
+    (code) => {
+      expect(isSurvivableNetworkFault(systemError(code, 'connect'))).toBe(true);
+    }
+  );
+
+  it.each([
+    ['EADDRNOTAVAIL', 'bind'],
+    ['EADDRNOTAVAIL', 'listen'],
+    ['EADDRNOTAVAIL', 'read'],
+    ['ENETDOWN', 'bind'],
+    ['ENETDOWN', 'write'],
+    ['EHOSTDOWN', 'listen'],
+    ['EHOSTDOWN', 'read'],
+  ])('does not survive %s on %s, which is not the link going away', (code, syscall) => {
+    expect(isSurvivableNetworkFault(systemError(code, syscall))).toBe(false);
+  });
+
   it.each(['UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'])(
     'survives undici %s, which names no syscall',
     (code) => {
@@ -82,6 +101,19 @@ describe('createProcessFaultHandlers', () => {
       survived: 2,
     });
     expect(handlers.survivedCount()).toBe(2);
+  });
+
+  it('stays up for EADDRNOTAVAIL on connect, and exits for it on bind', () => {
+    const warn = vi.fn();
+    const fatal = vi.fn();
+    const handlers = createProcessFaultHandlers({ warn, fatal });
+    handlers.onUncaughtException(systemError('EADDRNOTAVAIL', 'connect'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(fatal).not.toHaveBeenCalled();
+
+    const ownPort = systemError('EADDRNOTAVAIL', 'bind');
+    handlers.onUncaughtException(ownPort);
+    expect(fatal).toHaveBeenCalledWith('uncaughtException', ownPort);
   });
 
   it('hands everything else to the fatal path, for both events', () => {
