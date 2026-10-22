@@ -55,6 +55,8 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_OFFICIAL_SPACE_URL:
     'overrides spaces.official.url, which is documented with it in docs/getting-started/configuration.mdx; the official space has no link to put here yet',
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
+  DORKOS_UPDATE_CHECK_DISABLED:
+    'tests only — keeps a contract test server off the npm registry (DOR-3226)',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',
   DORKOS_TEST_RUNTIME_DOE: 'e2e only — the DorkOS runtime beside the fake one, on the fake Cloud',

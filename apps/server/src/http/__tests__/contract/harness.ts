@@ -101,9 +101,10 @@ function serverEnv(
     DORKOS_TASKS_ENABLED: 'true',
     DORKOS_A2A_ENABLED: 'true',
     DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
-    // No contract server reaches out: telemetry, install counts and the update
-    // check all honour this switch.
+    // No contract server reaches out: telemetry and install counts honour the
+    // first switch, the npm update check the second (DOR-3226).
     DORKOS_TELEMETRY_DISABLED: '1',
+    DORKOS_UPDATE_CHECK_DISABLED: '1',
     ...extra,
   };
 }

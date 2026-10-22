@@ -140,6 +140,10 @@ export const serverEnvSchema = z.object({
   // `@dorkos/shared/telemetry-consent` so the server and CLI agree exactly.
   DO_NOT_TRACK: z.string().optional(),
   DORKOS_TELEMETRY_DISABLED: z.string().optional(),
+  // Keeps the server off the npm registry: no "update available" check
+  // (DOR-3226). '1'/'true' turns it off. The contract harness sets it so no
+  // test server reaches the network.
+  DORKOS_UPDATE_CHECK_DISABLED: z.string().optional(),
   // Telemetry debug mode (DOR-312) — when '1'/'true', the heartbeat, install,
   // usage, and error-report senders print the exact JSON payload to stderr
   // instead of sending it.
