@@ -45,6 +45,12 @@ const RESET_CHANNEL = 'renderer:reset-and-relaunch';
 /** IPC channel the recovery page's "Save Diagnostic Report" goes out on (mirrors `DIAGNOSTICS_CHANNEL` in renderer-health/index.ts). */
 const DIAGNOSTICS_CHANNEL = 'renderer:save-diagnostics';
 
+/** IPC channel the main process says whether it is restarting the server on (mirrors `SERVER_RESTARTING_CHANNEL` in main/server-stopped/index.ts). */
+const SERVER_RESTARTING_CHANNEL = 'server:restarting';
+
+/** IPC channel the "DorkOS stopped" page's "Restart DorkOS" goes out on (mirrors `RESTART_AFTER_STOP_CHANNEL` in main/server-stopped/index.ts). */
+const RESTART_AFTER_STOP_CHANNEL = 'server-stopped:restart';
+
 /** IPC channel the main process pushes fullscreen state on (mirrors `FULLSCREEN_CHANGE_CHANNEL` in main/fullscreen/index.ts). */
 const FULLSCREEN_CHANGE_CHANNEL = 'window:fullscreen-changed';
 
@@ -363,6 +369,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener(CLOSE_TAB_CHANNEL, listener);
       if (--closeTabSubscriptions === 0) ipcRenderer.send(CLOSE_TAB_UNSUBSCRIBE_CHANNEL);
     };
+  },
+  /**
+   * Restart the server from the "DorkOS stopped" page (DOR-3229). The main
+   * process answers only that page, never the app itself, which runs
+   * third-party extension code.
+   */
+  restartAfterStop: (): Promise<void> => ipcRenderer.invoke(RESTART_AFTER_STOP_CHANNEL),
+  /**
+   * Subscribe to whether the server is being restarted after it stopped
+   * (DOR-3229), for the app's "Restarting DorkOS…" bar.
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onServerRestarting: (cb: (restarting: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, restarting: boolean): void =>
+      cb(restarting);
+    ipcRenderer.on(SERVER_RESTARTING_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(SERVER_RESTARTING_CHANNEL, listener);
   },
   /**
    * Subscribe to this window's fullscreen state (DOR-563). macOS retracts the

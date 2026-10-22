@@ -30,6 +30,7 @@ import { registerShellLogExcerptHandler } from './shell-log-excerpt';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
 import { offerMoveToApplications } from './install-location';
+import { registerServerStoppedIpc } from './server-stopped';
 import {
   attachRendererSupervisor,
   setupRendererRecovery,
@@ -291,6 +292,8 @@ if (!gotTheLock) {
   // soon as its first document runs, and a heartbeat nothing is listening for
   // is a "failure" the ladder would go on to recover from.
   setupRendererRecovery();
+  // The "DorkOS stopped" page's one button (DOR-3229).
+  registerServerStoppedIpc();
 
   // Settings → Advanced → Danger zone's "Restart" and "Reset all data". Both are the
   // supervisor's work here rather than the server's, because a server that ends
@@ -417,10 +420,8 @@ if (!gotTheLock) {
     // user to know why. showErrorBox is synchronous/blocking, so it's
     // guaranteed to be seen before the app quits.
     try {
-      // The accessor lets the supervisor anchor its crash dialog to whichever
-      // window is current, the same way setupAutoUpdater does.
       localBrowserBridge = await startLocalBrowserBridge(getRendererUrl, getMainWindow);
-      await startServer(getMainWindow);
+      await startServer();
       // Before any window loads: the person at their own Mac never types a
       // password (F3). Never throws; a failure leaves the sign-in screen.
       // Again twice a day, so a window left open keeps a live session.
