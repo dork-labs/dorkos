@@ -25,6 +25,15 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 /** How long a failed or timed-out check waits before the next one. */
 const FAILURE_BACKOFF = 5 * 60 * 1000; // 5 minutes
 const FETCH_TIMEOUT = 5000; // 5 seconds
+/**
+ * A version the registry may answer: `MAJOR.MINOR.PATCH`, with an optional
+ * pre-release and build, and nothing else. The answer is shown to a person and
+ * compared against the running version, so anything else is not believed.
+ */
+const VERSION_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+/** The longest version string believed. */
+const MAX_VERSION_LENGTH = 64;
 
 let cachedLatest: string | null = null;
 /** When the next refresh is due, epoch ms. `0` means now. */
@@ -64,8 +73,15 @@ async function refresh(): Promise<void> {
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`registry answered ${res.status}`);
-    const data = (await res.json()) as { version: string };
-    cachedLatest = data.version;
+    const { version } = (await res.json()) as { version?: unknown };
+    // An answer that is not a version is a failed check, with the same back-off.
+    if (
+      typeof version !== 'string' ||
+      version.length > MAX_VERSION_LENGTH ||
+      !VERSION_PATTERN.test(version)
+    )
+      throw new Error('registry answered no version');
+    cachedLatest = version;
     nextCheckAt = Date.now() + CACHE_TTL;
   } catch {
     // Keep the last answer, and do not ask again on every read while the

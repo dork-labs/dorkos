@@ -131,6 +131,38 @@ describe('update-checker', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ['a number', 1],
+    ['a missing version', undefined],
+    ['text', 'latest'],
+    ['markup', '<script>alert(1)</script>'],
+    ['a leading v', 'v1.2.3'],
+    ['two parts', '1.2'],
+    ['a leading zero', '01.2.3'],
+    ['an over-long pre-release', `1.2.3-${'a'.repeat(80)}`],
+  ])('treats %s from the registry as a failed check, with the back-off', async (_name, version) => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ version }) });
+
+    expect(await readAfterRefresh()).toBeNull();
+    expect(await readAfterRefresh()).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the last good version when the registry answers garbage', async () => {
+    mockFetch
+      .mockResolvedValueOnce(answers('0.2.0'))
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ version: 'nope' }) });
+
+    await readAfterRefresh();
+    vi.advanceTimersByTime(HOUR + 1);
+    expect(await readAfterRefresh()).toBe('0.2.0');
+  });
+
+  it('accepts a pre-release and a build', async () => {
+    mockFetch.mockResolvedValueOnce(answers('1.2.3-beta.1+build.5'));
+    expect(await readAfterRefresh()).toBe('1.2.3-beta.1+build.5');
+  });
+
   it('records a timed-out check as a failure', async () => {
     mockFetch.mockImplementation(
       (_url: string, init: { signal: AbortSignal }) =>
