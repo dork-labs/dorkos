@@ -71,3 +71,23 @@ that extension too. A clean current census is not proof of this missing rule.
 5. Only after census support and both hosted proofs pass does the coordinator
    activate the main-pinned required-workflow rule. Verify its persisted source
    settings and a real refusal. Never weaken a missing-data refusal to promote it.
+
+## PRs opened before initialization
+
+Only when `security-review` is absent, the read-only verifier may pass as
+`no security paths (computed)` after checking a complete nonsensitive diff. It
+never writes a status. An explicit pending/failure remains blocking. PR checks
+paginate the full files endpoint and match its count against `changed_files`;
+3,000 or more files refuse. Merge groups use the queue entry's immutable base commit SHA and
+its synthetic queued head commit SHA in `base...queuedHead`, never the current PR files list.
+The current head/base and queue snapshot are still rechecked before passing.
+Both sides of renames are checked. The compare endpoint returns files only on
+its first page, capped at 300; at that cap completeness is unknown and the gate
+refuses, even if a status exists. See [GitHub's compare endpoint](https://docs.github.com/en/rest/commits/commits#compare-two-commits).
+API failures, malformed lists, duplicates and PR count mismatches refuse.
+
+The immutable synthetic diff proves path classification, not the original source
+PR SHA used to build a squash queue entry. `pullRequest.headRefOid` is live.
+**Binding sensitive approvals to the original queued source SHA remains unproven;
+promotion stays blocked until that binding and the multi-entry chain have live
+evidence.** This fallback does not claim to establish that separate binding.

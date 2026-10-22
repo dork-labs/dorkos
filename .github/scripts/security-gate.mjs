@@ -4,6 +4,14 @@ import { pathToFileURL } from 'node:url';
 
 const CONTEXT = 'security-review';
 
+/** The workflow is the sole security-path list, shared by both read-only tools. */
+export function securityPathPattern() {
+  const text = readFileSync(new URL('../workflows/security-gate.yml', import.meta.url), 'utf8');
+  const pattern = /^ {2}SECURITY_PATH_PATTERN: '(.+)'$/m.exec(text)?.[1];
+  if (!pattern) throw new Error('Security path list missing');
+  return pattern;
+}
+
 /** GitHub returns statuses newest first. An older success never overrides a refusal. */
 export function latestReview(statuses) {
   return statuses.find((status) => status.context === CONTEXT);
@@ -43,11 +51,33 @@ function hasApproval(review, sensitive) {
   return review?.state === 'success' && (!sensitive || review.description !== 'no security paths');
 }
 
+function validateFiles(files) {
+  if (
+    !Array.isArray(files) ||
+    files.some(
+      (file) =>
+        !file ||
+        typeof file.filename !== 'string' ||
+        !file.filename ||
+        (file.previous_filename !== undefined && typeof file.previous_filename !== 'string')
+    ) ||
+    new Set(files.map((file) => file.filename)).size !== files.length
+  )
+    throw new Error('Incomplete or invalid file list');
+  return files;
+}
+
 async function sensitiveDiff(api, number, pr, pattern) {
   if (!pattern) throw new Error('Security path list missing');
   const files = await api.files(number);
   // The files endpoint is capped at 3,000; never classify a truncated diff as safe.
-  if (files.length !== pr.changed_files) throw new Error('Incomplete PR file list');
+  if (
+    !Number.isSafeInteger(pr.changed_files) ||
+    pr.changed_files < 0 ||
+    pr.changed_files >= 3000 ||
+    validateFiles(files).length !== pr.changed_files
+  )
+    throw new Error('Incomplete PR file list');
   return touchesSecurity(files, pattern);
 }
 
@@ -74,13 +104,33 @@ export async function checkPullRequest(
     }
   }
   if (write) await audit(api, number, sha, review);
-  if ((await api.pr(number)).head.sha !== sha) throw new Error(`PR #${number} head moved`);
-  // Fork verification can beat the trusted writer. A complete nonsensitive
-  // diff is safe to pass read-only; the queue still requires its written status.
-  if (requireApproval && (write || sensitive) && !hasApproval(review, sensitive))
+  const current = await api.pr(number);
+  if (current.head.sha !== sha) throw new Error(`PR #${number} head moved`);
+  if (current.base.ref !== pr.base.ref || current.base.sha !== pr.base.sha)
+    throw new Error(`PR #${number} base moved`);
+  // Only ABSENT status permits computed clearance. Never bypass an explicit
+  // pending/failure (or reused automatic approval on a now-sensitive diff).
+  const computed = !write && !review && !sensitive;
+  if (requireApproval && !computed && !hasApproval(review, sensitive))
     throw new Error(
       `PR #${number}: security-review pending on ${sha}; Security must approve, then rerun security-gate`
     );
+  return computed ? 'no security paths (computed)' : 'Security status verified';
+}
+
+async function queuedSensitiveDiff(api, base, sha, pattern) {
+  if (!base || !sha || !pattern) throw new Error('Missing immutable comparison input');
+  const comparison = await api.compare(base, sha);
+  // Compare files appear only on page 1 and are capped at 300, independently
+  // of commit pagination. At the cap completeness is unknown, so refuse.
+  const files = validateFiles(comparison.files);
+  if (
+    comparison.base_commit?.sha !== base ||
+    comparison.merge_base_commit?.sha !== base ||
+    files.length >= 300
+  )
+    throw new Error('Incomplete queued-head comparison');
+  return touchesSecurity(files, pattern);
 }
 
 async function audit(api, number, sha, review) {
@@ -102,22 +152,40 @@ async function audit(api, number, sha, review) {
 export async function checkMergeGroup(api, event, pattern) {
   const group = event.merge_group;
   const members = groupMembers(await api.queue(group.base_ref), group);
+  const results = [];
   for (const entry of members) {
     const { number, headRefOid: sha } = entry.pullRequest;
     const pr = await api.pr(number);
-    if (pr.head.sha !== sha) throw new Error(`PR #${number} head moved`);
     if (pr.base.ref !== group.base_ref.replace(/^refs\/heads\//, ''))
       throw new Error(`PR #${number} base moved`);
-    const sensitive = await sensitiveDiff(api, number, pr, pattern);
+    // Never borrow the current PR's files for the queued commit. Both SHA
+    // arguments are pinned by the merge-group event/entry snapshot.
+    const sensitive = await queuedSensitiveDiff(
+      api,
+      entry.baseCommit.oid,
+      entry.headCommit.oid,
+      pattern
+    );
     const review = latestReview(await api.statuses(sha));
-    if (!hasApproval(review, sensitive))
-      throw new Error(`PR #${number}: no security-review success on ${sha}`);
-    if ((await api.pr(number)).head.sha !== sha) throw new Error(`PR #${number} head moved`);
+    const computed = !review && !sensitive;
+    if (!computed && !hasApproval(review, sensitive))
+      throw new Error(
+        `PR #${number}: no security-review success on ${sha}; pending Security approval`
+      );
+    const current = await api.pr(number);
+    if (pr.head.sha !== sha || current.head.sha !== sha)
+      throw new Error(`PR #${number} head moved`);
+    if (current.base.ref !== pr.base.ref || current.base.sha !== pr.base.sha)
+      throw new Error(`PR #${number} base moved`);
+    results.push(
+      `PR #${number}: ${computed ? 'no security paths (computed)' : 'Security status verified'}`
+    );
   }
   // A push can dequeue/rebuild an entry while statuses are being read.
   const current = groupMembers(await api.queue(group.base_ref), group);
   if (JSON.stringify(current) !== JSON.stringify(members))
     throw new Error('Merge queue changed during security review');
+  return results.join('\n');
 }
 
 /** Minimal GitHub client. Follow every page; API errors never become empty results. */
@@ -141,9 +209,13 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
   }
   async function pages(path) {
     const values = [];
+    const seen = new Set();
     let url = `${root}${path}?per_page=100`;
     while (url) {
+      if (seen.has(url)) throw new Error('Repeated pagination cursor');
+      seen.add(url);
       const result = await request(url);
+      if (!Array.isArray(result.data)) throw new Error('Incomplete GitHub list response');
       values.push(...result.data);
       url = result.next;
     }
@@ -152,6 +224,12 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
   return {
     pr: async (number) => (await request(`${root}/pulls/${number}`)).data,
     files: (number) => pages(`/pulls/${number}/files`),
+    compare: async (base, sha) =>
+      (
+        await request(
+          `${root}/compare/${encodeURIComponent(base)}...${encodeURIComponent(sha)}?per_page=1&page=1`
+        )
+      ).data,
     statuses: (sha) => pages(`/commits/${sha}/statuses`),
     setStatus: async (sha, state, description) =>
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
@@ -195,16 +273,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     );
     if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
       if (!process.env.SECURITY_PATH_PATTERN) throw new Error('Security path list missing');
-      await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN);
+      console.log(await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN));
     } else if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
       // This event checks out ONLY the trusted base SHA, never PR code.
       // This writer has its own workflow, never the required verifier's identity.
       if (process.env.SECURITY_GATE_MODE === 'initialize') {
-        const trustedWorkflow = readFileSync(
-          new URL('../workflows/security-gate.yml', import.meta.url),
-          'utf8'
-        );
-        const pattern = /^ {2}SECURITY_PATH_PATTERN: '(.+)'$/m.exec(trustedWorkflow)?.[1];
+        const pattern = securityPathPattern();
         await checkPullRequest(api, event, pattern, {
           write: true,
           requireApproval: false,
@@ -213,7 +287,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         throw new Error('Target event requires explicit initializer mode');
       }
     } else if (process.env.GITHUB_EVENT_NAME === 'merge_group') {
-      await checkMergeGroup(api, event, process.env.SECURITY_PATH_PATTERN);
+      console.log(await checkMergeGroup(api, event, process.env.SECURITY_PATH_PATTERN));
     } else {
       throw new Error('Unsupported security gate event');
     }
