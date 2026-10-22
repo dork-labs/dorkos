@@ -1,3 +1,4 @@
+import './security-path-parity.test.mjs';
 /* global URL, structuredClone, Response, process */
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -55,6 +56,11 @@ function fixture({ files = ['apps/server/src/http/gate.ts'], statuses = {} } = {
       labels: [{ name: 'security-reviewed' }],
     }),
     files: async () => files.map((filename) => ({ filename })),
+    compare: async (base) => ({
+      base_commit: { sha: base },
+      merge_base_commit: { sha: base },
+      files: files.map((filename) => ({ filename })),
+    }),
     statuses: async (sha) => statuses[sha] ?? [],
     setStatus: async (sha, state, description) => {
       writes.push({ sha, state });
@@ -307,7 +313,7 @@ test('docs-only fork verifier can beat initialization without a permanent red ch
     throw new Error('read-only token');
   };
   await checkPullRequest(f.api, prEvent, pattern, { write: false });
-  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /no security-review success/);
+  assert.match(await checkMergeGroup(f.api, groupEvent, pattern), /no security paths \(computed\)/);
 });
 
 test('all verifier runs are read-only, including same-repo PRs and merge groups', async () => {
@@ -418,6 +424,12 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
       data = { head: { sha: 'head1' }, base: { ref: 'main' }, changed_files: 1 };
     } else if (/\/pulls\/1\/files\?/.test(req.url)) {
       data = [{ filename: script }];
+    } else if (/\/compare\/base\.\.\.group1\?/.test(req.url)) {
+      data = {
+        base_commit: { sha: 'base' },
+        merge_base_commit: { sha: 'base' },
+        files: [{ filename: script }],
+      };
     } else if (/\/commits\/head1\/statuses\?/.test(req.url)) {
       data = [{ context: 'security-review', state: 'pending' }];
     } else {
@@ -458,4 +470,187 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
   assert.equal(result.code, 1);
   assert.match(result.output, /no security-review success on head1/);
   assert.deepEqual(writes, []);
+});
+
+test('old client-only PR without status passes computed and never writes', async () => {
+  const f = fixture({ files: ['apps/client/src/old.ts'] });
+  assert.equal(await checkPullRequest(f.api, prEvent, pattern), 'no security paths (computed)');
+  assert.match(await checkMergeGroup(f.api, groupEvent, pattern), /no security paths \(computed\)/);
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.comments, []);
+});
+
+test('old security PR without status fails pending without writing', async () => {
+  const f = fixture({ files: ['apps/desktop/src/preload/index.ts'] });
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /pending on head1/);
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /pending Security approval/);
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.comments, []);
+});
+
+test('computed clearance cannot override an explicit nonsensitive refusal', async () => {
+  for (const state of ['pending', 'failure', 'error']) {
+    const f = fixture({
+      files: ['apps/client/src/old.ts'],
+      statuses: { head1: [{ ...approved, state }] },
+    });
+    await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /pending/);
+    await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /no security-review success/);
+  }
+});
+
+test('missing-status PR fails on failed, truncated, capped or malformed file lists', async () => {
+  const f = fixture({ files: ['apps/client/src/old.ts'] });
+  f.api.files = async () => [];
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /Incomplete/);
+  f.api.files = async () => {
+    throw new Error('API failed');
+  };
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /API failed/);
+  f.api.files = async () => Array.from({ length: 3000 }, (_, i) => ({ filename: `docs/${i}.md` }));
+  const original = f.api.pr;
+  f.api.pr = async (n) => ({ ...(await original(n)), changed_files: 3000 });
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /Incomplete/);
+  f.api.pr = original;
+  f.api.files = async () => [{}];
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /invalid file list/);
+});
+
+test('queued sensitive head cannot borrow the later client-only PR file list', async () => {
+  const f = fixture({ files: ['apps/client/src/later.ts'] });
+  f.heads[1] = 'laterHead';
+  f.api.files = async () => {
+    throw new Error('Must not read mutable PR files');
+  };
+  const comparisons = [];
+  f.api.compare = async (base, sha) => {
+    comparisons.push([base, sha]);
+    return {
+      base_commit: { sha: base },
+      merge_base_commit: { sha: base },
+      files: [{ filename: 'apps/desktop/src/preload/index.ts' }],
+    };
+  };
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /pending Security approval/);
+  assert.deepEqual(comparisons, [['base', 'group1']]);
+  assert.deepEqual(f.writes, []);
+});
+
+test('queue comparison matches both sides of a rename', async () => {
+  for (const files of [
+    [{ filename: 'docs/moved.md', previous_filename: 'apps/desktop/src/preload/index.ts' }],
+    [{ filename: 'apps/desktop/src/preload/index.ts', previous_filename: 'docs/moved.md' }],
+  ]) {
+    const f = fixture({ files: ['docs/old.md'] });
+    f.api.compare = async (base) => ({
+      base_commit: { sha: base },
+      merge_base_commit: { sha: base },
+      files,
+    });
+    await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /pending Security approval/);
+  }
+});
+
+test('queue comparison refuses API errors, missing lists, wrong base and the compare cap', async () => {
+  for (const comparison of [
+    {},
+    { base_commit: { sha: 'other' }, files: [] },
+    {
+      base_commit: { sha: 'base' },
+      merge_base_commit: { sha: 'base' },
+      files: Array.from({ length: 300 }, (_, i) => ({ filename: `docs/${i}.md` })),
+    },
+    {
+      base_commit: { sha: 'base' },
+      merge_base_commit: { sha: 'base' },
+      files: [{ filename: 'docs/a' }, { filename: 'docs/a' }],
+    },
+  ]) {
+    const f = fixture({ files: ['docs/old.md'] });
+    f.api.compare = async () => comparison;
+    await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /Incomplete/);
+  }
+  const f = fixture();
+  f.api.compare = async () => {
+    throw new Error('Compare API failed');
+  };
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /Compare API failed/);
+});
+
+test('computed PR clearance refuses same-head base retarget during files read', async () => {
+  const f = fixture({ files: ['docs/a.md'] });
+  const original = f.api.pr;
+  let reads = 0;
+  f.api.pr = async (n) => ({
+    ...(await original(n)),
+    base: { ref: ++reads === 1 ? 'main' : 'other' },
+  });
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /base moved/);
+});
+
+test('GitHub compare requests pin both SHA inputs and return page-one files', async (t) => {
+  let called;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    called = url;
+    return Response.json({
+      base_commit: { sha: 'base' },
+      merge_base_commit: { sha: 'base' },
+      files: [{ filename: 'docs/a.md' }],
+    });
+  });
+  const comparison = await githubApi('owner/repo', 'fake').compare('base', 'queuedHead');
+  assert.match(called, /\/compare\/base\.\.\.queuedHead\?per_page=1&page=1$/);
+  assert.equal(comparison.files[0].filename, 'docs/a.md');
+});
+
+test('later current PR head in queue snapshot cannot replace immutable queued diff', async () => {
+  const f = fixture({ files: ['apps/client/src/later.ts'] });
+  f.heads[1] = 'laterHead';
+  f.api.queue = async () =>
+    entries.map((entry, i) =>
+      i === 0 ? { ...entry, pullRequest: { ...entry.pullRequest, headRefOid: 'laterHead' } } : entry
+    );
+  const comparisons = [];
+  f.api.compare = async (base, sha) => {
+    comparisons.push([base, sha]);
+    return {
+      base_commit: { sha: base },
+      merge_base_commit: { sha: base },
+      files: [{ filename: 'apps/desktop/src/preload/index.ts' }],
+    };
+  };
+  f.api.files = async () => {
+    throw new Error('Mutable PR files used');
+  };
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /pending Security approval/);
+  assert.deepEqual(comparisons, [['base', 'group1']]);
+});
+
+test('each queue entry compares its immutable base/head, not a cumulative or live PR diff', async () => {
+  const f = fixture({ files: ['apps/client/src/a.ts'] });
+  const comparisons = [];
+  f.api.compare = async (base, head) => {
+    comparisons.push([base, head]);
+    return {
+      base_commit: { sha: base },
+      merge_base_commit: { sha: base },
+      files: [{ filename: 'docs/a.md' }],
+    };
+  };
+  await checkMergeGroup(f.api, groupEvent, pattern);
+  assert.deepEqual(comparisons, [
+    ['base', 'group1'],
+    ['group1', 'group2'],
+  ]);
+});
+
+test('queued comparison rejects a divergent or absent merge base', async () => {
+  for (const merge_base_commit of [undefined, { sha: 'divergent' }]) {
+    const f = fixture({ files: ['docs/a.md'] });
+    f.api.compare = async (base) => ({ base_commit: { sha: base }, merge_base_commit, files: [] });
+    await assert.rejects(
+      checkMergeGroup(f.api, groupEvent, pattern),
+      /Incomplete queued-head comparison/
+    );
+  }
 });
