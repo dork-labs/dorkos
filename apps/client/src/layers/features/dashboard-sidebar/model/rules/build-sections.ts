@@ -252,7 +252,28 @@ function section(
   reason: string,
   isWorking: (row: SidebarRowModel) => boolean
 ): SidebarSectionModel | null {
-  if (rows.length === 0) return null;
+  return rows.length === 0 ? null : fixedSection(id, label, rows, state, reason, isWorking);
+}
+
+/**
+ * One fixed section, drawn whatever it holds — {@link section} without the
+ * "nothing in it, no section" rule, for Direct messages, which always stands.
+ *
+ * @param id - Which fixed section this is.
+ * @param label - Its heading.
+ * @param rows - Its rows. A folded section's rollup is read from exactly these.
+ * @param state - The snapshot.
+ * @param reason - Its provenance.
+ * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
+ */
+function fixedSection(
+  id: FixedSectionId,
+  label: string,
+  rows: SidebarRowModel[],
+  state: SidebarState,
+  reason: string,
+  isWorking: (row: SidebarRowModel) => boolean
+): SidebarSectionModel {
   const prefs = state.prefs.sections[id];
   const collapsed = prefs?.collapsed ?? false;
   const rollup = collapsed ? rollUpCollapsedSection(rows, isWorking) : undefined;
@@ -509,20 +530,18 @@ function directMessagesSection(
     rows.length === 0
       ? doorRow('message-agent', 'add', 'Message an agent', 'dms:empty')
       : doorRow('message-someone', 'add', 'Message an agent or person', 'dms:message-someone');
-  const filled = section(
-    'dms',
-    'Direct messages',
-    [...rows, door],
-    state,
-    'section:dms',
-    isWorking
-  ) as SidebarSectionModel; // `null` only for no rows, and the door is always a row.
+  // **The rollup reads the conversations, and the door joins after it**
+  // (DOR-3200). Folded, the header says how many conversations it hides; a door
+  // fed into the rollup was counted as one, so "· 8 more" hid seven, and an
+  // empty folded section said "· 1 more" with nothing hidden.
+  const built = fixedSection('dms', 'Direct messages', rows, state, 'section:dms', isWorking);
   // **Folded and empty, the door stays.** It is the section's whole content
   // and the one way to start a conversation, so folding must not hide it.
-  if (rows.length === 0 && filled.rollup !== undefined) {
-    return { ...filled, rollup: { ...filled.rollup, keptRows: [door] } };
-  }
-  return filled;
+  const rollup =
+    built.rollup !== undefined && rows.length === 0
+      ? { ...built.rollup, keptRows: [door] }
+      : built.rollup;
+  return { ...built, ...(rollup ? { rollup } : {}), rows: [...rows, door] };
 }
 
 /**

@@ -1065,8 +1065,10 @@ describe('DashboardSidebar', () => {
     // The header carries no unread number — only how many rows the fold hides
     // (DOR-3200), and a dot while a member works.
     expect(heading.textContent).not.toMatch(/3/);
-    expect(heading.textContent).toContain('· 2 more');
-    expect(sectionToggle('Direct messages')).toHaveAccessibleDescription('2 more');
+    // One hidden: "Read chat". The "Message an agent or person" door is not a
+    // conversation and is never counted.
+    expect(heading.textContent).toContain('· 1 more');
+    expect(sectionToggle('Direct messages')).toHaveAccessibleDescription('1 more');
     expect(within(heading).getByRole('img', { name: 'Agent working' })).toBeInTheDocument();
   });
 

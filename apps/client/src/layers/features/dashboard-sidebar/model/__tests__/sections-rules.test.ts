@@ -463,12 +463,64 @@ describe('DOR-3200 — a folded section says how many rows it hides', () => {
     prefs: prefs({ ...busyFixture.prefs, sections: { dms: { collapsed: true } } }),
   };
 
-  it('counts every row the fold hides, and none it keeps', () => {
+  it('counts every conversation the fold hides, and none it keeps', () => {
     const dms = section(foldedDms, 'dms');
     const kept = dms?.rollup?.keptRows.length ?? 0;
+    const conversations = dms?.rows.filter((row) => row.target.kind !== 'command') ?? [];
     expect(kept).toBe(2);
-    expect(dms?.rows.length).toBeGreaterThan(kept);
-    expect(dms?.rollup?.hiddenCount).toBe((dms?.rows.length ?? 0) - kept);
+    expect(conversations.length).toBeGreaterThan(kept);
+    expect(dms?.rollup?.hiddenCount).toBe(conversations.length - kept);
+  });
+
+  /** Direct messages, folded, with `count` agent conversations, `unread` of them unread. */
+  function foldedDmsWith(count: number, unread: number): SidebarState {
+    const rooms = Array.from({ length: count }, (_, index) => {
+      const path = `/Users/dev/code/dm-${index}`;
+      return agentDm(`dm-${index}`, path, `dm-${index}`, index < unread ? { unreadCount: 2 } : {});
+    });
+    return emptyState({
+      agents: rooms.map((_, index) => agent(`/Users/dev/code/dm-${index}`)),
+      rooms,
+      prefs: prefs({ sections: { dms: { collapsed: true } } }),
+    });
+  }
+
+  it('never counts the "Message an agent or person" door (QA: "· 8 more" hid 7)', () => {
+    const dms = section(foldedDmsWith(9, 2), 'dms');
+    expect(dms?.rows).toHaveLength(10); // nine conversations and the door
+    expect(dms?.rollup?.keptRows).toHaveLength(2);
+    expect(dms?.rollup?.hiddenCount).toBe(7);
+  });
+
+  it('hides nothing when folded with no conversations, and keeps the door', () => {
+    const dms = section(foldedDmsWith(0, 0), 'dms');
+    expect(dms?.rollup?.hiddenCount).toBe(0);
+    expect(dms?.rollup?.keptRows.map((row) => row.primary)).toEqual(['Message an agent']);
+  });
+
+  it('counts only conversations in every folded section of every journey', () => {
+    // The guard for the next door: whatever section gains a non-conversation
+    // row, its fold must still count conversations only.
+    for (const state of [firstRunFixture, quietFixture, busyFixture, powerFixture]) {
+      const folded: SidebarState = {
+        ...state,
+        prefs: prefs({
+          ...state.prefs,
+          sections: Object.fromEntries(SIDEBAR_SECTION_IDS.map((id) => [id, { collapsed: true }])),
+          groups: state.prefs.groups.map((group) => ({ ...group, collapsed: true })),
+        }),
+      };
+      for (const entry of sections(folded)) {
+        if (entry.rollup === undefined) continue;
+        const conversations = entry.rows.filter((row) => row.target.kind !== 'command');
+        const keptConversations = entry.rollup.keptRows.filter(
+          (row) => row.target.kind !== 'command'
+        );
+        expect(entry.rollup.hiddenCount, entry.id).toBe(
+          conversations.length - keptConversations.length
+        );
+      }
+    }
   });
 
   it('counts zero when every row stays on screen', () => {
