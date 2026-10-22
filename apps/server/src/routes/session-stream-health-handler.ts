@@ -9,12 +9,12 @@
  * that moment, so "the reply only showed after I refreshed" leaves a trail.
  *
  * It lives here rather than in `routes/sessions.ts` to keep that file under the
- * size rule, and mounts the app's other per-window signal, `POST /:id/opened`,
- * beside it for the same reason.
+ * size rule; `session-touch-handler.ts` mounts it beside the app's other
+ * per-window signal, `POST /:id/opened`.
  *
  * @module routes/session-stream-health-handler
  */
-import type { Context, Hono } from 'hono';
+import type { Context } from 'hono';
 import { StreamHealthReportSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -22,7 +22,6 @@ import { logger } from '../lib/logger.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { openSessionStreamCount } from '../services/core/streams/session-stream-watch.js';
 import { peekProjector } from '../services/session/index.js';
-import { sessionOpenedHandler } from './session-touch-handler.js';
 
 /**
  * Log a window's report that its stream missed a turn. Always `204` for a
@@ -49,16 +48,4 @@ export function sessionStreamHealthHandler(c: Context<ApiEnv>): Response {
     openWindows: openSessionStreamCount(sessionId),
   });
   return c.body(null, 204);
-}
-
-/**
- * Mount the two signals an app window sends about a chat it shows:
- * `POST /:id/opened` (spec `your-activity-first` D3, handled in
- * `session-touch-handler.ts`) and `POST /:id/stream-health` (above).
- *
- * @param router - The `/api/sessions` route group.
- */
-export function mountWindowSignalRoutes(router: Hono<ApiEnv>): void {
-  router.post('/:id/opened', sessionOpenedHandler);
-  router.post('/:id/stream-health', sessionStreamHealthHandler);
 }

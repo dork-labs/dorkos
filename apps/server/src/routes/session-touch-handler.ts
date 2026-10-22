@@ -6,11 +6,12 @@
  * All three routes that touch `session_touches` go through here, so they ask
  * one question — {@link isPersonAtTheApp} — and save under the same id. They
  * live here rather than in `routes/sessions.ts` to keep that file under the
- * size rule, mirroring `session-queue-handler.ts`.
+ * size rule, mirroring `session-queue-handler.ts`. `POST /:id/stream-health`
+ * mounts beside `/opened` for the same reason.
  *
  * @module routes/session-touch-handler
  */
-import type { Context } from 'hono';
+import type { Context, Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isPersonAtTheApp } from '../lib/caller-authority.js';
@@ -19,6 +20,7 @@ import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getSessionTouchStore, laterIso } from '../services/session/origin/session-touch-store.js';
 import type { ResolveTouches } from '../services/session/origin/touched-by-you-overlay.js';
+import { sessionStreamHealthHandler } from './session-stream-health-handler.js';
 
 /**
  * `POST /api/sessions/:id/opened` — the chat page is showing this chat (D3).
@@ -89,4 +91,16 @@ export function touchedSinceKeeper(
     }
     return kept;
   };
+}
+
+/**
+ * Mount the two signals an app window sends about a chat it shows:
+ * `POST /:id/opened` (above) and `POST /:id/stream-health` (handled in
+ * `session-stream-health-handler.ts`).
+ *
+ * @param router - The `/api/sessions` route group.
+ */
+export function mountWindowSignalRoutes(router: Hono<ApiEnv>): void {
+  router.post('/:id/opened', sessionOpenedHandler);
+  router.post('/:id/stream-health', sessionStreamHealthHandler);
 }

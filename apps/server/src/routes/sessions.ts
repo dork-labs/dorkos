@@ -87,8 +87,7 @@ import {
   rejectUndeclaredPermissionMode,
   rejectUnknownModel,
 } from './session-model-gate.js';
-import { touchedSinceKeeper } from './session-touch-handler.js';
-import { mountWindowSignalRoutes } from './session-stream-health-handler.js';
+import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { createSessionCanvasRoutes } from './session-canvas.js';
@@ -908,7 +907,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
   // `your-activity-first` D3) — and POST /api/sessions/:id/stream-health — a
   // window that missed a turn says so, for the server log. Both mounted by
-  // `session-stream-health-handler.ts`.
+  // `session-touch-handler.ts`.
   mountWindowSignalRoutes(router);
 
   // GET /api/sessions/:id/chat-messages - What this chat sent other chats, and
