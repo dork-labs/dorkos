@@ -1,25 +1,25 @@
 {
  "schema": 1,
- "date": "2026-10-20",
- "collected_at": "2026-10-21T09:59:15.058Z",
- "snapshot": "snapshots/2026-10-20.json",
+ "date": "2026-10-21",
+ "collected_at": "2026-10-22T09:59:17.303Z",
+ "snapshot": "snapshots/2026-10-21.json",
  "report_ref": "reports/2026-W42.md",
  "healthy": true,
  "failures": [],
  "warnings": [
   "Thin sample: review-recovery (n=1 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 362,
+ "api_calls": 205,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 31507,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 30324,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 1.038
+    "p95_over_timeout": 1.039
    },
    "status": "breach",
    "excess_hours": null,
@@ -28,12 +28,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 486,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 446,
    "min_n": 30,
    "stats": {
-    "share": 0.6831
+    "share": 0.6883
    },
    "status": "breach",
    "excess_hours": null
@@ -41,42 +41,42 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 486,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 446,
    "min_n": 30,
    "stats": {
-    "share": 0.1111
+    "share": 0.1009
    },
    "status": "ok",
-   "excess_hours": 118.8
+   "excess_hours": 102.38
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 5033161,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 5085635,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 137,
-    "unreported_failed_jobs": 20
+    "failed_jobs": 119,
+    "unreported_failed_jobs": 17
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 20 of 137 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 12, wf.harness-windows.harness-windows 4, wf.credential-free-build.credential-free-build 3, wf.test.community-packaged 1); share 0 is over the reported suites only"
+   "note": "coverage unknown: 17 of 119 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 9, wf.harness-windows.harness-windows 4, wf.credential-free-build.credential-free-build 3, wf.test.community-packaged 1); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-09-23",
-   "to": "2026-10-20",
-   "n": 1017,
+   "from": "2026-09-24",
+   "to": "2026-10-21",
+   "n": 983,
    "min_n": 1,
    "stats": {
-    "red_episodes": 37,
-    "restore_p90": 147.9
+    "red_episodes": 36,
+    "restore_p90": 148.8
    },
    "status": "breach",
    "excess_hours": null
@@ -84,21 +84,21 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 272,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 263,
    "min_n": 30,
    "stats": {
-    "share": 0.9669
+    "share": 0.9163
    },
-   "status": "ok",
+   "status": "breach",
    "excess_hours": null
   },
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
+   "from": "2026-10-15",
+   "to": "2026-10-21",
    "n": 1,
    "min_n": 5,
    "stats": {
@@ -110,68 +110,68 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 326,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 317,
    "min_n": 30,
    "stats": {
     "p50": 22.5,
-    "p90": 42
+    "p90": 42.2
    },
    "status": "breach",
-   "excess_hours": 73.42
+   "excess_hours": 71.81
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 178,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 174,
    "min_n": 20,
    "stats": {
-    "p50": 29.9,
-    "p90": 69
+    "p50": 30,
+    "p90": 68.3
    },
    "status": "breach",
-   "excess_hours": 68.01
+   "excess_hours": 67.42
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 252,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 243,
    "min_n": 30,
    "stats": {
-    "p50": 109.7,
-    "p90": 867.6
+    "p50": 111.2,
+    "p90": 820
    },
    "status": "breach",
-   "excess_hours": 1845.97
+   "excess_hours": 1845.79
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 1594,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 1462,
    "min_n": 20,
    "stats": {
-    "p90": 163,
-    "killed_share": 0.005
+    "p90": 166,
+    "killed_share": 0.0055
    },
    "status": "ok",
-   "excess_hours": 26.5
+   "excess_hours": 24.9
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-10-14",
-   "to": "2026-10-20",
-   "n": 1176,
+   "from": "2026-10-15",
+   "to": "2026-10-21",
+   "n": 1072,
    "min_n": 20,
    "stats": {
-    "p90": 5,
+    "p90": 4,
     "killed_share": 0
    },
    "status": "met",
@@ -181,20 +181,20 @@
  "constraint": {
   "tier": "tripwire",
   "id": "headroom",
-  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 1.038 (worst gate wf.browser-test.browser-shard) breaches its floor."
+  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 1.039 (worst gate wf.browser-test.browser-shard) breaches its floor."
  },
  "local_breaches": [],
  "machine": {
-  "n": 35625,
+  "n": 32661,
   "clones": 2,
-  "load_per_core_p90": 3.24,
-  "mem_available_mb_p10": 590,
-  "swap_used_mb_p50": 6519
+  "load_per_core_p90": 3.35,
+  "mem_available_mb_p10": 576,
+  "swap_used_mb_p50": 6533
  },
  "safeguards_ok": true,
  "triggers": {
   "red": 7,
-  "amber": 36,
-  "top": "wf.browser-test.browser-shard p95 uses 103.8% of its time limit (n=2952)."
+  "amber": 37,
+  "top": "wf.browser-test.browser-shard p95 uses 103.9% of its time limit (n=2706)."
  }
 }
