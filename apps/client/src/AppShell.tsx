@@ -17,6 +17,7 @@ import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import { GlobalHeaderActions } from './app/GlobalHeaderActions';
 import { FIRST_RUN_SLOTS } from './app/first-run-slots';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
 import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';
@@ -70,7 +71,6 @@ import {
   OnboardingFlow,
 } from '@/layers/features/onboarding';
 import {
-  BarFixedCluster,
   OneBarProvider,
   resolveRouteHeader,
   type OneBarRouteState,
@@ -87,9 +87,7 @@ import {
   SidebarRail,
 } from '@/layers/shared/ui';
 import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
-import { ControlCenter, useControlCenterShortcut } from '@/layers/widgets/control-center';
-import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
-import { KeepAwakeBeacon } from '@/layers/widgets/keep-awake';
+import { useControlCenterShortcut } from '@/layers/widgets/control-center';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -826,33 +824,7 @@ export function AppShell() {
                             identity a full row and gives every persistent action
                             a 44px target without compressing tabs into initials.
                             At `md`, `contents` restores the desktop's one row. */}
-                      <div
-                        data-slot="global-header-actions"
-                        className="flex h-11 w-full items-center justify-end gap-1 md:contents"
-                      >
-                        {/* The Control Center glyph, in the persistent cluster so
-                            it is present on every route and on both desktop and
-                            mobile — the honest "always visible" anchor (spec
-                            D7). Outside the cross-fade like the cluster, so it
-                            never blinks on navigation. */}
-                        <ControlCenter />
-                        {/* The remote-access beacon, beside it and on the same
-                            terms — present on every route, outside the
-                            cross-fade — but only while a tunnel is actually
-                            starting, up, or re-establishing itself. With remote
-                            access off it draws nothing at all (DOR-1743). */}
-                        <RemoteAccessBeacon />
-                        {/* The keep-awake cup, on the same terms: machine-wide,
-                            outside the cross-fade, and drawn only while DorkOS
-                            is keeping this computer awake for work. */}
-                        <KeepAwakeBeacon />
-                        {/* ── Search · inbox · right-panel toggle. Outside the
-                            cross-fade and after it, which is both halves of
-                            I1: they stay mounted so the corner never blinks on
-                            navigation, and the route's bar — confined to the
-                            sibling above — cannot render anything past them. ── */}
-                        <BarFixedCluster />
-                      </div>
+                      <GlobalHeaderActions />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the
