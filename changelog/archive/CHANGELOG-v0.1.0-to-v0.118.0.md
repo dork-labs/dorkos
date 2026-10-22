@@ -1,7 +1,44 @@
-# Changelog archive: v0.1.0 – v0.117.0
+# Changelog archive: v0.1.0 – v0.118.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.118.0] - 2026-10-16
+
+> DorkOS 0.118.0 lets you drag files onto the message box in the desktop app again, lets you share a live browser page with your agent, shows whether each agent in a space is there, and makes space pages harder to attack.
+
+### Added
+
+- Share a live page with your agent inside DorkOS or in a new browser window. Pause the agent while you use the page. Separate browser choices keep their own saved sign-ins (DOR-2929).
+- Spaces (experimental): a space's channel members list can now show whether each agent is there, as "Available" or "Offline since" a time. The DorkOS app that runs the agent tells the space. An agent shows no status, never "Offline", until its app reports it (DOR-2877)
+- Show recorded save confirmation and safe retry for session file edits, and wait for the current save before removing the document.
+- Spaces (experimental): while your computer is on, DorkOS tells each space your agents belong to that they are there. A space's member list in the app then shows each agent as "Available" or "Offline since" a time. Removing an agent from a space, or disconnecting the space, stops it. A space that does not track this yet gets nothing new, and shows no status (DOR-2878)
+- Review a document’s previous saves and recover missing confirmations without resending edits.
+- `@dork-labs/cloud-api` describes how your own DorkOS in the cloud learns who it belongs to: by your account id, never your email, and it belongs to nobody until it is yours (DOR-2933)
+- `@dork-labs/cloud-api` describes how your DorkOS in the cloud asks DorkOS Cloud to start, stop or delete your cloud agent computers, so it never holds the keys to them itself (DOR-2933)
+- `@dork-labs/cloud-api` describes how your account remembers your computers, your agents, your quiet hours and the spaces you belong to. It keeps where each one is, never a way to sign in to it (DOR-2933)
+- `@dork-labs/cloud-api` describes a new command that asks one of your computers to connect to your DorkOS in the cloud. Computers on this release read it and do nothing with it yet. The same goes for a second new command, which tells your DorkOS in the cloud to check who it belongs to (DOR-2933)
+
+### Changed
+
+- When an app can't be connected because its sign-in setup in DorkOS has a problem, the connect dialog now says so and drops the retry button. Before, it said the app "isn't available right now" and asked you to try again in a few minutes, which never helped.
+- The "What should I call you?" card and the "What kind of work do you do?" card in the sidebar now show the DorkOS logo larger, on its own line at the top. The question and its explanation sit under it at full width, so they no longer squeeze into a narrow column.
+- If you run your own space server or move a space between servers: exports from this release use a new format, version 3, that lists each agent as a member beside the people, and says which member wrote every message. This release still imports exports from older releases. An older release cannot import an export from this one; it says the export's version is not supported (DOR-2876)
+- Space pages are harder to attack. A page now runs only the space server's own code, never code written into the page or loaded from another site. No other site can show a space page inside its own. A file opened straight from a space can't run anything (DOR-2957)
+
+### Removed
+
+- Replace the former hidden-browser setup with the two live-page choices. Existing custom browser tools and saved sign-ins stay available (DOR-2929).
+
+### Fixed
+
+- In the desktop app, dragging files onto the message box now attaches them, the same as the paperclip does. Before, the app quietly refused to read a dropped file, so nothing happened. (DOR-2870)
+- When one agent messages another, the chat it opens now starts at the level you set in Files & commands, still never above the sender's. Before, it always started at Ask, so two agents set to Full autonomy kept sending you approval cards while they talked.
+- Reopened file views stay responsive while older read-only checks finish.
+
+### Note for people upgrading
+
+- If you run your own space server, take a backup before you upgrade. This release makes a one-way change to the space's database when it starts. Nothing changes for the people and agents using the space. Earlier releases do not check for this change and will start on the upgraded database anyway, so never start one on it: going back means restoring the backup (DOR-2876)
 
 ## [0.117.0] - 2026-10-15
 
@@ -7238,6 +7275,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.118.0]: https://github.com/dork-labs/dorkos/compare/v0.117.0...v0.118.0
 [0.117.0]: https://github.com/dork-labs/dorkos/compare/v0.116.0...v0.117.0
 [0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
