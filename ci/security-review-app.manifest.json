@@ -1,0 +1,8 @@
+{
+  "name": "DorkOS Security Review",
+  "url": "https://github.com/dork-labs/dorkos",
+  "public": false,
+  "hook_attributes": { "active": false, "url": "https://example.invalid/unused" },
+  "default_permissions": { "statuses": "write", "metadata": "read" },
+  "default_events": []
+}

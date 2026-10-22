@@ -93,3 +93,125 @@ PR SHA used to build a squash queue entry. `pullRequest.headRefOid` is live.
 **Binding sensitive approvals to the original queued source SHA remains unproven;
 promotion stays blocked until that binding and the multi-entry chain have live
 evidence.** This fallback does not claim to establish that separate binding.
+
+## Dedicated approval helper (not provisioned)
+
+`SECURITY_APPROVAL_BOT_USER_ID: '0'` is a fail-closed placeholder. After Dorian
+creates the App, pin its numeric bot user ID in the main workflow, and the same
+ID plus App ID in `tools/security-approve/Main.swift`, through a reviewed PR.
+The latest sensitive-head status must have that exact `creator.id`; a similar
+slug or a later user success grants nothing. Complete nonsensitive diffs retain
+the trusted initializer's automatic classification.
+
+Dorian creates **DorkOS Security Review** from
+[`security-review-app.manifest.json`](security-review-app.manifest.json) via
+[GitHub's manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest),
+installs it on **dorkos only**, with statuses write and metadata read. Deliveries
+are disabled and there are no events. The reserved `.invalid` webhook URL is an
+inert required manifest field, not a service to deploy. This lane creates no App.
+
+The approval program is compiled Swift, never Node or shell. It accepts only
+`<pr> <40-hex-sha>`, verifies the public PR head, requests owner authentication
+showing that exact PR/SHA, reads its one Keychain item, signs an RS256 App JWT,
+verifies App/install identity, mints a repository-scoped installation token,
+rechecks the head and writes the status. It prints only the SHA on success. A
+post-write head race reports failure. No key file, key environment variable,
+external signer, arbitrary repository or API URL is accepted. Redirects refuse.
+The key is never printed or written as plaintext. The helper cannot broaden a
+Keychain ACL: a refused read stays refused without an access prompt.
+
+### Dorian's signing and exact-hash provisioning
+
+Run these only from reviewed source, after replacing the numeric placeholders.
+Dorian supplies his signing identity; agents must never use that identity. Both
+executables are signed with hardened runtime and no debugging/library-injection
+entitlements. The provisioner is a separate program, not an extra approval mode.
+Choose trusted absolute output paths that agents cannot replace during use:
+
+```sh
+tools/security-approve/build.sh /absolute/trusted/security-approve
+tools/security-approve/build-provisioner.sh /absolute/trusted/security-approve-provision
+codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --identifier ai.dorkos.security-approve /absolute/trusted/security-approve
+codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --identifier ai.dorkos.security-approve-provision /absolute/trusted/security-approve-provision
+codesign --verify --strict /absolute/trusted/security-approve
+helper_cdhash=$(codesign -dv --verbose=4 /absolute/trusted/security-approve 2>&1 | sed -n 's/^CDHash=//p')
+printf '%s\n' "$helper_cdhash"
+/absolute/trusted/security-approve-provision "$HOME/Library/Keychains/login.keychain-db" /absolute/trusted/security-approve "$helper_cdhash"
+```
+
+The provisioner validates the helper against `cdhash H"<printed-hash>"`, asks
+for owner authentication naming that hash, then reads the PEM from a terminal
+with echo disabled. Paste it from the App creation flow; finish on an empty line
+with Ctrl-D. Do not download it to a file, put it in an environment variable,
+pass it as an argument, or paste it into chat/logs. Import and conversion happen
+in memory. The new generic-password item is `ai.dorkos.security-review` /
+`github-app-private-key`; existing items are never overwritten. Its trusted
+application requirement is the exact cdhash, not the certificate, team or bundle
+identifier. The separate Keychain partition gate may identify the common signing
+team; it is an additional restriction and never replaces the exact-hash decrypt
+ACL. Signing the provisioner and helper with the same identity lets that
+additional partition gate admit the intended helper. No partition broadening
+command is part of production setup.
+
+Every rebuild or re-sign changes the hash. Print it again, review the new binary,
+then explicitly reapprove it without exporting/reentering the key:
+
+```sh
+helper_cdhash=$(codesign -dv --verbose=4 /absolute/trusted/security-approve 2>&1 | sed -n 's/^CDHash=//p')
+printf '%s\n' "$helper_cdhash"
+/absolute/trusted/security-approve-provision --repin "$HOME/Library/Keychains/login.keychain-db" /absolute/trusted/security-approve "$helper_cdhash"
+```
+
+Repinning requires owner authentication plus whatever Keychain authorization is
+needed to change its ACL. Failure leaves the existing item untouched. This tool
+never reads the existing secret to repin it. Do not click Always Allow for another
+binary. Pin the new hash only after reviewing that build.
+
+### Platform dependency and proof
+
+Exact trusted-application requirements require Apple's exported
+`SecTrustedApplicationCreateFromRequirement` SPI, isolated in `ExactAccess.c`.
+It is absent from the public headers, and the legacy file-based Keychain ACL APIs
+are deprecated. The provisioner dynamically resolves that function and fails
+closed if absent; it never falls back to a designated requirement. This is a
+material compatibility dependency requiring Security review, not a claim of
+support on every future macOS version. The approval reader itself uses Security
+framework APIs and does not need this SPI. Source:
+[Apple's requirement constructor](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/SecTrustedApplicationPriv.h).
+
+Run `tools/security-approve/tests/test-policy.sh` locally for canned-output unit tests only.
+Real helper/ACL tests (`tests/run.sh` and `tests/test-keychain.sh`) are CI macOS
+runner only and refuse other environments. Never run `security`, `codesign`, the
+helper or a Keychain probe from an agent session on the operator Mac—even with
+a disposable Keychain. Dorian alone performs attended production provisioning.
+The CI suite runs mock-signer tests,
+builds both production executables, proves zero identity placeholders refuse,
+and runs two disposable Keychain cases. The ad-hoc case gives both readers the
+same identifier and deliberately shared designated requirement, but different
+hashes. The certificate case creates a one-day self-signed signing-test identity
+inside the temporary Keychain and signs both readers with that same certificate.
+It uses a test-only native signing API with the explicitly selected disposable
+identity, because the codesign CLI filters out untrusted certificates. No trust
+settings are changed and no real identity is used. The generated signing-test
+key/P12 exist only in the private temporary directory and are deleted; they are
+not App keys. App keys never go to disk or an environment variable.
+
+In both cases, both reader hashes are admitted by the separate partition gate,
+so the exact-hash decrypt ACL is the deciding restriction. The approved binary
+reads, the different binary is refused, the stripped copy cannot read (macOS
+kills it before the read on arm64), and a final positive control reads. The test
+removes its Keychain and files. It never reads login items. The certificate case
+proves that a shared signing certificate does not confer the read grant. Real
+Developer ID provisioning remains Dorian's attended proof.
+
+No real App/key/approval has been exercised. Hosted required-workflow
+`merge_group`, multi-entry queue-chain and signed production provisioning proofs
+remain pending. Keep this PR on hold with auto-merge off.
+
+The provisioner checks displayed signature flags for hardened runtime and refuses
+any get-task-allow, allow-dyld-environment-variables, disable-library-validation
+or allow-unsigned-executable-memory entitlement, even with a false value. It
+binds that display to the requested exact cdhash; the existing strict signature
+validation then checks the same hash before ACL creation or repinning. Pure unit
+tests feed canned display output and never inspect/sign a binary or touch a Keychain.
+Pin the real App/bot IDs before promotion; zero placeholders intentionally refuse.
