@@ -196,6 +196,32 @@ export async function checkedAddress(
   };
 }
 
+/**
+ * The socket lookup that hands over the address {@link checkedAddress} already checked.
+ *
+ * **It answers on a later turn of the event loop, never at once** (DOR-3230). Node opens the
+ * socket inside this callback, and a connect that fails at once — `EHOSTUNREACH` or
+ * `ENETUNREACH` when the computer briefly has no route, as on Wi-Fi that drops IPv6 — is emitted
+ * as an error before the HTTP request has attached its own `error` handler. Answered at once, that
+ * error reached `uncaughtException` and shut the whole server down. A real DNS lookup is always
+ * asynchronous, and Node's socket code is written for that, so this one is too: the request's
+ * handler is attached first, and the failure becomes `REMOTE_UNAVAILABLE` like any other.
+ *
+ * `setImmediate` rather than `process.nextTick`: the request attaches its handler on a tick of its
+ * own, and an answer after every pending tick does not depend on which was queued first. Only the
+ * callback moves. The address is the one already checked, and nothing here loosens the pin.
+ *
+ * @param address - The checked address to connect to.
+ */
+export function pinnedLookup(address: { address: string; family: 4 | 6 }): LookupFunction {
+  return (_hostname, options, callback) => {
+    setImmediate(() => {
+      if (options.all) callback(null, [address]);
+      else callback(null, address.address, address.family);
+    });
+  };
+}
+
 /** How long looking up a space's address may take, before any request is opened. */
 export const ADDRESS_LOOKUP_TIMEOUT_MS = 5_000;
 
@@ -263,10 +289,7 @@ export async function pinnedJson(
   if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
     throw new PinnedOriginError('INVALID_ORIGIN');
   const address = await checkedAddress(origin);
-  const lookup: LookupFunction = (_hostname, options, callback) => {
-    if (options.all) callback(null, [address]);
-    else callback(null, address.address, address.family);
-  };
+  const lookup = pinnedLookup(address);
   const agent =
     origin.protocol === 'https:'
       ? new HttpsAgent({ keepAlive: false, lookup })
@@ -369,10 +392,7 @@ export async function* pinnedSse(
   if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
     throw new PinnedOriginError('INVALID_ORIGIN');
   const address = await checkedAddress(origin);
-  const lookup: LookupFunction = (_hostname, options, callback) => {
-    if (options.all) callback(null, [address]);
-    else callback(null, address.address, address.family);
-  };
+  const lookup = pinnedLookup(address);
   const agent =
     origin.protocol === 'https:'
       ? new HttpsAgent({ keepAlive: false, lookup })
