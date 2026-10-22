@@ -221,11 +221,46 @@ describe("a stranger's words, one agent hop later", () => {
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     expect(marksOf(ana, '/agents/ana')).toEqual({ outsider: true });
     const bound = markedBoundOf(ana, '/agents/ana');
-    expect(bound).toMatchObject({ outsider: true });
+    expect(bound).toEqual([expect.objectContaining({ outsider: true }), 'runtime-default']);
     const child = fresh('child');
     await run(runtime, child, { permissionCeiling: bound! });
     expect(runsAt(sent.get(child))).toBe('default');
     expect(lastTurnLevelOf(child)?.outsider).toBe(true);
+  });
+
+  // DOR-3204 (Security M1): the spin-off of a turn a stranger reached is held like the turn itself,
+  // so its folder's allow rules become cards there too. Without the stranger bound beside the
+  // level, the held-turn hook read the child as merely bounded and stayed silent.
+  it('holds a spin-off a stranger-reached turn starts, so its folder’s allow rules ask', async () => {
+    const { ceilingOn } = await import('../../../runtimes/claude-code/turn-permission.js');
+    const { createHeldTurnHook } =
+      await import('../../../runtimes/claude-code/tool-gate/held-turn-hook.js');
+    const { runtime } = seam({ child: 'bypassPermissions' });
+    const ana = fresh('ana');
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
+    const bound = markedBoundOf(ana, '/agents/ana')!;
+    const session = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling: bound };
+    expect(ceilingOn(session)).toBe('stranger');
+    const hook = createHeldTurnHook(
+      session,
+      async () => ({}),
+      { debug() {}, info() {} },
+      { cwd: '/agents/bo', roots: ['/agents/bo'] }
+    );
+    const out = await hook(
+      {
+        hook_event_name: 'PreToolUse',
+        session_id: 's',
+        transcript_path: '/t',
+        cwd: '/agents/bo',
+        tool_name: 'Bash',
+        tool_input: { command: 'python3 -c 1' },
+        tool_use_id: 't',
+      } as never,
+      't',
+      { signal: new AbortController().signal }
+    );
+    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: 'ask' } });
   });
 
   it('a post two of the author’s turns vouch for keeps the mark if either read an outsider', async () => {
@@ -523,6 +558,9 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     noteTurnOrigin(lifeos, { kind: 'interactive' });
     await run(runtime, lifeos);
     expect(postLevelFor([lifeos])?.outsider).toBe(true);
-    expect(markedBoundOf(lifeos, '/agents/lifeos')).toMatchObject({ outsider: true });
+    expect(markedBoundOf(lifeos, '/agents/lifeos')).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
   });
 });

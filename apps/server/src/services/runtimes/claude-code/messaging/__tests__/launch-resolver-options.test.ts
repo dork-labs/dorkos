@@ -149,7 +149,8 @@ describe('the launch options every Claude Code turn is given', () => {
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    expect(unmatched).toHaveLength(1);
+    // The teammate fence, then the held turn's ask (DOR-3204).
+    expect(unmatched).toHaveLength(2);
     const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,
@@ -166,6 +167,30 @@ describe('the launch options every Claude Code turn is given', () => {
     session.teammateTier = { roomId: 'room-answered' };
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
+  it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
+    // DOR-3204. Unregistered, a held turn runs whatever the folder's allow rules allow, unasked.
+    const session = makeSession();
+    const options = await captureSdkOptions(undefined, session);
+    const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    const hook = unmatched[1]!.hooks[0]!;
+    const call = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'Bash',
+      tool_input: { command: 'python3 -c 1' },
+      tool_use_id: 'tool-1',
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(call, 'tool-1', signal)).toEqual({});
+    session.turnPermissionCeiling = 'runtime-default';
+    expect(await hook(call, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
     });
   });
 

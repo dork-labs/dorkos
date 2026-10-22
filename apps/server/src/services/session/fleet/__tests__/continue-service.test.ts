@@ -63,7 +63,8 @@ import {
   writePlan,
 } from '../limit-plans.js';
 import { fireAutoHandoff } from '../auto-handoff.js';
-import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
+import { passedOnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
+import { chatHeardOutsider } from '../../origin/outsider-turns.js';
 import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 import {
   ContinueError,
@@ -1227,6 +1228,34 @@ describe('core’s automatic handoff', () => {
     expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
       'runtime-default'
     );
+  });
+
+  it('carries a stranger-reached chat’s marks to the chat that replaces it, held plainly (DOR-3204)', async () => {
+    adviseAuto();
+    const seam = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage() {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of seam.sendMessage('src-1', 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    await limitedSession('src-1');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    // Not a continuation's hold: the new chat reads the old one's words in its seed.
+    expect(call).not.toHaveProperty('continuationHold');
+    expect(call.permissionCeiling).toBe('runtime-default');
+    expect(chatHeardOutsider(call.sessionId!)).toBe(true);
+    expect(passedOnLevelOf(call.sessionId!)?.outsider).toBe(true);
   });
 
   it('seeds an automatic move with the default summary when the advisor’s seed is too big', async () => {

@@ -93,7 +93,7 @@ import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import {
   DORKOS_AGENT_TOOLS,
   IDENTITY_SCOPED_TOOLS,
-} from '../../runtimes/claude-code/messaging/interactive-handlers.js';
+} from '../../runtimes/claude-code/tool-gate/auto-allow.js';
 import { IN_SESSION_TOOL_PREFIX } from '../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import {
   composeCapabilityRegistryForDocs,

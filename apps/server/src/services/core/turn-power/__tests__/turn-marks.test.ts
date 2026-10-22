@@ -177,7 +177,10 @@ describe('the readers', () => {
     expect(marksOf(plain, undefined)).toEqual({});
     expect(markedBoundOf(plain, undefined)).toBeUndefined();
     expect(marksOf(marked, undefined)).toEqual({ outsider: true });
-    expect(markedBoundOf(marked, undefined)).toMatchObject({ outsider: true });
+    expect(markedBoundOf(marked, undefined)).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
     expect(marksOf(undefined, '/agents/nobody-running')).toEqual({});
   });
 
