@@ -448,7 +448,13 @@ describe('BC-31 — a folded section keeps its signal', () => {
   });
 
   it('keeps nothing and counts nothing for a quiet section', () => {
-    expect(rollUpCollapsedSection([], () => false)).toEqual({
+    expect(
+      rollUpCollapsedSection(
+        [],
+        () => false,
+        () => false
+      )
+    ).toEqual({
       keptRows: [],
       workingCount: 0,
       hiddenCount: 0,
@@ -526,13 +532,95 @@ describe('DOR-3200 — a folded section says how many rows it hides', () => {
   it('counts zero when every row stays on screen', () => {
     const kept = section(foldedDms, 'dms')?.rollup?.keptRows ?? [];
     expect(kept.length).toBeGreaterThan(0);
-    expect(rollUpCollapsedSection(kept, () => false).hiddenCount).toBe(0);
+    expect(
+      rollUpCollapsedSection(
+        kept,
+        () => false,
+        () => false
+      ).hiddenCount
+    ).toBe(0);
   });
 
   it('counts nothing while the section is open', () => {
     const dms = section(busyFixture, 'dms');
     expect(dms?.collapsed).toBe(false);
     expect(dms?.rollup).toBeUndefined();
+  });
+});
+
+describe('DOR-3224 — a folded section keeps an agent waiting on you', () => {
+  const OPS = manualGroup('ops', 'Ops', [
+    { kind: 'agent', path: TANGERINE },
+    { kind: 'agent', path: CARDAMOM },
+    { kind: 'agent', path: SAFFRON },
+  ]);
+
+  /** Three read, idle agents in a folded hand-made section. */
+  function foldedOps(overrides: Partial<SidebarState> = {}): SidebarState {
+    return emptyState({
+      agents: [agent(TANGERINE), agent(CARDAMOM), agent(SAFFRON)],
+      prefs: prefs({ groups: [{ ...OPS, collapsed: true }] }),
+      ...overrides,
+    });
+  }
+
+  /** Cardamom has a session waiting on an approval, and nothing unread. */
+  const cardamomBlocked: Partial<SidebarState> = {
+    blockedSessionIds: ['ses-approval'],
+    liveSessionCwds: { 'ses-approval': CARDAMOM },
+  };
+
+  it('keeps a needs-you row with 0 unread, and leaves it out of the count', () => {
+    const ops = section(foldedOps(cardamomBlocked), 'group:ops');
+    expect(ops?.rollup?.keptRows.map((row) => row.key)).toEqual([`agent:${CARDAMOM}`]);
+    expect(ops?.rollup?.keptRows[0]?.unread).toEqual({ tier: 'none' });
+    expect(ops?.rollup?.hiddenCount).toBe(2);
+  });
+
+  it('draws the kept row as the open section does, in the same order', () => {
+    const state = foldedOps(cardamomBlocked);
+    const open: SidebarState = { ...state, prefs: prefs({ groups: [OPS] }) };
+    const openRows = section(open, 'group:ops')?.rows ?? [];
+    const kept = section(state, 'group:ops')?.rollup?.keptRows[0];
+    expect(kept).toEqual({
+      ...openRows.find((row) => row.key === `agent:${CARDAMOM}`),
+      draggable: false,
+    });
+    expect(section(state, 'group:ops')?.rows.map((row) => row.key)).toEqual(
+      openRows.map((row) => row.key)
+    );
+  });
+
+  it('still hides and counts a read, idle row', () => {
+    const ops = section(foldedOps(), 'group:ops');
+    expect(ops?.rollup?.keptRows).toEqual([]);
+    expect(ops?.rollup?.hiddenCount).toBe(3);
+  });
+
+  it('keeps a needs-you row in a folded Direct messages', () => {
+    const state = emptyState({
+      agents: [agent(TANGERINE), agent(CARDAMOM)],
+      rooms: [
+        agentDm('dm-tangerine', TANGERINE, 'tangerine'),
+        agentDm('dm-cardamom', CARDAMOM, 'cardamom'),
+      ],
+      prefs: prefs({ sections: { dms: { collapsed: true } } }),
+      ...cardamomBlocked,
+    });
+    const dms = section(state, 'dms');
+    expect(dms?.rollup?.keptRows.map((row) => row.key)).toEqual([`agent:${CARDAMOM}`]);
+    expect(dms?.rollup?.hiddenCount).toBe(1);
+  });
+
+  it('keeps no muted row for it, because a muted row draws no needs-you dot', () => {
+    const state = foldedOps({
+      ...cardamomBlocked,
+      prefs: prefs({
+        groups: [{ ...OPS, collapsed: true }],
+        muted: [{ kind: 'agent', path: CARDAMOM }],
+      }),
+    });
+    expect(section(state, 'group:ops')?.rollup?.keptRows).toEqual([]);
   });
 });
 
