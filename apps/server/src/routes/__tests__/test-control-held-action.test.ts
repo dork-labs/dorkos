@@ -138,6 +138,15 @@ describe('POST /api/test/held-action/start', () => {
     expect(events).toEqual([]);
   });
 
+  it('takes a window of exactly six hours, the longest', async () => {
+    const res = await request(fixtureServer)
+      .post('/api/test/held-action/start')
+      .send({ ...BODY, holdMs: 6 * 60 * 60 * 1000 });
+    expect(res.status).toBe(201);
+    expect(events[0]?.metadata).toMatchObject({ holdMs: 6 * 60 * 60 * 1000 });
+    holds.cancel(res.body.holdId, { kind: 'person' });
+  });
+
   it('refuses a window longer than six hours', async () => {
     const res = await request(fixtureServer)
       .post('/api/test/held-action/start')

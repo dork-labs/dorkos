@@ -64,6 +64,28 @@ async function getJson<T>(pathname: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** PATCH JSON, throwing on a non-2xx response. */
+async function patchJson(pathname: string, body: unknown): Promise<void> {
+  const res = await fetch(`${API_URL}${pathname}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${pathname} → ${res.status}: ${await res.text()}`);
+}
+
+/**
+ * Pause the capture's scheduled tasks, the switch a person flips on each.
+ * Left on, they run on the clock (the hourly one at :15), and each run's
+ * "finished" row lands above the held action that must top the Inbox. No
+ * demo flow films a schedule.
+ */
+async function pauseSchedules(): Promise<void> {
+  for (const task of await getJson<{ id: string }[]>('/api/tasks')) {
+    await patchJson(`/api/tasks/${task.id}`, { enabled: false });
+  }
+}
+
 /** A date as `yyyy-mm-dd` in Central time, the queue's day (`queue/README.md`). */
 function centralDay(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(date);
@@ -327,11 +349,26 @@ async function buildMiniApp(): Promise<void> {
   throw new Error(`DorkOS never found the ${MINI_APP.id} mini app`);
 }
 
+/** Wait until a chat's turn has its "finished" row in the Inbox. */
+async function waitForTurnRow(sessionId: string): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const { notifications } = await getJson<{
+      notifications: { kind: string; sessionId?: string }[];
+    }>('/api/notifications');
+    if (notifications.some((n) => n.kind === 'turn.completed' && n.sessionId === sessionId)) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`the ${sessionId} turn never reported finishing`);
+}
+
 /**
  * One held action waiting in the Inbox with Cancel: a real hold on the
  * server's hold service, started through its test-mode seam
  * (`routes/test-control-held-action.ts`), with no connected app behind it.
- * Its window is an hour, so the row stays for the whole recording. The app
+ * Its window is six hours, so the row stays for the whole recording. The app
  * shows Cancel for 60 seconds after the Inbox draws the row; reload to see it
  * again.
  *
@@ -339,11 +376,15 @@ async function buildMiniApp(): Promise<void> {
  */
 async function holdAnAction(): Promise<string> {
   const sessionId = await startSession(HELD_ACTION.agent, HELD_ACTION.scenario, HELD_ACTION.prompt);
+  // Its chat's own "finished" row first, so the hold is the newest row.
+  await waitForTurnRow(sessionId);
   await postJson('/api/test/held-action/start', {
     agentPath: path.join(FLEET_ROOT, HELD_ACTION.agent),
     sessionId,
     actionName: HELD_ACTION.actionName,
     serviceName: HELD_ACTION.serviceName,
+    // The seam's longest: the demo takes a while to warm up, and a shoot runs long.
+    holdMs: 6 * 60 * 60 * 1000,
   });
   return sessionId;
 }
@@ -355,6 +396,7 @@ async function holdAnAction(): Promise<string> {
  * @returns What was made, for the printed links.
  */
 export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
+  await pauseSchedules();
   if (socialQueue) await turnOnSocialQueue();
   const roomId = await teamRoomId();
   await postTeamReports(roomId);
@@ -367,10 +409,11 @@ export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
   const miniAppSessionId = await startSession(MINI_APP.agent, MINI_APP.scenario, MINI_APP.prompt);
   await buildMiniApp();
   const heartbeatAgentId = await seedHeartbeat();
-  const heldActionSessionId = await holdAnAction();
   const socialChatSessionId = socialQueue
     ? await startSession(SOCIAL_CHAT.agent, SOCIAL_CHAT.scenario, SOCIAL_CHAT.prompt)
     : null;
+  // Last, so the held action is the newest row and tops the Inbox.
+  const heldActionSessionId = await holdAnAction();
   return {
     socialQueue,
     teamRoomId: roomId,
