@@ -53,6 +53,8 @@ function printLinks(seeds: DemoSeeds): void {
     `\n✓ DorkOS demo is up: ${CLIENT_URL}\n\n${rows.join('\n')}\n\n` +
       'Open the phone approval at phone size. The mini app waits under "Needs you" (top right).\n' +
       'Beside the queue chat, open the right panel (Cmd+.) on the Social queue tab.\n' +
+      'The held action is in the Inbox ("waiting on you", top right). Its Cancel shows for 60\n' +
+      'seconds after the page loads; reload to see it again.\n' +
       'Press Ctrl-C to stop. The next run starts fresh.\n'
   );
 }

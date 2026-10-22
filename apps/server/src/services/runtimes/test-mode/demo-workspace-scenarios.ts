@@ -17,6 +17,10 @@
  *   same, or the chat names a mini app that is not there.
  * - **`demo-social-chat`** is the chat the Social queue side-panel tab sits
  *   beside: the agent says what is queued and points at the tab.
+ * - **`demo-held-action`** is the chat behind the Inbox's waiting held
+ *   action: the agent says what it is about to delete and where to cancel it.
+ *   The hold itself is DorkOS's real one, started by the demo seeder
+ *   (`POST /api/test/held-action/start`) with nothing behind it to run.
  * - **`demo-heartbeat`** is an agent's side of a heartbeat beat that has work:
  *   the beat itself (its timer wake, its check, its record, a raise's delivery)
  *   is DorkOS's real beat runner, and this turn ends it through the real
@@ -222,10 +226,24 @@ const demoSocialChat: ScenarioFn = async function* () {
   yield done();
 };
 
+/**
+ * The chat behind the Inbox's waiting held action. The draft it names is the
+ * one the demo seeder holds (`HELD_ACTION` in `apps/e2e/capture/demo/config.ts`).
+ */
+const demoHeldAction: ScenarioFn = async function* () {
+  yield sessionStatus();
+  yield* streamText(
+    'Cleaning up old Gmail drafts. Deleting the **Q4 pricing notes** draft waits 60 seconds ' +
+      'first, so anyone can cancel it from the Inbox.'
+  );
+  yield done();
+};
+
 /** The demo workspace's turns, keyed by the names `POST /api/test/scenario` accepts. */
 export const DEMO_WORKSPACE_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-phone-approval': demoPhoneApproval,
   'demo-mini-app': demoMiniApp,
   'demo-heartbeat': demoHeartbeat,
   'demo-social-chat': demoSocialChat,
+  'demo-held-action': demoHeldAction,
 };

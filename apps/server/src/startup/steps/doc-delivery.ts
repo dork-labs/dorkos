@@ -30,6 +30,8 @@ import { connectorAgentRequestsChangedAnnouncer } from '../../services/core/stre
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { ConnectorAccessQueryService } from '../../services/connectors/execution/access-query-service.js';
 import { createConnectorExecution } from '../../services/connectors/execution/create-execution.js';
+import { registerTestHeldActionGroup } from '../../routes/test-control-held-action.js';
+import { env } from '../../env.js';
 import type { WireConnectorServicesResult } from './connector-services.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireConnectorEventsAndApprovalsResult } from './connector-events-approvals.js';
@@ -264,6 +266,12 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
     managedExecutionContexts,
     signIns: connectorRegistry,
     activity: activityService,
+  });
+  // The demo workspace's waiting held action, on this server's own holds so
+  // the real Cancel route reaches it. Test mode only.
+  registerTestHeldActionGroup(env.DORKOS_TEST_RUNTIME, {
+    holds: connectorHolds,
+    agentAt: (agentPath) => refs.meshCore?.getByPath(agentPath),
   });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the

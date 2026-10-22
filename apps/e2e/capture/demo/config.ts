@@ -125,6 +125,19 @@ export const TEAM_REPORTS: readonly TeamReport[] = [
   },
 ];
 
+/**
+ * The held-action flow: an agent's irreversible action in a connected app,
+ * waiting in the Inbox with Cancel. The scenario is the chat it came from
+ * (the server's `demo-held-action`); the hold has nothing behind it to run.
+ */
+export const HELD_ACTION = {
+  agent: 'scout',
+  scenario: 'demo-held-action',
+  prompt: 'Clean up my old Gmail drafts.',
+  actionName: 'Delete a Q4 draft',
+  serviceName: 'Gmail',
+} as const;
+
 /** The phone-approval flow: an agent's turn waiting on a tool approval. */
 export const PHONE_APPROVAL = {
   agent: 'forge',

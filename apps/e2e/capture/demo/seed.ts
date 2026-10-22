@@ -5,6 +5,7 @@ import { API_URL, CAPTURE_HOME, FLEET_ROOT } from '../config.js';
 import {
   DEMO_FAKE_HOME,
   DEMO_MARKETING_ROOT,
+  HELD_ACTION,
   MINI_APP,
   MINI_APP_MANIFEST,
   MINI_APP_SOURCE,
@@ -39,6 +40,8 @@ export interface DemoSeeds {
   readonly miniAppSessionId: string;
   /** The agent whose Heartbeat page holds the seeded beats. */
   readonly heartbeatAgentId: string;
+  /** The chat the waiting held action came from. */
+  readonly heldActionSessionId: string;
   /** The chat the Social queue tab sits beside, when that flow was seeded. */
   readonly socialChatSessionId: string | null;
 }
@@ -325,6 +328,27 @@ async function buildMiniApp(): Promise<void> {
 }
 
 /**
+ * One held action waiting in the Inbox with Cancel: a real hold on the
+ * server's hold service, started through its test-mode seam
+ * (`routes/test-control-held-action.ts`), with no connected app behind it.
+ * Its window is an hour, so the row stays for the whole recording. The app
+ * shows Cancel for 60 seconds after the Inbox draws the row; reload to see it
+ * again.
+ *
+ * @returns The chat the hold came from.
+ */
+async function holdAnAction(): Promise<string> {
+  const sessionId = await startSession(HELD_ACTION.agent, HELD_ACTION.scenario, HELD_ACTION.prompt);
+  await postJson('/api/test/held-action/start', {
+    agentPath: path.join(FLEET_ROOT, HELD_ACTION.agent),
+    sessionId,
+    actionName: HELD_ACTION.actionName,
+    serviceName: HELD_ACTION.serviceName,
+  });
+  return sessionId;
+}
+
+/**
  * Seed the flows against the running demo server (the heartbeat in `heartbeat.ts`).
  *
  * @param socialQueue - Whether {@link prepareSocialQueue} laid the extension down.
@@ -343,6 +367,7 @@ export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
   const miniAppSessionId = await startSession(MINI_APP.agent, MINI_APP.scenario, MINI_APP.prompt);
   await buildMiniApp();
   const heartbeatAgentId = await seedHeartbeat();
+  const heldActionSessionId = await holdAnAction();
   const socialChatSessionId = socialQueue
     ? await startSession(SOCIAL_CHAT.agent, SOCIAL_CHAT.scenario, SOCIAL_CHAT.prompt)
     : null;
@@ -352,6 +377,7 @@ export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
     approvalSessionId,
     miniAppSessionId,
     heartbeatAgentId,
+    heldActionSessionId,
     socialChatSessionId,
   };
 }

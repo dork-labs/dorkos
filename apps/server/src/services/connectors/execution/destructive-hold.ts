@@ -162,16 +162,20 @@ export class DestructiveHoldService {
    * call's signal aborted (the turn was interrupted or the chat stopped).
    *
    * @param request - Who asked, for what, and the call's abort signal.
+   *   `holdMs` overrides the window for this one hold; only the test-mode demo
+   *   seam (`routes/test-control-held-action.ts`) passes it.
    * @returns The started hold, or `undefined` when nobody could be told.
    */
   async start(request: {
     requester: HoldRequester;
     action: HeldActionDescription;
     signal?: AbortSignal;
+    holdMs?: number;
   }): Promise<StartedHold | undefined> {
     const holdId = ulid();
+    const holdMs = request.holdMs ?? this.holdMs;
     const record: HoldRecord = { holdId, requester: request.requester, action: request.action };
-    if (!(await this.write(record, 'held', { holdMs: this.holdMs }))) {
+    if (!(await this.write(record, 'held', { holdMs }))) {
       logger.warn('[Connections] Could not record a held action; asking with a card instead', {
         holdId,
       });
@@ -206,7 +210,7 @@ export class DestructiveHoldService {
       return { holdId, ended };
     }
     request.signal?.addEventListener('abort', onAbort, { once: true });
-    clock.timer = setTimeout(() => this.end(holdId, { outcome: 'elapsed' }), this.holdMs);
+    clock.timer = setTimeout(() => this.end(holdId, { outcome: 'elapsed' }), holdMs);
     return { holdId, ended };
   }
 
