@@ -645,6 +645,14 @@ export const RoomSummarySchema = RoomSchema.extend({
     .describe(
       "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
     ),
+  awaiting: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "How many of this room's turns are stopped, waiting on a person — a tool approval, a question or an MCP prompt — right now. `0` when none are. The server always sends it; it is optional only so a caller that predates it still parses. Read from the server's own session state (a live pending interaction on a session bound to this room), never from anything an agent reports, and a count only: no session, prompt or tool is named. A folded sidebar section keeps a room with one on screen. The `room_awaiting` event carries the same count when it changes."
+    ),
   viewerHasPosted: z
     .boolean()
     .optional()

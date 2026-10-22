@@ -640,6 +640,40 @@ describe('DOR-3224 — a folded section keeps an agent waiting on you', () => {
   });
 });
 
+describe('DOR-3236 — a folded Channels keeps a room waiting on you', () => {
+  /** Three read channels, Channels folded; `awaiting` sets each one's waiting turns. */
+  function foldedChannels(awaiting: [number, number, number], muted = false): SidebarState {
+    const rooms = ['ops', 'design', 'ship'].map((slug, index) =>
+      room({ id: `room-${slug}`, kind: 'channel', title: slug, awaiting: awaiting[index] })
+    );
+    return emptyState({
+      rooms,
+      prefs: prefs({
+        sections: { channels: { collapsed: true } },
+        ...(muted ? { muted: [{ kind: 'room', roomId: 'room-design' }] } : {}),
+      }),
+    });
+  }
+
+  it('keeps a room with a turn waiting on you, and leaves it out of the count', () => {
+    const channels = section(foldedChannels([0, 1, 0]), 'channels');
+    expect(channels?.rollup?.keptRows.map((row) => row.key)).toEqual(['room:room-design']);
+    expect(channels?.rollup?.hiddenCount).toBe(2);
+  });
+
+  it('keeps a muted room waiting on you too, still drawn muted', () => {
+    const channels = section(foldedChannels([0, 1, 0], true), 'channels');
+    expect(channels?.rollup?.keptRows.map((row) => row.key)).toEqual(['room:room-design']);
+    expect(channels?.rollup?.keptRows[0]?.muted).toBe(true);
+  });
+
+  it('still hides and counts a read, idle room', () => {
+    const channels = section(foldedChannels([0, 0, 0]), 'channels');
+    expect(channels?.rollup?.keptRows).toEqual([]);
+    expect(channels?.rollup?.hiddenCount).toBe(3);
+  });
+});
+
 describe('the "N live" chip is decided once, in the model', () => {
   /** Saffron's row in Direct messages with `count` live human sessions. */
   function saffronRow(count: number) {

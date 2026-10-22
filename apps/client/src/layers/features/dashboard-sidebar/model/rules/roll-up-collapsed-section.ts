@@ -15,14 +15,22 @@ import { blockedSessionIdsForPath } from './live-sessions';
  * agent is `blocked` on an approval or a question, automated runs included
  * (BC-19). **Muted rows included** (DOR-3236): mute silences chatter, never
  * a request, so a muted agent waiting on you keeps its needs-you dot and stays
- * on screen when folded. Only an agent row can answer yes: a room row carries
- * no needs-you fact yet.
+ * on screen when folded. A room row answers yes while one of its turns waits
+ * on a person (`RoomSummary.awaiting`, counted by the server from its own
+ * session state), muted or not; it draws as it does when the section is open.
  *
  * @param state - The snapshot.
  */
 export function rowNeedsYou(state: SidebarState): (row: SidebarRowModel) => boolean {
-  return (row) =>
-    row.target.kind === 'agent' && blockedSessionIdsForPath(state, row.target.path).length > 0;
+  const awaitingRooms = new Set(
+    state.rooms.filter((room) => (room.awaiting ?? 0) > 0).map((room) => room.id)
+  );
+  return (row) => {
+    if (row.target.kind === 'agent') {
+      return blockedSessionIdsForPath(state, row.target.path).length > 0;
+    }
+    return row.target.kind === 'room' && awaitingRooms.has(row.target.roomId);
+  };
 }
 
 /**

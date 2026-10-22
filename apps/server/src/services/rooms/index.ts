@@ -25,6 +25,7 @@ import { configManager } from '../core/config-manager.js';
 import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
+import { watchRoomAwaiting } from './awaiting/room-awaiting.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -400,6 +401,9 @@ function safeJson(raw: string): unknown {
   }
 }
 
+/** Stops the current `room_awaiting` watch; replaced when a subsystem is built. */
+let stopAwaitingWatch: (() => void) | undefined;
+
 /**
  * Wire the rooms subsystem from the DB handle.
  *
@@ -438,6 +442,10 @@ export function createRoomSubsystem(opts: {
   }) => RoomMirrorRuntime;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
+  // A room's count of turns waiting on a person, sent live as it changes
+  // (DOR-3236). The last subsystem built is the one watched.
+  stopAwaitingWatch?.();
+  stopAwaitingWatch = watchRoomAwaiting(store.sessionLedger);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
   // Receipts a restart left behind (DOR-2823).
