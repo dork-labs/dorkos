@@ -37,6 +37,17 @@ export const NETWORK_FAULT_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Codes that mean the link itself went away — a Wi-Fi drop, or waking from
+ * sleep on macOS. They count ONLY on `connect`: an `EADDRNOTAVAIL` from `bind`
+ * or `listen` means the server could not open its own port, which stays fatal.
+ */
+export const CONNECT_ONLY_FAULT_CODES: ReadonlySet<string> = new Set([
+  'EADDRNOTAVAIL',
+  'ENETDOWN',
+  'EHOSTDOWN',
+]);
+
+/**
  * The system calls a socket or DNS failure names: connecting, reading,
  * writing, and resolving a name.
  */
@@ -71,6 +82,7 @@ interface ErrorFields {
 function isNetworkFailure(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const { code, syscall } = value as ErrorFields;
+  if (typeof code === 'string' && CONNECT_ONLY_FAULT_CODES.has(code)) return syscall === 'connect';
   if (typeof code !== 'string' || !NETWORK_FAULT_CODES.has(code)) return false;
   if (code.startsWith('UND_ERR_')) return true;
   return typeof syscall === 'string' && NETWORK_SYSCALLS.has(syscall);
