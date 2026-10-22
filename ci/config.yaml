@@ -230,6 +230,7 @@ canary:
   # stopped reading that workflow's runs and the silence arm stopped watching
   # for them — the canary would go quiet with nothing saying so.
   exempt:
+    security-gate.yml: Checks approval on live PR heads and queue membership; main has neither a PR diff nor a live merge group.
     credential-free-build.yml: An affected-only build that reads a base SHA no scheduled run carries, and at a 21% failure rate it would cry wolf every day rather than report a break.
     changelog-fragment-check.yml: Measures a pull request's diff and labels against its base; main has no diff and no labels, so there is nothing for it to check here.
     operating-skills-version-check.yml: Compares the seeded skill pack's version against the base branch's; on main there is no base branch to outrank.

@@ -1,0 +1,73 @@
+# Security gate promotion
+
+Status: **not enforced**. The build PR stays on `hold` with auto-merge off.
+Only the coordinator changes GitHub rulesets, after Security's review and merge.
+
+## Required workflow source
+
+Use an organization-level **Require workflows to pass before merging** rule,
+targeting only this repository's `main` branch. Configure the source as:
+
+| Setting             | Value                                             |
+| ------------------- | ------------------------------------------------- |
+| Source repository   | `dork-labs/dorkos`                                |
+| Workflow path       | `.github/workflows/security-gate.yml`             |
+| Source ref          | `refs/heads/main`                                 |
+| Events              | `pull_request` and `merge_group`                  |
+| Initial enforcement | Evaluate, then Active only after the proofs below |
+
+Do not substitute a named status-check requirement for `security-gate`. A
+candidate can edit its own YAML to emit a passing job with that name. The
+required-workflow source must be selected from main by GitHub, before candidate
+YAML can run. Verifiers additionally check out the event's immutable base SHA;
+their token is read-only. Only the trusted `pull_request_target` initializer
+has status/comment write permission. That initializer lives in
+`security-review-initialize.yml`, a separate workflow with a separate identity;
+it cannot satisfy the required verifier workflow by succeeding at initialization.
+
+GitHub documents required workflows as an organization/enterprise ruleset
+feature. Confirm this organization's access to that setting; if unavailable,
+leave promotion blocked and ask Security for another trusted enforcement design.
+Do not upgrade a plan or change permissions as part of this work.
+
+References: [required workflows and supported events](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-workflows-to-pass-before-merging),
+[workflow source fields](https://docs.github.com/en/enterprise-cloud@latest/rest/repos/rules).
+
+## CI Steward gap
+
+`ci/required-checks.json` and `RequiredChecksSchema` currently support only
+`ruleset` plus named `contexts`. The generated required-check blocks and the
+census's deadlock checks describe those named checks, not required workflow
+sources. This PR removes `security-gate` from that named list rather than
+pretending it encodes a source pin. No new unconsumed configuration key is added.
+
+Before activation, extend the hand-owned intent/schema, census, live ruleset
+comparison, and collector/canary handling to represent the required workflow's
+source repository, path and `refs/heads/main`. Include organization rulesets in
+that live comparison. Prove that a missing rule, wrong ref/path/repository,
+absent trigger, filter or skipping verifier fails the census. Security reviews
+that extension too. A clean current census is not proof of this missing rule.
+
+## Bootstrap and proof
+
+1. Security reviews the build PR's final SHA. Its base lacks the new script and
+   fixture files, so its base-source gate fails closed rather than running the
+   candidate's copy. The initializer is available only after code lands on main.
+   Do not add a head-source fallback or self-post approval to clear bootstrap.
+2. Run the local fixture with `node --test .github/scripts/security-gate.test.mjs`.
+   It creates a temporary branch that changes both workflow and script to exit
+   successfully, then models main's workflow selection and executes the base verifier.
+   Without approval, queue verification must fail. This is a local trust-boundary
+   fixture, not a claim that a hosted required-workflow rule is already active.
+3. After merge, use Evaluate mode and a controlled PR to confirm GitHub selects
+   the main-sourced workflow even when candidate YAML/script both say `exit 0`.
+   The unapproved queue head must fail. Record run URLs, workflow source ref/SHA,
+   base SHA and candidate SHA. Reopen an existing PR to trigger the new rule when
+   needed; do not push an empty commit.
+4. Capture a real multi-entry `merge_group` event plus queue API responses.
+   **The MergeQueueEntry.baseCommit/headCommit chain and rebuild timing remain
+   unproven until this live capture.** Every queued PR's exact head must be
+   checked; one missing approval or moved head must refuse the whole group.
+5. Only after census support and both hosted proofs pass does the coordinator
+   activate the main-pinned required-workflow rule. Verify its persisted source
+   settings and a real refusal. Never weaken a missing-data refusal to promote it.

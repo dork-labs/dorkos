@@ -1,0 +1,36 @@
+name: security-review-initialize
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  initialize:
+    concurrency:
+      group: security-gate-initialize-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Initialize status from trusted base code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SECURITY_GATE_MODE: initialize
+        run: node .github/scripts/security-gate.mjs
