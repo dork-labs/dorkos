@@ -230,6 +230,48 @@ describe('SectionHeader', () => {
     expect(header.className).not.toContain('font-semibold');
   });
 
+  describe('"· N more" on a folded header (DOR-3200)', () => {
+    it('says how many rows the fold hides, after the name', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      // One space before the dot, typed rather than a flex gap (DOR-3200).
+      expect(toggle.textContent).toBe('DorkOS · 12 more');
+    });
+
+    it('reads "DorkOS, collapsed, 12 more" to a screen reader', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      // The name stays the section's name; the state and the count follow it.
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle).toHaveAccessibleDescription('12 more');
+    });
+
+    it('says nothing when the fold hides nothing', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={0} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).not.toHaveTextContent('more');
+      expect(toggle).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('says nothing while the section is open', () => {
+      render(
+        <SectionHeader label="DorkOS" collapsed={false} hiddenCount={12} onToggle={vi.fn()} />
+      );
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).not.toHaveTextContent('more');
+      expect(toggle).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('keeps the whole header a 44px target on a phone', () => {
+      phone = true;
+      useEmulatedViewport();
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).toHaveTextContent('· 12 more');
+      expect(toggle.className).toContain('h-11');
+    });
+  });
+
   describe('on touch (DOR-1083)', () => {
     it('draws its menu trigger at rest, where there is no hover to reveal it', () => {
       // **The defect, named.** `SidebarRow` took an `alwaysShowActions` prop and

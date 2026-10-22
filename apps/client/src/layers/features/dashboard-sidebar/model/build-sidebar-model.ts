@@ -206,10 +206,18 @@ export interface SidebarRollup {
    * The rows a folded section keeps on screen, in section order: every row
    * with unread.
    *
-   * **This is why a header never needs a count.** Folding hides the quiet rows
-   * and leaves the ones asking for something where they were.
+   * **This is why a header never needs an unread count.** Folding hides the
+   * quiet rows and leaves the ones asking for something where they were.
    */
   keptRows: SidebarRowModel[];
+  /**
+   * How many rows the fold hides: the section's rows minus {@link keptRows}.
+   *
+   * The header says "· 12 more" from this, so a folded section never reads as
+   * an open one that lost its rows. Zero means every row stayed on screen, and
+   * the header then says nothing.
+   */
+  hiddenCount: number;
   /**
    * How many of its members are streaming right now. The header draws one dot
    * when this is above zero, never the number.
