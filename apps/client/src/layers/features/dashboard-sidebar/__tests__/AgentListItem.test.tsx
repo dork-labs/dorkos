@@ -326,6 +326,20 @@ describe('AgentListItem', () => {
       expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
     });
 
+    it('keeps the needs-you dot for a muted agent waiting on you (DOR-3236)', () => {
+      // Mute silences chatter, never a request: the dot shows beside the mute
+      // glyph, and the row stays muted.
+      mockAgentStatus.mockReturnValue({
+        kind: 'pendingApproval',
+        color: 'rgb(245,158,11)',
+        pulse: true,
+        label: 'Awaiting your approval',
+      });
+      renderItem({ isMuted: true });
+      expect(screen.getByTestId('activity-badge')).toHaveTextContent('Awaiting your approval');
+      expect(screen.getByLabelText('Muted')).toBeInTheDocument();
+    });
+
     it('the row stays clickable while muted', () => {
       const { props } = renderItem({ isMuted: true, isActive: false });
       fireEvent.click(row());

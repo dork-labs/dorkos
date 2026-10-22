@@ -150,9 +150,15 @@ export function AgentListItem({
   // badge, saying the same thing twice in two vocabularies. Live state now rides
   // the shared status tokens: the badge here, the dot on the face
   // (design-decisions §6, cleanups 1 and 3).
-  const agentStatus = isMuted
-    ? { kind: 'idle' as const, label: rawAgentStatus.label }
-    : rawAgentStatus;
+  //
+  // **Except a request** (DOR-3236): mute silences chatter, never something
+  // waiting on you. A muted agent with an approval or a question pending keeps
+  // its needs-you dot, at full strength, beside its dimmed name and mute icon;
+  // once it is answered the row is plainly muted again.
+  const agentStatus =
+    isMuted && rawAgentStatus.kind !== 'pendingApproval'
+      ? { kind: 'idle' as const, label: rawAgentStatus.label }
+      : rawAgentStatus;
   // A muted agent asks for nothing, and a chip counting its live work would be
   // asking. The switcher stays reachable from ⌘K, which is a place the operator
   // went on purpose.
