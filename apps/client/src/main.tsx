@@ -39,6 +39,7 @@ import {
 } from '@/layers/shared/model';
 import { linkChipSlot, openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
+import { ServerRestartingBar } from './app/ServerRestartingBar';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
 import { eraseCommunityOwnerState } from '@/layers/entities/community';
@@ -271,6 +272,10 @@ function Root() {
             <AutoOpenDiffBridge />
             {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
             <OwnerSetupHost />
+            {/* The desktop app's "Restarting DorkOS…" bar (DOR-3229). Outside
+                the router, so it shows over any screen, the "can't reach the
+                server" one included. */}
+            <ServerRestartingBar />
           </ExtensionProvider>
         </EventStreamProvider>
       </TransportProvider>

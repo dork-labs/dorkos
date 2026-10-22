@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DorkOS</title>
+    <!--
+      What a window shows once restarting the server has given up (DOR-3229).
+      Loaded with `loadFile` from beside the compiled main process, so it needs
+      no server — the one thing that is not running. Quiet on purpose: centred,
+      no modal, no red. The try count arrives as `?tries=N`.
+
+      Its one action goes through the preload bridge to `main/server-stopped/`,
+      which answers it only while this page is the one on screen.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fafafa;
+        --fg: #171717;
+        --dim: #525252;
+        --action-bg: #171717;
+        --action-fg: #fafafa;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0a0a0a;
+          --fg: #dedede;
+          --dim: #a3a3a3;
+          --action-bg: #dedede;
+          --action-fg: #171717;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        text-align: center;
+        -webkit-app-region: drag;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0 0 20px;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--dim);
+      }
+      button {
+        -webkit-app-region: no-drag;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: var(--action-bg);
+        color: var(--action-fg);
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.55;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-labelledby="title">
+      <h1 id="title">DorkOS stopped</h1>
+      <p id="line">It couldn't start again.</p>
+      <button id="restart" type="button">Restart DorkOS</button>
+    </main>
+    <script>
+      (function () {
+        var api = window.electronAPI;
+        var line = document.getElementById('line');
+        var restart = document.getElementById('restart');
+
+        // The real try count, never a made-up one: a page without a number
+        // says only what it knows.
+        var tries = Number(new URLSearchParams(window.location.search).get('tries'));
+        if (Number.isInteger(tries) && tries > 0) {
+          line.textContent =
+            "It couldn't start again after " + tries + (tries === 1 ? ' try.' : ' tries.');
+        }
+
+        if (!api || typeof api.restartAfterStop !== 'function') {
+          restart.disabled = true;
+          return;
+        }
+        // This page came up; the window's supervisor has nothing to repair.
+        if (typeof api.reportAlive === 'function') api.reportAlive();
+
+        var busy = false;
+        restart.addEventListener('click', function () {
+          if (busy) return;
+          busy = true;
+          restart.disabled = true;
+          restart.textContent = 'Restarting…';
+          Promise.resolve()
+            .then(function () {
+              return api.restartAfterStop();
+            })
+            .catch(function (err) {
+              console.error('[dorkos] Restart failed.', err);
+            })
+            .finally(function () {
+              busy = false;
+              restart.disabled = false;
+              restart.textContent = 'Restart DorkOS';
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,62 +1,63 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
-import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { formatServerOutput } from './server-output';
 import { isQuitting } from './quit-guard';
 import { frontTabUrl } from './tab-session';
 import { noteDocumentReplaced } from './renderer-health/document-watermark';
+import { setServerRestarting, showServerStopped } from './server-stopped';
 
 /**
- * What the desktop shell does about a server it did not expect to lose:
- * tell the user what happened in the server's own words, offer to start it
- * again, and know when to stop offering.
+ * What the desktop shell does about a server it did not expect to lose: start
+ * it again on its own, wait a little longer between each try, and stop after
+ * {@link MAX_RESTART_TRIES} with a quiet "DorkOS stopped" page (DOR-3229).
  *
- * Split from `server-process.ts` because supervising a process and running a
- * recovery conversation with a person are different jobs, and only one of them
- * involves dialogs.
+ * It used to ask first, in a dialog, and give up after one failed restart a
+ * person had to click through. After a crash at night that left the app down
+ * until somebody reopened it. Now nothing waits on a click until every try has
+ * failed, and the log carries each try's real error.
+ *
+ * Split from `server-process.ts` because supervising a process and deciding
+ * how to recover it are different jobs.
  */
 
 /**
- * How many restarts may fail in a row before the retry button is withdrawn.
+ * How many restarts may fail in a row before DorkOS stops trying.
  *
- * Some failures cannot be retried out of. A `dorkos` CLI server already
- * holding the data directory is the case that prompted this: every restart
- * refuses for the same reason, so an unlimited "Restart Server" button is a
- * button that can never succeed. Three attempts is enough to ride out
- * something transient and few enough that the user is not clicking into a wall.
+ * Some failures cannot be retried out of — a `dorkos` CLI server already
+ * holding the data directory refuses every restart for the same reason — so
+ * the tries are capped, and what comes after is a page that says so.
  */
-const MAX_RESTART_FAILURES = 3;
+export const MAX_RESTART_TRIES = 4;
+
+/**
+ * The waits between tries and before the restarting bar. The first try waits
+ * 1 s and each wait doubles, up to 8 s; the bar appears after 2 s. A `let`
+ * only so tests can shorten them ({@link setRestartTimingForTests}).
+ */
+let timing = { firstDelayMs: 1_000, maxDelayMs: 8_000, noticeDelayMs: 2_000 };
 
 /**
  * How long a server must stay up before it counts as having actually worked.
  *
- * Spawning successfully is not the same thing as staying up, and the difference
- * is the whole point of this counter. A server that boots and dies seconds
- * later — the renderer reloads onto the new port and re-issues the request that
+ * Spawning successfully is not the same thing as staying up. A server that
+ * boots and dies seconds later — the renderer re-issues the request that
  * killed it, an OOM, a faulting native module — would otherwise reset the
- * counter on every cycle and loop forever, which is the exact behaviour the cap
- * exists to stop. A minute of service is a working server; anything shorter is
- * another failure.
+ * count on every cycle and loop forever, which is the exact behaviour the cap
+ * exists to stop. A minute of service is a working server.
  */
 const MIN_HEALTHY_UPTIME_MS = 60_000;
 
-/** Index of the leftmost (default) button in a `buttons` array. */
-const PRIMARY_BUTTON = 0;
-
-/** Restarts that have not produced a server that stayed up. */
-let consecutiveFailures = 0;
+/** Restarts tried since the last server that stayed up. */
+let triesSinceHealthy = 0;
 
 /**
- * Whether the app is on its way out — asked of `quit-guard.ts`, which owns it.
+ * The wait before one try: 1 s, 2 s, 4 s, then 8 s.
  *
- * Cmd+Q during a still-booting restart tears the child down, which surfaces as
- * a failed restart; without standing down, the shell would flash a dialog on
- * the way out, over an `app.quit()` that is already winning. This used to be a
- * `before-quit` listener of its own, which latched the moment the event fired.
- * That was safe only while a quit could not be cancelled — now that quitting
- * with agents mid-run asks first, a latched flag would silently disable crash
- * recovery for the rest of the session when someone said "keep working".
+ * @param tryIndex - Which try this is, from 0.
  */
+export function restartDelayMs(tryIndex: number): number {
+  return Math.min(timing.firstDelayMs * 2 ** tryIndex, timing.maxDelayMs);
+}
 
 /** Options for {@link recoverFromCrash}. */
 export interface CrashRecoveryOptions {
@@ -66,111 +67,84 @@ export interface CrashRecoveryOptions {
   output: string[];
   /** How long the dead server had been serving, in ms. */
   uptimeMs: number;
-  /** Point-in-time accessor for the main window, to anchor dialogs to. */
-  getWindow: () => BrowserWindow | null;
   /** Start a replacement server; resolves with the port it listens on. */
   restart: () => Promise<number>;
 }
 
 /**
- * Tell the user the server died and act on what they choose.
+ * Bring the server back after it stopped on its own.
  *
- * Loops rather than returning after one attempt, because a failed restart is
- * itself something the user has to decide about — but only up to
- * {@link MAX_RESTART_FAILURES}, after which the retry is withdrawn and the
- * choice becomes "look at the logs" or "quit".
+ * Restarts at once-doubling intervals until one comes up, and gives up after
+ * {@link MAX_RESTART_TRIES} tries without a server that stayed up a minute.
+ * The count carries across crashes, so a server that keeps dying right after
+ * it starts runs the count out too.
  *
  * @param options - See {@link CrashRecoveryOptions}.
  */
 export async function recoverFromCrash(options: CrashRecoveryOptions): Promise<void> {
-  const { code, output, uptimeMs, getWindow, restart } = options;
-
-  // Account for the server that just died before deciding anything. One that
-  // served for a while was genuinely working, so this is a fresh incident; one
-  // that died almost immediately is another failure, whether or not it managed
-  // to start.
-  if (uptimeMs >= MIN_HEALTHY_UPTIME_MS) {
-    consecutiveFailures = 0;
-  } else {
-    consecutiveFailures += 1;
-  }
-
-  let detail = crashDetail(code, output);
-
-  for (;;) {
-    if (isQuitting()) return;
-    if (consecutiveFailures >= MAX_RESTART_FAILURES) {
-      await giveUp(getWindow, detail);
-      return;
-    }
-
-    const { response } = await ask(getWindow, {
-      type: 'error',
-      title: 'Server Error',
-      message: 'The DorkOS server stopped unexpectedly.',
-      detail,
-      buttons: ['Restart Server', 'Quit'],
-    });
-    if (response !== PRIMARY_BUTTON) {
-      app.quit();
-      return;
-    }
-
-    try {
-      pointWindowsAtServer(await restart());
-      return;
-    } catch (err) {
-      consecutiveFailures += 1;
-      log.error('[server] Restarting the server failed.', err);
-      // The error already carries the child's own words (server-process
-      // attaches them), so it is shown as-is rather than rewritten.
-      detail = err instanceof Error ? err.message : String(err);
-    }
-  }
+  const { code, output, uptimeMs, restart } = options;
+  // The server's own words go to the log whole; that is where a person, or a
+  // bug report, looks for why.
+  const reported = formatServerOutput(output);
+  log.error(
+    `[server] The server stopped after ${Math.round(uptimeMs / 1000)}s ` +
+      `(exit code ${code ?? 'none, stopped by a signal'}).${reported ? `\n${reported}` : ''}`
+  );
+  if (uptimeMs >= MIN_HEALTHY_UPTIME_MS) triesSinceHealthy = 0;
+  await restartWithBackoff(restart);
 }
 
 /**
- * Stop offering something that keeps not working, and point at the logs.
+ * Try restarts until one works or the tries run out, with the restarting bar
+ * shown after two seconds.
  *
- * @param getWindow - Accessor for the window to anchor to.
- * @param detail - Why the last attempt failed, in the server's own words.
+ * @param restart - Starts a replacement server.
  */
-async function giveUp(getWindow: () => BrowserWindow | null, detail: string): Promise<void> {
-  const { response } = await ask(getWindow, {
-    type: 'error',
-    title: 'Server Error',
-    message: `DorkOS tried ${MAX_RESTART_FAILURES} times to get its server running, and it did not stay up.`,
-    detail: [detail, 'The full story is in the logs.'].filter(Boolean).join('\n\n'),
-    buttons: ['Open Logs', 'Quit'],
-  });
-  if (response === PRIMARY_BUTTON) revealLogs();
-  app.quit();
-}
-
-/**
- * What to tell the user about a crash: the server's own account first, because
- * that is the part that says what to do about it.
- *
- * @param code - Exit code, or `null` for death by signal.
- * @param output - The child's stderr tail.
- */
-function crashDetail(code: number | null, output: string[]): string {
-  return [
-    formatServerOutput(output),
-    'Your work is saved. Start the server again to pick up where you left off, or quit DorkOS.',
-    `Exit code: ${code ?? 'none (the server was stopped by a signal)'}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-/** Reveal the app's log file in the OS file manager. Best-effort. */
-function revealLogs(): void {
+async function restartWithBackoff(restart: () => Promise<number>): Promise<void> {
+  const notice = setTimeout(() => setServerRestarting(true), timing.noticeDelayMs);
   try {
-    shell.showItemInFolder(log.transports.file.getFile().path);
-  } catch (err) {
-    log.error('[server] Could not reveal the log file.', err);
+    while (triesSinceHealthy < MAX_RESTART_TRIES) {
+      await new Promise((done) => setTimeout(done, restartDelayMs(triesSinceHealthy)));
+      if (isQuitting()) return;
+      triesSinceHealthy += 1;
+      try {
+        pointWindowsAtServer(await restart());
+        return;
+      } catch (err) {
+        // The error carries the child's own words (server-process attaches
+        // them), so the real reason is in the log, not only its warnings.
+        log.error(`[server] Restart ${triesSinceHealthy} of ${MAX_RESTART_TRIES} failed.`, err);
+      }
+    }
+  } finally {
+    clearTimeout(notice);
+    setServerRestarting(false);
   }
+  if (isQuitting()) return;
+  showServerStopped(triesSinceHealthy, () => {
+    // "Restart DorkOS" is a person asking again, so the tries start over.
+    triesSinceHealthy = 0;
+    return restartWithBackoff(restart);
+  });
+}
+
+/**
+ * Reset the try count between tests.
+ *
+ * @internal Exported for testing only.
+ */
+export function resetCrashRecoveryForTests(): void {
+  triesSinceHealthy = 0;
+}
+
+/**
+ * Shorten the waits, so a test runs every try without real seconds passing.
+ *
+ * @internal Exported for testing only.
+ * @param next - The waits to use instead.
+ */
+export function setRestartTimingForTests(next: typeof timing): void {
+  timing = next;
 }
 
 /**
@@ -213,37 +187,4 @@ export function pointWindowsAtServer(port: number): void {
       win.reload();
     }
   }
-}
-
-/**
- * The window to anchor a dialog to: the tracked main window when there is a
- * live one, else whatever happens to be focused, else `null`.
- *
- * `null` is a normal outcome, not a failure — Electron shows an unanchored
- * message box just fine. The original code looked up `getFocusedWindow()` and
- * skipped the *entire* crash handler when it came back `null`, which is what
- * happens whenever the app isn't frontmost: the single most likely moment for
- * a server crash to go unnoticed.
- *
- * @param getWindow - Point-in-time accessor for the tracked main window.
- */
-function resolveDialogWindow(getWindow: () => BrowserWindow | null): BrowserWindow | null {
-  const tracked = getWindow();
-  if (tracked && !tracked.isDestroyed()) return tracked;
-  return BrowserWindow.getFocusedWindow();
-}
-
-/**
- * Show a message box anchored to the current main window, unanchored if there
- * is none.
- *
- * @param getWindow - Point-in-time accessor for the tracked main window.
- * @param options - The message box to show.
- */
-function ask(
-  getWindow: () => BrowserWindow | null,
-  options: MessageBoxOptions
-): Promise<MessageBoxReturnValue> {
-  const win = resolveDialogWindow(getWindow);
-  return win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);
 }
