@@ -612,7 +612,8 @@ describe('DOR-3224 — a folded section keeps an agent waiting on you', () => {
     expect(dms?.rollup?.hiddenCount).toBe(1);
   });
 
-  it('keeps no muted row for it, because a muted row draws no needs-you dot', () => {
+  it('keeps a muted agent waiting on you, and leaves it out of the count (DOR-3236)', () => {
+    // Mute silences chatter, never a request.
     const state = foldedOps({
       ...cardamomBlocked,
       prefs: prefs({
@@ -620,7 +621,22 @@ describe('DOR-3224 — a folded section keeps an agent waiting on you', () => {
         muted: [{ kind: 'agent', path: CARDAMOM }],
       }),
     });
+    const ops = section(state, 'group:ops');
+    expect(ops?.rollup?.keptRows.map((row) => row.key)).toEqual([`agent:${CARDAMOM}`]);
+    // Still drawn muted: the dimmed name and mute icon stay.
+    expect(ops?.rollup?.keptRows[0]?.muted).toBe(true);
+    expect(ops?.rollup?.hiddenCount).toBe(2);
+  });
+
+  it('hides a muted agent again once nothing is waiting', () => {
+    const state = foldedOps({
+      prefs: prefs({
+        groups: [{ ...OPS, collapsed: true }],
+        muted: [{ kind: 'agent', path: CARDAMOM }],
+      }),
+    });
     expect(section(state, 'group:ops')?.rollup?.keptRows).toEqual([]);
+    expect(section(state, 'group:ops')?.rollup?.hiddenCount).toBe(3);
   });
 });
 

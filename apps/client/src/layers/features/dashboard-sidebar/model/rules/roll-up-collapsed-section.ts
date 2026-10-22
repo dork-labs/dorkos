@@ -13,16 +13,16 @@ import { blockedSessionIdsForPath } from './live-sessions';
  *
  * **The same fact the row's needs-you dot is drawn from**: a session of that
  * agent is `blocked` on an approval or a question, automated runs included
- * (BC-19). A muted row draws no dot, so it is not kept for one. Only an agent
- * row can answer yes: a room row draws no needs-you dot.
+ * (BC-19). **Muted rows included** (DOR-3236): mute silences chatter, never
+ * a request, so a muted agent waiting on you keeps its needs-you dot and stays
+ * on screen when folded. Only an agent row can answer yes: a room row carries
+ * no needs-you fact yet.
  *
  * @param state - The snapshot.
  */
 export function rowNeedsYou(state: SidebarState): (row: SidebarRowModel) => boolean {
   return (row) =>
-    row.target.kind === 'agent' &&
-    !row.muted &&
-    blockedSessionIdsForPath(state, row.target.path).length > 0;
+    row.target.kind === 'agent' && blockedSessionIdsForPath(state, row.target.path).length > 0;
 }
 
 /**
