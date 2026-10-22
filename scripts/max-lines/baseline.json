@@ -20,7 +20,7 @@
     "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 709,
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
     "apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx": 565,
-    "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 533,
+    "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 529,
     "apps/client/src/layers/shared/lib/transport/system-methods.ts": 548,
     "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 694,
     "apps/client/src/layers/shared/ui/index.ts": 504,

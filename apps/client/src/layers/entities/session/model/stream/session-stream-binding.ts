@@ -18,6 +18,7 @@ import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 import { useHistoryWindowStore } from './history-window-store';
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
+import { noteAnnouncedLifecycle } from './stream-miss-guard';
 import {
   markSessionListsReset,
   markSessionListsStreamDown,
@@ -103,6 +104,9 @@ export function initSessionStreamBinding(): void {
         // settled. Skipped for the actively-attached session (the operator is
         // watching it settle — nothing is "unseen").
         const prev = useSessionListStore.getState().statuses[event.sessionId]?.lifecycle;
+        // The open chat's own stream must hear what this one announces; when it
+        // does not, the guard reports the miss and rebuilds that stream.
+        noteAnnouncedLifecycle(event.sessionId, prev, event.status.lifecycle);
         if (
           (prev === 'streaming' || prev === 'blocked') &&
           SETTLED_LIFECYCLES.has(event.status.lifecycle) &&

@@ -76,6 +76,7 @@ import {
   WorkbenchProbeResponseSchema,
   WorkbenchBridgeStatusRequestSchema,
   WorkbenchBridgeStatusResponseSchema,
+  StreamHealthReportSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -1141,6 +1142,31 @@ registry.registerPath({
     204: { description: 'Accepted; recorded when the caller is a person at the app' },
     400: {
       description: 'The id is not a session id (`INVALID_SESSION_ID`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/stream-health',
+  tags: ['Sessions'],
+  summary: 'Report a turn a window missed',
+  description:
+    'Called by the app when the fleet-wide `/api/events` stream says this session ran a ' +
+    "turn and the window's own `/api/sessions/{id}/events` stream delivered none of it. " +
+    'The window reconnects on its own; the server only logs the report, beside its own ' +
+    'count of open windows and live subscribers for the session, so the miss can be found ' +
+    'later. Changes nothing.',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: { content: { 'application/json': { schema: StreamHealthReportSchema } } },
+  },
+  responses: {
+    204: { description: 'Logged' },
+    400: {
+      description:
+        'The id is not a session id (`INVALID_SESSION_ID`), or the body is not a report (`VALIDATION_ERROR`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

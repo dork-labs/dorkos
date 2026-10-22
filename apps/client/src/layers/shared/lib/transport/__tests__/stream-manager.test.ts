@@ -120,6 +120,52 @@ describe('StreamManager', () => {
     expect(connections[0]!.destroy).not.toHaveBeenCalled();
   });
 
+  it('revives a session stream that gave up when the same session is attached again', () => {
+    // Real failure mode: a laptop waking without a network spends the five
+    // reconnect attempts in seconds and the stream settles at `disconnected`,
+    // where it never retries. The idempotent early return kept it dead through
+    // every later send, so the chat showed nothing until a refresh.
+    const { manager, connections } = setup();
+    manager.attachSession('sess-a');
+    connections[0]!.emitState('disconnected');
+
+    manager.attachSession('sess-a'); // the next send re-attaches the same chat
+
+    expect(connections).toHaveLength(2);
+    expect(connections[0]!.destroy).toHaveBeenCalled();
+    expect(connections[1]!.url).toBe('/api/sessions/sess-a/events');
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
+    expect(manager.getAttachedSessionId()).toBe('sess-a');
+  });
+
+  it('recoverSession reports the miss and rebuilds only the attached session', () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { manager, connections } = setup();
+    manager.attachSession('sess-a');
+    connections[0]!.emitState('connected');
+
+    manager.recoverSession('sess-b', { kind: 'silent-turn', silentMs: 20_000, lastSeq: 4 });
+    expect(connections).toHaveLength(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    manager.recoverSession('sess-a', { kind: 'silent-turn', silentMs: 20_000, lastSeq: 4 });
+    expect(connections).toHaveLength(2);
+    expect(connections[0]!.destroy).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/sess-a/stream-health',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body as string)).toEqual({
+      kind: 'silent-turn',
+      silentMs: 20_000,
+      lastSeq: 4,
+      connectionState: 'connected',
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('destroys the old connection and opens a new one when attachSession re-targets to a new id', () => {
     // Real failure mode: switching the active session must re-point the stream
     // (URL is immutable per connection) without leaking the previous one.

@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { SessionConnectorAttachmentStore } from '../../services/connectors/attachment-store.js';
 import { takeDailySnapshot } from '@dorkos/db';
 import { logError, logger } from '../../lib/logger.js';
+import { watchSessionStreamHealth } from '../../services/core/streams/session-stream-watch.js';
 import {
   SessionEventStore,
   wireSessionEventStore,
@@ -123,6 +124,9 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // holding their history, their idle in-memory copies are swept (DOR-2897).
   const sessionEventStore = new SessionEventStore(db);
   wireSessionEventStore(sessionEventStore);
+  // Warn when a turn starts that no open window will see — the trail a chat
+  // that "only showed the reply after a refresh" leaves in the log.
+  watchSessionStreamHealth();
 
   // An agent that was waiting on a person when the last process stopped is not
   // waiting any more — its turn died with that process, and nothing can hand it
