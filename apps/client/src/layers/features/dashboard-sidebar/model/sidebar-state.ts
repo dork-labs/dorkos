@@ -89,6 +89,12 @@ export interface SidebarState {
   /** The sessions streaming a turn right now. */
   workingSessionIds: readonly string[];
   /**
+   * The sessions waiting on a person right now: an approval or a question
+   * (`blocked`). A folded section keeps an agent row on screen for one
+   * (DOR-3224), the same fact the row's needs-you dot is drawn from.
+   */
+  blockedSessionIds: readonly string[];
+  /**
    * Session id → the directory it is running in, for every session the live
    * stream is currently tracking.
    *

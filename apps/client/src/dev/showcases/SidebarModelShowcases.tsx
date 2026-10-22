@@ -205,7 +205,13 @@ function ModelSection({
   const listId = `${useId()}-list`;
   // The model rolls up only what it was told is folded; a section folded here,
   // on the page, is rolled up the same way so it keeps the same rows.
-  const rollup = section.rollup ?? rollUpCollapsedSection(section.rows, () => false);
+  const rollup =
+    section.rollup ??
+    rollUpCollapsedSection(
+      section.rows,
+      () => false,
+      () => false
+    );
   const shownRows = collapsed ? rollup.keptRows : section.rows;
 
   return (

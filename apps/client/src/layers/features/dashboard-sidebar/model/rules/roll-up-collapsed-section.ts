@@ -4,15 +4,25 @@
  * @module features/dashboard-sidebar/model/rules/roll-up-collapsed-section
  */
 import type { SidebarRollup, SidebarRowModel } from '../build-sidebar-model';
+import type { SidebarState } from '../sidebar-state';
+import { blockedSessionIdsForPath } from './live-sessions';
 
 /**
- * Whether a folded section keeps a row on screen: any row with unread of
- * either tier.
+ * Whether one row's subject is waiting on the operator — what keeps a row on
+ * screen when its section is folded, beside unread (DOR-3224).
  *
- * @param row - One row of the section.
+ * **The same fact the row's needs-you dot is drawn from**: a session of that
+ * agent is `blocked` on an approval or a question, automated runs included
+ * (BC-19). A muted row draws no dot, so it is not kept for one. Only an agent
+ * row can answer yes: a room row draws no needs-you dot.
+ *
+ * @param state - The snapshot.
  */
-function hasUnreadSignal(row: SidebarRowModel): boolean {
-  return row.unread.tier !== 'none';
+export function rowNeedsYou(state: SidebarState): (row: SidebarRowModel) => boolean {
+  return (row) =>
+    row.target.kind === 'agent' &&
+    !row.muted &&
+    blockedSessionIdsForPath(state, row.target.path).length > 0;
 }
 
 /**
@@ -26,6 +36,12 @@ function hasUnreadSignal(row: SidebarRowModel): boolean {
  * as it is when the section is open — bold, with its own count pill where
  * something was aimed at you. Folding hides what is quiet and nothing else,
  * which is what "folding never loses signal" asks for.
+ *
+ * **A row waiting on you stays too** (DOR-3224). An agent with an approval or
+ * a question pending and nothing unread used to fold away, so the one row that
+ * most needed the operator was the one the fold hid. It is kept like an unread
+ * row: drawn as it is when the section is open, in its own place, and left out
+ * of the hidden count.
  *
  * **The one number it does carry is what is hidden** (DOR-3200). With no hint,
  * a folded section showing two unread rows read as an open section that had
@@ -47,17 +63,21 @@ function hasUnreadSignal(row: SidebarRowModel): boolean {
  * @param rows - The section's rows, in order.
  * @param isWorking - Whether one row's subject is streaming right now,
  *   independent of the dot that row draws.
+ * @param needsYou - Whether one row's subject is waiting on the operator: the
+ *   same fact as the needs-you dot that row draws when its section is open.
  */
 export function rollUpCollapsedSection(
   rows: readonly SidebarRowModel[],
-  isWorking: (row: SidebarRowModel) => boolean
+  isWorking: (row: SidebarRowModel) => boolean,
+  needsYou: (row: SidebarRowModel) => boolean
 ): SidebarRollup {
   const keptRows: SidebarRowModel[] = [];
   let workingCount = 0;
   for (const row of rows) {
     // A kept row is not a drag source: its section is folded, so there is
     // nowhere in it to drop, and a drag that starts there has no list to land in.
-    if (hasUnreadSignal(row)) keptRows.push(row.draggable ? { ...row, draggable: false } : row);
+    const kept = row.unread.tier !== 'none' || needsYou(row);
+    if (kept) keptRows.push(row.draggable ? { ...row, draggable: false } : row);
     if (isWorking(row)) workingCount += 1;
   }
   return { keptRows, workingCount, hiddenCount: rows.length - keptRows.length };

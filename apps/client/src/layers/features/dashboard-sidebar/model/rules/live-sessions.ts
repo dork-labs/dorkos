@@ -71,3 +71,18 @@ function cwdOf(state: SidebarState, sessionId: string): string | null {
 export function liveSessionIdsForPath(state: SidebarState, path: string): readonly string[] {
   return liveSessionIds(state).filter((id) => cwdOf(state, id) === path);
 }
+
+/**
+ * The sessions of one agent that are waiting on a person: an approval or a
+ * question.
+ *
+ * **Automated runs count here, unlike {@link liveSessionIdsForPath}.** A
+ * scheduled run that is blocked still needs you (BC-19), and the row's
+ * needs-you dot lights for it, so a folded section must keep that row too.
+ *
+ * @param state - The snapshot.
+ * @param path - The agent's directory, which is its identity.
+ */
+export function blockedSessionIdsForPath(state: SidebarState, path: string): readonly string[] {
+  return state.blockedSessionIds.filter((id) => cwdOf(state, id) === path);
+}

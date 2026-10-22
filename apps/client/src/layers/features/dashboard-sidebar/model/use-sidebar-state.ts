@@ -221,6 +221,13 @@ export function useSidebarState(): SidebarState {
         .map(([id]) => id),
     [sessionStatuses]
   );
+  const blockedSessionIds = useMemo(
+    () =>
+      Object.entries(sessionStatuses)
+        .filter(([, lifecycle]) => lifecycle === 'blocked')
+        .map(([id]) => id),
+    [sessionStatuses]
+  );
   // Whose each of those is, from the same event that made it live — the REST
   // window above is up to thirty seconds behind, and a folded section that
   // waited for it lost the working signal for exactly that long (BC-31,
@@ -348,6 +355,7 @@ export function useSidebarState(): SidebarState {
       now,
       sessions,
       workingSessionIds,
+      blockedSessionIds,
       liveSessionCwds,
       rooms,
       agents,
@@ -361,6 +369,7 @@ export function useSidebarState(): SidebarState {
       now,
       sessions,
       workingSessionIds,
+      blockedSessionIds,
       liveSessionCwds,
       rooms,
       agents,

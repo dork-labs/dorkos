@@ -32,7 +32,7 @@ import { addOnRows } from './add-on-rows';
 import { indexAgentDms, type AgentDmIndex } from './agent-direct-messages';
 import { muteIndex } from './apply-mute-rules';
 import { liveSessionIdsForPath } from './live-sessions';
-import { rollUpCollapsedSection } from './roll-up-collapsed-section';
+import { rollUpCollapsedSection, rowNeedsYou } from './roll-up-collapsed-section';
 import { agentRow, roomRow, type RowContext } from './section-rows';
 import { rowKey } from './targets';
 
@@ -276,7 +276,9 @@ function fixedSection(
 ): SidebarSectionModel {
   const prefs = state.prefs.sections[id];
   const collapsed = prefs?.collapsed ?? false;
-  const rollup = collapsed ? rollUpCollapsedSection(rows, isWorking) : undefined;
+  const rollup = collapsed
+    ? rollUpCollapsedSection(rows, isWorking, rowNeedsYou(state))
+    : undefined;
   const options = sectionOptions(prefs?.sortMode, prefs?.displayFilter);
   return {
     id,
@@ -378,7 +380,9 @@ function groupSection(
     label: group.name,
     collapsible: true,
     collapsed: group.collapsed ?? false,
-    ...(group.collapsed ? { rollup: rollUpCollapsedSection(ordered, isWorking) } : {}),
+    ...(group.collapsed
+      ? { rollup: rollUpCollapsedSection(ordered, isWorking, rowNeedsYou(state)) }
+      : {}),
     rows: ordered,
     reason: 'section:group',
   };

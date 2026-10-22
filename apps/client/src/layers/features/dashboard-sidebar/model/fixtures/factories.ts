@@ -190,6 +190,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     now: FIXTURE_NOW,
     sessions: [],
     workingSessionIds: [],
+    blockedSessionIds: [],
     liveSessionCwds: {},
     rooms: [],
     agents: [],
