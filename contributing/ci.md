@@ -91,6 +91,35 @@ Queue settings (live, 2026-09-19): squash, `ALLGREEN`, build up to 5 and merge u
 
 Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, admin included, and releases already go through a PR. An admin can still merge a **pull request** around the queue, which is what the merge guard below exists for.
 
+### Security approval per commit
+
+`security-gate` verifies `security-review=success` on every exact PR head in a
+queue group. Labels grant no approval. A new sensitive head needs Security's
+status; automatic "no security paths" success cannot approve a sensitive diff
+against a different base. Missing or stale membership fails closed.
+
+Both verifier legs check out the event's immutable base commit and have only
+contents/statuses/pull-requests read permission. Only the `pull_request_target`
+initializer in `security-review-initialize.yml` can write, from trusted base code. It comments once per observed
+SHA/state transition, recording that observation's status author and ID. Replacing
+a status with the same state adds no comment. It never renders `target_url`.
+After Security approves, rerun the PR verifier. A fully classified nonsensitive
+PR can pass read-only while initialization finishes; the queue requires the
+written status. The initial bootstrap PR fails closed while base lacks the code.
+
+Enforcement requires **Require workflows to pass**, sourced from
+`dork-labs/dorkos` at `refs/heads/main`, path
+`.github/workflows/security-gate.yml`. A named `security-gate` context alone lets
+a PR replace its own workflow. `ci/required-checks.json` lists only named status
+checks, so it deliberately excludes this workflow. The census cannot yet model
+or compare required workflow sources; promotion is blocked on that support.
+The coordinator's rollout, source pin, local malicious-branch fixture and live
+proof requirements are in [Security gate promotion](../ci/security-gate-promotion.md).
+
+The multi-entry queue chain and rebuild timing remain unproven until a real
+capture. Shared owner credentials still permit external approval posting;
+DOR-3181 / posture item 22 and DOR-3183 own that remaining identity boundary.
+
 ## Two gates: local and Actions
 
 **The local hooks are a smell test. The queue is the guarantee.** Say it that way round, because the two are not the same kind of thing and treating them as one is what made the local gates unusable (DOR-2160).
