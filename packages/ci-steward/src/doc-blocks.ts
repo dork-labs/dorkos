@@ -18,10 +18,19 @@ const REQUIRED_CHECKS_END = '<!-- ci-steward:required-checks:end -->';
  *
  * @param contexts - The required contexts from `ci/required-checks.json`.
  */
-export function renderRequiredChecksBlock(contexts: readonly string[]): string {
-  return [REQUIRED_CHECKS_START, ...contexts.map((c) => `- \`${c}\``), REQUIRED_CHECKS_END].join(
-    '\n'
-  );
+export function renderRequiredChecksBlock(
+  contexts: readonly string[],
+  workflows: readonly { repository: string; path: string; ref: string }[] = []
+): string {
+  return [
+    REQUIRED_CHECKS_START,
+    ...contexts.map((c) => `- \`${c}\``),
+    ...workflows.map(
+      (w) =>
+        `- Required workflow: ${w.repository}, \`${w.path}\` from \`${w.ref}\` (organization rule; no bypass actors).`
+    ),
+    REQUIRED_CHECKS_END,
+  ].join('\n');
 }
 
 /** How a doc's block compares with the rendered one. */

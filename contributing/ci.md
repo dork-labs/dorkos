@@ -77,6 +77,7 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
+- Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
@@ -110,9 +111,13 @@ written status. The initial bootstrap PR fails closed while base lacks the code.
 Enforcement requires **Require workflows to pass**, sourced from
 `dork-labs/dorkos` at `refs/heads/main`, path
 `.github/workflows/security-gate.yml`. A named `security-gate` context alone lets
-a PR replace its own workflow. `ci/required-checks.json` lists only named status
-checks, so it deliberately excludes this workflow. The census cannot yet model
-or compare required workflow sources; promotion is blocked on that support.
+a PR replace its own workflow. `ci/required-checks.json` keeps main-sourced
+workflows separately from named contexts. Offline census validates their source
+and every job/trigger. `pnpm ci:census --live` also compares the organization rule,
+source repository identity, active enforcement, exact repository/main scope and
+visible empty bypass list. Missing rules or unreadable evidence fail. The daily
+collector uses the same live comparison; it correctly reports missing enforcement
+until the coordinator promotes the rule. No admin credential is added to Actions.
 The coordinator's rollout, source pin, local malicious-branch fixture and live
 proof requirements are in [Security gate promotion](../ci/security-gate-promotion.md).
 

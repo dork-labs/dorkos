@@ -35,18 +35,20 @@ References: [required workflows and supported events](https://docs.github.com/en
 
 ## CI Steward gap
 
-`ci/required-checks.json` and `RequiredChecksSchema` currently support only
-`ruleset` plus named `contexts`. The generated required-check blocks and the
-census's deadlock checks describe those named checks, not required workflow
-sources. This PR removes `security-gate` from that named list rather than
-pretending it encodes a source pin. No new unconsumed configuration key is added.
+`ci/required-checks.json` now keeps required workflow sources separately from
+named contexts. The schema and offline census validate their source repository,
+main ref, workflow existence, triggers and jobs. Generated docs, collector timing
+and canary coverage include these sources.
 
-Before activation, extend the hand-owned intent/schema, census, live ruleset
-comparison, and collector/canary handling to represent the required workflow's
-source repository, path and `refs/heads/main`. Include organization rulesets in
-that live comparison. Prove that a missing rule, wrong ref/path/repository,
-absent trigger, filter or skipping verifier fails the census. Security reviews
-that extension too. A clean current census is not proof of this missing rule.
+Run `pnpm ci:census --live` before promotion. It reads organization rulesets,
+checks repository identity, source repository ID/path/ref (no SHA override),
+active enforcement, exact repository/main scope and a visible empty bypass list.
+Missing rules, API errors and hidden bypass lists refuse. The daily collector
+uses the same comparison and reports drift as unhealthy. Until activation it
+correctly reports the required org rule missing. Offline census never claims
+live enforcement. No admin token is added to Actions; if its token cannot read
+the evidence, the health check reports that blocker. The coordinator runs the
+promotion check with existing read authority.
 
 ## Bootstrap and proof
 
