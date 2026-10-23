@@ -14,6 +14,7 @@ import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
+import { scrubAgentBrowserStateAtStartup } from '../../services/browser/agent-browser-guard.js';
 import { createMcpRevocationWatch } from '../../services/mesh/mcp-revocation.js';
 import { warmMcpOAuthTokens } from '../../services/mesh/warm-mcp-oauth-tokens.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -143,6 +144,10 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
         void resumeAfterMcpSignin(event).catch(() => {});
       },
     });
+    // A saved browser session from before DOR-3196 loses any Cloud sign-in now,
+    // not only when an agent browser next loads it.
+    if (scrubAgentBrowserStateAtStartup() === 'scrubbed')
+      logger.info('[agent-browser] removed DorkOS Cloud sign-ins from the saved browser session');
     refs.agentMcpServerService = new AgentMcpServerService({
       agents: refs.meshCore.agentRegistry,
       logger,

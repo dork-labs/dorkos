@@ -4,7 +4,9 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
-import { LocalBrowserError, assertLocalBrowserUrl } from './errors.js';
+import { LocalBrowserError, assertLocalBrowserUrl, cloudOriginRefusal } from './errors.js';
+import { isCloudOriginUrl, type CloudOriginEntry } from '@dorkos/shared/cloud-origin';
+import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
   BrowserActionFlight,
   responseDeadline,
@@ -72,7 +74,8 @@ export class LocalBrowserService {
     private readonly embedded?: EmbeddedBrowserPort,
     private readonly backend: LocalBrowserBackend = productionBackend,
     private readonly audit: LocalBrowserAuditWriter = localBrowserAuditWriter(dataDirectory),
-    private readonly hostFacts: () => LocalBrowserHostFacts = localBrowserHostFacts
+    private readonly hostFacts: () => LocalBrowserHostFacts = localBrowserHostFacts,
+    private readonly cloudOrigins: () => readonly CloudOriginEntry[] = cloudOriginsForThisServer
   ) {}
 
   capabilities(): LocalBrowserCapabilities {
@@ -117,7 +120,7 @@ export class LocalBrowserService {
       if (!capabilities.newWindow)
         throw new LocalBrowserError('unsupported', capabilities.unavailableReasons['new-window']!);
     }
-    if (input.url) assertLocalBrowserUrl(input.url);
+    if (input.url) assertLocalBrowserUrl(input.url, 'person');
     this.opening = true;
     const setupAbort = new AbortController();
     this.openingAbort = setupAbort;
@@ -196,8 +199,10 @@ export class LocalBrowserService {
       );
   }
 
-  /** A tool may describe the selected tab only, never other browser tabs. */
+  /** A tool may describe the selected tab only, never other browser tabs, and never a Cloud one. */
   async agentState(): Promise<LocalBrowserState> {
+    const selected = this.tabs.get(this.selectedTabId ?? '');
+    if (selected && !selected.isClosed()) this.refuseCloudPage(selected);
     return this.snapshot(true);
   }
 
@@ -220,6 +225,7 @@ export class LocalBrowserService {
 
   async observe(): Promise<LocalBrowserObservation> {
     const page = this.page();
+    this.refuseCloudPage(page);
     this.invalidate();
     const revision = this.revision;
     if (revision !== this.revision) throw this.stale();
@@ -240,6 +246,7 @@ export class LocalBrowserService {
       if (revision !== this.revision) throw this.stale();
       const snapshot = await boundedPageSnapshot(page, ACTION_TIMEOUT_MS);
       if (revision !== this.revision) throw this.stale();
+      this.refuseCloudPage(page);
       this.observedNodes = nodes;
       this.observation = { revision, snapshot, url: page.url(), tabId: this.selectedTabId! };
       return this.observation;
@@ -252,10 +259,12 @@ export class LocalBrowserService {
   /** Capture pixels from the same selected page; this grants no new action observation. */
   async screenshot(): Promise<{ data: string; mimeType: string; revision: number; tabId: string }> {
     const page = this.page();
+    this.refuseCloudPage(page);
     const revision = this.revision;
     const tabId = this.selectedTabId!;
     if (revision !== this.revision) throw this.stale();
     const bytes = await boundedPageScreenshot(page, ACTION_TIMEOUT_MS);
+    this.refuseCloudPage(page);
     if (revision !== this.revision || tabId !== this.selectedTabId) throw this.stale();
     return { data: bytes.toString('base64'), mimeType: 'image/png', revision, tabId };
   }
@@ -293,7 +302,8 @@ export class LocalBrowserService {
     )
       throw this.stale();
     const page = this.page();
-    if (input.kind === 'navigate') assertLocalBrowserUrl(input.url);
+    this.refuseCloudPage(page);
+    if (input.kind === 'navigate') assertLocalBrowserUrl(input.url, 'agent', this.cloudOrigins());
     const lifecycle = this.lifecycle;
     const operation = async (admit: () => void, dispatched: () => void) => {
       admit();
@@ -311,18 +321,21 @@ export class LocalBrowserService {
         }
       );
     } catch (error) {
+      // A click or a redirect that ended on the Cloud origin is that refusal, not a stale page.
+      this.refuseCloudPage(page);
       if (error instanceof LocalBrowserError) throw error;
       throw new LocalBrowserError(
         'uncertain',
         'The page changed. Check what happened before continuing.'
       );
     }
+    this.refuseCloudPage(page);
     return this.agentState();
   }
 
   /** Human navigation remains available while the agent is paused. */
   async navigate(url: string): Promise<LocalBrowserState> {
-    assertLocalBrowserUrl(url);
+    assertLocalBrowserUrl(url, 'person');
     this.invalidate();
     const revision = this.revision;
     const page = this.page();
@@ -475,6 +488,19 @@ export class LocalBrowserService {
     if (this.paused)
       throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
     if (revision !== this.revision) throw this.stale();
+  }
+  /**
+   * An agent never reads or acts on a page showing the Cloud origin, in the
+   * tab or in any of its frames (DOR-3196): agent control pauses until the
+   * person resumes it, and the agent is refused.
+   */
+  private refuseCloudPage(page: Page): void {
+    const origins = this.cloudOrigins();
+    const urls = [page.url(), ...page.frames().map((frame) => frame.url())];
+    if (!urls.some((url) => isCloudOriginUrl(url, origins))) return;
+    this.paused = true;
+    this.invalidate();
+    throw cloudOriginRefusal();
   }
   private stale(): LocalBrowserError {
     return new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');

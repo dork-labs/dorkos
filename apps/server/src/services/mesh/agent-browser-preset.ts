@@ -4,8 +4,9 @@
  * server gives an agent a browser that starts from it.
  *
  * The operator creates the session with `dorkos browser login`; the CLI owns
- * every write. The server only ever reads, and only ever reports site names and
- * dates — never a cookie or storage value.
+ * every write but two: an empty file put in place, and the removal of a DorkOS
+ * Cloud sign-in (`agent-browser-guard.ts`). The server only ever reports site
+ * names and dates — never a cookie or storage value.
  *
  * @module services/mesh/agent-browser-preset
  */

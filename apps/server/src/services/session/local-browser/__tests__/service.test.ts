@@ -11,6 +11,7 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
+import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 
@@ -48,6 +49,7 @@ function fixture() {
   pixels.writeUInt32BE(100, 16);
   pixels.writeUInt32BE(100, 20);
   const frame = {};
+  const childFrames: { url: () => string }[] = [];
   const page = {
     on: events.on.bind(events),
     off: events.off.bind(events),
@@ -56,6 +58,7 @@ function fixture() {
     title: async () => 'Fixture',
     isClosed: () => false,
     mainFrame: () => frame,
+    frames: () => childFrames,
     keyboard: { press: vi.fn(async () => undefined) },
     mouse: { wheel: vi.fn(async () => undefined) },
     screenshot: vi.fn(async () => Buffer.from(pixels)),
@@ -119,6 +122,9 @@ function fixture() {
     },
     change: (next: string) => {
       snapshot = next;
+    },
+    addFrame: (frameUrl: string) => {
+      childFrames.push({ url: () => frameUrl });
     },
   };
 }
@@ -969,6 +975,119 @@ describe('bounded browser lifecycle ownership', () => {
     ]);
     expect(new Set(journal.map((record) => record.operationId)).size).toBe(1);
     expect(click).toHaveBeenCalledTimes(2);
+    await service.disconnect();
+  });
+});
+
+describe('the Cloud origin (DOR-3196)', () => {
+  const refused = { code: 'cloud_origin', message: CLOUD_ORIGIN_REFUSAL };
+
+  it.each([
+    'https://cloud.dorkos.ai/',
+    'https://cloud.dorkos.ai/any/path',
+    'https://x.cloud.dorkos.ai/',
+    'https://dorkos.ai/any/path',
+  ])('refuses an agent navigation to %s before it is dispatched', async (target) => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.goto).mockClear();
+    await expect(
+      service.action({ kind: 'navigate', url: target, revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('pauses and never observes when a click lands on the Cloud origin', async () => {
+    const { service, click, navigate, page } = await create();
+    await selectOwned(service);
+    const observed = await service.observe();
+    click.mockImplementationOnce(async () => {
+      navigate('https://cloud.dorkos.ai/some/page');
+      return undefined;
+    });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
+    vi.mocked(page.evaluateHandle).mockClear();
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    await expect(service.screenshot()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('refuses an agent navigation that a redirect carries onto the Cloud origin', async () => {
+    const { service, page, navigate } = await create();
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.goto).mockImplementationOnce(async () => {
+      navigate('https://app.cloud.dorkos.ai/');
+      return null;
+    });
+    await expect(
+      service.action({
+        kind: 'navigate',
+        url: 'http://fixture.test/redirect',
+        revision: observed.revision,
+      })
+    ).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it('does not observe a page that frames the Cloud origin', async () => {
+    const { service, addFrame, page } = await create();
+    await selectOwned(service);
+    addFrame('https://cloud.dorkos.ai/frame');
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('never describes a Cloud tab to the agent, even one the person opened', async () => {
+    const { service, navigate } = await create();
+    await selectOwned(service);
+    navigate('https://cloud.dorkos.ai/some/page?token=secret');
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it('still lets the person open the Cloud origin themselves', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    await service.navigate('https://cloud.dorkos.ai/');
+    expect(page.goto).toHaveBeenLastCalledWith('https://cloud.dorkos.ai/', {
+      waitUntil: 'commit',
+      timeout: 15_000,
+    });
+    const opened = await create();
+    await opened.service.open({ mode: 'new-window', url: 'https://cloud.dorkos.ai/start' });
+    expect(opened.page.goto).toHaveBeenCalledWith('https://cloud.dorkos.ai/start', {
+      waitUntil: 'commit',
+      timeout: 15_000,
+    });
+    await service.disconnect();
+    await opened.service.disconnect();
+  });
+
+  it('leaves other sites alone', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    const observed = await service.observe();
+    await service.action({
+      kind: 'navigate',
+      url: 'https://dorkos.ai.example.com/',
+      revision: observed.revision,
+    });
+    expect(page.goto).toHaveBeenLastCalledWith('https://dorkos.ai.example.com/', {
+      waitUntil: 'commit',
+      timeout: 750,
+    });
+    await service.observe();
     await service.disconnect();
   });
 });
