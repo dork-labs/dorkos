@@ -60,10 +60,11 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
     );
   const remaining = runtimes.length - named.length;
 
-  // The remainder is a trailing clause, not another name in the list: "Claude,
-  // Codex and 1 more sign-ins" is not a sentence anybody says.
-  const subject = runtimes.length === 1 ? `${named[0]} sign-in` : `${joinNames(named)} sign-ins`;
-  const rest = remaining > 0 ? `, and ${remaining} more` : '';
+  const subject = `${joinNames(named)}${remaining > 0 ? ` and ${remaining} more` : ''}`;
+  const singleAccount =
+    targets.length === 1 && targets[0].runtime === 'claude-code'
+      ? targets[0].accountRoot
+      : undefined;
 
   return (
     <Banner
@@ -71,24 +72,21 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
       icon={LogIn}
       actions={
         <>
-          {renderCreditsOffer && (
+          {targets.length === 1 && renderCreditsOffer && (
             <CreditsLeadAction
               runtimes={targets.map((target) => target.runtime)}
               renderCreditsOffer={renderCreditsOffer}
             />
           )}
-          {targets
-            .filter((target) => target.runtime === 'claude-code' && target.accountRoot)
-            .map((target) => (
-              <AccountSignin
-                key={target.accountRoot}
-                accountRoot={target.accountRoot!}
-                name={nameFor(target.accountRoot!)}
-                state="signed-out"
-                showAccountName
-              />
-            ))}
-          {targets.some((target) => !target.accountRoot) && (
+          {singleAccount ? (
+            <AccountSignin
+              accountRoot={singleAccount}
+              name={nameFor(singleAccount)}
+              state="signed-out"
+              showAccountName
+              hideStatus
+            />
+          ) : (
             <Button variant="outline" size="sm" onClick={() => openSettings(RUNTIMES_SETTINGS_TAB)}>
               Review sign-ins
             </Button>
@@ -96,8 +94,8 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
         </>
       }
     >
-      <span className="font-medium">{subject}</span> stopped working{rest}. Sign in to resume its
-      work.
+      <span className="font-medium">{subject}</span> {targets.length === 1 ? 'is' : 'are'} signed
+      out. {targets.length === 1 ? 'Its' : 'Their'} agents and tasks wait until you sign in.
     </Banner>
   );
 }

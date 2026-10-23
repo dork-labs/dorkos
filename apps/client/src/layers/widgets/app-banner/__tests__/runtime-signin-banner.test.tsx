@@ -248,7 +248,7 @@ describe('runtime-signin descriptor', () => {
 
     render(descriptor.render());
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Claude Code sign-in stopped working. Sign in to resume its work.'
+      'Claude Code is signed out. Its agents and tasks wait until you sign in.'
     );
   });
 
@@ -272,9 +272,7 @@ describe('runtime-signin descriptor', () => {
     await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
 
     render(findSigninDescriptor(result.current)!.render());
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Codex and Claude Code sign-ins stopped working.'
-    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Codex and Claude Code are signed out.');
   });
 
   it('counts the rest once more runtimes are dead than the row names', () => {
@@ -284,7 +282,7 @@ describe('runtime-signin descriptor', () => {
       <RuntimeSigninBanner runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']} />
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Claude Code, Codex and OpenCode sign-ins stopped working, and 1 more.'
+      'Claude Code, Codex and OpenCode and 1 more are signed out.'
     );
   });
 
@@ -414,7 +412,8 @@ describe('account-targeted sign-in', () => {
       wrapper: harness(transport),
     });
     const button = await screen.findByRole('button', { name: 'Sign in to Claude5' });
-    expect(screen.getByRole('alert')).toHaveTextContent('Claude5 sign-in stopped working');
+    expect(screen.getByRole('alert')).toHaveTextContent('Claude5 is signed out');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.click(button);
     await waitFor(() =>
       expect(login).toHaveBeenCalledWith('claude-code', {
@@ -424,5 +423,26 @@ describe('account-targeted sign-in', () => {
     );
     expect(login).toHaveBeenCalledTimes(1);
     expect(openSettings).not.toHaveBeenCalled();
+  });
+  it('offers one review action for two accounts and opens Runtimes', () => {
+    render(
+      <RuntimeSigninBanner
+        runtimes={['claude-code:/accounts/five', 'claude-code:/accounts/four']}
+      />
+    );
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review sign-ins' }));
+    expect(openSettings).toHaveBeenCalledWith('runtimes');
+  });
+  it('names the account when signing in does not work', async () => {
+    const transport = createMockTransport({
+      delegateRuntimeLogin: vi.fn().mockRejectedValue(new Error('Unavailable')),
+    });
+    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/Claude5']} />, {
+      wrapper: harness(transport),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
+    expect(await screen.findByText('Couldn’t sign in to Claude5. Try again.')).toBeInTheDocument();
   });
 });

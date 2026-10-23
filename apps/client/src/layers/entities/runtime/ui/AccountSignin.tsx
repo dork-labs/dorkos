@@ -7,23 +7,27 @@ export function AccountSignin({
   name,
   state = 'unknown',
   showAccountName = false,
+  hideStatus = false,
 }: {
   accountRoot: string;
   name: string;
   state?: 'signed-in' | 'signed-out' | 'unknown';
   showAccountName?: boolean;
+  hideStatus?: boolean;
 }) {
   const login = useDelegateRuntimeLogin('claude-code', { accountRoot });
   const observed = state === 'unknown' && login.isSuccess ? 'signed-in' : state;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-muted-foreground text-xs" role="status">
-        {observed === 'signed-in'
-          ? 'Signed in'
-          : observed === 'signed-out'
-            ? 'Signed out'
-            : 'Not checked yet'}
-      </span>
+      {!hideStatus && (
+        <span className="text-muted-foreground text-xs" role="status">
+          {observed === 'signed-in'
+            ? 'Signed in'
+            : observed === 'signed-out'
+              ? 'Signed out'
+              : 'Not checked yet'}
+        </span>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -35,7 +39,7 @@ export function AccountSignin({
       </Button>
       {login.isError && observed !== 'signed-in' && (
         <p role="alert" className="text-destructive text-xs">
-          Couldn’t sign in. Try again.
+          Couldn’t sign in to {name}. Try again.
         </p>
       )}
     </div>
