@@ -14,6 +14,7 @@ import {
 } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../lib/logger.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
+import type { RoomCore } from '../../rooms/service/room-core.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { dropRoomFromIndex, optimizeSearchIndex, reindexRoomEntries } from '../../search/index.js';
 import type {
@@ -64,6 +65,7 @@ export interface RemoteRedactionSyncDeps {
    * the log, so the frames carry the tombstone and never the text it replaced.
    */
   publishRevisions?: (localRoomId: string, seqs: readonly number[]) => void;
+  roomAudience?: RoomCore['roomAudience'];
   now?: () => number;
 }
 
@@ -143,7 +145,14 @@ export class RemoteRedactionSync {
         );
       }
       // The room list re-reads on this, so an open window drops the room.
-      eventFanOut.broadcast('room_updated', { roomId });
+      for (const member of purge.removedMembers ?? []) {
+        if (member.roomId !== roomId) continue;
+        eventFanOut.broadcast(
+          'room_member_removed',
+          member,
+          this.deps.roomAudience?.(roomId, member.authorId) ?? (() => false)
+        );
+      }
     }
     for (const file of purge.attachments) {
       void this.deps.attachmentBytes
@@ -242,7 +251,12 @@ export class RemoteRedactionSync {
         if (!page.hasMore) return;
       }
     } finally {
-      for (const roomId of touched) eventFanOut.broadcast('room_updated', { roomId });
+      for (const roomId of touched)
+        eventFanOut.broadcast(
+          'room_updated',
+          { roomId },
+          this.deps.roomAudience?.(roomId) ?? (() => false)
+        );
       if (changed) await this.scrub();
     }
   }

@@ -1,3 +1,4 @@
+import { roomAudience } from '../../services/rooms/service/room-audience.js';
 /**
  * Rooms: read state, the rooms graph, remote community mirrors and
  * subscriptions, room files and worktrees, session binding repair, and the
@@ -224,6 +225,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     mirrors: refs.remoteCommunityRuntime.mirrors,
     readers: getRemoteCommunityAdapter,
     attachmentBytes: roomAttachmentBytes,
+    roomAudience: (roomId, removedAuthorId) => roomAudience(roomId, roomService, removedAuthorId),
     publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   refs.remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({

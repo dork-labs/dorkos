@@ -140,6 +140,7 @@ export function postAuthorBound(
 
 /** The shared write half of every post that reaches a room's log. */
 export class RoomEntryWriter {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
   private readonly roster: RoomRoster;
@@ -154,6 +155,7 @@ export class RoomEntryWriter {
     private readonly publisher: RoomPublisher,
     private readonly notifier: RoomMessageNotifier
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.authors = core.authors;
     this.roster = core.roster;
@@ -226,7 +228,12 @@ export class RoomEntryWriter {
     // After the commit, never inside it: a broadcast is not rolled back, and a
     // roster event for a join that failed would leave every open cockpit
     // showing a member the database does not have.
-    if (joining) eventFanOut.broadcast('room_member_added', { roomId, authorId: author.id });
+    if (joining)
+      eventFanOut.broadcast(
+        'room_member_added',
+        { roomId, authorId: author.id },
+        this.roomAudience(roomId)
+      );
     return { entry, author, joined: joining };
   }
 
