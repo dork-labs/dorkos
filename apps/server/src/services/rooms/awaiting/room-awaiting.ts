@@ -16,7 +16,10 @@ import {
   listLiveProjectors,
   onProjectorStatusChange,
 } from '../../session/session-state-projector.js';
-import { eventFanOut } from '../../core/event-fan-out.js';
+import { eventFanOut, type BroadcastAudience } from '../../core/event-fan-out.js';
+import { readOwnerAccount } from '../../core/auth/index.js';
+import { resolveOperatorAuthor } from '../operator-author.js';
+import type { RoomService } from '../room-service.js';
 import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
 
 /** The two things this module asks of a live session. */
@@ -58,12 +61,14 @@ export function countAwaitingByRoom(
  * many status transitions cost one ledger lookup each and nothing on the wire.
  *
  * @param bindings - The room session ledger.
+ * @param rooms - The room service whose membership gate addresses each event.
  * @param deps - Where statuses come from, the live sessions, and where a change
  *   goes; injectable for tests.
  * @returns Stops watching.
  */
 export function watchRoomAwaiting(
   bindings: RoomBindings,
+  rooms: Pick<RoomService, 'authorRegistry' | 'requireMembership'>,
   deps: {
     onStatusChange?: (listener: (update: { sessionId: string }) => void) => () => void;
     sessions?: () => Iterable<AwaitingSession>;
@@ -75,7 +80,7 @@ export function watchRoomAwaiting(
   const publish =
     deps.publish ??
     ((roomId: string, awaiting: number) =>
-      eventFanOut.broadcast('room_awaiting', { roomId, awaiting }));
+      eventFanOut.broadcast('room_awaiting', { roomId, awaiting }, roomAudience(roomId, rooms)));
   /** The last count sent per room; a room at zero is absent. */
   const sent = new Map<string, number>();
   return subscribe(({ sessionId }) => {
@@ -87,4 +92,26 @@ export function watchRoomAwaiting(
     else sent.set(roomId, awaiting);
     publish(roomId, awaiting);
   });
+}
+
+/** Address a count through the same membership gate as room reads. */
+function roomAudience(
+  roomId: string,
+  rooms: Pick<RoomService, 'authorRegistry' | 'requireMembership'>
+): BroadcastAudience {
+  return (principal) => {
+    // Agent streams carry no verified agent identity to resolve membership from.
+    if (principal.kind !== 'operator' && principal.kind !== 'program') return false;
+    try {
+      const registry = rooms.authorRegistry;
+      const author =
+        principal.kind === 'operator' || principal.userId === readOwnerAccount()?.id
+          ? resolveOperatorAuthor(registry)
+          : registry.human(principal.userId);
+      rooms.requireMembership(roomId, author.id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 }

@@ -8,6 +8,8 @@ import {
   SessionStateProjector,
   type RawSessionEvent,
 } from '../../../session/session-state-projector.js';
+import { eventFanOut, type FanOutClient } from '../../../core/event-fan-out.js';
+import { agentLookupFor, createRoomHarness } from '../../__tests__/room-test-harness.js';
 import { countAwaitingByRoom, watchRoomAwaiting } from '../room-awaiting.js';
 
 /** Sessions bound to rooms, the way the room session ledger answers. */
@@ -73,14 +75,18 @@ describe('watchRoomAwaiting', () => {
     const ops = new SessionStateProjector('ses-ops');
     const publish = vi.fn();
     let listener: (update: { sessionId: string }) => void = () => undefined;
-    const stop = watchRoomAwaiting(bindings, {
-      onStatusChange: (next) => {
-        listener = next;
-        return () => undefined;
-      },
-      sessions: () => [ops],
-      publish,
-    });
+    const stop = watchRoomAwaiting(
+      bindings,
+      createRoomHarness({ agents: agentLookupFor({}) }).service,
+      {
+        onStatusChange: (next) => {
+          listener = next;
+          return () => undefined;
+        },
+        sessions: () => [ops],
+        publish,
+      }
+    );
 
     listener({ sessionId: 'ses-ops' });
     expect(publish).not.toHaveBeenCalled();
@@ -101,5 +107,73 @@ describe('watchRoomAwaiting', () => {
     listener({ sessionId: 'ses-direct' });
     expect(publish).toHaveBeenCalledTimes(2);
     stop();
+  });
+
+  it('sends only to member streams and rechecks membership on each change', () => {
+    const { service, authors, human, store } = createRoomHarness({ agents: agentLookupFor({}) });
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Ops', slug: 'ops', members: [], agentPaths: [] },
+      human
+    );
+    const member = authors.human('member');
+    store.addMember({
+      roomId: room.id,
+      authorId: member.id,
+      responseMode: 'mention-only',
+      joinedAt: new Date().toISOString(),
+    });
+    const client = () => ({
+      send: vi.fn<FanOutClient['send']>(),
+      bufferedBytes: 0,
+      gone: false,
+      drop: vi.fn(),
+    });
+    const inside = client();
+    const outside = client();
+    const agent = client();
+    const disconnect = [
+      eventFanOut.addClient(inside, { kind: 'program', userId: 'member' }),
+      eventFanOut.addClient(outside, { kind: 'program', userId: 'non-member' }),
+      eventFanOut.addClient(agent, { kind: 'agent' }),
+    ];
+    const ops = new SessionStateProjector('ses-ops');
+    let listener: (update: { sessionId: string }) => void = () => undefined;
+    const stop = watchRoomAwaiting(
+      {
+        bindingForSession: () =>
+          ({ roomId: room.id, authorId: human }) as ReturnType<typeof bindings.bindingForSession>,
+      },
+      service,
+      {
+        onStatusChange: (next) => {
+          listener = next;
+          return () => undefined;
+        },
+        sessions: () => [ops],
+      }
+    );
+    try {
+      askApproval(ops, 'tool-1');
+      listener({ sessionId: 'ses-ops' });
+      expect(inside.send).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(inside.send.mock.calls[0][0].json)).toMatchObject({
+        event: 'room_awaiting',
+        data: { roomId: room.id, awaiting: 1 },
+      });
+      expect(outside.send).not.toHaveBeenCalled();
+      expect(agent.send).not.toHaveBeenCalled();
+
+      service.removeMember(room.id, human, member.id);
+      // Ignore the separate room_member_removed broadcast from the service.
+      for (const stream of [inside, outside, agent]) stream.send.mockClear();
+      ops.ingest({ type: 'interaction_resolved', id: 'tool-1' } as RawSessionEvent);
+      listener({ sessionId: 'ses-ops' });
+      expect(inside.send).not.toHaveBeenCalled();
+      expect(outside.send).not.toHaveBeenCalled();
+      expect(agent.send).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      disconnect.forEach((off) => off());
+    }
   });
 });

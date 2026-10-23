@@ -442,10 +442,6 @@ export function createRoomSubsystem(opts: {
   }) => RoomMirrorRuntime;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
-  // A room's count of turns waiting on a person, sent live as it changes
-  // (DOR-3236). The last subsystem built is the one watched.
-  stopAwaitingWatch?.();
-  stopAwaitingWatch = watchRoomAwaiting(store.sessionLedger);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
   // Receipts a restart left behind (DOR-2823).
@@ -669,6 +665,9 @@ export function createRoomSubsystem(opts: {
     // server start.
     isRoomMuted: readRoomMuted,
   });
+  // The last subsystem built owns the live awaiting-count watch (DOR-3236).
+  stopAwaitingWatch?.();
+  stopAwaitingWatch = watchRoomAwaiting(store.sessionLedger, service);
   // **Here, not at a boot-time hook, and the difference is the ordering bug the
   // reservation exists to prevent.** `dorkos` has to be held before ANY author
   // can be minted — an agent whose manifest name is `DorkOS` that joins a room
