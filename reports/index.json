@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-10-22T09:59:17.303Z",
+ "updated_at": "2026-10-23T09:53:58.589Z",
  "days": [
+  {
+   "date": "2026-10-22",
+   "light": "red",
+   "headline": "wf.browser-test.browser-shard p95 uses 104% of its time limit (n=2412)."
+  },
   {
    "date": "2026-10-21",
    "light": "red",
