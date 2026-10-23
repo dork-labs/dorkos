@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(mcp): bound tool input validation and HTTP request bodies'
+  - 'fix(test): type the partial MCP server mock explicitly'
 ---
 
 ### Security
