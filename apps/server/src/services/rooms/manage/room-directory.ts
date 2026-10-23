@@ -34,6 +34,7 @@ import { parseEntryBody } from '../room-rows.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import { countAwaitingByRoom } from '../awaiting/room-awaiting.js';
 
 /** Every read that answers "what rooms are there, and where am I in them". */
 export class RoomDirectory {
@@ -165,6 +166,9 @@ export class RoomDirectory {
     const lastLines = this.store.listReads.lastLines(
       visible.map((room) => ({ roomId: room.id, floor: joinedAt.get(room.id) ?? 0 }))
     );
+    // Turns waiting on a person, per room, read once from the server's own
+    // session state (DOR-3236). A count only.
+    const awaiting = countAwaitingByRoom(this.store.sessionLedger);
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
       const unreadCount = cursor === undefined ? null : this.store.countUnread(room.id, cursor);
@@ -189,6 +193,8 @@ export class RoomDirectory {
         // be indistinguishable from "this server does not know", which is the
         // one thing it is never true of: the claim map is right here.
         working: this.triggers.workingCount(room.id),
+        // Always a number, for the reason `working` is.
+        awaiting: awaiting.get(room.id) ?? 0,
       };
     });
   }

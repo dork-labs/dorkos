@@ -260,6 +260,9 @@ export function useRoomListStream(): void {
   useEventSubscription(ROOM_LIST_EVENTS[2], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[3], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[4], refresh);
+  // A room whose turns started or stopped waiting on a person (DOR-3236): the
+  // list carries the count a folded section keeps the room on screen for.
+  useEventSubscription('room_awaiting', refresh);
 
   // The open room's own cache entry, kept honest independently of the list
   // above: `useRoom` never refetches on its own (`staleTime: Infinity` —

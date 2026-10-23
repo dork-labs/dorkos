@@ -25,6 +25,7 @@ import { configManager } from '../core/config-manager.js';
 import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
+import { watchRoomAwaiting } from './awaiting/room-awaiting.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -400,6 +401,9 @@ function safeJson(raw: string): unknown {
   }
 }
 
+/** Stops the current `room_awaiting` watch; replaced when a subsystem is built. */
+let stopAwaitingWatch: (() => void) | undefined;
+
 /**
  * Wire the rooms subsystem from the DB handle.
  *
@@ -661,6 +665,9 @@ export function createRoomSubsystem(opts: {
     // server start.
     isRoomMuted: readRoomMuted,
   });
+  // The last subsystem built owns the live awaiting-count watch (DOR-3236).
+  stopAwaitingWatch?.();
+  stopAwaitingWatch = watchRoomAwaiting(store.sessionLedger, service);
   // **Here, not at a boot-time hook, and the difference is the ordering bug the
   // reservation exists to prevent.** `dorkos` has to be held before ANY author
   // can be minted — an agent whose manifest name is `DorkOS` that joins a room
