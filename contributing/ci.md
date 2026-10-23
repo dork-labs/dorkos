@@ -94,7 +94,13 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 ### Security approval per commit
 
 `security-gate` verifies `security-review=success` on every exact PR head in a
-queue group. Labels grant no approval. A new sensitive head needs Security's
+queue group. Sensitive diffs require the newest success creator to be the
+workflow-pinned numeric Security bot user ID; a later user success invalidates an older App
+success. The numeric ID remains zero until Dorian creates the App.
+Use the compiled `tools/security-approve` helper with its exact cdhash-pinned
+Keychain item; setup is in [Security gate promotion](../ci/security-gate-promotion.md).
+Complete nonsensitive diffs keep the trusted initializer's automatic success.
+Labels grant no approval. A new sensitive head needs Security's
 status; automatic "no security paths" success cannot approve a sensitive diff
 against a different base. Missing or stale membership fails closed.
 
