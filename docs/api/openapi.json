@@ -829,6 +829,14 @@
       "AccountUsage": {
         "type": "object",
         "properties": {
+          "signInState": {
+            "type": "string",
+            "enum": [
+              "signed-in",
+              "signed-out",
+              "unknown"
+            ]
+          },
           "runtime": {
             "type": "string",
             "enum": [
