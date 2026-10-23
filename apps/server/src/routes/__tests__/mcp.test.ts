@@ -127,7 +127,10 @@ describe('MCP Route Handler', () => {
     const app = new Hono<ApiEnv>();
     app.onError((_error, c) => c.json({ error: 'too large' }, 413));
     app.use(parseRequestBody());
-    app.route('/mcp', createMcpEndpoint(factory as Parameters<typeof createMcpEndpoint>[0]));
+    app.route(
+      '/mcp',
+      createMcpEndpoint(factory as unknown as Parameters<typeof createMcpEndpoint>[0])
+    );
     const server = target.mount(honoListener(app));
     const res = await request(server)
       .post('/mcp')
