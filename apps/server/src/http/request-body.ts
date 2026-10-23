@@ -21,6 +21,7 @@
  *
  * @module http/request-body
  */
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../services/core/capabilities/mcp-input/limits.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import bodyParser from 'body-parser';
 import type { Context, MiddlewareHandler } from 'hono';
@@ -100,6 +101,8 @@ export type RequestBodyEnv = {
   };
 };
 
+// MCP is capped before parsing/auth as well as at the transport's raw-body seam.
+const parseMcpJson: NodeBodyParser = bodyParser.json({ limit: MCP_MAX_REQUEST_BODY_BYTES });
 const parseJson: NodeBodyParser = bodyParser.json({ limit: API_JSON_BODY_LIMIT });
 
 /**
@@ -120,11 +123,15 @@ export function parseRequestBody<E extends RequestBodyEnv>(
     const { incoming, outgoing } = c.env;
     const rule = rules.find((candidate) => candidate.matches(c.req.method, c.req.path));
     const failure = await new Promise<{ error: unknown } | undefined>((resolve, reject) => {
-      (rule?.parse ?? parseJson)(incoming, outgoing, (error) => {
-        if (!error) resolve(undefined);
-        else if (rule?.answerFailure) resolve({ error });
-        else reject(error);
-      });
+      (rule?.parse ?? (underMount(c.req.path, '/mcp') ? parseMcpJson : parseJson))(
+        incoming,
+        outgoing,
+        (error) => {
+          if (!error) resolve(undefined);
+          else if (rule?.answerFailure) resolve({ error });
+          else reject(error);
+        }
+      );
     });
     if (failure) {
       const { method, path } = c.req;
