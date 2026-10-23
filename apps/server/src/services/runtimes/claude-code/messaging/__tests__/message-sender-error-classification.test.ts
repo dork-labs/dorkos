@@ -1,3 +1,8 @@
+import {
+  noteCredentialsReadable,
+  resetCredentialReadHealth,
+  CREDENTIAL_INIT_TIMEOUT_MS,
+} from '../../tooling/credential-read-health.js';
 /**
  * Catch-all error classification in `executeSdkQuery`.
  *
@@ -8,7 +13,7 @@
  * failure stays `execution_error`. The raw message must always survive in
  * `details` so nothing is hidden from the user.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -97,6 +102,43 @@ function errorData(events: StreamEvent[]): Record<string, unknown> {
 describe('executeSdkQuery — catch-all error classification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCredentialReadHealth();
+  });
+
+  afterEach(() => {
+    resetCredentialReadHealth();
+    vi.useRealTimers();
+  });
+
+  it('reports an unreadable sign-in when a recently healthy account never emits init', async () => {
+    vi.useFakeTimers();
+    const root = '/mock/account';
+    noteCredentialsReadable(root);
+    const close = vi.fn();
+    vi.mocked(query).mockReturnValue({
+      close,
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+    } as unknown as ReturnType<typeof query>);
+    const events: StreamEvent[] = [];
+    const consuming = (async () => {
+      for await (const event of executeSdkQuery(
+        'hung',
+        'hello',
+        makeSession({ accountRoot: root }),
+        makeOpts()
+      ))
+        events.push(event);
+    })();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(query).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_INIT_TIMEOUT_MS);
+    await consuming;
+    expect(close).toHaveBeenCalledOnce();
+    expect(errorData(events)).toMatchObject({
+      code: 'credentials_unreadable',
+      category: 'execution_error',
+      message: "Agents can't read their sign-in. Check this Mac for a password prompt.",
+    });
   });
 
   it('classifies a thrown pre-stream auth failure as auth_error and keeps the raw message in details', async () => {

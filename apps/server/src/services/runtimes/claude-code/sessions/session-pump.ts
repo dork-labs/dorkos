@@ -1,3 +1,11 @@
+import { isInit } from './diagnostics/credential-init-guard.js';
+import {
+  CREDENTIAL_INIT_TIMEOUT_MS,
+  CredentialsUnreadableError,
+  credentialsRecentlyReadable,
+  noteCredentialsReadable,
+  noteCredentialsUnreadable,
+} from '../tooling/credential-read-health.js';
 /**
  * The long-lived owner of one claude-code session's SDK process (spec
  * `persistent-session-runtime` §4, task 3.2).
@@ -34,7 +42,6 @@
  *
  * @module services/runtimes/claude-code/sessions/session-pump
  */
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
 import { createHeldUserPrompt, createIdlePrompt, type HeldUserPrompt } from '../sdk/sdk-utils.js';
 import { createTurnLiveness, type TurnLiveness } from '../messaging/turn-liveness.js';
@@ -84,13 +91,6 @@ function deferred(): Deferred {
   return { promise, resolve, reject };
 }
 
-/** Is this SDK message the `system/init` that says the process is ready? */
-function isInit(
-  message: SDKMessage
-): message is Extract<SDKMessage, { type: 'system'; subtype: 'init' }> {
-  return message.type === 'system' && message.subtype === 'init';
-}
-
 /**
  * One session's SDK process, and the state machine that owns its life.
  *
@@ -103,6 +103,7 @@ export class SessionPump {
   private readonly opts: SessionPumpOptions;
   private currentState: PumpState = 'cold';
   private query: PumpQuery | undefined;
+  private launchedCredentialRoot: string | undefined;
   private held: HeldUserPrompt | undefined;
   private consumed: Promise<void> | undefined;
   private launchInFlight: Promise<void> | undefined;
@@ -771,13 +772,23 @@ export class SessionPump {
     this.held = held;
     const ready = deferred();
     this.initReady = ready;
+    const credentialRoot = this.opts.credentialAccountRoot?.();
+    this.launchedCredentialRoot = credentialRoot;
+    const recentlyReadable = credentialsRecentlyReadable(credentialRoot);
+    const initTimeout =
+      this.opts.initTimeoutMs ?? (recentlyReadable ? CREDENTIAL_INIT_TIMEOUT_MS : INIT_TIMEOUT_MS);
     this.initTimer = setTimeout(() => {
+      const live = this.query;
+      if (recentlyReadable) noteCredentialsUnreadable(credentialRoot);
       this.noteProcessGone(
-        new Error(
-          `session ${this.sessionId} never reported system/init within ${this.initTimeout}ms`
-        )
+        recentlyReadable
+          ? new CredentialsUnreadableError()
+          : new Error(
+              `session ${this.sessionId} never reported system/init within ${initTimeout}ms`
+            )
       );
-    }, this.initTimeout);
+      live?.close();
+    }, initTimeout);
     this.initTimer.unref?.();
     let live: PumpQuery;
     try {
@@ -802,11 +813,6 @@ export class SessionPump {
     this.query = live;
     this.consumed = this.consume(live);
     await ready.promise;
-  }
-
-  /** The configured init bound, or the module default. */
-  private get initTimeout(): number {
-    return this.opts.initTimeoutMs ?? INIT_TIMEOUT_MS;
   }
 
   /**
@@ -845,6 +851,7 @@ export class SessionPump {
 
   /** `WARMING → WARM`: the CLI is up and its control methods are usable. */
   private noteInit(capabilities: readonly string[]): void {
+    noteCredentialsReadable(this.launchedCredentialRoot);
     this.cachedCapabilities = [...capabilities];
     this.clearInitTimer();
     // A re-initialize on a live process refreshes the capabilities and nothing

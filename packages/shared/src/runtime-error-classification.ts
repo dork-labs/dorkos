@@ -22,6 +22,12 @@
 import { runtimeAuthConnectKind, runtimeDisplayName } from './agent-runtime.js';
 import type { ErrorCategory } from './types.js';
 
+/** Machine-readable failure: the credential store did not answer, not a signed-out account. */
+export const CREDENTIALS_UNREADABLE_CODE = 'credentials_unreadable';
+/** One actionable sentence for a hung credential read, shared by readiness and turn errors. */
+export const CREDENTIALS_UNREADABLE_MESSAGE =
+  "Agents can't read their sign-in. Check this Mac for a password prompt.";
+
 /**
  * Exact runtime error `code`/subtype values that unambiguously mean an
  * authentication failure, regardless of the human message text. These are the

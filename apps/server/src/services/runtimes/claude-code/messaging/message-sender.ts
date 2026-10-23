@@ -1,3 +1,5 @@
+import { credentialInitDeadline } from '../sessions/diagnostics/credential-init-guard.js';
+import { CredentialsUnreadableError } from '../tooling/credential-read-health.js';
 /**
  * SDK query execution -- extracted from ClaudeCodeRuntime.sendMessage()
  * for file size management.
@@ -182,6 +184,10 @@ export async function* executeSdkQuery(
   // and can answer getContextUsage() (closed below once the turn completes).
   const heldPrompt = createHeldUserPrompt(enrichedContent);
   const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
+  const initGuard = credentialInitDeadline(
+    agentQuery,
+    session.launchedPerToken ? undefined : resolved.launch.accountRoot
+  );
   session.activeQuery = agentQuery;
 
   // Ending the held prompt sends the CLI's stdin an EOF, and from that moment
@@ -316,11 +322,12 @@ export async function* executeSdkQuery(
       // moment a segment starts, and re-checks liveness before it closes
       // anything — so it can no longer fire inside a running segment or under a
       // helper launched since it was armed (DOR-1238).
-      const winner = await Promise.race(
-        deferredClose.deadline
-          ? [queuePromise, pendingSdkPromise, deferredClose.deadline]
-          : [queuePromise, pendingSdkPromise]
-      );
+      const winner = await Promise.race([
+        queuePromise,
+        pendingSdkPromise,
+        ...(deferredClose.deadline ? [deferredClose.deadline] : []),
+        ...(initGuard.deadline ? [initGuard.deadline] : []),
+      ]);
 
       if (winner === 'expired') {
         settleStdinAtDeadline({
@@ -339,6 +346,7 @@ export async function* executeSdkQuery(
       pendingSdkPromise = null;
       const { result } = winner;
       if (result.done) break;
+      initGuard.observe(result.value);
 
       // Track the last MAIN-THREAD assistant message uuid so the NEXT turn can
       // anchor its resume at it (see the `resumeSessionAt` note above). Subagent
@@ -617,15 +625,20 @@ export async function* executeSdkQuery(
     yield {
       type: 'error',
       data: {
-        message: isAuthError
-          ? describeAuthError(CLAUDE_CODE_RUNTIME_TYPE)
-          : 'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
+        code: err instanceof CredentialsUnreadableError ? err.code : undefined,
+        message:
+          err instanceof CredentialsUnreadableError
+            ? err.message
+            : isAuthError
+              ? describeAuthError(CLAUDE_CODE_RUNTIME_TYPE)
+              : 'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
         category: (isAuthError ? 'auth_error' : 'execution_error') as ErrorCategory,
         details: errMsg,
       },
     };
     emittedError = true;
   } finally {
+    initGuard.dispose();
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
     // Clearing the deadline here also covers the path where the race THREW —
