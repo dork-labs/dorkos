@@ -610,6 +610,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           <Suspense fallback={null}>
             <RoomFilesSection
               roomId={roomId}
+              canSetUp={detail.viewerCan?.setUpFiles === true}
               // Changing a room's files is for somebody IN the room, while it
               // is live: an archived room and a reader who only sees it would
               // both be refused, so neither is offered the controls.

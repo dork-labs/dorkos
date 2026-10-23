@@ -225,6 +225,7 @@ export const RoomNoticeCodeSchema = z
     'room_archived',
     'agent_reseated',
     'handle_changed',
+    'files_set_up',
   ])
   .openapi('RoomNoticeCode');
 
@@ -821,6 +822,14 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .optional()
     .describe(
       'Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means "this source cannot say", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn.'
+    ),
+  viewerCan: z
+    .object({
+      setUpFiles: z.boolean(),
+    })
+    .optional()
+    .describe(
+      'Actions THIS reader may take in this room. The server still enforces every action; this only keeps refused controls off the screen. Absent means this source cannot say.'
     ),
   reactionFrequents: z
     .array(z.string())

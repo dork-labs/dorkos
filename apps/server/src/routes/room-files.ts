@@ -86,7 +86,9 @@ const router = new Hono<ApiEnv>();
  */
 router.post('/:id/repo', (c) =>
   roomRoute(c, 'POST /:id/repo', async (caller) => {
-    const result = await getRoomRepoService().enable(c.req.param('id'), caller().id);
+    const person = caller();
+    const roomId = c.req.param('id');
+    const result = await getRoomRepoService().enable(roomId, person.id);
     if (!result.created) {
       return c.json(
         {
@@ -97,6 +99,10 @@ router.post('/:id/repo', (c) =>
         409
       );
     }
+    getRoomService().postNotice(roomId, {
+      text: `${person.displayName} set up files for this room.`,
+      notice: 'files_set_up',
+    });
     return c.json({ repo: result.repo }, 201);
   })
 );

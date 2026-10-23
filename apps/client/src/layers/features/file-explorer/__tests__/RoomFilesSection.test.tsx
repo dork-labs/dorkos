@@ -118,6 +118,93 @@ describe('RoomFilesSection', () => {
     await waitFor(() => expect(queryErrors).toHaveLength(0));
   });
 
+  it('lets the owner confirm setup, then replaces the invitation with the files', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('No files'), { code: 'ROOM_HAS_NO_REPO', status: 409 })
+      )
+      .mockResolvedValue({
+        path: '',
+        commit: 'head',
+        entries: [entry({ name: 'ROOM.md' })],
+      });
+    transport.enableRoomRepo = vi.fn().mockResolvedValue({
+      repo: {
+        roomId: ROOM_ID,
+        mode: 'owned',
+        createdAt: '2026-10-21T12:00:00.000Z',
+        createdBy: 'owner',
+        defaultBranch: 'main',
+        caps: { maxFileBytes: 1, maxRepoBytes: 2, maxRoomMdBytes: 3 },
+        lastMergeSeq: null,
+      },
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <RoomFilesSection roomId={ROOM_ID} canChange canSetUp />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up files…' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Set up files for this room?');
+    fireEvent.click(screen.getByRole('button', { name: 'Set up files' }));
+
+    await waitFor(() => expect(transport.enableRoomRepo).toHaveBeenCalledWith(ROOM_ID));
+    expect(await screen.findByRole('treeitem', { name: 'ROOM.md' })).toBeInTheDocument();
+    expect(screen.queryByText('This room has no shared files.')).not.toBeInTheDocument();
+  });
+
+  it('explains when room files are turned off', async () => {
+    const transport = roomWithoutFiles();
+    transport.enableRoomRepo = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('disabled'), { code: 'ROOM_REPOS_DISABLED', status: 409 })
+      );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <RoomFilesSection roomId={ROOM_ID} canChange canSetUp />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up files…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set up files' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Room files are turned off for this DorkOS.'
+    );
+  });
+
+  it('explains when the computer is offline', async () => {
+    const transport = roomWithoutFiles();
+    transport.enableRoomRepo = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <RoomFilesSection roomId={ROOM_ID} canChange canSetUp />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up files…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set up files' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You’re offline. Try again when this computer reconnects.'
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
   it('still reports a refusal that really is one', async () => {
     const transport = createMockTransport();
     transport.readRoomFiles = vi

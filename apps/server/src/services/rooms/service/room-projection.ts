@@ -155,6 +155,9 @@ export class RoomProjection {
       // server still refuses a non-operator; this only decides what is drawn
       // (spec `canvas-agent-seat` §8).
       viewerIsOperator: this.isOwnerAuthor(viewerAuthorId),
+      viewerCan: {
+        setUpFiles: this.isOwnerAuthor(viewerAuthorId) && !room.archived,
+      },
       // Here for the same reason `reactionFrequents` is, and it buys more: this
       // one method feeds the room read, the create response AND the stream's
       // hydration snapshot, so every way of arriving at a room arrives with its

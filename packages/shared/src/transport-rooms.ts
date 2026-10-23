@@ -24,6 +24,7 @@ import type {
   RoomFileSaveResponse,
 } from './room-files.js';
 import type {
+  EnableRoomRepoResponse,
   RoomMainRepairRequest,
   RoomMainRepairResult,
   RoomMergeResult,
@@ -133,6 +134,8 @@ export interface RoomTransport {
    *   may not see it — the two are deliberately indistinguishable.
    */
   getRoom(id: string): Promise<RoomWithRoster>;
+  /** Give a live room shared files. The install owner is the only allowed caller. */
+  enableRoomRepo(id: string): Promise<EnableRoomRepoResponse>;
   /**
    * Patch a room's title, topic or archived flag.
    *
