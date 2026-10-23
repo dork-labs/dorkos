@@ -172,6 +172,7 @@ const NOT_SETTINGS: Record<string, string> = {
   COMMUNITY_DELETION_OVERDUE_MS: 'constant (deletion-worker.ts)',
   COMMUNITY_EMAIL_LINK_PAGES: 'constant (shared wire)',
   COMMUNITY_IMPORT_MAX_PARTS: 'constant (shared wire)',
+  COMMUNITY_MEMBER_DIRECTORY_AGENTS_MAX: 'constant (shared wire)',
   COMMUNITY_MIGRATIONS: 'constant (migrate.ts)',
   COMMUNITY_MINIMUM_AGE_CEILING: 'constant (shared wire)',
   COMMUNITY_MINIMUM_AGE_FLOOR: 'constant (shared wire)',

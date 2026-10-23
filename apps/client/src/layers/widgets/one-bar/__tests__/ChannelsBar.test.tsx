@@ -18,6 +18,11 @@ import { BarHarness } from './bar-harness';
 
 // The fixed cluster OneBar renders. Both are real widgets with their own data
 // needs; this suite is about what the BAR says, so they are stubbed at the seam.
+// The private space's Settings tab is a hub's alone (DOR-3005); these tests run on a computer.
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
+  useIsHub: () => false,
+}));
 vi.mock('@/layers/widgets/inbox-bell', () => ({
   InboxBell: () => <button aria-label="Inbox">Inbox</button>,
 }));
@@ -51,6 +56,7 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityConnections: () => ({ data: [{ ref: 'acme', label: 'Acme' }] }),
   useRemoteCommunityRoom: () => ({ data: { title: 'design-review' } }),
   useRemoteCommunityDm: () => ({ dm: undefined }),
+  useCommunitySpaceRead: () => ({ data: undefined }),
   // Whether the space may show: the experiment alone here, since no official space is named.
   useSpaceVisible: () => ({ visible: route.spaces, isLoading: false }),
 }));
