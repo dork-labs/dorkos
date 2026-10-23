@@ -1,6 +1,10 @@
+import { WifiOff } from 'lucide-react';
+import { appRoutes } from '@/layers/shared/lib';
 import { useSafeSearch } from '@/layers/shared/model';
-import { PageHeading } from '@/layers/shared/ui';
+import { BarTabStrip, PageHeading, type BarTab } from '@/layers/shared/ui';
+import { useIsHub } from '@/layers/entities/config';
 import {
+  useCommunitySpaceRead,
   communityAccessState,
   remoteDmTitle,
   useRemoteCommunityDm,
@@ -107,13 +111,59 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
  * would be the worse half of that pair.
  */
 export function ChannelsBar() {
-  const search = useSafeSearch() as { community?: string; id?: string };
+  const search = useSafeSearch() as { community?: string; id?: string; tab?: string };
   // A space's bar only while that space is reachable: every space with spaces
   // on, the official one alone with them off (DOR-2740); the page redirects.
   const space = useSpaceVisible(search.community);
   if (space.visible && search.community && search.id)
     return <RemoteChannelsBar community={search.community} roomId={search.id} />;
-  return <LocalChannelsBar />;
+  if (space.visible && search.community)
+    return <SpaceBar community={search.community} settings={search.tab === 'settings'} />;
+  return <LocalChannelsBar settings={search.tab === 'settings'} />;
+}
+
+/** A space's two tabs: its channels, and its Settings (DOR-3005). */
+function spaceTabs(community: string | undefined): BarTab[] {
+  return [
+    { id: 'channels', label: 'Channels', ...appRoutes.channels(), search: { community } },
+    {
+      id: 'settings',
+      label: 'Settings',
+      ...appRoutes.channels(),
+      search: { community, tab: 'settings' },
+    },
+  ];
+}
+
+/**
+ * A space's page, before a channel is picked: its name, its Channels and Settings tabs, and an
+ * Offline chip while its Settings tab shows what the space said last (DOR-3005).
+ */
+function SpaceBar({ community, settings }: { community: string; settings: boolean }) {
+  const connection = useCommunityConnections().data?.find((item) => item.ref === community);
+  const offline = useCommunitySpaceRead(community, 'settings', settings).data?.offline === true;
+  return (
+    <OneBar
+      identity={<BarTitle>{connection?.label ?? 'Space'}</BarTitle>}
+      chips={
+        offline && settings ? (
+          <span className="bg-status-warning-bg text-status-warning-fg inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
+            <WifiOff aria-hidden className="size-3" />
+            Offline
+          </span>
+        ) : undefined
+      }
+      fill={
+        <BarTabStrip
+          tabs={spaceTabs(community)}
+          activeTabId={settings ? 'settings' : 'channels'}
+          label="Space sections"
+          indicatorLayoutId="space-tabs"
+          testId="space-tabs"
+        />
+      }
+    />
+  );
 }
 
 function RemoteChannelsBar({ community, roomId }: { community: string; roomId: string }) {
@@ -144,9 +194,11 @@ function RemoteChannelsBar({ community, roomId }: { community: string; roomId: s
   );
 }
 
-function LocalChannelsBar() {
+function LocalChannelsBar({ settings }: { settings: boolean }) {
   const { room } = useOneBarState();
   const team = useTeamRoom();
+  // On a hub, this DorkOS is the person's private space, with its own Settings tab (A6).
+  const isHub = useIsHub();
 
   // **#team never gets a room bar HERE, because this route never shows it.**
   // `?id=<team>` redirects to Home (spec §3.5), and while that navigation is in
@@ -164,6 +216,22 @@ function LocalChannelsBar() {
   // says `pending`, and this is the same answer in the header: the neutral bar
   // until the list says which room #team is.
   const teamUnknown = team.status === 'loading';
+
+  if (isHub && room === null)
+    return (
+      <OneBar
+        identity={<BarTitle>Private</BarTitle>}
+        fill={
+          <BarTabStrip
+            tabs={spaceTabs(undefined)}
+            activeTabId={settings ? 'settings' : 'channels'}
+            label="Space sections"
+            indicatorLayoutId="space-tabs"
+            testId="space-tabs"
+          />
+        }
+      />
+    );
 
   if (room === null || leavingForHome || teamUnknown)
     return <OneBar identity={<BarTitle>Channels</BarTitle>} />;

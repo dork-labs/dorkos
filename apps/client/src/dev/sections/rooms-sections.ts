@@ -258,6 +258,13 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['community', 'deleted', 'taken down', 'gone', 'unsent', 'draft', 'copy', 'remove'],
   },
   {
+    id: 'spacesettingspanel',
+    title: 'SpaceSettingsPanel',
+    page: 'rooms',
+    category: 'Delivery',
+    keywords: ['space', 'settings', 'members', 'rules', 'offline', 'private', 'owner', 'admin'],
+  },
+  {
     id: 'communityownernoticebanner',
     title: 'CommunityOwnerNoticeBanner',
     page: 'rooms',
