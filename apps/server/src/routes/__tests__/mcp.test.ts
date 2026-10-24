@@ -32,6 +32,7 @@ import type { Server } from 'node:http';
 import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../../services/core/capabilities/mcp-input/limits.js';
 import { createMcpEndpoint } from '../mcp.js';
 
 /**
@@ -117,7 +118,26 @@ describe('MCP Route Handler', () => {
 
     expect(mockTransportConstructor).toHaveBeenCalledWith({
       sessionIdGenerator: undefined,
+      maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES,
     });
+  });
+
+  it('oversized /mcp JSON is refused before the server or SDK can validate it', async () => {
+    const factory = vi.fn(createMockServer);
+    const app = new Hono<ApiEnv>();
+    app.onError((_error, c) => c.json({ error: 'too large' }, 413));
+    app.use(parseRequestBody());
+    app.route(
+      '/mcp',
+      createMcpEndpoint(factory as unknown as Parameters<typeof createMcpEndpoint>[0])
+    );
+    const server = target.mount(honoListener(app));
+    const res = await request(server)
+      .post('/mcp')
+      .send({ padding: 'x'.repeat(MCP_MAX_REQUEST_BODY_BYTES) });
+    expect(res.status).toBe(413);
+    expect(factory).not.toHaveBeenCalled();
+    expect(mockHandleRequest).not.toHaveBeenCalled();
   });
 
   it('POST /mcp connects transport to server', async () => {
