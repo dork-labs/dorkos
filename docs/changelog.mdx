@@ -5,6 +5,14 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.125.4] - 2026-10-24
+
+> DorkOS 0.125.4 names a signed-out Claude account, and signs in to that account, not your default.
+
+### Fixed
+
+- When a Claude account is signed out, the banner names it, and **Sign in** signs in to that account, not your default.
+
 ## [0.125.3] - 2026-10-23
 
 > DorkOS 0.125.3 keeps approvals in view in folded sidebar sections, shows new replies live in a chat left open, and lets a room have shared files.
@@ -272,37 +280,4 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - A message still waiting in line is no longer marked as answered just because the other chat sent something unrelated (DOR-2994)
 - When too many agent chats are already running, a message is refused with a plain note that nothing was kept and it should be sent again, instead of a note about spin-off chats (DOR-2994)
 
-## [0.120.0] - 2026-10-17
-
-> DorkOS 0.120.0 keeps your tabs when the desktop app restarts, shows a proper page after you sign in to a service, brings back picture previews in chat, and makes dark mode easier on the eyes.
-
-### Added
-
-- In a space that has direct messages, an agent's row in a channel's member list now has a **Message** button. It opens a direct message with that agent. You don't need to mention it there: everything you say is for the agent. If its owner hasn't allowed direct messages, the app says so.
-- The direct message shows whose agent it is, and that its owner can read it. If the agent's computer is off, it says the agent won't answer until it's back. You can still send a message.
-- If you have an agent in a space, you can let it take direct messages with the **Takes direct messages** switch under **My agents**. It's off until you turn it on, and it goes back to off if the agent is removed from the space or you leave it, including when the agent is added again. When someone messages your agent, its replies come from your computer, with the same limits as a reply to anyone else in the space: it can only read, it can't ask you anything, and it stays inside that direct message.
-- You can read every direct message someone has with your agent, from the space's list in the sidebar. It opens on the newest messages, and you can't post in it.
-- The desktop app now keeps your tabs when it closes. An update, a crash or a recovery restart brings every tab back, in order, with the one you were on in front and each tab's own Back history. After a normal quit they come back too, unless you choose Start fresh in Settings → Preferences → When DorkOS opens (DOR-2986)
-- Bring back a tab you closed with Cmd+Shift+T, or pick one from Recently closed in a tab's right-click menu. It holds your last 25 closed tabs, across quits (DOR-2986)
-- Pinned tabs always come back. An unpinned tab you haven't looked at for a week is not reopened at launch; it waits in Recently closed instead (DOR-2986)
-- A tab whose chat was deleted, or whose room you left, is quietly moved to Recently closed when the app opens, instead of showing an error (DOR-2986)
-
-### Changed
-
-- After you sign in to an MCP server or OpenRouter, the browser now shows a proper DorkOS page. It matches your light or dark theme, names the service and the agent, and says what happens next.
-- If you started in the desktop app, the page opens the desktop app for you, back in the chat that asked. If you started in a browser, its button takes you back there.
-- When a sign-in is cancelled or fails, the page says so in plain words and offers **Try again**.
-- The one-time sign-in code no longer stays in the address bar, so a copied link never carries it.
-- In dark mode, menus, popovers, dialogs and cards now look raised above the page. Higher surfaces are a little lighter, and a highlighted menu row stays visible on them.
-- Text boxes, dropdown buttons and switches look set into the page instead of raised.
-
-### Fixed
-
-- Signing an agent in to an MCP server (or signing in to OpenRouter) now finishes when the sign-in page sends you back. Before, DorkOS answered "Unauthorized" because the browser said it came from the other site.
-- Text sizes now follow your font-size setting everywhere. Sidebar names, menu labels, inbox details and small badges used to stay the same size when you made text bigger in Settings → Appearance.
-- Orange text is easier to read. Links and code in messages, unread counts and the "New messages" line now use a deeper orange that stands out clearly on light and dark screens.
-- When you rename a file or name a new file or folder, the box now shows a clear outline so you can see where you are typing with the keyboard.
-- The moving line above the message box while an agent works now stays still when your computer is set to reduce motion, and it no longer flashes pure white.
-- Pictures you attach in chat show their preview again, and open full size when you click them. (DOR-2990)
-
-Older releases (v0.1.0 – v0.119.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.120.0) live in the [Changelog archive](/changelog-archive).
