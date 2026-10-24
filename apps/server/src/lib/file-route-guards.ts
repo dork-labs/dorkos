@@ -14,11 +14,12 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { validateBoundary, BoundaryError } from './boundary.js';
-import { currentServerRole } from './server-role.js';
+import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 
 /**
  * Whether a file of this type is shown in the page rather than downloaded.
- * Everywhere but a hub, every type is. On a hub (DOR-2937) only pictures,
+ * On a person's own computer, every type is. On a hub (DOR-2937), and on an
+ * agent computer (DOR-2940), which no person browses, only pictures,
  * sound and video are, since a browser never runs those as a page; anything
  * else (an SVG, a PDF, a 3D model, an upload of any other kind) downloads, so
  * no file can open as a page at the hub's own address.
@@ -26,7 +27,7 @@ import { currentServerRole } from './server-role.js';
  * @param contentType - The type the file is served as.
  */
 export function servesInlineHere(contentType: string): boolean {
-  return currentServerRole() !== 'hub' || isPassiveMedia(contentType);
+  return isPersonalComputer() || isPassiveMedia(contentType);
 }
 
 /**

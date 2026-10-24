@@ -78,6 +78,7 @@ import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
 import { createServerRefs, type ServerRefs } from './startup/server-refs.js';
 import { currentServerRole } from './lib/server-role.js';
+import { isAgentComputer } from './services/core/server-role/role-checks.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
 //
@@ -345,7 +346,8 @@ async function start() {
       // and upgrades to the router above. Nothing listens until a tunnel opens.
       tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT));
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
-      managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
+      // Never on an agent computer, which holds no DorkOS account link (DOR-2940).
+      if (!isAgentComputer()) managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.

@@ -19,7 +19,7 @@
 
 import { env } from '../../env.js';
 import { IS_DEV_BUILD } from '../../lib/version.js';
-import { currentServerRole } from '../../lib/server-role.js';
+import { isPersonalComputer } from './server-role/role-checks.js';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 /** How long a failed or timed-out check waits before the next one. */
@@ -51,7 +51,10 @@ let refreshing: Promise<void> | null = null;
  */
 function checksRegistry(): boolean {
   if (IS_DEV_BUILD) return false;
-  if (currentServerRole() === 'hub') return false;
+  // A hub never updates itself: DorkOS Cloud upgrades hubs in waves. Nor does
+  // an agent computer, whose image its hub chooses (DOR-2940). Only a person's
+  // own computer asks the registry.
+  if (!isPersonalComputer()) return false;
   return !isSwitchOn(env.DORKOS_UPDATE_CHECK_DISABLED);
 }
 
