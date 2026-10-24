@@ -51,6 +51,7 @@ describe('zero-touch excluded folder', () => {
       path: root,
       label: 'Excluded fixture',
     });
+    const alias = path.join(home, 'allowed-looking-alias');
     const reads: string[] = [];
     // Every account filesystem seam is fake: no real account, token or credential store is consulted.
     vi.spyOn(fs, 'readFileSync').mockImplementation(((file: unknown) => {
@@ -67,7 +68,7 @@ describe('zero-touch excluded folder', () => {
     }) as typeof fs.lstatSync);
     vi.spyOn(fs.realpathSync, 'native').mockImplementation(((file: unknown) => {
       reads.push(String(file));
-      return String(file);
+      return String(file) === alias ? root : String(file);
     }) as typeof fs.realpathSync.native);
     const config = {
       get: () => ({
@@ -85,6 +86,11 @@ describe('zero-touch excluded folder', () => {
     expect((await checkClaudeDependencies({ config: config as never }))[1].status).toBe('missing');
     expect(await readClaudeSignInDeadlines(root)).toBeNull();
     expect(await readClaudeAuthStatus('/fake/claude', { CLAUDE_CONFIG_DIR: root })).toBeNull();
+    expect(accountLoginIdentity(alias).state).toBe('unreadable');
+    expect(() => requireConfirmedAccountLogin(alias)).toThrow();
+    expect(await readClaudeSignInDeadlines(alias)).toBeNull();
+    expect(await readClaudeAuthStatus('/fake/claude', { CLAUDE_CONFIG_DIR: alias })).toBeNull();
+    expect((await delegateRuntimeLogin('claude-code', { accountRoot: alias })).ok).toBe(false);
     const usage: AccountUsage = {
       runtime: 'claude-code',
       accountId: 'excluded',

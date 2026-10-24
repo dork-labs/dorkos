@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(runtimes): keep excluded account aliases out of probes'
   - 'fix(runtimes): pause Claude accounts until their login is confirmed'
 ---
 

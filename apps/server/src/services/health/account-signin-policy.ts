@@ -136,10 +136,16 @@ export function accountSigninPolicy(): AccountSigninPolicy | undefined {
 }
 /** Block explicit exclusions and unreadable policy before account I/O. */
 export function isNeverUseClaudeFolder(root: string): boolean {
-  return policy ? !policy.isReadable() || policy.neverUses(root) : false;
+  return policy ? !policy.isReadable() || isExplicitlyNeverUseClaudeFolder(root) : false;
 }
 
-/** Canonicalization must skip explicitly excluded paths without affecting other runtimes. */
+/** Refuse excluded paths before resolution, and aliases before any account read. */
 export function isExplicitlyNeverUseClaudeFolder(root: string): boolean {
-  return policy?.neverUses(root) ?? false;
+  if (!policy) return false;
+  if (policy.neverUses(root)) return true;
+  try {
+    return policy.neverUses(fs.realpathSync.native(root));
+  } catch {
+    return false; // A missing folder is not an alias; other health checks fail closed.
+  }
 }
