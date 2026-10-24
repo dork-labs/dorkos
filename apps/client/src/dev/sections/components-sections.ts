@@ -64,6 +64,14 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Buttons',
     keywords: ['code', 'command', 'mono', 'monospace', 'snippet', 'path'],
   },
+  // AccountSigninShowcases
+  {
+    id: 'account-sign-in-recovery',
+    title: 'Account sign-in recovery',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['account', 'sign-in', 'signin', 'login', 'claude', 'banner', 'runtimes', 'recovery'],
+  },
   // FeedbackShowcases
   {
     id: 'feedback-dialog',
