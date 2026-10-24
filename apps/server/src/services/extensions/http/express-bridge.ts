@@ -43,6 +43,7 @@ import { ingressOf } from '../../core/remote/ingress-mark.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
 import { logger } from '../../../lib/logger.js';
 import { currentServerRole } from '../../../lib/server-role.js';
+import { isPersonalComputer } from '../../core/server-role/role-checks.js';
 
 /**
  * The facts of a request an extension's router is handling
@@ -110,8 +111,8 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
 }
 
 /**
- * {@link bridgeExpressRouter}, except on a hub, which mounts no Express router
- * (DOR-2937): a router writes straight to the socket, past the reply rules that
+ * {@link bridgeExpressRouter}, except on a hub or an agent computer, which
+ * mount no Express router (DOR-2937, DOR-2940): a router writes straight to the socket, past the reply rules that
  * keep a reply from running as a page (`reply-headers.ts`). Fetch handlers
  * still answer there. Says so in the log when there was a route to mount.
  *
@@ -119,9 +120,11 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
  * @param router - The router its `register()` filled.
  */
 export function bridgeExpressRouterHere(id: string, router: Router): ExtensionHttpHandler | null {
-  if (currentServerRole() !== 'hub') return bridgeExpressRouter(router);
+  if (isPersonalComputer()) return bridgeExpressRouter(router);
   if (router.stack.length > 0) {
-    logger.warn(`[Extensions] ${id}: Express routes are off on a hub; use a fetch handler`);
+    logger.warn(
+      `[Extensions] ${id}: Express routes are off on a ${currentServerRole()}; use a fetch handler`
+    );
   }
   return null;
 }

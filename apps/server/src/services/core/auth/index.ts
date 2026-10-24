@@ -64,6 +64,7 @@ import {
   registrationAllowed,
 } from './registration-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
+import { isPersonalComputer } from '../server-role/role-checks.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 import { refuseWithoutSetupCode } from './setup-code-gate.js';
 import { stampSessionRoute } from './sessions/session-route.js';
@@ -191,9 +192,10 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // Local accounts: email is an identifier only. No verification, no SMTP.
     // Password hashing stays the Better Auth default (scrypt).
     // A hub has no passwords: its owner signs in with their DorkOS account,
-    // so sign-in, sign-up and resets by password are off there (A4).
+    // so sign-in, sign-up and resets by password are off there (A4). An agent
+    // computer has no person to sign in at all (DOR-2940).
     emailAndPassword: {
-      enabled: currentServerRole() !== 'hub',
+      enabled: isPersonalComputer(),
       requireEmailVerification: false,
     },
     user: {
@@ -204,8 +206,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       },
     },
     // A hub's only sign-in is its owner's DorkOS account, matched by account
-    // id, so no sign-in may link itself to an account by email (A4).
-    account: { accountLinking: { enabled: currentServerRole() !== 'hub' } },
+    // id, so no sign-in may link itself to an account by email (A4). Nor on an
+    // agent computer, where nobody signs in.
+    account: { accountLinking: { enabled: isPersonalComputer() } },
     session: {
       // A sign-in lasts 30 days and each day of use pushes that back, so a
       // device used weekly never signs out (DOR-2968). Set here rather than

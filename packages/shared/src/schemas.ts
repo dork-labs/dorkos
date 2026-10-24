@@ -4662,9 +4662,9 @@ export const ServerConfigSchema = z
     isDevMode: z
       .boolean()
       .openapi({ description: 'Whether the server is running a development build' }),
-    serverRole: z.enum(['computer', 'hub']).optional().openapi({
+    serverRole: z.enum(['computer', 'hub', 'agent-computer']).optional().openapi({
       description:
-        'What this server is: a person`s own computer, or a hub (their own DorkOS in the cloud), where the settings that only make sense on a computer do not apply. Absent from an older server, which is a computer',
+        'What this server is: a person`s own computer, a hub (their own DorkOS in the cloud), where the settings that only make sense on a computer do not apply, or an agent computer (a sealed machine where a hub`s agents work, which serves no person). Absent from an older server, which is a computer',
     }),
     isLocalCaller: z.boolean().openapi({
       description:
