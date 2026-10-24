@@ -30,6 +30,7 @@ import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { useSessionQueueOutcomes, useSessionStreamStore } from '@/layers/entities/session';
 import { useTransport } from '@/layers/shared/model';
 import { describeWaitingOn, queueDowngradeNotice, type QueueWaiting } from '../lib/queue-chips';
+import { queueSenderOf, type QueueSender } from '../lib/queue-sender';
 
 /**
  * One row of the queue as the panel draws it — the server's message plus the
@@ -52,6 +53,11 @@ export interface QueueItem {
    * agent as the person's own. The server refuses the reword too.
    */
   fromChat: boolean;
+  /**
+   * Who sent it, for a message from another chat: the agent and its chat, or
+   * `null` when the sender cannot be named. Absent on the person's own.
+   */
+  sender?: QueueSender | null;
   /**
    * What happened to this message, when that is worth saying: "queued instead of
    * steered, because this runtime cannot steer". `null` for the overwhelming
@@ -163,6 +169,9 @@ export function useMessageQueue({
         // where there is only one window.
         mine: transport.clientId === undefined || message.enqueuedBy === transport.clientId,
         fromChat: message.fromChats !== undefined || message.enqueuedBy.startsWith('chat:'),
+        ...(message.fromChats !== undefined || message.enqueuedBy.startsWith('chat:')
+          ? { sender: queueSenderOf(message.fromChats) }
+          : {}),
         notice: queueDowngradeNotice(outcomes[message.id]),
         ...(message.waitingOn ? { waiting: describeWaitingOn(message.waitingOn) } : {}),
       })),

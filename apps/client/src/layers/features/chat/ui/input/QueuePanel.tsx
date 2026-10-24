@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { AppWindow, ArrowUp, CornerDownLeft, MessageSquare, X } from 'lucide-react';
+import { AppWindow, ArrowUp, CornerDownLeft, X } from 'lucide-react';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
+import { queueHeaderCount, UNKNOWN_SENDER } from '../../lib/queue-sender';
+import { QueueSenderLine } from './QueueSenderLine';
 
 /**
  * Invisible reach that grows each 24px row action into a 32px touch target
@@ -72,7 +74,8 @@ interface QueuePanelProps {
  *
  * A chip another window queued says so, quietly. It stays fully editable — the
  * queue belongs to the session, not to a window — it just does not pretend to be
- * yours.
+ * yours. A message another chat sent names its sender above its words, so it
+ * never reads as the person's own (DOR-3060).
  */
 export function QueuePanel({
   queue,
@@ -101,7 +104,7 @@ export function QueuePanel({
       {/* The count alone never said the one thing a person waiting actually
           wants to know — when these go out. */}
       <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
-        <span className="font-medium">Queued ({queue.length})</span>
+        <span className="font-medium">{queueHeaderCount(queue)}</span>
         <span className="truncate">&middot; {statusNote}</span>
       </div>
       <div className="space-y-0.5">
@@ -131,43 +134,61 @@ export function QueuePanel({
                   editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
                 )}
               >
-                <button
-                  type="button"
-                  onClick={() => onEdit(item.id)}
+                {item.fromChat ? (
                   // Another chat's message is moved or removed, never edited
-                  // (DOR-3060), so it is not a door into the editor.
-                  disabled={item.fromChat}
-                  aria-current={editingId === item.id ? true : undefined}
-                  className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left disabled:cursor-default"
-                >
-                  <span className="text-muted-foreground shrink-0 text-xs font-medium">
-                    {i + 1}.
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="text-muted-foreground line-clamp-1 text-sm">
-                      {item.content}
+                  // (DOR-3060), so it is no door into the editor: a group
+                  // whose name says who sent it, with the sender line on top.
+                  <div
+                    role="group"
+                    aria-label={`From ${item.sender?.agentName ?? UNKNOWN_SENDER}: ${item.content}`}
+                    className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3"
+                  >
+                    <span className="text-muted-foreground shrink-0 text-xs font-medium">
+                      {i + 1}.
                     </span>
-                    {item.notice !== null && (
-                      <span className="text-muted-foreground/70 line-clamp-1 text-xs">
-                        {item.notice}
+                    <span className="min-w-0 flex-1">
+                      <QueueSenderLine sender={item.sender ?? null} />
+                      <span className="text-muted-foreground line-clamp-1 text-sm">
+                        {item.content}
                       </span>
-                    )}
-                    {item.waiting !== undefined && (
-                      <span className="text-muted-foreground/70 line-clamp-1 text-xs">
-                        {item.waiting.line}
-                      </span>
-                    )}
-                  </span>
-                  {item.fromChat ? (
-                    <span
-                      className="text-muted-foreground/60 flex shrink-0 items-center"
-                      title="From another chat"
-                    >
-                      <MessageSquare className="size-3" aria-hidden="true" />
-                      <span className="sr-only">From another chat</span>
+                      {item.notice !== null && (
+                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                          {item.notice}
+                        </span>
+                      )}
+                      {item.waiting !== undefined && (
+                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                          {item.waiting.line}
+                        </span>
+                      )}
                     </span>
-                  ) : (
-                    !item.mine && (
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(item.id)}
+                    aria-current={editingId === item.id ? true : undefined}
+                    className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left"
+                  >
+                    <span className="text-muted-foreground shrink-0 text-xs font-medium">
+                      {i + 1}.
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-muted-foreground line-clamp-1 text-sm">
+                        {item.content}
+                      </span>
+                      {item.notice !== null && (
+                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                          {item.notice}
+                        </span>
+                      )}
+                      {item.waiting !== undefined && (
+                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                          {item.waiting.line}
+                        </span>
+                      )}
+                    </span>
+                    {!item.mine && (
                       <span
                         className="text-muted-foreground/60 flex shrink-0 items-center"
                         title="Queued from another window"
@@ -175,9 +196,9 @@ export function QueuePanel({
                         <AppWindow className="size-3" aria-hidden="true" />
                         <span className="sr-only">Queued from another window</span>
                       </span>
-                    )
-                  )}
-                </button>
+                    )}
+                  </button>
+                )}
                 {/* Held for background work: the one way to run it anyway. A
                     text button, not an icon — it ends work, so it says so. */}
                 {item.waiting !== undefined && onSwitchNow !== undefined && (
