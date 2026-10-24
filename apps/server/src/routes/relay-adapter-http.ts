@@ -11,6 +11,7 @@ import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { readJsonBody } from '../http/request-body.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { SecretWriter } from '../services/relay/adapter-secret-policy.js';
@@ -25,6 +26,8 @@ const ADAPTER_ERROR_STATUS: Record<string, number> = {
   // A config its schema refuses — a webhook aimed at a DorkOS address among
   // them (DOR-2432). The caller's mistake, so a 400 that says which rule.
   INVALID_CONFIG: 400,
+  // What the owner confirmed no longer matches the connection (DOR-3271).
+  CONFIRMATION_STALE: 409,
 };
 
 /**
@@ -51,10 +54,14 @@ export function secretWriter(c: Context<ApiEnv>): SecretWriter {
 const PERSON_ONLY_CONFIRM = 'Only a person can confirm this setting.';
 
 /**
- * `POST /adapters/:id/confirm-references`: the owner confirms a connection
- * paused for holding `env:`/`keychain:` references nobody recorded a person
- * saving (DOR-3271). This is what records them, so it admits only a caller
- * that clears the agent bar; anything else gets a 403.
+ * `POST /adapters/:id/confirm-references` with `{ fingerprint }`: the owner
+ * confirms a connection paused for `env:`/`keychain:` references nobody
+ * recorded a person saving (DOR-3271). It approves exactly the summary the
+ * owner was shown, so a connection that changed since answers 409.
+ * `DELETE` on the same path is the toast's Undo: it takes the approval back
+ * and pauses the connection again. Both write the record that decides what a
+ * connection may send, so both admit only a caller that clears the agent bar;
+ * anything else gets a 403.
  *
  * @param router - The adapter routes' router.
  * @param adapterManager - The adapter manager.
@@ -63,16 +70,23 @@ export function registerConfirmReferencesRoute(
   router: Hono<ApiEnv>,
   adapterManager: AdapterManager
 ): void {
-  router.post('/adapters/:id/confirm-references', async (c) => {
+  const handle = async (c: Context<ApiEnv>, undo: boolean) => {
     if (secretWriter(c) !== 'person') {
       return c.json({ error: PERSON_ONLY_CONFIRM, code: 'person_only' }, 403);
     }
+    const body = undo ? undefined : (readJsonBody(c) as { fingerprint?: unknown } | undefined);
+    if (!undo && typeof body?.fingerprint !== 'string') {
+      return c.json({ error: 'Missing what you confirmed.', code: 'INVALID_CONFIG' }, 400);
+    }
     try {
-      await adapterManager.confirmReferences(c.req.param('id'));
+      const fingerprint = undo ? null : (body?.fingerprint as string);
+      await adapterManager.confirmReferences(c.req.param('id') ?? '', fingerprint, undo);
       return c.json({ ok: true });
     } catch (err) {
       if (err instanceof AdapterError) return sendAdapterError(c, err);
       return c.json({ error: err instanceof Error ? err.message : 'Confirm failed' }, 500);
     }
-  });
+  };
+  router.post('/adapters/:id/confirm-references', (c) => handle(c, false));
+  router.delete('/adapters/:id/confirm-references', (c) => handle(c, true));
 }

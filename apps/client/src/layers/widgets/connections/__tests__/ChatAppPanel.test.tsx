@@ -111,17 +111,32 @@ describe('ChatAppPanel', () => {
     );
   });
 
-  it('asks the owner to confirm a bot paused for settings saved before DOR-3271, and confirms it', async () => {
+  it('shows what a paused bot sends and where, in ASCII, and confirms exactly that', async () => {
     const user = userEvent.setup();
     const { transport } = renderPanel(
-      instance({ needsConfirmation: true, status: { ...instance().status, state: 'disconnected' } })
+      instance({
+        enabled: true,
+        status: { ...instance().status, state: 'disconnected' },
+        confirmation: {
+          references: [{ field: 'token', ref: 'env:DEPLOY_TOKEN' }],
+          host: 'xn--hks-ted.example.dev',
+          fingerprint: 'fp-1',
+          notSent: 3,
+        },
+      })
     );
 
     const fix = screen.getByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Paused. Confirm its saved settings to reconnect.');
-    await user.click(within(fix).getByRole('button', { name: 'Confirm this setting' }));
+    expect(fix).toHaveTextContent('Paused · confirm the setting it sends.');
+    expect(fix).toHaveTextContent('Telegram · sends env:DEPLOY_TOKEN to xn--hks-ted.example.dev');
+    expect(fix).toHaveTextContent('3 messages not sent while paused');
+    const button = within(fix).getByRole('button', { name: 'Confirm this setting' });
+    expect(button).toHaveAccessibleDescription(
+      'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Not yours? Open it and remove it.'
+    );
+    await user.click(button);
     await waitFor(() =>
-      expect(transport.confirmRelayAdapterReferences).toHaveBeenCalledWith('telegram-1')
+      expect(transport.confirmRelayAdapterReferences).toHaveBeenCalledWith('telegram-1', 'fp-1')
     );
   });
 

@@ -8,6 +8,7 @@ import {
   useRemoveAdapter,
   useToggleAdapter,
 } from '@/layers/entities/relay';
+import { PausedConfirm } from './PausedConfirm';
 import { ClaimFeed, PanelFix, PanelMoreRow, PanelSection } from '@/layers/features/connections';
 import { AdapterSetupWizard, ChatAppAnswerers, ChatAppRecent } from '@/layers/features/relay';
 import {
@@ -53,14 +54,13 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
 
   return (
     <div className="space-y-7">
-      {instance.needsConfirmation ? (
-        // Saved before DOR-3271 recorded who wrote its env:/keychain:
-        // settings, so it waits for a person to vouch for them.
-        <PanelFix
-          message="Paused. Confirm its saved settings to reconnect."
-          action="Confirm this setting"
-          pending={confirm.isPending}
-          onAction={() => confirm.mutate(instance.id)}
+      {instance.confirmation ? (
+        <PausedConfirm
+          kind={manifest.displayName}
+          name={instance.label ?? manifest.displayName}
+          id={instance.id}
+          confirmation={instance.confirmation}
+          confirm={confirm}
         />
       ) : !instance.enabled ? (
         <PanelFix

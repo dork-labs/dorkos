@@ -17,6 +17,7 @@ import type {
   SlackAdapterConfig,
   AdapterStatus,
   AdapterRegistry,
+  DeliveryResult,
 } from '@dorkos/relay';
 import {
   TelegramAdapter,
@@ -35,6 +36,15 @@ import type {
 } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import { maskSensitiveFields } from './adapter-config.js';
+import type { CredentialStore } from '../core/credential-provider.js';
+import {
+  approvedNow,
+  confirmationSummary,
+  readApprovalRecord,
+  unapprovedReferences,
+  type ApprovedReferences,
+  type ConfirmationSummary,
+} from './adapter-secrets.js';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
@@ -152,6 +162,125 @@ export function buildAdapterView(
 }
 
 /**
+ * A connection paused until its owner confirms its `env:`/`keychain:`
+ * references (DOR-3271): what the owner is shown, and how many messages it
+ * did not send while paused.
+ */
+export interface PausedConnection extends ConfirmationSummary {
+  /** Messages dropped while paused. Never queued, never replayed. */
+  notSent: number;
+}
+
+/** The catalog fields for a paused connection, or none. */
+function confirmationOf(paused: PausedConnection | undefined): {
+  confirmation?: PausedConnection;
+} {
+  return paused ? { confirmation: { ...paused } } : {};
+}
+
+/**
+ * What runs in a paused connection's place: it holds the connection's own
+ * subjects, so messages meant for it reach it instead of falling through to
+ * the pending buffer or the dead-letter queue (`relay-publish.ts`), and it
+ * drops every one. Each is counted, none is sent, none is held, so nothing
+ * replays after the owner confirms. A dropped message is a `skipped` result:
+ * neither a delivery nor a failure.
+ */
+export class PausedAdapter implements RelayAdapter {
+  readonly id: string;
+  readonly subjectPrefix: string | readonly string[];
+  readonly displayName: string;
+
+  /**
+   * Stand in for a connection.
+   *
+   * @param shape - The connection, built from its unresolved settings and
+   *   never started: only its id, subjects and name are read.
+   * @param paused - Its paused state, whose count this raises.
+   */
+  constructor(
+    shape: Pick<RelayAdapter, 'id' | 'subjectPrefix' | 'displayName'>,
+    private readonly paused: PausedConnection
+  ) {
+    this.id = shape.id;
+    this.subjectPrefix = shape.subjectPrefix;
+    this.displayName = shape.displayName;
+  }
+
+  /** Nothing to connect. */
+  async start(): Promise<void> {}
+
+  /** Nothing to disconnect. */
+  async stop(): Promise<void> {}
+
+  /** Drop the message and count it. */
+  async deliver(): Promise<DeliveryResult> {
+    this.paused.notSent += 1;
+    return { success: true, skipped: true, durationMs: 0 };
+  }
+
+  /** Not connected: it is waiting for its owner. */
+  getStatus(): AdapterStatus {
+    return defaultAdapterStatus();
+  }
+}
+
+/**
+ * Build a stored connection, or its {@link PausedAdapter} when it holds an
+ * `env:`/`keychain:` reference no person approved for where it now sends. A
+ * paused connection keeps its count across rebuilds; one that starts clears it.
+ *
+ * @param config - The stored connection.
+ * @param manifest - Its type's manifest.
+ * @param store - The encrypted credential store, which holds its approvals.
+ * @param paused - Paused connections by id, updated here.
+ * @param build - Builds the real connection under the given approvals.
+ * @param probe - Builds it from its unresolved settings, never started.
+ */
+export async function pauseOrBuild(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  store: CredentialStore,
+  paused: Map<string, PausedConnection>,
+  build: (approved: ApprovedReferences) => Promise<RelayAdapter | null>,
+  probe: () => Promise<RelayAdapter | null>
+): Promise<RelayAdapter | null> {
+  const approved = approvedNow(config, manifest, await readApprovalRecord(store, config.id));
+  if (unapprovedReferences(config, manifest, approved).length === 0) {
+    paused.delete(config.id);
+    return build(approved);
+  }
+  const shape = await probe();
+  if (!shape) return null;
+  const state = {
+    ...confirmationSummary(config, manifest),
+    notSent: paused.get(config.id)?.notSent ?? 0,
+  };
+  paused.set(config.id, state);
+  return new PausedAdapter(shape, state);
+}
+
+/**
+ * Test a connection's settings without saving or registering it: build it
+ * under a throwaway id, which owns no stored secret, and try to connect.
+ *
+ * @param type - The adapter type.
+ * @param config - The settings to try.
+ * @param build - Builds the adapter (secrets resolved under the caller's approvals).
+ */
+export async function testConfigConnection(
+  type: string,
+  config: Record<string, unknown>,
+  build: (temp: AdapterConfig) => Promise<RelayAdapter | null>
+): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
+  const id = `__test_${type}_${Date.now()}`;
+  const temp = { id, type, enabled: true, builtin: false, config } as AdapterConfig;
+  const adapter = await build(temp);
+  if (!adapter) return { ok: false, error: 'Failed to create adapter instance' };
+  return testAdapterConnection(adapter);
+}
+
+/**
  * The adapter catalog: every known type with its configured instances, their
  * live status and masked settings.
  *
@@ -165,7 +294,7 @@ export function buildAdapterCatalog(
   manifests: ReadonlyMap<string, AdapterManifest>,
   configs: readonly AdapterConfig[],
   registry: Pick<AdapterRegistry, 'get'>,
-  awaitingConfirmation: ReadonlySet<string>
+  awaitingConfirmation: ReadonlyMap<string, PausedConnection>
 ): CatalogEntry[] {
   const entries: CatalogEntry[] = [];
   for (const [type, manifest] of manifests) {
@@ -175,7 +304,7 @@ export function buildAdapterCatalog(
         id: c.id,
         enabled: c.enabled,
         ...(c.label ? { label: c.label } : {}),
-        ...(awaitingConfirmation.has(c.id) ? { needsConfirmation: true } : {}),
+        ...confirmationOf(awaitingConfirmation.get(c.id)),
         status: {
           id: c.id,
           type: c.type,

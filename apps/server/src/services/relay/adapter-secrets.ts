@@ -33,6 +33,8 @@ import type { AdapterConfig } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import type { CredentialProvider, CredentialStore } from '../core/credential-provider.js';
+import { createHash } from 'node:crypto';
+import { domainToASCII } from 'node:url';
 import { logger } from '../../lib/logger.js';
 import { getNestedValue, setNestedValue, saveAdapterConfig } from './adapter-config.js';
 import { AdapterError } from './adapter-error.js';
@@ -66,7 +68,7 @@ export interface ResolveSecretsContext {
   manifests: Map<string, AdapterManifest>;
   /**
    * Which `env:`/`keychain:` references may resolve, by field: for a stored
-   * config, the approvals a person recorded ({@link readApprovedReferences});
+   * config, the approvals a person recorded ({@link approvedNow});
    * for a connection test, `'any'` when a person asked for it and none
    * otherwise (DOR-3271).
    */
@@ -304,7 +306,14 @@ async function moveLegacyName(
   if (raw !== `file:${legacy}`) return undefined;
   const secret = await ctx.store.get(legacy);
   if (secret === null) return undefined;
-  const ref = await ctx.store.put(secretKeyFor(adapterId, label), secret);
+  const current = secretKeyFor(adapterId, label);
+  // An entry already under the new name is current (a move cut short after its
+  // copy): point at it and drop the old one, never overwrite it.
+  if ((await ctx.store.get(current)) !== null) {
+    await ctx.store.delete(legacy);
+    return `file:${current}`;
+  }
+  const ref = await ctx.store.put(current, secret);
   await ctx.store.delete(legacy);
   logger.info(
     `[AdapterSecrets] Moved adapter '${adapterId}' field '${label}' to its new stored name.`
@@ -345,67 +354,128 @@ export async function assertNoStoredSecrets(
 }
 
 /**
- * The references a person approved for one connection, read from the
- * encrypted store. A missing or unreadable record approves nothing.
+ * What a person approved for one connection: which `env:`/`keychain:`
+ * reference sits in which field, and where the connection sends. An approval
+ * holds only while both still match: a hand-edited destination for an
+ * approved reference pauses the connection again.
+ */
+export interface ApprovalRecord {
+  /** Field label → the reference a person saved there. */
+  refs: ApprovedReferences;
+  /** The connection's `url` field values when it was approved, sorted. */
+  to: readonly string[];
+}
+
+/** The connection's `url` field values (those under `prefix`, when given), sorted. */
+function destinationsOf(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  prefix = ''
+): string[] {
+  const urls = (manifest?.configFields ?? [])
+    .filter((field) => field.type === 'url' && field.key.startsWith(prefix))
+    .map((field) => getNestedValue(config.config as Record<string, unknown>, field.key.split('.')))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  return [...urls].sort();
+}
+
+/** The connection's `env:`/`keychain:` references, by field label. */
+function personRefsOf(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined
+): Map<string, string> {
+  return new Map(
+    secretValues(config.config as Record<string, unknown>, manifest)
+      .filter(({ value }) => isPersonReference(value))
+      .map(({ label, value }) => [label, value])
+  );
+}
+
+/**
+ * A connection's approval record, read from the encrypted store. A missing or
+ * unreadable record approves nothing.
  *
  * @param store - The encrypted credential store.
  * @param adapterId - The connection's id.
  */
-export async function readApprovedReferences(
+export async function readApprovalRecord(
   store: CredentialStore,
   adapterId: string
-): Promise<ApprovedReferences> {
+): Promise<ApprovalRecord> {
+  const none: ApprovalRecord = { refs: new Map(), to: [] };
   const raw = await store.get(approvalKeyFor(adapterId));
-  if (!raw) return new Map();
+  if (!raw) return none;
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return new Map();
-    return new Map(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string'
-      )
+    const parsed = JSON.parse(raw) as { refs?: unknown; to?: unknown };
+    if (typeof parsed.refs !== 'object' || parsed.refs === null || !Array.isArray(parsed.to)) {
+      return none;
+    }
+    const refs = Object.entries(parsed.refs).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
     );
+    return { refs: new Map(refs), to: parsed.to.filter((u): u is string => typeof u === 'string') };
   } catch {
-    return new Map();
+    return none;
   }
 }
 
 /** Write a connection's approvals, or delete the record when there are none. */
-async function writeApprovedReferences(
+async function writeApprovalRecord(
   store: CredentialStore,
   adapterId: string,
-  approved: ApprovedReferences
+  record: ApprovalRecord
 ): Promise<void> {
-  if (approved.size === 0) await store.delete(approvalKeyFor(adapterId));
-  else await store.put(approvalKeyFor(adapterId), JSON.stringify(Object.fromEntries(approved)));
+  if (record.refs.size === 0) {
+    await store.delete(approvalKeyFor(adapterId));
+    return;
+  }
+  const body = { refs: Object.fromEntries(record.refs), to: record.to };
+  await store.put(approvalKeyFor(adapterId), JSON.stringify(body));
+}
+
+/**
+ * The references a stored connection may resolve now: its record's, and only
+ * while the record's destinations still match the connection's.
+ *
+ * @param config - The stored connection.
+ * @param manifest - Its type's manifest.
+ * @param record - Its approval record.
+ */
+export function approvedNow(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  record: ApprovalRecord
+): ApprovedReferences {
+  const same = JSON.stringify(destinationsOf(config, manifest)) === JSON.stringify(record.to);
+  return same ? record.refs : new Map();
 }
 
 /**
  * The fields of a stored connection holding an `env:`/`keychain:` reference no
- * person approved. A connection with any does not start: it waits for its owner
- * to confirm ({@link approveAllReferences}).
+ * person approved for where it now sends. A connection with any does not start:
+ * it waits for its owner to confirm it.
  *
  * @param config - The stored connection.
  * @param manifest - Its type's manifest.
- * @param approved - Its recorded approvals.
+ * @param approved - What it may resolve now ({@link approvedNow}).
  */
 export function unapprovedReferences(
   config: AdapterConfig,
   manifest: AdapterManifest | undefined,
   approved: ApprovedReferences
 ): string[] {
-  return secretValues(config.config as Record<string, unknown>, manifest)
-    .filter(({ label, value }) => isPersonReference(value) && approved.get(label) !== value)
-    .map(({ label }) => label);
+  return [...personRefsOf(config, manifest)]
+    .filter(([label, value]) => approved.get(label) !== value)
+    .map(([label]) => label);
 }
 
 /**
  * Bring a connection's approvals up to date after a save. A person's save
  * approves the `env:`/`keychain:` references it sent. Every save keeps an
- * approval whose field still holds the same reference, and drops the rest. A
- * reference carried through the mask is never newly approved, so a person
- * saving a connection for another reason does not vouch for one somebody else
- * wrote.
+ * approval whose field still holds the same reference and whose destinations
+ * did not change, and drops the rest. A reference carried through the mask is
+ * never newly approved, so a person saving a connection for another reason
+ * does not vouch for one somebody else wrote.
  *
  * @param entry - The connection as saved.
  * @param writer - Who saved it.
@@ -419,43 +489,108 @@ export async function recordApprovals(
   ctx: MaterializeSecretsContext
 ): Promise<void> {
   const manifest = ctx.manifests.get(entry.type);
-  const before = await readApprovedReferences(ctx.store, entry.id);
+  const before = approvedNow(entry, manifest, await readApprovalRecord(ctx.store, entry.id));
   const sentNow = new Map(secretValues(sent, manifest).map(({ label, value }) => [label, value]));
-  const next = new Map<string, string>();
-  for (const { label, value } of secretValues(entry.config as Record<string, unknown>, manifest)) {
-    if (!isPersonReference(value)) continue;
+  const refs = new Map<string, string>();
+  for (const [label, value] of personRefsOf(entry, manifest)) {
     const wrote = writer === 'person' && sentNow.get(label) === value;
-    if (wrote || before.get(label) === value) next.set(label, value);
+    if (wrote || before.get(label) === value) refs.set(label, value);
   }
-  await writeApprovedReferences(ctx.store, entry.id, next);
+  await writeApprovalRecord(ctx.store, entry.id, { refs, to: destinationsOf(entry, manifest) });
 }
 
 /**
- * Approve every `env:`/`keychain:` reference a connection holds now: its owner
- * confirming a connection that was paused for having none recorded. The route
- * that calls this admits only a caller that clears the agent bar.
+ * What the owner is shown before confirming a paused connection, and must send
+ * back unchanged: every reference it would be allowed to send, the host it
+ * sends to, and a fingerprint of exactly that (references and full
+ * destinations), so a confirm can never approve something the person did not see.
+ */
+export interface ConfirmationSummary {
+  /** The references the confirm approves, by field. Names only, never values. */
+  references: { field: string; ref: string }[];
+  /** The host it sends to, always ASCII (punycode for a Unicode look-alike). */
+  host?: string;
+  /** Opaque: the confirm must send this back. */
+  fingerprint: string;
+}
+
+/**
+ * The host of a URL, always ASCII. A Unicode look-alike (`hооks.example.dev`
+ * with a Cyrillic о) shows as its `xn--` form, so it stands out.
+ *
+ * @param url - A configured `url` field value.
+ */
+export function asciiHost(url: string): string | undefined {
+  try {
+    const host = domainToASCII(new URL(url).hostname);
+    return host.length > 0 ? host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The summary a paused connection is listed with.
+ *
+ * @param config - The stored connection.
+ * @param manifest - Its type's manifest.
+ */
+export function confirmationSummary(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined
+): ConfirmationSummary {
+  const refs = [...personRefsOf(config, manifest)].sort(([a], [b]) => a.localeCompare(b));
+  const to = destinationsOf(config, manifest);
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify({ id: config.id, refs, to }))
+    .digest('hex');
+  // The host shown is where a secret is SENT: an `outbound.*` address. A
+  // Telegram webhook URL is where Telegram calls DorkOS, not where its token
+  // goes, so naming it would mislead; such a connection shows no host.
+  const sentTo = destinationsOf(config, manifest, 'outbound.');
+  const host = sentTo.map(asciiHost).find((h) => h !== undefined);
+  return {
+    references: refs.map(([field, ref]) => ({ field, ref })),
+    ...(host ? { host } : {}),
+    fingerprint,
+  };
+}
+
+/**
+ * Approve exactly what the owner was shown: the connection's current
+ * `env:`/`keychain:` references and destinations, only when they still match
+ * the fingerprint the owner confirmed. The route that calls this admits only a
+ * caller that clears the agent bar.
  *
  * @param entry - The stored connection.
+ * @param fingerprint - The {@link ConfirmationSummary.fingerprint} the owner saw.
  * @param ctx - The credential store and manifests.
+ * @throws AdapterError `CONFIRMATION_STALE` when the connection changed since.
  */
-export async function approveAllReferences(
+export async function approveWhatWasShown(
   entry: AdapterConfig,
+  fingerprint: string,
   ctx: MaterializeSecretsContext
 ): Promise<void> {
-  const values = secretValues(
-    entry.config as Record<string, unknown>,
-    ctx.manifests.get(entry.type)
-  );
-  const approved = new Map(
-    values.filter(({ value }) => isPersonReference(value)).map(({ label, value }) => [label, value])
-  );
-  await writeApprovedReferences(ctx.store, entry.id, approved);
+  const manifest = ctx.manifests.get(entry.type);
+  if (confirmationSummary(entry, manifest).fingerprint !== fingerprint) {
+    throw new AdapterError(
+      'This connection changed since you looked. Check it again.',
+      'CONFIRMATION_STALE',
+      entry.id
+    );
+  }
+  await writeApprovalRecord(ctx.store, entry.id, {
+    refs: personRefsOf(entry, manifest),
+    to: destinationsOf(entry, manifest),
+  });
 }
 
 /**
- * Delete a removed connection's approvals record.
+ * Delete a connection's approvals record: when it is removed, or when its
+ * owner takes a confirmation back (Undo), which pauses it again.
  *
- * @param adapterId - The removed connection's id.
+ * @param adapterId - The connection's id.
  * @param store - The encrypted credential store.
  */
 export async function deleteApprovedReferences(
@@ -467,31 +602,4 @@ export async function deleteApprovedReferences(
     .catch((err: unknown) =>
       logger.warn(`[AdapterSecrets] Could not delete approvals for adapter '${adapterId}':`, err)
     );
-}
-
-/**
- * The approvals a stored connection starts under. One holding an
- * `env:`/`keychain:` reference no person approved does not start: it is added
- * to `awaiting`, which the catalog lists as waiting for its owner to confirm it
- * (DOR-3271).
- *
- * @param config - The stored connection.
- * @param manifest - Its type's manifest.
- * @param store - The encrypted credential store.
- * @param awaiting - The ids of connections waiting for their owner, updated here.
- * @throws Error when the connection must wait for its owner.
- */
-export async function approvalsToStart(
-  config: AdapterConfig,
-  manifest: AdapterManifest | undefined,
-  store: CredentialStore,
-  awaiting: Set<string>
-): Promise<ApprovedReferences> {
-  const approved = await readApprovedReferences(store, config.id);
-  if (unapprovedReferences(config, manifest, approved).length === 0) {
-    awaiting.delete(config.id);
-    return approved;
-  }
-  awaiting.add(config.id);
-  throw new Error(`Adapter '${config.id}' waits for its owner to confirm its settings.`);
 }

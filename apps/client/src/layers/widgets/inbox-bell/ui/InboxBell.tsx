@@ -36,6 +36,7 @@ import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 import { ExtensionApprovalList } from './ExtensionApprovalList';
 import { WaitingGroups } from './WaitingGroups';
+import { PausedConnectionList } from './PausedConnectionList';
 
 /**
  * The entrance for the "All clear ✓" line — the same fade-and-rise idiom every
@@ -72,8 +73,12 @@ function waitingLabel(
   schedules: number,
   asks: number,
   extensions: number,
-  decisions: number
+  decisions: number,
+  paused = 0
 ): string {
+  if (paused > 0) {
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} waiting on you. Open to answer.`;
+  }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
     return decisions === 1
       ? '1 decision needs you. Open to answer it.'
@@ -189,6 +194,7 @@ export function InboxBell() {
     schedules,
     extensionApprovals,
     extensionDecisions,
+    pausedConnections,
     items: waitingItems,
     isError,
     retry,
@@ -326,6 +332,7 @@ export function InboxBell() {
     askCount: asks.length,
     extensionCount: extensionApprovals.length,
     decisionCount: extensionDecisions.length,
+    pausedCount: pausedConnections.length,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -406,6 +413,7 @@ export function InboxBell() {
                           asks,
                           extensionApprovals,
                           extensionDecisions,
+                          pausedConnections,
                         })}
                       </p>
                     ))}
@@ -452,6 +460,9 @@ export function InboxBell() {
                     }}
                     onScheduleNavigate={() => setOpen(false)}
                   />
+                  {/* Connections paused until their owner confirms what they
+                      send (DOR-3271): after the approvals, only you can answer. */}
+                  <PausedConnectionList items={pausedConnections} />
                 </div>
               )}
 
@@ -542,6 +553,7 @@ function resolvePill(counts: {
   askCount: number;
   extensionCount: number;
   decisionCount: number;
+  pausedCount: number;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -557,7 +569,8 @@ function resolvePill(counts: {
         counts.scheduleCount,
         counts.askCount,
         counts.extensionCount,
-        counts.decisionCount
+        counts.decisionCount,
+        counts.pausedCount
       ),
     };
   }

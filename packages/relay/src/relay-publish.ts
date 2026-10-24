@@ -771,20 +771,18 @@ export class RelayPublishPipeline {
     //    NOT when the ceiling refused: the buffer exists so a subscriber that
     //    arrives a moment late still sees the message, and replaying a turn the
     //    ceiling just declined to run would hand back exactly what it refused.
-    if (matchedSubscribers === 0 && matchingEndpoints.length === 0 && !ceilingRefusal) {
+    //    NOR when an adapter deliberately sent nothing (`skipped`): a paused
+    //    connection drops its messages (DOR-3271), and holding one for a late
+    //    subscriber would keep what it was told to drop.
+    const nothingTookIt = matchedSubscribers === 0 && matchingEndpoints.length === 0;
+    if (nothingTookIt && !ceilingRefusal && !adapterResult?.skipped) {
       this.deps.subscriptionRegistry.bufferForPendingSubscriber(subject, envelope);
     }
 
     // 10. Dead-letter only when NO delivery targets matched at all — and never
     //     a second time for a ceiling refusal, which dead-lettered itself with
     //     the reason that actually explains it.
-    if (
-      deliveredTo === 0 &&
-      matchingEndpoints.length === 0 &&
-      matchedSubscribers === 0 &&
-      !adapterResult?.skipped &&
-      !ceilingRefusal
-    ) {
+    if (deliveredTo === 0 && nothingTookIt && !adapterResult?.skipped && !ceilingRefusal) {
       await this.deadLetter(subject, envelope, adapterResult, observation);
       observation.assertOutsideTransaction();
     }

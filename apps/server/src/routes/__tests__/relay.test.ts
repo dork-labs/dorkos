@@ -1073,9 +1073,30 @@ describe('Adapter routes', () => {
       expect(refused.body.code).toBe('person_only');
       expect(vi.mocked(adapterManager.confirmReferences)).not.toHaveBeenCalled();
 
-      const ok = await request(server).post('/api/relay/adapters/wh-1/confirm-references');
+      const missing = await request(server).post('/api/relay/adapters/wh-1/confirm-references');
+      expect(missing.status).toBe(400);
+
+      const ok = await request(server)
+        .post('/api/relay/adapters/wh-1/confirm-references')
+        .send({ fingerprint: 'abc' });
       expect(ok.status).toBe(200);
-      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenCalledWith('wh-1');
+      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenCalledWith(
+        'wh-1',
+        'abc',
+        false
+      );
+
+      const undoRefused = await request(server)
+        .delete('/api/relay/adapters/wh-1/confirm-references')
+        .set('X-DorkOS-Agent', 'agent-1');
+      expect(undoRefused.status).toBe(403);
+      const undo = await request(server).delete('/api/relay/adapters/wh-1/confirm-references');
+      expect(undo.status).toBe(200);
+      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenLastCalledWith(
+        'wh-1',
+        null,
+        true
+      );
     });
 
     it('tells the manager an agent wrote it when the caller names an agent (DOR-3271)', async () => {

@@ -1986,10 +1986,11 @@ export interface Transport extends TransportSlices {
   /** Remove a relay adapter by ID. */
   removeRelayAdapter(id: string): Promise<{ ok: boolean }>;
   /**
-   * Confirm a connection paused for `env:`/`keychain:` settings saved before
-   * DOR-3271, and resume it. Refused (403) for anything but a person.
+   * Confirm a connection paused for `env:`/`keychain:` settings (DOR-3271):
+   * send back the `fingerprint` it was listed with, or `null` to undo a
+   * confirmation. Refused (403) for anything but a person; 409 when it changed.
    */
-  confirmRelayAdapterReferences(id: string): Promise<{ ok: boolean }>;
+  confirmRelayAdapterReferences(id: string, fingerprint: string | null): Promise<{ ok: boolean }>;
   /** Update the config for an existing relay adapter. */
   updateRelayAdapterConfig(id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
   /** Test connectivity for an adapter type and config without registering it. */

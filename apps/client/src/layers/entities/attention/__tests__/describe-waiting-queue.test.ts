@@ -15,6 +15,7 @@ function queue(counts: Partial<Record<keyof WaitingQueueCounts, number>>): Waiti
     asks: fill(counts.asks),
     extensionApprovals: fill(counts.extensionApprovals),
     extensionDecisions: fill(counts.extensionDecisions),
+    pausedConnections: fill(counts.pausedConnections),
   };
 }
 
@@ -41,6 +42,18 @@ describe('describeWaitingQueue', () => {
   it('keeps a lone extension in its own words', () => {
     expect(describeWaitingQueue(queue({ extensionApprovals: 1 }))).toBe(
       '1 extension is waiting to be turned on. None of it runs until you decide.'
+    );
+  });
+
+  it('names paused connections, alone and in a mix (DOR-3271)', () => {
+    expect(describeWaitingQueue(queue({ pausedConnections: 1 }))).toBe(
+      '1 connection is paused until you confirm what it sends.'
+    );
+    expect(describeWaitingQueue(queue({ pausedConnections: 2 }))).toBe(
+      '2 connections are paused until you confirm what they send.'
+    );
+    expect(describeWaitingQueue(queue({ approvals: 1, pausedConnections: 1 }))).toBe(
+      '1 request and 1 paused connection are waiting on you.'
     );
   });
 });

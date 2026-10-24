@@ -521,6 +521,22 @@ export const AdapterManifestSchema = z
 
 export type AdapterManifest = z.infer<typeof AdapterManifestSchema>;
 
+/** What a paused connection's owner is shown before confirming it (DOR-3271). */
+export const AdapterConfirmationSchema = z
+  .object({
+    /** The references Confirm approves, by field. Names only, never values. */
+    references: z.array(z.object({ field: z.string(), ref: z.string() })),
+    /** The host it sends to, always ASCII: a Unicode look-alike shows as `xn--…`. */
+    host: z.string().optional(),
+    /** Opaque; Confirm sends it back, so a changed connection is refused. */
+    fingerprint: z.string(),
+    /** Messages dropped while paused. Never queued, never replayed. */
+    notSent: z.number().int().nonnegative(),
+  })
+  .openapi('AdapterConfirmation');
+
+export type AdapterConfirmation = z.infer<typeof AdapterConfirmationSchema>;
+
 export const CatalogInstanceSchema = z
   .object({
     id: z.string(),
@@ -528,10 +544,11 @@ export const CatalogInstanceSchema = z
     /** User-facing label to distinguish multiple instances of the same adapter type. */
     label: z.string().optional(),
     /**
-     * Paused until its owner confirms its `env:`/`keychain:` references, which
-     * were saved before DOR-3271 recorded who wrote them.
+     * Present while paused until its owner confirms the `env:`/`keychain:`
+     * references it sends (DOR-3271): what the owner is shown, and how many
+     * messages it dropped meanwhile.
      */
-    needsConfirmation: z.boolean().optional(),
+    confirmation: AdapterConfirmationSchema.optional(),
     status: AdapterStatusSchema,
     config: z.record(z.string(), z.unknown()).optional(),
   })

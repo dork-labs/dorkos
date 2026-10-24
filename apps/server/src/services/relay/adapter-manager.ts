@@ -48,8 +48,11 @@ import {
 import {
   buildAdapterCatalog,
   buildAdapterView,
+  pauseOrBuild,
+  PausedAdapter,
+  testConfigConnection,
+  type PausedConnection,
   createAdapter,
-  testAdapterConnection,
 } from './adapter-factory.js';
 import {
   broadcastAdaptersChanged,
@@ -294,7 +297,7 @@ function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCap
 export class AdapterManager {
   private readonly registry: AdapterRegistry;
   /** Connections paused until their owner confirms their env:/keychain: references. */
-  private readonly awaitingConfirmation = new Set<string>();
+  private readonly awaitingConfirmation = new Map<string, PausedConnection>();
   private configWatcher: FSWatcher | null = null;
   private readonly configPath: string;
   private configs: AdapterConfig[] = [];
@@ -588,15 +591,40 @@ export class AdapterManager {
   }
 
   /**
-   * The owner confirms a connection paused for holding `env:`/`keychain:`
-   * references no person approved (DOR-3271): record them and resume it. Only
-   * the route that admits a caller clearing the agent bar calls this.
+   * The owner confirms a paused connection (DOR-3271): approve exactly what they
+   * were shown (`fingerprint`), clear its count, and let it send again if it is
+   * turned on. A turned-off connection stays off. With `undo`, take the
+   * approval back instead, which pauses it again. Only the person-only route
+   * calls this.
    */
-  async confirmReferences(id: string): Promise<void> {
+  async confirmReferences(id: string, fingerprint: string | null, undo = false): Promise<void> {
     const config = this.configs.find((c) => c.id === id);
     if (!config) throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
-    await approvals.approveAllReferences(config, this.secretsCtx);
-    await this.enable(id);
+    if (undo) await approvals.deleteApprovedReferences(id, this.secretsCtx.store);
+    else await approvals.approveWhatWasShown(config, fingerprint ?? '', this.secretsCtx);
+    this.awaitingConfirmation.delete(id);
+    await this.enqueue(async () => {
+      // Re-read: a reload or a disable may have replaced or turned it off since.
+      const current = this.configs.find((c) => c.id === id);
+      if (this.stopped || !current?.enabled) return;
+      await this.registry.unregister(id);
+      try {
+        const adapter = await this.buildAdapter(current);
+        if (adapter) await this.registry.register(adapter);
+        if (adapter) await this.noteConnected(id, adapter);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+        throw err;
+      }
+    });
+  }
+
+  /** Record and announce a connection that came up. A paused stand-in did not (DOR-3271). */
+  private async noteConnected(id: string, adapter: RelayAdapter): Promise<void> {
+    if (adapter instanceof PausedAdapter) return;
+    this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.connected', 'Connected to relay');
+    await this.emitAdapterLifecycle(id, 'connected');
   }
 
   /**
@@ -627,8 +655,7 @@ export class AdapterManager {
       if (!adapter) return;
       try {
         await this.registry.register(adapter);
-        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.connected', 'Connected to relay');
-        await this.emitAdapterLifecycle(id, 'connected');
+        await this.noteConnected(id, adapter);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
@@ -659,6 +686,7 @@ export class AdapterManager {
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
     config.enabled = false;
+    this.awaitingConfirmation.delete(id);
     await this.persistConfigs();
 
     await this.enqueue(async () => {
@@ -950,25 +978,9 @@ export class AdapterManager {
     config: Record<string, unknown>,
     writer: SecretWriter = 'agent'
   ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
-    const manifest = this.manifests.get(type);
-    if (!manifest) {
-      return { ok: false, error: `Unknown adapter type: ${type}` };
-    }
-
-    const tempConfig = {
-      id: `__test_${type}_${Date.now()}`,
-      type,
-      enabled: true,
-      builtin: false,
-      config,
-    } as AdapterConfig;
-
-    const adapter = await this.buildAdapter(tempConfig, writer === 'person' ? 'any' : new Map());
-    if (!adapter) {
-      return { ok: false, error: 'Failed to create adapter instance' };
-    }
-
-    return testAdapterConnection(adapter);
+    if (!this.manifests.has(type)) return { ok: false, error: `Unknown adapter type: ${type}` };
+    const approved = writer === 'person' ? 'any' : new Map<string, string>();
+    return testConfigConnection(type, config, (temp) => this.buildAdapter(temp, approved));
   }
 
   /**
@@ -1039,12 +1051,7 @@ export class AdapterManager {
           logger.info('[AdapterManager] starting adapter', { id });
           try {
             await (ownership ? ownership.register(adapter) : this.registry.register(adapter));
-            this.deps.eventRecorder?.insertAdapterEvent(
-              id,
-              'adapter.connected',
-              'Connected to relay'
-            );
-            await this.emitAdapterLifecycle(id, 'connected');
+            await this.noteConnected(id, adapter);
             logger.info('[AdapterManager] adapter registered', { id });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -1385,12 +1392,7 @@ export class AdapterManager {
         if (!adapter) continue;
         if (this.stopped) return; // shutdown() ran while building — registry is dead
         await this.registry.register(adapter);
-        this.deps.eventRecorder?.insertAdapterEvent(
-          config.id,
-          'adapter.connected',
-          'Connected to relay'
-        );
-        await this.emitAdapterLifecycle(config.id, 'connected');
+        await this.noteConnected(config.id, adapter);
       } catch (err) {
         const described = describeError(err);
         this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', described.message);
@@ -1500,22 +1502,23 @@ export class AdapterManager {
     config: AdapterConfig,
     given?: approvals.ApprovedReferences | 'any'
   ): Promise<RelayAdapter | null> {
-    const manifest = this.manifests.get(config.type);
-    const approved =
-      given ??
-      (await approvals.approvalsToStart(
-        config,
-        manifest,
-        this.secretsCtx.store,
-        this.awaitingConfirmation
-      ));
-    const resolved = await resolveAdapterSecrets(config, {
-      provider: this.credentialProvider,
-      manifests: this.manifests,
-      approved,
-    });
+    if (given === undefined) {
+      const { store } = this.secretsCtx;
+      const manifest = this.manifests.get(config.type);
+      const build = (approved: approvals.ApprovedReferences) => this.buildAdapter(config, approved);
+      const probe = () => this.createFrom(config);
+      return pauseOrBuild(config, manifest, store, this.awaitingConfirmation, build, probe);
+    }
+    const { credentialProvider: provider, manifests } = this;
+    return this.createFrom(
+      await resolveAdapterSecrets(config, { provider, manifests, approved: given })
+    );
+  }
+
+  /** Construct an adapter from a config, through the factory. */
+  private createFrom(config: AdapterConfig): Promise<RelayAdapter | null> {
     return createAdapter(
-      resolved,
+      config,
       {
         agentRuntimes: this.agentRuntimes,
         traceStore: this.deps.traceStore,

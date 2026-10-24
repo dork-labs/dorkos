@@ -4,6 +4,7 @@ covers:
   - 'fix(relay): exact secret names, no stored names from callers, and checks on the parsed edit (DOR-3271)'
   - 'fix(relay): only a person can give a connection an env: or keychain: secret (DOR-3271)'
   - 'fix(relay): person approvals live in the encrypted store, and stored names cannot collide (DOR-3271)'
+  - 'fix(relay): a paused connection drops and counts, and its owner confirms exactly what it sends (DOR-3271)'
 ---
 
 ### Security
@@ -14,4 +15,4 @@ covers:
 
 - Removing a connection deletes only its own saved secrets.
 
-- A connection that reads a secret from an environment variable or the keychain now needs a person to save it. One set up before this update is paused until you open it and choose Confirm this setting.
+- A connection that sends an environment variable or Keychain item now pauses after this update until you confirm that setting, on the connection or in Needs you. Connections using saved secrets are unaffected. Messages are not sent while paused.
