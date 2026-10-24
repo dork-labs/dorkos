@@ -39,7 +39,7 @@
     "slackify-markdown": "^5.0.0",
     "ulidx": "^2.4.1",
     "undici": "^7.30.1",
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
