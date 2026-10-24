@@ -2036,10 +2036,12 @@ describe('AdapterManager', () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await initAndStart(manager);
 
-      // Update wh-github with empty nested secrets — should preserve originals
+      // Update wh-github with empty nested secrets and the same address — should
+      // preserve originals. A NEW address carries nothing (DOR-3271; tested below).
+      const url = 'https://example.com/hook';
       await manager.updateConfig('wh-github', {
         inbound: { subject: 'relay.webhook.new', secret: '' },
-        outbound: { url: 'https://new.com', secret: '***' },
+        outbound: { url, secret: '***' },
       });
 
       // getAdapter() masks sensitive fields
@@ -2048,7 +2050,7 @@ describe('AdapterManager', () => {
       expect(config.inbound.secret).toBe('***');
       expect(config.outbound.secret).toBe('***');
       expect(config.inbound.subject).toBe('relay.webhook.new');
-      expect(config.outbound.url).toBe('https://new.com');
+      expect(config.outbound.url).toBe(url);
 
       // Nested secrets are preserved too, each as a resolvable reference (DOR-280).
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;

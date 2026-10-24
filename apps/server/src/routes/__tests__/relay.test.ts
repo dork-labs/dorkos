@@ -1059,8 +1059,27 @@ describe('Adapter routes', () => {
         'wh-new',
         { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } },
         undefined,
-        undefined
+        undefined,
+        'person'
       );
+    });
+
+    it('tells the manager an agent wrote it when the caller names an agent (DOR-3271)', async () => {
+      await request(server)
+        .post('/api/relay/adapters')
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({
+          type: 'webhook',
+          id: 'wh-agent',
+          config: { inbound: { subject: 'relay.webhook.agent', secret: 'secret-long-enough' } },
+        });
+      await request(server)
+        .patch('/api/relay/adapters/wh-agent/config')
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({ config: { outbound: { url: 'https://example.com/x' } } });
+
+      expect(vi.mocked(adapterManager.addAdapter).mock.calls.at(-1)?.[5]).toBe('agent');
+      expect(vi.mocked(adapterManager.updateConfig).mock.calls.at(-1)?.[2]).toBe('agent');
     });
 
     it('returns 400 when body missing required fields', async () => {
@@ -1177,10 +1196,11 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith('tg-main', {
-        token: 'new-token',
-        mode: 'webhook',
-      });
+      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith(
+        'tg-main',
+        { token: 'new-token', mode: 'webhook' },
+        'person'
+      );
     });
 
     it('returns 404 when not found', async () => {
@@ -1213,10 +1233,11 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith('telegram', {
-        token: 'test-token',
-        mode: 'polling',
-      });
+      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith(
+        'telegram',
+        { token: 'test-token', mode: 'polling' },
+        'person'
+      );
     });
 
     it('returns 200 with { ok: false, error } on failure', async () => {

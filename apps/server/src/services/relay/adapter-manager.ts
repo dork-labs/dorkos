@@ -12,13 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
-import type {
-  AdapterRegistry,
-  RelayAdapter,
-  AdapterConfig,
-  AdapterContext,
-  AdapterOwnershipReservation,
-} from '@dorkos/relay';
+import type { AdapterRegistry, RelayAdapter, AdapterConfig, AdapterContext } from '@dorkos/relay';
 import {
   TELEGRAM_MANIFEST,
   WEBHOOK_MANIFEST,
@@ -28,7 +22,6 @@ import {
   toIdList,
   describeError,
   TRACE_PRUNE_BATCH,
-  adapterPrefixesConflict,
 } from '@dorkos/relay';
 import type {
   AgentRuntimeLike,
@@ -50,8 +43,8 @@ import {
   watchAdapterConfig,
   AdapterConfigWrites,
   maskSensitiveFields,
-  mergeWithPasswordPreservation,
   parseAdapterConfigForPersist,
+  reserveWebhookOwnership,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
 import {
@@ -73,6 +66,12 @@ import {
   deleteAdapterSecrets,
   type MaterializeSecretsContext,
 } from './adapter-secrets.js';
+import {
+  assertSecretReferences,
+  mergeSecretUpdate,
+  secretValueSet,
+  type SecretWriter,
+} from './adapter-secret-policy.js';
 import {
   credentialProvider as defaultCredentialProvider,
   credentialStore as defaultCredentialStore,
@@ -940,7 +939,8 @@ export class AdapterManager {
   /** Test connectivity for an adapter type and config without registering it. */
   async testConnection(
     type: string,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    writer: SecretWriter = 'agent'
   ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
     const manifest = this.manifests.get(type);
     if (!manifest) {
@@ -955,7 +955,7 @@ export class AdapterManager {
       config,
     } as AdapterConfig;
 
-    const adapter = await this.buildAdapter(tempConfig);
+    const adapter = await this.buildAdapter(tempConfig, writer === 'person');
     if (!adapter) {
       return { ok: false, error: 'Failed to create adapter instance' };
     }
@@ -963,39 +963,17 @@ export class AdapterManager {
     return testAdapterConnection(adapter);
   }
 
-  /** Reserve prospective webhook ownership before any config or lifecycle mutation. */
-  private reserveWebhookOwnership(config: AdapterConfig): AdapterOwnershipReservation | undefined {
-    if (config.type !== 'webhook') return undefined;
-    const subject = (config.config as { inbound: { subject: string } }).inbound.subject;
-    for (const other of this.configs) {
-      if (other.id === config.id || other.type !== 'webhook') continue;
-      const claimed = (other.config as { inbound: { subject: string } }).inbound.subject;
-      if (adapterPrefixesConflict(subject, claimed)) {
-        throw new AdapterError(
-          `Address ownership conflicts with connection '${other.id}'. Choose a different webhook address.`,
-          'INVALID_CONFIG',
-          config.id
-        );
-      }
-    }
-    try {
-      return this.registry.reserveOwnership(config.id, subject);
-    } catch (error) {
-      throw new AdapterError(
-        error instanceof Error ? error.message : 'Address ownership could not be checked.',
-        'INVALID_CONFIG',
-        config.id
-      );
-    }
-  }
-
-  /** Add a new adapter instance, persist config, and start it if enabled. */
+  /**
+   * Add a new adapter instance, persist config, and start it if enabled.
+   * `writer` decides which credential references it may hold (DOR-3271).
+   */
   async addAdapter(
     type: string,
     id: string,
     config: Record<string, unknown>,
     enabled = true,
-    label?: string
+    label?: string,
+    writer: SecretWriter = 'agent'
   ): Promise<void> {
     logger.info('[AdapterManager] adding adapter', { type, id, enabled });
 
@@ -1029,7 +1007,8 @@ export class AdapterManager {
       },
       manifest
     );
-    const ownership = this.reserveWebhookOwnership(adapterConfig);
+    assertSecretReferences(id, adapterConfig.config, manifest, writer);
+    const ownership = reserveWebhookOwnership(adapterConfig, this.configs, this.registry);
     try {
       this.configs.push(adapterConfig);
       await this.persistConfigs();
@@ -1277,19 +1256,23 @@ export class AdapterManager {
     return true;
   }
 
-  /** Update an adapter's config with password field preservation. */
-  async updateConfig(id: string, newConfig: Record<string, unknown>): Promise<void> {
+  /**
+   * Update an adapter's config with password field preservation, under the
+   * secret rules in `adapter-secret-policy.ts` (DOR-3271).
+   */
+  async updateConfig(
+    id: string,
+    newConfig: Record<string, unknown>,
+    writer: SecretWriter = 'agent'
+  ): Promise<void> {
     const existing = this.configs.find((c) => c.id === id);
     if (!existing) {
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
 
     const manifest = this.manifests.get(existing.type);
-    const mergedConfig = mergeWithPasswordPreservation(
-      existing.config as Record<string, unknown>,
-      newConfig,
-      manifest
-    );
+    const previous = structuredClone(existing);
+    const mergedConfig = mergeSecretUpdate(id, previous.config, newConfig, manifest, writer);
 
     // Re-parse the whole entry rather than assigning the merged record straight
     // in: the merge can drop a key the incoming config omitted, and an
@@ -1300,7 +1283,7 @@ export class AdapterManager {
       manifest
     );
 
-    const ownership = this.reserveWebhookOwnership(prospective);
+    const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
       existing.config = prospective.config;
 
@@ -1309,6 +1292,12 @@ export class AdapterManager {
         existing.label = mergedConfig.label;
       }
       await this.persistConfigs();
+      // Secrets a new address cleared, or a new value replaced, are deleted.
+      await deleteAdapterSecrets(
+        previous,
+        this.secretsCtx,
+        secretValueSet(existing.config, manifest)
+      );
 
       // Apply the settings to an enabled adapter. Serialized and re-checked inside the
       // queue — the enabled/registered snapshot taken outside the queue could
@@ -1490,7 +1479,10 @@ export class AdapterManager {
   }
 
   /** Delegate adapter instantiation to the factory module. */
-  private async buildAdapter(config: AdapterConfig): Promise<RelayAdapter | null> {
+  private async buildAdapter(
+    config: AdapterConfig,
+    allowPersonReferences = true
+  ): Promise<RelayAdapter | null> {
     // Resolve credential references to real secrets in memory only — the
     // adapter receives the live token, but it is never written back to disk
     // (DOR-280). A cleartext value (e.g. a transient test config) passes
@@ -1498,6 +1490,7 @@ export class AdapterManager {
     const resolved = await resolveAdapterSecrets(config, {
       provider: this.credentialProvider,
       manifests: this.manifests,
+      allowPersonReferences,
     });
     return createAdapter(
       resolved,

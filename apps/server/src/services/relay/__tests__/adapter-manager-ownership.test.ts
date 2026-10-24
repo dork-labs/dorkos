@@ -82,7 +82,9 @@ async function boot(
   manager = new AdapterManager(registry, file, {
     traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
     credentialStore: {
-      put: vi.fn(async () => 'file:ownership-fixture-secret16'),
+      // A real store names an entry after its adapter (`relay-adapter-<id>-…`),
+      // and only those resolve for the adapter (DOR-3271).
+      put: vi.fn(async (name: string) => `file:${name}`),
       get: vi.fn(async () => secret),
       delete: vi.fn(async () => {}),
     } as never,

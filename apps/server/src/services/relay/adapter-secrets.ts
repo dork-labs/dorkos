@@ -22,6 +22,11 @@
  * bit as sensitive as a bot token — so each value in such a map is migrated
  * and resolved individually; see {@link isSecretMap}.
  *
+ * Which references an adapter may hold is `adapter-secret-policy.ts` (DOR-3271):
+ * a `file:` reference resolves only to this adapter's own entries, `env:` and
+ * `keychain:` only for a config a person wrote, and removal deletes only this
+ * adapter's own entries.
+ *
  * @module services/relay/adapter-secrets
  */
 import type { AdapterConfig } from '@dorkos/relay';
@@ -30,9 +35,16 @@ import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import type { CredentialProvider, CredentialStore } from '../core/credential-provider.js';
 import { logger } from '../../lib/logger.js';
 import { getNestedValue, setNestedValue, saveAdapterConfig } from './adapter-config.js';
+import {
+  isSecretMap,
+  ownSecretPrefix,
+  referenceRefusal,
+  secretFieldKeys,
+  secretKeyFor,
+  secretValues,
+} from './adapter-secret-policy.js';
 
-/** Prefix for the credential-store key backing an adapter secret field. */
-const SECRET_KEY_PREFIX = 'relay-adapter';
+export { secretFieldKeys };
 
 /** Dependencies for materializing pasted secrets into `file:` references. */
 export interface MaterializeSecretsContext {
@@ -48,41 +60,12 @@ export interface ResolveSecretsContext {
   provider: CredentialProvider;
   /** Manifests by adapter type — supplies each type's `password` field keys. */
   manifests: Map<string, AdapterManifest>;
-}
-
-/**
- * The dot-notation keys of an adapter type's secret (`password`) fields.
- *
- * @param manifest - The adapter manifest, or undefined for an unknown type.
- * @returns The password field keys (e.g. `['token']`, `['inbound.secret']`), or
- *   an empty list when the manifest is unknown or has no secret fields.
- */
-export function secretFieldKeys(manifest: AdapterManifest | undefined): string[] {
-  if (!manifest) return [];
-  return manifest.configFields.filter((f) => f.type === 'password').map((f) => f.key);
-}
-
-/** Build the credential-store key for one adapter field (`relay-adapter-<id>-<field>`). */
-function secretKeyFor(adapterId: string, fieldKey: string): string {
-  return `${SECRET_KEY_PREFIX}-${adapterId}-${fieldKey.replace(/\./g, '-')}`;
-}
-
-/**
- * Whether a stored secret field holds a MAP of secrets rather than one secret.
- *
- * The webhook adapter's `outbound.headers` is the case: its stored value is
- * `{ "Authorization": "Bearer …", "X-Api-Key": "…" }`, and every one of those
- * values is a credential. Materializing the object as a whole is not possible
- * (the schema requires an object of strings, and a reference is a string), so
- * each VALUE is materialized individually and the object keeps its shape with
- * `file:` references inside it. The header NAMES stay in the clear, which is
- * right: a header name is not a secret, and it is what makes the stored entry
- * readable and its credential key stable.
- *
- * @param value - The value read from the stored config at a secret field key.
- */
-function isSecretMap(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  /**
+   * Whether `env:` and `keychain:` references may resolve: true for a stored
+   * config (an agent can never save one), false for a config nobody vouched
+   * for, such as a connection test an agent asked for (DOR-3271).
+   */
+  allowPersonReferences: boolean;
 }
 
 /**
@@ -178,6 +161,10 @@ export async function persistAdapterConfigs(
  * The resolved secret exists only in the returned object; it is never written
  * back to disk and never logged.
  *
+ * A reference this adapter may not use (another owner's `file:` entry, or an
+ * `env:`/`keychain:` reference in a config nobody vouched for) throws before
+ * anything is read, so a planted reference never reaches the provider.
+ *
  * @param config - The stored adapter config (secret fields hold references).
  * @param ctx - The credential provider and manifests.
  * @returns A clone whose secret fields hold real secrets.
@@ -198,6 +185,7 @@ export async function resolveAdapterSecrets(
       for (const [entryKey, entryValue] of Object.entries(value)) {
         if (typeof entryValue !== 'string' || entryValue.length === 0) continue;
         if (!parseCredentialReference(entryValue)) continue;
+        refuseReference(config.id, `${key}.${entryKey}`, entryValue, ctx);
         const resolution = await ctx.provider.resolve(entryValue);
         if (!resolution.ok) {
           throw new Error(
@@ -212,6 +200,7 @@ export async function resolveAdapterSecrets(
 
     if (typeof value !== 'string' || value.length === 0) continue;
     if (!parseCredentialReference(value)) continue; // Cleartext (test/legacy) — pass through.
+    refuseReference(config.id, key, value, ctx);
     const resolution = await ctx.provider.resolve(value);
     if (!resolution.ok) {
       throw new Error(
@@ -227,36 +216,52 @@ export async function resolveAdapterSecrets(
  * Delete the stored secrets for an adapter that is being removed.
  *
  * Best-effort cleanup (defense in depth) so a deleted adapter leaves no orphan
- * secret behind. Never throws — a failed delete is logged and ignored.
+ * secret behind. Never throws — a failed delete is logged and ignored. Only
+ * this adapter's own `relay-adapter-<id>-*` entries are deleted: a `file:`
+ * reference naming any other entry (the Anthropic key, a Community token) is
+ * left alone, so removing an adapter can never erase somebody else's secret
+ * (DOR-3271). `env:` and `keychain:` are user-owned and never touched.
  *
  * @param config - The adapter config being removed.
  * @param ctx - The credential store and manifests.
+ * @param keep - Stored values still in use, for an edit that replaced some of
+ *   the adapter's secrets rather than removing the adapter.
  */
 export async function deleteAdapterSecrets(
   config: AdapterConfig,
-  ctx: MaterializeSecretsContext
+  ctx: MaterializeSecretsContext,
+  keep: ReadonlySet<string> = new Set()
 ): Promise<void> {
-  const keys = secretFieldKeys(ctx.manifests.get(config.type));
   const cfg = config.config as Record<string, unknown>;
-  for (const key of keys) {
-    const value = getNestedValue(cfg, key.split('.'));
-    const entries: Array<[string, unknown]> = isSecretMap(value)
-      ? Object.entries(value).map(([entryKey, entryValue]) => [`${key}.${entryKey}`, entryValue])
-      : [[key, value]];
-
-    for (const [label, raw] of entries) {
-      // Only file: references live in our store; env:/keychain: are user-owned.
-      if (typeof raw !== 'string') continue;
-      const parsed = parseCredentialReference(raw);
-      if (parsed?.scheme !== 'file') continue;
-      try {
-        await ctx.store.delete(parsed.value);
-      } catch (err) {
-        logger.warn(
-          `[AdapterSecrets] Could not delete stored secret for adapter '${config.id}' field '${label}':`,
-          err
-        );
-      }
+  for (const { label, value } of secretValues(cfg, ctx.manifests.get(config.type))) {
+    if (keep.has(value)) continue;
+    const parsed = parseCredentialReference(value);
+    if (parsed?.scheme !== 'file' || !parsed.value.startsWith(ownSecretPrefix(config.id))) continue;
+    try {
+      await ctx.store.delete(parsed.value);
+    } catch (err) {
+      logger.warn(
+        `[AdapterSecrets] Could not delete stored secret for adapter '${config.id}' field '${label}':`,
+        err
+      );
     }
+  }
+}
+
+/**
+ * Throw when this adapter may not resolve `raw` (see `referenceRefusal`). The
+ * message names the field, never the reference, so no stored name leaks.
+ */
+function refuseReference(
+  adapterId: string,
+  label: string,
+  raw: string,
+  ctx: ResolveSecretsContext
+): void {
+  const refusal = referenceRefusal(adapterId, raw, ctx.allowPersonReferences);
+  if (refusal) {
+    throw new Error(
+      `Refused credential for adapter '${adapterId}' field '${label}': it ${refusal}`
+    );
   }
 }

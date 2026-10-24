@@ -153,7 +153,11 @@ describe('resolveAdapterSecrets — point of use', () => {
     await store.put('relay-adapter-telegram-1-token', '123:SECRET-BOT-TOKEN');
     const stored = telegramConfig('file:relay-adapter-telegram-1-token');
 
-    const resolved = await resolveAdapterSecrets(stored, { provider, manifests });
+    const resolved = await resolveAdapterSecrets(stored, {
+      provider,
+      manifests,
+      allowPersonReferences: true,
+    });
 
     expect((resolved.config as { token: string }).token).toBe('123:SECRET-BOT-TOKEN');
     // The input config is not mutated — the reference stays on the stored copy.
@@ -164,15 +168,16 @@ describe('resolveAdapterSecrets — point of use', () => {
     const resolved = await resolveAdapterSecrets(telegramConfig('123:raw'), {
       provider,
       manifests,
+      allowPersonReferences: true,
     });
     expect((resolved.config as { token: string }).token).toBe('123:raw');
   });
 
   it('throws a descriptive, secret-free error for a dangling reference', async () => {
     const stored = telegramConfig('file:relay-adapter-telegram-1-token');
-    await expect(resolveAdapterSecrets(stored, { provider, manifests })).rejects.toThrow(
-      /Failed to resolve credential for adapter 'telegram-1' field 'token'/
-    );
+    await expect(
+      resolveAdapterSecrets(stored, { provider, manifests, allowPersonReferences: true })
+    ).rejects.toThrow(/Failed to resolve credential for adapter 'telegram-1' field 'token'/);
   });
 });
 
@@ -256,6 +261,7 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
     const resolved = await resolveAdapterSecrets(config, {
       provider: new FakeCredentialProvider(store),
       manifests: webhookManifests,
+      allowPersonReferences: true,
     });
 
     expect(storedHeaders(resolved)).toEqual({ Authorization: 'Bearer sk-live-abc' });
@@ -458,6 +464,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     const resolved = await resolveAdapterSecrets(parsed, {
       provider: new FakeCredentialProvider(store),
       manifests,
+      allowPersonReferences: true,
     });
     // In the adapter's hands: the real value.
     expect(resolved.config).toMatchObject({

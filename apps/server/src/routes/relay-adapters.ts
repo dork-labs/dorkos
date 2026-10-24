@@ -21,7 +21,7 @@
  *
  * @module routes/relay-adapters
  */
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { honoRateLimit } from '../http/rate-limiter.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -45,31 +45,9 @@ import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js'
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
+import { sendAdapterError, secretWriter } from './relay-adapter-http.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
-
-/** Map adapter error codes to HTTP status codes. */
-const ADAPTER_ERROR_STATUS: Record<string, number> = {
-  DUPLICATE_ID: 409,
-  UNKNOWN_TYPE: 400,
-  MULTI_INSTANCE_DENIED: 400,
-  NOT_FOUND: 404,
-  REMOVE_BUILTIN_DENIED: 400,
-  // A config its schema refuses — a webhook aimed at a DorkOS address among
-  // them (DOR-2432). The caller's mistake, so a 400 that says which rule.
-  INVALID_CONFIG: 400,
-};
-
-/**
- * Answer an AdapterError, mapping its code to an HTTP status via ADAPTER_ERROR_STATUS.
- *
- * @param c - The Hono context
- * @param err - The AdapterError to answer
- */
-function sendAdapterError(c: Context<ApiEnv>, err: AdapterError): Response {
-  const status = (ADAPTER_ERROR_STATUS[err.code] ?? 500) as ContentfulStatusCode;
-  return c.json({ error: err.message, code: err.code }, status);
-}
 
 /** Resolve a human-readable name for an adapter, falling back to its ID. */
 function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): string {
@@ -226,7 +204,11 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       return c.json(validationFailureBody(result.error), 400);
     }
     try {
-      const testResult = await adapterManager.testConnection(result.data.type, result.data.config);
+      const testResult = await adapterManager.testConnection(
+        result.data.type,
+        result.data.config,
+        secretWriter(c)
+      );
       return c.json(testResult);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Test failed';
@@ -244,7 +226,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     // label param). Fall back to config.label if the top-level field wasn't provided.
     const label = topLabel ?? (typeof config.label === 'string' ? config.label : undefined);
     try {
-      await adapterManager.addAdapter(type, id, config, enabled, label);
+      await adapterManager.addAdapter(type, id, config, enabled, label, secretWriter(c));
 
       if (activity) {
         const adapterName = adapterManager.resolveAdapterName(id);
@@ -303,7 +285,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       return c.json(validationFailureBody(result.error), 400);
     }
     try {
-      await adapterManager.updateConfig(c.req.param('id'), result.data.config);
+      await adapterManager.updateConfig(c.req.param('id'), result.data.config, secretWriter(c));
       return c.json({ ok: true });
     } catch (err) {
       if (err instanceof AdapterError) return sendAdapterError(c, err);
