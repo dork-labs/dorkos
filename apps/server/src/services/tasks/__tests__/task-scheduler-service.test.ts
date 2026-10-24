@@ -2313,6 +2313,75 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** Dispatch a task whose first delivery finds nobody, and hand back the run and the wait. */
+    async function waitingForRetry(name: string, over: Record<string, unknown> = {}) {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValue({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...over }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      const finish = async () => {
+        let settled = false;
+        void pending.finally(() => (settled = true));
+        for (let step = 0; step < 20 && !settled; step += 1) {
+          await vi.advanceTimersByTimeAsync(5_000);
+        }
+        await pending;
+        vi.useRealTimers();
+        await service.stop();
+      };
+      const dispatches = () =>
+        mockRelay.publish.mock.calls.filter(
+          (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+        );
+      return { task, run, service, finish, dispatches };
+    }
+
+    // DOR-3033 review (Security Must): Stop on a run nothing received yet ends
+    // it, and the retry does not start it.
+    it('pressing Stop during the wait ends the run, and it never starts', async () => {
+      const { run, service, finish, dispatches } = await waitingForRetry('Stopped Meanwhile');
+      await expect(service.cancelRun(run.id)).resolves.toEqual({ state: 'stopping' });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)).toMatchObject({
+        status: 'cancelled',
+        error: 'Stopped before it started.',
+      });
+    });
+
+    it('lowering the level during the wait runs the retry at the new level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Lowered Meanwhile', {
+        permissionMode: 'bypassPermissions',
+      });
+      store.updateTask(task.id, { permissionMode: 'acceptEdits' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    it('turning the schedule off during the wait means no run', async () => {
+      const { task, run, finish, dispatches } = await waitingForRetry('Disabled Meanwhile');
+      store.updateTask(task.id, { enabled: false });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)?.status).toBe('skipped');
+    });
+
     it('words a run that never reported its ending as that, not as never started', async () => {
       mockRelay.publish.mockResolvedValue({
         messageId: 'm',
