@@ -23,6 +23,11 @@ their dates so a later reader knows what is durable and what was situational.
 - **Adaptive layouts, not just shrinking** (operator, 2026-09-03). See lens 8.
 - **Overflow containment** (operator, 2026-09-03). See lens 8. A string escaping its container
   is automatically P1.
+- **Measure the phone; it scales up, never down** (operator, 2026-10-18). Every review and audit
+  tests the phone. Font sizes, icon sizes, line height and tracking, and spacing all change for
+  the phone, and only ever upward from desktop; mobile icons in particular get far too small (the
+  mobile header). The browser leg captures 390x844 and 375x667 in both themes and measures the
+  rendered page against the floors in `contributing/design-review.md`. See lens 8.
 
 ## Ground truth the auditors read first
 
@@ -32,6 +37,9 @@ their dates so a later reader knows what is durable and what was situational.
 - `contributing/design-system.md` — Calm Tech: "less, but better", no pure black or white, no
   dramatic animation, chrome appears on hover and focus, whitespace before rules.
 - `contributing/animations.md` — the motion rules and the timing system.
+- `contributing/design-review.md` — what **passes**: the numbered rules a finding cites, the
+  measured floors (type, line height and tracking, icons by role, hit targets, contrast, focus),
+  and the phone tokens. Its Blocker / Should / Polish are this charter's P1 / P2 / P3.
 - `.claude/rules/fsd-layers.md` — the layer hierarchy `shared ← entities ← features ← widgets`,
   barrel imports only.
 - `.claude/skills/maintaining-dev-playground/SKILL.md` — playground candidacy rules.
@@ -87,6 +95,11 @@ it everywhere; do not invent a second spelling elsewhere.
 8. **Responsiveness** `responsive` — phone, tablet, and desktop behavior; touch targets under 44px; text,
    buttons, and icons that need to be **bigger** on small screens; layouts that overflow or
    cram; missing breakpoint handling; hover-only affordances with no touch equivalent.
+   - **Measured, not read.** Sizes are judged on the rendered page at 390x844 and 375x667
+     against `contributing/design-review.md` §2, §3, §7 and §11: an icon under 20px in a phone
+     control or header, a target under 44px, a field under 16px (iOS zooms the page), or a line
+     height under 1.3 on wrapped text. A raw icon size class (`size-3.5`) that does not go
+     through `--size-icon-*` does not grow on the phone, which is how most of these happen.
    - **Adaptive layouts.** Responsiveness is not only shrinking; sometimes a small screen
      deserves a _different_ layout. For each cramped surface, name the adaptation strategy and
      why: (a) collapse to icon-only, with the label available elsewhere; (b) fold overflow

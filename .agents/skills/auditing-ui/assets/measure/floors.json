@@ -1,0 +1,42 @@
+{
+  "$comment": "The measured floors the browser leg scores against. One number per rule, keyed by the section of contributing/design-review.md that states it. Phone = viewport width under 768px (Tailwind md), the same gate --_st and TOUCH_TARGET_* use. Phone values only ever go up from desktop.",
+  "phoneMaxWidth": 767,
+  "text": {
+    "rule": "2.2",
+    "minFontPx": { "desktop": 10, "phone": 12 },
+    "minReadPx": { "desktop": 12, "phone": 13 },
+    "minLineHeightRatio": { "singleLine": 1.15, "multiLine": 1.3 },
+    "smallTextPx": 14,
+    "minTrackingEmBelowSmall": -0.005
+  },
+  "input": {
+    "rule": "2.4",
+    "minFontPx": { "phone": 16 },
+    "minHeightPx": { "desktop": 32, "phone": 44 }
+  },
+  "icon": {
+    "rule": "3.1",
+    "minPx": {
+      "inline": { "desktop": 12, "phone": 14 },
+      "control": { "desktop": 16, "phone": 20 },
+      "chrome": { "desktop": 16, "phone": 20 }
+    },
+    "ignoreAbovePx": 64
+  },
+  "target": {
+    "rule": "7.2",
+    "minPx": { "desktop": 24, "phone": 44 },
+    "minGapPx": { "phone": 8 }
+  },
+  "contrast": {
+    "rule": "4.4",
+    "text": 4.5,
+    "largeText": 3,
+    "largePx": 24,
+    "largeBoldPx": 18.66
+  },
+  "focus": {
+    "rule": "7.1",
+    "minRingPx": 2
+  }
+}
