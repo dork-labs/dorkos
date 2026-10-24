@@ -3,6 +3,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
+import {
+  recordAccountSignin,
+  resetAccountSignins,
+} from '../../../observability/account-signin-state.js';
 import { AccountUsageStore } from '../account-usage-store.js';
 import { flushRetryDelayMs, type AccountUsageStoreOptions } from '../account-usage-types.js';
 import { CONFIG_UNREADABLE, readConfigFile } from '../account-usage-reconcile.js';
@@ -64,6 +68,7 @@ beforeEach(async () => {
   await fs.mkdir(path.join(home, '.claude3'), { recursive: true });
   stores = [];
   clock = Date.now();
+  resetAccountSignins();
 });
 
 afterEach(async () => {
@@ -77,6 +82,29 @@ afterEach(async () => {
 });
 
 describe('AccountUsageStore: recording and persistence', () => {
+  it('serves the observed sign-in state of each account independently', async () => {
+    const first = path.join(home, '.claude');
+    const second = path.join(home, '.claude3');
+    await writeConfig(
+      claudeConfig([
+        { id: 'main', path: first, label: 'Main' },
+        { id: 'five', path: `${second}/`, label: 'Claude5' },
+      ])
+    );
+    const store = makeStore();
+    await store.load();
+    expect(store.list('claude-code').find((row) => row.accountId === 'five')?.signInState).toBe(
+      'unknown'
+    );
+    recordAccountSignin('claude-code', first, 'signed-in');
+    recordAccountSignin('claude-code', second, 'signed-out');
+    const states = new Map(
+      store.list('claude-code').map((row) => [row.accountId, row.signInState])
+    );
+    expect(states.get('main')).toBe('signed-in');
+    expect(states.get('five')).toBe('signed-out');
+  });
+
   it('two sessions (two spellings of one root) on one account update one record', async () => {
     await writeConfig(
       claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: 'Work' }])

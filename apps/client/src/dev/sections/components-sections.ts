@@ -1,10 +1,11 @@
 import type { PlaygroundSection } from '../playground-registry';
 import { APP_TABS_SECTIONS } from './app-tabs-sections';
+import { FEEDBACK_SECTIONS } from './feedback-sections';
 
 /**
  * Component sections from ComponentsPage.
  *
- * Sources: LayoutShowcases, ControlShowcases, FeedbackShowcases,
+ * Sources: LayoutShowcases, ControlShowcases (feedback entries in feedback-sections.ts),
  * NavigationShowcases, SidebarShowcases, OverlayShowcases, DataDisplayShowcases.
  */
 export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
@@ -64,101 +65,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Buttons',
     keywords: ['code', 'command', 'mono', 'monospace', 'snippet', 'path'],
   },
-  // FeedbackShowcases
-  {
-    id: 'feedback-dialog',
-    title: 'Feedback dialog',
-    page: 'components',
-    category: 'Feedback',
-    keywords: [
-      'feedback',
-      'bug',
-      'report',
-      'idea',
-      'praise',
-      'diagnostics',
-      'attachments',
-      'screenshot',
-      'paste',
-      'drop',
-      'capture',
-      'point',
-      'composer',
-      'email',
-      'signed out',
-      'draft',
-    ],
-  },
-  {
-    id: 'point-at-it-still',
-    title: 'Point at it (still)',
-    page: 'components',
-    category: 'Feedback',
-    keywords: [
-      'point',
-      'element',
-      'picker',
-      'crosshair',
-      'highlight',
-      'crop',
-      'bug',
-      'report',
-      'screenshot',
-      'overlay',
-    ],
-  },
-  {
-    id: 'skeleton',
-    title: 'Skeleton',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['loading', 'placeholder', 'tasks', 'shimmer', 'spinner'],
-  },
-
-  {
-    id: 'copy-feedback',
-    title: 'Copy feedback',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['copy', 'clipboard', 'useCopyFeedback', 'CopyButton', 'copied', 'failed'],
-  },
-  {
-    id: 'toaster',
-    title: 'Toaster',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['toast', 'notification', 'sonner', 'success', 'error', 'info', 'warning'],
-  },
-  {
-    id: 'banner',
-    title: 'Banner',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['banner', 'alert', 'notice', 'critical', 'warning', 'info', 'neutral', 'dismiss'],
-  },
-  {
-    id: 'permissionmodescopenote',
-    title: 'PermissionModeScopeNote',
-    page: 'components',
-    category: 'Feedback',
-    keywords: [
-      'permission',
-      'mode',
-      'scope',
-      'note',
-      'bypass',
-      'never asks',
-      'covers',
-      'approvals',
-    ],
-  },
-  {
-    id: 'unverifiedcatalognotice',
-    title: 'UnverifiedCatalogNotice',
-    page: 'components',
-    category: 'Feedback',
-    keywords: ['unverified', 'catalog', 'notice', 'model', 'bounded', 'guess', 'connect'],
-  },
+  ...FEEDBACK_SECTIONS,
   // NavigationShowcases
   {
     id: 'navigationlayout',
