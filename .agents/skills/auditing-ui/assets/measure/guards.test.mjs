@@ -40,3 +40,8 @@ test('refuses what is not an http(s) URL', () => {
   assert.ok(refuseUrl('localhost:6241'));
   assert.ok(refuseUrl('file:///etc/passwd'));
 });
+
+test('a route can turn a safe base into :4242, so each base + route is checked', () => {
+  assert.equal(refuseUrl('http://localhost'), null);
+  assert.match(refuseUrl('http://localhost' + ':4242/') ?? '', /4242/);
+});

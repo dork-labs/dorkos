@@ -64,16 +64,20 @@ if (!args.url) {
   console.error('measure.mjs: --url is required (see the header of this file for usage)');
   process.exit(2);
 }
-const refusal = refuseUrl(String(args.url));
-if (refusal) {
-  console.error(`measure.mjs: ${refusal}`);
-  process.exit(2);
-}
 const base = String(args.url).replace(/\/$/, '');
 const routes = String(args.routes ?? '/')
   .split(',')
   .map((r) => r.trim())
   .filter(Boolean);
+// Check every address the script will visit, not only --url: a route like
+// ':4242/' turns 'http://localhost' into the operator's own DorkOS.
+for (const target of [String(args.url), ...routes.map((r) => base + r)]) {
+  const refusal = refuseUrl(target);
+  if (refusal) {
+    console.error(`measure.mjs: ${refusal}`);
+    process.exit(2);
+  }
+}
 const viewports = String(args.viewports ?? '390x844,375x667,768x1024,1440x900')
   .split(',')
   .map((v) => {
