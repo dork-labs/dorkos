@@ -19,6 +19,7 @@ export {
   useAdapterCatalog,
   useAddAdapter,
   useRemoveAdapter,
+  useConfirmAdapterReferences,
   useUpdateAdapterConfig,
   useTestAdapterConnection,
   CATALOG_KEY,

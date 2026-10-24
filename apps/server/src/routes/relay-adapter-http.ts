@@ -7,12 +7,12 @@
  *
  * @module routes/relay-adapter-http
  */
-import type { Context } from 'hono';
+import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
-import type { AdapterError } from '../services/relay/adapter-manager.js';
+import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { SecretWriter } from '../services/relay/adapter-secret-policy.js';
 
 /** Map adapter error codes to HTTP status codes. */
@@ -45,4 +45,34 @@ export function sendAdapterError(c: Context<ApiEnv>, err: AdapterError): Respons
  */
 export function secretWriter(c: Context<ApiEnv>): SecretWriter {
   return clearsTheAgentBar(honoRequestFacts(c)) ? 'person' : 'agent';
+}
+
+/** What an agent is told when it asks to confirm a connection's settings. */
+const PERSON_ONLY_CONFIRM = 'Only a person can confirm this setting.';
+
+/**
+ * `POST /adapters/:id/confirm-references`: the owner confirms a connection
+ * paused for holding `env:`/`keychain:` references nobody recorded a person
+ * saving (DOR-3271). This is what records them, so it admits only a caller
+ * that clears the agent bar; anything else gets a 403.
+ *
+ * @param router - The adapter routes' router.
+ * @param adapterManager - The adapter manager.
+ */
+export function registerConfirmReferencesRoute(
+  router: Hono<ApiEnv>,
+  adapterManager: AdapterManager
+): void {
+  router.post('/adapters/:id/confirm-references', async (c) => {
+    if (secretWriter(c) !== 'person') {
+      return c.json({ error: PERSON_ONLY_CONFIRM, code: 'person_only' }, 403);
+    }
+    try {
+      await adapterManager.confirmReferences(c.req.param('id'));
+      return c.json({ ok: true });
+    } catch (err) {
+      if (err instanceof AdapterError) return sendAdapterError(c, err);
+      return c.json({ error: err instanceof Error ? err.message : 'Confirm failed' }, 500);
+    }
+  });
 }

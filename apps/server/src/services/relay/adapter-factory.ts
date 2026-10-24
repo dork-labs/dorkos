@@ -16,6 +16,7 @@ import type {
   WebhookAdapterConfig,
   SlackAdapterConfig,
   AdapterStatus,
+  AdapterRegistry,
 } from '@dorkos/relay';
 import {
   TelegramAdapter,
@@ -32,7 +33,8 @@ import type {
   AgentSessionStoreLike,
   RefusedAskReporter,
 } from '@dorkos/relay';
-import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
+import { maskSensitiveFields } from './adapter-config.js';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
@@ -125,6 +127,66 @@ export function defaultAdapterStatus(): AdapterStatus {
     messageCount: { inbound: 0, outbound: 0 },
     errorCount: 0,
   };
+}
+
+/**
+ * A masked config and live status snapshot for one adapter.
+ *
+ * @param config - The stored adapter config.
+ * @param manifest - Its type's manifest, when known.
+ * @param registry - The live registry, for its status when running.
+ */
+export function buildAdapterView(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  registry: Pick<AdapterRegistry, 'get'>
+): { config: AdapterConfig; status: AdapterStatus } {
+  const status = {
+    id: config.id,
+    type: config.type,
+    displayName: manifest?.displayName ?? config.type,
+    ...(registry.get(config.id)?.getStatus() ?? defaultAdapterStatus()),
+  };
+  const masked = maskSensitiveFields(config.config as Record<string, unknown>, manifest);
+  return { config: { ...config, config: masked }, status };
+}
+
+/**
+ * The adapter catalog: every known type with its configured instances, their
+ * live status and masked settings.
+ *
+ * @param manifests - Manifests by adapter type.
+ * @param configs - Every configured instance.
+ * @param registry - The live registry, for each running instance's status.
+ * @param awaitingConfirmation - Instances paused until their owner confirms
+ *   their `env:`/`keychain:` references (DOR-3271).
+ */
+export function buildAdapterCatalog(
+  manifests: ReadonlyMap<string, AdapterManifest>,
+  configs: readonly AdapterConfig[],
+  registry: Pick<AdapterRegistry, 'get'>,
+  awaitingConfirmation: ReadonlySet<string>
+): CatalogEntry[] {
+  const entries: CatalogEntry[] = [];
+  for (const [type, manifest] of manifests) {
+    const instances = configs
+      .filter((c) => c.type === type)
+      .map((c) => ({
+        id: c.id,
+        enabled: c.enabled,
+        ...(c.label ? { label: c.label } : {}),
+        ...(awaitingConfirmation.has(c.id) ? { needsConfirmation: true } : {}),
+        status: {
+          id: c.id,
+          type: c.type,
+          displayName: manifest.displayName,
+          ...(registry.get(c.id)?.getStatus() ?? defaultAdapterStatus()),
+        },
+        config: maskSensitiveFields((c.config ?? {}) as Record<string, unknown>, manifest),
+      }));
+    entries.push({ manifest, instances });
+  }
+  return entries;
 }
 
 /**

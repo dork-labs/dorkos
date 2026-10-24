@@ -81,13 +81,19 @@ async function boot(
   });
   manager = new AdapterManager(registry, file, {
     traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
-    credentialStore: {
-      // A real store names an entry after its adapter (`relay-adapter-<id>-…`),
-      // and only those resolve for the adapter (DOR-3271).
-      put: vi.fn(async (name: string) => `file:${name}`),
-      get: vi.fn(async () => secret),
-      delete: vi.fn(async () => {}),
-    } as never,
+    credentialStore: (() => {
+      // A real store holds only what was put, and names an entry after its
+      // adapter (`relay-adapter:<id>:…`), which is all that resolves for it (DOR-3271).
+      const entries = new Map<string, string>();
+      return {
+        put: vi.fn(async (name: string, value: string) => {
+          entries.set(name, value);
+          return `file:${name}`;
+        }),
+        get: vi.fn(async (name: string) => entries.get(name) ?? null),
+        delete: vi.fn(async (name: string) => void entries.delete(name)),
+      };
+    })() as never,
     credentialProvider: { resolve: resolveSecret } as never,
   });
   await manager.initialize();

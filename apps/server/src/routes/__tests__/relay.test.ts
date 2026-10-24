@@ -840,6 +840,7 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
     ]),
     addAdapter: vi.fn().mockResolvedValue(undefined),
     removeAdapter: vi.fn().mockResolvedValue(undefined),
+    confirmReferences: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     testConnection: vi.fn().mockResolvedValue({ ok: true }),
     resolveAdapterName: vi.fn((id: string) => id),
@@ -1062,6 +1063,19 @@ describe('Adapter routes', () => {
         undefined,
         'person'
       );
+    });
+
+    it('lets only a person confirm a paused connection (DOR-3271)', async () => {
+      const refused = await request(server)
+        .post('/api/relay/adapters/wh-1/confirm-references')
+        .set('X-DorkOS-Agent', 'agent-1');
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('person_only');
+      expect(vi.mocked(adapterManager.confirmReferences)).not.toHaveBeenCalled();
+
+      const ok = await request(server).post('/api/relay/adapters/wh-1/confirm-references');
+      expect(ok.status).toBe(200);
+      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenCalledWith('wh-1');
     });
 
     it('tells the manager an agent wrote it when the caller names an agent (DOR-3271)', async () => {

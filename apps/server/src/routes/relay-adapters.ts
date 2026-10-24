@@ -45,7 +45,11 @@ import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js'
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
-import { sendAdapterError, secretWriter } from './relay-adapter-http.js';
+import {
+  registerConfirmReferencesRoute,
+  sendAdapterError,
+  secretWriter,
+} from './relay-adapter-http.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 
@@ -293,6 +297,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       return c.json({ error: message }, 500);
     }
   });
+
+  registerConfirmReferencesRoute(router, adapterManager);
 
   router.post('/adapters/:id/enable', async (c) => {
     try {

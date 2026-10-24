@@ -2009,8 +2009,8 @@ describe('AdapterManager', () => {
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedTg = savedAdapters.find((a: { id: string }) => a.id === 'tg-main');
-      expect(savedTg.config.token).toBe('file:relay-adapter-tg-main-token');
-      expect(secretStore.get('relay-adapter-tg-main-token')).toBe('bot-token-123');
+      expect(savedTg.config.token).toBe('file:relay-adapter:tg-main:token');
+      expect(secretStore.get('relay-adapter:tg-main:token')).toBe('bot-token-123');
     });
 
     it('preserves password fields when *** submitted', async () => {
@@ -2028,8 +2028,8 @@ describe('AdapterManager', () => {
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedTg = savedAdapters.find((a: { id: string }) => a.id === 'tg-main');
-      expect(savedTg.config.token).toBe('file:relay-adapter-tg-main-token');
-      expect(secretStore.get('relay-adapter-tg-main-token')).toBe('bot-token-123');
+      expect(savedTg.config.token).toBe('file:relay-adapter:tg-main:token');
+      expect(secretStore.get('relay-adapter:tg-main:token')).toBe('bot-token-123');
     });
 
     it('preserves nested password fields (e.g., inbound.secret)', async () => {
@@ -2056,12 +2056,12 @@ describe('AdapterManager', () => {
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedWh = savedAdapters.find((a: { id: string }) => a.id === 'wh-github');
-      expect(savedWh.config.inbound.secret).toBe('file:relay-adapter-wh-github-inbound-secret');
-      expect(savedWh.config.outbound.secret).toBe('file:relay-adapter-wh-github-outbound-secret');
-      expect(secretStore.get('relay-adapter-wh-github-inbound-secret')).toBe(
+      expect(savedWh.config.inbound.secret).toBe('file:relay-adapter:wh-github:inbound.secret');
+      expect(savedWh.config.outbound.secret).toBe('file:relay-adapter:wh-github:outbound.secret');
+      expect(secretStore.get('relay-adapter:wh-github:inbound.secret')).toBe(
         'a-very-long-secret-16'
       );
-      expect(secretStore.get('relay-adapter-wh-github-outbound-secret')).toBe(
+      expect(secretStore.get('relay-adapter:wh-github:outbound.secret')).toBe(
         'another-long-secret-16'
       );
     });
@@ -2374,7 +2374,7 @@ describe('AdapterManager', () => {
             id: 'tg-broken',
             type: 'telegram',
             enabled: true,
-            config: { token: 'file:relay-adapter-tg-broken-token', mode: 'polling' },
+            config: { token: 'file:relay-adapter:tg-broken:token', mode: 'polling' },
           },
           {
             id: 'tg-ok',

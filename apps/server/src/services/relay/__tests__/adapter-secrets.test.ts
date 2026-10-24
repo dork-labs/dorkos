@@ -83,13 +83,13 @@ describe('materializeAdapterSecrets — migration', () => {
     expect(changed).toBe(true);
     const token = (configs[0].config as { token: string }).token;
     // The on-disk value is now a reference, not the raw token.
-    expect(token).toBe('file:relay-adapter-telegram-1-token');
+    expect(token).toBe('file:relay-adapter:telegram-1:token');
     // The real secret lives only in the encrypted store.
-    expect(store.secrets.get('relay-adapter-telegram-1-token')).toBe('123:SECRET-BOT-TOKEN');
+    expect(store.secrets.get('relay-adapter:telegram-1:token')).toBe('123:SECRET-BOT-TOKEN');
   });
 
   it('is idempotent — a value that is already a reference is left untouched', async () => {
-    const configs = [telegramConfig('file:relay-adapter-telegram-1-token')];
+    const configs = [telegramConfig('file:relay-adapter:telegram-1:token')];
 
     const changed = await materializeAdapterSecrets(configs, { store, manifests });
 
@@ -119,10 +119,10 @@ describe('materializeAdapterSecrets — migration', () => {
     await materializeAdapterSecrets(configs, { store, manifests });
 
     const cfg = configs[0].config as Record<string, string>;
-    expect(cfg.botToken).toBe('file:relay-adapter-slack-1-botToken');
-    expect(cfg.appToken).toBe('file:relay-adapter-slack-1-appToken');
-    expect(cfg.signingSecret).toBe('file:relay-adapter-slack-1-signingSecret');
-    expect(store.secrets.get('relay-adapter-slack-1-botToken')).toBe('xoxb-raw');
+    expect(cfg.botToken).toBe('file:relay-adapter:slack-1:botToken');
+    expect(cfg.appToken).toBe('file:relay-adapter:slack-1:appToken');
+    expect(cfg.signingSecret).toBe('file:relay-adapter:slack-1:signingSecret');
+    expect(store.secrets.get('relay-adapter:slack-1:botToken')).toBe('xoxb-raw');
   });
 
   it('does nothing for an adapter type with no secret fields', async () => {
@@ -150,33 +150,33 @@ describe('resolveAdapterSecrets — point of use', () => {
   });
 
   it('resolves a file: reference back to the real token without persisting it', async () => {
-    await store.put('relay-adapter-telegram-1-token', '123:SECRET-BOT-TOKEN');
-    const stored = telegramConfig('file:relay-adapter-telegram-1-token');
+    await store.put('relay-adapter:telegram-1:token', '123:SECRET-BOT-TOKEN');
+    const stored = telegramConfig('file:relay-adapter:telegram-1:token');
 
     const resolved = await resolveAdapterSecrets(stored, {
       provider,
       manifests,
-      allowPersonReferences: true,
+      approved: 'any',
     });
 
     expect((resolved.config as { token: string }).token).toBe('123:SECRET-BOT-TOKEN');
     // The input config is not mutated — the reference stays on the stored copy.
-    expect((stored.config as { token: string }).token).toBe('file:relay-adapter-telegram-1-token');
+    expect((stored.config as { token: string }).token).toBe('file:relay-adapter:telegram-1:token');
   });
 
   it('passes a cleartext value through unchanged (transient test config)', async () => {
     const resolved = await resolveAdapterSecrets(telegramConfig('123:raw'), {
       provider,
       manifests,
-      allowPersonReferences: true,
+      approved: 'any',
     });
     expect((resolved.config as { token: string }).token).toBe('123:raw');
   });
 
   it('throws a descriptive, secret-free error for a dangling reference', async () => {
-    const stored = telegramConfig('file:relay-adapter-telegram-1-token');
+    const stored = telegramConfig('file:relay-adapter:telegram-1:token');
     await expect(
-      resolveAdapterSecrets(stored, { provider, manifests, allowPersonReferences: true })
+      resolveAdapterSecrets(stored, { provider, manifests, approved: 'any' })
     ).rejects.toThrow(/Failed to resolve credential for adapter 'telegram-1' field 'token'/);
   });
 });
@@ -184,13 +184,13 @@ describe('resolveAdapterSecrets — point of use', () => {
 describe('deleteAdapterSecrets — cleanup', () => {
   it('deletes only file: secrets, leaving user-owned env:/keychain: references alone', async () => {
     const store = new FakeCredentialStore();
-    await store.put('relay-adapter-telegram-1-token', '123:SECRET');
+    await store.put('relay-adapter:telegram-1:token', '123:SECRET');
 
-    await deleteAdapterSecrets(telegramConfig('file:relay-adapter-telegram-1-token'), {
+    await deleteAdapterSecrets(telegramConfig('file:relay-adapter:telegram-1:token'), {
       store,
       manifests,
     });
-    expect(store.secrets.has('relay-adapter-telegram-1-token')).toBe(false);
+    expect(store.secrets.has('relay-adapter:telegram-1:token')).toBe(false);
 
     // An env: reference is not ours to delete — no throw, nothing removed.
     await expect(
@@ -244,11 +244,11 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
 
     expect(changed).toBe(true);
     expect(storedHeaders(config)).toEqual({
-      Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization',
-      'X-Trace': 'file:relay-adapter-wh-1-outbound-headers-X-Trace',
+      Authorization: 'file:relay-adapter:wh-1:outbound.headers.Authorization',
+      'X-Trace': 'file:relay-adapter:wh-1:outbound.headers.X-Trace',
     });
     // The value is in the encrypted store, not in the file.
-    expect(store.secrets.get('relay-adapter-wh-1-outbound-headers-Authorization')).toBe(
+    expect(store.secrets.get('relay-adapter:wh-1:outbound.headers.Authorization')).toBe(
       'Bearer sk-live-abc'
     );
     expect(JSON.stringify(config)).not.toContain('sk-live-abc');
@@ -261,7 +261,7 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
     const resolved = await resolveAdapterSecrets(config, {
       provider: new FakeCredentialProvider(store),
       manifests: webhookManifests,
-      allowPersonReferences: true,
+      approved: 'any',
     });
 
     expect(storedHeaders(resolved)).toEqual({ Authorization: 'Bearer sk-live-abc' });
@@ -314,7 +314,7 @@ describe('editing a webhook adapter without touching its headers', () => {
     outbound: {
       url: 'https://example.com/hook',
       secret: 'file:outbound-ref',
-      headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+      headers: { Authorization: 'file:relay-adapter:wh-1:outbound.headers.Authorization' },
     },
   };
 
@@ -330,7 +330,7 @@ describe('editing a webhook adapter without touching its headers', () => {
 
     expect(merged).toMatchObject({
       outbound: {
-        headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+        headers: { Authorization: 'file:relay-adapter:wh-1:outbound.headers.Authorization' },
       },
     });
   });
@@ -351,7 +351,7 @@ describe('editing a webhook adapter without touching its headers', () => {
 
     expect(parsed.config).toMatchObject({
       outbound: {
-        headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+        headers: { Authorization: 'file:relay-adapter:wh-1:outbound.headers.Authorization' },
       },
     });
   });
@@ -464,7 +464,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     const resolved = await resolveAdapterSecrets(parsed, {
       provider: new FakeCredentialProvider(store),
       manifests,
-      allowPersonReferences: true,
+      approved: 'any',
     });
     // In the adapter's hands: the real value.
     expect(resolved.config).toMatchObject({

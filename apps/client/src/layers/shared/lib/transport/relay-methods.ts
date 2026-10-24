@@ -190,6 +190,12 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
+    confirmRelayAdapterReferences(id: string): Promise<{ ok: boolean }> {
+      return fetchJSON(baseUrl, `/relay/adapters/${encodeURIComponent(id)}/confirm-references`, {
+        method: 'POST',
+      });
+    },
+
     updateRelayAdapterConfig(
       id: string,
       config: Record<string, unknown>

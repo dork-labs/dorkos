@@ -3,6 +3,7 @@ covers:
   - "fix(relay): a connection's secrets stay with that connection, and a new address needs them again (DOR-3271)"
   - 'fix(relay): exact secret names, no stored names from callers, and checks on the parsed edit (DOR-3271)'
   - 'fix(relay): only a person can give a connection an env: or keychain: secret (DOR-3271)'
+  - 'fix(relay): person approvals live in the encrypted store, and stored names cannot collide (DOR-3271)'
 ---
 
 ### Security
@@ -13,4 +14,4 @@ covers:
 
 - Removing a connection deletes only its own saved secrets.
 
-- A connection that reads a secret from an environment variable or the keychain now needs a person to save it. If one stops connecting after this update, open it, type that reference again, and save.
+- A connection that reads a secret from an environment variable or the keychain now needs a person to save it. One set up before this update is paused until you open it and choose Confirm this setting.

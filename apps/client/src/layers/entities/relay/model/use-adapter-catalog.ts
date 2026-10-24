@@ -88,6 +88,23 @@ export function useRemoveAdapter() {
   });
 }
 
+/**
+ * Mutation for the owner confirming a connection paused for settings saved
+ * before DOR-3271 recorded who wrote them. Resumes it on success.
+ */
+export function useConfirmAdapterReferences() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => transport.confirmRelayAdapterReferences(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
+      queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
+    },
+    meta: { errorLabel: 'Couldn’t confirm that setting' },
+  });
+}
+
 /** Mutation to update an existing adapter's configuration. */
 export function useUpdateAdapterConfig() {
   const transport = useTransport();

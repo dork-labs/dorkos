@@ -42,11 +42,15 @@ import {
   ensureDefaultAdapterConfig,
   watchAdapterConfig,
   AdapterConfigWrites,
-  maskSensitiveFields,
   parseAdapterConfigForPersist,
   reserveWebhookOwnership,
 } from './adapter-config.js';
-import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
+import {
+  buildAdapterCatalog,
+  buildAdapterView,
+  createAdapter,
+  testAdapterConnection,
+} from './adapter-factory.js';
 import {
   broadcastAdaptersChanged,
   broadcastBindingsChanged,
@@ -66,11 +70,11 @@ import {
   deleteAdapterSecrets,
   type MaterializeSecretsContext,
 } from './adapter-secrets.js';
+import * as approvals from './adapter-secrets.js';
 import {
   assertSecretReferences,
   mergeSecretUpdate,
   readIncoming,
-  stampPersonReferences,
   secretValueSet,
   type SecretWriter,
 } from './adapter-secret-policy.js';
@@ -289,6 +293,8 @@ function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCap
 /** Server-side adapter lifecycle manager. */
 export class AdapterManager {
   private readonly registry: AdapterRegistry;
+  /** Connections paused until their owner confirms their env:/keychain: references. */
+  private readonly awaitingConfirmation = new Set<string>();
   private configWatcher: FSWatcher | null = null;
   private readonly configPath: string;
   private configs: AdapterConfig[] = [];
@@ -582,6 +588,18 @@ export class AdapterManager {
   }
 
   /**
+   * The owner confirms a connection paused for holding `env:`/`keychain:`
+   * references no person approved (DOR-3271): record them and resume it. Only
+   * the route that admits a caller clearing the agent bar calls this.
+   */
+  async confirmReferences(id: string): Promise<void> {
+    const config = this.configs.find((c) => c.id === id);
+    if (!config) throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
+    await approvals.approveAllReferences(config, this.secretsCtx);
+    await this.enable(id);
+  }
+
+  /**
    * Enable a specific adapter by ID and persist the change to disk.
    *
    * The config flip + persist happen immediately; the register itself is
@@ -705,19 +723,7 @@ export class AdapterManager {
     config: AdapterConfig;
     status: AdapterStatus;
   } {
-    const adapter = this.registry.get(config.id);
-    const manifest = this.manifests.get(config.type);
-    const status = {
-      id: config.id,
-      type: config.type,
-      displayName: manifest?.displayName ?? config.type,
-      ...(adapter?.getStatus() ?? defaultAdapterStatus()),
-    };
-    const maskedConfig = {
-      ...config,
-      config: maskSensitiveFields(config.config as Record<string, unknown>, manifest),
-    };
-    return { config: maskedConfig, status };
+    return buildAdapterView(config, this.manifests.get(config.type), this.registry);
   }
 
   /** Get the underlying AdapterRegistry. */
@@ -957,7 +963,7 @@ export class AdapterManager {
       config,
     } as AdapterConfig;
 
-    const adapter = await this.buildAdapter(tempConfig, writer === 'person');
+    const adapter = await this.buildAdapter(tempConfig, writer === 'person' ? 'any' : new Map());
     if (!adapter) {
       return { ok: false, error: 'Failed to create adapter instance' };
     }
@@ -1010,11 +1016,12 @@ export class AdapterManager {
       manifest
     );
     assertSecretReferences(id, adapterConfig.config, manifest, writer);
-    stampPersonReferences(adapterConfig, manifest, writer, adapterConfig.config);
+    await approvals.assertNoStoredSecrets(adapterConfig, this.secretsCtx);
     const ownership = reserveWebhookOwnership(adapterConfig, this.configs, this.registry);
     try {
       this.configs.push(adapterConfig);
       await this.persistConfigs();
+      await approvals.recordApprovals(adapterConfig, writer, adapterConfig.config, this.secretsCtx);
       logger.debug('[AdapterManager] config saved', { id });
 
       if (enabled) {
@@ -1137,6 +1144,8 @@ export class AdapterManager {
     // `config` is the current entry: it was dropped in the same tick it was
     // found, and every save before ours, which moves secrets into it, is done.
     await deleteAdapterSecrets(config, this.secretsCtx);
+    await approvals.deleteApprovedReferences(id, this.secretsCtx.store);
+    this.awaitingConfirmation.delete(id);
     if (options.forgetHistory) await this.deleteConnectionHistory(id);
 
     // Auto-delete bindings that belonged to the removed adapter
@@ -1289,13 +1298,18 @@ export class AdapterManager {
     const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
       existing.config = prospective.config;
-      stampPersonReferences(existing, manifest, writer, readIncoming(newConfig, manifest));
 
       // Promote label from config to top-level if present (client embeds it in config)
       if (typeof mergedConfig.label === 'string' && mergedConfig.label) {
         existing.label = mergedConfig.label;
       }
       await this.persistConfigs();
+      await approvals.recordApprovals(
+        existing,
+        writer,
+        readIncoming(newConfig, manifest),
+        this.secretsCtx
+      );
       // Secrets a new address cleared, or a new value replaced, are deleted.
       await deleteAdapterSecrets(
         previous,
@@ -1482,19 +1496,23 @@ export class AdapterManager {
     }
   }
 
-  /** Delegate adapter instantiation to the factory module. */
   private async buildAdapter(
     config: AdapterConfig,
-    allowPersonReferences = config.personWroteReferences === true
+    given?: approvals.ApprovedReferences | 'any'
   ): Promise<RelayAdapter | null> {
-    // Resolve credential references to real secrets in memory only — the
-    // adapter receives the live token, but it is never written back to disk
-    // (DOR-280). A cleartext value (e.g. a transient test config) passes
-    // through unchanged.
+    const manifest = this.manifests.get(config.type);
+    const approved =
+      given ??
+      (await approvals.approvalsToStart(
+        config,
+        manifest,
+        this.secretsCtx.store,
+        this.awaitingConfirmation
+      ));
     const resolved = await resolveAdapterSecrets(config, {
       provider: this.credentialProvider,
       manifests: this.manifests,
-      allowPersonReferences,
+      approved,
     });
     return createAdapter(
       resolved,
@@ -1513,25 +1531,12 @@ export class AdapterManager {
 
   /** Return the full adapter catalog with manifests and configured instances. */
   getCatalog(): CatalogEntry[] {
-    const entries: CatalogEntry[] = [];
-    for (const [type, manifest] of this.manifests) {
-      const instances = this.configs
-        .filter((c) => c.type === type)
-        .map((c) => ({
-          id: c.id,
-          enabled: c.enabled,
-          ...(c.label ? { label: c.label } : {}),
-          status: {
-            id: c.id,
-            type: c.type,
-            displayName: manifest.displayName,
-            ...(this.registry.get(c.id)?.getStatus() ?? defaultAdapterStatus()),
-          },
-          config: maskSensitiveFields((c.config ?? {}) as Record<string, unknown>, manifest),
-        }));
-      entries.push({ manifest, instances });
-    }
-    return entries;
+    return buildAdapterCatalog(
+      this.manifests,
+      this.configs,
+      this.registry,
+      this.awaitingConfirmation
+    );
   }
 
   /** Get a manifest by adapter type. */

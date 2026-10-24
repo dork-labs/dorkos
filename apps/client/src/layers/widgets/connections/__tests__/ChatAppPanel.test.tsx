@@ -111,6 +111,20 @@ describe('ChatAppPanel', () => {
     );
   });
 
+  it('asks the owner to confirm a bot paused for settings saved before DOR-3271, and confirms it', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderPanel(
+      instance({ needsConfirmation: true, status: { ...instance().status, state: 'disconnected' } })
+    );
+
+    const fix = screen.getByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Paused. Confirm its saved settings to reconnect.');
+    await user.click(within(fix).getByRole('button', { name: 'Confirm this setting' }));
+    await waitFor(() =>
+      expect(transport.confirmRelayAdapterReferences).toHaveBeenCalledWith('telegram-1')
+    );
+  });
+
   it('shows a failed bot in plain words, its raw error only under Details, with its settings one click away', async () => {
     const user = userEvent.setup();
     renderPanel(

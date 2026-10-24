@@ -23,9 +23,10 @@
  *    into a secret field, so a person may still save one. Anything else that
  *    writes one is refused: the same pairing of "a credential and where it
  *    goes" that `config-write-policy.ts` keeps operator-only for `config.json`.
- *    A stored connection resolves them only when the server stamped it
- *    `personWroteReferences` on a person's save ({@link stampPersonReferences});
- *    the request body cannot set that flag.
+ *    A stored connection resolves one only when the encrypted store holds a
+ *    record that a person saved that reference in that field
+ *    (`adapter-secrets.ts`, {@link approvalKeyFor}). A connection holding one
+ *    with no record does not start until its owner confirms it.
  * 3. **A new address needs its secrets entered again.** When a `url` field
  *    changes, a secret field that came back masked or empty is not carried to
  *    the new address. A required one is refused; an optional one is cleared.
@@ -38,18 +39,8 @@
  * ({@link normalizeFormConfig}), so headers sent as JSON text are checked as
  * the map they become, and a blank `url` reads as no address.
  *
- * ## What this does not cover
- *
- * `adapters.json` itself. The file watcher reloads it, and a program that can
- * write that file directly can also write `personWroteReferences` there (and
- * read the store's key under the same data folder), so it is not stopped here.
- * A `file:` name that is not the connection's own is still refused when it
- * resolves. An `env:` or `keychain:` reference saved before DOR-3271 stops
- * resolving until a person enters it again.
- *
  * @module services/relay/adapter-secret-policy
  */
-import type { AdapterConfig } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import { AdapterError } from './adapter-error.js';
@@ -71,13 +62,52 @@ export type SecretWriter = 'person' | 'agent';
 const SECRET_KEY_PREFIX = 'relay-adapter';
 
 /**
- * The credential-store name for one adapter field (`relay-adapter-<id>-<field>`).
+ * The credential-store name for one adapter field: `relay-adapter:<id>:<field>`.
+ *
+ * The colon is the point. An id is `[a-z0-9-]` and a field key is dotted, so
+ * neither can hold a colon, and no two adapters' names can meet. The old
+ * hyphen form could: adapter `hooks` with header `x-auth-token` and adapter
+ * `hooks-outbound-headers-x-auth` with field `token` both landed on one name.
  *
  * @param adapterId - The adapter instance id.
  * @param fieldKey - The dot-notation field key, plus `.<header>` for a map entry.
  */
 export function secretKeyFor(adapterId: string, fieldKey: string): string {
+  return `${SECRET_KEY_PREFIX}:${adapterId}:${fieldKey}`;
+}
+
+/**
+ * The name the same field was stored under before DOR-3271, read only to move a
+ * stored connection's secret to {@link secretKeyFor} when it loads.
+ *
+ * @param adapterId - The adapter instance id.
+ * @param fieldKey - The dot-notation field key, plus `.<header>` for a map entry.
+ */
+export function legacySecretKeyFor(adapterId: string, fieldKey: string): string {
   return `${SECRET_KEY_PREFIX}-${adapterId}-${fieldKey.replace(/\./g, '-')}`;
+}
+
+/**
+ * The credential-store name of an adapter's approved references: which
+ * `env:`/`keychain:` reference a person saved in which field. It lives in the
+ * encrypted store, never in `adapters.json`, so editing that file cannot add
+ * one, and its name is not a secret field's name, so no reference resolves it.
+ *
+ * @param adapterId - The adapter instance id.
+ */
+export function approvalKeyFor(adapterId: string): string {
+  return `${SECRET_KEY_PREFIX}-approved:${adapterId}`;
+}
+
+/**
+ * Whether a value is an `env:` or `keychain:` reference: the kinds only a
+ * person may give a connection.
+ *
+ * @param value - A secret field's value.
+ */
+export function isPersonReference(value: string): boolean {
+  const scheme = parseCredentialReference(value)?.scheme;
+  return scheme === 'env' || scheme === 'keychain';
 }
 
 /**
@@ -228,47 +258,6 @@ function addressOf(config: Record<string, unknown>, key: string): unknown {
   return value === '' ? undefined : value;
 }
 
-/**
- * Record, on the entry itself, whether a person wrote its `env:`/`keychain:`
- * references: the server-set flag a stored config is resolved under
- * (`AdapterConfig.personWroteReferences`).
- *
- * A person's save sets it when that save sent such a reference, or when the
- * entry already had it and still holds one. A reference merely carried through
- * the mask does not earn it, so a person saving a connection for another reason
- * never vouches for a reference somebody else wrote before DOR-3271. Anything
- * but a person keeps what was there: it cannot add such a reference
- * ({@link assertSecretReferences}).
- *
- * @param entry - The parsed entry about to be saved, updated in place; for an
- *   edit it still carries the flag as stored.
- * @param manifest - The adapter type's manifest.
- * @param writer - Who is writing.
- * @param sent - The values this save sent ({@link readIncoming} for an edit,
- *   the whole config for a new connection).
- */
-export function stampPersonReferences(
-  entry: AdapterConfig,
-  manifest: AdapterManifest | undefined,
-  writer: SecretWriter,
-  sent: Record<string, unknown>
-): void {
-  if (writer !== 'person') return;
-  const isPersonRef = (value: string) => {
-    const scheme = parseCredentialReference(value)?.scheme;
-    return scheme === 'env' || scheme === 'keychain';
-  };
-  const holds = secretValues(entry.config as Record<string, unknown>, manifest).some(({ value }) =>
-    isPersonRef(value)
-  );
-  const wrote = secretValues(sent, manifest).some(({ value }) => isPersonRef(value));
-  if (holds && (wrote || entry.personWroteReferences === true)) {
-    entry.personWroteReferences = true;
-  } else {
-    delete entry.personWroteReferences;
-  }
-}
-
 /** The `url` fields of an adapter type: where its secrets travel. */
 function urlFieldKeys(manifest: AdapterManifest | undefined): string[] {
   if (!manifest) return [];
@@ -314,7 +303,7 @@ export function mergeSecretUpdate(
 ): Record<string, unknown> {
   // `mergeWithPasswordPreservation` writes stored values into nested objects it
   // shares with its input, so it gets a copy: the caller's edit must still say
-  // only what was sent (`stampPersonReferences` reads it after the merge).
+  // only what was sent (`recordApprovals` reads it after the merge).
   incoming = structuredClone(incoming);
   const read = readIncoming(incoming, manifest);
   assertSecretReferences(adapterId, read, manifest, writer);

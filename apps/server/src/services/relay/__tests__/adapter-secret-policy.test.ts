@@ -22,7 +22,12 @@ import type {
 } from '../../core/credential-provider.js';
 import { AdapterManager } from '../adapter-manager.js';
 import { deleteAdapterSecrets, resolveAdapterSecrets } from '../adapter-secrets.js';
-import { assertSecretReferences, mergeSecretUpdate } from '../adapter-secret-policy.js';
+import {
+  assertSecretReferences,
+  legacySecretKeyFor,
+  mergeSecretUpdate,
+  secretKeyFor,
+} from '../adapter-secret-policy.js';
 
 vi.mock('chokidar', () => ({
   default: { watch: () => ({ on: vi.fn().mockReturnThis(), close: vi.fn(async () => {}) }) },
@@ -112,38 +117,38 @@ describe('1. an adapter naming file:anthropic', () => {
       headers: { Authorization: 'file:community:space-1:token' },
     });
     await expect(
-      resolveAdapterSecrets(config, { provider, manifests, allowPersonReferences: true })
+      resolveAdapterSecrets(config, { provider, manifests, approved: 'any' })
     ).rejects.toThrow(/field 'outbound\.headers\.Authorization'.*belongs to something else/);
     expect(provider.asked).toEqual([]);
   });
 
   it("is refused for another adapter's own entry", async () => {
-    await store.put('relay-adapter-other-outbound-secret', 'other-secret');
-    const config = webhook('wh', { secret: 'file:relay-adapter-other-outbound-secret' });
+    await store.put('relay-adapter:other:outbound.secret', 'other-secret');
+    const config = webhook('wh', { secret: 'file:relay-adapter:other:outbound.secret' });
     await expect(
-      resolveAdapterSecrets(config, { provider, manifests, allowPersonReferences: true })
+      resolveAdapterSecrets(config, { provider, manifests, approved: 'any' })
     ).rejects.toThrow(/belongs to something else/);
   });
 });
 
 describe('1b. names are exact, not prefixes', () => {
   it("adapter 'w-outbound' cannot resolve adapter 'w''s header entry", async () => {
-    await store.put('relay-adapter-w-outbound-headers-Authorization', 'w-header');
+    await store.put('relay-adapter:w:outbound.headers.Authorization', 'w-header');
     const config = webhook('w-outbound', {
       secret: 'outbound-secret-16chars',
-      headers: { X: 'file:relay-adapter-w-outbound-headers-Authorization' },
+      headers: { X: 'file:relay-adapter:w:outbound.headers.Authorization' },
     });
     await expect(
-      resolveAdapterSecrets(config, { provider, manifests, allowPersonReferences: true })
+      resolveAdapterSecrets(config, { provider, manifests, approved: 'any' })
     ).rejects.toThrow(/belongs to something else/);
     await deleteAdapterSecrets(config, { store, manifests });
-    expect(store.secrets.get('relay-adapter-w-outbound-headers-Authorization')).toBe('w-header');
+    expect(store.secrets.get('relay-adapter:w:outbound.headers.Authorization')).toBe('w-header');
   });
 
   it('a stored name sent back on a new address is refused, not carried', () => {
     const existing = webhook('w', {
-      secret: 'file:relay-adapter-w-outbound-secret',
-      headers: { Authorization: 'file:relay-adapter-w-outbound-headers-Authorization' },
+      secret: 'file:relay-adapter:w:outbound.secret',
+      headers: { Authorization: 'file:relay-adapter:w:outbound.headers.Authorization' },
     }).config;
     expect(() =>
       mergeSecretUpdate(
@@ -154,7 +159,7 @@ describe('1b. names are exact, not prefixes', () => {
           outbound: {
             url: URL_B,
             secret: 'new-outbound-secret-16',
-            headers: { Authorization: 'file:relay-adapter-w-outbound-headers-Authorization' },
+            headers: { Authorization: 'file:relay-adapter:w:outbound.headers.Authorization' },
           },
         },
         WEBHOOK_MANIFEST,
@@ -166,7 +171,7 @@ describe('1b. names are exact, not prefixes', () => {
 
 describe('2. an agent-written env: reference', () => {
   it('is refused when the headers arrive as JSON text', () => {
-    const existing = webhook('w', { secret: 'file:relay-adapter-w-outbound-secret' }).config;
+    const existing = webhook('w', { secret: 'file:relay-adapter:w:outbound.secret' }).config;
     for (const url of [URL_A, URL_B]) {
       expect(() =>
         mergeSecretUpdate(
@@ -204,7 +209,7 @@ describe('2. an agent-written env: reference', () => {
   it('is refused when an agent asks to test a connection with one', async () => {
     const config = webhook('wh', { secret: 'env:ANTHROPIC_API_KEY' });
     await expect(
-      resolveAdapterSecrets(config, { provider, manifests, allowPersonReferences: false })
+      resolveAdapterSecrets(config, { provider, manifests, approved: new Map() })
     ).rejects.toThrow(/only a person can set/);
     expect(provider.asked).toEqual([]);
   });
@@ -212,21 +217,21 @@ describe('2. an agent-written env: reference', () => {
 
 describe('3. removing an adapter that names another entry', () => {
   it('leaves that entry alone and deletes only its own', async () => {
-    await store.put('relay-adapter-wh-outbound-secret', 'own-secret');
+    await store.put('relay-adapter:wh:outbound.secret', 'own-secret');
     const config = webhook('wh', {
-      secret: 'file:relay-adapter-wh-outbound-secret',
+      secret: 'file:relay-adapter:wh:outbound.secret',
       headers: { Authorization: 'file:anthropic' },
     });
     await deleteAdapterSecrets(config, { store, manifests });
     expect(store.secrets.get('anthropic')).toBe('sk-ant-THE-REAL-KEY');
-    expect(store.secrets.has('relay-adapter-wh-outbound-secret')).toBe(false);
+    expect(store.secrets.has('relay-adapter:wh:outbound.secret')).toBe(false);
   });
 });
 
 describe('4. a masked secret with a new URL', () => {
   const existing = webhook('wh', {
-    secret: 'file:relay-adapter-wh-outbound-secret',
-    headers: { Authorization: 'file:relay-adapter-wh-outbound-headers-Authorization' },
+    secret: 'file:relay-adapter:wh:outbound.secret',
+    headers: { Authorization: 'file:relay-adapter:wh:outbound.headers.Authorization' },
   }).config as Record<string, Record<string, unknown>>;
 
   it('is refused for everyone, a person included', () => {
@@ -277,7 +282,7 @@ describe('4. a masked secret with a new URL', () => {
 
 describe('5 and 6. what still works', () => {
   it('editing a polling Telegram bot keeps its token (a blank webhook URL is no address)', () => {
-    const existing = { token: 'file:relay-adapter-tg-token', mode: 'polling' };
+    const existing = { token: 'file:relay-adapter:tg:token', mode: 'polling' };
     const merged = mergeSecretUpdate(
       'tg',
       existing,
@@ -285,14 +290,14 @@ describe('5 and 6. what still works', () => {
       TELEGRAM_MANIFEST,
       'person'
     );
-    expect(merged.token).toBe('file:relay-adapter-tg-token');
+    expect(merged.token).toBe('file:relay-adapter:tg:token');
   });
 
   it("resolves an existing adapter's own secrets", async () => {
-    await store.put('relay-adapter-wh-outbound-secret', 'own-secret');
+    await store.put('relay-adapter:wh:outbound.secret', 'own-secret');
     const resolved = await resolveAdapterSecrets(
-      webhook('wh', { secret: 'file:relay-adapter-wh-outbound-secret' }),
-      { provider, manifests, allowPersonReferences: true }
+      webhook('wh', { secret: 'file:relay-adapter:wh:outbound.secret' }),
+      { provider, manifests, approved: 'any' }
     );
     expect(resolved.config).toMatchObject({ outbound: { secret: 'own-secret' } });
   });
@@ -309,7 +314,7 @@ describe('5 and 6. what still works', () => {
     const resolved = await resolveAdapterSecrets(only, {
       provider,
       manifests,
-      allowPersonReferences: true,
+      approved: 'any',
     });
     expect(resolved.config).toMatchObject({ outbound: { secret: 'sk-ant-FROM-ENV' } });
   });
@@ -371,7 +376,7 @@ describe('through AdapterManager', () => {
       outbound: { url: URL_A, secret: 'outbound-secret-16chars', headers: { 'X-Key': 'k-1' } },
     };
     await manager.addAdapter('webhook', 'wh', withHeader, false, undefined, 'person');
-    expect(store.secrets.get('relay-adapter-wh-outbound-headers-X-Key')).toBe('k-1');
+    expect(store.secrets.get('relay-adapter:wh:outbound.headers.X-Key')).toBe('k-1');
 
     await expect(
       manager.updateConfig('wh', {
@@ -392,15 +397,15 @@ describe('through AdapterManager', () => {
     );
     expect(saved.config.outbound.url).toBe(URL_B);
     expect(saved.config.outbound.headers).toBeUndefined();
-    expect(store.secrets.has('relay-adapter-wh-outbound-headers-X-Key')).toBe(false);
-    expect(store.secrets.get('relay-adapter-wh-outbound-secret')).toBe('new-outbound-secret-16');
+    expect(store.secrets.has('relay-adapter:wh:outbound.headers.X-Key')).toBe(false);
+    expect(store.secrets.get('relay-adapter:wh:outbound.secret')).toBe('new-outbound-secret-16');
     expect(store.secrets.get('anthropic')).toBe('sk-ant-THE-REAL-KEY');
   });
 
   it('removing an adapter never deletes an entry it does not own', async () => {
     await manager.addAdapter('webhook', 'wh', fresh(), false, undefined, 'person');
     await manager.removeAdapter('wh');
-    expect(store.secrets.has('relay-adapter-wh-outbound-secret')).toBe(false);
+    expect(store.secrets.has('relay-adapter:wh:outbound.secret')).toBe(false);
     expect(store.secrets.get('anthropic')).toBe('sk-ant-THE-REAL-KEY');
     expect(store.secrets.get('community:space-1:token')).toBe('community-token');
   });
@@ -446,8 +451,8 @@ describe("Security's five, against a real adapters.json", () => {
 
   /** A hand-edited webhook entry whose own secret is real and whose header names `ref`. */
   async function handEdited(ref: string, extra: Record<string, unknown> = {}): Promise<void> {
-    await store.put('relay-adapter-wh-outbound-secret', 'own-outbound-secret');
-    await store.put('relay-adapter-wh-inbound-secret', 'own-inbound-secret');
+    await store.put('relay-adapter:wh:outbound.secret', 'own-outbound-secret');
+    await store.put('relay-adapter:wh:inbound.secret', 'own-inbound-secret');
     await boot([
       {
         id: 'wh',
@@ -455,10 +460,10 @@ describe("Security's five, against a real adapters.json", () => {
         enabled: true,
         ...extra,
         config: {
-          inbound: { subject: 'relay.webhook.wh', secret: 'file:relay-adapter-wh-inbound-secret' },
+          inbound: { subject: 'relay.webhook.wh', secret: 'file:relay-adapter:wh:inbound.secret' },
           outbound: {
             url: URL_B,
-            secret: 'file:relay-adapter-wh-outbound-secret',
+            secret: 'file:relay-adapter:wh:outbound.secret',
             headers: { Authorization: ref },
           },
         },
@@ -467,10 +472,10 @@ describe("Security's five, against a real adapters.json", () => {
   }
 
   it("1. adapter A naming B's file: entry fails to resolve", async () => {
-    await store.put('relay-adapter-other-outbound-secret', 'b-secret');
-    await handEdited('file:relay-adapter-other-outbound-secret');
+    await store.put('relay-adapter:other:outbound.secret', 'b-secret');
+    await handEdited('file:relay-adapter:other:outbound.secret');
     expect(registry.get('wh')).toBeUndefined();
-    expect(provider.asked).not.toContain('file:relay-adapter-other-outbound-secret');
+    expect(provider.asked).not.toContain('file:relay-adapter:other:outbound.secret');
   });
 
   it('2. an agent PATCH carrying env:ANTHROPIC_API_KEY is refused', async () => {
@@ -517,7 +522,7 @@ describe("Security's five, against a real adapters.json", () => {
     await handEdited('file:anthropic');
     await manager.removeAdapter('wh');
     expect(store.secrets.get('anthropic')).toBe('sk-ant-THE-REAL-KEY');
-    expect(store.secrets.has('relay-adapter-wh-outbound-secret')).toBe(false);
+    expect(store.secrets.has('relay-adapter:wh:outbound.secret')).toBe(false);
   });
 
   it('5. a hand-edited adapters.json naming file:anthropic is refused at resolve', async () => {
@@ -526,56 +531,63 @@ describe("Security's five, against a real adapters.json", () => {
     expect(provider.asked).not.toContain('file:anthropic');
   });
 
-  it('a hand-edited env: reference without the server-set flag does not resolve', async () => {
+  /** The connection's catalog instance, as the Connections page reads it. */
+  const instance = () =>
+    manager
+      .getCatalog()
+      .flatMap((entry) => entry.instances)
+      .find((i) => i.id === 'wh');
+  const fileText = () => readFile(file, 'utf8');
+
+  it('M1: a hand-edited env: reference is refused at resolve and the connection waits for its owner', async () => {
     await handEdited('env:ANTHROPIC_API_KEY');
     expect(registry.get('wh')).toBeUndefined();
     expect(provider.asked).not.toContain('env:ANTHROPIC_API_KEY');
+    expect(instance()?.needsConfirmation).toBe(true);
   });
 
-  it("a person's save stamps the flag; an agent's later edit keeps it; the body cannot set it", async () => {
+  it('upgrade: an existing env: connection is paused, and resolves once its owner confirms', async () => {
+    await handEdited('env:ANTHROPIC_API_KEY');
+    expect(registry.get('wh')).toBeUndefined();
+    await manager.confirmReferences('wh');
+    expect(registry.get('wh')).toBeDefined();
+    expect(provider.asked).toContain('env:ANTHROPIC_API_KEY');
+    expect(instance()?.needsConfirmation).toBeUndefined();
+    // The record is in the encrypted store, never in adapters.json.
+    expect(store.secrets.get('relay-adapter-approved:wh')).toContain('env:ANTHROPIC_API_KEY');
+    expect(await fileText()).not.toMatch(/approved|personWrote/);
+  });
+
+  it('a file: connection is not paused by the upgrade', async () => {
+    await store.put('relay-adapter:wh:outbound.headers.Authorization', 'own-header');
+    await handEdited('file:relay-adapter:wh:outbound.headers.Authorization');
+    expect(registry.get('wh')).toBeDefined();
+    expect(instance()?.needsConfirmation).toBeUndefined();
+  });
+
+  it("a person's save records the reference in the store; an agent's later edit keeps it; the body cannot add one", async () => {
     await boot([]);
     const config = webhook('wh', { secret: 'env:ANTHROPIC_API_KEY' }).config;
-    await manager
-      .addAdapter(
-        'webhook',
-        'wh',
-        { ...config, personWroteReferences: true },
-        false,
-        undefined,
-        'agent'
-      )
-      .catch((error: Error) => expect(error.message).toMatch(/only a person can set/));
+    await expect(
+      manager.addAdapter('webhook', 'wh', config, false, undefined, 'agent')
+    ).rejects.toThrow(/only a person can set/);
     await manager.addAdapter('webhook', 'wh', config, false, undefined, 'person');
-    const read = async () =>
-      JSON.parse(await readFile(file, 'utf8')).adapters.find((a: { id: string }) => a.id === 'wh');
-    expect((await read()).personWroteReferences).toBe(true);
-    expect((await read()).config.personWroteReferences).toBeUndefined();
+    expect(JSON.parse(store.secrets.get('relay-adapter-approved:wh')!)).toEqual({
+      'outbound.secret': 'env:ANTHROPIC_API_KEY',
+    });
 
-    await manager.updateConfig(
-      'wh',
-      { outbound: { url: URL_A, secret: '***' }, personWroteReferences: false },
-      'agent'
-    );
-    expect((await read()).personWroteReferences).toBe(true);
-    expect((await read()).config.outbound.secret).toBe('env:ANTHROPIC_API_KEY');
+    await manager.updateConfig('wh', { outbound: { url: URL_A, secret: '***' } }, 'agent');
+    expect(store.secrets.get('relay-adapter-approved:wh')).toContain('env:ANTHROPIC_API_KEY');
+    await manager.enable('wh');
+    expect(registry.get('wh')).toBeDefined();
   });
 
-  it('a person saving for another reason does not vouch for an old unflagged env: reference', async () => {
+  it('a person saving for another reason does not vouch for an old unrecorded env: reference', async () => {
     await handEdited('env:ANTHROPIC_API_KEY');
-    const read = async () =>
-      JSON.parse(await readFile(file, 'utf8')).adapters.find((a: { id: string }) => a.id === 'wh');
-    await manager
-      .updateConfig(
-        'wh',
-        { outbound: { url: URL_B, secret: '***', headers: { Authorization: '***' } } },
-        'person'
-      )
-      .catch(() => undefined);
-    // Saved, then refused at start: the reference still has no person behind it.
     await expect(manager.updateConfig('wh', { label: 'Renamed' }, 'person')).rejects.toThrow(
-      /only a person can set/
+      /waits for its owner/
     );
-    expect((await read()).personWroteReferences).toBeUndefined();
+    expect(store.secrets.has('relay-adapter-approved:wh')).toBe(false);
 
     await manager.updateConfig(
       'wh',
@@ -588,7 +600,121 @@ describe("Security's five, against a real adapters.json", () => {
       },
       'person'
     );
-    expect((await read()).personWroteReferences).toBe(true);
+    expect(store.secrets.get('relay-adapter-approved:wh')).toContain('env:ANTHROPIC_API_KEY');
     expect(registry.get('wh')).toBeDefined();
+  });
+
+  it('removing a connection deletes its approvals record', async () => {
+    await handEdited('env:ANTHROPIC_API_KEY');
+    await manager.confirmReferences('wh');
+    await manager.removeAdapter('wh');
+    expect(store.secrets.has('relay-adapter-approved:wh')).toBe(false);
+  });
+});
+
+describe('S1: stored names cannot collide across connections', () => {
+  it('names differ where the old hyphen form collided', () => {
+    const a = secretKeyFor('hooks', 'outbound.headers.x-auth-token');
+    const b = secretKeyFor('hooks-outbound-headers-x-auth', 'token');
+    expect(a).not.toBe(b);
+    expect(legacySecretKeyFor('hooks', 'outbound.headers.x-auth-token')).toBe(
+      legacySecretKeyFor('hooks-outbound-headers-x-auth', 'token')
+    );
+  });
+
+  it("connection 'hooks-outbound-headers-x-auth' cannot resolve 'hooks''s header", async () => {
+    const victim = secretKeyFor('hooks', 'outbound.headers.x-auth-token');
+    await store.put(victim, 'victim-token');
+    const config = {
+      id: 'hooks-outbound-headers-x-auth',
+      type: 'telegram',
+      enabled: true,
+      config: { token: `file:${victim}`, mode: 'polling' },
+    } as AdapterConfig;
+    await expect(
+      resolveAdapterSecrets(config, {
+        provider,
+        manifests: new Map([['telegram', TELEGRAM_MANIFEST]]),
+        approved: 'any',
+      })
+    ).rejects.toThrow(/belongs to something else/);
+  });
+
+  describe('through AdapterManager', () => {
+    let directory: string;
+    let manager: AdapterManager;
+    let file: string;
+
+    async function boot(entries: unknown[]): Promise<void> {
+      directory = await mkdtemp(join(tmpdir(), 'relay-secret-names-'));
+      file = join(directory, 'adapters.json');
+      const builtin = {
+        id: 'claude-code',
+        type: 'claude-code',
+        enabled: false,
+        builtin: true,
+        config: {},
+      };
+      await writeFile(file, JSON.stringify({ adapters: [builtin, ...entries] }));
+      manager = new AdapterManager(new AdapterRegistry(), file, {
+        traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
+        credentialStore: store,
+        credentialProvider: provider,
+      });
+      await manager.initialize();
+      await manager.adaptersStarted();
+    }
+
+    afterEach(async () => {
+      await manager.shutdown();
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('refuses a new connection whose names are already in the store', async () => {
+      await boot([]);
+      await store.put(secretKeyFor('wh', 'outbound.secret'), 'leftover');
+      await expect(
+        manager.addAdapter(
+          'webhook',
+          'wh',
+          webhook('wh', { secret: 'outbound-secret-16chars' }).config,
+          false,
+          undefined,
+          'person'
+        )
+      ).rejects.toThrow(/still exist/);
+      expect(store.secrets.get(secretKeyFor('wh', 'outbound.secret'))).toBe('leftover');
+    });
+
+    it('migrates an existing connection from its old names on load', async () => {
+      await store.put(legacySecretKeyFor('wh', 'outbound.secret'), 'old-outbound');
+      await store.put(legacySecretKeyFor('wh', 'inbound.secret'), 'old-inbound');
+      await boot([
+        {
+          id: 'wh',
+          type: 'webhook',
+          enabled: false,
+          config: {
+            inbound: {
+              subject: 'relay.webhook.wh',
+              secret: `file:${legacySecretKeyFor('wh', 'inbound.secret')}`,
+            },
+            outbound: { url: URL_A, secret: `file:${legacySecretKeyFor('wh', 'outbound.secret')}` },
+          },
+        },
+      ]);
+      const saved = JSON.parse(await readFile(file, 'utf8')).adapters.find(
+        (a: { id: string }) => a.id === 'wh'
+      );
+      expect(saved.config.outbound.secret).toBe(`file:${secretKeyFor('wh', 'outbound.secret')}`);
+      expect(store.secrets.get(secretKeyFor('wh', 'outbound.secret'))).toBe('old-outbound');
+      expect(store.secrets.has(legacySecretKeyFor('wh', 'outbound.secret'))).toBe(false);
+      const resolved = await resolveAdapterSecrets(saved, {
+        provider,
+        manifests,
+        approved: new Map(),
+      });
+      expect(resolved.config).toMatchObject({ outbound: { secret: 'old-outbound' } });
+    });
   });
 });

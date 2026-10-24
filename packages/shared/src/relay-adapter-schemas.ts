@@ -370,13 +370,6 @@ export const AdapterConfigSchema = z
     builtin: z.boolean().optional(),
     /** Plugin source — required when type is 'plugin' */
     plugin: PluginSourceSchema.optional(),
-    /**
-     * Set by the server, never by a caller: a person saved this connection's
-     * `env:` or `keychain:` references, so they may resolve (DOR-3271). The
-     * create and edit routes build the entry themselves, so a request body has
-     * no way to set or copy it.
-     */
-    personWroteReferences: z.boolean().optional(),
     /** Adapter-specific configuration (passed to adapter constructor/factory) */
     config: z.union([
       TelegramAdapterConfigSchema,
@@ -534,6 +527,11 @@ export const CatalogInstanceSchema = z
     enabled: z.boolean(),
     /** User-facing label to distinguish multiple instances of the same adapter type. */
     label: z.string().optional(),
+    /**
+     * Paused until its owner confirms its `env:`/`keychain:` references, which
+     * were saved before DOR-3271 recorded who wrote them.
+     */
+    needsConfirmation: z.boolean().optional(),
     status: AdapterStatusSchema,
     config: z.record(z.string(), z.unknown()).optional(),
   })
@@ -959,3 +957,12 @@ export const BindingTestResultSchema = z
   .openapi('BindingTestResult');
 
 export type BindingTestResult = z.infer<typeof BindingTestResultSchema>;
+
+/** A lifecycle event recorded for an adapter instance. */
+export interface AdapterEvent {
+  id: string;
+  subject: string;
+  status: string;
+  sentAt: string;
+  metadata: string | null;
+}

@@ -35,12 +35,17 @@ import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import type { CredentialProvider, CredentialStore } from '../core/credential-provider.js';
 import { logger } from '../../lib/logger.js';
 import { getNestedValue, setNestedValue, saveAdapterConfig } from './adapter-config.js';
+import { AdapterError } from './adapter-error.js';
 import {
+  approvalKeyFor,
+  isPersonReference,
   isSecretMap,
+  legacySecretKeyFor,
   referenceRefusal,
   secretFieldKeys,
   secretKeyFor,
   secretValues,
+  type SecretWriter,
 } from './adapter-secret-policy.js';
 
 export { secretFieldKeys };
@@ -60,13 +65,16 @@ export interface ResolveSecretsContext {
   /** Manifests by adapter type — supplies each type's `password` field keys. */
   manifests: Map<string, AdapterManifest>;
   /**
-   * Whether `env:` and `keychain:` references may resolve: for a stored
-   * config, its server-set `personWroteReferences` flag (DOR-3271; see
-   * `adapter-secret-policy.ts` on `adapters.json` itself); for a connection
-   * test, whether a person asked for it.
+   * Which `env:`/`keychain:` references may resolve, by field: for a stored
+   * config, the approvals a person recorded ({@link readApprovedReferences});
+   * for a connection test, `'any'` when a person asked for it and none
+   * otherwise (DOR-3271).
    */
-  allowPersonReferences: boolean;
+  approved: ApprovedReferences | 'any';
 }
+
+/** The `env:`/`keychain:` references a person saved, by field label. */
+export type ApprovedReferences = ReadonlyMap<string, string>;
 
 /**
  * Move any cleartext secrets in `configs` into the encrypted credential store,
@@ -98,6 +106,12 @@ export async function materializeAdapterSecrets(
       if (isSecretMap(value)) {
         for (const [entryKey, entryValue] of Object.entries(value)) {
           if (typeof entryValue !== 'string' || entryValue.length === 0) continue;
+          const moved = await moveLegacyName(config.id, `${key}.${entryKey}`, entryValue, ctx);
+          if (moved) {
+            value[entryKey] = moved;
+            changed = true;
+            continue;
+          }
           if (parseCredentialReference(entryValue)) continue;
           value[entryKey] = await ctx.store.put(
             secretKeyFor(config.id, `${key}.${entryKey}`),
@@ -114,6 +128,12 @@ export async function materializeAdapterSecrets(
       }
 
       if (typeof value !== 'string' || value.length === 0) continue;
+      const moved = await moveLegacyName(config.id, key, value, ctx);
+      if (moved) {
+        setNestedValue(cfg, parts, moved);
+        changed = true;
+        continue;
+      }
       // Already a reference (including a power user's env:/keychain:) — leave it.
       if (parseCredentialReference(value)) continue;
       const ref = await ctx.store.put(secretKeyFor(config.id, key), value);
@@ -258,10 +278,220 @@ function refuseReference(
   raw: string,
   ctx: ResolveSecretsContext
 ): void {
-  const refusal = referenceRefusal(adapterId, label, raw, ctx.allowPersonReferences);
+  const allowed = ctx.approved === 'any' || ctx.approved.get(label) === raw;
+  const refusal = referenceRefusal(adapterId, label, raw, allowed);
   if (refusal) {
     throw new Error(
       `Refused credential for adapter '${adapterId}' field '${label}': it ${refusal}`
     );
   }
+}
+
+/**
+ * Move a secret stored under its pre-DOR-3271 name to {@link secretKeyFor},
+ * when `raw` is exactly that old name for this adapter and field. Run on load
+ * and on every save, so a connection saved before the new names keeps working.
+ *
+ * @returns The new `file:` reference, or `undefined` when there was nothing to move.
+ */
+async function moveLegacyName(
+  adapterId: string,
+  label: string,
+  raw: string,
+  ctx: MaterializeSecretsContext
+): Promise<string | undefined> {
+  const legacy = legacySecretKeyFor(adapterId, label);
+  if (raw !== `file:${legacy}`) return undefined;
+  const secret = await ctx.store.get(legacy);
+  if (secret === null) return undefined;
+  const ref = await ctx.store.put(secretKeyFor(adapterId, label), secret);
+  await ctx.store.delete(legacy);
+  logger.info(
+    `[AdapterSecrets] Moved adapter '${adapterId}' field '${label}' to its new stored name.`
+  );
+  return ref;
+}
+
+/**
+ * Refuse a new connection when the store already holds entries under the names
+ * it would use: a leftover from an earlier connection with the same id must not
+ * be inherited (DOR-3271).
+ *
+ * @param config - The connection being added, as parsed.
+ * @param ctx - The credential store and manifests.
+ * @throws AdapterError `INVALID_CONFIG` when a name is taken.
+ */
+export async function assertNoStoredSecrets(
+  config: AdapterConfig,
+  ctx: MaterializeSecretsContext
+): Promise<void> {
+  const labels = secretValues(
+    config.config as Record<string, unknown>,
+    ctx.manifests.get(config.type)
+  ).map(({ label }) => label);
+  const names = [
+    ...labels.map((label) => secretKeyFor(config.id, label)),
+    approvalKeyFor(config.id),
+  ];
+  for (const name of names) {
+    if ((await ctx.store.get(name)) !== null) {
+      throw new AdapterError(
+        `Saved secrets from an earlier connection named '${config.id}' still exist. Choose another name.`,
+        'INVALID_CONFIG',
+        config.id
+      );
+    }
+  }
+}
+
+/**
+ * The references a person approved for one connection, read from the
+ * encrypted store. A missing or unreadable record approves nothing.
+ *
+ * @param store - The encrypted credential store.
+ * @param adapterId - The connection's id.
+ */
+export async function readApprovedReferences(
+  store: CredentialStore,
+  adapterId: string
+): Promise<ApprovedReferences> {
+  const raw = await store.get(approvalKeyFor(adapterId));
+  if (!raw) return new Map();
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return new Map();
+    return new Map(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string'
+      )
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+/** Write a connection's approvals, or delete the record when there are none. */
+async function writeApprovedReferences(
+  store: CredentialStore,
+  adapterId: string,
+  approved: ApprovedReferences
+): Promise<void> {
+  if (approved.size === 0) await store.delete(approvalKeyFor(adapterId));
+  else await store.put(approvalKeyFor(adapterId), JSON.stringify(Object.fromEntries(approved)));
+}
+
+/**
+ * The fields of a stored connection holding an `env:`/`keychain:` reference no
+ * person approved. A connection with any does not start: it waits for its owner
+ * to confirm ({@link approveAllReferences}).
+ *
+ * @param config - The stored connection.
+ * @param manifest - Its type's manifest.
+ * @param approved - Its recorded approvals.
+ */
+export function unapprovedReferences(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  approved: ApprovedReferences
+): string[] {
+  return secretValues(config.config as Record<string, unknown>, manifest)
+    .filter(({ label, value }) => isPersonReference(value) && approved.get(label) !== value)
+    .map(({ label }) => label);
+}
+
+/**
+ * Bring a connection's approvals up to date after a save. A person's save
+ * approves the `env:`/`keychain:` references it sent. Every save keeps an
+ * approval whose field still holds the same reference, and drops the rest. A
+ * reference carried through the mask is never newly approved, so a person
+ * saving a connection for another reason does not vouch for one somebody else
+ * wrote.
+ *
+ * @param entry - The connection as saved.
+ * @param writer - Who saved it.
+ * @param sent - The values the save sent (the whole config for a new connection).
+ * @param ctx - The credential store and manifests.
+ */
+export async function recordApprovals(
+  entry: AdapterConfig,
+  writer: SecretWriter,
+  sent: Record<string, unknown>,
+  ctx: MaterializeSecretsContext
+): Promise<void> {
+  const manifest = ctx.manifests.get(entry.type);
+  const before = await readApprovedReferences(ctx.store, entry.id);
+  const sentNow = new Map(secretValues(sent, manifest).map(({ label, value }) => [label, value]));
+  const next = new Map<string, string>();
+  for (const { label, value } of secretValues(entry.config as Record<string, unknown>, manifest)) {
+    if (!isPersonReference(value)) continue;
+    const wrote = writer === 'person' && sentNow.get(label) === value;
+    if (wrote || before.get(label) === value) next.set(label, value);
+  }
+  await writeApprovedReferences(ctx.store, entry.id, next);
+}
+
+/**
+ * Approve every `env:`/`keychain:` reference a connection holds now: its owner
+ * confirming a connection that was paused for having none recorded. The route
+ * that calls this admits only a caller that clears the agent bar.
+ *
+ * @param entry - The stored connection.
+ * @param ctx - The credential store and manifests.
+ */
+export async function approveAllReferences(
+  entry: AdapterConfig,
+  ctx: MaterializeSecretsContext
+): Promise<void> {
+  const values = secretValues(
+    entry.config as Record<string, unknown>,
+    ctx.manifests.get(entry.type)
+  );
+  const approved = new Map(
+    values.filter(({ value }) => isPersonReference(value)).map(({ label, value }) => [label, value])
+  );
+  await writeApprovedReferences(ctx.store, entry.id, approved);
+}
+
+/**
+ * Delete a removed connection's approvals record.
+ *
+ * @param adapterId - The removed connection's id.
+ * @param store - The encrypted credential store.
+ */
+export async function deleteApprovedReferences(
+  adapterId: string,
+  store: CredentialStore
+): Promise<void> {
+  await store
+    .delete(approvalKeyFor(adapterId))
+    .catch((err: unknown) =>
+      logger.warn(`[AdapterSecrets] Could not delete approvals for adapter '${adapterId}':`, err)
+    );
+}
+
+/**
+ * The approvals a stored connection starts under. One holding an
+ * `env:`/`keychain:` reference no person approved does not start: it is added
+ * to `awaiting`, which the catalog lists as waiting for its owner to confirm it
+ * (DOR-3271).
+ *
+ * @param config - The stored connection.
+ * @param manifest - Its type's manifest.
+ * @param store - The encrypted credential store.
+ * @param awaiting - The ids of connections waiting for their owner, updated here.
+ * @throws Error when the connection must wait for its owner.
+ */
+export async function approvalsToStart(
+  config: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  store: CredentialStore,
+  awaiting: Set<string>
+): Promise<ApprovedReferences> {
+  const approved = await readApprovedReferences(store, config.id);
+  if (unapprovedReferences(config, manifest, approved).length === 0) {
+    awaiting.delete(config.id);
+    return approved;
+  }
+  awaiting.add(config.id);
+  throw new Error(`Adapter '${config.id}' waits for its owner to confirm its settings.`);
 }
