@@ -1,3 +1,6 @@
+vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
+  accountLoginIdentity: () => ({ state: 'confirmed' }),
+}));
 /**
  * Security's rows for re-seating (DOR-3143), one test each:
  *

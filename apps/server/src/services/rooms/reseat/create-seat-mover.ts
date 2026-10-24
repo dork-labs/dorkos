@@ -1,3 +1,4 @@
+import { accountLoginIdentity } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 /**
  * The production {@link RoomSeatMover}: the mover's ports filled from the
  * running server, and the one instance the room dispatcher and `rooms.reseat`
@@ -140,6 +141,12 @@ export function createRoomSeatMover(opts: {
   activity: () => ActivityService | undefined;
 }): RoomSeatMover {
   return new RoomSeatMover({
+    signinHealthy: (root) => {
+      const world = testWorldRanking();
+      return world && runtimeRegistry.has(TEST_RUNTIME)
+        ? world.some((row) => row.usage.path === root)
+        : accountLoginIdentity(root).state === 'confirmed';
+    },
     rebind: (roomId, authorId, sessionId) =>
       opts.store.rebindRoomSession(roomId, authorId, sessionId),
     runtimeOf: async (seat) =>

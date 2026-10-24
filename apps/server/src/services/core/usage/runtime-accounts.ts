@@ -1,3 +1,7 @@
+import {
+  isNeverUseClaudeFolder,
+  isExplicitlyNeverUseClaudeFolder,
+} from '../../health/account-signin-policy.js';
 /**
  * Which accounts each runtime has, and which one `default` names: DorkOS's
  * implementation of the shared account rules (marketplace `specs/flow-cli-core`
@@ -154,6 +158,7 @@ function isAbsolutePath(value: unknown): value is string {
 /** The filesystem's real path of `dir`, or `null` when it cannot be resolved. */
 export function systemRealpath(dir: string): string | null {
   try {
+    if (isExplicitlyNeverUseClaudeFolder(dir)) return null;
     return fs.realpathSync.native(dir);
   } catch {
     return null;
@@ -269,26 +274,31 @@ function readRegistered(
   const runtimes = isObject(config) ? config.runtimes : undefined;
   const section = isObject(runtimes) ? runtimes[RUNTIME_CONFIG_KEYS[runtime]] : undefined;
   const read = readClaudeAccountSettings(section, ACCOUNT_NOUNS[runtime]);
-  const accounts = read.accounts.map((row): RuntimeAccount => {
-    // A reserved id (`default`, `dorkos-credits`) never routes to a person's folder.
-    const routable = !isReservedAccountId(row.id) && ACCOUNT_ID_PATTERN.test(row.id);
-    const expanded = expandAccountPath(row.path, home);
-    return {
-      runtime,
-      id: row.id,
-      path: row.path,
-      canonicalPath: realpath(expanded) ?? expanded,
-      label: row.label ?? null,
-      color: row.color,
-      storedColor: row.colorIsDefault ? null : row.color,
-      routable,
-      implicit: false,
-      isDefault: false,
-      ledgerId: routable ? row.id : null,
-      ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
-      ...(row.noAutoMove === true ? { noAutoMove: true as const } : {}),
-    };
-  });
+  const accounts = read.accounts
+    .filter(
+      (row) =>
+        runtime !== 'claude-code' || !isNeverUseClaudeFolder(expandAccountPath(row.path, home))
+    )
+    .map((row): RuntimeAccount => {
+      // A reserved id (`default`, `dorkos-credits`) never routes to a person's folder.
+      const routable = !isReservedAccountId(row.id) && ACCOUNT_ID_PATTERN.test(row.id);
+      const expanded = expandAccountPath(row.path, home);
+      return {
+        runtime,
+        id: row.id,
+        path: row.path,
+        canonicalPath: realpath(expanded) ?? expanded,
+        label: row.label ?? null,
+        color: row.color,
+        storedColor: row.colorIsDefault ? null : row.color,
+        routable,
+        implicit: false,
+        isDefault: false,
+        ledgerId: routable ? row.id : null,
+        ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
+        ...(row.noAutoMove === true ? { noAutoMove: true as const } : {}),
+      };
+    });
   return {
     accounts,
     warnings: read.warnings.map(({ code, message }) => ({ code, message })),
@@ -330,6 +340,8 @@ export function resolveRuntimeAccounts(
   warnings.push(...chosen.warnings);
   if (chosen.path === null) return { accounts: registered, warnings };
   const folder = chosen.path;
+  if (runtime === 'claude-code' && isNeverUseClaudeFolder(folder))
+    return { accounts: registered, warnings };
   const canonical = realpath(folder) ?? folder;
   const alias = registered.find((a) => a.routable && a.canonicalPath === canonical);
   if (alias) {

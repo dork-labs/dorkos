@@ -21,7 +21,7 @@
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
     "apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx": 565,
     "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 529,
-    "apps/client/src/layers/shared/lib/transport/system-methods.ts": 548,
+    "apps/client/src/layers/shared/lib/transport/system-methods.ts": 534,
     "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 694,
     "apps/client/src/layers/shared/ui/index.ts": 504,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
@@ -140,7 +140,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1311,
+    "packages/test-utils/src/mock-factories.ts": 1304,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
     "packages/test-utils/src/runtime-conformance.ts": 2432
   }

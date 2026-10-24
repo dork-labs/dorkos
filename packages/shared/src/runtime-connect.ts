@@ -38,6 +38,8 @@ export interface StoreCredentialResult {
  * pin for every other runtime, so callers send it only for `claude-code`.
  */
 export interface DelegateLoginOptions {
+  /** Server-owned registry id. Paths are never sent to the login endpoint. */
+  accountId?: string;
   /**
    * Sign back into the account THIS session is bound to. Preferred over
    * {@link accountRoot} wherever a session exists, because only the server can
@@ -66,6 +68,8 @@ export interface DelegateLoginOptions {
 export interface DelegatedLoginResult {
   /** True when the vendor CLI reported a completed, authenticated login. */
   ok: boolean;
+  /** Identity review can remain required after the CLI completes. */
+  identity?: AccountSigninIdentityView;
   /** Honest failure message when the login failed, was denied, or timed out. */
   error?: string;
 }
@@ -455,4 +459,35 @@ export interface DoeInferenceStatus {
   hasKey: boolean;
   /** The format DorkOS picks a credits model in, or `null` when it has nothing to pick. */
   autoProtocol: DoeInferenceConfig['protocol'] | null;
+}
+
+/** Only masked identity labels are exposed; credentials never reach this view. */
+export interface AccountSigninIdentityView {
+  state: 'unreadable' | 'unconfirmed' | 'changed' | 'blocked' | 'confirmed' | 'never-use';
+  email?: string;
+  previousEmail?: string;
+}
+export interface ClaudeSigninPolicyView {
+  deniedOrganizations: Array<{ id: string; label: string }>;
+  folders: Array<{ accountId: string; path: string; label: string }>;
+  accounts: Array<{
+    accountId: string;
+    path: string;
+    name: string;
+    identity: AccountSigninIdentityView;
+  }>;
+}
+/** Every mutation requires an owner session and a fresh password step-up. */
+export type ClaudeSigninPolicyChange = {
+  password: string;
+} & (
+  | { action: 'add-org'; orgId: string; label: string }
+  | { action: 'remove-org'; orgId: string }
+  | { action: 'exclude-folder' | 'allow-folder' | 'accept'; accountId: string }
+);
+
+/** Owner-only account sign-in policy surface. */
+export interface ClaudeSigninPolicyTransport {
+  getClaudeSigninPolicy(): Promise<ClaudeSigninPolicyView>;
+  changeClaudeSigninPolicy(input: ClaudeSigninPolicyChange): Promise<{ ok: boolean }>;
 }

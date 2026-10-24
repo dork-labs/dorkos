@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * Reads WHEN the host's Claude sign-in stops working — the one thing the
  * readiness probe next door cannot see.
@@ -200,6 +201,7 @@ export async function readClaudeSignInDeadlines(
   root: string
 ): Promise<ClaudeSignInDeadlines | null> {
   try {
+    if (isNeverUseClaudeFolder(root)) return null;
     return parseClaudeSignInDeadlines(await readCredentialStore(root));
   } catch (err) {
     // Expected and uninteresting on any machine that signs in another way (an

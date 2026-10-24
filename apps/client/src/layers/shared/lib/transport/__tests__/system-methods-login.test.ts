@@ -43,14 +43,14 @@ describe('delegateRuntimeLogin', () => {
     serveOk();
 
     await createSystemMethods(BASE).delegateRuntimeLogin('claude-code', {
-      accountRoot: '/Users/dev/.claude2',
+      accountId: 'two',
     });
 
     expect(vi.mocked(globalThis.fetch).mock.calls.at(-1)![0]).toBe(
       `${BASE}/runtimes/claude-code/login`
     );
     expect(JSON.parse(lastInit().body as string)).toEqual({
-      accountRoot: '/Users/dev/.claude2',
+      accountId: 'two',
     });
   });
 

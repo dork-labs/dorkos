@@ -1,3 +1,4 @@
+import type { ClaudeSigninPolicyTransport } from './runtime-connect.js';
 import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.js';
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
@@ -35,6 +36,7 @@ import type { AgentLevelTransport } from './transport-agent-level.js';
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
   extends
+    ClaudeSigninPolicyTransport,
     FileSaveRecoveryTransport,
     RoomTransport,
     CommunityConnectionTransport,

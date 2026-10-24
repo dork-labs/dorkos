@@ -1,3 +1,4 @@
+import { SigninIdentityShowcases } from '../showcases/SigninIdentityShowcases';
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { COMPONENTS_SECTIONS } from '../playground-registry';
 import { LayoutShowcases } from '../showcases/LayoutShowcases';
@@ -28,6 +29,7 @@ export function ComponentsPage() {
     >
       <LayoutShowcases />
       <ControlShowcases />
+      <SigninIdentityShowcases />
       <BannerShowcases />
       <FeedbackShowcases />
       <NavigationShowcases />

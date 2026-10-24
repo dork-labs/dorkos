@@ -1,3 +1,4 @@
+import { SigninPolicySection } from './SigninPolicySection';
 /**
  * Settings → Runtimes: one card per runtime, then the two things that are true
  * of the whole fleet.
@@ -165,6 +166,7 @@ export function RuntimesTab() {
         onChangeRuntime={(runtime, stop) => trust.changeTrustStop(runtime, stop)}
       />
 
+      <SigninPolicySection />
       <ExecutionExceptionsStrip />
     </div>
   );

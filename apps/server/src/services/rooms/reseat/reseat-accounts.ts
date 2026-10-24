@@ -1,3 +1,4 @@
+import { accountLoginIdentity } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 /**
  * Which account a room seat moves to when its own runs out (Security Must 4).
  *
@@ -60,12 +61,16 @@ export function nearlyOut(usage: AccountUsage): boolean {
 export function reseatCandidates(
   ranking: readonly RankedAccount[],
   runtime: string,
-  opts: { keptOut?: boolean } = {}
+  opts: { keptOut?: boolean; signinHealthy?: (root: string) => boolean } = {}
 ): RankedAccount[] {
   return ranking.filter(
     (row) =>
       row.runtime === runtime &&
       row.id !== CREDITS_ACCOUNT_ID &&
+      (runtime !== 'claude-code' ||
+        (row.usage.path !== null &&
+          (opts.signinHealthy?.(row.usage.path) ??
+            accountLoginIdentity(row.usage.path).state === 'confirmed'))) &&
       !row.notAllowed &&
       (opts.keptOut === true || !row.noAutoMove)
   );
@@ -112,7 +117,7 @@ function usableAgainAt(usage: AccountUsage): string | null {
 export function pickReseatAccount(
   ranking: readonly RankedAccount[],
   seat: { runtime: string; currentAccountId: string | null },
-  opts: { keptOut?: boolean } = {}
+  opts: { keptOut?: boolean; signinHealthy?: (root: string) => boolean } = {}
 ): ReseatPick {
   const candidates = reseatCandidates(ranking, seat.runtime, opts);
   const account = candidates.find((row) => row.id !== seat.currentAccountId && canTakeWork(row));
