@@ -1,0 +1,23 @@
+{
+  "about": [
+    "Case and Unicode spellings of security paths, for dork-labs/dorkos to copy as-is (its #3191) so both repos test the same list.",
+    "Every path in `match` must count as a built-in security path when folded at least as broadly as a case-insensitive disk does (at least `normalize('NFKC')` and `toLowerCase()`); no path in `noMatch` may."
+  ],
+  "match": [
+    "Package.json",
+    "PACKAGE.JSON",
+    "pacKage.json",
+    "ｐａｃｋａｇｅ.json",
+    ".NPMRC",
+    ".Npmrc",
+    ".PNPMFILE.CJS",
+    "PATCHES/foo.patch",
+    "PNPM-LOCK.YAML",
+    "Pnpm-Workspace.yaml",
+    "pnpm-workſpace.yaml",
+    "packages/a/patches/b.patch"
+  ],
+  "noMatch": [
+    "src/packagejson.ts"
+  ]
+}
