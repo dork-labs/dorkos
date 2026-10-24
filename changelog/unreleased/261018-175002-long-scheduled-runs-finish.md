@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): scheduled runs longer than two minutes finish instead of failing as never started (DOR-3033)'
   - 'fix(server): a scheduled run retry stands down after a stop, and failure reasons read plainly (DOR-3033)'
+  - "fix(server): a scheduled run's retry obeys the schedule as it is now, and Stop ends a run nobody received (DOR-3033)"
 ---
 
 ### Fixed

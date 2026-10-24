@@ -276,9 +276,11 @@ export async function dispatchRunViaRelay(
     const current = deps.store.getRun(run.id);
     if (!current || !isTerminalRunStatus(current.status)) {
       logger.warn(`no receiver for relay dispatch of run ${run.id}; trying once more`);
+      deps.runs.setAwaitingRetry(run.id, true);
       await new Promise((resolve) => {
         setTimeout(resolve, deps.noReceiverRetryMs ?? NO_RECEIVER_RETRY_MS).unref?.();
       });
+      deps.runs.setAwaitingRetry(run.id, false);
       // The wait is long enough for the world to move. A shutdown forgets every
       // relay run's slot (`forgetRelayRuns`) and leaves the row for crash
       // recovery; a Stop or any other ending makes the row terminal. Either
@@ -289,6 +291,21 @@ export async function dispatchRunViaRelay(
         deps.runs.release(run.id);
         return;
       }
+      // The schedule may have moved too: turned off, sent back for approval, or
+      // given a lower level. What it says NOW binds; a lower level always does
+      // (DOR-3175). Nothing has run yet, so the run is skipped, not failed.
+      const fresh = deps.store.getTask(task.id);
+      if (!fresh || !fresh.enabled || fresh.status !== 'active') {
+        deps.runs.release(run.id);
+        deps.store.updateRun(run.id, {
+          status: 'skipped',
+          finishedAt: new Date().toISOString(),
+          durationMs: 0,
+          error: 'The schedule was turned off or sent back for approval before this run started.',
+        });
+        return;
+      }
+      if (fresh.permissionMode) payload.permissionMode = fresh.permissionMode;
       deps.runs.addRelay(run.id, task.maxRuntime);
       result = await publish();
     }
