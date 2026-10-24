@@ -69,6 +69,8 @@ import {
 import {
   assertSecretReferences,
   mergeSecretUpdate,
+  readIncoming,
+  stampPersonReferences,
   secretValueSet,
   type SecretWriter,
 } from './adapter-secret-policy.js';
@@ -1008,6 +1010,7 @@ export class AdapterManager {
       manifest
     );
     assertSecretReferences(id, adapterConfig.config, manifest, writer);
+    stampPersonReferences(adapterConfig, manifest, writer, adapterConfig.config);
     const ownership = reserveWebhookOwnership(adapterConfig, this.configs, this.registry);
     try {
       this.configs.push(adapterConfig);
@@ -1286,6 +1289,7 @@ export class AdapterManager {
     const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
       existing.config = prospective.config;
+      stampPersonReferences(existing, manifest, writer, readIncoming(newConfig, manifest));
 
       // Promote label from config to top-level if present (client embeds it in config)
       if (typeof mergedConfig.label === 'string' && mergedConfig.label) {
@@ -1481,7 +1485,7 @@ export class AdapterManager {
   /** Delegate adapter instantiation to the factory module. */
   private async buildAdapter(
     config: AdapterConfig,
-    allowPersonReferences = true
+    allowPersonReferences = config.personWroteReferences === true
   ): Promise<RelayAdapter | null> {
     // Resolve credential references to real secrets in memory only — the
     // adapter receives the live token, but it is never written back to disk

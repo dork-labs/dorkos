@@ -370,6 +370,13 @@ export const AdapterConfigSchema = z
     builtin: z.boolean().optional(),
     /** Plugin source — required when type is 'plugin' */
     plugin: PluginSourceSchema.optional(),
+    /**
+     * Set by the server, never by a caller: a person saved this connection's
+     * `env:` or `keychain:` references, so they may resolve (DOR-3271). The
+     * create and edit routes build the entry themselves, so a request body has
+     * no way to set or copy it.
+     */
+    personWroteReferences: z.boolean().optional(),
     /** Adapter-specific configuration (passed to adapter constructor/factory) */
     config: z.union([
       TelegramAdapterConfigSchema,

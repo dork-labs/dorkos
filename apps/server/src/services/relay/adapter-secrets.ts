@@ -60,10 +60,10 @@ export interface ResolveSecretsContext {
   /** Manifests by adapter type — supplies each type's `password` field keys. */
   manifests: Map<string, AdapterManifest>;
   /**
-   * Whether `env:` and `keychain:` references may resolve: true for a stored
-   * config (only a person can save one through the API, DOR-3271; see that
-   * module's note on `adapters.json` itself), false for a config nobody
-   * vouched for, such as a connection test an agent asked for.
+   * Whether `env:` and `keychain:` references may resolve: for a stored
+   * config, its server-set `personWroteReferences` flag (DOR-3271; see
+   * `adapter-secret-policy.ts` on `adapters.json` itself); for a connection
+   * test, whether a person asked for it.
    */
   allowPersonReferences: boolean;
 }

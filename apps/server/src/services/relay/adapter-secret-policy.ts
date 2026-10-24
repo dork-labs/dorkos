@@ -23,6 +23,9 @@
  *    into a secret field, so a person may still save one. Anything else that
  *    writes one is refused: the same pairing of "a credential and where it
  *    goes" that `config-write-policy.ts` keeps operator-only for `config.json`.
+ *    A stored connection resolves them only when the server stamped it
+ *    `personWroteReferences` on a person's save ({@link stampPersonReferences});
+ *    the request body cannot set that flag.
  * 3. **A new address needs its secrets entered again.** When a `url` field
  *    changes, a secret field that came back masked or empty is not carried to
  *    the new address. A required one is refused; an optional one is cleared.
@@ -37,14 +40,16 @@
  *
  * ## What this does not cover
  *
- * `adapters.json` itself. The file watcher reloads it, and a stored config
- * resolves `env:` and `keychain:` as a person's choice, so a program that can
- * write that file directly is not stopped here (it can also read the store's
- * key under the same data folder). References saved before DOR-3271 resolve as
- * they did, except a `file:` name that is not the adapter's own.
+ * `adapters.json` itself. The file watcher reloads it, and a program that can
+ * write that file directly can also write `personWroteReferences` there (and
+ * read the store's key under the same data folder), so it is not stopped here.
+ * A `file:` name that is not the connection's own is still refused when it
+ * resolves. An `env:` or `keychain:` reference saved before DOR-3271 stops
+ * resolving until a person enters it again.
  *
  * @module services/relay/adapter-secret-policy
  */
+import type { AdapterConfig } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import { AdapterError } from './adapter-error.js';
@@ -223,6 +228,47 @@ function addressOf(config: Record<string, unknown>, key: string): unknown {
   return value === '' ? undefined : value;
 }
 
+/**
+ * Record, on the entry itself, whether a person wrote its `env:`/`keychain:`
+ * references: the server-set flag a stored config is resolved under
+ * (`AdapterConfig.personWroteReferences`).
+ *
+ * A person's save sets it when that save sent such a reference, or when the
+ * entry already had it and still holds one. A reference merely carried through
+ * the mask does not earn it, so a person saving a connection for another reason
+ * never vouches for a reference somebody else wrote before DOR-3271. Anything
+ * but a person keeps what was there: it cannot add such a reference
+ * ({@link assertSecretReferences}).
+ *
+ * @param entry - The parsed entry about to be saved, updated in place; for an
+ *   edit it still carries the flag as stored.
+ * @param manifest - The adapter type's manifest.
+ * @param writer - Who is writing.
+ * @param sent - The values this save sent ({@link readIncoming} for an edit,
+ *   the whole config for a new connection).
+ */
+export function stampPersonReferences(
+  entry: AdapterConfig,
+  manifest: AdapterManifest | undefined,
+  writer: SecretWriter,
+  sent: Record<string, unknown>
+): void {
+  if (writer !== 'person') return;
+  const isPersonRef = (value: string) => {
+    const scheme = parseCredentialReference(value)?.scheme;
+    return scheme === 'env' || scheme === 'keychain';
+  };
+  const holds = secretValues(entry.config as Record<string, unknown>, manifest).some(({ value }) =>
+    isPersonRef(value)
+  );
+  const wrote = secretValues(sent, manifest).some(({ value }) => isPersonRef(value));
+  if (holds && (wrote || entry.personWroteReferences === true)) {
+    entry.personWroteReferences = true;
+  } else {
+    delete entry.personWroteReferences;
+  }
+}
+
 /** The `url` fields of an adapter type: where its secrets travel. */
 function urlFieldKeys(manifest: AdapterManifest | undefined): string[] {
   if (!manifest) return [];
@@ -266,6 +312,10 @@ export function mergeSecretUpdate(
   manifest: AdapterManifest | undefined,
   writer: SecretWriter
 ): Record<string, unknown> {
+  // `mergeWithPasswordPreservation` writes stored values into nested objects it
+  // shares with its input, so it gets a copy: the caller's edit must still say
+  // only what was sent (`stampPersonReferences` reads it after the merge).
+  incoming = structuredClone(incoming);
   const read = readIncoming(incoming, manifest);
   assertSecretReferences(adapterId, read, manifest, writer);
   const moved = urlFieldKeys(manifest).some((key) => {

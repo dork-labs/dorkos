@@ -405,3 +405,190 @@ describe('through AdapterManager', () => {
     expect(store.secrets.get('community:space-1:token')).toBe('community-token');
   });
 });
+
+describe("Security's five, against a real adapters.json", () => {
+  let directory: string;
+  let manager: AdapterManager;
+  let registry: AdapterRegistry;
+  let file: string;
+
+  /** Boot a manager over a hand-written adapters.json holding these entries. */
+  async function boot(entries: unknown[]): Promise<void> {
+    directory = await mkdtemp(join(tmpdir(), 'relay-secret-five-'));
+    file = join(directory, 'adapters.json');
+    const builtin = {
+      id: 'claude-code',
+      type: 'claude-code',
+      enabled: false,
+      builtin: true,
+      config: {},
+    };
+    await writeFile(file, JSON.stringify({ adapters: [builtin, ...entries] }));
+    registry = new AdapterRegistry();
+    registry.setRelay({
+      publish: vi.fn(async () => ({ messageId: 'fixture', deliveredTo: 1 })),
+      subscribe: () => () => {},
+      onSignal: () => () => {},
+    } as never);
+    manager = new AdapterManager(registry, file, {
+      traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
+      credentialStore: store,
+      credentialProvider: provider,
+    });
+    await manager.initialize();
+    await manager.adaptersStarted();
+  }
+
+  afterEach(async () => {
+    await manager.shutdown();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  /** A hand-edited webhook entry whose own secret is real and whose header names `ref`. */
+  async function handEdited(ref: string, extra: Record<string, unknown> = {}): Promise<void> {
+    await store.put('relay-adapter-wh-outbound-secret', 'own-outbound-secret');
+    await store.put('relay-adapter-wh-inbound-secret', 'own-inbound-secret');
+    await boot([
+      {
+        id: 'wh',
+        type: 'webhook',
+        enabled: true,
+        ...extra,
+        config: {
+          inbound: { subject: 'relay.webhook.wh', secret: 'file:relay-adapter-wh-inbound-secret' },
+          outbound: {
+            url: URL_B,
+            secret: 'file:relay-adapter-wh-outbound-secret',
+            headers: { Authorization: ref },
+          },
+        },
+      },
+    ]);
+  }
+
+  it("1. adapter A naming B's file: entry fails to resolve", async () => {
+    await store.put('relay-adapter-other-outbound-secret', 'b-secret');
+    await handEdited('file:relay-adapter-other-outbound-secret');
+    expect(registry.get('wh')).toBeUndefined();
+    expect(provider.asked).not.toContain('file:relay-adapter-other-outbound-secret');
+  });
+
+  it('2. an agent PATCH carrying env:ANTHROPIC_API_KEY is refused', async () => {
+    await boot([]);
+    await manager.addAdapter(
+      'webhook',
+      'wh',
+      webhook('wh', { secret: 'outbound-secret-16chars' }).config,
+      false,
+      undefined,
+      'person'
+    );
+    const before = await readFile(file, 'utf8');
+    await expect(
+      manager.updateConfig(
+        'wh',
+        { outbound: { url: URL_A, secret: 'env:ANTHROPIC_API_KEY' } },
+        'agent'
+      )
+    ).rejects.toThrow(/only a person can set/);
+    expect(await readFile(file, 'utf8')).toBe(before);
+  });
+
+  it('3. a new outbound.url with masked secrets clears nothing it should keep and requires the secret', async () => {
+    await boot([]);
+    await manager.addAdapter(
+      'webhook',
+      'wh',
+      webhook('wh', { secret: 'outbound-secret-16chars' }).config,
+      false,
+      undefined,
+      'person'
+    );
+    await expect(
+      manager.updateConfig('wh', { outbound: { url: URL_B, secret: '***' } }, 'person')
+    ).rejects.toThrow(/entered again: Inbound Secret, Outbound Secret/);
+    const saved = JSON.parse(await readFile(file, 'utf8')).adapters.find(
+      (a: { id: string }) => a.id === 'wh'
+    );
+    expect(saved.config.outbound.url).toBe(URL_A);
+  });
+
+  it('4. DELETE of an adapter naming file:anthropic leaves the key file', async () => {
+    await handEdited('file:anthropic');
+    await manager.removeAdapter('wh');
+    expect(store.secrets.get('anthropic')).toBe('sk-ant-THE-REAL-KEY');
+    expect(store.secrets.has('relay-adapter-wh-outbound-secret')).toBe(false);
+  });
+
+  it('5. a hand-edited adapters.json naming file:anthropic is refused at resolve', async () => {
+    await handEdited('file:anthropic');
+    expect(registry.get('wh')).toBeUndefined();
+    expect(provider.asked).not.toContain('file:anthropic');
+  });
+
+  it('a hand-edited env: reference without the server-set flag does not resolve', async () => {
+    await handEdited('env:ANTHROPIC_API_KEY');
+    expect(registry.get('wh')).toBeUndefined();
+    expect(provider.asked).not.toContain('env:ANTHROPIC_API_KEY');
+  });
+
+  it("a person's save stamps the flag; an agent's later edit keeps it; the body cannot set it", async () => {
+    await boot([]);
+    const config = webhook('wh', { secret: 'env:ANTHROPIC_API_KEY' }).config;
+    await manager
+      .addAdapter(
+        'webhook',
+        'wh',
+        { ...config, personWroteReferences: true },
+        false,
+        undefined,
+        'agent'
+      )
+      .catch((error: Error) => expect(error.message).toMatch(/only a person can set/));
+    await manager.addAdapter('webhook', 'wh', config, false, undefined, 'person');
+    const read = async () =>
+      JSON.parse(await readFile(file, 'utf8')).adapters.find((a: { id: string }) => a.id === 'wh');
+    expect((await read()).personWroteReferences).toBe(true);
+    expect((await read()).config.personWroteReferences).toBeUndefined();
+
+    await manager.updateConfig(
+      'wh',
+      { outbound: { url: URL_A, secret: '***' }, personWroteReferences: false },
+      'agent'
+    );
+    expect((await read()).personWroteReferences).toBe(true);
+    expect((await read()).config.outbound.secret).toBe('env:ANTHROPIC_API_KEY');
+  });
+
+  it('a person saving for another reason does not vouch for an old unflagged env: reference', async () => {
+    await handEdited('env:ANTHROPIC_API_KEY');
+    const read = async () =>
+      JSON.parse(await readFile(file, 'utf8')).adapters.find((a: { id: string }) => a.id === 'wh');
+    await manager
+      .updateConfig(
+        'wh',
+        { outbound: { url: URL_B, secret: '***', headers: { Authorization: '***' } } },
+        'person'
+      )
+      .catch(() => undefined);
+    // Saved, then refused at start: the reference still has no person behind it.
+    await expect(manager.updateConfig('wh', { label: 'Renamed' }, 'person')).rejects.toThrow(
+      /only a person can set/
+    );
+    expect((await read()).personWroteReferences).toBeUndefined();
+
+    await manager.updateConfig(
+      'wh',
+      {
+        outbound: {
+          url: URL_B,
+          secret: '***',
+          headers: { Authorization: 'env:ANTHROPIC_API_KEY' },
+        },
+      },
+      'person'
+    );
+    expect((await read()).personWroteReferences).toBe(true);
+    expect(registry.get('wh')).toBeDefined();
+  });
+});
