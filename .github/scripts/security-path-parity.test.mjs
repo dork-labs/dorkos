@@ -110,7 +110,7 @@ const variants = JSON.parse(variantBytes.toString('utf8'));
 test('shared spelling fixture retains the pinned marketplace blob', () => {
   assert.equal(
     createHash('sha1').update(`blob ${variantBytes.length}\0`).update(variantBytes).digest('hex'),
-    '27c78795f270cb5c4666f1cfe358f88268a568e7'
+    '32a042ddddc493f52f51883832b031c05f92a430'
   );
 });
 for (const path of variants.match) {
@@ -148,3 +148,17 @@ test('normalization only adds matches and preserves regex syntax', () => {
   assert.equal(touchesSecurity([{ filename: 'Private/File' }], '^Private/\\S+$'), true);
   assert.equal(touchesSecurity([{ filename: 'Private/ ' }], '^Private/\\S+$'), false);
 });
+
+for (const [pattern, path, miss] of [
+  ['^(?!docs/)', 'DOCS/run.sh', 'docs/run.sh'],
+  ['^[^a-z]', 'Secrets/a', 'secrets/a'],
+  ['^(?!.*\\.md$)', 'README.MD', 'README.md'],
+]) {
+  test(`flagless match survives added folding: ${pattern}`, () => {
+    assert.equal(new RegExp(pattern).test(path), true);
+    assert.equal(new RegExp(pattern, 'iu').test(path), false);
+    assert.equal(touchesSecurity([{ filename: path }], pattern), true);
+    assert.equal(touchesSecurity([{ filename: miss, previous_filename: path }], pattern), true);
+    assert.equal(touchesSecurity([{ filename: miss }], pattern), false);
+  });
+}

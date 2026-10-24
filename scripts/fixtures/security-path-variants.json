@@ -14,7 +14,8 @@
     "PATCHES/foo.patch",
     "PNPM-LOCK.YAML",
     "Pnpm-Workspace.yaml",
-    "pnpm-workſpace.yaml"
+    "pnpm-workſpace.yaml",
+    "packages/a/patches/b.patch"
   ],
   "noMatch": [
     "src/packagejson.ts"

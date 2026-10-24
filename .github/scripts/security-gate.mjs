@@ -24,12 +24,18 @@ function fullFold(path) {
 }
 
 export function touchesSecurity(files, pattern) {
+  const exact = new RegExp(pattern);
   const matcher = new RegExp(pattern, 'iu');
   return files.some((file) =>
     [file.filename, file.previous_filename].some(
       (path) =>
         path &&
-        [path, fullFold(path), fullFold(path.normalize('NFKC'))].some((form) => matcher.test(form))
+        // Flags can remove matches for lookaheads and negated classes. Preserve
+        // the original flagless verdict before adding folded matches.
+        (exact.test(path) ||
+          [path, fullFold(path), fullFold(path.normalize('NFKC'))].some((form) =>
+            matcher.test(form)
+          ))
     )
   );
 }
