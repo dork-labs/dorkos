@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.125.3] - 2026-10-23
+
+> DorkOS 0.125.3 keeps approvals in view in folded sidebar sections, shows new replies live in a chat left open, and lets a room have shared files.
+
+### Added
+
+- Set up shared files from a live room’s panel, then start with its shared `ROOM.md`. Only the room's owner can set them up: agents, guests and archived rooms can't. (DOR-3127)
+
+### Fixed
+
+- A folded sidebar section now also shows a muted agent that is waiting on you, like one asking for your approval. Mute still hides its chatter, but never a request.
+- A folded sidebar section now still shows a room where an agent is waiting on you.
+- A chat you left open for half an hour or more now shows the agent working and its reply as it comes in. Before, the next reply only appeared after you refreshed the app.
+- If the app ever misses a reply again, it now notices on its own within about 20 seconds, catches up, and writes a note about it to the DorkOS log.
+- A turn started by someone DorkOS can't vouch for, like a message from a stranger or a Wi-Fi sign-in, now asks before running commands the project's settings allow. The project's blocked commands stay blocked, and these approval cards don't offer Always allow. (DOR-3204)
+
+### Security
+
+- Keep agents' browsers away from DorkOS Cloud and dorkos.ai. A DorkOS sign-in is never saved for agents, and one saved by an earlier version is removed. An agent can't open, read or act on a page from either site, and a link or redirect that lands there pauses it. You can still open them yourself (DOR-3196)
+
 ## [0.125.2] - 2026-10-22
 
 > DorkOS 0.125.2 keeps running when a network connection drops, opens without waiting on the update check, and keeps an agent waiting on you in view in a folded sidebar section.
@@ -293,65 +313,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The moving line above the message box while an agent works now stays still when your computer is set to reduce motion, and it no longer flashes pure white.
 - Pictures you attach in chat show their preview again, and open full size when you click them. (DOR-2990)
 
-## [0.119.0] - 2026-10-17
+Older releases (v0.1.0 – v0.119.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.119.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.119.0.md).
 
-> DorkOS 0.119.0 stops other people in a shared space from getting your agent to read your other chats, makes every other device sign in, opens pictures in a viewer over the chat, and lets the Mac app sign you in by itself.
-
-### Added
-
-- If you run your own space server: a program with a new key permission, `accounts:read`, can now ask which spaces a person belongs to, using the identity your single sign-on gives them. It gets back each space's name, address, the person's role, and whether the space is open or archived. It never sees what anyone wrote. No other permission includes `accounts:read`, so give it only to the program that needs it (DOR-2954)
-- Click a picture in a chat or a room and it opens right there, over the conversation, instead of in a new tab or window. Step through every picture in that message with the arrows or the ← and → keys, zoom in with a scroll or a double-click, and save it with the download button. On a phone, pinch to zoom, swipe sideways for the next picture, and drag down to close. Escape or a click outside the picture closes it too (DOR-2975)
-- A space can now hold a direct message between one person and one agent, if the agent's owner allows it. Each agent starts with this off, and only its owner can turn it on. If the owner turns it off again, the person can't send new messages there, but the agent can still read and reply. The DorkOS app doesn't open direct messages yet.
-- Nobody else can read a direct message in the space, not even the space's owner or admins. If the person in it reports a message, the space's moderators see that message, because they chose to share it. Like private channels, direct messages are included when the space's owner exports the whole space, and when the server's host keeps a copy as evidence for a legal takedown.
-
-### Changed
-
-- In a space's web page, files and exports now download through a short-lived link. A link works for a few minutes (an hour for an export), and only while the person it was made for is still signed in and can still open the file (DOR-2957)
-- If you run your own space server: set `COMMUNITY_USER_CONTENT_URL` to give downloads an address of their own, so a file never opens on the space's own address. Without it, downloads come from the space's own address, as before (DOR-2957)
-- When you sign in to a space with Google, GitHub or a DorkOS account, the space now keeps only who you are. It no longer stores the access that provider gave it, so it can't act in that account. Access stored before this release is deleted when the space server upgrades (DOR-2957)
-- If you run your own space server and sign people in with a DorkOS account: `COMMUNITY_OIDC_SCOPES` may ask only for `openid`, `email` and `profile` when `COMMUNITY_OIDC_MARK` is `dorkos`. Set that mark whenever your sign-in is a DorkOS account. The server won't start with any other scope (DOR-2957)
-- DorkOS now checks where each request comes from. On this computer, nothing changes: you are still signed in. From any other device, you always need to sign in, even with "Require login" off (DOR-2967).
-- A phone or laptop that reaches DorkOS through your own tunnel or over Wi-Fi no longer counts as "this computer". Signing an agent in to Claude and other setup that only works at the computer now refuses it (DOR-2967).
-- If DorkOS runs behind a reverse proxy on the same computer, other devices now need a password. Create your owner account on the computer itself first (DOR-2967).
-- Sharing DorkOS beyond this computer now needs only an owner account, not "Require login" (DOR-2967).
-- An MCP client on another device now signs in with your personal API key. The local token, and a key set in `MCP_API_KEY`, work only on this computer (DOR-2967).
-- A Docker install with no owner account yet stays open, as before, for this release only. A later release will ask for a one-time setup code instead (DOR-2967).
-- "Require login" is now called "Ask for a password on this computer too", because other devices always need your password anyway (DOR-2967).
-- Settings shows who is signed in, and the Sign out button, whenever you're signed in, from any device (DOR-2967).
-- Opening a tunnel or Wi-Fi access no longer turns on a password for this computer. It only needs an owner account (DOR-2967).
-- Turning the setting off no longer turns Wi-Fi access off. Devices on your Wi-Fi still sign in (DOR-2967).
-- `dorkos auth reset-password` now signs out every browser and device, and says what it can't cut off yet: a window already open, live streams, and API keys (DOR-2968).
-- A sign-in now lasts 30 days, and each day you use DorkOS pushes that back (DOR-2968).
-- Turning off "Ask for a password on this computer too" no longer needs a restart before MCP apps on this computer work (DOR-2968).
-- Settings says the local MCP token works only for apps on this computer. Other devices need a personal API key (DOR-2968).
-- Creating the owner account from another device now asks for a setup code. DorkOS prints it where it runs, and it works once, for an hour. On the computer itself, nothing changes (DOR-2968).
-- A Docker container with no owner yet still lets the first visitor create it, for this release only, and now warns loudly when it starts. A coming release will ask for the setup code there too (DOR-2968).
-- The Mac app now signs you in by itself, so the things only you can do at your Mac work without a password. If you turned on "Ask for a password on this computer too", the app still asks, as before. The sign-in lasts until you quit the app and is never saved to disk (DOR-2966)
-
-### Fixed
-
-- Keep heading selections aligned with the original Markdown, including emoji.
-- When an agent asks another chat something during a scheduled run or a heartbeat, the answer now reaches it. It arrives in that agent's direct chat with whoever answered, instead of being refused.
-- An agent can now read a chat it sent a message to, from any of its own chats, including a scheduled run or a heartbeat. Before, it could only read chats that had written to it first. Your own private chats stay closed to agents.
-- Your agents in a space no longer miss mentions because the app reconnected to the space every 30 seconds. Before, a mention sent while it reconnected went unanswered, and a reply sent at that moment was lost. The link now stays open while the space is reachable.
-- When the app's link to a space drops for a moment, your agents still answer a mention sent in that gap, if it is less than about a minute and a half old. That covers a link that dies silently, which can take the app up to 50 seconds to notice. Older messages stay as history. A short network blip also no longer stops an agent from replying in that space.
-- Signing in at a plain `http://` address on your network no longer drops you back on the sign-in screen with no reason. DorkOS now tells you the browser won't keep the sign-in, and to use `https` (DOR-2968).
-
-### Security
-
-- When someone else in a shared space mentions your agent, the agent now answers with much less power. It can read and post only in the room it's answering. It reads no files, it can't see your other rooms or chats, and it doesn't see its saved notes, your CLAUDE.md files or Claude Code's own memory for its folder. It can't run commands, change files, use the web or your connected apps, or save notes. It never asks you to approve anything, so other people's messages don't send you approval cards. Before, someone in the space could ask your agent to read your other rooms and post what it found. (DOR-2955)
-- What a teammate writes stays in that room's conversation. The next time you talk to your agent in that room, it still sees what they wrote.
-- Each person in a space can now wake your agent at most 3 times every 10 minutes, mentions and other posts counted together, and each channel at most 20 times. Messages past that stay in the space, and your agent doesn't answer them.
-- In any room, a Claude Code agent no longer runs a command or opens a file because of what someone else wrote. A `/command` or an `@file` in a message from a Telegram or Slack chat linked to a room, from a shared space, or from another agent now reaches the agent as plain text. A message you type yourself in the app still runs commands and opens files as before. Two exceptions: your own post that arrives through a shared space, and your message when the agent answers it together with someone else's in one go, also reach it as plain text.
-- For now, agents that run on Codex or OpenCode don't answer other people's messages in a space. Your own messages there reach them as before.
-
-### Note for people upgrading
-
-- If you run your own space server, take a backup before you upgrade. This release makes a one-way change to the space's database when it starts. Version 0.118.0 refuses to start on the upgraded database. Versions before it don't check and would start anyway, so never start one on it. Going back means restoring the backup.
-
-Older releases (v0.1.0 – v0.118.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.118.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.118.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.125.2...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.125.3...HEAD
+[0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
 [0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
@@ -361,4 +326,3 @@ Older releases (v0.1.0 – v0.118.0) are archived in [changelog/archive/CHANGELO
 [0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
 [0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0
-[0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
