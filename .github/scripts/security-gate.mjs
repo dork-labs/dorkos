@@ -20,7 +20,9 @@ export function latestReview(statuses) {
 export function touchesSecurity(files, pattern) {
   const matcher = new RegExp(pattern);
   return files.some((file) =>
-    [file.filename, file.previous_filename].some((path) => path && matcher.test(path))
+    [file.filename, file.previous_filename].some(
+      (path) => path && (matcher.test(path) || matcher.test(path.normalize('NFKC').toLowerCase()))
+    )
   );
 }
 

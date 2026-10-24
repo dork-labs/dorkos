@@ -30,6 +30,14 @@ test('gate pattern equals Security reference and the installed interim checker',
 });
 
 const additions = [
+  ['.NPMRC', '.NPMRC.backup'],
+  ['.PNPMFILE.CJS', '.PNPMFILE.CJS.old'],
+  ['PATCHES/dependency.patch', 'PATCHES-old/dependency.patch'],
+  ['PNPM-LOCK.YAML', 'PNPM-LOCK.YAML.old'],
+  ['Pnpm-Workspace.yaml', 'Pnpm-Workspaces.yaml'],
+  ['.NVMRC', '.NVMRCx'],
+  ['pacKage.json', 'pacKage.jsonx'],
+  ['patcheſ/dependency.patch', 'patcheſ-old/dependency.patch'],
   ['.npmrc', '.npmrc.backup'],
   ['apps/client/.npmrc', 'apps/client/npmrc'],
   ['patches/dependency.patch', 'patches-old/dependency.patch'],
@@ -74,11 +82,11 @@ for (const [match, miss] of additions) {
     assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
     // The coordinator uses POSIX ERE; keep its engine aligned with JavaScript.
     const shell = spawnSync('grep', ['-E', reference], {
-      input: `${match}\n${miss}\n`,
+      input: `${match.normalize('NFKC').toLowerCase()}\n${miss.normalize('NFKC').toLowerCase()}\n`,
       encoding: 'utf8',
     });
     assert.equal(shell.status, 0, shell.stderr);
-    assert.equal(shell.stdout, `${match}\n`);
+    assert.equal(shell.stdout, `${match.normalize('NFKC').toLowerCase()}\n`);
   });
 }
 
