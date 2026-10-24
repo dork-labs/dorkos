@@ -36,7 +36,11 @@ for (const url of [
   });
 }
 
-for (const url of ['http://localhost:6241', 'http://127.0.0.1:5173/', 'https://preview.example.dev']) {
+for (const url of [
+  'http://localhost:6241',
+  'http://127.0.0.1:5173/',
+  'https://preview.example.dev',
+]) {
   test(`allows ${url}`, () => {
     assert.equal(refuseUrl(url), null);
   });
@@ -53,7 +57,9 @@ test('a route can turn a safe base into :4242, so each base + route is checked',
 });
 
 test('measure.mjs exits 2 on :4242 before loading anything', () => {
-  const r = spawnSync(process.execPath, [MEASURE, '--url', 'http://[::1]:4242'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [MEASURE, '--url', 'http://[::1]:4242'], {
+    encoding: 'utf8',
+  });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /port 4242/);
 });
@@ -64,16 +70,23 @@ test('a playwright-core planted in the current directory never runs', () => {
   const pkg = join(dir, 'node_modules', 'playwright-core');
   mkdirSync(pkg, { recursive: true });
   writeFileSync(join(pkg, 'package.json'), '{"name":"playwright-core","main":"index.js"}');
-  writeFileSync(join(pkg, 'index.js'), `require('fs').writeFileSync(${JSON.stringify(marker)}, '1'); module.exports = {};`);
+  writeFileSync(
+    join(pkg, 'index.js'),
+    `require('fs').writeFileSync(${JSON.stringify(marker)}, '1'); module.exports = {};`
+  );
   try {
     const env = { ...process.env, CHROME_PATH: join(dir, 'no-such-chrome') };
     delete env.PLAYWRIGHT_FROM;
-    spawnSync(process.execPath, [MEASURE, '--url', 'http://127.0.0.1:9', '--out', join(dir, 'out')], {
-      cwd: dir,
-      env,
-      encoding: 'utf8',
-      timeout: 30_000,
-    });
+    spawnSync(
+      process.execPath,
+      [MEASURE, '--url', 'http://127.0.0.1:9', '--out', join(dir, 'out')],
+      {
+        cwd: dir,
+        env,
+        encoding: 'utf8',
+        timeout: 30_000,
+      }
+    );
     assert.equal(existsSync(marker), false, 'measure.mjs loaded playwright-core from cwd');
   } finally {
     rmSync(dir, { recursive: true, force: true });
