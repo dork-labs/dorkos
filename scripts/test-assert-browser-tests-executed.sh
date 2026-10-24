@@ -59,6 +59,10 @@ make_workspace() {
   : >"$root/apps/e2e/tests/conversation/ask-anywhere.ts"
   : >"$root/apps/e2e/tests/conversation/ask-parks.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/dorkbot-seed-survives-reload.ts"
+  mkdir -p "$root/apps/e2e/tests/workbench"
+  : >"$root/apps/e2e/tests/workbench/doc-frame-companion-browser.ts"
+  : >"$root/apps/e2e/tests/workbench/doc-frame-outside-browser.ts"
+  : >"$root/apps/e2e/tests/workbench/doc-frame-sdk-browser.ts"
   cat >"$root/apps/e2e/test-results/results.json" <<'JSON'
 {
   "suites": [
@@ -89,6 +93,15 @@ make_workspace() {
     { "title": "chat/session-read-state.ts", "file": "chat/session-read-state.ts",
       "specs": [ { "title": "the module's suite runs", "file": "chat/session-read-state.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "workbench/doc-frame-companion-browser.ts", "file": "workbench/doc-frame-companion-browser.ts",
+      "specs": [ { "title": "the doc-frame-companion-browser module's suite runs", "file": "workbench/doc-frame-companion-browser.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
+    { "title": "workbench/doc-frame-outside-browser.ts", "file": "workbench/doc-frame-outside-browser.ts",
+      "specs": [ { "title": "the doc-frame-outside-browser module's suite runs", "file": "workbench/doc-frame-outside-browser.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
+    { "title": "workbench/doc-frame-sdk-browser.ts", "file": "workbench/doc-frame-sdk-browser.ts",
+      "specs": [ { "title": "the doc-frame-sdk-browser module's suite runs", "file": "workbench/doc-frame-sdk-browser.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "dashboard-sidebar/dorkbot-seed-survives-reload.ts", "file": "dashboard-sidebar/dorkbot-seed-survives-reload.ts",
       "specs": [ { "title": "the second module's suite runs", "file": "dashboard-sidebar/dorkbot-seed-survives-reload.ts",
                    "tests": [ { "status": "expected" } ] } ] },
@@ -116,7 +129,7 @@ make_workspace() {
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
   "config": { "shard": null },
-  "stats": { "expected": 16, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 19, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -201,7 +214,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '16 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '19 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
@@ -455,7 +468,7 @@ check 'a missing quarantine list is refused, never assumed empty' "$tmp/qMissing
 
 make_workspace "$tmp/qEmpty"
 : >"$tmp/qEmpty/quarantine.txt"
-check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '16 test(s) executed' \
+check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '19 test(s) executed' \
   --quarantined "$tmp/qEmpty/quarantine.txt"
 
 # The tally check must keep working WHILE the lane is absorbing. It used to be
@@ -547,7 +560,7 @@ check 'a stats block with no numbers is refused, not skipped past' \
 make_workspace "$tmp/sharded"
 make_shards "$tmp/sharded" 3
 sharded=$tmp/sharded/apps/e2e/test-results
-check 'a healthy three-shard run passes' "$tmp/sharded" 0 '16 test(s) executed' \
+check 'a healthy three-shard run passes' "$tmp/sharded" 0 '19 test(s) executed' \
   "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
 
 # The size CI actually runs (browser-test.yml's matrix, six since 2026-09-27).
@@ -556,7 +569,7 @@ check 'a healthy three-shard run passes' "$tmp/sharded" 0 '16 test(s) executed' 
 make_workspace "$tmp/sharded6"
 make_shards "$tmp/sharded6" 6
 sharded6=$tmp/sharded6/apps/e2e/test-results
-check 'a healthy six-shard run passes' "$tmp/sharded6" 0 '16 test(s) executed' \
+check 'a healthy six-shard run passes' "$tmp/sharded6" 0 '19 test(s) executed' \
   "$sharded6/shard-1.json" "$sharded6/shard-2.json" "$sharded6/shard-3.json" \
   "$sharded6/shard-4.json" "$sharded6/shard-5.json" "$sharded6/shard-6.json"
 check 'a six-shard run missing one shard is refused by count' "$tmp/sharded6" 1 \
