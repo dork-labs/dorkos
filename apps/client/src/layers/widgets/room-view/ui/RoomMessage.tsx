@@ -420,14 +420,11 @@ export function RoomMessage({
         )}
         <Message.Content
           id={contentId}
-          // A long unbroken token — a URL, a file path, a hash pasted as
-          // `code` — is wider than the column and had nowhere to go: the column
-          // is `min-w-0`, so the overflow was simply clipped and the end of the
-          // token was unreadable and unselectable. Inline code breaks mid-token,
-          // which is right for something that is not prose; a fenced block
-          // scrolls instead, because breaking a line of code changes what it
-          // says.
-          className="[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto"
+          // A long unbroken token — a URL, file path or hash, whether or not the
+          // author marked it as code — must yield to a phone-width column.
+          // Fenced blocks scroll instead, because breaking a line of code
+          // changes what it says.
+          className="wrap-anywhere [&_pre]:overflow-x-auto [&_pre]:wrap-normal"
         >
           {entry.body.fileChange ? (
             // A person's change to the room's files, drawn as plain text from
