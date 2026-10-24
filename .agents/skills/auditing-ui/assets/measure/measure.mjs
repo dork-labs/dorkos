@@ -22,8 +22,11 @@
  *     [--ignore '<css>']   # skip anything inside these (e.g. the playground's own chrome)
  *
  * Playwright: resolves `playwright-core`, then `playwright`, then `@playwright/test` (this repo
- * has the last in apps/e2e). Set PLAYWRIGHT_FROM=<dir> to resolve from somewhere else, and
+ * has the last in apps/e2e). It looks in PLAYWRIGHT_FROM, then this folder, then apps/e2e, and
+ * never in the current directory. Set PLAYWRIGHT_FROM=<dir> to resolve from somewhere else, and
  * CHROME_PATH=<binary> to use a specific Chromium (e.g. a headless shell).
+ *
+ * It refuses any --url on port 4242, the operator's own DorkOS, however the host is spelled.
  *
  * Output (in --out): shots/<route>/<w>x<h>-<theme>[-<mode>].png, measure.json (every flag plus
  * per-capture stats), summary.md (counts by rule and severity, worst offenders first).
@@ -36,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 import { focusWalkPage } from './focus-walk.mjs';
 import { measureInPage } from './in-page.mjs';
 import { writeReport } from './report.mjs';
+import { playwrightRoots, refuseUrl } from './guards.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +69,15 @@ const routes = String(args.routes ?? '/')
   .split(',')
   .map((r) => r.trim())
   .filter(Boolean);
+// Check every address the script will visit, not only --url: a route like
+// ':4242/' turns 'http://localhost' into the operator's own DorkOS.
+for (const target of [String(args.url), ...routes.map((r) => base + r)]) {
+  const refusal = refuseUrl(target);
+  if (refusal) {
+    console.error(`measure.mjs: ${refusal}`);
+    process.exit(2);
+  }
+}
 const viewports = String(args.viewports ?? '390x844,375x667,768x1024,1440x900')
   .split(',')
   .map((v) => {
@@ -86,14 +99,8 @@ const floors = JSON.parse(
 
 // ---------------------------------------------------------------- playwright
 function loadChromium() {
-  const roots = [
-    process.env.PLAYWRIGHT_FROM,
-    process.cwd(),
-    here,
-    resolve(here, '../../../../../apps/e2e'),
-  ].filter(Boolean);
-  for (const root of roots) {
-    const req = createRequire(join(resolve(root), 'noop.js'));
+  for (const root of playwrightRoots(process.env.PLAYWRIGHT_FROM, here)) {
+    const req = createRequire(join(root, 'noop.js'));
     for (const name of ['playwright-core', 'playwright', '@playwright/test']) {
       try {
         const mod = req(name);
