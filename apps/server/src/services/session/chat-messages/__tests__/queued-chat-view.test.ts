@@ -149,6 +149,7 @@ describe('the queue a person reads', () => {
       ...chatRow(fenced('Please hold PR #12.')),
       position: 1,
       context: null,
+      heldToDefault: false,
     };
     setQueuedChatView((row) => queuedChatViewOf(() => [record()], row));
 
