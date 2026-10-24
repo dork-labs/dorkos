@@ -429,3 +429,9 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     expect(run.yielded.at(-1)?.type).toBe('done');
   });
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

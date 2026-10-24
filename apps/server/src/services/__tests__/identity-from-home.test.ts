@@ -281,3 +281,11 @@ async function writeIdentity(dir: string, identity: Identity): Promise<void> {
   fs.writeFileSync(path.join(dir, '.dork', 'SOUL.md'), `${identity.soul}\n`);
   fs.writeFileSync(path.join(dir, '.dork', 'NOPE.md'), `${identity.nope}\n`);
 }
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../runtimes/claude-code/accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<
+    typeof import('../runtimes/claude-code/accounts/account-login-metadata.js')
+  >()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

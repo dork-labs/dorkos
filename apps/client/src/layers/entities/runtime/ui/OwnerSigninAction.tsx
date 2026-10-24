@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClaudeSigninPolicyChange } from '@dorkos/shared/runtime-connect';
-import { useTransport } from '@/layers/shared/model';
+import { configKeys, useTransport } from '@/layers/shared/model';
 import {
   Button,
   Dialog,
@@ -48,7 +48,7 @@ export function OwnerSigninAction({
       await transport.changeClaudeSigninPolicy({ ...change, password: stepUp });
       await Promise.all([
         client.invalidateQueries({ queryKey: SIGNIN_POLICY_KEY }),
-        client.invalidateQueries({ queryKey: ['config'] }),
+        client.invalidateQueries({ queryKey: configKeys.current() }),
         client.invalidateQueries({ queryKey: ['accounts'] }),
       ]);
       setOpen(false);

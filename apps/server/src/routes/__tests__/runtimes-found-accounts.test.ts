@@ -1,3 +1,4 @@
+import { seedSigninPolicyFixture } from '../../services/health/__tests__/policy-fixture.js';
 /**
  * The "Found on this computer" routes (spec `claude-account-ui` §7.4), on a
  * real config file. The carve-out's folder listing, comparable form and default
@@ -76,6 +77,7 @@ beforeEach(() => {
   fake.home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dork-found-route-home-')));
   dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-found-route-dork-'));
   fs.writeFileSync(path.join(dorkHome, 'config.json'), JSON.stringify({}), 'utf-8');
+  seedSigninPolicyFixture(dorkHome);
   initConfigManager(dorkHome);
 });
 

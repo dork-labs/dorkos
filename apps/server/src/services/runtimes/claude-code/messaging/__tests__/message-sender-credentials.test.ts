@@ -114,3 +114,9 @@ describe('executeSdkQuery — Claude credential injection (ADR-0315)', () => {
     expect(allLogArgs.some((s) => s.includes('sk-secret-should-not-log'))).toBe(false);
   });
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

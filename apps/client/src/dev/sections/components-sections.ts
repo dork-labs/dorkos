@@ -1,5 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
-import { APP_TABS_SECTIONS } from './app-tabs-sections';
+import { COMPONENTS_SETTINGS_SECTIONS } from './components-settings-sections';
 
 /**
  * Component sections from ComponentsPage.
@@ -167,7 +167,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
   },
-  ...APP_TABS_SECTIONS,
+  ...COMPONENTS_SETTINGS_SECTIONS,
   // SidebarShowcases
   {
     id: 'sidebarrow',

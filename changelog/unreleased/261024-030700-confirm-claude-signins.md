@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(runtimes): refresh confirmed sign-ins through the shared config query'
   - 'fix(runtimes): keep excluded account aliases out of probes'
   - 'fix(runtimes): pause Claude accounts until their login is confirmed'
 ---

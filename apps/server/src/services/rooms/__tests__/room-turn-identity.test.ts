@@ -372,3 +372,11 @@ describe('a room turn, standing at home', () => {
     });
   });
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../runtimes/claude-code/accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<
+    typeof import('../../runtimes/claude-code/accounts/account-login-metadata.js')
+  >()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));
