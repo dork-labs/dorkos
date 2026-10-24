@@ -40,7 +40,7 @@ export function refuseUrl(raw) {
     return `--url must be http or https, not ${url.protocol}`;
   }
   if (url.port === OPERATOR_PORT) {
-    return `--url points at port ${OPERATOR_PORT}, the operator's own DorkOS. Measure a dev or preview server instead (see SKILL.md).`;
+    return `${raw} is on port ${OPERATOR_PORT}, the operator's own DorkOS. Measure a dev or preview server instead (see SKILL.md).`;
   }
   return null;
 }
