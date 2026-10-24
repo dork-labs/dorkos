@@ -80,7 +80,6 @@ import { disclosedEffectsOf } from '../../preview/disclosed-effects.js';
 import { UnsupportedSourceUrlError } from '../../sources/source-url-policy.js';
 import { reportInstallEvent } from '../../telemetry/telemetry-hook.js';
 import { readInstallMetadata, writeInstallMetadata } from '../../installed-metadata.js';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { recordProjectInstall } from '../../lib/project-install-index.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents } from '@dorkos/db';
