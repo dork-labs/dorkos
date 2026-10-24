@@ -60,7 +60,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.42",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "^41.10.7",
+    "electron": "^42.11.16",
     "electron-builder": "^26.17.0",
     "electron-builder-squirrel-windows": "26.17.0",
     "electron-vite": "^5.0.0",
