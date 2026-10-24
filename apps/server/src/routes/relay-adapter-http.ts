@@ -12,7 +12,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
-import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { SecretWriter } from '../services/relay/adapter-secret-policy.js';
 
@@ -43,15 +44,20 @@ export function sendAdapterError(c: Context<ApiEnv>, err: AdapterError): Respons
 
 /**
  * Who is writing an adapter's settings, for the secret rules (DOR-3271): a
- * person only when the caller clears the agent bar, the same bar that keeps
- * credentials operator-only in `routes/config.ts`.
+ * person only when the caller is the owner of this install
+ * (`refuseUnlessAccountOwner`, the bar the account and provider-key routes
+ * use). An `env:` or `keychain:` reference reads the owner's own machine, so a
+ * signed-in person who does not own it writes as anyone else does.
  */
 export function secretWriter(c: Context<ApiEnv>): SecretWriter {
-  return clearsTheAgentBar(honoRequestFacts(c)) ? 'person' : 'agent';
+  return refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined ? 'person' : 'agent';
 }
 
-/** What an agent is told when it asks to confirm a connection's settings. */
-const PERSON_ONLY_CONFIRM = 'Only a person can confirm this setting.';
+/** How the confirm routes word a refusal: to anything but a person, and to a non-owner. */
+const CONFIRM_WORDING = {
+  personOnly: 'Only a person can confirm this setting.',
+  action: 'confirm this setting',
+};
 
 /**
  * `POST /adapters/:id/confirm-references` with `{ fingerprint }`: the owner
@@ -60,8 +66,9 @@ const PERSON_ONLY_CONFIRM = 'Only a person can confirm this setting.';
  * owner was shown, so a connection that changed since answers 409.
  * `DELETE` on the same path is the toast's Undo: it takes the approval back
  * and pauses the connection again. Both write the record that decides what a
- * connection may send, so both admit only a caller that clears the agent bar;
- * anything else gets a 403.
+ * connection may send, so both admit only the owner of this install
+ * (`person_only` for an agent, `owner_only` for a signed-in person who does not
+ * own it); anything else gets a 403.
  *
  * @param router - The adapter routes' router.
  * @param adapterManager - The adapter manager.
@@ -71,9 +78,8 @@ export function registerConfirmReferencesRoute(
   adapterManager: AdapterManager
 ): void {
   const handle = async (c: Context<ApiEnv>, undo: boolean) => {
-    if (secretWriter(c) !== 'person') {
-      return c.json({ error: PERSON_ONLY_CONFIRM, code: 'person_only' }, 403);
-    }
+    const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONFIRM_WORDING);
+    if (refusal) return c.json(refusal, 403);
     const body = undo ? undefined : (readJsonBody(c) as { fingerprint?: unknown } | undefined);
     if (!undo && typeof body?.fingerprint !== 'string') {
       return c.json({ error: 'Missing what you confirmed.', code: 'INVALID_CONFIG' }, 400);
