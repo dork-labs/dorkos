@@ -34612,6 +34612,730 @@
         }
       }
     },
+    "/api/runtimes/claude-code/signins": {
+      "get": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read Claude sign-in identity and exclusions",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned.",
+        "responses": {
+          "200": {
+            "description": "Owner policy and masked account identities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deniedOrganizations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ]
+                      }
+                    },
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "path",
+                          "label"
+                        ]
+                      }
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "identity": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "unreadable",
+                                  "unconfirmed",
+                                  "changed",
+                                  "blocked",
+                                  "confirmed",
+                                  "never-use"
+                                ]
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "previousEmail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "path",
+                          "name",
+                          "identity"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "deniedOrganizations",
+                    "folders",
+                    "accounts"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/organizations": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Exclude an organization",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "orgId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "orgId",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "429": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/organizations/{id}": {
+      "delete": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Remove an organization exclusion",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "429": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/folders": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Exclude a registered folder",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "accountId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "429": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/folders/{id}": {
+      "delete": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Remove a folder exclusion",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "429": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/{id}/accept": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Confirm a folder’s current identity",
+        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "429": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/{type}/login": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Start a vendor sign-in",
+        "description": "Claude requires an owner cookie and a registered accountId or a sessionId bound to a registered account. Paths and unknown accounts are refused; the default is never substituted. A completed login remains paused until its UUID identity is confirmed. Codex uses the existing person credential-change gate and accepts no accountId.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex"
+              ]
+            },
+            "required": true,
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [

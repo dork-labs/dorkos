@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * Read an idle Claude account's usage without running a turn (spec
  * `claude-account-fleet` D3).
@@ -199,6 +200,7 @@ async function runProbe(
     reason,
   });
   const root = account.path;
+  if (root && isNeverUseClaudeFolder(root)) return failed('excluded-account');
   const isAccountRoot = deps.isAccountRoot ?? isClaudeAccountRoot;
   if (!root || !isAccountRoot(root)) return failed('not-an-account');
 

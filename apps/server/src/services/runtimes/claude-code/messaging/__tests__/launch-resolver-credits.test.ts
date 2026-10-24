@@ -564,3 +564,9 @@ describe('the invariant: no ANTHROPIC_AUTH_TOKEN without a real link credential'
     }
   }
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

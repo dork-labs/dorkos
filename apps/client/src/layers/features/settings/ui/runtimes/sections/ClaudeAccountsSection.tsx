@@ -1,3 +1,5 @@
+import { describeWriteFailure } from '../runtime-write-error';
+import { AccountSigninIdentity } from '@/layers/entities/runtime';
 /**
  * Claude Code's declared `claude-accounts` settings section.
  *
@@ -143,9 +145,7 @@ function toWritableAccounts(accounts: readonly Account[]): WritableAccount[] {
 }
 
 /**
- * The registry rows with one new account appended: its id minted from the
- * label (else the folder's name) and made unique against the ids already
- * registered, the same rule the config migration backfills with.
+ * Append one registry row with a unique id.
  */
 function withNewAccount(
   accounts: readonly Account[],
@@ -172,9 +172,6 @@ function withNewAccount(
  * would go stale the day the guard's wording changes. The fallback covers a
  * transport that throws without a message at all.
  */
-function describeWriteFailure(err: unknown): string {
-  return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
-}
 
 /**
  * Which Claude Code account new work runs on, and the accounts DorkOS knows
@@ -728,6 +725,7 @@ function AccountRow({
         <p className="text-muted-foreground truncate font-mono text-xs" title={account.path}>
           {shortenHomePath(account.path)}
         </p>
+        {rule && <AccountSigninIdentity accountId={rule.accountId} name={name} />}
         {rule && <AccountRowRules name={name} rule={rule} disabled={disabled} />}
         {!account.isAccountRoot && (
           <p

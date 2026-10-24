@@ -1,3 +1,7 @@
+vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
+  accountLoginIdentity: () => ({ state: 'confirmed' }),
+  requireConfirmedAccountLogin: () => undefined,
+}));
 /**
  * Re-seat P0, driven through the real {@link RoomService} and dispatcher with
  * only the turn runner and the mover's ports scripted. QA's matrix:
@@ -13,7 +17,7 @@
  * - the re-run keeps the original trigger's ceiling (Security Must 3);
  * - one Activity entry per move (Security Must 6).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import type { RoomTurnRequest } from '../../room-turn-port.js';

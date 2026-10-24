@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * The Claude CLI auth probe: the ONE place that answers "does the `claude`
  * binary on this machine resolve, and is it signed in?".
@@ -135,7 +136,8 @@ export async function readClaudeAuthStatus(
   binary: string | null,
   env?: NodeJS.ProcessEnv
 ): Promise<ClaudeAuthStatus | null> {
-  if (!binary) return null;
+  if (!binary || (env?.CLAUDE_CONFIG_DIR && isNeverUseClaudeFolder(env.CLAUDE_CONFIG_DIR)))
+    return null;
   try {
     const out = await runBinaryProbe(
       binary,

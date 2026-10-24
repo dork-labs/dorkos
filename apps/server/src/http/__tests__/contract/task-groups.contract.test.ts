@@ -409,7 +409,7 @@ contractSuite(
       name: 'POST /api/runtimes/:type/login refuses a runtime with no sign-in',
       method: 'POST',
       path: '/api/runtimes/opencode/login',
-      expect: { status: 400, body: { ok: false, error: 'OpenCode does not support sign-in.' } },
+      expect: { status: 400, body: { ok: false, error: 'This app does not support sign-in.' } },
     },
     {
       name: 'POST /api/runtimes/:type/login refuses an empty account root',
@@ -418,7 +418,7 @@ contractSuite(
       body: { accountRoot: '' },
       expect: {
         status: 400,
-        body: { ok: false, error: 'accountRoot and sessionId must be non-empty strings.' },
+        body: { ok: false, error: 'Choose an account from Runtimes.' },
       },
     },
     {

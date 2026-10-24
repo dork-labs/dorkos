@@ -1,3 +1,4 @@
+import { createAccountSigninRoutes } from './account-signin.js';
 /**
  * Runtime connect + provisioning routes, mounted at `/api/runtimes`.
  *
@@ -26,11 +27,7 @@ import {
   checkRuntimeCredential,
 } from '../services/runtimes/connect/credentials.js';
 import { ConnectError } from '../services/runtimes/connect/connect-error.js';
-import {
-  delegateRuntimeLogin,
-  LOGIN_RUNTIME_TYPES,
-} from '../services/runtimes/connect/delegated-login.js';
-import { resolveAccountRootForSession } from '../services/runtimes/connect/resolve-session-account.js';
+import { runtimeLogin } from './runtime-login.js';
 import {
   buildAuthorizeUrl,
   handleOpenRouterCallback,
@@ -116,20 +113,6 @@ const OllamaPullBodySchema = z.object({
   // not (spec §3). The regex only rejects malformed input, never uncurated tags.
   model: z.string().min(1).regex(OLLAMA_TAG_PATTERN).optional(),
 });
-const LoginBodySchema = z.object({
-  // `claude-code` only: pin the login to this account root instead of the
-  // one DorkOS runs new sessions on (DOR-1652). Shape-validated here;
-  // `delegateRuntimeLogin` rejects it outright for `codex` (no config-dir
-  // concept there) and, for `claude-code`, against the known account roots —
-  // both before anything spawns.
-  accountRoot: z.string().min(1).optional(),
-  // Sign back into the account THIS session is bound to (DOR-1651). Preferred
-  // over `accountRoot` because only the server can answer it correctly for a
-  // session whose first turn failed before writing a transcript — the client's
-  // `Session.account` is derived from that transcript and is absent exactly
-  // then. See `resolveAccountRootForSession`.
-  sessionId: z.string().min(1).optional(),
-});
 
 /** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
 type ProvisionFn = (
@@ -176,6 +159,7 @@ export interface RuntimesRouterDeps {
  */
 export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
+  router.route('/claude-code/signins', createAccountSigninRoutes());
 
   // Which Claude accounts may work in which projects (spec `flow-multiproject`
   // §8.6), in their own module; mounted first so no `/:type/...` pattern below
@@ -696,53 +680,8 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     }
   });
 
-  /**
-   * POST /api/runtimes/:type/login — delegate the vendor CLI login terminal-free
-   * and detect completion (bounded). Returns `{ ok, error? }`. Loopback-only.
-   *
-   * Body is optional (Express 5 leaves `req.body` `undefined` on an empty POST):
-   * an omitted body signs in the account DorkOS runs new sessions on.
-   *
-   * Account precedence, highest first:
-   *
-   * 1. `{ sessionId }` — the account THAT session is bound to, resolved through
-   *    the launch ladder the server already owns (DOR-1651). Highest because it
-   *    is the only rung that is right for a session whose first turn failed
-   *    before a transcript existed; the client cannot compute it.
-   * 2. `{ accountRoot }` — an explicit pin, for callers with no session
-   *    (DOR-1652's seam).
-   * 3. Neither — the account DorkOS runs new sessions on.
-   *
-   * A `sessionId` that resolves to nothing falls through to `accountRoot`, then
-   * to the default: an unknown session degrades the pin, it never refuses the
-   * sign-in. `delegateRuntimeLogin` owns the rest of the validation — it rejects
-   * a pin outright for any type other than `claude-code`, and, for `claude-code`,
-   * against the known account roots, both before anything spawns.
-   */
-  router.post('/:type/login', async (c) => {
-    const refused = refuseCredentialChange(c);
-    if (refused) return refused;
-    const type = c.req.param('type');
-    if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type)) {
-      return c.json(
-        { ok: false, error: `${runtimeDisplayName(type)} does not support sign-in.` },
-        400
-      );
-    }
-    const parsed = LoginBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) {
-      return c.json(
-        { ok: false, error: 'accountRoot and sessionId must be non-empty strings.' },
-        400
-      );
-    }
-    const fromSession = parsed.data.sessionId
-      ? await resolveAccountRootForSession(parsed.data.sessionId)
-      : undefined;
-    const accountRoot = fromSession ?? parsed.data.accountRoot;
-    const result = await delegateRuntimeLogin(type, { accountRoot });
-    return c.json(result);
-  });
+  // Claude sign-ins require an owner and a server-resolved registry target.
+  router.post('/:type/login', runtimeLogin);
 
   return router;
 }

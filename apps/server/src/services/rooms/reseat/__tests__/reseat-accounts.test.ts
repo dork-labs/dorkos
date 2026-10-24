@@ -1,3 +1,6 @@
+vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
+  accountLoginIdentity: () => ({ state: 'confirmed' }),
+}));
 /**
  * Which account a room seat moves to (Security Must 4): only accounts core's
  * own ranking offers for the folder's project (person-set eligibility, never
@@ -5,7 +8,7 @@
  * credits, never one that is out or nearly out. None left: the earliest time
  * any of them is usable again, so the room can say when.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { RankedAccount } from '../../../core/usage/account-ranking.js';
 import { nearlyOut, pickReseatAccount } from '../reseat-accounts.js';

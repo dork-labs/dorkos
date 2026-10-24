@@ -1,3 +1,6 @@
+import { accountLoginIdentity } from '../claude-code/accounts/account-login-metadata.js';
+import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
+import { signinAccounts } from './signin-accounts.js';
 /**
  * Delegated vendor login — spawns a runtime's own CLI login flow terminal-free
  * and detects completion, so a user connects Claude or Codex without opening a
@@ -18,31 +21,6 @@
  * Binary resolution reuses each adapter's own resolver (plain functions, not SDK
  * imports), so SDK confinement (Hard Rule #2) is unaffected.
  *
- * ## Account pinning (DOR-1652)
- *
- * A `claude-code` login is spawned with `CLAUDE_CONFIG_DIR` explicitly pinned
- * ({@link claudeConfigDirEnv}) to the account DorkOS runs a NEW session on by
- * default — `runtimes.claudeCode.defaultAccount`, or the inherited
- * `$CLAUDE_CONFIG_DIR`/`~/.claude` chain when nothing is configured (rungs 3-4
- * of the account ladder in `claude-config-dir.ts`; see {@link
- * resolveActiveClaudeRoot}). Without this the spawned `claude auth login`
- * instead inherits whatever `CLAUDE_CONFIG_DIR` the SERVER PROCESS happens to
- * have, which on a multi-account machine can silently re-authenticate the
- * wrong account. Today's only caller (Settings → "Fix sign-in") carries no
- * session identity, so this default is what it gets.
- *
- * An explicit {@link ResolveLoginCommandOptions.accountRoot} pins to a
- * DIFFERENT, specific account instead — validated against {@link
- * resolveClaudeRootSet} before anything spawns, so an unrecognized path is
- * rejected rather than handed to a child process, and rejected outright for
- * any runtime type other than `claude-code`. DOR-1651 (inline sign-in from a
- * session's error card) is the intended consumer: it knows that session's
- * actual bound account (rungs 1-2 of the ladder — a launch hint, an agent
- * manifest, or the session's own persisted `accountRoot`) and will pass it
- * through here so re-login targets THAT account rather than just the default.
- * `codex` has no config-dir concept here and is unaffected: its `LoginCommand`
- * carries no `env`, so it spawns exactly as it did before this seam existed.
- *
  * @module services/runtimes/connect/delegated-login
  */
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
@@ -54,11 +32,7 @@ import { logger } from '../../../lib/logger.js';
 import { noteSigninRepaired } from '../../observability/index.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
-import {
-  claudeConfigDirEnv,
-  resolveActiveClaudeRoot,
-  resolveClaudeRootSet,
-} from '../claude-code/claude-config-dir.js';
+import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-code/claude-config-dir.js';
 import { isCreditsClaudeRoot } from '../claude-code/credits-root.js';
 
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
@@ -184,7 +158,8 @@ function isKnownClaudeAccountRoot(root: string): boolean {
   // person's own subscription the moment the token went missing.
   if (isCreditsClaudeRoot(root)) return false;
   const target = path.resolve(root);
-  return resolveClaudeRootSet().some((known) => path.resolve(known) === target);
+  if (isNeverUseClaudeFolder(root)) return false;
+  return signinAccounts().some((known) => path.resolve(known.path) === target);
 }
 
 /**
@@ -309,18 +284,10 @@ export function pipeSecretToChild(
  * detect completion. Returns an honest, binary-not-found state when the vendor
  * CLI is unresolvable (Codex install is handled in T0; Claude ships bundled).
  *
- * `deps.accountRoot` pins a `claude-code` login to a specific account instead
- * of the account DorkOS runs new sessions on. Its intended caller is DOR-1651
- * (inline sign-in from a session's error card), which knows that session's
- * actual bound account (DOR-1652 introduces the seam; DOR-1651 is the first
- * caller to pass a non-default root). It is rejected outright for any type
- * other than `claude-code` — accounts are a Claude-only concept here — and
- * for `claude-code` it is validated against {@link resolveClaudeRootSet}
- * BEFORE anything spawns: a root that resolver does not recognize resolves
- * to an honest `{ ok: false }` rather than reaching a child process with an
- * arbitrary caller-supplied path. Omitted, the login pins to {@link
- * resolveActiveClaudeRoot} (see {@link resolveLoginCommand}) — the account
- * DorkOS runs a new session on by default.
+ * The HTTP route resolves a Claude account by registry ID before entering here.
+ * This internal pin is checked against the same server registry before a spawn.
+ * Successful CLI completion is not proof of health: UUID identity must still
+ * match the owner's confirmed binding and the exclusion policy.
  *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
  * @param deps - Injectable timeout + spawn seam + command resolver (for tests),
@@ -379,6 +346,12 @@ export async function delegateRuntimeLogin(
     // credential for the account we pinned it to — the one moment an operator can
     // end a standing "sign-in stopped working" condition on purpose, instead of
     // waiting for a turn to happen to run on that same account (DOR-1910).
+    if (result.ok && type === 'claude-code') {
+      const root = signedInAccount(type, deps.accountRoot);
+      const identity = root ? accountLoginIdentity(root) : { state: 'unreadable' as const };
+      if (identity.state !== 'confirmed')
+        return { ok: false, identity, error: 'Review this sign-in in Runtimes.' };
+    }
     if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot));
     return result;
   })();
@@ -424,11 +397,9 @@ function signedInAccount(type: string, accountRoot: string | undefined): string 
  * login output carries no secret, but we still normalize to one short line and
  * never surface a raw multi-line stack to the Connect UI.
  */
-function honestLoginError(detail: string): string {
-  const firstLine = detail
-    .split(/\r?\n/)
-    .find((l) => l.trim())
-    ?.trim();
-  logger.warn('[Connect] delegated login did not complete', { detail: firstLine });
-  return firstLine ? `Sign-in failed: ${firstLine}` : 'Sign-in failed. Please try again.';
+function honestLoginError(_detail: string): string {
+  // CLI stderr may contain an address, token or browser URL. It never leaves
+  // this boundary, including in logs; the page supplies the account's name.
+  logger.warn('[Connect] delegated login did not complete');
+  return 'Couldn’t sign in. Try again.';
 }

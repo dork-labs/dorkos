@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
 /**
  * Resolves the Claude Agent SDK's config roots — the directories holding
  * `projects/` (JSONL transcripts), `todos/`, and other SDK-managed state.
@@ -272,6 +273,7 @@ function readClaudeCodeConfig(config: ConfigReader): {
  * @returns True when the folder holds a `projects/` directory.
  */
 export function isClaudeAccountRoot(dir: string): boolean {
+  if (!isCreditsClaudeRoot(dir) && isNeverUseClaudeFolder(dir)) return false;
   try {
     return fs.statSync(path.join(dir, 'projects')).isDirectory();
   } catch {
@@ -667,6 +669,7 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
   const seen = new Set<string>();
   const roots: string[] = [];
   for (const candidate of candidates) {
+    if (!isCreditsClaudeRoot(candidate) && isNeverUseClaudeFolder(candidate)) continue;
     // Dedupe on the resolved path so `~/.claude` and `~/.claude/` are one root,
     // but emit the candidate as written. The active root is first, so its
     // spelling is the one that survives.
@@ -722,6 +725,8 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
  * @returns A one-entry env fragment to spread AFTER `...process.env`.
  */
 export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
+  if (!isCreditsClaudeRoot(root) && isNeverUseClaudeFolder(root))
+    throw new Error('This Claude folder is excluded in Runtimes.');
   const ambient = ambientClaudeConfigDir();
   // Compared by real path (`canonicalAccountPath`), so a symlink or another
   // spelling of `~/.claude` is still `~/.claude` and still reaches the child as
@@ -870,34 +875,36 @@ export function describeClaudeCodeAccounts(
     // account is not registered" and "nobody can say" — see
     // `readClaudeCodeConfig`.
     ...(unavailable ? { accountsUnavailable: true } : {}),
-    accounts: accounts.map((account) => ({
-      // The id agents and launch hints reference this account by. Never `null`
-      // for a REGISTERED account, including on a config the migration has not
-      // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
-      // reserved for a row a caller synthesizes to describe an unregistered
-      // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
-      id: account.id,
-      path: account.path,
-      label: account.label,
-      // Resolved by position when the operator stored none; `colorIsDefault`
-      // lets the settings screen write `null` back for such a row, so it keeps
-      // following the palette instead of freezing today's default into the file.
-      color: account.color,
-      colorIsDefault: account.colorIsDefault,
-      // NOT `exists`: this is D4's structural check, so a directory that is
-      // really there but holds no `projects/` reports false. Naming it `exists`
-      // would read as `fs.existsSync` to any UI and mislabel that case.
-      isAccountRoot: isClaudeAccountRoot(account.path),
-      // The projects the account is kept to, named, so Settings can say "Only
-      // for client-app" (spec `flow-multiproject` §8.5).
-      onlyProjects:
-        account.onlyProjects == null
-          ? null
-          : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
-      // Sent only when on, so Settings' "Move agents here automatically" switch
-      // reads it, and a row without it reads the same wire as before.
-      ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
-    })),
+    accounts: accounts
+      .filter((account) => !isNeverUseClaudeFolder(expandClaudeAccountHome(account.path)))
+      .map((account) => ({
+        // The id agents and launch hints reference this account by. Never `null`
+        // for a REGISTERED account, including on a config the migration has not
+        // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
+        // reserved for a row a caller synthesizes to describe an unregistered
+        // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
+        id: account.id,
+        path: account.path,
+        label: account.label,
+        // Resolved by position when the operator stored none; `colorIsDefault`
+        // lets the settings screen write `null` back for such a row, so it keeps
+        // following the palette instead of freezing today's default into the file.
+        color: account.color,
+        colorIsDefault: account.colorIsDefault,
+        // NOT `exists`: this is D4's structural check, so a directory that is
+        // really there but holds no `projects/` reports false. Naming it `exists`
+        // would read as `fs.existsSync` to any UI and mislabel that case.
+        isAccountRoot: isClaudeAccountRoot(account.path),
+        // The projects the account is kept to, named, so Settings can say "Only
+        // for client-app" (spec `flow-multiproject` §8.5).
+        onlyProjects:
+          account.onlyProjects == null
+            ? null
+            : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
+        // Sent only when on, so Settings' "Move agents here automatically" switch
+        // reads it, and a row without it reads the same wire as before.
+        ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
+      })),
     ...describeAccountRules(config, unavailable),
     credits,
   };

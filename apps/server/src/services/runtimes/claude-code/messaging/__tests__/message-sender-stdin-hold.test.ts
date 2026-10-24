@@ -506,3 +506,9 @@ describe('executeSdkQuery — stdin stays open while the turn is alive (DOR-1238
     );
   });
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * Finds the Claude account folders on this computer that DorkOS does not know
  * about yet, for Settings' "Found on this computer" list (spec
@@ -209,6 +210,7 @@ function candidateFolders(env: FolderEnv): { dir: string; canonical: string }[] 
   const seen = new Set<string>();
   const out: { dir: string; canonical: string }[] = [];
   for (const dir of env.candidates) {
+    if (isNeverUseClaudeFolder(dir)) continue;
     if (!isFolder(dir) || !isFolder(path.join(dir, 'projects'))) continue;
     // A symlink and its target are one folder; the first by name is kept.
     const canonical = env.canonical(dir);

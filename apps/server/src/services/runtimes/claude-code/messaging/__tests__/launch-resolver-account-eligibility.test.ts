@@ -165,3 +165,9 @@ describe('a new session whose ladder refuses', () => {
     expect((captured!.env as Record<string, string | undefined>).CLAUDE_CONFIG_DIR).toBe(WORK_ROOT);
   });
 });
+
+// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
+vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
+  requireConfirmedAccountLogin: vi.fn(),
+}));

@@ -1,3 +1,4 @@
+import { requireConfirmedAccountLogin } from '../accounts/account-login-metadata.js';
 /**
  * Everything a claude-code launch is resolved from, in one place, so the two
  * dispatch paths cannot drift (spec `persistent-session-runtime` §P3, task
@@ -362,12 +363,6 @@ export async function resolveLaunch(args: {
   // settled; running the ladder anyway would let a stale hint or a since-changed
   // agent setting move a live conversation's billing mid-stream. `undefined` is
   // "unknown", never an error: a session with no transcript yet legitimately has
-  // no account of its own, and that is exactly the case the ladder answers.
-  //
-  // The ladder keeps to the accounts that may work in this folder's project
-  // (spec `flow-multiproject` §8.4). A refusal throws the plain sentence, which
-  // the turn reports as its error; an existing session keeps its account, since
-  // the rule applies when an account is picked, not mid-conversation.
   let accountRoot = session.accountRoot;
   if (accountRoot === undefined) {
     const launch = resolveLaunchAccountRoot({
@@ -382,6 +377,7 @@ export async function resolveLaunch(args: {
     if (!launch.ok) throw launch.error;
     accountRoot = launch.root;
   }
+  if (!isCreditsClaudeRoot(accountRoot)) requireConfirmedAccountLogin(accountRoot);
   const accountEnv = claudeConfigDirEnv(accountRoot);
 
   // **Who pays, decided by the folder** (ADR 261001-000811). A session whose

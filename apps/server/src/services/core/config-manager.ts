@@ -1,3 +1,4 @@
+import { initAccountSigninPolicy } from '../health/account-signin-policy.js';
 /**
  * Persistent user configuration — canonical entry point.
  *
@@ -990,5 +991,6 @@ export let configManager: ConfigManager;
 /** Initialize the config manager. Called once at startup. */
 export function initConfigManager(dorkHome: string): ConfigManager {
   configManager = new ConfigManager(dorkHome);
+  initAccountSigninPolicy(dorkHome);
   return configManager;
 }

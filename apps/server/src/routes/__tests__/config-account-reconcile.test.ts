@@ -1,3 +1,4 @@
+import { seedSigninPolicyFixture } from '../../services/health/__tests__/policy-fixture.js';
 /**
  * `PATCH /api/config` waits for the account usage store after a save that
  * changes Claude Code's accounts (spec `claude-account-ui` §6.5, "Main's own
@@ -15,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AccountUsageStore as AccountUsageStoreType } from '../../services/core/usage/account-usage-store.js';
 
-// The cockpit's user owns this install: account folders are a front-door
+// The app's user owns this install: account folders are a front-door
 // setting, changed by the owner at this computer (DOR-2969).
 vi.mock('../../services/core/auth/install-owner.js', () => ({
   isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_cockpit',
@@ -57,6 +58,7 @@ type Mods = {
 /** Fresh modules, config and app per test; `store` is installed as the process store. */
 async function mountApp(): Promise<Mods> {
   const configModule = await import('../../services/core/config-manager.js');
+  seedSigninPolicyFixture(tmpDir);
   configModule.initConfigManager(tmpDir);
   // A live binding, set by `initConfigManager`: read it after the call.
   const configManager = configModule.configManager;
