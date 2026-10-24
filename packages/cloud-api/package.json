@@ -46,14 +46,14 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "peerDependencies": {
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "keywords": [
     "dorkos",
