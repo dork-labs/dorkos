@@ -1,6 +1,6 @@
 /* global URL */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +30,17 @@ test('gate pattern equals Security reference and the installed interim checker',
 });
 
 const additions = [
+  ['.npmrc', '.npmrc.backup'],
+  ['apps/client/.npmrc', 'apps/client/npmrc'],
+  ['patches/dependency.patch', 'patches-old/dependency.patch'],
+  ['packages/shared/patches/dependency.patch', 'packages/shared/patches-old/dependency.patch'],
+  ['.pnpmfile.cjs', '.pnpmfile.cjs.old'],
+  ['packages/shared/.pnpmfile.cjs', 'packages/shared/pnpmfile.cjs'],
+  ['.nvmrc', '.nvmrcx'],
+  ['apps/client/.nvmrc', 'apps/client/nvmrc'],
+  ['PACKAGE.JSON', 'PACKAGE.JSONX'],
+  ['apps/client/Package.Json', 'apps/client/Package.Jsonx'],
+  ['packages/shared/pAcKaGe.JsOn', 'packages/shared/pAcKaGe.JsOnx'],
   ['package.json', 'package.jsonx'],
   ['apps/client/package.json', 'apps/client/package.jsonx'],
   ['packages/shared/package.json', 'packages/shared/packages.json'],
@@ -61,6 +72,13 @@ for (const [match, miss] of additions) {
       touchesSecurity([{ filename: 'docs/moved.md', previous_filename: match }], reference)
     );
     assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
+    // The coordinator uses POSIX ERE; keep its engine aligned with JavaScript.
+    const shell = spawnSync('grep', ['-E', reference], {
+      input: `${match}\n${miss}\n`,
+      encoding: 'utf8',
+    });
+    assert.equal(shell.status, 0, shell.stderr);
+    assert.equal(shell.stdout, `${match}\n`);
   });
 }
 
