@@ -164,7 +164,13 @@ describe('watchRoomAwaiting', () => {
       expect(agent.send).not.toHaveBeenCalled();
 
       service.removeMember(room.id, human, member.id);
-      // Ignore the separate room_member_removed broadcast from the service.
+      expect(JSON.parse(inside.send.mock.calls.at(-1)![0].json)).toMatchObject({
+        event: 'room_member_removed',
+        data: { roomId: room.id, authorId: member.id },
+      });
+      expect(outside.send).not.toHaveBeenCalled();
+      expect(agent.send).not.toHaveBeenCalled();
+      // Ignore the separately addressed removal notice from the service.
       for (const stream of [inside, outside, agent]) stream.send.mockClear();
       ops.ingest({ type: 'interaction_resolved', id: 'tool-1' } as RawSessionEvent);
       listener({ sessionId: 'ses-ops' });

@@ -32,6 +32,7 @@ import type { RoomVisibility } from '../service/room-visibility.js';
 
 /** Every write that changes who is in a room. */
 export class RoomMembership {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly roster: RoomRoster;
   private readonly bridges: BridgeStore;
@@ -47,6 +48,7 @@ export class RoomMembership {
     private readonly authority: RoomAuthority,
     private readonly systemPosts: RoomSystemPosts
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.roster = core.roster;
     this.bridges = core.bridges;
@@ -186,7 +188,11 @@ export class RoomMembership {
     ) {
       this.store.setLead(roomId, member.authorId);
     }
-    eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
+    eventFanOut.broadcast(
+      'room_member_added',
+      { roomId, authorId: member.authorId },
+      this.roomAudience(roomId)
+    );
     this.followRosterTitle(room, priorTitleNames);
     return member;
   }
@@ -269,11 +275,15 @@ export class RoomMembership {
     if (title === '' || title === room.title) return;
     const updated = this.store.updateRoom(room.id, { title });
     if (!updated) return;
-    eventFanOut.broadcast('room_updated', {
-      roomId: updated.id,
-      title: updated.title,
-      archived: updated.archived,
-    });
+    eventFanOut.broadcast(
+      'room_updated',
+      {
+        roomId: updated.id,
+        title: updated.title,
+        archived: updated.archived,
+      },
+      this.roomAudience(updated.id)
+    );
   }
 
   /**
@@ -441,7 +451,11 @@ export class RoomMembership {
     // `RoomTriggerDispatcher.abandonHolds` for why the removal is its own
     // durable, visible sibling.
     this.triggers.abandonHolds(roomId, authorId);
-    eventFanOut.broadcast('room_member_removed', { roomId, authorId });
+    eventFanOut.broadcast(
+      'room_member_removed',
+      { roomId, authorId },
+      this.roomAudience(roomId, authorId)
+    );
   }
 
   /**

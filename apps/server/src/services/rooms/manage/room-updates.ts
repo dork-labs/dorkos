@@ -45,6 +45,7 @@ const ROOM_TURN_LIMIT_FIELDS = [
 
 /** Every way an existing room's own row is written. */
 export class RoomUpdates {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly bridges: BridgeStore;
   private readonly triggers: RoomTriggerDispatcher;
@@ -59,6 +60,7 @@ export class RoomUpdates {
     private readonly projection: RoomProjection,
     private readonly systemPosts: RoomSystemPosts
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.bridges = core.bridges;
     this.triggers = core.triggers;
@@ -363,11 +365,15 @@ export class RoomUpdates {
     if (deliverNotices !== undefined) {
       this.bridges.setDeliverNotices(roomId, deliverNotices);
     }
-    eventFanOut.broadcast('room_updated', {
-      roomId: updated.id,
-      title: updated.title,
-      archived: updated.archived,
-    });
+    eventFanOut.broadcast(
+      'room_updated',
+      {
+        roomId: updated.id,
+        title: updated.title,
+        archived: updated.archived,
+      },
+      this.roomAudience(updated.id)
+    );
     return this.projection.withRoster(updated, viewerAuthorId);
   }
 

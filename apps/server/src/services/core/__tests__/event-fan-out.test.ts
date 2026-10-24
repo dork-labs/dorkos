@@ -403,12 +403,12 @@ describe('EventFanOut', () => {
       const seen: [string, unknown][] = [];
       const unsub = eventFanOut.subscribe((name, data) => seen.push([name, data]));
       try {
-        eventFanOut.broadcast('room_created', { roomId: 'room-1' });
+        eventFanOut.broadcast('room_created', { roomId: 'room-1' }, () => false);
         expect(seen).toEqual([['room_created', { roomId: 'room-1' }]]);
       } finally {
         unsub();
       }
-      eventFanOut.broadcast('room_created', { roomId: 'room-2' });
+      eventFanOut.broadcast('room_created', { roomId: 'room-2' }, () => false);
       expect(seen, 'unsubscribing stops delivery').toHaveLength(1);
     });
 
@@ -422,7 +422,9 @@ describe('EventFanOut', () => {
         eventFanOut.subscribe((name) => seen.push(name)),
       ];
       try {
-        expect(() => eventFanOut.broadcast('room_updated', { roomId: 'room-1' })).not.toThrow();
+        expect(() =>
+          eventFanOut.broadcast('room_updated', { roomId: 'room-1' }, () => false)
+        ).not.toThrow();
         expect(seen, 'the second listener still ran').toEqual(['room_updated']);
         expect(logger.warn).toHaveBeenCalled();
       } finally {
