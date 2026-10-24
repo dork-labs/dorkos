@@ -97,6 +97,28 @@ describe('RightPanelHeader', () => {
     mockActiveRightPanelTab = 'agent';
   });
 
+  it('offers no close control on a permanent tab, and keeps it on the others (FB-60)', () => {
+    const onCloseView = vi.fn();
+    const profile = { ...makeContribution('agent', { title: 'Profile' }), permanent: true };
+    const canvas = makeContribution('canvas', { title: 'Canvas' });
+    const { rerender } = render(
+      <TooltipProvider>
+        <RightPanelHeader contributions={[profile, canvas]} onCloseView={onCloseView} />
+      </TooltipProvider>
+    );
+    expect(screen.queryByRole('button', { name: 'Close Profile view' })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Profile' }), { key: 'Delete' });
+    expect(onCloseView).not.toHaveBeenCalled();
+
+    mockActiveRightPanelTab = 'canvas';
+    rerender(
+      <TooltipProvider>
+        <RightPanelHeader contributions={[profile, canvas]} onCloseView={onCloseView} />
+      </TooltipProvider>
+    );
+    expect(screen.getByRole('button', { name: 'Close Canvas view' })).toBeInTheDocument();
+  });
+
   it('renders one tab per contribution when there are 2+', () => {
     renderHeader([
       makeContribution('agent', { title: 'Profile' }),
@@ -274,6 +296,31 @@ describe('RightPanelHeader — a tab strip that scrolls instead of clipping', ()
     for (const tab of screen.getAllByRole('tab')) {
       expect(tab.className).toContain('shrink-0');
       expect(tab.className).toContain('whitespace-nowrap');
+    }
+  });
+
+  it('below desktop, snaps to a tab and keeps room past the last one, so none sits half-drawn', () => {
+    // DOR-3075: at 390px the last tab sat half under the fade beside the
+    // panel's buttons. The docked desktop strip keeps its look.
+    renderHeader(
+      ['agent', 'files', 'canvas', 'browser', 'computer', 'work', 'social'].map((id) =>
+        makeContribution(id)
+      )
+    );
+    const classes = scroller().className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'max-lg:snap-x',
+        'max-lg:snap-proximity',
+        'max-lg:scroll-px-6',
+        'max-lg:pe-6',
+      ])
+    );
+    expect(classes.filter((name) => !name.startsWith('max-lg:'))).not.toEqual(
+      expect.arrayContaining(['snap-x'])
+    );
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab.closest('.group\\/view')?.className).toContain('max-lg:snap-start');
     }
   });
 

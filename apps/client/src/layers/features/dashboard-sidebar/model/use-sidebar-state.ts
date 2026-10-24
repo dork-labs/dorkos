@@ -29,12 +29,10 @@ import {
   useExecutionExceptions,
   useResolvedAgents,
 } from '@/layers/entities/agent';
-import { useAttentionSignals } from '@/layers/entities/attention';
-import { mutedRoomIds, toSidebarModelPrefs, useSidebarPrefs } from '@/layers/entities/config';
+import { toSidebarModelPrefs, useSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useJumpBackIn } from '@/layers/entities/recents';
-import { useDirectChat, useRooms, useThreads } from '@/layers/entities/room';
+import { useRooms } from '@/layers/entities/room';
 import {
   RECENT_SESSIONS_WINDOW,
   useAgentAttentionMap,
@@ -44,23 +42,14 @@ import {
 } from '@/layers/entities/session';
 import type { SidebarTarget } from './build-sidebar-model';
 import { useBootState } from './boot/use-boot-state';
-import { useDigestFacts } from './use-digest-facts';
-import { useGettingStartedRetirement } from './use-getting-started-retirement';
-import { useJourneyFacts } from './use-journey-facts';
-import { useTodayRevealStore } from './today-reveal-store';
-import type {
-  AgentRosterEntry,
-  SidebarAddOnPage,
-  SidebarModelPrefs,
-  SidebarState,
-} from './sidebar-state';
+import type { AgentRosterEntry, SidebarAddOnPage, SidebarState } from './sidebar-state';
 
 /**
  * How coarse the model's clock is, in milliseconds.
  *
- * One minute, because the only two rules that read `state.now` are the 04:00
- * overnight boundary (BC-18) and the once-a-day digest (BC-22). A finer clock
- * would rebuild the whole tree for an answer that did not change.
+ * One minute, because the only rule that reads `state.now` is a smart
+ * section's "active in the last N days". A finer clock would rebuild the whole
+ * tree for an answer that did not change.
  */
 export const SIDEBAR_CLOCK_TICK_MS = 60_000;
 
@@ -72,15 +61,6 @@ export const SIDEBAR_CLOCK_TICK_MS = 60_000;
  * rebuild the whole model on every tick of that wait.
  */
 const NO_PATHS: string[] = [];
-
-/**
- * No @mention counts, as one identity.
- *
- * No client source can count them above a read cursor, so the field is always
- * this — omission, never a guess (BC-40). A shared empty rather than a fresh
- * `{}`, so it is never the reason a memo below it rebuilds.
- */
-const NO_MENTIONS: Record<string, number> = {};
 
 /**
  * The value a slot was last given, until it is given a different one by the
@@ -162,23 +142,22 @@ function useStableList(value: string[]): string[] {
  * URL is the one answer every window agrees on.
  *
  * **`/` is deliberately NOT a room target here**, even though it draws #team.
- * This value is the sidebar's notion of what is open, and it feeds far more than
- * a row tint: the scroll anchor, the working rollup, and which rows Today
- * gathers all read it. Making Home answer "the #team room" pinned #team into
- * Today and moved the anchor on every visit to the dashboard — a large behaviour
- * change smuggled in behind a highlight. The highlight is handled on its own,
- * next to the row that needs it (`SidebarChrome`'s `activeRoomId`).
+ * Home is not "a room is open" — the highlight on #team's row is handled on its
+ * own, next to the row that needs it (`SidebarChrome`'s `homeRoomId`), so the
+ * scroll anchor does not move on every visit to the dashboard.
+ *
+ * **A top item's page is open when you are on it** — Threads on `/threads`, the
+ * Directory on `/team` — so its door lights like any other row.
  *
  * **A mini app's page is open when you are on it or anywhere under it**, and it
  * names the one listed page that holds the address ({@link listedPageAt}), so
- * the Add-ons section lights one row. Every rule that reads this asks about
- * sessions and rooms, so an add-on target moves nothing but that tint.
+ * the Add-ons section lights one row.
  *
  * @param roomKindOf - Resolves a room id to its kind, from the room list.
  * @param addOns - The listed mini-app pages, for which one is open.
  */
 function useActiveTarget(
-  roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread',
+  roomKindOf: (roomId: string) => 'channel' | 'dm',
   addOns: readonly SidebarAddOnPage[]
 ): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -189,81 +168,43 @@ function useActiveTarget(
     id?: string;
     dir?: string;
     session?: string;
-    thread?: string;
   };
   const sessionId = pathname === '/session' ? (search.session ?? null) : null;
   // **Where the open chat lives comes from its route context, not the URL.**
   // Links no longer carry `?dir=` (`toSession` strips it), so reading the URL
-  // alone left a chat the session list had not caught up with yet — a brand-new
-  // one above all — with no agent, and its row said "Session" (DOR-2845). The
-  // route loader records the directory it resolved for every chat it opens.
+  // alone left a brand-new chat with no agent, and its agent's row dark
+  // (DOR-2845). The route loader records the directory it resolved for every
+  // chat it opens.
   const routeContext = useSessionRouteContext(sessionId);
   const cwd = pathname === '/session' ? (routeContext?.cwd ?? search.dir ?? null) : null;
   const roomId = pathname === '/channels' ? (search.id ?? null) : null;
-  // **`?thread=` is part of what is open, not decoration.** A thread row now
-  // navigates to it, so a reader that ignored it would answer "the room" for a
-  // click on the thread — and the anchor, the active tint and the scroll would
-  // all land on a different row from the one pressed. `?thread=` is the ROOT
-  // ENTRY a thread hangs off, which is also what keys the row (`rowKey`).
-  // `?thread=` is spelled the same on both routes and means the same thing.
-  const rootEntryId = pathname === '/channels' || pathname === '/' ? (search.thread ?? null) : null;
   const roomKind = roomId === null ? null : roomKindOf(roomId);
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };
+    if (pathname === '/threads') return { kind: 'command', commandId: 'open-threads' };
+    if (pathname === '/team') return { kind: 'command', commandId: 'open-directory' };
     if (addOnExtensionId !== null && addOnPath !== null) {
       return { kind: 'add-on', extensionId: addOnExtensionId, path: addOnPath };
     }
     if (roomId === null || roomKind === null) return null;
-    if (rootEntryId !== null) {
-      return { kind: 'room', roomId, roomKind: 'thread', rootEntryId };
-    }
     return { kind: 'room', roomId, roomKind };
-  }, [sessionId, cwd, addOnExtensionId, addOnPath, roomId, roomKind, rootEntryId]);
-}
-
-/** What a caller may tell {@link useSidebarState} about its own surface. */
-export interface UseSidebarStateOptions {
-  /**
-   * Signal ids this surface is already drawing as cards above Heads up.
-   *
-   * The phone's Home tab and nothing else — see
-   * {@link SidebarState.coveredSignalIds}. Must be referentially stable across
-   * renders that do not change it, like every other list in this hook: a fresh
-   * array each render would rebuild the whole model.
-   */
-  coveredSignalIds?: readonly string[];
+  }, [sessionId, cwd, pathname, addOnExtensionId, addOnPath, roomId, roomKind]);
 }
 
 /**
  * Everything the sidebar is a function of, as one memoized snapshot.
- *
- * One field is still waiting for a source and says so where it is filled:
- * `mentions`, which no client source can count above a read cursor. Its absence
- * is the specified behaviour rather than a gap — omission, never a guess
- * (BC-40).
- *
- * @param options - What the calling surface draws for itself. Desktop passes
- * nothing.
  */
-export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarState {
-  const { coveredSignalIds } = options;
+export function useSidebarState(): SidebarState {
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
-  // Where this mount is in its first paint. Two rules below need to tell
-  // "pending" from "empty" — Getting started, which retires permanently, and
-  // the digest's once-a-day latch — and this is the one place that can.
+  // Where this mount is in its first paint — the fleet is withheld until its
+  // manifests are in (see `fleetKnown` below).
   const boot = useBootState();
 
-  // ── Sessions and their coarse lifecycle ──
+  // ── Sessions, for whose each live one is ──
   // Lifecycle ONLY, never `activity` — the standing rule the whole design rests
   // on. `useShallow` is what makes that true in practice as well as in type: the
   // status objects in the store carry the verb, so selecting them raw would put
   // a new identity in front of the memo on every tool call.
-  //
-  // The WHOLE shared window, never a slice of it (spec `your-activity-first`
-  // D10). The request also carries every chat you touched since 04:00 beyond
-  // the window (`useRecentSessions`), and whose each chat is gets decided on
-  // all of it BEFORE any cap — slicing first is what dropped a chat you typed
-  // in once ten agent chats were newer.
   const recentQuery = useRecentSessions(RECENT_SESSIONS_WINDOW);
   const sessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const sessionStatuses = useSessionListStore(
@@ -280,6 +221,13 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
         .map(([id]) => id),
     [sessionStatuses]
   );
+  const blockedSessionIds = useMemo(
+    () =>
+      Object.entries(sessionStatuses)
+        .filter(([, lifecycle]) => lifecycle === 'blocked')
+        .map(([id]) => id),
+    [sessionStatuses]
+  );
   // Whose each of those is, from the same event that made it live — the REST
   // window above is up to thirty seconds behind, and a folded section that
   // waited for it lost the working signal for exactly that long (BC-31,
@@ -287,31 +235,41 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // only when it changes, which is the same read `useAgentAttentionMap` makes.
   const liveSessionCwds = useSessionListStore(useCallback((s) => s.statusCwds, []));
 
-  // ── Rooms and threads ──
+  // ── Rooms ──
   //
   // **Direct messages wait for the fleet** (DOR-1143). A DM's face is its
-  // agent participants' faces, joined through the manifests — so on a boot that
-  // opened on the 1500 ms ceiling with manifests still in flight, a DM row would
-  // paint with the room's own letter and grow faces a moment later. Channels,
-  // threads and sessions have no such dependency and paint immediately. See
-  // `fleetKnown`.
+  // agent participants' faces, and an agent's DM is drawn as the agent's own
+  // row — so on a boot that opened on the 1500 ms ceiling with manifests still
+  // in flight, a DM row would paint with the room's own letter and grow faces a
+  // moment later. Channels have no such dependency and paint immediately.
   const roomsQuery = useRooms();
   const rooms = useMemo(() => {
     const all = roomsQuery.data ?? [];
     if (boot.fleetKnown) return all;
     return all.filter((room) => room.kind !== 'dm');
   }, [roomsQuery.data, boot.fleetKnown]);
-  const threadsQuery = useThreads();
-  const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
+  // **@mentions come from the room list itself** (BC-40). The server counts
+  // them from the log above the reader's own cursor (`RoomSummary.mentionCount`),
+  // so this is a projection, never a second count. A room the server sent no
+  // count for has no entry: omission, never a guess. Built from every room
+  // rather than the fleet-gated list above, because a mention is not a face.
+  // Held while equal, so a list refetch that moved no count rebuilds nothing.
+  const mentions = useShallowStable(
+    useMemo(() => {
+      const counts: Record<string, number> = {};
+      for (const room of roomsQuery.data ?? []) {
+        const count = room.mentionCount ?? 0;
+        if (count > 0) counts[room.id] = count;
+      }
+      return counts;
+    }, [roomsQuery.data])
+  );
 
-  // ── What the operator opened, and when ──
-  // Read before the fleet because attention is a function of it — an agent you
-  // opened this week is not dormant, whatever it ran (D3) — and before prefs
-  // because the digest is a function of it too (BC-22).
+  // ── When the operator opened each agent, which its attention reads ──
+  // An agent you opened this week is not dormant, whatever it ran. Re-keyed by
+  // path, parsed once, and held while equal: a fresh object each render would
+  // defeat `useAgentAttentionMap`'s memo on every store tick.
   const interactions = useInteractionTimestamps();
-  // The agent half of that record, re-keyed by path and parsed once. Guarded for
-  // stability like every other map here: a fresh object each render would defeat
-  // `useAgentAttentionMap`'s memo on every store tick.
   const agentInteractionAt = useShallowStable(
     useMemo(() => {
       const opened: Record<string, number> = {};
@@ -338,15 +296,13 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   );
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
   // **The fleet is empty until its manifests are in** (DOR-1143), and that is a
-  // withholding rather than a degradation. Every other boot source may read as
-  // empty on the timeout, because a room list that has not answered means "no
-  // rooms yet" and a room arriving late is a row appearing. A manifest that has
-  // not answered means something else: an agent row would hash the DIRECTORY for
-  // its face (`useAgentVisual`) and fall back to the path for its name, and both
-  // change the moment the manifest lands — thirty rows flipping at once, which is
-  // the defect D6 exists to remove. So on a boot that opened on the ceiling with
-  // manifests still in flight, the agent rows are simply not drawn, and they
-  // appear once, correct, when the manifests answer.
+  // withholding rather than a degradation. A manifest that has not answered
+  // means an agent row would hash the DIRECTORY for its face and fall back to
+  // the path for its name, and both change the moment the manifest lands —
+  // thirty rows flipping at once, which is the defect D6 exists to remove. So
+  // on a boot that opened on the ceiling with manifests still in flight, the
+  // agent rows are simply not drawn, and they appear once, correct, when the
+  // manifests answer.
   const paths = boot.fleetKnown ? rawPaths : NO_PATHS;
   const agents = useMemo<readonly AgentRosterEntry[]>(
     () =>
@@ -360,95 +316,19 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
           namespace: manifest?.namespace ?? null,
           isSystem: manifest?.isSystem ?? false,
           lastActivityAt: Number.isNaN(lastActivityAt) ? null : lastActivityAt,
-          lastInteractionAt: agentInteractionAt[path] ?? null,
           attention: attentionMap[path] ?? 'inactive',
         };
       }),
-    [paths, manifests, agentActivity, attentionMap, agentInteractionAt]
+    [paths, manifests, agentActivity, attentionMap]
   );
   const displayNames = useMemo(
     () => disambiguateDisplayNames(paths, manifests ?? {}),
     [paths, manifests]
   );
 
-  // ── When the operator last WROTE, the server's half of Today's key ──
-  //
-  // The other half of BC-16's `max(userLastMessageAt, userLastOpenedAt)`, from
-  // `Session.userLastMessageAt` on `GET /api/sessions/recent` (DOR-1081). A
-  // session that carries no value contributes no entry, and the operator's own
-  // interaction record governs alone — omission, never a guess.
-  //
-  // **Read from the REST window and from nothing else, deliberately.** The live
-  // session-list stream carries session records too, and it is the wrong source
-  // for this one field: `SessionListBroadcaster` applies only the stored-settings
-  // overlay, not the room and task origin overlays that suppress the field for
-  // turns a person did not start. A room turn's prompt arrives as plain user
-  // text no content rule can tell from something you typed, so on the stream it
-  // would look like your writing and reorder Today for work an agent did. The
-  // REST read applies those overlays and is the only source that has answered
-  // the question.
-  //
-  // Stability-guarded like every other map here: a session's other fields churn
-  // (`updatedAt` moves on every agent write) and rebuilding this map identically
-  // would rebuild the whole model with it.
-  const userLastMessageAt = useShallowStable(
-    useMemo(() => {
-      const written: Record<string, string> = {};
-      for (const session of sessions) {
-        const at = session.userLastMessageAt;
-        if (at !== undefined) written[`session:${session.id}`] = at;
-      }
-      return written;
-    }, [sessions])
-  );
-  // ── When YOU last touched each chat, on any device ──
-  //
-  // `Session.lastTouchedByYouAt` (spec `your-activity-first` D1, D10): the
-  // server's record of you opening or writing in a chat, so Today agrees
-  // between the desktop, the phone and a second browser. The third input to
-  // Today's order key beside the local open record and `userLastMessageAt`.
-  // Guarded for the same reason as the map above.
-  const lastTouchedByYouAt = useShallowStable(
-    useMemo(() => {
-      const touched: Record<string, string> = {};
-      for (const session of sessions) {
-        const at = session.lastTouchedByYouAt;
-        if (at !== undefined) touched[`session:${session.id}`] = at;
-      }
-      return touched;
-    }, [sessions])
-  );
-
-  // ── Preferences, and the recents list they filter ──
+  // ── Preferences ──
   const storedPrefs = useSidebarPrefs();
-  const storedModelPrefs = useMemo(() => toSidebarModelPrefs(storedPrefs), [storedPrefs]);
-  const digestFacts = useDigestFacts({
-    now,
-    sessions,
-    workingSessionIds,
-    sessionStatuses,
-    interactions,
-    storedLastShownDate: storedModelPrefs.digest.lastShownDate,
-    settled: boot.settled,
-  });
-  // **The one field of prefs the model does not read live.** Everything else
-  // here is the stored value; `digest.lastShownDate` is the value this tab
-  // loaded with, because writing it is what makes the row appear at most once a
-  // day and reading the write back is what would make it vanish on sight. See
-  // {@link DigestFacts.lastShownDate}.
-  const prefs = useMemo<SidebarModelPrefs>(
-    () => ({ ...storedModelPrefs, digest: { lastShownDate: digestFacts.lastShownDate } }),
-    [storedModelPrefs, digestFacts.lastShownDate]
-  );
-  const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs.muted), [storedPrefs.muted]);
-  const jumpBackIn = useJumpBackIn({ mutedRoomIds: mutedRooms });
-  // Today derives its OWN membership and order (BC-15, BC-16). What it takes
-  // from here is the one-line summary each row already computed, so the sentence
-  // under a row is derived once in the product rather than twice.
-  const recents = useMemo(
-    () => ({ items: jumpBackIn.items, automated: jumpBackIn.automated }),
-    [jumpBackIn.items, jumpBackIn.automated]
-  );
+  const prefs = useMemo(() => toSidebarModelPrefs(storedPrefs), [storedPrefs]);
 
   const roomKinds = useMemo(() => {
     const map = new Map<string, 'channel' | 'dm'>();
@@ -468,120 +348,36 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => menuPages.map(({ id, extensionId, path, title }) => ({ id, extensionId, path, title })),
     [menuPages]
   );
-  const routedTarget = useActiveTarget(roomKindOf, addOns);
-  // An agent's Direct chat is drawn as its DM's row (rule S12), so the chat on
-  // screen anchors that row rather than adding a second one for its session.
-  const { data: openDirectChat } = useDirectChat(
-    routedTarget?.kind === 'session' ? routedTarget.sessionId : null
-  );
-  const activeTarget = useMemo<SidebarTarget | null>(
-    () =>
-      openDirectChat
-        ? { kind: 'room', roomId: openDirectChat.roomId, roomKind: 'dm' }
-        : routedTarget,
-    [openDirectChat, routedTarget]
-  );
+  const activeTarget = useActiveTarget(roomKindOf, addOns);
 
-  // ── Whether Today's automated runs are unfolded (BC-19) ──
-  const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);
-
-  // ── What needs the operator (BC-5) ──
-  // The only source Heads up draws from, normalized once in `entities/attention` so
-  // the home surface's triage header and this panel read the same list.
-  const attention = useAttentionSignals();
-
-  // ── How far along this operator is (BC-12) ──
-  // The boot gate is what keeps the loading placeholder out of permanent
-  // retirement: a roster query that has not answered looks exactly like an
-  // empty fleet, and Getting started's whole first suggestion turns on that.
-  // It used to ask three of the queries itself; the gate asks all seven (and
-  // gives up after 1.5s), so the answer is the same one the panel paints with.
-  //
-  // **Not `settled` on its own** (task 3.2). The gate also waits on Heads up's
-  // three sources, and those are the three the persisted cache deliberately does
-  // NOT keep — a stale "three things need you" that resolves to zero is a
-  // confident lie. So on a warm reload `settled` was still false for a round
-  // trip while every fact THIS question depends on — the roster, the recents,
-  // the rooms — was already in hand, and Getting started grew in at the top of a
-  // panel that had finished painting, pushing everything below it down. A
-  // browser probe caught it (`boot-stability.spec.ts`). `phase !== 'cold'` is
-  // exactly "the seven shape sources have answered, from the network or from
-  // local memory", which is the question `rosterResolved` actually asks.
-  const journey = useJourneyFacts({
-    agents,
-    agentActivity,
-    sessionCount: sessions.length,
-    rooms,
-    rosterResolved: boot.phase !== 'cold',
-  });
-
-  // **One memo, not a "slow inputs / fast inputs" pair.** `sidebar-simplification`
-  // D8 proposed splitting this in two so a clock tick would not re-derive the
-  // half a query decides. It was built and measured, and it bought nothing: every
-  // field here is already its own memo keyed on its own sources, so the split
-  // allocated one extra object and changed no identity anywhere — and it could
-  // not do more, because `now` is part of the state `buildSidebarModel` takes and
-  // its signature is fixed. The two halves had one consumer, this spread. Dead
-  // structure with a comment claiming a benefit is worse than the plain shape.
-  const state = useMemo(
+  return useMemo(
     () => ({
       now,
       sessions,
       workingSessionIds,
+      blockedSessionIds,
       liveSessionCwds,
-      sessionStatuses,
       rooms,
-      threads,
       agents,
       displayNames,
-      attention,
-      recents,
       prefs,
-      interactions,
-      userLastMessageAt,
-      lastTouchedByYouAt,
-      // No client source counts @mentions above a read cursor. A source that
-      // cannot say has no entry — omission, never a guess (BC-40).
-      mentions: NO_MENTIONS,
-      ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
-      todayAutomatedExpanded,
+      mentions,
       addOns,
       activeTarget,
-      journey: journey.facts,
-      digest: digestFacts.digest,
     }),
     [
-      coveredSignalIds,
       now,
       sessions,
       workingSessionIds,
+      blockedSessionIds,
       liveSessionCwds,
-      sessionStatuses,
       rooms,
-      threads,
       agents,
       displayNames,
-      attention,
-      recents,
       prefs,
-      interactions,
-      userLastMessageAt,
-      lastTouchedByYouAt,
-      todayAutomatedExpanded,
+      mentions,
       addOns,
       activeTarget,
-      journey.facts,
-      digestFacts.digest,
     ]
   );
-
-  // **A write, inside the hook that gathers reads — deliberately.** Retirement
-  // is permanent (BC-13), so its writer needs both the facts and the one bit
-  // that says whether they are real; `SidebarState` carries the first and not
-  // the second, and adding a resolution flag to the model's snapshot would put
-  // a loading state into a pure function that has no business knowing about
-  // one. Placing it here keeps that bit where it is produced.
-  useGettingStartedRetirement(state, journey.isResolved);
-
-  return state;
 }

@@ -2,7 +2,7 @@
  * Workbench embedded-browser serving routes (DOR-216, DOR-1260;
  * ADR 260708-185519).
  *
- * Three routes:
+ * Four routes:
  * - `POST /api/workbench/sign` — mint what the embedded browser needs to load a
  *   target (auth-gated by the app-wide session gate). A `serve` request gets a
  *   short-lived signed URL into the static route below, after its cwd is checked
@@ -13,6 +13,8 @@
  * - `POST /api/workbench/probe` — report whether a loopback port has a server on
  *   it, so the browser can explain a dead port instead of framing it. Auth-gated
  *   like `/sign`, and loopback-pinned: the body carries a port and nothing else.
+ * - `POST /api/workbench/bridge` — whether DorkOS added its frame scripts to a
+ *   page it served, and why not (DOR-3131). Auth-gated like `/sign`.
  * - `GET /api/workbench/serve/:token/:splat{.+}` — statically serve a local file from
  *   the token's cwd so relative assets resolve. Authorized by the signed token,
  *   NOT cookie/header auth (the browser frame is opaque-origin, credential-less),
@@ -31,7 +33,11 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
-import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
+import {
+  WorkbenchBridgeStatusRequestSchema,
+  WorkbenchProbeRequestSchema,
+  WorkbenchSignRequestSchema,
+} from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
@@ -49,6 +55,9 @@ import {
   previewListeners,
   probeLoopbackPort,
   PREVIEW_BOOTSTRAP_PARAM,
+  frameBridgeLedger,
+  servedFileKey,
+  bridgeKeyFor,
 } from '../services/workbench-serve/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -228,6 +237,22 @@ router.post('/probe', async (c) => {
 });
 
 /**
+ * `POST /api/workbench/bridge` — whether DorkOS added its frame scripts the last
+ * time it served this page into a frame, and the stable reason when it did not
+ * (DOR-3131). Auth-gated like `/sign`. The canvas asks after the frame's `load`,
+ * because neither a frame's response headers nor a cross-origin preview's are
+ * readable from the page that framed it. Names a file the way `/sign` does, so
+ * a path outside the session's folder names nothing and answers `unknown`.
+ */
+router.post('/bridge', async (c) => {
+  const parsed = WorkbenchBridgeStatusRequestSchema.safeParse(readJsonBody(c));
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+  }
+  return c.json(frameBridgeLedger.status(await bridgeKeyFor(parsed.data)));
+});
+
+/**
  * Serve a file from the token's cwd. The remainder path is resolved within and
  * re-validated against `cwd`, so a `..`/symlink escape is rejected (403). Content
  * type is by extension; anything unlisted is an opaque download (never sniffed).
@@ -305,7 +330,13 @@ async function handleServe(c: Context<ApiEnv>) {
   // Bounded raw bytes: unsupported encoding/markup/CSP is served without SDKs.
   // Never decode an oversized file or let growth after stat cause an unbounded read.
   let knownLength = true;
-  if (contentType?.startsWith('text/html') && size <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
+  // Every HTML page's decision is recorded, so the canvas can say why a page
+  // has no frame scripts (DOR-3131).
+  const html = contentType?.startsWith('text/html') === true;
+  if (html && size > WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
+    frameBridgeLedger.record(servedFileKey(resolved), 'oversize');
+  }
+  if (html && size <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
     try {
       const file = await fs.open(resolved, 'r');
       let raw: Buffer;
@@ -324,10 +355,13 @@ async function handleServe(c: Context<ApiEnv>) {
       if (raw.length <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
         // The one policy this response enforces is the sandbox set above.
         const decision = injectFrameScripts(raw, { contentType, enforcingPolicies: [policy] });
+        frameBridgeLedger.record(servedFileKey(resolved), decision.reason);
+        c.header('Content-Type', decision.contentType);
         c.header('Content-Length', String(decision.bytes.length));
         return c.body(new Uint8Array(decision.bytes));
       }
       // A growing file exceeded the cap: stream unchanged without a stale stat length.
+      frameBridgeLedger.record(servedFileKey(resolved), 'oversize');
       knownLength = false;
     } catch (err) {
       logger.error('[workbench-serve] serve read/inject failed', { err, resolved });

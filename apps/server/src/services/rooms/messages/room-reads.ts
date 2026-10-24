@@ -216,6 +216,25 @@ export class RoomReads {
   }
 
   /**
+   * One entry by id, for a member — the root a thread read starts from
+   * (DOR-3017). Held to the same three scope rules as {@link readHistory}:
+   * members only, "not a member" reads as "no such room", and nothing at or
+   * below the member's join floor.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param entryId - The entry.
+   * @returns The entry with its rollups, or `null` when there is none the
+   *   caller may read.
+   */
+  readEntry(roomId: string, viewerAuthorId: string, entryId: string): RoomEntry | null {
+    const { floor } = this.visibility.requireHistoryFloor(roomId, viewerAuthorId);
+    const entry = this.store.getEntryById(roomId, entryId);
+    if (!entry || entry.seq <= floor) return null;
+    return this.projection.withRollups(roomId, [entry])[0] ?? null;
+  }
+
+  /**
    * A room's whole history as JSONL — `GET /api/rooms/:id/export` (DOR-1225).
    *
    * Rooms live only in SQLite, and this is the projection that pays back what

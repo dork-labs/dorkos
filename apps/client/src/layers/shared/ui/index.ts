@@ -19,8 +19,7 @@ export {
 export { Badge, badgeVariants } from './badge';
 export type { BadgeProps } from './badge';
 export { BarTabStrip } from './bar-tab-strip';
-export type { BarTab } from './bar-tab-strip';
-export type { BarTabStripProps } from './bar-tab-strip';
+export type { BarTab, BarTabStripProps } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
 export type { BannerVariant, BannerProps } from './banner';
 export { BoundedNumberInput } from './bounded-number-input';
@@ -487,6 +486,7 @@ export type {
 } from './sidebar-menu-node';
 export type { SidebarMenuNodesProps, SidebarMenuSurfaceProps } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
+export { CountPill, COUNT_PILL_CAP, type CountPillProps } from './count-pill';
 export {
   TOUCH_TARGET_MIN_H,
   TOUCH_TARGET_RESPONSIVE_H,

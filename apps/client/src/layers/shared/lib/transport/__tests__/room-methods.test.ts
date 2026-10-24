@@ -438,6 +438,13 @@ describe('saveRoomFile', () => {
 });
 
 describe('the room-repo status and its repair', () => {
+  it('sets up a room repo through the room’s own route', async () => {
+    await setup().enableRoomRepo('room-1');
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/repo');
+    expect(init?.method).toBe('POST');
+  });
+
   it('reads the status from the room’s own repo route', async () => {
     await setup().readRoomRepoStatus('room-1');
     const [url, init] = lastCall();

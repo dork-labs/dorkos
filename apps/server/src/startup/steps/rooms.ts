@@ -72,10 +72,12 @@ import {
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
+  continueActivity,
 } from '../../services/session/index.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
-import { runsTeammateTurns } from '../../services/rooms/limits/teammate-turn.js';
+import { runsTeammateTurns } from '../../services/core/turn-power/teammate-mark.js';
+import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
 import { agentRuntimeTypeFrom } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import {
   followSessionRekeys,
@@ -86,6 +88,16 @@ import { registerLocalCommunity } from '../../services/communities/index.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
+import {
+  originLabelerFrom,
+  setOriginLabeler,
+} from '../../services/tasks/approvals/marked-schedules.js';
+import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
+import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
+import {
+  createRoomSeatMover,
+  setRoomSeatMover,
+} from '../../services/rooms/reseat/create-seat-mover.js';
 
 /** What {@link wireRooms} reads from the startup steps before it. */
 export interface WireRoomsInput {
@@ -159,6 +171,15 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     },
   });
   setRoomService(roomService);
+  // A post's turn marks survive a restart on its row (DOR-3036).
+  setEntryMarksStore(createEntryMarksStore(db));
+  // A parked schedule's card names the teammate and the space room a mark came from (DOR-3036).
+  setOriginLabeler(
+    originLabelerFrom({
+      authorName: (authorId) => roomAuthors.getById(authorId)?.displayName,
+      roomTitle: (roomId) => roomStore.getRoom(roomId)?.title,
+    })
+  );
   if (!refs.remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(refs.remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(refs.remoteCommunityRuntime.projection);
@@ -196,6 +217,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     if (!agent || !projectPath) return false;
     return runsTeammateTurns(agentRuntimeTypeFrom(projectPath, agent.runtime));
   });
+  // What each teammate turn cost, counted against its space's monthly limit (DOR-2956).
+  wireTeammateSpend(refs.remoteCommunityRuntime.mirrors);
   refs.remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: refs.remoteCommunityRuntime.mirrors,
@@ -545,6 +568,19 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       );
     }
   }
+
+  // Re-seating: a room seat whose account runs out moves to another account and
+  // keeps answering, and one whose transcript expired starts a fresh session.
+  // After the transcript probe above, which is how an expired seat is found;
+  // without Claude Code in this process no seat reads as expired, and no other
+  // runtime's accounts run out.
+  setRoomSeatMover(
+    createRoomSeatMover({
+      store: roomStore,
+      transcripts: refs.roomBindingTranscripts,
+      activity: continueActivity,
+    })
+  );
 
   // The local community (spec `community-adapter` §8) — this machine's own rooms
   // behind the `CommunityAdapter` port. Registered unconditionally and first,

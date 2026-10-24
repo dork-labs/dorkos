@@ -49,6 +49,21 @@ describe('ApprovalService', () => {
     vi.useRealTimers();
   });
 
+  it('records a person’s own yes only for a document route, with no broadcast', () => {
+    expect(() =>
+      service.recordOwnAnswer({ ...BINDING, summary: 'Uninstall "sentry-monitor"' })
+    ).toThrow(/Only ui.approve_doc_route/);
+    expect(db.select().from(approvals).all()).toHaveLength(0);
+    const ticket = service.recordOwnAnswer(
+      { ...BINDING, capabilityId: 'ui.approve_doc_route', summary: 'Allow document events.' },
+      'user-1'
+    );
+    const row = db.select().from(approvals).where(eq(approvals.id, ticket.approvalId)).get();
+    expect(row?.state).toBe('granted');
+    expect(row?.decidedByUserId).toBe('user-1');
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
   /** Ask for approval of the standard action. */
   function requestOne(requestedBy = 'dorkbot') {
     return service.request({

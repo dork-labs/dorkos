@@ -1,0 +1,482 @@
+import { createHash } from 'node:crypto';
+import type { PoolClient } from 'pg';
+import { REMOVED_ENTRY_TEXT, type RemovedBy } from './content/tombstones.js';
+import { ApiError } from './http.js';
+import { notifyLive } from './live/notices.js';
+
+/** A named, content-free reason a content change could not be made. */
+export class ContentChangeError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = 'ContentChangeError';
+  }
+}
+
+/** Test seams inside one removal transaction. */
+export interface ContentRemovalHooks {
+  /** Runs after the content version is bumped and before any redaction row is written. */
+  afterVersionBump?: () => Promise<void>;
+}
+
+/**
+ * SHA-256 of a tombstoned entry's payload, in the shape a post hashes its own payload, so the
+ * stored hash says nothing about what the entry used to say.
+ */
+export function tombstonePayloadHash(text: string, parentEntryId: string | null): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ text, mentions: [], parentEntryId, attachmentIds: [] }))
+    .digest('hex');
+}
+
+/**
+ * Bump the community's content version, which takes that row's lock and holds it to commit.
+ *
+ * Every transaction that writes `entry_redactions` rows calls this first. An identity value is
+ * assigned at insert, not at commit, so two changes that each inserted before locking could
+ * commit in the opposite order of their ids, and a reader that saved cursor `N+1` would never
+ * see row `N`. Taking this lock first serializes every content change in a community, so
+ * redaction ids become visible in the order they were assigned.
+ */
+export async function bumpContentVersion(client: PoolClient, communityId: string): Promise<void> {
+  const bumped = await client.query(
+    'UPDATE community_content_versions SET version=version+1 WHERE community_id=$1',
+    [communityId]
+  );
+  if (bumped.rowCount !== 1) throw new ContentChangeError('CONTENT_VERSION_MISSING');
+}
+
+/**
+ * Queue blobs for deletion in the transaction that removed the rows naming them. Storage
+ * limits count only `stored` and `committed` blobs, so the space is freed at commit; the
+ * pending-deletion sweep removes the bytes and then the inventory row with its checksum.
+ */
+export async function queueBlobs(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  // The same two statements queueCommittedBlobDeletion and discardManagedBlob run.
+  await client.query(
+    `UPDATE managed_blobs SET state='pending_delete'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state IN ('committed','stored')`,
+    [communityId, keys]
+  );
+  await client.query(
+    `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
+     SELECT key,0,now() FROM unnest($1::text[]) AS key ON CONFLICT(blob_key) DO NOTHING`,
+    [keys]
+  );
+}
+
+/**
+ * Hold blobs for a takedown's evidence copy, in the transaction that removed the rows naming
+ * them. `evidence_hold` bytes stay in primary storage, but no route reaches them, no limit counts
+ * them, and the pending-deletion sweep leaves them, until {@link releaseHeldBlobs}.
+ */
+export async function holdBlobs(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='evidence_hold'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state IN ('committed','stored')`,
+    [communityId, keys]
+  );
+}
+
+/**
+ * Queue held blobs for deletion, once their evidence copy has landed or a host operator has
+ * released them. A key with no inventory row (a legacy blob) is queued all the same.
+ */
+export async function releaseHeldBlobs(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='pending_delete'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state='evidence_hold'`,
+    [communityId, keys]
+  );
+  await client.query(
+    `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
+     SELECT key,0,now() FROM unnest($1::text[]) AS key ON CONFLICT(blob_key) DO NOTHING`,
+    [keys]
+  );
+}
+
+/**
+ * Record one redaction row per changed entry, for the redaction feed. The caller has already
+ * bumped the content version in this transaction ({@link bumpContentVersion}).
+ */
+export async function recordRedactions(
+  client: PoolClient,
+  communityId: string,
+  changed: readonly { entryId: string; channelId: string }[]
+): Promise<void> {
+  if (!changed.length) return;
+  await client.query(
+    `INSERT INTO entry_redactions(community_id,channel_id,entry_id)
+     SELECT $1,changed.channel_id,changed.id
+     FROM unnest($2::uuid[],$3::uuid[]) AS changed(id,channel_id)`,
+    [communityId, changed.map((row) => row.entryId), changed.map((row) => row.channelId)]
+  );
+  // A stream sends new entries by sequence, and a removal or redaction adds none: readers learn
+  // of it from the redaction feed, which this row is. The notice only makes live feeds forget
+  // the copies they kept, so a stream that is behind reads the changed entries fresh.
+  await notifyLive(
+    client,
+    ...[...new Set(changed.map((row) => row.channelId))].map((channelId) => ({
+      k: 'content' as const,
+      c: communityId,
+      ch: channelId,
+    }))
+  );
+}
+
+/**
+ * Tombstone a batch of locked entries for member erasure: the erased text and author name, a
+ * retired idempotency key, the tombstone payload hash, and no mentions. Files are erased in an
+ * earlier step; the caller bumps the version and records the redaction rows.
+ */
+export async function eraseEntries(
+  client: PoolClient,
+  communityId: string,
+  rows: readonly { id: string; parentEntryId: string | null }[],
+  tombstone: { text: string; memberName: string; agentName: string }
+): Promise<void> {
+  if (!rows.length) return;
+  const ids = rows.map((row) => row.id);
+  await client.query(
+    `UPDATE entries e SET text=$2,
+       author_display_name=CASE WHEN e.author_agent_id IS NULL THEN $3 ELSE $4 END,
+       idempotency_key='erased:' || e.id::text,payload_hash=erased.hash,erased_at=now()
+     FROM unnest($5::uuid[],$6::text[]) AS erased(id,hash)
+     WHERE e.id=erased.id AND e.community_id=$1`,
+    [
+      communityId,
+      tombstone.text,
+      tombstone.memberName,
+      tombstone.agentName,
+      ids,
+      rows.map((row) => tombstonePayloadHash(tombstone.text, row.parentEntryId)),
+    ]
+  );
+  await client.query(
+    'DELETE FROM entry_mentions WHERE community_id=$1 AND entry_id=ANY($2::uuid[])',
+    [communityId, ids]
+  );
+}
+
+/** Replace one locked entry's text and payload hash with a removal tombstone, and drop its mentions. */
+async function tombstoneRemoved(
+  client: PoolClient,
+  communityId: string,
+  entry: { id: string; parent_entry_id: string | null },
+  removedBy: RemovedBy
+): Promise<void> {
+  const text = REMOVED_ENTRY_TEXT[removedBy];
+  await client.query(
+    `UPDATE entries SET text=$3,payload_hash=$4,removed_at=now(),removed_by=$5
+     WHERE id=$2 AND community_id=$1`,
+    [communityId, entry.id, text, tombstonePayloadHash(text, entry.parent_entry_id), removedBy]
+  );
+  await client.query('DELETE FROM entry_mentions WHERE community_id=$1 AND entry_id=$2', [
+    communityId,
+    entry.id,
+  ]);
+}
+
+interface LockedEntry {
+  id: string;
+  channel_id: string;
+  parent_entry_id: string | null;
+  text: string;
+  removed_at: Date | null;
+  removed_by: RemovedBy | null;
+  erased_at: Date | null;
+}
+
+async function lockEntry(
+  client: PoolClient,
+  communityId: string,
+  entryId: string
+): Promise<LockedEntry | null> {
+  // FOR NO KEY UPDATE, not FOR UPDATE: a reply holds FOR KEY SHARE on its parent while it holds
+  // its channel, and a removal never changes an entry's key.
+  const result = await client.query<LockedEntry>(
+    `SELECT id,channel_id,parent_entry_id,text,removed_at,removed_by,erased_at FROM entries
+     WHERE id=$2 AND community_id=$1 FOR NO KEY UPDATE`,
+    [communityId, entryId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/** How one removal treats the bytes of the files it takes away. */
+interface RemovalInput {
+  communityId: string;
+  removedBy: RemovedBy;
+  /**
+   * Keep the files' bytes as `evidence_hold` for a host takedown's evidence copy, instead of
+   * queueing them for deletion.
+   */
+  holdBlobs?: boolean;
+}
+
+/** Queue or hold the bytes a removal took away, as the removal asked. */
+async function detachBlobs(client: PoolClient, input: RemovalInput, keys: readonly string[]) {
+  if (input.holdBlobs) await holdBlobs(client, input.communityId, keys);
+  else await queueBlobs(client, input.communityId, keys);
+}
+
+/** The columns a removed file's description keeps, as `DELETE … RETURNING` reads them. */
+const REMOVED_FILE_COLUMNS = `blob_key,entry_id,id AS attachment_id,display_name,content_type,
+  byte_size,checksum,uploaded_at,uploader_member_id,uploader_agent_id`;
+
+/** A removed file whose bytes wait for the sweep, as a host takedown finds it again. */
+export interface RemovedFileRow {
+  blob_key: string;
+  entry_id: string;
+  attachment_id: string;
+  display_name: string;
+  content_type: string;
+  byte_size: number;
+  checksum: string;
+  uploaded_at: Date;
+  uploader_member_id: string | null;
+  uploader_agent_id: string | null;
+}
+
+/**
+ * Keep a description of the posted files an author or admin just removed, for as long as their
+ * bytes wait for the sweep, so a host takedown of the message can still hold them as evidence.
+ * A host's own removal holds or releases the bytes itself and needs none.
+ */
+async function rememberRemovedFiles(
+  client: PoolClient,
+  input: RemovalInput,
+  rows: readonly RemovedFileRow[]
+): Promise<void> {
+  if (input.removedBy === 'host' || input.holdBlobs || !rows.length) return;
+  await client.query(
+    `INSERT INTO removed_file_blobs(
+       blob_key,community_id,entry_id,attachment_id,display_name,content_type,byte_size,
+       checksum,uploaded_at,uploader_member_id,uploader_agent_id
+     )
+     SELECT r.blob_key,$1,r.entry_id,r.attachment_id,r.display_name,r.content_type,r.byte_size,
+            r.checksum,r.uploaded_at,r.uploader_member_id,r.uploader_agent_id
+     FROM jsonb_to_recordset($2::jsonb) AS r(
+       blob_key text,entry_id uuid,attachment_id uuid,display_name text,content_type text,
+       byte_size int,checksum text,uploaded_at timestamptz,uploader_member_id uuid,
+       uploader_agent_id uuid
+     )
+     ON CONFLICT (blob_key) DO NOTHING`,
+    [input.communityId, JSON.stringify(rows)]
+  );
+}
+
+/**
+ * Lock the files an author or admin removed from one message whose bytes the sweep has not
+ * deleted yet. The inventory rows are locked first, as the sweep locks them, so a file the sweep
+ * is deleting right now is simply not found.
+ */
+export async function lockRemovedFiles(
+  client: PoolClient,
+  communityId: string,
+  entryId: string
+): Promise<RemovedFileRow[]> {
+  const pending = await client.query<{ blob_key: string }>(
+    `SELECT m.blob_key FROM managed_blobs m
+     JOIN removed_file_blobs r ON r.blob_key=m.blob_key
+     WHERE r.community_id=$1 AND r.entry_id=$2 AND m.community_id=$1
+       AND m.state='pending_delete' AND m.byte_size IS NOT NULL
+     ORDER BY m.blob_key FOR UPDATE OF m`,
+    [communityId, entryId]
+  );
+  if (!pending.rows.length) return [];
+  const rows = await client.query<RemovedFileRow>(
+    `SELECT blob_key,entry_id,attachment_id,display_name,content_type,byte_size,checksum,
+            uploaded_at,uploader_member_id,uploader_agent_id
+     FROM removed_file_blobs WHERE blob_key=ANY($1::text[]) ORDER BY uploaded_at,attachment_id
+     FOR UPDATE`,
+    [pending.rows.map((row) => row.blob_key)]
+  );
+  return rows.rows;
+}
+
+/**
+ * Take removed files back from the deletion queue and hold them for a takedown's evidence copy.
+ * Their description has moved into the takedown's staged record, so its row goes.
+ */
+export async function reholdRemovedFiles(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='evidence_hold'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state='pending_delete'`,
+    [communityId, keys]
+  );
+  await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=ANY($1::text[])', [keys]);
+  await client.query('DELETE FROM removed_file_blobs WHERE blob_key=ANY($1::text[])', [keys]);
+}
+
+/**
+ * Lock one message's files in id order. Every path that deletes files takes them before the
+ * content version (erasure too), so no two removals ever wait on each other in a cycle.
+ */
+async function lockEntryFiles(client: PoolClient, communityId: string, entryId: string) {
+  await client.query(
+    'SELECT 1 FROM attachments WHERE community_id=$1 AND entry_id=$2 ORDER BY id FOR UPDATE',
+    [communityId, entryId]
+  );
+}
+
+/**
+ * Replace an entry's content with a tombstone and remove its mentions and files, in place. The
+ * entry keeps its id, sequence, thread links, author, time, and idempotency key.
+ *
+ * The caller has taken the community row `FOR SHARE` and checked the lifecycle and the actor.
+ * An erased entry is left as it is (`changed: false`): erasure wins over a removal. An entry
+ * already removed is left as it is too, except that a host takedown relabels an author's or
+ * moderator's tombstone to the host's (`previouslyRemoved: true`), so the reason a member sees
+ * is the one that stands.
+ *
+ * @throws ApiError 404 when the entry is not in this community.
+ */
+export async function removeEntry(
+  client: PoolClient,
+  input: RemovalInput & { entryId: string },
+  hooks: ContentRemovalHooks = {}
+): Promise<{
+  changed: boolean;
+  previouslyRemoved: boolean;
+  channelId: string;
+  blobKeys: string[];
+}> {
+  const entry = await lockEntry(client, input.communityId, input.entryId);
+  if (!entry) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
+  const unchanged = { changed: false, previouslyRemoved: false, channelId: entry.channel_id };
+  if (entry.erased_at) return { ...unchanged, blobKeys: [] };
+  if (entry.removed_at) {
+    if (input.removedBy !== 'host' || entry.removed_by === 'host')
+      return { ...unchanged, blobKeys: [] };
+    // Its files went with the first removal, so only the sentence changes.
+    await bumpContentVersion(client, input.communityId);
+    await hooks.afterVersionBump?.();
+    await tombstoneRemoved(client, input.communityId, entry, 'host');
+    await recordRedactions(client, input.communityId, [
+      { entryId: entry.id, channelId: entry.channel_id },
+    ]);
+    return { changed: true, previouslyRemoved: true, channelId: entry.channel_id, blobKeys: [] };
+  }
+  await lockEntryFiles(client, input.communityId, entry.id);
+  await bumpContentVersion(client, input.communityId);
+  await hooks.afterVersionBump?.();
+  await tombstoneRemoved(client, input.communityId, entry, input.removedBy);
+  const files = await client.query<RemovedFileRow>(
+    `DELETE FROM attachments WHERE community_id=$1 AND entry_id=$2
+     RETURNING ${REMOVED_FILE_COLUMNS}`,
+    [input.communityId, entry.id]
+  );
+  const blobKeys = files.rows.map((row) => row.blob_key);
+  await detachBlobs(client, input, blobKeys);
+  await rememberRemovedFiles(client, input, files.rows);
+  await recordRedactions(client, input.communityId, [
+    { entryId: entry.id, channelId: entry.channel_id },
+  ]);
+  return { changed: true, previouslyRemoved: false, channelId: entry.channel_id, blobKeys };
+}
+
+/**
+ * Remove one file and queue its bytes for deletion. A file bound to a message is taken out of
+ * it; the message is tombstoned when it has no text and no other file left. An upload that was
+ * never posted belongs to no message, so no version bump and no redaction row are needed.
+ *
+ * The caller has taken the community row `FOR SHARE` and checked the lifecycle and the actor.
+ *
+ * @throws ApiError 404 when the file is not in this community (or is already gone).
+ */
+export async function removeAttachment(
+  client: PoolClient,
+  input: RemovalInput & { attachmentId: string },
+  hooks: ContentRemovalHooks = {}
+): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
+  // Lock order is always entry, then file, as removeEntry takes them (it locks the entry and
+  // then deletes its files). Taking the file first would deadlock with a removal of its message.
+  const current = await client.query<{ entry_id: string | null }>(
+    'SELECT entry_id FROM attachments WHERE id=$2 AND community_id=$1',
+    [input.communityId, input.attachmentId]
+  );
+  if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  if (current.rows[0].entry_id)
+    return removeBoundAttachment(client, input, current.rows[0].entry_id, hooks);
+  // Unbound: only a post can take this file, and it binds it under this same row lock. If one
+  // did before the lock was granted, undo the lock (a savepoint releases it) and take the bound
+  // path, so the file is never held while waiting for its new message.
+  await client.query('SAVEPOINT unbound_file');
+  const locked = await client.query<{ entry_id: string | null; blob_key: string }>(
+    'SELECT entry_id,blob_key FROM attachments WHERE id=$2 AND community_id=$1 FOR UPDATE',
+    [input.communityId, input.attachmentId]
+  );
+  const attachment = locked.rows[0];
+  if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  if (attachment.entry_id) {
+    await client.query('ROLLBACK TO SAVEPOINT unbound_file');
+    return removeBoundAttachment(client, input, attachment.entry_id, hooks);
+  }
+  await client.query('RELEASE SAVEPOINT unbound_file');
+  const blobKeys = [attachment.blob_key];
+  await client.query('DELETE FROM attachments WHERE id=$2 AND community_id=$1', [
+    input.communityId,
+    input.attachmentId,
+  ]);
+  await detachBlobs(client, input, blobKeys);
+  return { entryId: null, entryTombstoned: false, blobKeys };
+}
+
+/** Remove a posted file: lock its message, then the file, and record the message's change. */
+async function removeBoundAttachment(
+  client: PoolClient,
+  input: RemovalInput & { attachmentId: string },
+  entryId: string,
+  hooks: ContentRemovalHooks
+): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
+  const entry = await lockEntry(client, input.communityId, entryId);
+  if (!entry) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  // A bound file never moves to another message, but it may be gone: removed with its message
+  // by the removal this one waited for.
+  const locked = await client.query<{ blob_key: string }>(
+    `SELECT blob_key FROM attachments WHERE id=$2 AND community_id=$1 AND entry_id=$3
+     FOR UPDATE`,
+    [input.communityId, input.attachmentId, entry.id]
+  );
+  if (!locked.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  const blobKeys = [locked.rows[0].blob_key];
+  await bumpContentVersion(client, input.communityId);
+  await hooks.afterVersionBump?.();
+  const removed = await client.query<RemovedFileRow>(
+    `DELETE FROM attachments WHERE id=$2 AND community_id=$1 RETURNING ${REMOVED_FILE_COLUMNS}`,
+    [input.communityId, input.attachmentId]
+  );
+  await detachBlobs(client, input, blobKeys);
+  await rememberRemovedFiles(client, input, removed.rows);
+  const others = await client.query(
+    'SELECT 1 FROM attachments WHERE community_id=$1 AND entry_id=$2 LIMIT 1',
+    [input.communityId, entry.id]
+  );
+  const tombstone = !entry.removed_at && !entry.erased_at && !entry.text && !others.rowCount;
+  if (tombstone) await tombstoneRemoved(client, input.communityId, entry, input.removedBy);
+  await recordRedactions(client, input.communityId, [
+    { entryId: entry.id, channelId: entry.channel_id },
+  ]);
+  return { entryId: entry.id, entryTombstoned: tombstone, blobKeys };
+}
+
+export { removalAuthority, type RemovalActor, type RemovalTarget } from '@dorkos/shared/space-page';

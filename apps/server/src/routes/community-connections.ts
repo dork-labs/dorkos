@@ -56,6 +56,7 @@ import {
   getRemoteCommunityAdapter,
   getRemotePairingService,
   getRemoteWakePolicy,
+  getTeammateSpend,
 } from '../services/communities/remote/state.js';
 import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
@@ -68,6 +69,13 @@ import {
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { officialOnlyOrigin, spaceReachable } from '../middleware/spaces-enabled.js';
 import { addAnswerInRoutes } from './community-answer-in.js';
+import { addTeammateSpendRoutes, type TeammateSpendPolicy } from './community-teammate-spend.js';
+import { addSpaceSettingsRoutes } from './community-space-settings.js';
+import {
+  getSpaceSettingsCache,
+  getSpaceSettingsReader,
+  type SpaceSettingsReader,
+} from '../services/communities/remote/settings/index.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /**
@@ -280,7 +288,9 @@ export function createCommunityConnectionsRoutes(
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
   announcer: CommunityOwnerNoticeAnnouncer = getOwnerNoticeAnnouncer(resolveDorkHome()),
   // Looked up per request when not injected, so building the routes reads nothing from disk.
-  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>
+  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>,
+  teammateSpend?: TeammateSpendPolicy,
+  spaceSettings?: SpaceSettingsReader
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   const caches: ActivityCaches = {
@@ -526,6 +536,14 @@ export function createCommunityConnectionsRoutes(
   );
   // Where any person's post wakes the owner's agents without a mention (D11), owner-only too.
   addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
+  // What teammates' turns in the space may cost the owner a month (DOR-2956), owner-only too.
+  addTeammateSpendRoutes(router, resolveCommunityOwner, () => teammateSpend ?? getTeammateSpend());
+  // A space's settings, members and rules for its Settings tab (DOR-3005), person-only too.
+  addSpaceSettingsRoutes(
+    router,
+    resolveCommunityOwner,
+    () => spaceSettings ?? getSpaceSettingsReader()
+  );
   router.delete(
     '/:ref',
     forConnection(async (c, owner, ref) => {
@@ -540,6 +558,9 @@ export function createCommunityConnectionsRoutes(
         // for a Community the owner asked to leave must not outlive the request.
         attentionCache.forget(owner, ref);
         ownerNoticeCache.forget(owner, ref);
+        await getSpaceSettingsCache()
+          .forget(owner, ref)
+          .catch(() => undefined);
       }
     })
   );

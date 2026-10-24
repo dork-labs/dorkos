@@ -157,7 +157,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
 
   it('interrupts a live turn of the agent, on the runtime it runs on', async () => {
     const runtime = fakeRuntime();
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('s1', 'go', { cwd: SCOUT.home });
     const drained = (async () => {
       for await (const _event of turn) {
@@ -174,7 +176,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
 
   it('counts only the stops the runtime acknowledged', async () => {
     const runtime = fakeRuntime('failed');
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('s1f', 'go', { cwd: SCOUT.home });
     await turn.next();
     const result = await service.pause(SCOUT.id, PERSON);
@@ -206,7 +210,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     const runtime = fakeRuntime();
     const withRuntimes = new AgentPauseService({ db, runtimes: () => [runtime] });
     initAgentPause(withRuntimes);
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('elsewhere', 'go', { cwd: '/tmp/x', forAgent: SCOUT.home });
     await turn.next();
     await turn.return(undefined);
@@ -230,7 +236,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
       yield { type: 'text_delta', data: { text: 'still working' } } as StreamEvent;
     });
     runtime.interruptQuery.mockResolvedValue({ outcome: 'not-running', reason: 'no-open-turn' });
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('s-launch', 'go', { cwd: SCOUT.home });
     const first = turn.next();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -250,7 +258,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     const runtime = fakeRuntime();
     const withRuntimes = new AgentPauseService({ db, runtimes: () => [runtime] });
     initAgentPause(withRuntimes);
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('ana-here', 'go', { cwd: ANA.home });
     await turn.next();
     await turn.return(undefined);
@@ -265,7 +275,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
 
   it("leaves another agent's live turn alone", async () => {
     const runtime = fakeRuntime();
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+      storedPermissionModeOf: () => null,
+    });
     const turn = wrapped.sendMessage('s2', 'go', { cwd: ANA.home });
     const drained = (async () => {
       for await (const _event of turn) {
@@ -343,7 +355,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     it('refuses a paused agent’s turn before the runtime is asked, and records it', async () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = fakeRuntime();
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const turn = wrapped.sendMessage('s3', 'go', { cwd: SCOUT.home } as MessageOpts);
       await expect(turn.next()).rejects.toBeInstanceOf(AgentPausedError);
       expect(runtime.sendMessage).not.toHaveBeenCalled();
@@ -359,7 +373,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     it('holds a turn dispatched AS the agent from a folder that is not its home', async () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = fakeRuntime();
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const turn = wrapped.sendMessage('s4', 'go', { forAgent: SCOUT.home });
       await expect(turn.next()).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
     });
@@ -368,7 +384,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = fakeRuntime();
       runtime.getSessionCwd.mockReturnValue(SCOUT.home);
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       await expect(wrapped.sendMessage('s7', 'go').next()).rejects.toBeInstanceOf(AgentPausedError);
       expect(runtime.getSessionCwd).toHaveBeenCalledWith('s7');
       expect(runtime.sendMessage).not.toHaveBeenCalled();
@@ -377,7 +395,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     it('refuses a summary (compaction) for a paused agent', async () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = fakeRuntime();
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const summary = wrapped.executeCommandIntent('s8', 'compact', { cwd: SCOUT.home });
       await expect(summary.next()).rejects.toBeInstanceOf(AgentPausedError);
       expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
@@ -387,7 +407,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = fakeRuntime();
       runtime.getSessionCwd.mockReturnValue(SCOUT.home);
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       await expect(
         wrapped.deliverIntoTurn!('s9', 'also this', { mode: 'steer', messageId: 'm1' })
       ).resolves.toEqual({ delivered: false, reason: 'stream-closed' });
@@ -403,7 +425,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     it('stops a turn the agent starts on its own, ends its session, and records it', async () => {
       const runtime = fakeRuntime();
       runtime.getSessionCwd.mockReturnValue(SCOUT.home);
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const projected: Array<Promise<StreamEvent[]>> = [];
       wrapped.onRuntimeTurn!((_sessionId, events) => projected.push(drain(events)));
       await service.pause(SCOUT.id, PERSON);
@@ -429,7 +453,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     it('lets an unpaused agent’s own turn through untouched, and a pause can stop it', async () => {
       const runtime = fakeRuntime();
       runtime.getSessionCwd.mockReturnValue(SCOUT.home);
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       let release!: () => void;
       const parked = new Promise<void>((resolve) => (release = resolve));
       async function* wake(): AsyncGenerator<StreamEvent> {
@@ -460,7 +486,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
         },
         interruptQuery: async () => ({ status: 'not-running' }),
       };
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const events: StreamEvent[] = [];
       for await (const event of wrapped.sendMessage('s5', 'go', { cwd: ANA.home })) {
         events.push(event);
@@ -472,7 +500,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
       await service.pause(SCOUT.id, PERSON);
       service.resume(SCOUT.id, ANA_ACTOR);
       const runtime = fakeRuntime();
-      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, () => null);
+      const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
+        storedPermissionModeOf: () => null,
+      });
       const turn = wrapped.sendMessage('s6', 'go', { cwd: SCOUT.home });
       await expect(turn.next()).resolves.toMatchObject({ done: false });
       expect(runtime.sendMessage).toHaveBeenCalledTimes(1);

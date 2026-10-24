@@ -15,8 +15,7 @@ import { registerAskParksTests } from './conversation/ask-parks.js';
 import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
 import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
-import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
-import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
+import { registerDorkBotSeedSurvivesReloadTests } from './dashboard-sidebar/dorkbot-seed-survives-reload.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -179,9 +178,11 @@ test.describe('TestModeRuntime — mock browser tests', () => {
       });
     }
 
-    // Every virtualizer row is rendered (6 messages, overscan 5).
+    // Every virtualizer row is rendered (6 messages, overscan 5), plus the day
+    // divider now that log-backed history carries the time each message was sent.
+    await expect(chatPage.messageList.getByTestId('day-divider')).toHaveCount(1);
     const rows = chatPage.messageList.locator('[data-index]');
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(7);
 
     /** Viewport boxes of every rendered row, sorted by message index. */
     const collectBoxes = async () => {
@@ -941,17 +942,11 @@ test.describe('the chat composer with formatting on', () => {
 // worker rather than beside it. See the module header for the full argument.
 registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
-// The sidebar's Heads up zone surviving a page load (DOR-1136). Registered here for
-// the same reason as the suite above — it needs the `error` scenario, which only
-// this leg has — and because the defect is about what a FRESH page connection is
-// told, which no unit test can observe.
-registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// Writing in a conversation puts it in Today (DOR-1156). Registered here because
-// it drives a real send, which is free and deterministic only on this leg — and
-// because what it asserts happens on the OTHER side of a navigation, which is
-// exactly what a jsdom render cannot walk through.
-registerSendLandsInTodayTests({ agentDir: () => agentDir });
+// What a session went through surviving a page load (DOR-1136). Registered here
+// for the same reason as the suite above — it needs the `error` scenario, which
+// only this leg has — and because the defect is about what a FRESH page
+// connection is told, which no unit test can observe.
+registerDorkBotSeedSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 // The double-Escape clear on both fields, and Enter during an IME composition
 // (DOR-948). Registered here because both suites flip `ui.composer.richText`,

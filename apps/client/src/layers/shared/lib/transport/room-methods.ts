@@ -26,6 +26,8 @@ import {
   type DirectChat,
   type OpenDirectChatRequest,
   type HaltRoomResponse,
+  type ReseatOptions,
+  type ReseatSeatRequest,
   type PromoteHoldResponse,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
@@ -62,6 +64,7 @@ import type {
 } from '@dorkos/shared/room-files';
 import { ROOM_UPLOAD_FILES_FIELD } from '@dorkos/shared/room-files';
 import type {
+  EnableRoomRepoResponse,
   RoomMainRepairRequest,
   RoomMainRepairResult,
   RoomMergeResult,
@@ -171,6 +174,12 @@ export function createRoomMethods(baseUrl: string) {
 
     getRoom(id: string): Promise<RoomWithRoster> {
       return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`);
+    },
+
+    enableRoomRepo(id: string): Promise<EnableRoomRepoResponse> {
+      return fetchJSON<EnableRoomRepoResponse>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo`, {
+        method: 'POST',
+      });
     },
 
     updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster> {
@@ -402,6 +411,27 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${id}/halt/${encodeURIComponent(authorId)}`,
         { method: 'POST' }
+      );
+    },
+
+    /** Where an agent's seat here could move (re-seat). */
+    getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions> {
+      return fetchJSON<ReseatOptions>(
+        baseUrl,
+        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat-options`
+      );
+    },
+
+    /** Move an agent's seat here to another account (re-seat). */
+    reseatRoomAgent(
+      id: string,
+      authorId: string,
+      request: ReseatSeatRequest
+    ): Promise<{ sessionId: string }> {
+      return fetchJSON<{ sessionId: string }>(
+        baseUrl,
+        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat`,
+        { method: 'POST', body: JSON.stringify(request) }
       );
     },
 

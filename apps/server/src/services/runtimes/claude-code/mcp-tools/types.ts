@@ -67,6 +67,8 @@ export interface McpToolSession {
    * that. Read at call time.
    */
   turnPermissionCeiling?: TurnPermissionCeiling;
+  /** The agent's level this turn starts from, for a chat that follows its agent up (DOR-3175). */
+  turnLevelMode?: string;
   /** The ceiling background work from an earlier ceilinged turn still runs under. */
   backgroundPermissionCeiling?: TurnPermissionCeiling;
 }

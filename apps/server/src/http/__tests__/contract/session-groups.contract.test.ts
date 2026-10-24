@@ -1256,8 +1256,13 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     expect(messages.status).toBe(200);
     expect(messages.json).toEqual({
       messages: [
-        { id: 'user-3', role: 'user', content: 'hello' },
-        { id: 'assistant-3', role: 'assistant', content: 'Echo: hello' },
+        { id: 'user-3', role: 'user', content: 'hello', timestamp: expect.any(String) },
+        {
+          id: 'assistant-3',
+          role: 'assistant',
+          content: 'Echo: hello',
+          timestamp: expect.any(String),
+        },
       ],
     });
 
@@ -1582,7 +1587,7 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     ]);
     const cursor = snapshot!.data.cursor as number;
     expect(snapshot!.data.messages).toEqual([
-      { id: 'user-3', role: 'user', content: 'hello' },
+      { id: 'user-3', role: 'user', content: 'hello', timestamp: expect.any(String) },
       { id: 'assistant-3', role: 'assistant', content: 'Echo: hello' },
     ]);
 

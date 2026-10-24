@@ -9,6 +9,32 @@ import { CapabilityToolError } from '../../core/capabilities/index.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { RoomError, roomRefusalFor } from '../room-errors.js';
 import { normalizeMemberHandle, type RoomService } from '../room-service.js';
+import type { CapabilityDeps } from '../../core/capabilities/index.js';
+import { readOwnerAccount } from '../../core/auth/index.js';
+import { isOwnerRecord } from '../author-registry.js';
+
+/**
+ * Narrow the shared bag to the rooms service, throwing if the registry was
+ * composed with the rooms domain but without it (a wiring bug, caught at boot).
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @returns The rooms service.
+ */
+export function requireRoomDeps(deps: CapabilityDeps): RoomService {
+  if (!deps.roomDeps) {
+    throw new Error('Rooms capability invoked without roomDeps in the registry bag.');
+  }
+  return deps.roomDeps.rooms;
+}
+
+/**
+ * Whether a resolved caller is the install's owner, for {@link answering}.
+ *
+ * @param caller - The caller, or `undefined` when it was never resolved.
+ */
+export function isOwnerCaller(caller: AuthorRecord | undefined): boolean {
+  return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
+}
 
 /**
  * Run a room verb, turning its typed refusal into the MCP `isError` payload

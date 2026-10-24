@@ -213,9 +213,18 @@ describe('which agent the panel is pointed at', () => {
     expect(await screen.findByText('Warden')).toBeInTheDocument();
   });
 
-  it('prefers the explicitly opened agent over the session’s own', async () => {
+  it('in a 1:1 chat, shows the session’s own agent over a profile opened elsewhere (FB-60)', async () => {
     useAppStore.setState({ selectedCwd: WARDEN_PATH, explicitAgentPath: SCOUT_PATH });
     const harness = renderDock();
+    await harness.ready();
+
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+    expect(screen.queryByText('Scout')).not.toBeInTheDocument();
+  });
+
+  it('off a chat, shows the explicitly opened agent', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH, explicitAgentPath: SCOUT_PATH });
+    const harness = renderDock({ url: '/' });
     await harness.ready();
 
     expect(await screen.findByText('Scout')).toBeInTheDocument();
@@ -356,7 +365,9 @@ describe('a link naming an agent other than the session’s', () => {
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
     useProfileStore.getState().openProfileDockedFromLink(SCOUT_PATH, 'rooms');
 
-    const harness = renderDock();
+    const harness = renderDock({
+      url: `/session?panel=profile&profilePage=rooms&agentPath=${encodeURIComponent(SCOUT_PATH)}`,
+    });
     await harness.ready();
 
     // The session's own bind, as `useRightPanelLayoutPersistence` makes it.
@@ -375,7 +386,9 @@ describe('a link naming an agent other than the session’s', () => {
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
     useProfileStore.getState().openProfileDockedFromLink('/repo/never-existed');
 
-    const harness = renderDock();
+    const harness = renderDock({
+      url: `/session?panel=profile&agentPath=${encodeURIComponent('/repo/never-existed')}`,
+    });
     await harness.ready();
 
     await waitFor(() => expect(useAppStore.getState().requestedRightPanel).toBeNull());

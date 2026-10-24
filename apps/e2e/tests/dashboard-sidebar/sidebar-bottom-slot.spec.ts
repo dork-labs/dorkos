@@ -133,7 +133,7 @@ test.describe('the sidebar’s bottom slot @smoke', { tag: SOLE_SIDEBAR_TAG }, (
 
     // The list really does overflow — otherwise everything below proves nothing.
     // Polled, not measured once: the bottom slot un-hides the moment the boot
-    // gate opens, but `SidebarZones` holds the skeleton through a 160ms exit
+    // gate opens, but `SidebarSections` holds the skeleton through a 160ms exit
     // under `AnimatePresence mode="wait"` — so for ~200ms the card is on screen
     // while the scroller still holds a skeleton that is sized to fit and cannot
     // overflow. A one-shot read in that window ejected two unrelated PRs from

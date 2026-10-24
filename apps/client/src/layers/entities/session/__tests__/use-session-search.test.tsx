@@ -33,9 +33,9 @@ import { sessionSearchSchema } from '@/layers/shared/lib/session-link';
  *
  * - `continuedFrom` — the `/clear` "linked back" reference, read off the router
  *   by the surface that draws the link.
- * - the eleven `dialogSearchSchema` keys `mergeDialogSearch` folds in
+ * - the `dialogSearchSchema` keys `mergeDialogSearch` folds in
  *   (`settings`, `settingsSection`, `agent`, `agentPath`, `panel`, `hubTab`,
- *   `profile`, `profilePage`, `tasks`, `relay`, `inbox`) — these belong to
+ *   `profile`, `profilePage`, `profileRow`, `tasks`, `relay`, `inbox`) — these belong to
  *   `useSettingsDeepLink`, `useProfileDeepLink`, `useInboxDeepLink` and their
  *   siblings, which own opening and closing the dialogs. A session hook forwarding them would invite a second opener.
  *
@@ -52,6 +52,7 @@ const DELIBERATELY_NOT_FORWARDED = new Set([
   'hubTab',
   'profile',
   'profilePage',
+  'profileRow',
   'tasks',
   'inbox',
   'relay',
@@ -67,7 +68,12 @@ describe('useSessionSearch', () => {
     const shouldForward = schemaKeys().filter((key) => !DELIBERATELY_NOT_FORWARDED.has(key));
     // A string value for every key, so "did it come out" is answerable without
     // knowing each key's shape. The enumerated ones need their legal literal.
-    const literals: Record<string, string> = { send: '1', seed: 'dorkbot-help', draft: '1' };
+    const literals: Record<string, string> = {
+      send: '1',
+      seed: 'dorkbot-help',
+      draft: '1',
+      view: 'session',
+    };
     mockSearch = Object.fromEntries(
       shouldForward.map((key) => [key, literals[key] ?? `value-for-${key}`])
     );

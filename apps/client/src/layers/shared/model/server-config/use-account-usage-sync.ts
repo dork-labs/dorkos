@@ -5,6 +5,7 @@
  * @module shared/model/server-config/use-account-usage-sync
  */
 import { useQueryClient } from '@tanstack/react-query';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { useEventSubscription } from '../event-stream-context';
 import { accountKeys } from './query-keys';
@@ -21,6 +22,12 @@ import { upsertAccountUsage } from './use-account-usage';
  */
 export function useAccountUsageSync(): void {
   const queryClient = useQueryClient();
+
+  useEventSubscription('notification', (data) => {
+    if ((data as NotificationDTO)?.kind === 'signin.required') {
+      void queryClient.invalidateQueries({ queryKey: accountKeys.all });
+    }
+  });
 
   useEventSubscription('account_usage', (data) => {
     const usage = data as AccountUsage | null;

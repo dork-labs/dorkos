@@ -308,10 +308,24 @@ function buildTurnParts(turn: TurnAccumulator): MessagePart[] {
  * (events before the first retained `turn_start` are unattributable and
  * skipped).
  *
+ * **Times (DOR-3074).** A message carries a `timestamp` only where one was
+ * recorded, never an invented one: a user message the time its turn opened
+ * (`turn_start.at`, else when its turn was saved for a turn recorded before
+ * that field), a reply and a turn's notices when the turn was saved, which is
+ * when it finished. A steer carries none: it landed somewhere inside its turn,
+ * and no record says where.
+ *
  * @param events - The session's retained events in seq order (e.g.
  *   `projector.replayFrom(0)`).
+ * @param savedAt - When an event's row was written (ISO 8601), or undefined
+ *   when the caller has no such record (an in-memory log).
  */
-export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMessage[] {
+export function reconstructHistoryFromEvents(
+  events: SessionEvent[],
+  savedAt: (event: SessionEvent) => string | undefined = () => undefined
+): HistoryMessage[] {
+  /** `{ timestamp }` from the record, or nothing at all. */
+  const stamp = (at: string | undefined) => (at === undefined ? {} : { timestamp: at });
   const messages: HistoryMessage[] = [];
   let turn: TurnAccumulator | null = null;
   // Resolutions that landed after their own turn closed — see
@@ -335,6 +349,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
             id: `user-${event.seq}`,
             role: 'user',
             content: event.userMessage,
+            ...stamp(event.at !== undefined ? new Date(event.at).toISOString() : savedAt(event)),
             // The room post a room turn answered, so a reload shows its author (DOR-2113).
             ...(event.roomMessage ? { roomMessage: event.roomMessage } : {}),
           });
@@ -459,6 +474,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           id: `compaction-${event.seq}`,
           role: 'user',
           content: '',
+          ...stamp(savedAt(event)),
           messageType: 'compaction',
           ...(Object.keys(meta).length > 0 ? { compactMetadata: meta } : {}),
         });
@@ -487,6 +503,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           id: `model-substituted-${event.seq}`,
           role: 'assistant',
           content: '',
+          ...stamp(savedAt(event)),
           parts: [
             {
               type: 'model_substituted',
@@ -556,6 +573,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
             id: `assistant-${turn.seq}`,
             role: 'assistant',
             content: turn.text,
+            ...stamp(savedAt(event)),
             ...(turn.tools.size > 0 ? { toolCalls: [...turn.tools.values()] } : {}),
             ...(turn.errors.length > 0 || turn.images.length > 0
               ? { parts: buildTurnParts(turn) }

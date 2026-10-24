@@ -101,9 +101,12 @@ import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
+import { setHandleRenameActivity } from '../services/rooms/handles/rename-author-handle.js';
 import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
+import { createDevicesRoutes } from '../routes/devices.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
@@ -123,6 +126,7 @@ import {
   type UnclaimedChatsRouterDeps,
 } from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
+import { createTestAccountWorldRoutes } from '../routes/test-account-world.js';
 import tunnelRoutes from '../routes/tunnel.js';
 import { createLanAccessRoutes } from '../routes/lan-access.js';
 import eventsRoutes from '../routes/events.js';
@@ -352,6 +356,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
+  // A person renaming an agent writes one Activity row (DOR-3156).
+  setHandleRenameActivity(deps.activity);
   app.route('/api/rooms', roomRoutes);
   app.route(
     '/api/direct-chats',
@@ -389,7 +395,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/feedback', feedbackRoutes);
   app.route(
     '/api/canvas/docs',
-    createCanvasDocEventRoutes(() => deps.docChannel)
+    createCanvasDocEventRoutes(
+      () => deps.docChannel,
+      () => deps.activity
+    )
   );
   // Diagnostic reads. ALWAYS mounted and read-only: an env gate would make them
   // unavailable in the one situation they exist for, because enabling one needs
@@ -403,6 +412,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.admin) app.route('/api/admin', createAdminRoutes(deps.admin));
   // Test-only surfaces, imported always (no vitest or SDK deps) but mounted only
   // in test mode, so none of their paths exist in production.
+  // The forced-limit seam for re-seating (DOR-3143), test runtime only.
+  if (env.DORKOS_TEST_RUNTIME) app.route('/api/test/account-world', createTestAccountWorldRoutes());
   if (env.DORKOS_TEST_RUNTIME || deps.testControl) {
     app.route('/api/test', createTestControlRoutes(deps.testControl));
   }
@@ -489,6 +500,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/link', createHubLinkRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
+  // The loopback page an approvals passkey comes back to (B4c), at this computer only.
+  app.route('/', createRelayPasskeyPageRoutes());
+  // A person's own signed-in devices, and signing them out (DOR-2969).
+  app.route('/api/devices', createDevicesRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
   app.route('/api/documents', createDocLinkRoutes());
   if (deps.heartbeatTriage) {

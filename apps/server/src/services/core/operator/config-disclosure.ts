@@ -203,6 +203,10 @@ export const CONFIG_DISCLOSURE = {
   // When the person saw the "agents now work without asking" notice: a date
   // that names nothing and unlocks nothing on being read.
   'ui.trustNoticeSeenAt': 'expose',
+  // How chats with one agent are drawn, and whether the session behind a chat
+  // can be opened (DOR-3074). Plain booleans about the view.
+  'ui.dmView': 'expose',
+  'ui.showSessions': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an
@@ -374,6 +378,10 @@ export const CONFIG_DISCLOSURE = {
   // code this machine runs without asking.
   'extensions.trustedSources[].source': 'withhold',
   'extensions.trustedSources[].trustedAt': 'withhold',
+  // The rooms each mini app may read and reply in as the person (DOR-3017). A
+  // person's own decision no agent task reads: a mini app refused a room says
+  // so in a sentence, which is all an agent can act on.
+  'extensions.roomAccess': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -460,6 +468,10 @@ export const CONFIG_DISCLOSURE = {
   // nothing an agent needs. A launch it asks for that the rules refuse is
   // answered with a sentence naming the project, which is all it can act on.
   'runtimes.claudeCode.accounts[].onlyProjects': 'withhold',
+  // Whether a person kept an account out of automatic moves (Re-seat P0). A
+  // boolean preference that names no folder and no secret; an agent knowing
+  // its seat will not move there on its own is harmless.
+  'runtimes.claudeCode.accounts[].noAutoMove': 'expose',
   'runtimes.claudeCode.defaultAccountOnlyProjects': 'withhold',
   'runtimes.claudeCode.projectAccounts': 'withhold',
   // The execution defaults a new session on each runtime starts with. A model id

@@ -13,6 +13,9 @@ import type {
   SessionRelayDeviceList,
   SessionRelayLevel,
   SessionRelayLinkBody,
+  SessionRelayPasskeyList,
+  SessionRelayPasskeyStart,
+  SessionRelayPasskeyStartBody,
   SessionRelayPresence,
   SessionRelayStatus,
 } from './session-relay-link.js';
@@ -64,4 +67,30 @@ export interface SessionRelayTransport {
   endSessionRelayPresence(): Promise<SessionRelayPresence>;
   /** Every browser that has used chat from the web here, most recent first. */
   listSessionRelayDevices(): Promise<SessionRelayDeviceList>;
+  /** The approvals passkeys pinned here, labels and dates only. At this computer only. */
+  listSessionRelayPasskeys(): Promise<SessionRelayPasskeyList>;
+  /**
+   * Begin adding an approvals passkey: answers the approve page to open. At
+   * this computer only.
+   *
+   * @param body - The label, the owner's password, and a self-hoster's own approve page.
+   */
+  startSessionRelayPasskey(body: SessionRelayPasskeyStartBody): Promise<SessionRelayPasskeyStart>;
+  /**
+   * Remove an approvals passkey. At this computer only.
+   *
+   * @param credentialId - The passkey.
+   * @param password - The owner's password.
+   */
+  removeSessionRelayPasskey(
+    credentialId: string,
+    password: string
+  ): Promise<SessionRelayPasskeyList>;
+  /**
+   * Remove a damaged passkeys file, so a passkey can be added again. At this
+   * computer only.
+   *
+   * @param password - The owner's password.
+   */
+  removeDamagedSessionRelayPasskeys(password: string): Promise<SessionRelayPasskeyList>;
 }

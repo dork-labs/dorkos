@@ -150,6 +150,13 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
   const sentinel = (): Promise<unknown> =>
     request(testServer).post(`/api/rooms/${sentinelRoomId}/entries`).send({ text: 'sentinel' });
 
+  it('does not move a room thread’s cursor: only a mini app’s mark-read does (DOR-3017)', async () => {
+    const res = await request(testServer)
+      .put('/api/read-cursors/room-thread/some-room%2Fsome-root')
+      .send({ lastReadSeq: 2147483647 });
+    expect(res.status).toBe(400);
+    expect(db.select().from(readCursors).all()).toEqual([]);
+  });
   it('stores the cursor and answers with it', async () => {
     const res = await request(testServer)
       .put(`/api/read-cursors/room/${sentinelRoomId}`)

@@ -119,6 +119,16 @@ export const NOTIFICATION_KINDS = [
    */
   'community.owner-replacement',
   /**
+   * Turns teammates started in a space this person connected reached the monthly limit they set
+   * for it (DOR-2956). Once per space and month.
+   */
+  'community.teammate-limit',
+  /**
+   * The saved teammate limits couldn't be read and were set aside, so they need setting again
+   * (DOR-2956). Once per reset.
+   */
+  'community.teammate-limits-reset',
+  /**
    * The one-time offer to run agents' cheap checks on DorkOS credits (spec
    * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
    */
@@ -754,3 +764,16 @@ export const WebPushPayloadSchema = z
 
 /** Exactly what a push carries to a browser. */
 export type WebPushPayload = z.infer<typeof WebPushPayloadSchema>;
+
+/** Stable sign-in subject; legacy runtime-only subjects remain readable. */
+export function signinSubjectId(runtime: string, accountRoot?: string): string {
+  return accountRoot ? `${runtime}:${accountRoot}` : runtime;
+}
+
+/** Read an account target from a sign-in subject without guessing a default. */
+export function signinTarget(subjectId: string): { runtime: string; accountRoot?: string } {
+  const separator = subjectId.indexOf(':');
+  return separator < 0
+    ? { runtime: subjectId }
+    : { runtime: subjectId.slice(0, separator), accountRoot: subjectId.slice(separator + 1) };
+}

@@ -51,11 +51,17 @@ export type RoomErrorCode =
   | 'HANDLE_TAKEN'
   /**
    * A handle somebody asked for is tombstoned to another author, or is one of
-   * the seeded broadcast reservations (`everyone`, `here`, `channel`). A freed
+   * the seeded broadcast reservations (`everyone`, `here`, `channel`, `room`). A freed
    * handle stays its original author's forever, and they may take it back
    * (spec `handles` §3).
    */
   | 'HANDLE_RESERVED'
+  /**
+   * A handle somebody asked for reads as another author's, live or released,
+   * once both are case-folded and skeletoned by Unicode TR39 (`d0rian` beside
+   * `dorian`, DOR-3156). The message names the handle it looks like.
+   */
+  | 'HANDLE_LOOKALIKE'
   /** A handle somebody asked for fails the grammar in `@dorkos/shared/handle`. */
   | 'INVALID_HANDLE'
   | 'NESTED_THREAD'
@@ -116,6 +122,22 @@ export type RoomErrorCode =
    * emoji on a message (ADR 260814-195522, which reverses etiquette E16b).
    */
   | 'PEOPLE_ONLY'
+  /**
+   * A person asked to move an agent to another account (`rooms.reseat`) and no
+   * account it may use has usage left right now.
+   */
+  | 'NO_ACCOUNT_LEFT'
+  /**
+   * A person asked to move an agent to another account while it is answering
+   * here. Its running turn would bind the seat back to the old session, so the
+   * move waits until the turn is done.
+   */
+  | 'AGENT_WORKING'
+  /**
+   * A person asked to move an agent that has not answered in this room yet.
+   * There is no session to move; its first turn starts on its usual account.
+   */
+  | 'NOTHING_TO_MOVE'
   /**
    * `leave_room` was aimed at something that is not a channel (spec
    * `rooms-management-tools` §D9, DOR-1611).

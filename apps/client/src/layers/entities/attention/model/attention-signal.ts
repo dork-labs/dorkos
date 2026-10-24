@@ -12,7 +12,9 @@
  */
 
 /**
- * The only four blockages that may reach the operator's Heads up zone (BC-5).
+ * Every kind of thing that may be waiting on the operator (BC-5). Four of them
+ * are blockages — what the phone's Home cards and the home surface draw; the
+ * other two are counted by the Inbox only.
  *
  * An allowlist, not a filter over an exclusion list. Mentions, DMs, unread
  * channels, automated-session activity and update-ready notices have no member
@@ -22,9 +24,7 @@
  * **Two of the four changed in DOR-1391, and both changes were about honesty.**
  * `idle-timeout` left: "this session went quiet" is a guess about somebody's
  * afternoon, not a blockage, and a row that asks for attention on a heuristic
- * teaches a person to stop reading the zone. What it observed did not vanish —
- * the Today digest mentions quiet sessions instead
- * (`features/dashboard-sidebar/model/use-digest-facts`). `schedule-approval`
+ * teaches a person to stop reading the list. `schedule-approval`
  * arrived: an agent that proposes a schedule through `tasks_create` never arms
  * it (DOR-504), so a person saying yes or no is the only thing that can make it
  * run. That is a blockage by every definition the other three meet, and it used
@@ -33,13 +33,9 @@
  * `extension-approval` (DOR-2517) is an installed extension waiting for a
  * person to turn it on. It is a member of the vocabulary so the Inbox
  * popover's waiting queue can count it in the same words, but it is NOT a
- * Heads up blockage: nothing is stopped while it waits, and its notification
- * tier is `notable`, never `blocking`. {@link deriveAttentionSignals} never
- * emits it — see {@link HeadsUpSignalKind}, the four the zone may carry.
- *
- * {@link HeadsUpSignalKind} must stay assignable to the sidebar model's
- * `NowKind`. Nothing asserts it in a test; the assignment in `useSidebarState`
- * is the assertion, and it stops compiling the day the two disagree.
+ * blockage: nothing is stopped while it waits, and its notification tier is
+ * `notable`, never `blocking`. {@link deriveAttentionSignals} never emits it —
+ * see {@link HeadsUpSignalKind}, the four blockages.
  */
 export type AttentionSignalKind =
   | 'permission-prompt'
@@ -50,10 +46,11 @@ export type AttentionSignalKind =
   | 'extension-decision';
 
 /**
- * The four blockages the Heads up zone may carry: every kind but the two an
- * extension raises. `extension-decision` (spec `flow-multiproject` §7.5) is
- * counted in the Inbox and may reach a phone, but it is about a project, not
- * a session, so it has no row in a zone drawn one session at a time.
+ * The four blockages: every kind but the two an extension raises. The name is
+ * historical — the sidebar's Heads up zone that first drew them is gone
+ * (DOR-3092). `extension-decision` (spec `flow-multiproject` §7.5) is counted
+ * in the Inbox, but it is about a project, not a session, so it has no row in
+ * a list drawn one session at a time.
  */
 export type HeadsUpSignalKind = Exclude<
   AttentionSignalKind,
@@ -80,7 +77,7 @@ export interface AttentionSignal {
    * things.
    */
   id: string;
-  /** Which of the four blockages this is. Drives Heads up's priority order (BC-6). */
+  /** Which of the four blockages this is. Drives the priority order (BC-6). */
   kind: HeadsUpSignalKind;
   /** Who needs you — the agent's name where there is one, else what asked. */
   primary: string;

@@ -1,6 +1,6 @@
 ---
 name: auditing-ui
-description: Runs a lens-based UI/UX audit of the client and turns its findings into tracked, fenced work items. Use when auditing the interface for quality gaps, running or scoping an audit (full, one lens, one surface, or a diff), driving the real-browser leg of an audit, synthesizing raw lens findings into batches, or deciding how audit findings enter the tracker.
+description: Runs a lens-based UI/UX audit of the client and turns its findings into tracked, fenced work items, and measures the rendered page for a design review. Use when auditing the interface for quality gaps, running or scoping an audit (full, one lens, one surface, or a diff), driving the real-browser leg of an audit, measuring a page or a PR's change against the design review floors (phone sizes, icons, targets, contrast, focus), synthesizing raw lens findings into batches, or deciding how audit findings enter the tracker.
 ---
 
 # Auditing UI
@@ -9,7 +9,8 @@ An audit reads the interface through several independent lenses at once, then me
 saw into one ranked report and a set of PR-sized batches. It writes **zero code**.
 
 The rules live in the charter, not here: `audits/ui.md` (domain) inherits `audits/README.md`
-(cross-domain). **The charter is the authority on the lens set, the lens keys, and which lens is
+(cross-domain). What **passes** lives in `contributing/design-review.md`: the numbered rules a
+finding cites and the floors the browser leg measures. **The charter is the authority on the lens set, the lens keys, and which lens is
 surface-local versus whole-tree.** This file is the **procedure**, and it is the single home for
 the procedure: the commands under `/ui-audit:*` point here rather than restating any of it.
 
@@ -163,8 +164,54 @@ This is the predicate; nothing else decides it.
   or a profile that says there is none), say so in the report and audit code-only. Never let the
   browser leg silently vanish, leaving a reader who assumes it ran. A dropped browser leg is a
   stated coverage gap, listed with the others.
-- **Widths.** Desktop and phone at minimum (1440x900 and 390x844 are where this repo's findings
-  were confirmed). Tablet where the surface has a distinct layout there.
+- **Widths.** The capture matrix below. Desktop and phone at minimum (1440x900 and 390x844 are
+  where this repo's findings were confirmed); the phone is never optional (charter, 2026-10-18).
+
+### Measure the rendered page
+
+Reading the source misses what the browser decides: the `touch-target.ts` header records four
+controls under 44px in one phone header, "missed by every review that read the source instead
+of the page". So the browser leg measures, with one script:
+
+```bash
+node .agents/skills/auditing-ui/assets/measure/measure.mjs \
+  --url http://localhost:<your port> --routes /,/settings --out <scratchpad>/measure \
+  --modes base,contrast-more,forced-colors,reduced-motion --focus-walk 12
+```
+
+**The capture matrix** (its defaults): 390x844, 375x667, 768x1024 and 1440x900, each in light and
+dark, plus any `--modes` you name (screenshot-only). States the script cannot reach without a
+click (hover menus, open dialogs, errors) come from the dev playground's showcases, which render
+them at rest: point `--routes` at `/dev/<page>`, and pass `--ignore` a selector for the
+playground's own chrome when it is noise.
+
+**What it measures**, per base capture, and flags against `assets/measure/floors.json`:
+
+| Measure                                                                             | Rule       | Floor (desktop / phone)                        |
+| ----------------------------------------------------------------------------------- | ---------- | ---------------------------------------------- |
+| Every text run's font-size                                                          | §2.2       | 12 read, 10 absolute / 13 read, 12 absolute    |
+| Line height on wrapped and single-line text; tracking under 14px                    | §2.3       | 1.3 wrapped, 1.15 single; no negative tracking |
+| Every text field's font-size and height                                             | §2.4       | — / 16px (iOS zooms below it), 44px tall       |
+| Every icon's rendered box, by role (inline, control, chrome)                        | §3.1       | 12 / 16 / 16 — 14 / 20 / 20                    |
+| Text contrast against the composited background                                     | §4.4       | 4.5:1, large text 3:1                          |
+| The first N tab stops paint the system ring, on screen                              | §7.1       | 2px ring                                       |
+| Every interactive element's hit box (a grown `::after` counts; inline links exempt) | §7.2       | 24 / 44                                        |
+| Overlap and gaps between small targets                                              | §7.3       | — / 8px apart                                  |
+| Page-level sideways scroll; text escaping the viewport                              | §8.4, §1.4 | none                                           |
+
+It writes `summary.md` (counts by severity and rule, worst first), `measure.json` (every flag with
+its selector, text, value, floor and where it was seen) and the screenshots, including a crop of
+each tab stop that fails the ring check. **A flag is a candidate, not a finding.** Open the
+screenshot, confirm it, then trace it to the `file:line` that sets the size (charter validity
+rule 1) before filing it. A flag the screenshot contradicts is dropped with the reason, like any
+other dropped finding. Playwright resolves from `apps/e2e` (`@playwright/test`) with no setup;
+`PLAYWRIGHT_FROM` and `CHROME_PATH` point it elsewhere.
+
+**Scoring.** Each confirmed flag becomes a finding in the charter's shape, with the severity
+`floors.json` gave it mapped to the charter's rubric (Blocker = P1, Should = P2, Polish = P3) and
+the rule cited as a section of `contributing/design-review.md`. The capture matrix and the
+measured values go in the auditor's coverage note, so the reader can see which viewports and
+themes were actually looked at.
 
 **Cold worktree + browser-leg.** Two things the September 2026 run learned the hard way, recorded
 so the next browser leg does not re-learn them. A cold worktree does not boot the client on
@@ -287,11 +334,29 @@ duplicated here:
 > Both sections are on `main`. If `grep 'Landing Parallel Batches'` finds nothing in that skill,
 > your checkout predates them and you substitute your own landing method.
 
+## 8. Design review of one change
+
+A PR review is the smallest scope: one change, judged against `contributing/design-review.md`,
+with no tracker emission. `/ui-audit:measure` is its entry point.
+
+1. **Capture the change**, not the app: the routes or playground pages it touches, at the full
+   capture matrix, plus every state the change touches (design-review §0). When the PR only
+   brings screenshots, review those and say which viewports, themes and states are missing; a
+   missing phone capture is itself a finding (§8.1).
+2. **Measure** with the script, and read every screenshot.
+3. **Judge the rest by eye** against the unmeasured rules (hierarchy, states, motion, copy, fit).
+4. **Sign off** in the PR thread in the format at the end of `design-review.md`: Signed off or
+   Not yet, then Blockers, Should and Polish, each with the issue, the rule, the measured value
+   against its floor, and the fix. One line on what is good.
+
 ## Assets
 
 - `assets/auditor-prompt.md` — the per-lens auditor prompt.
 - `assets/synthesizer-prompt.md` — the synthesis prompt.
 - `assets/review-brief.md` — the adversarial-review brief for an execute batch.
+- `assets/measure/` — the capture-and-measure script (`measure.mjs`, with its in-page,
+  focus-walk and report modules) and `floors.json`, the measured floors keyed to
+  `contributing/design-review.md`.
 - `assets/reference-implementation/` — two **non-normative** orchestration scripts from the
   September 2026 run, kept as known-good examples for one specific session orchestrator. The
   prose above is what is normative; the scripts are color. See that directory's README.
@@ -300,5 +365,5 @@ duplicated here:
 > capability language so any harness can follow it. Three references are unavoidably specific to
 > this repo's Claude Code setup: the `/ui-audit:*` commands, the `orchestrating-parallel-work`
 > skill (Claude-only by manifest), and the `/flow` plugin's adapter. A harness without them still
-> runs §§1-6 unchanged; for §7 it substitutes its own landing method, and for §5 its own tracker
+> runs §§1-6 and §8 unchanged; for §7 it substitutes its own landing method, and for §5 its own tracker
 > path or the markdown ledger.

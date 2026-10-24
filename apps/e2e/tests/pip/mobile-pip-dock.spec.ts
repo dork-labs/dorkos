@@ -19,7 +19,7 @@
  * the Vite dev server, which is where it does.
  *
  * From there the test is the operator's own path: the sheet opens at peek, its
- * chevron minimizes it to the bar, and the four destinations are asked whether
+ * chevron minimizes it to the bar, and the destinations are asked whether
  * they are still there.
  *
  * **Both themes.** The geometry is theme-independent and the assertions here
@@ -37,11 +37,11 @@ import { PHONE, rectOf } from '../rooms/room-sheet-helpers';
 /** The docked PIP, by the slot it stamps on itself. */
 const miniBar = (page: Page) => page.locator('[data-slot="pip-minibar"]');
 
-/** The four destinations, by the id the bar stamps on each button. */
-const DESTINATIONS = ['home', 'library', 'dorkbot', 'you'] as const;
+/** The three destinations, by the id the bar stamps on each button. */
+const DESTINATIONS = ['home', 'dorkbot', 'you'] as const;
 
-/** The three that show a panel. DorkBot opens a conversation instead. */
-const PANEL_DESTINATIONS = ['home', 'library', 'you'] as const;
+/** The two that show a panel. DorkBot opens a conversation instead. */
+const PANEL_DESTINATIONS = ['home', 'you'] as const;
 
 test.describe('PIP on a phone — 390×844 @smoke', () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });

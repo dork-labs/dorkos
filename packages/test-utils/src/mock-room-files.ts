@@ -11,6 +11,7 @@ import type { Transport } from '@dorkos/shared/transport';
 type RoomFileMethods = Pick<
   Transport,
   | 'readRoomFiles'
+  | 'enableRoomRepo'
   | 'readRoomFileContent'
   | 'readRoomRepoStatus'
   | 'saveRoomFile'
@@ -44,6 +45,7 @@ function mockRoomHasNoRepoError(): Error & { code: string; status: number } {
  */
 export function roomFileTransportMocks(): RoomFileMethods {
   return {
+    enableRoomRepo: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),

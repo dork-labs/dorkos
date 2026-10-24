@@ -20,6 +20,7 @@
     "./listening-server": "./src/listening-server.ts",
     "./playwright-routes": "./src/playwright-routes.ts",
     "./runtime-capability-matrix": "./src/runtime-capability-matrix.ts",
+    "./soft-authenticator": "./src/soft-authenticator.ts",
     "./supertest": "./src/supertest.ts"
   },
   "scripts": {

@@ -133,6 +133,27 @@ export interface TurnPermissionLevel {
    * the turn saves to memory says so.
    */
   readonly outsider?: true;
+  /**
+   * The teammates whose words started the chain this turn is part of, one per
+   * space room and member (DOR-3036, `specs/turn-marks`): a space member who
+   * is not the owner wrote a message a turn answered, and everything that
+   * turn caused carries it on. Not a power axis of its own: a turn carrying it
+   * is held to the teammate tier and counted against each space's monthly
+   * limit. Present (even empty) means marked.
+   */
+  readonly teammate?: readonly TeammateOrigin[];
+}
+
+/**
+ * Where a teammate's mark began: the local copy of the space room the
+ * teammate wrote in, which names the space connection whose monthly limit the
+ * marked turns count against, and the teammate's author id there.
+ */
+export interface TeammateOrigin {
+  /** The local room id of the space room the teammate wrote in. */
+  readonly roomId: string;
+  /** The teammate's author id in that room. */
+  readonly authorId: string;
 }
 
 /**
@@ -341,7 +362,9 @@ export interface DependencyCheck {
   /** What this dependency is for. */
   description: string;
   /** Current status. */
-  status: 'satisfied' | 'missing' | 'outdated';
+  status: 'satisfied' | 'missing' | 'outdated' | 'unknown';
+  /** A passive diagnostic classification, distinct from a missing sign-in. */
+  reason?: 'credentials_unreadable';
   /** Installed version, if detected. */
   version?: string;
   /** Minimum required version, if applicable. */
@@ -395,7 +418,7 @@ export interface RuntimeReadiness {
    * e.g. Claude's delegated host login or a detected local model); otherwise
    * `connect`.
    */
-  state: 'ready' | 'connect';
+  state: 'ready' | 'connect' | 'unknown';
   /** The single Connect action to present; absent when `state` is `ready`. */
   connect?: RuntimeConnectAction;
 }
@@ -526,6 +549,7 @@ export function deriveRuntimeReadiness(
   // required), so treat auth as satisfied.
   const authReady = authCheck ? authCheck.status === 'satisfied' : true;
 
+  if (binaryReady && authCheck?.status === 'unknown') return { state: 'unknown' };
   if (binaryReady && authReady) return { state: 'ready' };
 
   const name = runtimeDisplayName(type);
@@ -1165,6 +1189,15 @@ export interface MessageOpts extends SessionSettings {
    */
   unattended?: boolean;
   /**
+   * True when THIS turn carries a teammate's mark (DOR-3036): a teammate in a
+   * shared space started the chain it is part of, however many agents it came
+   * through. Set by the registry's turn-mark seam, never by a caller. A runtime
+   * that honours it holds the turn to the teammate tier: its DorkOS tools reach
+   * only `roomTurn.roomId` when it answers a room and no room otherwise, and it
+   * reads no files, notes or the owner's profile. Assigned on every send.
+   */
+  teammate?: true;
+  /**
    * The loosest level THIS turn may run at, whatever the session is set to
    * (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
    *
@@ -1181,6 +1214,29 @@ export interface MessageOpts extends SessionSettings {
    * `@dorkos/shared/permission-semantics`.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /**
+   * The `'runtime-default'` bound in {@link permissionCeiling} is a
+   * continuation's hold (DOR-3203), not a stranger's words: a turn that picks
+   * a chat up on its own while the chat's latest turn was held (an approval's
+   * answer, a resume, a wake after a restart). It clamps the turn's power and
+   * nothing more, so the turn neither records itself as held nor marks what it
+   * posts as an outsider's. Only real outsider words do either. Runtimes
+   * ignore it; the turn-level record reads it.
+   */
+  continuationHold?: true;
+  /**
+   * The mode THIS turn starts from in place of the session's stored one: its
+   * agent's current level, for a chat that follows its agent up (DOR-3175).
+   * Set only at the registry's seam (`agent-level-bound.ts`), only for a chat a
+   * person never set a mode on, that nothing outside reached and nothing
+   * marked, and only when the level is looser than the stored mode.
+   *
+   * Per TURN and never written to the session's stored settings: the stored
+   * mode stays what it was, and a later lower level holds the next turn down
+   * again. Still held to {@link MessageOpts.permissionCeiling}. A runtime with
+   * no per-session mode ignores it.
+   */
+  levelPermissionMode?: PermissionModeId;
   /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the
@@ -1839,6 +1895,20 @@ export interface AgentRuntime {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   isHelperWorking?(sessionId: string): boolean;
+
+  /**
+   * The ids of the background tasks (helpers, shells) a session's process
+   * still names as live after its turn ended. A turn's stream-end sweep
+   * spares these instead of calling them lost, so a helper that outlives the
+   * reply keeps its row (FB-18). The ids are the ones `subagent_update`
+   * carries as `taskId`.
+   *
+   * Optional, and empty when the process ended with its turn: a runtime with
+   * no process that outlives a turn omits it, and every child is swept.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  liveHelperIds?(sessionId: string): string[];
 
   /**
    * The person chose Switch now on a message held for background work (spec

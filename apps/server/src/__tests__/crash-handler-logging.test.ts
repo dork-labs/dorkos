@@ -35,37 +35,44 @@ import { fileURLToPath } from 'node:url';
 const INDEX_TS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
 
 /**
- * The body of one `process.on('<event>', …)` registration in `index.ts`.
+ * The fatal path of the process handlers in `index.ts`: the `fatal` callback
+ * handed to `createProcessFaultHandlers`, which both events reach for anything
+ * that is not a survivable network failure (DOR-3229).
  *
  * A missing handler throws rather than returning empty: a scan that passes
  * because it found nothing to look at is the failure mode this whole file
  * exists to avoid.
  */
-function handlerBody(event: string): string {
+function fatalBody(): string {
   const source = readFileSync(INDEX_TS, 'utf-8');
-  const start = source.indexOf(`process.on('${event}'`);
-  expect(start, `no process.on('${event}') registration in index.ts`).toBeGreaterThan(-1);
+  for (const event of ['uncaughtException', 'unhandledRejection']) {
+    expect(source, `no process.on('${event}') registration in index.ts`).toContain(
+      `process.on('${event}', processFaults.`
+    );
+  }
+  const start = source.indexOf('createProcessFaultHandlers({');
+  expect(start, 'no createProcessFaultHandlers call in index.ts').toBeGreaterThan(-1);
   const end = source.indexOf('\n});', start);
-  expect(end, `unterminated process.on('${event}') handler in index.ts`).toBeGreaterThan(start);
+  expect(end, 'unterminated createProcessFaultHandlers call in index.ts').toBeGreaterThan(start);
   return source.slice(start, end);
 }
 
 describe('process crash handlers', () => {
   it('hands the uncaught error to the logger whole, not flattened', () => {
-    const body = handlerBody('uncaughtException');
+    const body = fatalBody();
 
-    expect(body).toContain("logger.error('[DorkOS] Uncaught exception — shutting down', err)");
+    expect(body).toContain("logger.error('[DorkOS] Uncaught exception — shutting down', value)");
     // The shape that defeats both reporters' clipping.
-    expect(body).not.toMatch(/\bstack:\s*err\.stack/);
-    expect(body).not.toMatch(/\bmessage:\s*err\.message/);
+    expect(body).not.toMatch(/\bstack:\s*value\.stack/);
+    expect(body).not.toMatch(/\bmessage:\s*value\.message/);
   });
 
   it('hands the rejection reason to the logger whole, not flattened', () => {
-    const body = handlerBody('unhandledRejection');
+    const body = fatalBody();
 
-    expect(body).toContain("logger.error('[DorkOS] Unhandled promise rejection', { reason })");
-    expect(body).not.toMatch(/\bstack:\s*reason\.stack/);
-    expect(body).not.toMatch(/\bmessage:\s*reason\.message/);
+    expect(body).toContain(
+      "logger.error('[DorkOS] Unhandled promise rejection — shutting down', { reason: value })"
+    );
   });
 
   it('bounds a crash whose error is far larger than a log line should be', async () => {

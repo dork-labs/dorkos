@@ -5,6 +5,8 @@
  *
  * @module shared/community-connections
  */
+import type { CommunityTeammatesTransport } from './community-teammates.js';
+import type { CommunitySpaceSettingsTransport } from './community-space-settings.js';
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
 import type {
@@ -292,7 +294,8 @@ export type CommunityDisconnectImpact = z.infer<typeof CommunityDisconnectImpact
 export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnectionPollResponseSchema>;
 
 /** Owner-scoped community connection operations over the local server only. */
-export interface CommunityConnectionTransport {
+export interface CommunityConnectionTransport
+  extends CommunityTeammatesTransport, CommunitySpaceSettingsTransport {
   /** List this install owner's pending, connected and reconnect-required communities. */
   listCommunityConnections(): Promise<CommunityConnectionDescriptor[]>;
   /** Begin browser approval without returning the installation's verifier or bearer. */

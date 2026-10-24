@@ -53,12 +53,17 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { renameAuthorHandle } from '../services/rooms/handles/rename-author-handle.js';
+import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
 import roomFileRoutes from './room-files.js';
 import roomCanvasRoutes from './room-canvas.js';
 import roomFollowRoutes from './room-follow.js';
+import roomReseatRoutes from './room-reseat.js';
 import { parseOrRefuse, roomRoute } from './room-route.js';
 
 const router = new Hono<ApiEnv>();
@@ -340,12 +345,17 @@ router.post('/:id/entries', (c) => {
   const body = parseOrRefuse(c, PostToRoomRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/entries', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
+    );
     return c.json(accepted(entry), 202);
   });
 });
@@ -435,10 +445,21 @@ router.patch('/:id/members/:authorId', (c) => {
  * owner and renamed as the person — in a loop, at whatever rate it liked, which
  * is precisely the mechanism this route claims not to have.
  *
+ * **A person may rename an agent** (DOR-3156) on any encrypted connection: at
+ * this computer, through the tunnel, or over `https` (DOR-3172). Plain-`http`
+ * Wi-Fi is the one way in where anyone on the same network can copy the
+ * sign-in, so there an agent's handle is refused until Wi-Fi gets `https`
+ * (DOR-3173); the check reads the socket, so it lifts on its own then. A
+ * person's own handle stays open everywhere. A rename of an agent writes one
+ * quiet line in each room it is in (`renameAuthorHandle`).
+ *
  * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
  * mistaken for a room id, because a room id is a ULID and this path has a second
  * segment matched literally.
  */
+/** What a person on plain-`http` Wi-Fi reads when they try to rename an agent. */
+const PLAIN_WIFI_AGENT_HANDLE_REFUSAL = 'Renaming an agent needs a secure connection.';
+
 router.patch('/authors/:authorId/handle', (c) => {
   const body = parseOrRefuse(c, SetAuthorHandleRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
@@ -446,9 +467,14 @@ router.patch('/authors/:authorId/handle', (c) => {
     if (caller().kind !== 'human') {
       throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
     }
-    return c.json(
-      toAuthorRef(getRoomService().authorRegistry.setHandle(c.req.param('authorId'), body.handle))
-    );
+    const service = getRoomService();
+    const authorId = c.req.param('authorId');
+    const facts = honoRequestFacts(c);
+    const target = service.authorRegistry.getById(authorId);
+    if (target && target.kind !== 'human' && isFromWifi(facts) && !facts.connectionEncrypted) {
+      return c.json({ error: PLAIN_WIFI_AGENT_HANDLE_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    }
+    return c.json(toAuthorRef(renameAuthorHandle(service, caller().id, authorId, body.handle)));
   });
 });
 
@@ -495,13 +521,18 @@ router.post('/:id/threads', (c) => {
   const body = parseOrRefuse(c, PostThreadReplyRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/threads', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      replyTo: body.rootEntryId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        replyTo: body.rootEntryId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
+    );
     return c.json(accepted(entry), 202);
   });
 });
@@ -596,5 +627,6 @@ router.route('/', roomAttachmentRoutes);
 router.route('/', roomFileRoutes);
 router.route('/:id/canvas', roomCanvasRoutes);
 router.route('/:id/follow', roomFollowRoutes);
+router.route('/:id/members/:authorId', roomReseatRoutes);
 
 export default router;

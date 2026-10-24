@@ -266,7 +266,7 @@ describe('UpdatePill', () => {
     expect(openExternal).toHaveBeenCalledWith('https://dorkos.ai/');
   });
 
-  it('never puts an update in Heads up', () => {
+  it('never puts an update in the list', () => {
     mockConfigData = {
       version: '1.2.3',
       latestVersion: '1.4.0',
@@ -278,18 +278,11 @@ describe('UpdatePill', () => {
     // Observable: the pill IS on screen for this state.
     expect(screen.getByText('Update ready: v1.4.0')).toBeInTheDocument();
 
-    // And the zone model built from the same moment — a fleet that genuinely
-    // has things waiting, so the Heads up zone is populated and the query below
-    // can fail — carries nothing about it.
-    const model = buildSidebarModel(busyFixture);
-    const now = model.zones.find((zone) => zone.id === 'now');
-    const nowRows = now?.sections.flatMap((section) => section.rows) ?? [];
-    expect(nowRows.length).toBeGreaterThan(0);
-    const nowText = nowRows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
-    expect(nowText).not.toContain('Update ready: v1.4.0');
-    expect(nowText.filter((text) => /update|version|restart/i.test(text))).toEqual([]);
-    // Every Heads up row is an agent that needs you or a rollup of them, and
-    // nothing else can be (BC-5).
-    expect(nowRows.every((r) => /^(now:|rollup:)/.test(r.reason))).toBe(true);
+    // And the list built from the same moment carries nothing about it: an
+    // update is a card in the bottom slot, never a row.
+    const rows = buildSidebarModel(busyFixture).sections.flatMap((section) => section.rows);
+    expect(rows.length).toBeGreaterThan(0);
+    const text = rows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
+    expect(text.filter((line) => /update|version|restart/i.test(line))).toEqual([]);
   });
 });

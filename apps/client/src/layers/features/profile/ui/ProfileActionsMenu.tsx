@@ -7,13 +7,20 @@
  * on it plus a line saying why the rest are missing, and everybody else gets
  * whatever their handle allows.
  *
+ * **An agent can be pinned from here** (DOR-3092). The sidebar draws an agent
+ * only once you have a direct message with it or have pinned it, so the
+ * profile — reached from the Directory, where every other agent lives — is
+ * where pinning has to be offered. It writes `ui.sidebar.pinned` exactly as
+ * the sidebar row's own menu does.
+ *
  * @module features/profile/ui/ProfileActionsMenu
  */
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MoreVertical } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
+import { sameSidebarItem, type SidebarItemRef } from '@dorkos/shared/config-schema';
 import { useCopyFeedback } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import {
@@ -27,7 +34,13 @@ import {
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { useProfileAgent } from '../model/use-profile-agent';
-import { configKeys } from '@/layers/entities/config';
+import {
+  configKeys,
+  pinItem,
+  unpinItem,
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+} from '@/layers/entities/config';
 import { useAgentPause, useResumeAgent } from '@/layers/entities/mesh';
 import {
   ProfileAgentActions,
@@ -83,6 +96,12 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
   const agentId = isAgent ? (member.agent?.manifestId ?? null) : null;
   const pause = useAgentPause(agentId);
   const resumeAgent = useResumeAgent();
+  const sidebarPrefs = useSidebarPrefs();
+  const { update: updateSidebar } = useUpdateSidebarPrefs();
+  const pinRef: SidebarItemRef | null =
+    isAgent && projectPath !== null ? { kind: 'agent', path: projectPath } : null;
+  const isPinned =
+    pinRef !== null && sidebarPrefs.pinned.some((entry) => sameSidebarItem(entry, pinRef));
 
   const setDefault = useMutation({
     mutationFn: (slug: string) => transport.setDefaultAgent(slug),
@@ -111,8 +130,13 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <Button size="icon-xs" variant="ghost" aria-label={`Actions for ${member.displayName}`}>
-            <MoreVertical className="size-(--size-icon-xs)" />
+          <Button
+            size="icon-sm"
+            variant="secondary"
+            className="max-md:size-11"
+            aria-label={`Actions for ${member.displayName}`}
+          >
+            <MoreHorizontal className="size-(--size-icon-sm)" />
           </Button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent align="end">
@@ -125,6 +149,18 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
           {isAgent && slug !== null && !isDefault && (
             <ResponsiveDropdownMenuItem onSelect={() => setDefault.mutate(slug)}>
               Set as default
+            </ResponsiveDropdownMenuItem>
+          )}
+
+          {pinRef !== null && (
+            <ResponsiveDropdownMenuItem
+              onSelect={() =>
+                updateSidebar((prev) =>
+                  isPinned ? unpinItem(prev, pinRef) : pinItem(prev, pinRef)
+                )
+              }
+            >
+              {isPinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
             </ResponsiveDropdownMenuItem>
           )}
 

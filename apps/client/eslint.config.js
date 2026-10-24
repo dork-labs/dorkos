@@ -7,6 +7,7 @@ import testConfig from '@dorkos/eslint-config/test';
 
 import fsd from './eslint-rules/fsd.js';
 import routes from './eslint-rules/routes.js';
+import space from './eslint-rules/space.js';
 
 // The TS preset's `extensions`/`parsers`/`external-module-folders` — the settings
 // that let import-x parse a `.ts` dependency — minus its `import-x/resolver` key,
@@ -15,6 +16,12 @@ import routes from './eslint-rules/routes.js';
 // instead of two, only one of which is live.
 const importXTypeScriptSettings = { ...importX.flatConfigs.typescript.settings };
 delete importXTypeScriptSettings['import-x/resolver'];
+
+/** The client never imports the server, from the app or the space's website alike. */
+const SERVER_IMPORT_BAN = {
+  group: ['@dorkos/server', '@dorkos/server/*', '**/apps/server/**', '**/server/src/**'],
+  message: 'The client never imports the server. Reach a backend through the Transport port.',
+};
 
 export default defineConfig([
   // `.yalc/**` holds local co-dev overlays of published packages (e.g. an
@@ -65,27 +72,20 @@ export default defineConfig([
 
   // Keep backend access behind the Transport port, including in tests.
   // This TypeScript rule supplements the per-layer FSD import restrictions.
+  //
+  // `src/space/` is a second site, not part of the app: the space's own web pages, which
+  // `vite.space.config.ts` builds separately and the space server serves (server-merge step 7e).
+  // `eslint-rules/space.js` keeps the two from importing each other, by resolved path.
   {
     files: ['src/**/*.{ts,tsx}'],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: [
-                '@dorkos/server',
-                '@dorkos/server/*',
-                '**/apps/server/**',
-                '**/server/src/**',
-              ],
-              message:
-                'The client never imports the server. Reach a backend through the Transport port.',
-            },
-          ],
-        },
-      ],
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [SERVER_IMPORT_BAN] }],
     },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { space },
+    rules: { 'space/separate-sites': 'error' },
   },
 
   // FSD Layer Enforcement: shared/ cannot import higher layers, and inside
@@ -300,6 +300,8 @@ export default defineConfig([
     ignores: [
       'src/**/__tests__/**',
       'src/**/*.test.{ts,tsx}',
+      // The space's own website has no app routes; its links are its own server's pages.
+      'src/space/**',
       'src/routes/**',
       'src/layers/shared/lib/route-factory.ts',
       'src/layers/shared/lib/session-link.ts',

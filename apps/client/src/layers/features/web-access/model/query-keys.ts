@@ -14,3 +14,6 @@ export const WEB_ACCESS_PRESENCE_KEY = ['session-relay', 'presence'] as const;
 
 /** Every browser seen here (`GET /api/session-relay/devices`). */
 export const WEB_ACCESS_DEVICES_KEY = ['session-relay', 'devices'] as const;
+
+/** The approvals passkeys pinned here (`GET /api/session-relay/passkeys`). */
+export const WEB_ACCESS_PASSKEYS_KEY = ['session-relay', 'passkeys'] as const;

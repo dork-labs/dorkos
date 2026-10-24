@@ -327,7 +327,7 @@ describe('ChildProcessLauncher home isolation', () => {
  * the codex auth profile
  * (`services/runtimes/shared/runtime-environment-catalog.ts`), so the projected
  * turn environment inherits it into the `codex` child process, where the SDK
- * hands it to the CLI (`@openai/codex-sdk` 0.154.0, `dist/index.js:258`).
+ * hands it to the CLI (`@openai/codex-sdk` 0.163.0, `dist/index.js:262`).
  */
 describe('ChildProcessLauncher and the Codex leg credential', () => {
   const CODEX_KEY = 'sk-codex-test-not-a-real-key';

@@ -17,7 +17,7 @@
  *        └─ SessionCrashRecovery.dispatch
  *                 └─ SessionTurnWindows.dispatch   ← boundary asked again; the ingress
  *                          └─ SessionPump.dispatch
- *                                   └─ createPumpLauncher → query()
+ *                                   └─ createPumpLaunchOptions → query()
  * ```
  *
  * ## The opt-in is asymmetric, and P5's comparison runs depend on knowing it
@@ -178,7 +178,7 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { createPumpLauncher, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { createPumpLaunchOptions, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
 import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
@@ -198,6 +198,7 @@ import {
   sharedBackgroundWorkLedger,
   type BackgroundWorkLedger,
 } from '../messaging/background-work-ledger.js';
+import { noteTaskTypes } from './diagnostics/task-type-log.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -532,6 +533,16 @@ export class PersistentDispatch {
    */
   isHelperWorking(sessionId: string): boolean {
     return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+  }
+
+  /**
+   * The background tasks the session's warm process still names as live, or
+   * none when it has no warm process (FB-18).
+   *
+   * @param sessionId - The session.
+   */
+  liveTaskIds(sessionId: string): string[] {
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.liveTaskIds() ?? [];
   }
 
   /**
@@ -1305,7 +1316,7 @@ export class PersistentDispatch {
           since: Date.now(),
         });
       },
-      launch: createPumpLauncher(
+      ...createPumpLaunchOptions(
         session,
         opts,
         () => {
@@ -1621,37 +1632,6 @@ function enrichDeliveredContent(content: string, additionalContext?: AdditionalC
   // Context defused as a turn's is; the words as written, since this path does
   // not know who wrote them and a person's steer must keep its `@` (DOR-2955).
   return enrichContent(content, additionalContext, false);
-}
-
-/**
- * Log each background `task_type` the first time this process reports it
- * (spec `warm-process-lifecycle` D1, DOR-2064).
- *
- * Only `local_agent` is known to hold a process today, and whether a Monitor
- * appears on the level frame, and under what type, has never been watched. So
- * nothing here decides anything: it records what a real CLI actually sends,
- * once per type per process, so the next real session answers the question.
- * Defensive for the same reason `turn-liveness.ts` is: this runs inside the
- * pump's message loop, where a throw would read as the process dying.
- *
- * @param sessionId - The session the process belongs to
- * @param seen - The types already logged for this process
- * @param message - One frame the process just produced
- */
-function noteTaskTypes(sessionId: string, seen: Set<string>, message: SDKMessage): void {
-  if (message.type !== 'system') return;
-  if ((message as { subtype?: unknown }).subtype !== 'background_tasks_changed') return;
-  const tasks = (message as { tasks?: unknown }).tasks;
-  if (!Array.isArray(tasks)) return;
-  for (const task of tasks) {
-    const taskType = (task as { task_type?: unknown } | null)?.task_type;
-    if (typeof taskType !== 'string' || seen.has(taskType)) continue;
-    seen.add(taskType);
-    logger.info('[persistent-dispatch] a background task type appeared on this process', {
-      session: sessionId,
-      taskType,
-    });
-  }
 }
 
 /**

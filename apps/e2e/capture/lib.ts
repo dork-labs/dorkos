@@ -98,6 +98,25 @@ export async function post(pathname: string, body: unknown): Promise<Response> {
   });
 }
 
+/**
+ * Open each fleet agent's Direct chat, so the sidebar lists the agent.
+ *
+ * The sidebar draws an agent once there is a direct message with it; the rest
+ * of the team lives in the Directory. A drive that wants agents on screen in
+ * the panel opens their Direct chats first, the same call every "Message"
+ * button makes, and it is safe to repeat.
+ *
+ * @param agents - The fleet agents' directory names.
+ */
+export async function openDirectChats(agents: readonly string[]): Promise<void> {
+  for (const agent of agents) {
+    const res = await post('/api/direct-chats', { agentPath: path.join(FLEET_ROOT, agent) });
+    if (!res.ok) {
+      throw new Error(`Opening ${agent}'s Direct chat answered ${res.status}: ${await res.text()}`);
+    }
+  }
+}
+
 /** PATCH JSON, throwing on a non-2xx response. */
 export async function patch(pathname: string, body: unknown): Promise<void> {
   const res = await fetch(`${API_URL}${pathname}`, {
@@ -291,8 +310,7 @@ export async function attemptShot(
  *
  * The scenario is bound before the page opens; it is read only when the turn
  * starts, which is strictly later. Opening the chat also records it as one this
- * person touched (DOR-2789), so the sidebar's Today and agent clicks treat it
- * as theirs.
+ * person touched (DOR-2789), so the agent's profile lists it among its chats.
  *
  * @param page - The page to drive.
  * @param scenario - The test-mode scenario the turn runs.

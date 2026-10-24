@@ -8,7 +8,7 @@
 // Zero dependencies. Configuration is all environment:
 //   BRAINSTORM_DIR       session directory (content/, state/, shots/)
 //   BRAINSTORM_PORT      port (vc passes one; random if unset)
-//   BRAINSTORM_HOST      bind host (127.0.0.1)
+//   BRAINSTORM_HOST      bind host (127.0.0.1); only 127.0.0.1, ::1 or localhost
 //   BRAINSTORM_URL_HOST  host printed in URLs (localhost)
 //   BRAINSTORM_IDLE_MS   idle shutdown, ms (4h; 0 disables)
 //   BRAINSTORM_THEME     default theme for screens with no ?theme= or meta (light)
@@ -59,6 +59,8 @@ function encodeFrame(opcode, payload) {
   return Buffer.concat([header, payload]);
 }
 
+const MAX_FRAME = 1024 * 1024;
+
 function decodeFrame(buffer) {
   if (buffer.length < 2) return null;
 
@@ -79,6 +81,8 @@ function decodeFrame(buffer) {
     payloadLen = Number(buffer.readBigUInt64BE(2));
     offset = 10;
   }
+  // Pages send small JSON events; a frame claiming more is refused, not buffered.
+  if (payloadLen > MAX_FRAME) throw new Error('frame too large');
 
   const maskOffset = offset;
   const dataOffset = offset + 4;
@@ -98,7 +102,33 @@ function decodeFrame(buffer) {
 
 const PORT = Number(process.env.BRAINSTORM_PORT || 49152 + Math.floor(Math.random() * 16383));
 const HOST = process.env.BRAINSTORM_HOST || '127.0.0.1';
-const URL_HOST = process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST);
+// The server takes notes and Sends that wake an agent, so it listens on this
+// computer only. Reach it from elsewhere by forwarding the port (ssh -L).
+const LOOPBACK_HOSTS = ['127.0.0.1', '::1', 'localhost'];
+if (!LOOPBACK_HOSTS.includes(HOST)) {
+  console.error(
+    JSON.stringify({
+      error: `the visual companion listens on this computer only (127.0.0.1, ::1 or localhost), not ${HOST}; to see it from another machine, forward the port, e.g. ssh -L <port>:localhost:<port>`,
+    })
+  );
+  process.exit(2);
+}
+// The host printed in URLs: a name this server answers to (see hostOk), with
+// ::1 in brackets so the URL parses.
+const URL_HOST = (() => {
+  const h = (process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST))
+    .toLowerCase()
+    .replace(/^\[?::1\]?$/, '[::1]');
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(h)) {
+    console.error(
+      JSON.stringify({
+        error: `the visual companion answers only to localhost, 127.0.0.1 or [::1], so a URL naming ${h} could not load`,
+      })
+    );
+    process.exit(2);
+  }
+  return h;
+})();
 const SESSION_DIR = process.env.BRAINSTORM_DIR || '/tmp/brainstorm';
 const CONTENT_DIR = path.join(SESSION_DIR, 'content');
 const STATE_DIR = path.join(SESSION_DIR, 'state');
@@ -245,7 +275,7 @@ function savedFor(name, events) {
     if (e.screen !== name) continue;
     if (e.type === 'select' && Array.isArray(e.choices)) choices = e.choices;
     if (e.type === 'send') {
-      const sel = Array.isArray(e.selection) ? e.selection : [];
+      const sel = Array.isArray(e.selection) ? e.selection.filter(isObj) : [];
       sent = sel.map((x) => x.choice);
       sentLabels = sel.map((x) => x.label || x.choice);
       sentAt = e.timestamp || null;
@@ -357,7 +387,7 @@ function statePayload() {
 // ========== Waking the agent ==========
 //
 // DorkOS can't take an event straight from a preview page yet (the canvas host
-// never completes the doc-frame handshake; see FINDINGS-events.md). What does
+// never completes the doc-frame handshake). What does
 // work is this server calling DorkOS's HTTP API from Node: no Origin header, so
 // CORS doesn't apply, and loopback needs no credential by default.
 //
@@ -569,10 +599,49 @@ function scheduleRoute(ms) {
   if (routeTimer) return;
   routeTimer = setTimeout(() => {
     routeTimer = null;
-    deliverRoute();
+    deliverRoute().catch(dropFailedBatch);
   }, ms);
   routeTimer.unref();
 }
+
+// A delivery that throws must not take the server down, and must not stay
+// queued: it would be replayed, and throw again, on every restart. Mark the
+// head chat's batch failed and move on.
+function dropFailedBatch(e) {
+  console.error('Delivery failed:', e && e.message);
+  const head = routeQueue[0];
+  if (!head) return;
+  let session = null;
+  try {
+    session = readRoute(head.screen)?.session || null;
+  } catch {
+    // An unreadable route: drop just the head.
+  }
+  const batch = routeQueue.filter((x) => {
+    if (x === head) return true;
+    try {
+      return session !== null && readRoute(x.screen)?.session === session;
+    } catch {
+      return false;
+    }
+  });
+  try {
+    markDelivery(batch, 'failed', 'bad-event');
+  } catch {
+    // Best effort: the queue still moves on.
+  }
+  for (const x of batch) routeQueue.splice(routeQueue.indexOf(x), 1);
+  scheduleRoute(0);
+}
+
+const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+
+// An event is a plain object whose `type` and `screen`, when present, are
+// strings. Anything else (null, a number, an array, `{"type":7}`) is no event.
+const isEvent = (x) =>
+  isObj(x) &&
+  (x.type === undefined || typeof x.type === 'string') &&
+  (x.screen === undefined || typeof x.screen === 'string');
 
 const clip = (s, n) => (typeof s === 'string' && s.length > n ? s.slice(0, n) + '…' : s);
 
@@ -600,13 +669,14 @@ function buildPayload(batch) {
     if (!groups.has(k))
       groups.set(k, { selection: [], newPins: [], trigger: 'pin', message: null, messageAt: null });
     const g = groups.get(k);
-    if (Array.isArray(e.selection)) g.selection = e.selection;
+    // Events come from pages: take only fields of the shape they should have.
+    if (Array.isArray(e.selection)) g.selection = e.selection.filter(isObj);
     if (e.type === 'pin' && !e.quiet) g.newPins.push(e.n);
-    if (e.type === 'send' && e.review && Array.isArray(e.review.notes))
-      g.newPins.push(...e.review.notes.map((n) => n.n));
+    if (e.type === 'send' && isObj(e.review) && Array.isArray(e.review.notes))
+      g.newPins.push(...e.review.notes.filter(isObj).map((n) => n.n));
     if (e.type === 'send') g.trigger = 'send';
     // The whole reply; deliverRoute trims to DorkOS's budget, and only if it must.
-    if (e.message) {
+    if (typeof e.message === 'string' && e.message) {
       g.message = e.message;
       g.messageAt = e.timestamp;
     }
@@ -821,8 +891,28 @@ function scrubToken(v, depth = 0) {
   return out;
 }
 
+// Events come from pages, so the fields other code reads are kept to the shapes
+// it expects before anything is stored: a stored event is read again on every
+// page load and replayed after a restart.
+function cleanFields(e) {
+  if ('screen' in e && typeof e.screen !== 'string') delete e.screen;
+  if ('message' in e && typeof e.message !== 'string') delete e.message;
+  if ('selection' in e) e.selection = Array.isArray(e.selection) ? e.selection.filter(isObj) : [];
+  if ('choices' in e && !Array.isArray(e.choices)) delete e.choices;
+  if ('notes' in e && !Array.isArray(e.notes)) delete e.notes;
+  if ('review' in e) {
+    if (!isObj(e.review)) delete e.review;
+    else if ('notes' in e.review)
+      e.review = {
+        ...e.review,
+        notes: Array.isArray(e.review.notes) ? e.review.notes.filter(isObj) : [],
+      };
+  }
+  return e;
+}
+
 function recordEvent(event) {
-  const clean = scrubToken({ ...event });
+  const clean = cleanFields(scrubToken({ ...event }));
   if (!clean.timestamp) clean.timestamp = Date.now();
   if (!clean.type) clean.type = 'event';
   fs.appendFileSync(EVENTS_FILE, JSON.stringify(clean) + '\n');
@@ -929,6 +1019,58 @@ function crossOrigin(req) {
   }
 }
 
+// The names this server answers to. A web page can point its own domain at
+// 127.0.0.1 (DNS rebinding) and then reach this port as if it were same-origin,
+// but its requests still name that domain in Host, so any other Host is refused.
+// DorkOS's preview proxy sends Host: localhost:<this port> (dorkos
+// apps/server/src/services/workbench-serve/preview-listener.ts; its test pins
+// it). Names compare
+// case-insensitively and without a trailing dot (`localhost.` is localhost).
+const HOST_NAMES = ['localhost', '127.0.0.1', '[::1]'];
+let boundPort = PORT;
+function hostOk(req) {
+  const h = String(req.headers.host || '').toLowerCase();
+  const i = h.lastIndexOf(':');
+  if (i <= 0) return false;
+  const name = h.slice(0, i).replace(/\.$/, '');
+  return HOST_NAMES.includes(name) && h.slice(i + 1) === String(boundPort);
+}
+// A page on a website (not this computer) may not write, and may not open a
+// socket: browsers let any site open a websocket to localhost, and the socket
+// carries every screen change. No Origin at all is a local tool, not a page.
+// A page this server rendered says same-origin in Sec-Fetch-Site, which a page
+// cannot forge; that is how the DorkOS preview opened from a phone (Origin is
+// the computer's LAN or Tailscale address) still works. A rebinding page was
+// already refused by hostOk.
+function originOk(req) {
+  const origin = req.headers.origin;
+  if (origin === undefined || req.headers['sec-fetch-site'] === 'same-origin') return true;
+  return LOCAL_ORIGIN.test(origin.toLowerCase());
+}
+const FOREIGN_ORIGIN = {
+  ok: false,
+  error: 'foreign-origin',
+  message: 'Only pages on this computer can write to the visual companion.',
+};
+const WRONG_HOST = {
+  ok: false,
+  error: 'wrong-host',
+  message: 'The visual companion answers only to localhost, 127.0.0.1 or [::1] on its own port.',
+};
+
+// Event types a page may not write. The server records where a Send is
+// (`delivery`), and only the agent answers a note (`pin-resolve`, from
+// `vc review`, a local tool with no Origin). A page faking either could mark a
+// Send delivered, answer a note in the agent's name, or (a malformed delivery)
+// break every read of the notes.
+const SERVER_ONLY = new Set(['delivery']);
+const AGENT_ONLY = new Set(['pin-resolve']);
+const SERVER_ONLY_MESSAGE = 'Pages cannot write delivery records or answer notes.';
+function pageMayWrite(type, fromPage) {
+  if (SERVER_ONLY.has(type)) return false;
+  return !(fromPage && AGENT_ONLY.has(type));
+}
+
 // A cross-origin write must carry the token `vc review open` minted for that
 // review (the `vt` in its link). Without it any local page could post a Send
 // that wakes the agent.
@@ -957,9 +1099,59 @@ function readBody(req, cb) {
   req.on('end', () => cb(data));
 }
 
+// Whether a path is a regular file (a folder, like `files/%2E%2E%2F`, is not).
+function isFile(f) {
+  try {
+    return fs.statSync(f).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Stream a file; a read that fails later (gone, unreadable) drops the response.
+function stream(f, res) {
+  return fs
+    .createReadStream(f)
+    .on('error', () => res.destroy())
+    .pipe(res);
+}
+
+// A path segment decoded, or null when it is not valid percent-encoding.
+function safeDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null;
+  }
+}
+
+// Routes a page on another local port may read (CORS). Everything else, the
+// screens' HTML included, stays readable only by the companion's own pages.
+const CORS_ROUTES = new Set([
+  'vc/event',
+  'vc/pins',
+  'vc/review',
+  'vc/review-status',
+  'vc/review.js',
+  'vc/director.js',
+]);
+
+// Any page can make the browser send a GET here (an <img>, say), so a request
+// that throws must cost one 400, never the server.
+function handleRequest(req, res) {
+  try {
+    routeRequest(req, res);
+  } catch (e) {
+    console.error('Request failed:', e.message);
+    if (!res.headersSent) send(res, 400, { ok: false, error: 'bad-request' });
+    else res.destroy();
+  }
+}
+
 // The page may be served under a proxy prefix (/…/preview/abc/), so every
 // route is matched on the path's tail and the page uses relative URLs.
-function handleRequest(req, res) {
+function routeRequest(req, res) {
+  if (!hostOk(req)) return send(res, 421, WRONG_HOST);
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   const tail = p.replace(/^.*\/(vc\/shot\/[^/]+|vc\/[^/]+|files\/[^/]+)$/, '$1');
@@ -969,10 +1161,12 @@ function handleRequest(req, res) {
     tail === 'vc/health' ||
     tail === 'vc/review-status' ||
     (tail === 'vc/pins' && url.searchParams.has('poll'));
-  if (!passive) touchActivity();
-  const corsOrigin = (res.corsOrigin = LOCAL_ORIGIN.test(req.headers.origin || '')
-    ? req.headers.origin
-    : null);
+  // A website's request (an <img> on any page) is not someone using the companion.
+  if (!passive && req.headers['sec-fetch-site'] !== 'cross-site') touchActivity();
+  const corsOrigin = (res.corsOrigin =
+    CORS_ROUTES.has(tail) && LOCAL_ORIGIN.test(req.headers.origin || '')
+      ? req.headers.origin
+      : null);
   if (req.method === 'OPTIONS') {
     res.writeHead(
       204,
@@ -1023,16 +1217,17 @@ function handleRequest(req, res) {
     return;
   }
   if (req.method === 'GET' && tail.startsWith('vc/shot/')) {
-    const f = path.join(SHOTS_DIR, path.basename(decodeURIComponent(tail.slice(8))));
-    if (!f.endsWith('.png') || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
+    const name = safeDecode(tail.slice(8));
+    const f = name === null ? '' : path.join(SHOTS_DIR, path.basename(name));
+    if (!f.endsWith('.png') || !isFile(f)) return send(res, 404, 'Not found', 'text/plain');
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
-    return fs.createReadStream(f).pipe(res);
+    return stream(f, res);
   }
   if (req.method === 'GET' && tail === 'vc/app.css') {
-    if (!fs.existsSync(APP_CSS_FILE))
+    if (!isFile(APP_CSS_FILE))
       return send(res, 404, 'app.css is not built yet: run scripts/vc build', 'text/plain');
     res.writeHead(200, { 'Content-Type': MIME_TYPES['.css'], 'Cache-Control': 'max-age=300' });
-    return fs.createReadStream(APP_CSS_FILE).pipe(res);
+    return stream(APP_CSS_FILE, res);
   }
   if (req.method === 'POST' && tail === 'vc/event') {
     return readBody(req, (body) => {
@@ -1042,25 +1237,35 @@ function handleRequest(req, res) {
       } catch {
         return send(res, 400, { ok: false, error: 'bad json' });
       }
-      if (!event || typeof event !== 'object' || Array.isArray(event))
-        return send(res, 400, { ok: false, error: 'bad event' });
+      if (!isEvent(event)) return send(res, 400, { ok: false, error: 'bad event' });
       const { vt, ...rest } = event;
+      if (!originOk(req)) return send(res, 403, FOREIGN_ORIGIN);
+      if (!pageMayWrite(rest.type, req.headers.origin !== undefined))
+        return send(res, 403, { ok: false, error: 'not-yours', message: SERVER_ONLY_MESSAGE });
       if (crossOrigin(req) && !tokenOk(rest.screen, vt))
         return send(res, 403, {
           ok: false,
           error: 'stale-link',
           message: 'This page needs the link from `vc review open` (its vt token).',
         });
-      const saved = recordEvent(rest);
+      let saved;
+      try {
+        saved = recordEvent(rest);
+      } catch (e) {
+        console.error('Failed to record event:', e.message);
+        return send(res, 400, { ok: false, error: 'bad event' });
+      }
       send(res, 200, { ok: true, routed: saved.routed, timestamp: saved.timestamp });
     });
   }
   if (req.method === 'GET' && tail.startsWith('files/')) {
-    const filePath = path.join(CONTENT_DIR, path.basename(decodeURIComponent(tail.slice(6))));
-    if (!fs.existsSync(filePath)) return send(res, 404, 'Not found', 'text/plain');
+    const name = safeDecode(tail.slice(6));
+    if (name === null) return send(res, 404, 'Not found', 'text/plain');
+    const filePath = path.join(CONTENT_DIR, path.basename(name));
+    if (!isFile(filePath)) return send(res, 404, 'Not found', 'text/plain');
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-    return fs.createReadStream(filePath).pipe(res);
+    return stream(filePath, res);
   }
   if (req.method === 'GET' && (p.endsWith('/') || p.endsWith('.html') || !p.includes('.'))) {
     const html = renderScreen(url.searchParams.get('screen'), {
@@ -1077,6 +1282,19 @@ function handleRequest(req, res) {
 const clients = new Set();
 
 function handleUpgrade(req, socket) {
+  // Node drops its own error listener once a socket reaches this handler, so a
+  // client that resets while being refused would otherwise crash the server.
+  socket.on('error', () => {});
+  if (!hostOk(req)) {
+    socket.end(
+      'HTTP/1.1 421 Misdirected Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
+    );
+    return;
+  }
+  if (!originOk(req)) {
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    return;
+  }
   const key = req.headers['sec-websocket-key'];
   if (!key) {
     socket.destroy();
@@ -1103,6 +1321,11 @@ function handleUpgrade(req, socket) {
 
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
+    if (buffer.length > 2 * MAX_FRAME) {
+      socket.destroy();
+      clients.delete(socket);
+      return;
+    }
     while (buffer.length > 0) {
       let result;
       try {
@@ -1152,8 +1375,17 @@ function handleMessage(text) {
     console.error('Failed to parse WebSocket message:', e.message);
     return;
   }
+  // `null`, a number or an array parses fine but is no event (and `null.type` throws).
+  if (!isEvent(event)) return;
   if (event.type === 'ping') return;
-  recordEvent(event);
+  // Every socket is a page.
+  if (!pageMayWrite(event.type, true)) return;
+  // One bad frame must not take the server (and every open page) down with it.
+  try {
+    recordEvent(event);
+  } catch (e) {
+    console.error('Failed to record WebSocket event:', e.message);
+  }
 }
 
 function broadcast(msg) {
@@ -1214,7 +1446,14 @@ function startServer() {
         debounceTimers.delete(filename);
         const filePath = path.join(CONTENT_DIR, filename);
         const name = filename.replace(/\.html$/, '');
-        if (!fs.existsSync(filePath)) {
+        // One stat, not exists-then-stat: a file deleted in between would throw here.
+        let st = null;
+        try {
+          st = fs.statSync(filePath);
+        } catch {
+          // Gone: handled below as a removed screen.
+        }
+        if (!st) {
           knownFiles.delete(filename);
           bump();
           broadcast({ type: 'screens', version: stateVersion });
@@ -1222,7 +1461,7 @@ function startServer() {
         }
         touchActivity();
         bump();
-        const mtime = Math.round(fs.statSync(filePath).mtimeMs);
+        const mtime = Math.round(st.mtimeMs);
 
         if (!knownFiles.has(filename)) {
           knownFiles.add(filename);
@@ -1354,14 +1593,15 @@ function startServer() {
   replayQueued();
 
   server.listen(PORT, HOST, () => {
+    boundPort = server.address().port;
     const info = JSON.stringify({
       type: 'server-started',
       v: VERSION,
       pid: process.pid,
-      port: PORT,
+      port: boundPort,
       host: HOST,
       url_host: URL_HOST,
-      url: 'http://' + URL_HOST + ':' + PORT,
+      url: 'http://' + URL_HOST + ':' + boundPort,
       session: SESSION_ID,
       agent_session: process.env.VC_AGENT_SESSION || null,
       session_dir: SESSION_DIR,

@@ -15,10 +15,10 @@
  * validators on the read path supply these blocks — conf's Ajv writes the
  * declared defaults in (`useDefaults`), and Zod fills them on any parsed config
  * — and `config-manager.test.ts` proves an unmigrated install still reads back
- * `sections: {}` / `gettingStarted: { retired: [] }` / `digest: {}`. The sibling
- * `isSectionCollapsed` and `isSuggestionRetired` rely on exactly that and would
- * throw if it were ever untrue. The fallbacks cost nothing and keep this the one
- * place a hand-edited or half-written config cannot reach the model through.
+ * `sections: {}`. The sibling `isSectionCollapsed` relies on exactly that and
+ * would throw if it were ever untrue. The fallbacks cost nothing and keep this
+ * the one place a hand-edited or half-written config cannot reach the model
+ * through.
  *
  * @module entities/config/model/sidebar-model-prefs
  */
@@ -37,18 +37,14 @@ import type {
  * through `useUpdateSidebarPrefs` and the pure mutators beside it.
  */
 export interface SidebarModelPrefs {
-  /** Ordered pins — the Library's Pins section, in the person's own order. */
+  /** Pinned items — a pinned agent stays in Direct messages. */
   readonly pinned: readonly SidebarItemRef[];
-  /** Manual and smart groups — sub-headers inside Library ▸ Agents. */
+  /** Manual and smart groups — the operator's own sections. */
   readonly groups: readonly SidebarGroup[];
   /** Individually muted items. Mute owns every attention signal at once. */
   readonly muted: readonly SidebarItemRef[];
   /** Per-section collapse and options. A section with no entry has no state. */
   readonly sections: Readonly<Partial<Record<SidebarSectionId, SidebarSectionPrefs>>>;
-  /** Getting started's memory: suggestions this person has finished with. */
-  readonly gettingStarted: { readonly retired: readonly string[] };
-  /** The welcome-back digest's memory: the local date it last appeared on. */
-  readonly digest: { readonly lastShownDate?: string };
 }
 
 /**
@@ -70,7 +66,5 @@ export function toSidebarModelPrefs(prefs: SidebarPrefs): SidebarModelPrefs {
     groups: prefs.groups ?? [],
     muted: prefs.muted ?? [],
     sections: prefs.sections ?? {},
-    gettingStarted: { retired: prefs.gettingStarted?.retired ?? [] },
-    digest: { lastShownDate: prefs.digest?.lastShownDate },
   };
 }

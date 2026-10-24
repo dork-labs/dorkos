@@ -95,11 +95,11 @@ export function isBootQueryKey(queryKey: readonly unknown[]): boolean {
     // `configKeys.current()` — pins, groups, collapse and mute state.
     case 'config':
       return queryKey.length === 2 && second === 'current';
-    // `roomKeys.list(kind)` (length 3) and `roomKeys.threads()` (length 2).
-    // `listWithArchived` is length 4 and falls through.
+    // `roomKeys.list(kind)` (length 3). `listWithArchived` is length 4 and
+    // falls through, and so does `roomKeys.threads()`: threads are a page of
+    // their own, not part of the sidebar's first paint.
     case 'rooms':
-      if (second === 'list') return queryKey.length === 3;
-      return queryKey.length === 2 && second === 'threads';
+      return second === 'list' && queryKey.length === 3;
     // `['mesh','agent-paths']` — how many agent rows there will be.
     case 'mesh':
       return queryKey.length === 2 && second === 'agent-paths';
@@ -107,7 +107,7 @@ export function isBootQueryKey(queryKey: readonly unknown[]): boolean {
     // in the paths, so this one is a prefix by nature.
     case 'agents':
       return second === 'resolved';
-    // `sessionKeys.recent(limit)` — Today's rows and the Agents section's order.
+    // `sessionKeys.recent(limit)` — when each agent last ran, and who is live.
     case 'recent-sessions':
       return queryKey.length === 2 && typeof second === 'number';
     // `TEAM_ROSTER_KEY` — the header's team name. Exactly `['team']`; the

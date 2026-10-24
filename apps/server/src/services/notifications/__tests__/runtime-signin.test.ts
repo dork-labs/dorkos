@@ -279,7 +279,7 @@ describe('a runtime turn that fails on its sign-in', () => {
     // is still in the inbox tomorrow, and telling somebody to sign in when they
     // already did is exactly the staleness that argued against storing at all.
     expect(row.title).toBe('Your Claude Code sign-in stopped working');
-    expect(row.body).toBe('Scheduled tasks and agent replies cannot run until you sign in.');
+    expect(row.body).toBe('Its tasks and replies wait until you sign in.');
     // `blocking` because it IS a condition a person can end — the difference
     // that puts it on the escalation ladder.
     expect(row.tier).toBe('blocking');
@@ -397,7 +397,7 @@ describe('nobody signs in', () => {
     expect(sendToAll).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Your Claude Code sign-in stopped working',
-        body: 'Scheduled tasks and agent replies cannot run until you sign in.',
+        body: 'Its tasks and replies wait until you sign in.',
         deepLink: '/?settings=runtimes',
         tier: 'blocking',
       })
@@ -615,7 +615,7 @@ describe('a machine with more than one account on one runtime', () => {
 
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(sendToAll).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Your Claude Code sign-in stopped working' })
+      expect.objectContaining({ title: 'Your Main sign-in stopped working' })
     );
   });
 
@@ -630,43 +630,41 @@ describe('a machine with more than one account on one runtime', () => {
     await drain(registry, 'claude-code', 'sess-fixed');
 
     expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual([
-      'Your Claude Code sign-in is working again',
-    ]);
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Main sign-in is working again']);
   });
 
-  it('says it once for two dead accounts, and waits for both to be fixed', async () => {
-    // One notice per runtime is the product decision — the inbox subject is the
-    // runtime and the app's standing banner reads the newest row per runtime, so
-    // a second row would say the same sentence twice. What the per-account store
-    // buys is that the one notice does not end early.
+  it('keeps separate notices and clears only the repaired account', async () => {
     const registry = registryWithAccounts(
       'claude-code',
       [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
       {
-        'sess-a-fail': '~/.claude',
-        'sess-b-fail': '~/.claude2',
-        'sess-a-fixed': '~/.claude',
-        'sess-b-fixed': '~/.claude2',
+        'a-fail': '/accounts/claude4',
+        'b-fail': '/accounts/claude5',
+        'a-fixed': '/accounts/claude4',
+        'b-fixed': '/accounts/claude5',
       }
     );
-
-    await drain(registry, 'claude-code', 'sess-a-fail');
+    await drain(registry, 'claude-code', 'a-fail');
     vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-b-fail');
-    expect(raisedRows()).toHaveLength(1);
-
+    await drain(registry, 'claude-code', 'b-fail');
+    expect(raisedRows().map((row) => row.subject.id)).toEqual(
+      expect.arrayContaining(['claude-code:/accounts/claude4', 'claude-code:/accounts/claude5'])
+    );
+    expect(raisedRows().map((row) => row.title)).toEqual(
+      expect.arrayContaining([
+        'Your claude4 sign-in stopped working',
+        'Your claude5 sign-in stopped working',
+      ])
+    );
     vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-a-fixed');
-    expect(clearedRows()).toEqual([]);
-
+    await drain(registry, 'claude-code', 'a-fixed');
+    expect(clearedRows().map((row) => row.subject.id)).toEqual(['claude-code:/accounts/claude4']);
+    expect(store.unresolvedStandingSubjects('signin.required').map((row) => row.subjectId)).toEqual(
+      ['claude-code:/accounts/claude5']
+    );
     vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-b-fixed');
-
-    // Retired under the FIRST account's episode key — the identity the ladder
-    // armed on, which does not move when a second account joins the condition.
-    expect(retired()).toHaveLength(1);
-    expect(clearedRows()).toHaveLength(1);
+    await drain(registry, 'claude-code', 'b-fixed');
+    expect(clearedRows()).toHaveLength(2);
   });
 
   it('does not count a turn that was already running when THAT account failed', async () => {
@@ -715,14 +713,10 @@ describe('a machine with more than one account on one runtime', () => {
 
     // The held turn is the only thing left that could end the condition, and it
     // is evidence about a moment before its own account broke.
-    expect(retired()).toEqual([]);
+    expect(clearedRows().map((row) => row.subject.id)).toEqual(['claude-code:~/.claude']);
   });
 
-  it('lets any working credential answer a failure it could not place', async () => {
-    // A failure the runtime could not attribute is recorded under "unknown",
-    // which every clean turn on that runtime answers. The alternative is an
-    // episode nothing can ever clear — a banner for the life of the install —
-    // and a sign-in that is still dead re-stands on the very next turn.
+  it('leaves an unattributed failure standing after another account works', async () => {
     const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
       // `sess-unplaceable` is deliberately absent: the runtime cannot say.
       'sess-live': '~/.claude2',
@@ -734,7 +728,7 @@ describe('a machine with more than one account on one runtime', () => {
     vi.advanceTimersByTime(ONE_MINUTE_MS);
     await drain(registry, 'claude-code', 'sess-live');
 
-    expect(retired()).toHaveLength(1);
+    expect(retired()).toHaveLength(0);
   });
 
   it('places a failure on a session whose account was only decided by the launch', async () => {
@@ -781,10 +775,6 @@ describe('a machine with more than one account on one runtime', () => {
   });
 
   it('keeps a named account standing when only the unplaceable failure is answered', async () => {
-    // The mixed episode: one failure this runtime could place, one it could not.
-    // A clean turn on some THIRD account answers the unplaceable one — that is
-    // the best evidence anything can offer against "we could not tell" — and
-    // must leave the named one exactly where it was.
     const registry = registryWithAccounts(
       'claude-code',
       [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
@@ -799,7 +789,7 @@ describe('a machine with more than one account on one runtime', () => {
     await drain(registry, 'claude-code', 'sess-a-fail');
     vi.advanceTimersByTime(ONE_MINUTE_MS);
     await drain(registry, 'claude-code', 'sess-unplaceable');
-    expect(raisedRows()).toHaveLength(1);
+    expect(raisedRows()).toHaveLength(2);
 
     vi.advanceTimersByTime(ONE_MINUTE_MS);
     await drain(registry, 'claude-code', 'sess-live');
@@ -808,7 +798,7 @@ describe('a machine with more than one account on one runtime', () => {
     vi.advanceTimersByTime(ONE_MINUTE_MS);
     await drain(registry, 'claude-code', 'sess-a-fixed');
 
-    // Only now: the map is empty, so the one notice covering both ends.
+    // Only the named account is cleared. The unattributed failure stays open.
     expect(retired()).toHaveLength(1);
     expect(clearedRows()).toHaveLength(1);
   });
@@ -859,9 +849,7 @@ describe('signing back in', () => {
     await flush();
 
     expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual([
-      'Your Claude Code sign-in is working again',
-    ]);
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Main sign-in is working again']);
   });
 
   it('does not cancel the phone leg for an account nobody signed in', async () => {
@@ -1029,7 +1017,7 @@ describe('a server restart that stranded an episode', () => {
     const [closed] = clearedRows();
     expect(closed.title).toBe('DorkOS restarted while your Claude Code sign-in was broken');
     expect(closed.title).not.toContain('working again');
-    expect(closed.body).toContain('the next task or reply will say so');
+    expect(closed.body).toBe('Sign in again if it still needs you.');
   });
 
   it('says it quietly: nothing announced, nothing pushed, nothing unread', async () => {

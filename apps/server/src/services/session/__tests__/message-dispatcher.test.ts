@@ -982,6 +982,135 @@ describe('dispatchMessage — never into an open permission ask', () => {
   });
 });
 
+// DOR-3113: a room mention for an agent parked on a person's answer waits behind
+// the answer instead of failing after its five-minute wait.
+describe('dispatchMessage — a room trigger behind an unanswered approval', () => {
+  it('keeps waiting past its budget while the agent waits on a person, then runs', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield {
+          type: 'approval_required',
+          data: {
+            toolCallId: 'call-1',
+            toolName: 'Bash',
+            input: '{}',
+            timeoutMs: 60_000,
+            remainingMs: 60_000,
+          },
+        } as unknown as StreamEvent;
+        await first.wait;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      quickTurn(),
+    ]);
+
+    await send('run something dangerous');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    expect(projector.hasPendingInteractions()).toBe(true);
+
+    // The parked turn holds the session, as it does in production.
+    runtime.acquireLock.mockReturnValue(false);
+    const held = await send('re-mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    expect(held.accepted).toBe(true);
+
+    // Many budgets pass. It used to fail here, once per mention.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(settled).toEqual([]);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // The person answers; the parked turn ends; the mention runs.
+    projector.resolveInteraction('call-1', 'approved');
+    runtime.acquireLock.mockReturnValue(true);
+    first.open();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
+    });
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      're-mentioned while it waits',
+      expect.anything()
+    );
+    expect(settled).not.toContain('failed');
+  });
+
+  /** A turn that stops on an approval, then ends when `release` opens. */
+  function approvalTurn(release: Promise<void>) {
+    return async function* (): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Bash',
+          input: '{}',
+          timeoutMs: 60_000,
+          remainingMs: 60_000,
+        },
+      } as unknown as StreamEvent;
+      await release;
+      yield { type: 'done', data: {} } as StreamEvent;
+    };
+  }
+
+  // Review finding 2: the person answers, and the same turn runs on for longer
+  // than a budget. The mention must not be dropped in that window.
+  it('keeps waiting while the answered turn runs on, then runs', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
+    await send('run something dangerous');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    runtime.acquireLock.mockReturnValue(false);
+    await send('re-mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    projector.resolveInteraction('call-1', 'approved');
+    // The answered turn keeps working for several budgets.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled).toEqual([]);
+
+    runtime.acquireLock.mockReturnValue(true);
+    first.open();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
+    });
+    expect(settled).not.toContain('failed');
+  });
+
+  // Review finding 3: a card left over from a turn that already ended has
+  // nobody to resume it, so a mention must not wait hours behind it.
+  it('does not wait behind a card no live turn holds', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
+    await send('run something dangerous');
+    await settle();
+    runtime.acquireLock.mockReturnValue(false);
+    await send('mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    // The turn ends with the card still unanswered: nobody will resume it.
+    first.open();
+    await settle();
+    expect(getOrCreateProjector(session).hasPendingInteractions()).toBe(true);
+
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
+  });
+});
+
 describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
   /** Re-declare the runtime's capabilities for one case. */
   function withCapabilities(overrides: Partial<RuntimeCapabilities>): void {
@@ -1063,6 +1192,65 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
 
     first.open();
     await settle();
+  });
+
+  it('queues a steer or stage held to the runtime default rather than join a looser turn (DOR-3037)', async () => {
+    withCapabilities({ supportsSteer: true, supportsContextStaging: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn()]);
+    await send('long turn');
+    await settle();
+
+    const held = { permissionCeiling: 'runtime-default' as const };
+    const steer = await send('from the phone', { disposition: 'steer', ...held });
+    const stage = await send('more from the phone', { disposition: 'stage', ...held });
+
+    expect(steer.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-steerable' });
+    expect(stage.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-stageable' });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    // The rows say so, so the hold survives a restart.
+    expect(listQueuedMessages(session).map((row) => store.get(row.id)?.heldToDefault)).toEqual([
+      true,
+      true,
+    ]);
+
+    first.open();
+    await settle();
+  });
+
+  it('hands a continuation’s hold to the runtime, queued or not (DOR-3203)', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    // Queued behind the running turn, as an approval's answer is.
+    await send('the answer', { permissionCeiling: 'runtime-default', continuationHold: true });
+    first.open();
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'the answer');
+    expect(call?.[2]).toMatchObject({
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
+    const plain = runtime.sendMessage.mock.calls.find(([, content]) => content === 'long turn');
+    expect(plain?.[2]?.continuationHold).toBeUndefined();
+  });
+
+  it('marks a continuation once somebody rewords it while it waits (DOR-3203)', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    await send('the answer', { permissionCeiling: 'runtime-default', continuationHold: true });
+    const [row] = listQueuedMessages(session);
+    editQueuedMessage(session, row!.id, { content: 'words from the phone', holdToDefault: true });
+    first.open();
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(
+      ([, content]) => content === 'words from the phone'
+    );
+    expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
+    expect(call?.[2]?.continuationHold).toBeUndefined();
   });
 
   it('runs a steer on an idle session immediately, and stays quiet about it (AC3)', async () => {

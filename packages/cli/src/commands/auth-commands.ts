@@ -25,7 +25,7 @@ export interface OwnerAuth {
   api: {
     signUpEmail(input: {
       body: { name: string; email: string; password: string };
-    }): Promise<unknown>;
+    }): Promise<{ token?: string | null }>;
   };
   $context: Promise<{
     password: {
@@ -35,6 +35,7 @@ export interface OwnerAuth {
     internalAdapter: {
       findAccounts(userId: string): Promise<Array<{ providerId: string }>>;
       updatePassword(userId: string, hashedPassword: string): Promise<void>;
+      deleteSession(token: string): Promise<void>;
       createAccount(account: {
         userId: string;
         providerId: string;
@@ -214,19 +215,37 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
     return 1;
   }
 
+  let signUpToken: string | null | undefined;
   try {
     // Better Auth requires `name` but accepts an empty one. It stays empty so
     // the app asks what to call the owner; an email sent here showed up as
     // their name everywhere (DOR-2964).
-    await auth.api.signUpEmail({ body: { name: '', email, password } });
+    ({ token: signUpToken } = await auth.api.signUpEmail({
+      body: { name: '', email, password },
+    }));
   } catch (err) {
     io.error(`Could not create the owner account: ${errorMessage(err)}`);
     return 1;
   }
 
   // Only flip the flag after the account exists — a failed sign-up must leave
-  // config untouched.
+  // config untouched. And before anything else can fail: with the account
+  // made and the flag unset, a re-run refuses (an owner exists) and the
+  // password would never be asked for.
   configStore.setDot('auth.enabled', true);
+
+  // Sign-up also signs in, and nothing here ever uses that sign-in: kept, it
+  // shows in Signed-in devices as a device nobody holds (DOR-3097). Only that
+  // one ends, through Better Auth, so its own delete hooks run. Best effort:
+  // the server sweeps a leftover one on start.
+  if (signUpToken) {
+    try {
+      await (await auth.$context).internalAdapter.deleteSession(signUpToken);
+    } catch (err) {
+      io.error(`Could not end the sign-in made during setup: ${errorMessage(err)}`);
+      io.error('It ends the next time DorkOS starts.');
+    }
+  }
 
   io.log(`Owner account created for ${email}.`);
   io.log('This computer now asks for a password too. Other devices always do.');
@@ -297,9 +316,9 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     `Signed out everywhere (${signedOut} ${signedOut === 1 ? 'sign-in' : 'sign-ins'} ended). ` +
       'Sign in again with the new password.'
   );
+  io.log('A running DorkOS closes their open chat streams and terminals within a minute.');
   io.log('What this cannot cut off yet:');
   io.log('  - a window already open may keep working for up to 5 minutes;');
-  io.log('  - live chat streams and terminals stay open until they reconnect;');
   io.log('  - API keys keep working. Revoke them in Settings > Login & security.');
   return 0;
 }

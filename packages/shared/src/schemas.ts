@@ -4233,6 +4233,73 @@ export const WorkbenchProbeResponseSchema = z
 
 export type WorkbenchProbeResponse = z.infer<typeof WorkbenchProbeResponseSchema>;
 
+/**
+ * Why DorkOS served a page WITHOUT its two frame scripts (the page channel,
+ * `window.dorkos.channel`, and the DevTools shim). Stable codes: the canvas maps
+ * each to one line of copy and agents read them back.
+ *
+ * - `csp` — an enforcing Content-Security-Policy does not allow inline scripts,
+ *   or the page declares a policy in a `<meta>` tag.
+ * - `encoding` — the page is not UTF-8 (by header, `<meta charset>` or bytes).
+ * - `oversize` — the page is over {@link FRAME_SCRIPT_HTML_MAX_BYTES}.
+ * - `no-head` — the page has no explicit `<head>` tag to put the scripts in.
+ * - `markup` — something before or inside the `<head>` (or between `</head>`
+ *   and the body) is outside what the injector can place a script after safely.
+ * - `fixed-source` — the scripts themselves failed their own build-time check.
+ */
+/**
+ * The largest HTML page DorkOS adds its frame scripts to (bytes). The server's
+ * buffering cap and the `oversize` copy both read this one number.
+ */
+export const FRAME_SCRIPT_HTML_MAX_BYTES = 5 * 1024 * 1024;
+
+export const FrameBridgeRefusalSchema = z
+  .enum(['csp', 'encoding', 'oversize', 'no-head', 'markup', 'fixed-source'])
+  .openapi('FrameBridgeRefusal');
+
+export type FrameBridgeRefusal = z.infer<typeof FrameBridgeRefusalSchema>;
+
+/**
+ * Request for `POST /api/workbench/bridge` — what DorkOS decided the last time
+ * it served this page into a frame. Names the page the way the embedded browser
+ * opened it: a file under a session's `cwd`, or a path on a localhost dev
+ * server's port.
+ */
+export const WorkbenchBridgeStatusRequestSchema = z
+  .discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('serve'),
+      cwd: z.string().min(1).max(4096),
+      /** The file, relative to `cwd` or absolute inside it. */
+      path: z.string().min(1).max(4096),
+    }),
+    z.object({
+      kind: z.literal('proxy'),
+      /** The dev server's own port (1–65535), not the preview listener's. */
+      port: z.number().int().min(1).max(65535),
+      /** The path (and query, which is ignored) the frame opened. */
+      path: z.string().max(8192),
+    }),
+  ])
+  .openapi('WorkbenchBridgeStatusRequest');
+
+export type WorkbenchBridgeStatusRequest = z.infer<typeof WorkbenchBridgeStatusRequestSchema>;
+
+/**
+ * Response for `POST /api/workbench/bridge`: `added` when the frame scripts went
+ * in, `refused` with a stable `reason` when they did not, and `unknown` when
+ * DorkOS has not served that page as HTML since it started (or no longer
+ * remembers it).
+ */
+export const WorkbenchBridgeStatusResponseSchema = z
+  .object({
+    bridge: z.enum(['added', 'refused', 'unknown']),
+    reason: FrameBridgeRefusalSchema.optional(),
+  })
+  .openapi('WorkbenchBridgeStatusResponse');
+
+export type WorkbenchBridgeStatusResponse = z.infer<typeof WorkbenchBridgeStatusResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z
@@ -4603,6 +4670,18 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
+    onTrustedConnection: z.boolean().optional().openapi({
+      description:
+        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
+    }),
+    callerRoute: z
+      .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
+      }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
@@ -4666,6 +4745,10 @@ export const ServerConfigSchema = z
               onlyProjects: z.array(ProjectRefSchema).nullable().optional().openapi({
                 description:
                   'The projects this account may work in ("Only for client-app"), or null for any project (spec flow-multiproject §8). Change it with PUT /api/runtimes/claude-code/accounts/:id/only-projects, never by writing it back through PATCH /api/config. Absent on a server too old to report it',
+              }),
+              noAutoMove: z.boolean().optional().openapi({
+                description:
+                  'True when DorkOS never moves a room agent to this account on its own (a person still may). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
               }),
             })
           )
@@ -5131,6 +5214,13 @@ export const ServerConfigSchema = z
           description:
             'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
+        // Whether the working session behind a chat can be opened
+        // (DOR-3074). On the wire because Settings shows it back as a switch
+        // and the chat header reads it. Optional so an older server still parses.
+        showSessions: z.boolean().optional().openapi({
+          description:
+            'Whether the working session behind a chat can be opened, for everyone using this DorkOS: its model, account and context. Off by default',
+        }),
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
@@ -5433,6 +5523,33 @@ export const TaskRunTriggerSchema = z
 
 export type TaskRunTrigger = z.infer<typeof TaskRunTriggerSchema>;
 
+/**
+ * The turn marks a schedule was created or last edited under (DOR-3036, `specs/turn-marks`), as
+ * its approval card shows them: words from outside the owner's circle, and each teammate in a
+ * shared space whose message started the chain, with the names DorkOS knew when it was written.
+ */
+export const ScheduleOriginMarksSchema = z
+  .object({
+    /** The turn read words DorkOS can't vouch for: a stranger's message, or another agent's that carried one. */
+    outsider: z.literal(true).optional(),
+    /** Each teammate whose message started the chain, and the space room they wrote in. */
+    teammate: z
+      .array(
+        z.object({
+          roomId: z.string(),
+          authorId: z.string(),
+          /** The teammate's name when the mark was written, or null when it was unknown. */
+          name: z.string().nullable().default(null),
+          /** The room's title when the mark was written, or null when it was unknown. */
+          room: z.string().nullable().default(null),
+        })
+      )
+      .optional(),
+  })
+  .openapi('ScheduleOriginMarks');
+
+export type ScheduleOriginMarks = z.infer<typeof ScheduleOriginMarksSchema>;
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5616,6 +5733,12 @@ export const TaskSchema = z
      * such. `null` on every schedule a person or an agent explained themselves.
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
+    /**
+     * The turn marks the schedule was created or last edited under, or null for an unmarked
+     * turn or a person's own schedule (DOR-3036). A marked schedule waits for a person, whatever
+     * the trust preset; approving it clears this.
+     */
+    originMarks: ScheduleOriginMarksSchema.nullable().optional(),
     nextRun: z.string().nullable().optional(),
     /**
      * When the schedule last started a run (ISO 8601), or null when it never
@@ -7293,3 +7416,32 @@ export const KeepAwakeStatusSchema = z
 
 /** Whether DorkOS is keeping this computer awake right now, and for what. */
 export type KeepAwakeStatus = z.infer<typeof KeepAwakeStatusSchema>;
+
+// === Session stream health (a window that missed a turn) ===
+
+/**
+ * What an app window reports when the server says a turn ran on a chat it has
+ * open, and its live stream delivered none of it.
+ *
+ * - `silent-turn`: the server says a turn is running, and the window's stream
+ *   has shown no sign of it for a while.
+ * - `unrendered-turn`: a turn started and finished on the server, and the
+ *   window's stream never delivered any of it.
+ *
+ * The window reconnects its stream either way. The report is what puts the
+ * miss in the server log, where a person can find it.
+ */
+export const StreamHealthReportSchema = z
+  .object({
+    kind: z.enum(['silent-turn', 'unrendered-turn']),
+    /** How long the window waited without hearing the turn, in milliseconds. */
+    silentMs: z.number().int().nonnegative(),
+    /** The highest event sequence the window had applied. */
+    lastSeq: z.number().int().nonnegative(),
+    /** The window's stream connection state when it noticed. */
+    connectionState: z.enum(['connecting', 'connected', 'reconnecting', 'disconnected']),
+  })
+  .openapi('StreamHealthReport');
+
+/** Inferred type for {@link StreamHealthReportSchema}. */
+export type StreamHealthReport = z.infer<typeof StreamHealthReportSchema>;

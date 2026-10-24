@@ -1,6 +1,7 @@
 import { defineConfig } from 'eslint/config';
 import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
+import spaces from './eslint-rules/space-boundary.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -399,6 +400,21 @@ export default defineConfig([
     'src/services/runtimes/doe',
     ALL_CONFINED.filter((ban) => ban !== DOE_SDK_BAN)
   ),
+
+  // The space server ships alone, in its own image (server-merge step 7): its code imports only
+  // itself and its image's packages, and nothing else here imports it. Tests are not checked.
+  {
+    files: ['src/services/spaces/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**/__tests__/**', 'src/services/spaces/**/*.test.{ts,tsx}'],
+    plugins: { spaces },
+    rules: { 'spaces/stay-inside': 'error' },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    plugins: { spaces },
+    rules: { 'spaces/no-reach-in': 'error' },
+  },
 
   ...testConfig,
 ]);

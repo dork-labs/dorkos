@@ -392,6 +392,18 @@ export async function haltRoom(opts: { baseUrl: string; roomId: string }): Promi
   return body?.stopped ?? 0;
 }
 
+/**
+ * Leave a channel with no lead (DOR-2823). A new channel leads with its first
+ * agent, and a lead answers a person's post that addresses nobody, so a case
+ * about an unaddressed post that nobody owes an answer to clears it first.
+ */
+export async function clearRoomLead(opts: { baseUrl: string; roomId: string }): Promise<void> {
+  await roomFetch(opts.baseUrl, `/api/rooms/${opts.roomId}`, {
+    method: 'PATCH',
+    body: { leadAuthorId: null },
+  });
+}
+
 /** A signal frame's identity, for the quiet check below. */
 interface QuietSignalData {
   signal?: string;

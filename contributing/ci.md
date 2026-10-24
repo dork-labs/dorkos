@@ -77,6 +77,7 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
+- Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
@@ -90,6 +91,42 @@ gh api repos/{owner}/{repo}/rules/branches/main \
 Queue settings (live, 2026-09-19): squash, `ALLGREEN`, build up to 5 and merge up to 5 per group, check timeout 120 minutes, `strict_required_status_checks_policy: false`. ADR `260728-112203` still says batch size 1; the live setting is 5.
 
 Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, admin included, and releases already go through a PR. An admin can still merge a **pull request** around the queue, which is what the merge guard below exists for.
+
+### Security approval per commit
+
+`security-gate` verifies `security-review=success` on every exact PR head in a
+queue group. Labels grant no approval. A new sensitive head needs Security's
+status; automatic "no security paths" success cannot approve a sensitive diff
+against a different base. Missing or stale membership fails closed.
+
+Both verifier legs check out the event's immutable base commit and have only
+contents/statuses/pull-requests read permission. Only the `pull_request_target`
+initializer in `security-review-initialize.yml` can write, from trusted base code. It comments once per observed
+SHA/state transition, recording that observation's status author and ID. Replacing
+a status with the same state adds no comment. It never renders `target_url`.
+After Security approves, rerun the PR verifier. A fully classified nonsensitive
+PR with no security-review status can pass read-only as "no security paths
+(computed)". The queue can do the same using `base...queuedHead`, never the current
+PR's files. An explicit pending/failure cannot use computed clearance. Incomplete
+file lists, the PR endpoint's 3,000-file cap and the compare endpoint's 300-file
+cap fail closed. Both sides of renames are checked. The initial bootstrap PR fails closed while base lacks the code.
+
+Enforcement requires **Require workflows to pass**, sourced from
+`dork-labs/dorkos` at `refs/heads/main`, path
+`.github/workflows/security-gate.yml`. A named `security-gate` context alone lets
+a PR replace its own workflow. `ci/required-checks.json` keeps main-sourced
+workflows separately from named contexts. Offline census validates their source
+and every job/trigger. `pnpm ci:census --live` also compares the organization rule,
+source repository identity, active enforcement, exact repository/main scope and
+visible empty bypass list. Missing rules or unreadable evidence fail. The daily
+collector uses the same live comparison; it correctly reports missing enforcement
+until the coordinator promotes the rule. No admin credential is added to Actions.
+The coordinator's rollout, source pin, local malicious-branch fixture and live
+proof requirements are in [Security gate promotion](../ci/security-gate-promotion.md).
+
+The multi-entry queue chain and rebuild timing remain unproven until a real
+capture. Shared owner credentials still permit external approval posting;
+DOR-3181 / posture item 22 and DOR-3183 own that remaining identity boundary.
 
 ## Two gates: local and Actions
 

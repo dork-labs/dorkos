@@ -695,6 +695,11 @@ capabilityConformance(registry, {
     // rather than a structured refusal that would read as "wired" without ever
     // reaching the service.
     'rooms.read_canvas': { roomId: CONFORMANCE_ROOM_ID },
+    // Re-seat (Re-seat P0). The options read reaches the real service, which
+    // answers the structured MEMBER_NOT_FOUND for an agent the harness room does
+    // not hold; the move, in the Rooms area, is refused by the permission first.
+    'rooms.reseat_options': { roomId: CONFORMANCE_ROOM_ID, agentId: 'conformance-agent' },
+    'rooms.reseat': { roomId: CONFORMANCE_ROOM_ID, agentId: 'conformance-agent' },
     // The SESSION canvas read (spec `canvas-agent-seat` §1.8). Its input is a
     // document id and nothing else — there is no session argument, which is the
     // whole security property — so the conformance call runs the handler with no

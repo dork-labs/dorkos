@@ -34,6 +34,7 @@
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { refuseTeammateTurnOn, roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
@@ -66,7 +67,7 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
-import { RoomTurnRuntimeGoneError } from './room-turn-port.js';
+import { RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { configManager } from '../core/config-manager.js';
 import {
@@ -75,8 +76,7 @@ import {
   deriveSessionActivity,
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
-  resolveUnattendedPermissionMode,
-  readAgentExecutionDefaults,
+  resolveAgentLaunchLevel,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -86,12 +86,6 @@ import type {
   RoomTurnRunner,
   RoomTurnWaiting,
 } from './room-trigger.js';
-
-/**
- * Lock identity every room-triggered turn takes — see {@link ROOMS.CLIENT_ID},
- * which owns it because the message dispatcher has to recognise it too.
- */
-const ROOM_CLIENT_ID = ROOMS.CLIENT_ID;
 
 /**
  * The two bounds on how long a room pays attention to one turn.
@@ -588,16 +582,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // The row half of that rule is `externalAuthor` on the turn origin.
       // The addressed agent's own Files & commands stop beats the operator's
       // (spec `agent-permissions` D16), exactly as it does for the row's seed.
-      const agentStop =
-        isNewSession && !request.externalAuthor
-          ? (await readAgentExecutionDefaults(request.agentPath)).filesAndCommands
-          : undefined;
+      // One function with the profile's Level row, so the level it reports is
+      // the level this launches at (`agent-launch-level.ts`).
       const unattendedMode =
         isNewSession && !request.externalAuthor
-          ? resolveUnattendedPermissionMode({
-              capabilities: runtime.getCapabilities(),
-              ...(agentStop ? { agent: { filesAndCommands: agentStop } } : {}),
-            })
+          ? (
+              await resolveAgentLaunchLevel({
+                agentPath: request.agentPath,
+                capabilities: runtime.getCapabilities(),
+              })
+            ).mode
           : undefined;
       const seed = isNewSession
         ? await resolveUnattendedSessionDefaults({
@@ -871,7 +865,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
 
       const result = await dispatchMessage({
         sessionId,
-        clientId: ROOM_CLIENT_ID,
+        // The lock identity every room turn takes; `ROOMS.CLIENT_ID` owns it
+        // because the message dispatcher has to recognise it too.
+        clientId: ROOMS.CLIENT_ID,
         content: prompt,
         cwd: request.cwd,
         // The agent this turn is dispatched AS, in the runtime-neutral field
@@ -907,6 +903,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
         },
         roomContext,
+        ...seatLaunchOf(request),
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
         // shared canvas rather than on this agent's private session stream
@@ -1420,9 +1417,8 @@ function collectReply(
 ): ReplyCollector {
   const abort = new AbortController();
   const startedAt = Date.now();
-  const ceiling = setTimeout(() => abort.abort(), bounds.ceilingMs);
-  // `unref` so a pending room turn never holds the process open on shutdown.
-  ceiling.unref?.();
+  // Waits again while the turn is parked on a person's answer (DOR-3113).
+  const ceiling = armLateReplyCeiling(abort, bounds.ceilingMs, projector);
 
   // Never rejects: both phases read this one promise, and the busy path reads
   // neither, so a rejection would surface as an unhandled one.
@@ -1544,7 +1540,7 @@ function collectReply(
       failed = true;
       clearActivity();
     } finally {
-      clearTimeout(ceiling);
+      ceiling.clear();
       // The turn has ended, one way or another. A prompt it was stopped on can
       // no longer be answered, so a notice about it now would be advice nobody
       // can act on — and a timer outliving its turn is a room that speaks about
@@ -1628,7 +1624,7 @@ function collectReply(
     })),
     cancel: () => {
       abort.abort();
-      clearTimeout(ceiling);
+      ceiling.clear();
       clearTimeout(deadline);
       stopWaitingOnEverything();
     },

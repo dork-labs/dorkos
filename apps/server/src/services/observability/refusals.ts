@@ -137,6 +137,11 @@ export const REFUSAL_REASONS = {
    */
   space_wake_budget: 'the person had already woken the agent enough for now',
   /**
+   * A teammate's post in a space started no turn because teammates' turns there had already cost
+   * the monthly limit the owner set for that space (DOR-2956, the card limit).
+   */
+  teammate_spend_limit: 'teammates had used this month’s limit in this space',
+  /**
    * A teammate's post in a space started no turn because the agent runs on a
    * program that cannot hold their turn to its limits yet (DOR-2955, DOR-2978).
    * The post stays in the space as history.

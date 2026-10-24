@@ -166,8 +166,7 @@ describe('useAttentionSignals', () => {
 
   it('says nothing about a session that has only gone quiet (DOR-1391)', async () => {
     // `ses-2` has been still for forty-five minutes, which is exactly what the
-    // retired idle nudge fired on. The engine is silent about it now, and the
-    // Today digest is where quiet sessions are mentioned instead.
+    // retired idle nudge fired on. The engine is silent about it now.
     act(() => {
       useSessionListStore.getState().setSessionStatus('ses-2', status('idle'));
     });

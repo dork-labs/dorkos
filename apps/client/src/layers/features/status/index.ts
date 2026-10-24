@@ -7,6 +7,7 @@ export { StatusLine } from './ui/StatusLine';
 export { CwdItem } from './ui/CwdItem';
 export { GitStatusItem } from './ui/GitStatusItem';
 export { PermissionModeItem } from './ui/PermissionModeItem';
+export { WifiTurnCapPill } from './ui/WifiTurnCapPill';
 export { MakeDefaultStopLine } from './ui/MakeDefaultStopLine';
 export { useMakeDefaultStop } from './model/use-make-default-stop';
 export type { MakeDefaultStop } from './model/use-make-default-stop';
@@ -68,11 +69,13 @@ export {
 } from './model/extension-status-items';
 export type { EvaluatedExtensionStatusItems } from './model/extension-status-items';
 export { selectPromotedItems } from './model/promoted-items';
-export { applyStatusBudget, resolveStatusBudget } from './model/status-budget';
+export { applyStatusBudget, isPhoneDensity, resolveStatusBudget } from './model/status-budget';
 export type { StatusDensity, StatusBudget } from './model/status-budget';
 export { useStatusBudget } from './model/use-status-budget';
 export { SessionInspector, SessionReadout } from './ui/SessionInspector';
 export { useSessionDiagnostics } from './model/use-session-diagnostics';
+// The model's name in the status line's words, for a surface naming the same model.
+export { statusModelLabel } from './lib/status-labels';
 export { formatDiagnostics } from './model/session-diagnostics';
 export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';
 export { formatCost } from './lib/format-tokens';

@@ -2,7 +2,7 @@
  * @vitest-environment node
  *
  * The local rooms backend against the shared `CommunityAdapter` conformance
- * suite — the same gate a Buzz relay and `apps/community` will each clear, and
+ * suite — the same gate a Buzz relay and `apps/space` will each clear, and
  * the first time it is run against something other than the reference fake.
  *
  * Everything below the adapter is the real thing: the real `RoomService`, the

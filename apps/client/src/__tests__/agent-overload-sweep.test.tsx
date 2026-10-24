@@ -15,7 +15,7 @@
  * empty-Library branch was reachable, but only before the fleet query answered
  * or while it failed — a hydration gap, not day one — so it flashed on cold
  * loads instead of greeting anyone; day-one guidance is the Getting started
- * zone's. One card is left, so the two-card collision cannot recur in the shape
+ * card's. One card is left, so the two-card collision cannot recur in the shape
  * it took.
  *
  * Two halves still need guarding, and each is checked the way it can actually
@@ -154,7 +154,7 @@ describe('DOR-853: the "agent" overload is resolved to one sense per surface', (
     // Positive half first — the scan really read the feature — because "no file
     // matches" is also what an empty scan says.
     expect(SIDEBAR_SOURCE.size).toBeGreaterThan(20);
-    expect(sidebarFilesMatching(/\bSidebarZones\b/).length).toBeGreaterThan(0);
+    expect(sidebarFilesMatching(/\bSidebarSections\b/).length).toBeGreaterThan(0);
 
     expect(sidebarFilesMatching(/Add more agents/)).toEqual([]);
   });

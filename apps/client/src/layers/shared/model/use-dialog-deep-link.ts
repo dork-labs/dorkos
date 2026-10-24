@@ -42,7 +42,7 @@ export const SETTINGS_RELINK_SECTION = 'relink';
 const DIALOG_SEARCH_PARAMS = {
   settings: ['settings', 'settingsSection'],
   tasks: ['tasks'],
-  profile: ['profile', 'profilePage'],
+  profile: ['profile', 'profilePage', 'profileRow'],
 } as const satisfies Record<string, readonly string[]>;
 
 /** A dialog with both a store open flag and a URL open signal. */

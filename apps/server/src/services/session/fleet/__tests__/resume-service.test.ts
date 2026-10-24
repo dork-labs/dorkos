@@ -50,6 +50,11 @@ import type { AccountUsageStore } from '../../../core/usage/account-usage-store.
 import type { RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 import { SessionLimitStore, setSessionLimitStore } from '../session-limit-store.js';
+import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
+import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { planNewLimit, startLimitPlanning, writePlan } from '../limit-plans.js';
 import { continueSession, installContinueService, waitForReset } from '../continue-service.js';
 import {
@@ -210,6 +215,24 @@ async function waitingSession(
   await waitForReset(id, { autoResume: opts.autoResume ?? true });
 }
 
+/** Record that the session's last turn ran held to the runtime default, as a Wi-Fi turn does. */
+async function ranHeld(id: string, held = true): Promise<void> {
+  const seam = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage() {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'bypassPermissions'
+  );
+  const opts = held ? { permissionCeiling: 'runtime-default' as const } : undefined;
+  for await (const _event of seam.sendMessage(id, 'hi', opts)) {
+    // drain
+  }
+}
+
 function plan(id: string): LimitPlan | undefined {
   return store.get(id)?.limit.plan;
 }
@@ -254,6 +277,7 @@ beforeEach(() => {
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   setAgentPathLookup({ getByPath: () => undefined });
   runtimeRegistry.setDb(db);
+  setContinuationHoldDb(db);
   runtimeRegistry.register(new FakeAgentRuntime('claude-code') as never);
   runtimeRegistry.register(new FakeAgentRuntime('codex') as never);
   __resetAccountAdvisorForTests();
@@ -370,6 +394,37 @@ describe('waiting for the reset', () => {
     expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBe(RESETS);
     await vi.advanceTimersByTimeAsync(RESET_RECHECK_MS * 10);
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the resume to the runtime default when the turn that ran out was held (DOR-3037)', async () => {
+    await ranHeld('s-held');
+    await waitingSession('s-held');
+    recordReading('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
+    expect(opts).toMatchObject({
+      sessionId: 's-held',
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
+  });
+
+  it('runs a resume whose chat has no turn on record at its own level (DOR-3203)', async () => {
+    await waitingSession('s-unknown');
+    recordReading('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
+    expect(opts.permissionCeiling).toBeUndefined();
+    expect(opts.continuationHold).toBeUndefined();
+  });
+
+  it('carries no ceiling for a resume whose turn was not held', async () => {
+    await ranHeld('s-free', false);
+    await waitingSession('s-free');
+    recordReading('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
+    expect(opts.permissionCeiling).toBeUndefined();
   });
 
   it('leaves the row to the resumed turn, which records one resumed-reset in the history', async () => {

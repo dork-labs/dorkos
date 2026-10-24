@@ -57,6 +57,7 @@ import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/m
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import {
   ArrivalRecord,
+  PersonSetPermissions,
   PermissionObserver,
   createArrivalStep,
   createPermissionService,
@@ -107,6 +108,7 @@ let emitted: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
 let arrivals: ArrivalRecord;
 /** What the gate reads for an agent: the same narrowing reader index.ts hands it. */
 let gateRead: (agentPath: string) => Promise<unknown>;
+let service: ReturnType<typeof createPermissionService>;
 
 beforeEach(async () => {
   relay = new RelayCore({ dataDir: await tempDir('arrival-relay-') });
@@ -141,16 +143,24 @@ beforeEach(async () => {
     file: path.join(await tempDir('arrival-record-'), 'pending.json'),
     logger: { warn: () => {} },
   });
-  const service = createPermissionService({
+  // Seeded empty: nobody has set anything for these agents yet (DOR-3107).
+  const personSet = new PersonSetPermissions({
+    file: path.join(await tempDir('person-set-'), 'person-set.json'),
+    logger: { warn: () => {} },
+  });
+  personSet.seed(new Map());
+  service = createPermissionService({
     config: fakeConfig,
     mesh: () => mesh,
     registry: () => composeCapabilityRegistryForDocs(),
     activity,
     observer,
     arrivals,
+    personSet,
   });
   gateRead = narrowingReader(readAgentPermissionsFromManifest, {
     arrivals,
+    personSet,
     agentAt: (agentPath) => mesh.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
     context: () => narrowingContext(fakeConfig, composeCapabilityRegistryForDocs()),
   });
@@ -292,5 +302,30 @@ describe('a folder cannot widen the agent it registers', () => {
     const again = await request(target.server).post('/api/mesh/agents').send({ path: second });
     expect(again.status).toBe(201);
     await expectScreened(second);
+  });
+});
+
+// DOR-3107: through the real service and the one gate reader, an agent that
+// edits its own settings file cannot raise itself, and a person's change can.
+describe('an agent editing its own settings file', () => {
+  it('cannot raise itself, while a person can raise it', async () => {
+    const id = '01JKOWNEDIT000000000000000';
+    const dir = await wideFolder(path.join(base, 'proj'), 'own-edit', id);
+    const res = await request(target.server).post('/api/mesh/agents').send({ path: dir });
+    expect(res.status).toBe(201);
+    await expectScreened(dir);
+
+    // The agent writes Full autonomy into its own file.
+    const manifest = (await readManifest(dir))!;
+    await writeManifest(dir, { ...manifest, permissions: { filesAndCommands: 'autonomy' } });
+    expect(await gateRead(dir)).not.toMatchObject({ filesAndCommands: 'autonomy' });
+
+    // A person sets it through DorkOS.
+    await service.setAgent(
+      id,
+      { filesAndCommands: 'autonomy', surface: 'settings' },
+      { attribution: 'local-trust', actorType: 'user', actorLabel: 'You' }
+    );
+    expect(await gateRead(dir)).toMatchObject({ filesAndCommands: 'autonomy' });
   });
 });

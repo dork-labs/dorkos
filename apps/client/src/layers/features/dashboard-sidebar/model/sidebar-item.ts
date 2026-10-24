@@ -43,7 +43,7 @@ export const sidebarItemFaces = identityMarkFaces;
  *
  * An ephemeral DOM identity, never a membership key: membership is always
  * compared with `sameSidebarItem` over the reference itself. The section's key
- * prefix is what lets a pinned reference sit beside its home copy.
+ * prefix is what lets a row filed into a section sit beside a copy elsewhere.
  *
  * @param ref - The row's reference.
  */

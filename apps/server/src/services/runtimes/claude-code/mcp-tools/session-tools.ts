@@ -69,7 +69,6 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -82,7 +81,7 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
-import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
 import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
 import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
@@ -92,6 +91,7 @@ import {
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
+import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -271,6 +271,8 @@ function findAccount(runtime: string, id: string): RuntimeAccount | null {
 interface CallerAgent {
   agentPath: string;
   label: string;
+  name: string;
+  displayName?: string;
 }
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
@@ -292,6 +294,8 @@ function callerOf(
   return {
     agentPath,
     label: agent.displayName ?? agent.name,
+    name: agent.name,
+    ...(agent.displayName ? { displayName: agent.displayName } : {}),
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -301,17 +305,6 @@ function callerOf(
         }
       : null,
   };
-}
-
-/**
- * The ceiling a started session's first turn carries when its starter's turn
- * read an outsider's words, as the spread a launch takes; empty otherwise.
- *
- * @param caller - Who is starting it: the calling chat, or only the agent.
- */
-function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
-  const bound = outsiderBoundOf(caller.chat?.sessionId, caller.agentPath);
-  return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 
 /**
@@ -495,11 +488,15 @@ export function createSessionStartHandler(
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
     // With no chat (the external `/mcp` server) it is the agent's own stop.
+    // A marked starting turn opens a chat born capped (DOR-3107).
+    const markedCeiling = outsiderStartCeiling(caller);
     const level = await resolveStartPermission(
       args.permissionMode,
       caller.chat,
       runtimeType,
-      await chatlessCallerStop(caller.chat, runtime, agentPath)
+      await chatlessCallerStop(caller.chat, runtime, agentPath),
+      'permissionCeiling' in markedCeiling,
+      await startLevelFacts(caller, runtime, args)
     );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
@@ -607,7 +604,7 @@ export function createSessionStartHandler(
         // A starter whose turn read an outsider's words passes that on: the new
         // session's turn is recorded as one that read them too (spec
         // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
-        ...outsiderStartCeiling(caller),
+        ...markedCeiling,
         meshCore: deps.meshCore,
         // A session minted here is in no room.
         roomSessionPlace: undefined,
@@ -700,7 +697,9 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
-        'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
+        'higher one is refused, and never above what a person set for you. From your own chat ' +
+        'at Full autonomy, with nothing outside in view, it starts at Full; otherwise Full ' +
+        'autonomy is granted only when named in permissionMode. ' +
         'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
         'that link, never the id.',

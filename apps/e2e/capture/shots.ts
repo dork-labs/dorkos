@@ -212,14 +212,13 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  * Shots always placed on shard 0 in a parallel record, in registry order:
  *
  * - `multi-session` and `mobile-sessions` are the SIDEBAR surfaces — their money
- *   is an inhabited Now/Today panel. Each drive mints its own Today rows by
- *   opening the conversations it started, but the Now zone above them counts
- *   every turn still running or still stopped for an approval anywhere in the
- *   same stack. Pinning both to shard 0 keeps that summary tied to one stack's
- *   state instead of letting it vary with shard placement. (No other shot reads
- *   the sidebar's zones: the remaining chat surfaces are single-session views,
- *   and `team-room` holds its own #team conversation in whichever stack drives
- *   it.)
+ *   is an inhabited panel. Each drive opens its own agents' Direct chats, but
+ *   whether an agent reads as working, and the phone's answer cards above the
+ *   list, reflect every turn still running or still stopped for an approval
+ *   anywhere in the same stack. Pinning both to shard 0 keeps that tied to one
+ *   stack's state instead of letting it vary with shard placement. (The
+ *   remaining chat surfaces are single-session views, and `team-room` holds its
+ *   own #team conversation in whichever stack drives it.)
  * - `accounts-pending` and `accounts-linked` come from ONE linear device flow
  *   (link → pending → auto-flip → linked, capture-cloud-link-stub); a
  *   round-robin split would put them on different stacks and break the flow,

@@ -69,6 +69,7 @@ import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { useNoticeSessionLink } from '../model/use-notice-session-link';
 import { makeRoomBodyRenderer } from './render-room-body';
+import { useRoomAgentCard } from './identity/room-agent-card';
 import { fileChangeLine } from '../lib/file-change-line';
 
 /**
@@ -248,6 +249,27 @@ export function RoomMessage({
     viewerAuthorId,
     onViewProfile: viewAuthorProfile,
   });
+  // An agent's card over its face and name while the DM view is on (DOR-3074):
+  // a click opens it, and its Message opens the agent's DM. `null` otherwise.
+  // One identity per change of who wrote it, so the card's wrappers keep their
+  // identity across the feed's re-renders rather than being rebuilt each time.
+  const authorHandle = authorRef?.handle ?? undefined;
+  const cardIdentity = useMemo(
+    () => ({
+      kind: author.kind,
+      displayName: author.displayName,
+      handle: authorHandle,
+      color: author.color,
+      emoji: author.emoji,
+      imageUrl: author.imageUrl,
+    }),
+    [author.kind, author.displayName, authorHandle, author.color, author.emoji, author.imageUrl]
+  );
+  const agentCard = useRoomAgentCard({
+    agentRef: authorRef?.agentRef,
+    identity: cardIdentity,
+    onViewProfile: viewAuthorProfile,
+  });
   const handleKeyDown = useEntryRowKeys({
     barRef,
     pillsRef,
@@ -363,8 +385,9 @@ export function RoomMessage({
       <Message.Gutter
         author={author}
         at={entry.createdAt}
-        onViewProfile={viewAuthorProfile}
+        onViewProfile={agentCard ? undefined : viewAuthorProfile}
         isSelf={entry.authorId === viewerAuthorId}
+        renderAvatar={agentCard?.wrapAvatar}
       />
       <Message.Body>
         <Message.Author
@@ -372,6 +395,7 @@ export function RoomMessage({
           author={author}
           at={entry.createdAt}
           origin={authorRef?.origin}
+          renderName={agentCard?.wrapName}
         />
         {orphanedReply === true && (
           <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
@@ -396,14 +420,11 @@ export function RoomMessage({
         )}
         <Message.Content
           id={contentId}
-          // A long unbroken token — a URL, a file path, a hash pasted as
-          // `code` — is wider than the column and had nowhere to go: the column
-          // is `min-w-0`, so the overflow was simply clipped and the end of the
-          // token was unreadable and unselectable. Inline code breaks mid-token,
-          // which is right for something that is not prose; a fenced block
-          // scrolls instead, because breaking a line of code changes what it
-          // says.
-          className="[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto"
+          // A long unbroken token — a URL, file path or hash, whether or not the
+          // author marked it as code — must yield to a phone-width column.
+          // Fenced blocks scroll instead, because breaking a line of code
+          // changes what it says.
+          className="wrap-anywhere [&_pre]:overflow-x-auto [&_pre]:wrap-normal"
         >
           {entry.body.fileChange ? (
             // A person's change to the room's files, drawn as plain text from

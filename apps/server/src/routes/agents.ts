@@ -45,7 +45,10 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
 import { creditsAgentModelRefusal } from '../services/core/cloud/credits-model-gate.js';
-import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
+import {
+  refuseAgentExecutionWrites,
+  refuseAgentSelfFilesFromWifi,
+} from '../middleware/agent-execution-gate.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
@@ -593,7 +596,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   // Update agent fields by path
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
-  router.patch('/current', refuseAgentExecutionWrites, async (c) => {
+  router.patch('/current', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, async (c) => {
     try {
       const rawPath = rawPathOf(c);
       if (!rawPath) {

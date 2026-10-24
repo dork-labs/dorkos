@@ -35,6 +35,8 @@
  *
  * @module services/runtimes/claude-code/messaging/directory-grants
  */
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
@@ -174,6 +176,93 @@ export function applyDirectoryGrants(
         ...(permissions.deny ?? []),
         ...grants.filter((grant) => grant.access === 'read').flatMap((g) => readOnlyRules(g.path)),
       ],
+    },
+  } as Options['settings'];
+}
+
+/**
+ * The folders under the data directory that only a person may change, never an
+ * agent's file tools:
+ *
+ * - `permissions/` holds the permission levels a person set for agents (the
+ *   floor `person-set-agent-permissions.json`, DOR-3107). An agent that could
+ *   rewrite it could raise its own level.
+ * - `session-relay/` holds the pins that say which hub and which keys this
+ *   computer trusts (and, with B4, `approval-keys.json`).
+ *
+ * Bash is not covered, as the module note says: a turn with a shell it was not
+ * asked about is outside what file rules can hold.
+ */
+export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay'] as const;
+
+/**
+ * A Windows drive path seen on a POSIX host (tests, mostly), which
+ * `path.resolve` would mangle into a relative one. Taken as written.
+ */
+function isForeignWindowsPath(target: string): boolean {
+  return process.platform !== 'win32' && /^[A-Za-z]:[\\/]/.test(target);
+}
+
+/** The real path of `target`, or `undefined` when it does not exist yet. */
+function realpathOrUndefined(target: string): string | undefined {
+  try {
+    return realpathSync.native(target);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Every spelling one person-only folder can be reached by, each a rule of its
+ * own: the absolute path, the path through the data folder's real location,
+ * and the folder's own real location. A relative `DORK_HOME`, a symlinked
+ * `~/.dork`, or a symlinked `permissions/` would otherwise yield a rule that
+ * names a path the file tools never see.
+ */
+function namesOf(dorkHome: string, name: string): string[] {
+  const foreign = isForeignWindowsPath(dorkHome);
+  const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
+  const realHome = foreign ? undefined : realpathOrUndefined(home);
+  const names = [`${home}/${name}`];
+  if (realHome) {
+    names.push(`${realHome}/${name}`);
+    const realFolder = realpathOrUndefined(`${realHome}/${name}`);
+    if (realFolder) names.push(realFolder);
+  }
+  return names;
+}
+
+/**
+ * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS}, merged into
+ * the launch's settings beside any grant rules. Whatever the permission mode:
+ * a deny rule holds under `bypassPermissions` too (see the module note).
+ *
+ * @param sdkOptions - The launch options, mutated in place.
+ * @param dorkHome - The data directory.
+ * @throws DirectoryGrantError when the data directory's path can't be named
+ *   exactly in a rule — failing closed, as a `read` grant does.
+ */
+export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): void {
+  const folders = [...new Set(PERSON_ONLY_DATA_FOLDERS.flatMap((name) => namesOf(dorkHome, name)))];
+  if (!folders.every(ruleCanName)) {
+    throw new DirectoryGrantError(
+      `Claude Code can't keep DorkOS's own settings folder "${dorkHome}" safe from agents, because ` +
+        `its name has a character its safety rules can't match: a question mark, a backslash, a ` +
+        `hidden control character, or a space at the very end. So this turn was not started. ` +
+        `Move your DorkOS data folder to a path without those characters, then try again.`
+    );
+  }
+  const base =
+    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
+      ? sdkOptions.settings
+      : {};
+  const permissions = ((base as { permissions?: PermissionSettings }).permissions ??
+    {}) as PermissionSettings;
+  sdkOptions.settings = {
+    ...base,
+    permissions: {
+      ...permissions,
+      deny: [...(permissions.deny ?? []), ...folders.flatMap(readOnlyRules)],
     },
   } as Options['settings'];
 }

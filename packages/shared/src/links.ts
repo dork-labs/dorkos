@@ -24,6 +24,11 @@ export const links = {
   docs: 'https://dorkos.ai/docs',
   /** The origin of the DorkOS Cloud `/v1` API, which the website does not serve. */
   cloudApi: 'https://cloud.dorkos.ai',
+  /**
+   * The approve page: where an approvals passkey is made and used, and the
+   * relying party it belongs to. Its own origin, never the site's or Cloud's.
+   */
+  approve: 'https://approve.dorkos.ai',
   /** The DorkOS app repository, as `owner/repo`. */
   repoSlug: `${GITHUB_ORG}/dorkos`,
   /** The DorkOS app repository on GitHub. */

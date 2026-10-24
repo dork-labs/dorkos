@@ -1,0 +1,18 @@
+{
+  // The CHECK program for the space server's code (server-merge step 7). It keeps the compiler
+  // options the space server has always been checked with; apps/space/tsconfig.build.json
+  // emits it into apps/space/dist-server/, the layout the image runs. Tests included.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "noEmit": true
+  },
+  "include": ["src/services/spaces/**/*"]
+}

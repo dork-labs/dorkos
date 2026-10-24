@@ -8,35 +8,28 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Filtering and Muting Your Agent List
 
-Once you're running more than a handful of agents, the lower half of your sidebar — your sections,
-pins, channels, direct messages and agents — gets crowded. Some agents are waiting on you right
-now. Some are quietly idle. A few might not have done anything in a week. DorkOS gives you two
-simple controls to cut through that: **show filters** and **mute**. The Agents list also keeps
-itself short on its own.
+Once you're running more than a handful of agents, your sidebar's sections, channels and direct
+messages get crowded. Some agents are waiting on you right now. Some are quietly idle. A few might
+not have done anything in a week. DorkOS gives you two simple controls to cut through that:
+**show filters** and **mute**. The sidebar also keeps itself short on its own.
 
 Neither control deletes or hides an agent for good. They just change what's on screen, and each is
-one click away from showing everything again. They're separate from **Heads up** and **Today**, the
-two parts of the sidebar that DorkOS fills in for you automatically. Those aren't something you
-filter or organise.
+one click away from showing everything again.
 
 <Callout type="info">
   DorkOS used to call these **groups**. They're called **sections** now, everywhere you read them.
   Nothing you organised moved or changed.
 </Callout>
 
-## The Agents list stays short on its own
+## The sidebar stays short on its own
 
-**Agents** shows the agents you have used lately and the ones you pinned, then a single
-**All N agents →** row that opens your team page. "Lately" counts the last time you looked at an
-agent, not only the last time it ran, so an agent you have not touched in a month stops costing a
-row. If you have eight agents or fewer, you still see all of them.
-
-Nothing is hidden by this. Everything you don't see in the sidebar is on the team page, one click
-away, and ⌘K still finds any agent by name.
+An agent shows up in the sidebar once you have a direct message with it, once you pin it, or once
+you put it in one of your sections. Every other agent lives in the **Directory**, one click away
+at the top of the sidebar, and ⌘K still finds any agent by name. Nothing is hidden for good.
 
 ## Show only what matters
 
-Every section, and the "Agents" section itself, has a **Show** menu with three options:
+Every section you make has a **Show** menu with three options:
 
 - **All**: every agent in that section.
 - **Active**: only agents that are working right now, or that need your attention.
@@ -46,8 +39,8 @@ Open a section's `⋮` menu, or right-click it, and pick **Show**. Switch a busy
 **Needs attention** and it drops down to just the agents actually waiting on you, no scrolling
 required.
 
-Filters are per-section: each one remembers its own choice, and the "Agents" section has its own
-too. Switching one section's filter never touches another.
+Filters are per-section: each one remembers its own choice. Switching one section's filter never
+touches another.
 
 <Callout type="info">
   Filtering never deletes anything. It's a different view onto agents that are still there, still
@@ -163,7 +156,7 @@ on a shared DorkOS instance.
 
 <Cards>
   <Card title="Your sidebar" href="/docs/concepts/sidebar">
-    What Heads up and Today are, and why things move in and out of them on their own.
+    What each part of the sidebar holds, and where threads and chats live now.
   </Card>
   <Card title="Agent Identity" href="/docs/guides/agents">
     Give your agents a name, color, and emoji so a busy sidebar is still easy to scan.

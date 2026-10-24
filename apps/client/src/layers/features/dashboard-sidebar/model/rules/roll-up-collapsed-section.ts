@@ -4,67 +4,89 @@
  * @module features/dashboard-sidebar/model/rules/roll-up-collapsed-section
  */
 import type { SidebarRollup, SidebarRowModel } from '../build-sidebar-model';
+import type { SidebarState } from '../sidebar-state';
+import { blockedSessionIdsForPath } from './live-sessions';
 
 /**
- * What a folded section still says: how many messages were aimed at the
- * operator inside it, and how many of its members are working.
+ * Whether one row's subject is waiting on the operator — what keeps a row on
+ * screen when its section is folded, beside unread (DOR-3224).
  *
- * **The tiers do not add up into each other.** The badge counts tier-2 only —
- * a numbered badge means "this many things were addressed to you", and folding
- * a channel with four hundred unread messages must not produce a 400. The
- * `'activity'` tier survives as a bold header when any member has ordinary
- * unread and none has directed unread, which is the same two-tier rule a row
- * follows.
+ * **The same fact the row's needs-you dot is drawn from**: a session of that
+ * agent is `blocked` on an approval or a question, automated runs included
+ * (BC-19). **Muted rows included** (DOR-3236): mute silences chatter, never
+ * a request, so a muted agent waiting on you keeps its needs-you dot and stays
+ * on screen when folded. A room row answers yes while one of its turns waits
+ * on a person (`RoomSummary.awaiting`, counted by the server from its own
+ * session state), muted or not; it draws as it does when the section is open.
+ *
+ * @param state - The snapshot.
+ */
+export function rowNeedsYou(state: SidebarState): (row: SidebarRowModel) => boolean {
+  const awaitingRooms = new Set(
+    state.rooms.filter((room) => (room.awaiting ?? 0) > 0).map((room) => room.id)
+  );
+  return (row) => {
+    if (row.target.kind === 'agent') {
+      return blockedSessionIdsForPath(state, row.target.path).length > 0;
+    }
+    return row.target.kind === 'room' && awaitingRooms.has(row.target.roomId);
+  };
+}
+
+/**
+ * What a folded section still shows: the rows that are asking for the
+ * operator, how many rows it hides, and whether any of its members are working.
+ *
+ * **Rows, not unread counts.** A folded header used to say "12 · 3 unread",
+ * which put an unread number on a header and made the reader unfold the section
+ * to learn what the number was about. Now the header never carries one: a folded
+ * section keeps its unread rows on screen beneath it, each one drawn exactly
+ * as it is when the section is open — bold, with its own count pill where
+ * something was aimed at you. Folding hides what is quiet and nothing else,
+ * which is what "folding never loses signal" asks for.
+ *
+ * **A row waiting on you stays too** (DOR-3224). An agent with an approval or
+ * a question pending and nothing unread used to fold away, so the one row that
+ * most needed the operator was the one the fold hid. It is kept like an unread
+ * row: drawn as it is when the section is open, in its own place, and left out
+ * of the hidden count.
+ *
+ * **The one number it does carry is what is hidden** (DOR-3200). With no hint,
+ * a folded section showing two unread rows read as an open section that had
+ * lost its other ten, so the header says "· 10 more" — a count of rows, not
+ * of unread, and nothing at all when the fold hides nothing.
  *
  * **The working count is asked, not inferred** — and that is the whole of
  * `isWorking`. BC-31's text is "members currently streaming", and streaming is
  * a fact about the session. A row draws ONE mark and needs-you outranks
  * streaming on it, so a member that is both blocked and streaming presents as
- * blocked; reading the count off that mark did not merely undercount such a
- * member, it could take `workingCount` to zero, return `undefined` here, and
- * **lose the folded header's rollup entirely** — the exact thing BC-31 says
- * folding never does. A blocked-and-working agent is still working, and a
- * folded header may say both.
+ * blocked; reading the count off that mark could take it to zero and lose the
+ * folded header's working dot. A blocked-and-working agent is still working.
  *
  * The predicate is the caller's because the caller is where the truth is:
- * `buildLibrarySections` holds the snapshot and the room index, so it can put
- * an agent row's answer through `liveSessionIds` — the same list Heads up counts —
- * rather than through a status the row had already collapsed.
+ * `buildSections` holds the snapshot and the room index, so it can put an agent
+ * row's answer through `liveSessionIds` rather than through a status the row
+ * had already collapsed.
  *
- * A live session whose directory nothing knows is in Heads up's number and in no
- * section's, because it is a member of nothing. That is a gap in attribution,
- * not in signal: the operator is still told something is running.
- *
- * **It always answers.** It used to return `undefined` for a quiet section, so a
- * folded header said nothing at all about what was behind it. Now that every
- * header in the panel folds (D1), a size is the minimum a fold owes the person
- * who made it: "12" is what tells them the section they put away still has
- * twelve things in it. A caller that wants "nothing to say" reads the fields.
- *
- * @param rows - The section's rows, including any subsection's.
+ * @param rows - The section's rows, in order.
  * @param isWorking - Whether one row's subject is streaming right now,
  *   independent of the dot that row draws.
+ * @param needsYou - Whether one row's subject is waiting on the operator: the
+ *   same fact as the needs-you dot that row draws when its section is open.
  */
 export function rollUpCollapsedSection(
   rows: readonly SidebarRowModel[],
-  isWorking: (row: SidebarRowModel) => boolean
+  isWorking: (row: SidebarRowModel) => boolean,
+  needsYou: (row: SidebarRowModel) => boolean
 ): SidebarRollup {
-  let unreadCount = 0;
-  let anyActivity = false;
+  const keptRows: SidebarRowModel[] = [];
   let workingCount = 0;
   for (const row of rows) {
-    if (row.unread.tier === 'directed') unreadCount += row.unread.count ?? 0;
-    if (row.unread.tier === 'activity') anyActivity = true;
+    // A kept row is not a drag source: its section is folded, so there is
+    // nowhere in it to drop, and a drag that starts there has no list to land in.
+    const kept = row.unread.tier !== 'none' || needsYou(row);
+    if (kept) keptRows.push(row.draggable ? { ...row, draggable: false } : row);
     if (isWorking(row)) workingCount += 1;
   }
-  return {
-    count: rows.length,
-    unread:
-      unreadCount > 0
-        ? { tier: 'directed', count: unreadCount }
-        : anyActivity
-          ? { tier: 'activity' }
-          : { tier: 'none' },
-    workingCount,
-  };
+  return { keptRows, workingCount, hiddenCount: rows.length - keptRows.length };
 }

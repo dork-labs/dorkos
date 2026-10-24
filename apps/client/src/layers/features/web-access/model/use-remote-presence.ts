@@ -17,7 +17,11 @@ import {
   type SessionRelayDevice,
   type SessionRelayPresence,
 } from '@dorkos/shared/session-relay-link';
-import { useExperimentEnabledState, useIsHub, useLocalCaller } from '@/layers/entities/config';
+import {
+  useExperimentEnabledState,
+  useIsHub,
+  useTrustedConnection,
+} from '@/layers/entities/config';
 import { useEventSubscription, useTransport } from '@/layers/shared/model';
 import { SESSION_RELAY_EXPERIMENT } from './use-web-access';
 import {
@@ -37,8 +41,11 @@ const STALE_TIME_MS = 5 * 60_000;
 export interface RemotePresence {
   /** Where it stands; `undefined` until loaded, or when there is nothing to show. */
   presence: SessionRelayPresence | undefined;
-  /** Whether this browser is on the computer DorkOS runs on, where "End now" works. */
-  atThisComputer: boolean;
+  /**
+   * Whether "End now" works here: at the computer DorkOS runs on or over an
+   * encrypted connection (DOR-3172), never plain-`http` Wi-Fi.
+   */
+  canEnd: boolean;
   /** Close the relay and pause the link. */
   end: () => void;
   /** Whether "End now" is on its way. */
@@ -59,7 +66,7 @@ export function useRemotePresence(): RemotePresence {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const available = useAvailable();
-  const atThisComputer = useLocalCaller();
+  const canEnd = useTrustedConnection();
   const [error, setError] = useState<string | null>(null);
 
   const query = useQuery({
@@ -90,7 +97,7 @@ export function useRemotePresence(): RemotePresence {
 
   return {
     presence: available ? query.data : undefined,
-    atThisComputer,
+    canEnd,
     end: () => end.mutate(),
     ending: end.isPending,
     error,

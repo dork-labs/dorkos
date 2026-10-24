@@ -488,7 +488,7 @@ export default defineConfig({
     // Set HERE rather than in a fixture because half this suite does not use the
     // shared `test` — 48 files import `test` straight from `@playwright/test`,
     // and a fixture-level opt-out silently misses every one of them (measured:
-    // `now-survives-reload.ts` was the one that noticed, by reloading into a
+    // `dorkbot-seed-survives-reload.ts` was the one that noticed, by reloading into a
     // snapshot taken before the session it was asserting on errored). A config
     // `storageState` applies to every context in every project however `test`
     // was imported, which is the property this needs.
@@ -823,6 +823,9 @@ export default defineConfig({
         '**/workbench/session-canvas-sync.spec.ts',
         '**/workbench/session-file-save-receipts.spec.ts',
         '**/workbench/session-file-save-recovery.spec.ts',
+        // Declares document routes through `/api/test/doc-routes`, which exists
+        // only under `DORKOS_TEST_RUNTIME`, and drives a turn to open its document.
+        '**/workbench/session-doc-routes.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -973,7 +976,7 @@ export default defineConfig({
       // reasons: its rename leg drives turns, and its sync test opens a second
       // context.
       name: 'chromium-browser-driving',
-      // These five specs share the test-mode scenario store and tracked sessions.
+      // These six specs share the test-mode scenario store and tracked sessions.
       // Their global reset must not erase another file's active conversation.
       // CI already uses one worker; keep local runs isolated the same way.
       workers: 1,
@@ -988,6 +991,7 @@ export default defineConfig({
         '**/workbench/session-canvas-sync.spec.ts',
         '**/workbench/session-file-save-receipts.spec.ts',
         '**/workbench/session-file-save-recovery.spec.ts',
+        '**/workbench/session-doc-routes.spec.ts',
       ],
     },
     {

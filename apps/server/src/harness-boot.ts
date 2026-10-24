@@ -34,6 +34,11 @@ import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
+import { setContinuationHoldDb } from './services/core/turn-power/continuation-hold.js';
+import {
+  createChatRiseFacts,
+  setChatRiseFacts,
+} from './services/core/turn-power/chat-rise-facts.js';
 import {
   SessionEventStore,
   StagedContextStore,
@@ -99,6 +104,9 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // for them is durable, so the hold behind it is (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
+  setContinuationHoldDb(db);
+  // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
+  setChatRiseFacts(createChatRiseFacts(db));
 
   // **Agent identity, because a rooms case has to be able to act AS an agent.**
   // `POST /api/test/agent-token` mints through this service, and an eval that

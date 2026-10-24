@@ -10,6 +10,11 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useSessionId: () => [null, vi.fn()],
 }));
 vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
+// Beside no DM: the panel these tests describe is the one with the DM view off.
+vi.mock('@/layers/features/direct-message', () => ({
+  useDirectMessagePanel: () => null,
+  GroupDmMemberPicker: () => null,
+}));
 vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
 vi.mock('@/layers/entities/local-browser', () => ({
   useLocalBrowserState: () => ({ data: undefined }),
@@ -87,17 +92,31 @@ vi.mock('react-resizable-panels', async () => {
 // every assertion below unchanged.
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
+  const { useEffect, useRef } = await import('react');
   const Passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>;
   const SheetStub = ({ children, open }: React.PropsWithChildren<{ open?: boolean }>) =>
     open ? <div data-testid="sheet">{children}</div> : null;
+  // Opens the way Radix does: offers `onOpenAutoFocus` a cancellable event,
+  // and focuses the first tab unless the handler prevented it.
   const SheetContentStub = ({
     children,
     className,
-  }: React.PropsWithChildren<{ className?: string }>) => (
-    <div data-testid="sheet-content" className={className}>
-      {children}
-    </div>
-  );
+    onOpenAutoFocus,
+  }: React.PropsWithChildren<{ className?: string; onOpenAutoFocus?: (e: Event) => void }>) => {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      const event = new Event('focusScope.autoFocusOnMount', { cancelable: true });
+      Object.defineProperty(event, 'currentTarget', { value: ref.current });
+      onOpenAutoFocus?.(event);
+      if (!event.defaultPrevented) ref.current?.querySelector<HTMLElement>('[role="tab"]')?.focus();
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open, as Radix does
+    }, []);
+    return (
+      <div ref={ref} tabIndex={-1} data-testid="sheet-content" className={className}>
+        {children}
+      </div>
+    );
+  };
   const SheetTitleStub = ({ children }: React.PropsWithChildren) => (
     <span data-testid="sheet-title">{children}</span>
   );
@@ -747,6 +766,36 @@ describe('RightPanelContainer', () => {
   // A tablet is wider than a phone and still too narrow for three panes: at
   // 768px with the sidebar and the panel both docked, the page between them
   // measured 236px. So the panel comes OVER the page there — but as a sheet at
+  // DOR-3075: Show work and Watch open the Work tab to read a turn. The sheet
+  // must not open with a tab focused, wearing its ring and tooltip.
+  describe('opening on the Work tab', () => {
+    it('puts focus on the panel body, not on a tab', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'work';
+      mockContributions = [makeContribution('profile'), makeContribution('work')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(document.activeElement).toBe(document.getElementById('right-panel-content'));
+      expect(document.activeElement?.getAttribute('role')).toBe('tabpanel');
+    });
+
+    it('leaves every other tab opening as before', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'profile';
+      mockContributions = [makeContribution('profile'), makeContribution('work')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(document.activeElement?.getAttribute('role')).toBe('tab');
+      expect(document.getElementById('right-panel-content')).not.toHaveAttribute('tabindex');
+    });
+  });
+
   // reading width, not the phone's full-bleed takeover, because there is a page
   // worth keeping in view behind it.
   describe('tablet tier (768–1023px)', () => {

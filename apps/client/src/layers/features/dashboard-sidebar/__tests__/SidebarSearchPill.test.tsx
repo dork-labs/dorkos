@@ -18,10 +18,10 @@ beforeEach(() => useAppStore.getState().setGlobalPaletteOpen(false));
 afterEach(() => cleanup());
 
 describe('SidebarSearchPill', () => {
-  it('reads "Jump to anything…" and shows the chord that does the same thing', () => {
+  it('reads "Find a conversation…" and shows the chord that does the same thing', () => {
     render(<SidebarSearchPill />);
     const pill = screen.getByTestId('sidebar-search-pill');
-    expect(pill).toHaveTextContent('Jump to anything…');
+    expect(pill).toHaveTextContent('Find a conversation…');
     expect(pill.textContent).toMatch(/K$/);
   });
 

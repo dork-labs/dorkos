@@ -1,4 +1,5 @@
 /** One conservative, bounded HTML/CSP decision for both fixed frame SDKs. */
+import type { FrameBridgeRefusal } from '@dorkos/shared/schemas';
 import { WORKBENCH } from '../../config/constants.js';
 import { DOC_FRAME_SHIM_SCRIPT } from '../canvas/doc-frame-shim.js';
 import { DEVTOOLS_AGENT_SCRIPT } from './devtools-shim.js';
@@ -9,11 +10,23 @@ export interface FrameInjectionOptions {
   enforcingPolicies: readonly string[];
 }
 
+/** The Content-Type an instrumented page must be sent with. */
+export const INSTRUMENTED_CONTENT_TYPE = 'text/html; charset=utf-8';
+
 /** Refusal keeps the exact original bytes, including unsupported encodings. */
 export interface FrameInjectionResult {
   bytes: Buffer;
   instrumented: boolean;
-  reason: string | null;
+  /**
+   * The exact Content-Type the caller must send with `bytes`. For an
+   * instrumented page it is always {@link INSTRUMENTED_CONTENT_TYPE}: the scan
+   * stops where the body starts, which is only safe while the charset is
+   * certain, so a `<meta charset>` in the body can never re-decode the page.
+   * A refused page keeps the Content-Type it came with.
+   */
+  contentType: string;
+  /** Why the scripts were not added, as a stable code; `null` when they were. */
+  reason: FrameBridgeRefusal | null;
 }
 
 const SPACE = /[\t\n\f\r ]/;
@@ -31,7 +44,41 @@ const UNSUPPORTED = new Set([
   'noframes',
 ]);
 const HEAD_TAGS = new Set(['meta', 'title', 'style', 'link', 'base', 'script']);
+/** Start tags the parser sends to the head (or a new head) between `</head>` and the body. */
+const AFTER_HEAD_REFUSED = new Set([
+  'html',
+  'head',
+  'template',
+  'noframes',
+  'frameset',
+  'basefont',
+  'bgsound',
+]);
+const VOID = new Set([
+  'meta',
+  'link',
+  'base',
+  'br',
+  'hr',
+  'img',
+  'input',
+  'source',
+  'area',
+  'col',
+  'embed',
+  'param',
+  'track',
+  'wbr',
+]);
 const SCRIPT_TAGS = `<script>${DOC_FRAME_SHIM_SCRIPT}</script><script>${DEVTOOLS_AGENT_SCRIPT}</script>`;
+/**
+ * Our own scripts must end where they appear to: no `</script`, and no `<!--`
+ * that could start the double-escaped state and swallow the page's own end tag.
+ * Fixed source, so checked once when the module loads.
+ */
+const FIXED_SOURCE_SAFE = [DOC_FRAME_SHIM_SCRIPT, DEVTOOLS_AGENT_SCRIPT].every(
+  (source) => !/<\/script[\t\n\f\r />]|<!--/i.test(source)
+);
 
 function utf8ContentType(value: string): boolean {
   const pieces = value.split(';');
@@ -133,108 +180,123 @@ function tagAt(html: string, start: number): Tag | undefined {
   }
 }
 
-function insertionPoint(html: string): number | undefined {
+/** Where the scripts go, or the stable reason the markup refuses them. */
+type Placement =
+  | { at: number }
+  | { refusal: Extract<FrameBridgeRefusal, 'markup' | 'no-head' | 'encoding' | 'csp'> };
+
+const MARKUP = { refusal: 'markup' } as const;
+
+/**
+ * The scan stops where the body starts, and everything that decides the
+ * insertion is before that point:
+ *
+ * - Before `<head>` and inside it, every rule is strict. The insertion point is
+ *   right after an explicit `<head>` start tag, so only the bytes before it can
+ *   make that tag something other than the real head, and only scripts before it
+ *   could run before the shim. Inside the head, unsupported markup (`<noscript>`,
+ *   `<template>`, foreign content, self-closing non-void tags, unknown tags that
+ *   close the head implicitly) still refuses, and raw text (`<script>`, `<style>`,
+ *   `<title>`) is skipped so a `</head>` in a script string cannot close it.
+ * - Between `</head>` and the body, the parser still moves `<meta>`, `<link>`,
+ *   `<base>`, `<title>`, `<style>` and `<script>` INTO the head ("after head"
+ *   insertion mode), so those keep the head rules (a `<meta>` policy there is a
+ *   real policy); `<head>`, `<html>`, `<template>`, `<noframes>` and
+ *   `<frameset>` refuse.
+ * - The body begins at `<body>`, at any other start tag, at `</body>`/`</html>`,
+ *   or at text. Nothing in the body is ever inserted into the head, the body is
+ *   parsed after the shim has run, and the response's charset is always certain
+ *   (UTF-8 by header, so no `<meta charset>` can restart the parse). So the body
+ *   is not read at all: inline SVG, MathML, `<iframe>`, `<template>`,
+ *   `<noscript>`, and a `<meta>` (inert outside the head) are its own business.
+ */
+function insertionPoint(html: string): Placement {
   let i = html.charCodeAt(0) === 0xfeff ? 1 : 0;
   let head: 'before' | 'inside' | 'after' = 'before';
   let htmlSeen = false;
-  let htmlClosed = false;
-  let bodySeen = false;
-  let bodyClosed = false;
   let doctypeSeen = false;
   let charsetSeen = false;
-  let insertion: number | undefined;
+  let insertion = 0;
+  // Content before any `<head>`: a page that never has one is told so plainly.
+  const beforeHead = (): Placement =>
+    /<head[\t\n\f\r />]/i.test(html.slice(i)) ? MARKUP : { refusal: 'no-head' };
   while (i < html.length) {
     if (html.startsWith('<!--', i)) {
+      // A browser ends a comment earlier than `-->` in three ways: `<!-->` and
+      // `<!--->` are whole empty comments, and `--!>` closes one. Text after any
+      // of them is markup, so each is refused rather than read as comment text;
+      // so are a nested `<!--` and a comment with no end.
+      if (html[i + 4] === '>' || html.startsWith('->', i + 4)) return MARKUP;
       const end = html.indexOf('-->', i + 4);
-      if (end < 0 || /--|<!/.test(html.slice(i + 4, end))) return;
+      if (end < 0 || /--|<!/.test(html.slice(i + 4, end))) return MARKUP;
       i = end + 3;
       continue;
     }
     if (/^<!doctype html>/i.test(html.slice(i, i + 15))) {
-      if (doctypeSeen || head !== 'before' || htmlSeen) return;
+      if (doctypeSeen || head !== 'before' || htmlSeen) return MARKUP;
       doctypeSeen = true;
       i += 15;
       continue;
     }
     if (html[i] !== '<') {
-      if ((head !== 'after' || htmlClosed || bodyClosed) && !SPACE.test(html[i])) return;
-      if (html[i] === '\x00') return;
+      if (html[i] === '\x00') return MARKUP;
+      if (!SPACE.test(html[i])) {
+        if (head === 'after') return { at: insertion };
+        return head === 'before' ? beforeHead() : MARKUP;
+      }
       i++;
       continue;
     }
     const tag = tagAt(html, i);
-    if (
-      !tag ||
-      UNSUPPORTED.has(tag.name) ||
-      (tag.selfClosing &&
-        ![
-          'meta',
-          'link',
-          'base',
-          'br',
-          'hr',
-          'img',
-          'input',
-          'source',
-          'area',
-          'col',
-          'embed',
-          'param',
-          'track',
-          'wbr',
-        ].includes(tag.name))
-    )
-      return;
-    if (htmlClosed || bodyClosed) {
-      if (!(tag.closing && tag.name === 'html' && bodyClosed && !htmlClosed)) return;
-    }
-    if (tag.name === 'html') {
+    if (!tag) return MARKUP;
+    if (head === 'after') {
       if (tag.closing) {
-        if (!htmlSeen || head !== 'after' || htmlClosed) return;
-        htmlClosed = true;
-      } else {
-        if (htmlSeen || head !== 'before') return;
-        htmlSeen = true;
+        if (tag.name === 'body' || tag.name === 'html' || tag.name === 'br')
+          return { at: insertion };
+        // The parser ignores any other end tag here.
+        i = tag.end;
+        continue;
       }
+      if (AFTER_HEAD_REFUSED.has(tag.name)) return MARKUP;
+      // `<body>`, or any start tag the parser does not move into the head: the body.
+      if (!HEAD_TAGS.has(tag.name)) return { at: insertion };
+    }
+    if (UNSUPPORTED.has(tag.name) || (tag.selfClosing && !VOID.has(tag.name))) return MARKUP;
+    if (tag.name === 'html') {
+      if (tag.closing || htmlSeen || head !== 'before') return MARKUP;
+      htmlSeen = true;
     } else if (tag.name === 'head') {
       if (tag.closing) {
-        if (head !== 'inside') return;
+        if (head !== 'inside') return MARKUP;
         head = 'after';
       } else {
-        if (head !== 'before') return;
+        if (head !== 'before') return MARKUP;
         head = 'inside';
         insertion = tag.end;
       }
-    } else if (tag.name === 'body') {
-      if (head !== 'after') return;
-      if (tag.closing) {
-        if (!bodySeen || bodyClosed) return;
-        bodyClosed = true;
-      } else {
-        if (bodySeen) return;
-        bodySeen = true;
-      }
-    } else if (head === 'before' || (head === 'inside' && !HEAD_TAGS.has(tag.name))) return;
+    } else if (head === 'before') return beforeHead();
+    else if (head === 'inside' && !HEAD_TAGS.has(tag.name)) return MARKUP;
     if (tag.name === 'meta') {
-      if (tag.closing) return;
+      if (tag.closing) return MARKUP;
       if (
         [...tag.attributes.values()].some((value) =>
           [...value].some((character) => character === '&' || character.codePointAt(0)! <= 31)
         )
       )
-        return;
+        return MARKUP;
       const equiv = tag.attributes.get('http-equiv')?.trim().toLowerCase();
-      if (equiv && equiv !== 'content-type') return;
+      if (equiv === 'content-security-policy') return { refusal: 'csp' };
+      if (equiv && equiv !== 'content-type') return MARKUP;
       const declared = tag.attributes.get('charset');
       if (declared !== undefined || equiv === 'content-type') {
-        if (head !== 'inside' || charsetSeen) return;
+        if (head !== 'inside' || charsetSeen) return MARKUP;
         charsetSeen = true;
         if (
           declared !== undefined
             ? !/^(utf-8|utf8)$/i.test(declared)
             : !utf8ContentType(tag.attributes.get('content') ?? '')
         )
-          return;
+          return { refusal: 'encoding' };
       }
     }
     i = tag.end;
@@ -242,16 +304,17 @@ function insertionPoint(html: string): number | undefined {
       const closing = new RegExp(`</${tag.name}(?=[\\t\\n\\f\\r />])`, 'ig');
       closing.lastIndex = i;
       const match = closing.exec(html);
-      if (!match) return;
+      if (!match) return MARKUP;
       // Script double-escaped states require a full HTML parser, so refuse them.
       if (tag.name === 'script' && /<!--|<script[\t\n\f\r />]/i.test(html.slice(i, match.index)))
-        return;
+        return MARKUP;
       const end = tagAt(html, match.index);
-      if (!end?.closing || end.name !== tag.name) return;
+      if (!end?.closing || end.name !== tag.name) return MARKUP;
       i = end.end;
     }
   }
-  return head === 'after' ? insertion : undefined;
+  if (head === 'after') return { at: insertion };
+  return head === 'before' ? { refusal: 'no-head' } : MARKUP;
 }
 
 /** Insert fixed Doc/DevTools SDKs only when encoding, markup order and every CSP are provable. */
@@ -259,9 +322,10 @@ export function injectFrameScripts(
   raw: Buffer,
   options: FrameInjectionOptions
 ): FrameInjectionResult {
-  const refuse = (reason: string): FrameInjectionResult => ({
+  const refuse = (reason: FrameBridgeRefusal): FrameInjectionResult => ({
     bytes: raw,
     instrumented: false,
+    contentType: options.contentType,
     reason,
   });
   if (raw.length > WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) return refuse('oversize');
@@ -274,16 +338,14 @@ export function injectFrameScripts(
   } catch {
     return refuse('encoding');
   }
-  const at = insertionPoint(html);
-  if (at === undefined) return refuse('markup');
-  if (
-    /<\/script[\t\n\f\r />]/i.test(DOC_FRAME_SHIM_SCRIPT) ||
-    /<\/script[\t\n\f\r />]/i.test(DEVTOOLS_AGENT_SCRIPT)
-  )
-    return refuse('fixed-source');
+  const placement = insertionPoint(html);
+  if ('refusal' in placement) return refuse(placement.refusal);
+  const at = placement.at;
+  if (!FIXED_SOURCE_SAFE) return refuse('fixed-source');
   return {
     bytes: Buffer.from(html.slice(0, at) + SCRIPT_TAGS + html.slice(at), 'utf8'),
     instrumented: true,
+    contentType: INSTRUMENTED_CONTENT_TYPE,
     reason: null,
   };
 }

@@ -203,12 +203,12 @@ export const authors = sqliteTable(
  * The original author may always reclaim its own: that is the case that would
  * otherwise be infuriating, and the one `author_id` exists to answer.
  *
- * **Also the reservation table.** `everyone`, `here` and `channel` are seeded
+ * **Also the reservation table.** `everyone`, `here`, `channel` and `room` are seeded
  * here at boot, owned by the system author, because a model writes `@everyone`
  * whether or not that is our spelling for a broadcast — and an unreserved
  * `everyone` is a name an adversarial agent could claim precisely to harvest
  * broadcast-intent messages. That is not a blocklist: nothing consults a list of
- * forbidden words at any enforcement point. It is three rows under one index.
+ * forbidden words at any enforcement point. It is a few rows under one index.
  */
 export const handleTombstones = sqliteTable(
   'handle_tombstones',
@@ -692,6 +692,21 @@ export const roomEntries = sqliteTable(
      */
     dispatchId: text('dispatch_id'),
 
+    /**
+     * The turn marks the post was written under (DOR-3036, `specs/turn-marks`): JSON
+     * `{ outsider?: true, teammate?: [{ roomId, authorId }] }`, `{}` for a known unmarked turn, and
+     * NULL when nobody knows (an unverified caller, a row from before this column). Kept so a
+     * restart does not read a teammate-marked agent post as merely an outsider's. Off the wire.
+     */
+    turnMarks: text('turn_marks'),
+
+    /**
+     * Whether the turns this post starts, and the beats that read it, are held
+     * to the runtime's default: a person wrote it from Wi-Fi (DOR-3037). Kept on
+     * the row so the hold outlives a restart. Off the wire, like `dispatchId`.
+     */
+    heldToDefault: integer('held_to_default', { mode: 'boolean' }).notNull().default(false),
+
     /** The entry this one answers, in this same room. Null for a top-level entry. */
     parentEntryId: text('parent_entry_id'),
 
@@ -761,7 +776,7 @@ export const roomEntries = sqliteTable(
     index('idx_room_entries_thread_root')
       .on(table.roomId, table.threadRootEntryId, table.seq)
       .where(sql`"thread_root_entry_id" IS NOT NULL`),
-    // "Which rooms has this author written in?" — `RoomStore.roomsPostedInBy`,
+    // "Which rooms has this author written in?" — `RoomListReads.roomsPostedInBy`,
     // one query for a whole room list (`RoomSummary.viewerHasPosted`).
     //
     // **It leads with `author_id` because the question does.** Every other index

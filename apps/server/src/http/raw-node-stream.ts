@@ -22,6 +22,10 @@
  * - **A client that leaves aborts {@link RawNodeStreamControl.signal}**, so
  *   the writer can stop work nobody will read. The listener is removed when
  *   the writer finishes, so nothing outlives the request.
+ * - **Signing out closes it.** A stream opened with a person's session cookie
+ *   is registered under that sign-in while it runs, and ending the sign-in
+ *   destroys the response (`services/core/auth/sessions/live-connections.ts`,
+ *   DOR-2969). The client sees the stream drop, reconnects, and is refused.
  * - **A thrown error is the chain's.** Before anything was written, the chain
  *   answers it as JSON (`onError`); after, it closes the connection, as
  *   Express does.
@@ -31,7 +35,12 @@
 import type { ServerResponse } from 'node:http';
 import type { HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import type { Context } from 'hono';
+import type { Context, Env } from 'hono';
+import type { RequestUser } from '../services/core/auth/session-gate.js';
+import {
+  registerLiveConnection,
+  type LiveConnectionKind,
+} from '../services/core/auth/sessions/live-connections.js';
 
 /** What a writer is handed beside the response. */
 export interface RawNodeStreamControl {
@@ -67,12 +76,47 @@ export async function streamToNodeResponse<E extends RawNodeStreamEnv>(
   outgoing.once('close', onClose);
   // Gone before the route got here: nothing will close again to say so.
   if (outgoing.destroyed) controller.abort();
+  const unregister = registerWithSignIn(c, () => outgoing.destroy());
   try {
     await write(outgoing, { signal: controller.signal });
   } finally {
     outgoing.off('close', onClose);
+    unregister();
   }
   // A fresh marker each time: the shared one has mutable headers, and a chain
   // step that sets one after the route would write it into every later answer.
   return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
+}
+
+/**
+ * Register a long-lived response with the sign-in that opened it, when a
+ * cookie session did: the gate set `user` with a session id. Anything else
+ * (an API key, a gate that asked for nothing) names no sign-in to end.
+ *
+ * @param c - The Hono context, read for the gate's `user`.
+ * @param close - Ends it.
+ * @param kind - What it is (`live-connections.ts`); a stream by default.
+ * @returns Unregister.
+ */
+export function registerWithSignIn<E extends Env>(
+  c: Context<E>,
+  close: () => void,
+  kind: LiveConnectionKind = 'stream'
+): () => void {
+  const user = (c.var as { user?: RequestUser }).user;
+  if (user?.credential !== 'cookie' || !user.sessionId) return () => {};
+  return registerLiveConnection(user.sessionId, user.userId, close, kind);
+}
+
+/**
+ * Close a response the route hands back as a `Response` (a streamed MCP or
+ * A2A answer) when the sign-in that asked for it ends, for as long as the
+ * Node response is open.
+ *
+ * @param c - The Hono context: the gate's `user` and the raw Node response.
+ */
+export function closeResponseWithSignIn<E extends RawNodeStreamEnv>(c: Context<E>): void {
+  const { outgoing } = c.env;
+  const unregister = registerWithSignIn(c, () => outgoing.destroy());
+  outgoing.once('close', unregister);
 }

@@ -185,21 +185,14 @@ vi.mock('@/layers/widgets/one-bar', async () => {
 
 // ── Mock child components with identifiable test markers ──
 
-// The roster can render with zones and without them — P2 AC-8 asks for the
-// takeover to be correct in both states, and "without" is the ordinary quiet
-// morning where Heads up and Today are both absent (BC-1).
-let mockZonesPresent = true;
-vi.mock('@/layers/features/dashboard-sidebar', async () => {
-  // The zone enumeration is the REAL one, imported from the module that owns
-  // it: the mobile tabs derive Home's and Library's zone sets from that tuple,
-  // and a hand-written copy here would let the two drift apart silently.
-  const { SIDEBAR_ZONE_IDS } =
-    await import('@/layers/features/dashboard-sidebar/model/build-sidebar-model');
+// The roster can render with sections and without them — P2 AC-8 asks for the
+// takeover to be correct in both states.
+let mockSectionsPresent = true;
+vi.mock('@/layers/features/dashboard-sidebar', () => {
   return {
-    SIDEBAR_ZONE_IDS,
     DashboardSidebar: () => (
       <nav aria-label="Sidebar" data-testid="dashboard-sidebar">
-        {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
+        {mockSectionsPresent && <section data-sidebar-section="channels">Channels</section>}
       </nav>
     ),
     // Both are persistent chrome: AppShell mounts them OUTSIDE the
@@ -219,26 +212,13 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     // What the mobile tabs compose. Stubbed at the feature seam so this suite
     // stays about the SHELL — which cockpit it mounts and where a takeover
     // lands — while `MobileTabsLayout.test.tsx` drives the real model through
-    // the real zones.
+    // the real sections.
     SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    SidebarZones: ({ zoneIds }: { zoneIds?: readonly string[] }) => (
-      <div data-testid={`sidebar-zones-${zoneIds?.join('+') ?? 'all'}`} />
-    ),
-    // `attention` is here because the phone reads it: with every blockage drawn
-    // as a card the model emits no Heads up zone, so the tab badge falls back to
-    // this list for its count (DOR-1391). A stub missing it is not a
-    // `SidebarState`, and the widget must not paper over that with a defensive
-    // read — an empty list is the honest value for a shell suite that mounts no
-    // blockages.
-    useSidebarState: () => ({ activeTarget: null, attention: [] }),
-    useSidebarModel: () => ({ zones: [] }),
+    SidebarSections: () => <div data-testid="sidebar-sections" />,
+    useSidebarState: () => ({ activeTarget: null }),
+    useSidebarModel: () => ({ sections: [] }),
     useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
     useLegacyPinMigration: () => {},
-    // The phone's needs-you announcement, which the tabs now render OUTSIDE
-    // their panels because a panel is `inert` whenever it is put away (P4.2).
-    useLiveRegionText: (text: string | undefined) => text ?? '',
-    needsYouLiveRegionText: (count: number) =>
-      count === 0 ? undefined : `${count} agents need you`,
   };
 });
 
@@ -584,6 +564,7 @@ vi.mock('@/layers/features/right-panel', () => ({
 vi.mock('@/layers/features/profile', () => ({
   useProfileShortcut: () => {},
   useProfileDockDeepLink: () => {},
+  useProfileRootLinks: () => {},
   useLegacyProfileLinkRedirect: () => {},
 }));
 
@@ -751,17 +732,12 @@ describe('AppShell slot integration', () => {
       });
     });
 
-    it('puts Now and Today in Home and Library in its own destination', () => {
+    it('puts the whole list in Home, and has no second list tab', () => {
       renderAppShell();
-      // The zone sets the layout asked for, read off the stub that records them.
       expect(
-        within(screen.getByTestId('mobile-tab-panel-home')).getByTestId(
-          'sidebar-zones-getting-started+now+today'
-        )
+        within(screen.getByTestId('mobile-tab-panel-home')).getByTestId('sidebar-sections')
       ).toBeInTheDocument();
-      expect(
-        within(screen.getByTestId('mobile-tab-panel-library')).getByTestId('sidebar-zones-library')
-      ).toBeInTheDocument();
+      expect(screen.queryByTestId('mobile-tab-panel-library')).not.toBeInTheDocument();
     });
 
     it('carries the four places DorkOS goes into You, so nothing is stranded', () => {
@@ -783,18 +759,15 @@ describe('AppShell slot integration', () => {
       });
       afterEach(() => unregister?.());
 
-      it('lands inside Library and nowhere else on a phone', () => {
+      it('takes over Home’s list on a phone, and nothing else', () => {
         mockPathname = '/marketplace';
         renderAppShell();
         const takeover = screen.getByTestId('marketplace-sidebar-fake');
-        expect(screen.getByTestId('mobile-tab-panel-library')).toContainElement(takeover);
-        expect(screen.getByTestId('mobile-tab-panel-home')).not.toContainElement(takeover);
-        // …and Home keeps its zones: browsing the marketplace is not a reason
-        // to stop being told what needs you.
+        expect(screen.getByTestId('mobile-tab-panel-home')).toContainElement(takeover);
+        expect(screen.queryByTestId('sidebar-sections')).not.toBeInTheDocument();
+        // …and the header block stays: the way to make things is not the list.
         expect(
-          within(screen.getByTestId('mobile-tab-panel-home')).getByTestId(
-            'sidebar-zones-getting-started+now+today'
-          )
+          within(screen.getByTestId('mobile-tab-panel-home')).getByTestId('sidebar-header-block')
         ).toBeInTheDocument();
       });
     });
@@ -845,20 +818,20 @@ describe('AppShell slot integration', () => {
 
     afterEach(() => {
       unregister?.();
-      mockZonesPresent = true;
+      mockSectionsPresent = true;
     });
 
     // ── P2 AC-8 ──
     it.each([true, false])(
-      'keeps the header block OUTSIDE the swap region, so a takeover cannot take it (zones present: %s)',
-      (zones) => {
+      'keeps the header block OUTSIDE the swap region, so a takeover cannot take it (sections present: %s)',
+      (sections) => {
         // **Structural, not presence.** Chrome rendered inside the animated
         // body would still be on screen on the roster route and would still be
         // "mounted" after a takeover swapped a different body in — because the
         // shell mounts it either way. What distinguishes the two arrangements is
         // whether the swap region CONTAINS it. An earlier version of this test
         // asserted presence and passed with the chrome moved inside.
-        mockZonesPresent = zones;
+        mockSectionsPresent = sections;
         mockPathname = '/';
         renderAppShell();
 
@@ -866,8 +839,8 @@ describe('AppShell slot integration', () => {
         const footer = screen.getByTestId('sidebar-footer-strip');
         expect(swap).toContainElement(screen.getByTestId('dashboard-sidebar'));
         expect(swap).not.toContainElement(footer);
-        // The zones themselves live inside the body, whichever state they are in.
-        expect(document.querySelector('[data-sidebar-zone="library"]') !== null).toBe(zones);
+        // The sections themselves live inside the body, whichever state they are in.
+        expect(document.querySelector('[data-sidebar-section="channels"]') !== null).toBe(sections);
         cleanup();
 
         // And the takeover swaps only what the swap region held.

@@ -68,7 +68,7 @@ export interface AttentionRows {
  *
  * **Both blocking groups are slices of the ONE list.** Schedules used to be
  * fetched beside the attention engine and counted on afterwards, which meant
- * this hook, the sidebar's Heads up zone and the arrival watch each held their
+ * this hook, the sidebar's old needs-you list and the arrival watch each held their
  * own idea of whether a parked schedule counted. It is an `AttentionSignal`
  * now, so membership and the total are read off `useAttentionSignals` and the
  * task lookup below exists only to hand the view something it can draw.

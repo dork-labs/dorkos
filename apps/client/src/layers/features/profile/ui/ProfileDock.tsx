@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/layers/shared/model';
 import { useMeshAgentPaths, useMeshMemberId } from '@/layers/entities/mesh';
 import { useTeamRoster } from '@/layers/entities/team';
+import { useDirectMessagePanel } from '@/layers/features/direct-message';
 import { useDockedAgentPath, useSessionAgent } from '../model/use-docked-agent';
 import { useDockedEntries, useProfileStore } from '../model/profile-store';
 import {
@@ -57,6 +58,9 @@ export function ProfileDock() {
   const agentPath = useDockedAgentPath();
   const session = useSessionAgent();
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
+  // Beside a DM, the session behind it stays out of sight without Show sessions.
+  const dm = useDirectMessagePanel();
+  const quietSessionDetail = dm !== null && !dm.showSessions;
 
   // The fleet's path → id map is the honest join and the only one: an agent on
   // disk but absent from it has no roster row either, so a manifest read would
@@ -176,6 +180,7 @@ export function ProfileDock() {
         // a profile you opened deliberately, or chained onto this one, belongs
         // to someone else's conversation and Message is the way to get to it.
         inOwnSession={agentPath === session.agentPath && subject.id === display.id}
+        quietSessionDetail={quietSessionDetail}
         stack={stack}
         onPush={handlePush}
         onPop={handlePop}

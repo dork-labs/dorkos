@@ -25,7 +25,11 @@ import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  refuseFrontDoorChange,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 
 const router = new Hono<ApiEnv>();
@@ -93,6 +97,9 @@ router.post('/start', async (c) => {
     logger.warn('[Tunnel] Blocked start — an agent may not publish this machine');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
+  // The front-door bar (DOR-2969): only the owner, at this computer, publishes it.
+  const frontDoor = refuseFrontDoorChange(caller, 'remote access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
 
   // Return 409 if a tunnel is already open. Asked of the manager rather than of
   // `status.connected`, which goes false for as long as ngrok is reconnecting

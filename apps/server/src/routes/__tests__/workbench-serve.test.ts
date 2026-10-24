@@ -486,3 +486,56 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
     expect(res.body).toEqual({ url: null, unavailable: 'no-port' });
   });
 });
+
+describe('POST /api/workbench/bridge — why a served page has no frame scripts (DOR-3131)', () => {
+  const token = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
+  const ask = (filePath: string, cwd = root) =>
+    request(testServer).post('/api/workbench/bridge').send({ kind: 'serve', cwd, path: filePath });
+
+  it('says the scripts went into a page whose body is hundreds of inline SVG icons', async () => {
+    const icons = Array.from({ length: 300 }, (_, n) => `<svg><path d="M${n} 0"/></svg>`).join('');
+    await fs.writeFile(
+      path.join(root, 'icons.html'),
+      `<!doctype html><html><head><title>icons</title></head><body>${icons}</body></html>`
+    );
+    const served = await request(testServer).get(`/api/workbench/serve/${token()}/icons.html`);
+    expect(served.text).toMatch(/^<!doctype html><html><head><script>/);
+    const res = await ask('icons.html');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ bridge: 'added' });
+    // Named absolutely, it is the same page.
+    expect((await ask(path.join(root, 'icons.html'))).body).toEqual({ bridge: 'added' });
+  });
+
+  it('gives the stable reason for a page it served unchanged', async () => {
+    await fs.writeFile(
+      path.join(root, 'policy.html'),
+      '<html><head><meta http-equiv="content-security-policy" content="script-src \'none\'"></head><body></body></html>'
+    );
+    await fs.writeFile(path.join(root, 'fragment.html'), '<div>no head</div>');
+    await fs.writeFile(
+      path.join(root, 'big.html'),
+      `<html><head></head><body>${'x'.repeat(WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES)}</body></html>`
+    );
+    await request(testServer).get(`/api/workbench/serve/${token()}/policy.html`);
+    await request(testServer).get(`/api/workbench/serve/${token()}/fragment.html`);
+    await request(testServer).get(`/api/workbench/serve/${token()}/big.html`);
+    expect((await ask('policy.html')).body).toEqual({ bridge: 'refused', reason: 'csp' });
+    expect((await ask('fragment.html')).body).toEqual({ bridge: 'refused', reason: 'no-head' });
+    expect((await ask('big.html')).body).toEqual({ bridge: 'refused', reason: 'oversize' });
+  });
+
+  it('knows nothing about a page it has not served, or one outside the folder', async () => {
+    await fs.writeFile(path.join(root, 'never-served.html'), '<html><head></head></html>');
+    expect((await ask('never-served.html')).body).toEqual({ bridge: 'unknown' });
+    expect((await ask('../secret.txt')).body).toEqual({ bridge: 'unknown' });
+    expect((await ask('secret.txt', outside)).body).toEqual({ bridge: 'unknown' });
+  });
+
+  it('rejects a malformed request (400)', async () => {
+    const res = await request(testServer)
+      .post('/api/workbench/bridge')
+      .send({ kind: 'proxy', port: 0, path: '/' });
+    expect(res.status).toBe(400);
+  });
+});

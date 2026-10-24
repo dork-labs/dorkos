@@ -9,7 +9,8 @@
  * @module server/services/rooms/messages/room-posting
  */
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { postLevelFor } from '../../core/turn-power/turn-levels.js';
+import { postLevelFor, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import {
   OUTSIDER_TURN_LIMIT,
   releaseOutsiderOutput,
@@ -19,9 +20,11 @@ import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
-import type { RoomEntryWriter } from './room-entry-writer.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { PostAuthorBound, RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
+import { noteCallerSession } from '../limits/caller-sessions.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
@@ -80,6 +83,7 @@ export class RoomPosting {
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
+  private readonly authors: AuthorRegistry;
 
   constructor(
     core: RoomCore,
@@ -90,6 +94,7 @@ export class RoomPosting {
     this.attachments = core.attachments;
     this.triggers = core.triggers;
     this.maxAttachmentsPerEntry = core.maxAttachmentsPerEntry;
+    this.authors = core.authors;
   }
 
   /**
@@ -110,11 +115,12 @@ export class RoomPosting {
    * @param input - The post itself; see {@link RoomPostInput}, which documents
    *   each field.
    * @param authorLevel - The level the turns this post starts are held to, for
-   *   a tool post a verified session made; see {@link RoomPosting.postFromTool}.
+   *   a tool post a verified session made (see {@link RoomPosting.postFromTool}),
+   *   or `'runtime-default'` for a person's post from Wi-Fi (DOR-3037).
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(roomId: string, input: RoomPostInput, authorLevel?: TurnPermissionLevel): PostedEntry {
+  post(roomId: string, input: RoomPostInput, authorLevel?: PostAuthorBound): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -222,6 +228,12 @@ export class RoomPosting {
        * and nothing at all when the caller is unknown.
        */
       callerSessionId?: string;
+      /**
+       * The caller presented a verified agent identity but no session (Codex
+       * and OpenCode over the external server). Its post is read like an own
+       * agent's with an unknown level (DOR-3107), not as a stranger's.
+       */
+      callerAgentVerified?: boolean;
     }
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
@@ -274,12 +286,22 @@ export class RoomPosting {
     // The level the turns this post starts are held to. Both sessions vouch:
     // the one that made the call, and the author's turn in this room, which
     // differ when an agent posts from one room's turn into another. A caller
-    // nobody verified keeps nothing, and its post is held to the default.
-    const authorLevel =
-      input.callerSessionId !== undefined
-        ? postLevelFor([input.callerSessionId, turn?.sessionId])
-        : undefined;
-    const { callerSessionId: _caller, ...postInput } = input;
+    // nobody verified is kept as an outsider's (DOR-3107): an unknown post
+    // from the owner's own agent is trusted, an unverified one never is.
+    const vouching = [input.callerSessionId, turn?.sessionId];
+    const known = input.callerSessionId !== undefined ? postLevelFor(vouching) : undefined;
+    // Unknown is trusted only when nothing says a stranger reached these chats.
+    const authorLevel: TurnPermissionLevel | { marks: TurnMarks } =
+      known ??
+      (input.callerSessionId === undefined && !input.callerAgentVerified
+        ? { marks: { outsider: true } }
+        : {
+            marks: unknownLevelMarks(
+              vouching,
+              this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
+            ),
+          });
+    const { callerSessionId: _caller, callerAgentVerified: _verified, ...postInput } = input;
     let entry: PostedEntry;
     try {
       entry = this.post(
@@ -311,6 +333,11 @@ export class RoomPosting {
     } catch (err) {
       releaseOutsiderOutput('post', countedSession);
       throw err;
+    }
+    // The chat the post was written from, when it is not this room's turn: a
+    // person may have set that chat to ask first (DOR-3107, `posterCapsFor`).
+    if (input.callerSessionId !== undefined && input.callerSessionId !== turn?.sessionId) {
+      noteCallerSession(entry.id, input.callerSessionId);
     }
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;

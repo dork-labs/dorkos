@@ -10,7 +10,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, shortenHomePath } from '@/layers/shared/lib';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
 // Human-readable descriptions for known detection strategies
@@ -110,7 +110,7 @@ export function CandidateCard({
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <Folder className="size-3 shrink-0" />
           <span className="truncate font-mono" title={path}>
-            {path}
+            {shortenHomePath(path)}
           </span>
         </div>
 

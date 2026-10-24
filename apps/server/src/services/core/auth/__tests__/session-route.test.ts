@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   mayCarrySessionCookie,
+  OTHER_DEVICE_SESSION_MAX_SECONDS,
+  sessionMaxSeconds,
   sessionRouteOf,
   sessionWorksOn,
   WIFI_SESSION_MAX_SECONDS,
@@ -18,7 +20,7 @@ describe('sessionWorksOn', () => {
   it('holds a session to its own route', () => {
     expect(sessionWorksOn({ route: 'tunnel', createdAt: new Date(NOW) }, 'tunnel', NOW)).toBe(true);
     expect(sessionWorksOn({ route: 'tunnel', createdAt: new Date(NOW) }, 'wifi', NOW)).toBe(false);
-    expect(sessionWorksOn({ route: 'hub' }, 'hub', NOW)).toBe(true);
+    expect(sessionWorksOn({ route: 'hub', createdAt: new Date(NOW) }, 'hub', NOW)).toBe(true);
   });
 
   it('keeps a session with no route to this computer', () => {
@@ -41,6 +43,25 @@ describe('sessionWorksOn', () => {
       sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - WEEK - 1) }, 'wifi', NOW)
     ).toBe(false);
     expect(sessionWorksOn({ route: 'wifi' }, 'wifi', NOW)).toBe(false);
+  });
+
+  it('holds every other device to 90 days however often it is used (DOR-3172)', () => {
+    const limit = OTHER_DEVICE_SESSION_MAX_SECONDS * 1000;
+    for (const route of ['tunnel', 'managed', 'network', 'hub'] as const) {
+      expect(sessionMaxSeconds(route)).toBe(90 * 24 * 60 * 60);
+      expect(sessionWorksOn({ route, createdAt: new Date(NOW - limit) }, route, NOW)).toBe(true);
+      expect(sessionWorksOn({ route, createdAt: new Date(NOW - limit - 1) }, route, NOW)).toBe(
+        false
+      );
+      expect(sessionWorksOn({ route }, route, NOW)).toBe(false);
+    }
+  });
+
+  it('puts no age limit on a sign-in made at this computer', () => {
+    expect(sessionMaxSeconds('local')).toBeNull();
+    const old = new Date(NOW - 10 * OTHER_DEVICE_SESSION_MAX_SECONDS * 1000);
+    expect(sessionWorksOn({ route: 'local', createdAt: old }, 'local', NOW)).toBe(true);
+    expect(sessionWorksOn({ route: null }, 'local', NOW)).toBe(true);
   });
 });
 

@@ -14,6 +14,7 @@ import { blockState, renderRequiredChecksBlock, replaceBlock } from './doc-block
 import type { Finding } from './finding.ts';
 import { CONFIG_PATH, loadHandFiles, type HandFiles } from './load.ts';
 import { checkRequiredContexts, checkTimeouts } from './required.ts';
+import { checkWorkflowIntent } from './required-workflows.ts';
 import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
 /** Inputs to one census run. */
@@ -247,18 +248,22 @@ function checkCanary(files: HandFiles, workflows: readonly WorkflowModel[]): Fin
         message: `${file} is in canary.workflows AND canary.exempt ("${reason.slice(0, 40)}…"). One of the two is a lie.`,
         fix: `Delete the entry from whichever list is wrong in ${CONFIG_PATH}.`,
       });
-  for (const context of files.requiredChecks?.contexts ?? []) {
-    const owners = workflows.filter((wf) => wf.jobs.some((j) => j.checkName === context));
-    for (const wf of owners) {
-      if (listed.has(wf.file) || wf.file in canary.exempt) continue;
-      out.push({
-        code: 'canary/required-unwatched',
-        file: CONFIG_PATH,
-        where: wf.file,
-        message: `${wf.file} owns the required context "${context}" but is in neither canary.workflows nor canary.exempt, so nothing runs it against main and nothing says why.`,
-        fix: `Add ${wf.file} to canary.workflows in ${CONFIG_PATH} (and give it schedule: and workflow_dispatch: triggers), or add it to canary.exempt with the reason it cannot run on main.`,
-      });
-    }
+  const contexts = files.requiredChecks?.contexts ?? [];
+  const sources = files.requiredChecks?.workflows ?? [];
+  const owners = workflows.filter(
+    (wf) =>
+      sources.some((s) => s.path === wf.path) ||
+      wf.jobs.some((j) => j.checkName !== null && contexts.includes(j.checkName))
+  );
+  for (const wf of owners) {
+    if (listed.has(wf.file) || wf.file in canary.exempt) continue;
+    out.push({
+      code: 'canary/required-unwatched',
+      file: CONFIG_PATH,
+      where: wf.file,
+      message: `${wf.file} is required but is in neither canary.workflows nor canary.exempt, so nothing watches it on main and nothing says why.`,
+      fix: `Add ${wf.file} to canary.workflows (with schedule and workflow_dispatch triggers), or exempt it with a reason.`,
+    });
   }
   return out;
 }
@@ -287,7 +292,7 @@ function checkDocBlocks(root: string, files: HandFiles, fix: boolean, fixed: str
   const out: Finding[] = [];
   const { config, requiredChecks } = files;
   if (!requiredChecks) return out;
-  const rendered = renderRequiredChecksBlock(requiredChecks.contexts);
+  const rendered = renderRequiredChecksBlock(requiredChecks.contexts, requiredChecks.workflows);
   for (const rel of config.generated_blocks.required_checks) {
     const abs = path.join(root, rel);
     if (!existsSync(abs)) {
@@ -359,6 +364,7 @@ export function runCensus(opts: CensusOptions): CensusResult {
       )
     );
   }
+  findings.push(...checkWorkflowIntent(files, workflows, opts.now));
   if (files.allowlist) findings.push(...allow.leftovers());
   findings.push(...checkCrossFile(opts.root, files));
   findings.push(...checkCanary(files, workflows));

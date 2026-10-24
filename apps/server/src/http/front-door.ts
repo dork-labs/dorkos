@@ -43,6 +43,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-server';
 import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
@@ -155,6 +156,13 @@ export interface FrontDoorServerOptions {
    * `127.0.0.1`) lands on the Wi-Fi listener. It is still this computer.
    */
   ingress?: IngressKind;
+  /**
+   * Serve `https` with this certificate and key instead of plain `http`
+   * (`./tls-listener.ts`, DOR-3172). Its requests carry an encrypted socket,
+   * which is what makes a signed-in person on it count as on an encrypted
+   * connection; nothing about it is marked.
+   */
+  tls?: { readonly cert: Buffer; readonly key: Buffer };
 }
 
 /**
@@ -174,14 +182,15 @@ export function createFrontDoorServer(
   const mark = (req: IncomingMessage) => {
     if (ingress && !isLoopbackPeer(req.socket.remoteAddress)) markIngress(req, ingress);
   };
-  const server = createServer(
-    ingress
-      ? (req, res) => {
-          mark(req);
-          return listener(req, res);
-        }
-      : listener
-  );
+  const handler: RequestListener = ingress
+    ? (req, res) => {
+        mark(req);
+        return listener(req, res);
+      }
+    : listener;
+  const server: Server = options.tls
+    ? createTlsServer({ cert: options.tls.cert, key: options.tls.key }, handler)
+    : createServer(handler);
   // First in line, so the upgrade router sees the mark and authorizes with the
   // cookie names the auth stack set (see `adaptLanCookies`).
   server.prependListener('upgrade', (req: IncomingMessage) => {

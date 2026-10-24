@@ -16,44 +16,19 @@ const SHOWCASE_PATH = '/dev/sidebar-model';
 const AXE_CONTEXT = '[data-slot="page-container"]';
 
 /**
- * The zones each journey is expected to draw, in order.
+ * The sections each journey is expected to draw, in order.
  *
  * Hard-coded rather than derived from the page, because a test that reads its
  * expectation off the thing it is testing cannot fail. These are the four
- * journeys' answers as `buildSidebarModel` computes them:
- *
- * - `first-run` — Getting started occupies Heads up's slot, and Today is **absent**
- *   because nothing has happened yet. BC-1 and BC-4 in one row.
- * - `quiet` — no Heads up zone AT ALL. The calm signal is the absence of a box, not
- *   an empty one.
- * - `busy` / `power` — the full three.
+ * journeys' answers as `buildSidebarModel` computes them: the top items always
+ * first, Direct messages always standing (its empty state is the way to start
+ * one), and `power`'s own two sections right under the top items.
  */
-const EXPECTED_ZONES: Record<string, string[]> = {
-  'first-run': ['getting-started', 'library'],
-  quiet: ['today', 'library'],
-  busy: ['now', 'today', 'library'],
-  power: ['now', 'today', 'library'],
-};
-
-/**
- * How many attention rows each journey's Heads up zone holds, and whether it
- * overflows.
- *
- * **`busy` does not overflow, and that is the point of having both.** It raises
- * exactly three signals, so it fills the cap without exceeding it; `power`
- * raises seven, so three are shown and `+ 4 more` carries the rest (BC-7). A
- * test that only ever looked at an overflowing fixture could not tell a cap from
- * a coincidence. (The task brief said both fixtures overflow; the model says
- * otherwise, and the model is what this asserts.)
- */
-const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null } | null> = {
-  // No Heads up zone at all — the row exists so that adding a fifth journey without
-  // an entry here throws rather than being silently skipped, which is what
-  // `Object.entries` over a partial table used to do.
-  'first-run': null,
-  quiet: null,
-  busy: { attention: 3, overflow: null },
-  power: { attention: 3, overflow: '+ 4 more' },
+const EXPECTED_SECTIONS: Record<string, string[]> = {
+  'first-run': ['top', 'channels', 'dms'],
+  quiet: ['top', 'channels', 'dms'],
+  busy: ['top', 'channels', 'dms'],
+  power: ['top', 'group:group-frontend', 'group:group-codex', 'channels', 'dms'],
 };
 
 /** Every fixture the page draws, in the order it draws them. */
@@ -153,7 +128,7 @@ async function expectPageFitsViewport(page: Page): Promise<void> {
  * Assert axe actually evaluated every reason chip on the page.
  *
  * The second half of the coverage guarantee, and the one that tracks content
- * rather than geometry. There is exactly one chip per zone, per section and per
+ * rather than geometry. There is exactly one chip per section and per
  * row, they carry text, and they run top to bottom of the page — so "axe saw all
  * of them" is the strongest statement available about whether it saw the page.
  * Add a showcase and the denominator grows on its own; no constant to bump.
@@ -184,7 +159,7 @@ async function expectEveryReasonChipEvaluated(page: Page, results: AxeResults): 
 }
 
 /**
- * The mandatory R1 gate, plus the model's zone contracts, read off a real
+ * The mandatory R1 gate, plus the model's section contracts, read off a real
  * browser.
  *
  * The four journey fixtures drive the model's table tests, the Dev Playground's
@@ -220,21 +195,9 @@ test.describe('Sidebar model showcase @smoke', () => {
    *
    * It grows with the page, which is the point: `expectPageFitsViewport` reds
    * the moment a new showcase pushes the column past it, and the fix is this
-   * number rather than a looser threshold. Raised for the Today states panel
-   * (P2.3), which added four more 272px panels below Heads up's; and again for
-   * the parked-schedule state (DOR-1391), which made Heads up's row five panels
-   * wide — more than the content column fits, so the last one wraps onto a
-   * second line and the page grows by a panel's height.
+   * number rather than a looser threshold. A taller viewport than the page is
+   * harmless; a shorter one is the trap.
    */
-  // **The viewport is the page's height, not a round number.** axe reports
-  // success for a page it never looked at, so this suite asserts coverage
-  // before correctness (`expectPageFitsViewport`) — which means the viewport
-  // has to grow with the page. It went from 8800 to 10400 when P4.2 added the
-  // long-press-menu and Catch-up showcases, and to 10800 when DOR-1391 added
-  // Heads up's fifth state: five 272px panels are wider than the content
-  // column, so the last one wraps and the row grows by a panel's height.
-  // Raising it is the fix the guard's own failure message names, and lowering
-  // the threshold is the one it forbids.
   test.use({ viewport: { width: 1600, height: 10800 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
@@ -263,166 +226,30 @@ test.describe('Sidebar model showcase @smoke', () => {
     expect(apiCalls, 'the sidebar model showcase must render with no server behind it').toEqual([]);
   });
 
-  test('draws the zones each journey earns, and never an empty box', async ({ page }) => {
-    await openShowcase(page);
-
-    for (const fixture of FIXTURES) {
-      const panel = page.locator(`[data-slot="sidebar-model-panel"][data-fixture="${fixture}"]`);
-      const zones = panel.locator('[data-slot="sidebar-model-zone"]');
-      expect(
-        await zones.evaluateAll((nodes) => nodes.map((n) => n.dataset.zone)),
-        `${fixture} draws the wrong zones`
-      ).toEqual(EXPECTED_ZONES[fixture]);
-
-      // Named separately from the ordered list above, because "absent" is the
-      // assertion this phase keeps having to defend: a zone with nothing in it
-      // disappears entirely rather than rendering an empty card (BC-1). Heads up and
-      // the day-one zone also share one slot, so no journey may show both.
-      if (!EXPECTED_ZONES[fixture].includes('now')) {
-        await expect(panel.locator('[data-zone="now"]')).toHaveCount(0);
-      }
-      if (!EXPECTED_ZONES[fixture].includes('getting-started')) {
-        await expect(panel.locator('[data-zone="getting-started"]')).toHaveCount(0);
-      }
-    }
-  });
-
-  test('caps Heads up at three, and overflows only when there is more than three', async ({
+  test('draws the sections each journey earns, and never a session or a thread', async ({
     page,
   }) => {
     await openShowcase(page);
 
-    // Driven off FIXTURES, not off EXPECTED_NOW's own keys: a fifth journey with
-    // a Heads up zone and no entry in the table must throw here rather than be
-    // skipped by a loop that only ever visits what somebody remembered to write.
     for (const fixture of FIXTURES) {
-      const expected = EXPECTED_NOW[fixture];
+      const panel = page.locator(`[data-slot="sidebar-model-panel"][data-fixture="${fixture}"]`);
+      const sections = panel.locator('[data-slot="sidebar-model-section"]');
       expect(
-        expected,
-        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Heads up zone`
-      ).not.toBeUndefined();
+        await sections.evaluateAll((nodes) => nodes.map((n) => n.dataset.section)),
+        `${fixture} draws the wrong sections`
+      ).toEqual(EXPECTED_SECTIONS[fixture]);
 
-      const now = page.locator(
-        `[data-slot="sidebar-model-panel"][data-fixture="${fixture}"] [data-zone="now"]`
-      );
-      if (expected === null) {
-        await expect(now, `${fixture} drew a Heads up zone it has nothing for`).toHaveCount(0);
-        continue;
-      }
-
-      // Attention rows are the ones whose reason names why they blocked —
-      // `now:permission-prompt`, `now:question`, `now:schedule-approval`,
-      // `now:error` — which is exactly the set the cap applies to. The working rollup and
-      // the overflow row carry `rollup:` reasons and are deliberately not counted.
-      //
-      // Scoped to `li`, and that is load-bearing: the zone's headerless section
-      // carries `now:body`, which the `now:` prefix also matches. Only rows are
-      // wrapped in a list item, so this counts rows and nothing else. (Caught by
-      // this test going 3→4 the moment headerless sections started drawing their
-      // own reason chip.)
-      await expect(
-        now.locator('li [data-slot="sidebar-model-reason"][data-reason^="now:"]'),
-        `${fixture} shows the wrong number of things needing you`
-      ).toHaveCount(expected.attention);
-
-      const overflow = now.locator('[data-reason="rollup:now-overflow"]');
-      if (expected.overflow === null) {
-        await expect(
-          overflow,
-          `${fixture} raised an overflow row it has nothing to fill`
-        ).toHaveCount(0);
-      } else {
-        await expect(overflow).toHaveCount(1);
-        await expect(now.getByText(expected.overflow, { exact: true })).toBeVisible();
-      }
+      // Places only: no row is a session or a thread. The one reason allowed to
+      // say "thread" is the Threads door at the top (`top:threads`) — a page
+      // that holds them, not a thread itself — and every fixture draws it.
+      const reasons = await panel
+        .locator('[data-slot="sidebar-model-reason"]')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-reason') ?? ''));
+      expect(reasons).toContain('top:threads');
+      expect(
+        reasons.filter((reason) => reason !== 'top:threads' && /session|thread/.test(reason))
+      ).toEqual([]);
     }
-  });
-
-  test('never lets Heads up scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
-    await openShowcase(page);
-
-    // `power` is the worst case the fixtures hold: seven things waiting and six
-    // sessions working, so Heads up draws its maximum — three attention rows, an
-    // overflow row and the working rollup.
-    const now = page.locator(
-      '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-zone="now"]'
-    );
-    await expect(now.locator('li')).toHaveCount(5);
-
-    // The measurement only a browser can make. jsdom reports 0 for both
-    // heights, so this assertion is vacuous there and is deliberately here
-    // instead: a zone that had grown a scroller would report an overflow.
-    const overflow = await now.evaluate((zone) => zone.scrollHeight - zone.clientHeight);
-    expect(overflow, 'the Heads up zone grew a scroller — it must never scroll').toBe(0);
-
-    // And the measurement is live: the same reading over a box that IS
-    // scrollable comes back non-zero, so a zero above means "does not scroll"
-    // rather than "was never measured".
-    const proof = await now.evaluate((zone) => {
-      const probe = document.createElement('div');
-      probe.style.cssText = 'height:20px;overflow:auto';
-      probe.innerHTML = '<div style="height:200px"></div>';
-      zone.appendChild(probe);
-      const reading = probe.scrollHeight - probe.clientHeight;
-      probe.remove();
-      return reading;
-    });
-    expect(proof).toBeGreaterThan(0);
-  });
-
-  test('draws Heads up’s five states, and the beat, on the same page', async ({ page }) => {
-    await openShowcase(page);
-
-    // The states a reviewer cannot catch in the running app: empty, one signal,
-    // a parked schedule, capped with an overflow, and the day-one zone
-    // (spec §13). The exact list in the exact order, so a state that silently
-    // stopped rendering is a failure rather than a smaller number nobody reads.
-    const states = page.locator('[data-slot="sidebar-now-state"]');
-    expect(await states.evaluateAll((nodes) => nodes.map((n) => n.dataset.stateName))).toEqual([
-      'now-empty',
-      'now-one',
-      'now-schedule',
-      'now-capped',
-      'getting-started',
-    ]);
-
-    // Empty means EMPTY: the panel is mounted and holds no zone at all.
-    const empty = page.locator('[data-slot="sidebar-now-state"][data-state-name="now-empty"]');
-    await expect(empty).toBeVisible();
-    await expect(empty.locator('[data-slot="sidebar-model-zone"]')).toHaveCount(0);
-
-    // While the panel beside it, drawn from the same component, does hold one.
-    await expect(
-      page.locator(
-        '[data-slot="sidebar-now-state"][data-state-name="now-one"] [data-slot="sidebar-model-zone"]'
-      )
-    ).toHaveCount(1);
-
-    // **The parked schedule is here to put its GLYPH in front of the gates**
-    // (DOR-1391). Every other signal in the fixtures carries an `agentPath`, so
-    // its row draws a face and the semantic icon behind it never renders — a
-    // schedule belongs to a timer rather than to an agent, so this is the one
-    // state where the icon is actually on screen for the contrast and axe
-    // sweeps below.
-    const schedule = page.locator(
-      '[data-slot="sidebar-now-state"][data-state-name="now-schedule"]'
-    );
-    await expect(schedule.locator('[data-slot="sidebar-model-row"]')).toHaveCount(1);
-    await expect(schedule).toContainText('Wants to run on a timer');
-    await expect(schedule.locator('[data-slot="identity-avatar"]')).toHaveCount(0);
-    // Asserted through the product's own avatar handle rather than through a
-    // class name lucide happens to emit: at v1.21 every icon renders the bare
-    // class `lucide` and nothing per-icon, so there is no honest way to name
-    // CalendarClock in a selector. What IS assertable is that this row draws an
-    // icon where the others draw a face — and the panel beside it proves the
-    // selector can find one, so the zero above is a fact about this state.
-    await expect(
-      page.locator(
-        '[data-slot="sidebar-now-state"][data-state-name="now-one"] [data-slot="identity-avatar"]'
-      )
-    ).not.toHaveCount(0);
-
-    await expect(page.getByText('All clear', { exact: true })).toBeVisible();
   });
 
   test('says why every row it drew is there', async ({ page }) => {
@@ -447,17 +274,13 @@ test.describe('Sidebar model showcase @smoke', () => {
       );
       expect(rowsWithoutReason, `${fixture} drew a row that does not say why`).toEqual([]);
 
-      // Zones and sections carry one too, including the headerless bodies Heads up
-      // and Today draw — those used to render no chip at all, so their reasons
-      // were never format-checked by the loop below.
-      const zones = await panel.locator('[data-slot="sidebar-model-zone"]').count();
+      // Sections carry one too, including the headerless top items — which
+      // have no header to hang a chip off, so they get their own line.
       const sections = await panel.locator('[data-slot="sidebar-model-section"]').count();
       const reasons = await panel
         .locator('[data-slot="sidebar-model-reason"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-reason') ?? ''));
-      expect(reasons.length, `${fixture} has a zone or section with no reason`).toBe(
-        rows + zones + sections
-      );
+      expect(reasons.length, `${fixture} has a section with no reason`).toBe(rows + sections);
       for (const reason of reasons) {
         expect(reason, `${fixture} has a malformed reason`).toMatch(/^[a-z-]+:[a-z-]+$/);
       }
@@ -467,41 +290,46 @@ test.describe('Sidebar model showcase @smoke', () => {
   test('a folded section keeps the signal folding it hid', async ({ page }) => {
     await openShowcase(page);
 
-    // `power` folds Library → Channels with a rollup of `{ activity, working: 3 }`.
-    // Both halves have to survive the fold (BC-31), and they survive in two
-    // different places: the working count is a dot in the trailing slot, and the
-    // `activity` tier is the label going bold — no badge, no dot, because a
-    // third weight is exactly what the two-tier system refuses (§18). The page
-    // showed only the dot until `SectionHeader` gained `emphasized`.
+    // `power` folds Channels while some of its rooms are unread and
+    // some of its agents are working. Both have to survive the fold (BC-31),
+    // and neither does it as a number: the unread rows stay on screen under
+    // the header, drawn as they are when the section is open, and the header
+    // carries one working dot and no unread count — only how many rows the
+    // fold hides (DOR-3200).
     const channels = page.locator(
       '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-slot="sidebar-model-section"][data-section="channels"]'
     );
-    const header = channels.getByRole('button', { name: 'Channels' });
+    const header = channels.getByRole('button', { name: /^Channels/ });
     await expect(header).toHaveAttribute('aria-expanded', 'false');
-    await expect(header, 'a folded section holding unread activity reads as quiet').toHaveClass(
-      /font-semibold/
+    await expect(header, 'a folded header is never bold').not.toHaveClass(/font-semibold/);
+    await expect(header, 'a folded header counts only what it hides').toHaveText(
+      /^Channels · \d+ more$/
     );
-    // The roll-up is TEXT now, not a dot and a pill (`sidebar-simplification`
-    // D1): every header in the panel folds, so a fold's receipt is an ordinary
-    // sentence rather than two marks borrowed from the row vocabulary.
-    await expect(header).toContainText('3 working');
+    await expect(header).toHaveAccessibleDescription(/^\d+ more$/);
+    await expect(header.getByRole('img', { name: 'Agents working' })).toBeVisible();
 
-    // And the tier really is `activity`, so the absence of a badge is the
-    // decision rather than an oversight.
-    await expect(channels.locator('[data-slot="sidebar-model-directed-badge"]')).toHaveCount(0);
+    // The unread rows are still there, and every one of them is bold.
+    const kept = channels.locator('[data-slot="sidebar-model-kept-rows"] [data-sidebar-row]');
+    await expect(kept.first()).toBeVisible();
+    const states = await kept.evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute('data-row-state'))
+    );
+    expect(states.length).toBeGreaterThan(0);
+    expect(states.every((state) => state === 'emphasized')).toBe(true);
 
-    // Expanding gives the signal back to the rows, so the header stops carrying
-    // it — the rollup is a stand-in for what folding hid, not a second badge.
+    // Expanding gives the section all its rows back, and the dot goes.
     await header.click();
     await expect(header).toHaveAttribute('aria-expanded', 'true');
-    await expect(header).not.toHaveClass(/font-semibold/);
+    await expect(header.getByRole('img', { name: 'Agents working' })).toHaveCount(0);
+    await expect(header, 'an open header counts nothing').not.toHaveText(/more/);
+    await expect(channels.locator('[data-slot="sidebar-model-kept-rows"]')).toHaveCount(0);
   });
 
   // The R1 gate. A `for` loop rather than two copies so neither theme can be
   // quietly dropped: removing one is removing a loop entry, which reads as a
   // deletion in a diff.
   for (const theme of ['light', 'dark'] as const) {
-    test(`meets 4.5:1 on the zone tint in the ${theme} theme`, async ({ page }, testInfo) => {
+    test(`meets 4.5:1 on the panel in the ${theme} theme`, async ({ page }, testInfo) => {
       await openShowcase(page);
       await setTheme(page, theme);
 
@@ -534,12 +362,12 @@ test.describe('Sidebar model showcase @smoke', () => {
       const contrast = results.violations.filter((violation) => violation.id === 'color-contrast');
       expect(
         contrast.map(describeViolation),
-        `label-on-zone-tint must meet 4.5:1 in the ${theme} theme (design-system §Accessibility)`
+        `every label must meet 4.5:1 in the ${theme} theme (design-system §Accessibility)`
       ).toEqual([]);
 
-      // Every other rule, held to the same bar. The zone landmarks, the heading
-      // order and the list semantics are as much a part of what this page shows
-      // as its colours are.
+      // Every other rule, held to the same bar. The landmarks, the heading order
+      // and the list semantics are as much a part of what this page shows as its
+      // colours are.
       const others = results.violations.filter((violation) => violation.id !== 'color-contrast');
       expect(others.map(describeViolation), `axe found a11y defects in the ${theme} theme`).toEqual(
         []
@@ -550,10 +378,10 @@ test.describe('Sidebar model showcase @smoke', () => {
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
       //
-      // **Matched on what makes it an unread badge, not on which component
+      // **Matched on what makes it a count pill, not on which component
       // drew it, and read off the node axe reported rather than off a selector
       // resolved again.** The allowance used to name the showcase's own
-      // stand-in (`sidebar-model-directed-badge`) and look it up by
+      // stand-in and look it up by
       // `querySelector` — which silently answers `null` for a target axe
       // reports as more than one selector, so the filter counted nothing and
       // the gate failed with no explanation. `node.html` is the element itself,
@@ -561,19 +389,15 @@ test.describe('Sidebar model showcase @smoke', () => {
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
       // The one-digit counts axe declines to judge, enumerated. Each is a
       // DECISION recorded here rather than an exemption inherited: the panel's
-      // directed-unread mark since P1, P4's mobile Home badge, and Catch up's
-      // "how many" — the last of which only appeared once the Catch-up showcase
-      // started drawing a real button instead of an empty box, which is what a
-      // showcase is for.
+      // directed-unread mark since P1, and P4's mobile Home badge.
       //
       // **The mobile badge was measured before it was pinned, and the measuring
       // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
       // serious failure that would have hidden inside this list precisely
       // because axe cannot judge two-character text. It is amber-950 on
       // amber-500 now: 6.97:1, in both themes, since the pill carries its own
-      // background. Catch up's count went the same way: 3.24:1 at `/50`, and
-      // `/70` once anyone looked. **Every count admitted here is measured
-      // below** — one that is not is a colour nothing checks.
+      // background. **Every count admitted here is measured below** — one that
+      // is not is a colour nothing checks.
       //
       // **Matched on the node axe reported, not on a selector resolved again.**
       // `document.querySelector` silently answers `null` for a target axe
@@ -581,10 +405,9 @@ test.describe('Sidebar model showcase @smoke', () => {
       // page grew past its first fold — so a `closest()` filter counted nothing
       // and the gate failed naming elements it had in fact been handed.
       const isCountBadge = (text: string) =>
-        /data-slot="sidebar-model-directed-badge"/.test(text) ||
-        /aria-label="\d+ unread"/.test(text) ||
-        /data-testid="mobile-tab-badge-/.test(text) ||
-        /data-slot="catch-up-count"/.test(text);
+        /data-slot="count-pill"/.test(text) ||
+        /aria-label="(\d+|More than \d+) (mentions?|new messages?)"/.test(text) ||
+        /data-testid="mobile-tab-badge-/.test(text);
       const badges = undecided.filter(
         (node) => isCountBadge(node.html) || isCountBadge(node.target.join(' '))
       ).length;
@@ -601,11 +424,9 @@ test.describe('Sidebar model showcase @smoke', () => {
       // That is not hypothetical: the mobile badge shipped white-on-amber at
       // 2.15:1 and this list is where it hid.
       //
-      // **Scoped to the badge this task pinned**, not to both families. The
-      // panel's own directed badge is translucent (`bg-brand/15`), so judging it
-      // means compositing it over whatever is behind it — a different and
-      // larger job, and it is no less guarded than it was before P4 touched
-      // this pin.
+      // **Scoped to the mobile badge here.** The panel's own count pill has a
+      // translucent tint, so it is judged further down, composited over the
+      // panel behind it.
       //
       // **Colours are read as pixels, never parsed as text.** Tailwind v4 emits
       // `oklch()`, and a regex pulling the first three numbers out of
@@ -655,12 +476,10 @@ test.describe('Sidebar model showcase @smoke', () => {
         `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
 
-      // **The same debt for the one count that is NOT on its own pill.** Catch
-      // up's number is translucent text over whatever it sits on, so the
-      // opaque-pair check above cannot judge it: it has to be composited first.
-      // Admitting it to the pin without this would be the exact trade the
-      // mobile badge nearly shipped behind.
-      const countContrast = await page.evaluate((selector) => {
+      // **The sidebar's count pill, paid back the same way.** Neutral ink on a
+      // translucent neutral tint: the tint is composited over the first solid
+      // backdrop behind the pill, and the ink is read against that.
+      const pillContrast = await page.evaluate((selector) => {
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = 1;
         const ctx = canvas.getContext('2d')!;
@@ -677,39 +496,31 @@ test.describe('Sidebar model showcase @smoke', () => {
         };
         const luminance = ([r, g, b]: number[]) =>
           0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
-        /**
-         * The first ancestor that actually paints something behind this one.
-         *
-         * **Exact while nothing translucent sits between**, which is true of
-         * every count on this page: the button is transparent and the panel
-         * behind it is solid. An interposed translucent layer would need
-         * compositing in turn, and this would then read slightly optimistic —
-         * so a new one is a reason to extend this, not to trust it.
-         */
+        const over = (top: number[], under: number[]) =>
+          [0, 1, 2].map((i) => top[i]! * top[3]! + under[i]! * (1 - top[3]!));
         const backdrop = (node: Element): [number, number, number, number] => {
-          for (let el: Element | null = node; el !== null; el = el.parentElement) {
+          for (let el: Element | null = node.parentElement; el !== null; el = el.parentElement) {
             const painted = pixel(getComputedStyle(el).backgroundColor);
             if (painted[3] === 1) return painted;
           }
           return [255, 255, 255, 1];
         };
         return [...document.querySelectorAll(selector)].map((node) => {
-          const fg = pixel(getComputedStyle(node).color);
-          const bg = backdrop(node);
-          // Source-over: the text's own alpha, laid on what is behind it.
-          const composited = [0, 1, 2].map((i) => fg[i]! * fg[3] + bg[i]! * (1 - fg[3]));
-          const [a, b] = [luminance(composited), luminance(bg)];
+          const style = getComputedStyle(node);
+          const tint = over(pixel(style.backgroundColor), backdrop(node));
+          const ink = over(pixel(style.color), tint);
+          const [a, b] = [luminance(ink), luminance(tint)];
           return {
             text: node.textContent ?? '',
             ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
           };
         });
-      }, '[data-slot="catch-up-count"]');
+      }, '[data-slot="count-pill"]');
 
-      expect(countContrast.length, 'no Catch-up counts on the page to check').toBeGreaterThan(0);
+      expect(pillContrast.length, 'no count pills on the page to check').toBeGreaterThan(0);
       expect(
-        countContrast.filter((count) => count.ratio < 4.5),
-        `Catch up's count is below 4.5:1 in the ${theme} theme`
+        pillContrast.filter((pill) => pill.ratio < 4.5),
+        `a sidebar count pill is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
     });
   }

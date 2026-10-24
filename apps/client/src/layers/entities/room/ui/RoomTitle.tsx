@@ -10,6 +10,12 @@ import { roomDisplayTitle, roomName } from '../lib/room-display';
 export interface RoomTitleProps {
   /** The room to name. */
   room: Pick<Room, 'kind' | 'slug' | 'title'>;
+  /**
+   * Whether the name carries its own browser tooltip. Defaults to `true`. A
+   * caller that shows a richer tooltip of its own — a sidebar row with the
+   * room's last line — turns this off, so two tooltips never open at once.
+   */
+  tooltip?: boolean;
   className?: string;
 }
 
@@ -28,12 +34,19 @@ export interface RoomTitleProps {
  * A room whose name carries no mark — a DM — renders as one text node, because
  * there is nothing for the two forms to disagree about.
  */
-export function RoomTitle({ room, className }: RoomTitleProps) {
+export function RoomTitle({ room, tooltip = true, className }: RoomTitleProps) {
   const spoken = roomDisplayTitle(room);
   const name = roomName(room);
 
   return (
-    <span data-slot="room-title" title={spoken} className={cn('truncate', className)}>
+    <span
+      data-slot="room-title"
+      // The spoken name as data as well as a tooltip, so something that finds a
+      // row by its room's name does not depend on whether the tooltip is on.
+      data-spoken-name={spoken}
+      title={tooltip ? spoken : undefined}
+      className={cn('truncate', className)}
+    >
       {spoken === name ? (
         name
       ) : (

@@ -223,8 +223,12 @@ export function assertPackedCommitUnchanged(before: string, after: string): void
   }
 }
 
-/** Where the Community migrations live, relative to the repository root. */
-const COMMUNITY_MIGRATIONS = 'apps/community/migrations';
+/**
+ * Where the Community migrations live, relative to the repository root, newest home first. They
+ * moved from `apps/community` to `apps/space` in server-merge step 7g; a release tag from before
+ * the move still has them at the old path, and the files, not the folder, are what count.
+ */
+const COMMUNITY_MIGRATION_FOLDERS = ['apps/space/migrations', 'apps/community/migrations'];
 
 /**
  * The release-manifest contract the launcher is compiled with: `COMMUNITY_CONFIG_SCHEMA_VERSION`
@@ -232,29 +236,43 @@ const COMMUNITY_MIGRATIONS = 'apps/community/migrations';
  */
 const COMMUNITY_RELEASE_CONTRACT = 'packages/shared/src/community-release-manifest.ts';
 
-/** `path -> blob id` for the files the launcher's release check depends on, at one ref. */
+/**
+ * `key -> blob id` for the files the launcher's release check depends on, at one ref. A migration
+ * is keyed `migrations/<name>`, so moving the folder changes nothing; the contract by its path.
+ */
 function releaseCheckInputs(git: (args: string[]) => string, ref: string): Map<string, string> {
   const inputs = new Map<string, string>();
   const listing = git([
     'ls-tree',
     ref,
     '--',
-    `${COMMUNITY_MIGRATIONS}/`,
+    ...COMMUNITY_MIGRATION_FOLDERS.map((folder) => `${folder}/`),
     COMMUNITY_RELEASE_CONTRACT,
   ]);
+  const migrations = new Map<string, Map<string, string>>();
   for (const line of listing === '' ? [] : listing.split('\n')) {
     // `<mode> <type> <blob>\t<path>`. Only the blob id is compared, so a mode-only change (chmod)
     // never counts: the build reads names and contents, never modes.
     const [meta, path] = line.split('\t');
     const [, type, blob] = (meta ?? '').split(' ');
     if (type !== 'blob' || !path || !blob) continue;
+    if (path === COMMUNITY_RELEASE_CONTRACT) {
+      inputs.set(path, blob);
+      continue;
+    }
     // `ls-tree` without -r lists only files directly in the directory, which is what build.ts
     // reads; of those, only `.sql` files are fingerprinted.
-    const fingerprinted =
-      path === COMMUNITY_RELEASE_CONTRACT ||
-      (path.startsWith(`${COMMUNITY_MIGRATIONS}/`) && path.endsWith('.sql'));
-    if (fingerprinted) inputs.set(path, blob);
+    const folder = COMMUNITY_MIGRATION_FOLDERS.find((candidate) =>
+      path.startsWith(`${candidate}/`)
+    );
+    if (!folder || !path.endsWith('.sql')) continue;
+    const files = migrations.get(folder) ?? new Map<string, string>();
+    files.set(`migrations/${path.slice(folder.length + 1)}`, blob);
+    migrations.set(folder, files);
   }
+  // The newest home the ref has, as build.ts reads one folder.
+  const home = COMMUNITY_MIGRATION_FOLDERS.find((folder) => migrations.has(folder));
+  for (const [key, blob] of home ? migrations.get(home)! : []) inputs.set(key, blob);
   return inputs;
 }
 
@@ -262,7 +280,9 @@ function releaseCheckInputs(git: (args: string[]) => string, ref: string): Map<s
  * The files the launcher's release check depends on that differ between a release tag and HEAD.
  *
  * Two inputs. The Community migrations, counted the way `scripts/build.ts` fingerprints them: the
- * `.sql` files directly in `apps/community/migrations`, by name and content. And the release-manifest
+ * `.sql` files directly in the migrations folder (`apps/space/migrations`, or
+ * `apps/community/migrations` at a tag from before server-merge step 7g), by name and content,
+ * whichever folder holds them; each is reported as `migrations/<name>`. And the release-manifest
  * contract, `packages/shared/src/community-release-manifest.ts`, whose schema version and strict
  * schema the launcher checks a manifest against. Any content change to either counts; for the
  * contract that includes a comment-only edit, which is fail-safe (a refused pack, never a pack that

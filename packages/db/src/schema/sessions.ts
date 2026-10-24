@@ -37,10 +37,22 @@ export const sessionMetadata = sqliteTable(
     // here, not on the `session_limits` row, because the resumed turn's own
     // `turn_start` deletes that row. NULL = never resumed automatically.
     lastAutoResumeFor: text('last_auto_resume_for'),
+    // Whether this chat's latest turn read words DorkOS cannot vouch for, such
+    // as a Wi-Fi sign-in's, so it ran at the runtime's default at most
+    // (DOR-3037). Every turn that picks the chat up on its own (an approval's
+    // answer, a resume, a wake) is held the same way, after a restart too.
+    // NULL = no turn recorded since this column existed: read as held.
+    lastTurnHeld: integer('last_turn_held', { mode: 'boolean' }),
     createdAt: text('created_at').notNull(),
     // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
     // NULL = "no explicit preference; use the runtime's default."
     permissionMode: text('permission_mode'),
+    // Whether a person set `permissionMode` on this chat themselves (DOR-3175).
+    // A mode a person picked is a cap the agent's level never raises past; a
+    // seeded one follows the agent's level up and down. NULL = never set by a
+    // person since this column existed: read as seeded, as the DOR-3106 raise
+    // read an unknown launch.
+    permissionModeByPerson: integer('permission_mode_by_person', { mode: 'boolean' }),
     model: text('model'),
     effort: text('effort'),
     fastMode: integer('fast_mode', { mode: 'boolean' }),
@@ -101,6 +113,11 @@ export const sessionMessageQueue = sqliteTable(
     enqueuedAt: integer('enqueued_at').notNull(),
     // The `ClientContext` captured at enqueue time, JSON. NULL = none was sent.
     contextJson: text('context_json'),
+    // Whether the turn this row starts is held to the runtime's default level,
+    // because the words came from somewhere DorkOS cannot vouch for (a Wi-Fi
+    // sign-in, DOR-3037). Kept on the row so the hold survives a restart and an
+    // edit, when no in-memory plan carries the turn's ceiling.
+    heldToDefault: integer('held_to_default', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => ({
     // (session_id, position) rather than session_id alone: every read of this

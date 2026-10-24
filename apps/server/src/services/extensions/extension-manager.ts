@@ -62,6 +62,7 @@ import {
 } from './agent-skills/running-skills-ledger.js';
 import { declaredSet, isCovered, isSamePermissionSet } from './isolation/permission-coverage.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
+import { withoutExtension } from './rooms/extension-room-access.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -1328,17 +1329,15 @@ export class ExtensionManager {
     }
     const permissions = extensions.approvedPermissions ?? {};
     if (extensions.approvedToRun.includes(id) || sources[id] || permissions[id]) {
-      const remainingSources = { ...sources };
-      delete remainingSources[id];
       // The permission set goes with the approval it described (DOR-2686): a
-      // set left behind would be read against whatever is approved next.
-      const remainingPermissions = { ...permissions };
-      delete remainingPermissions[id];
+      // set left behind would be read against whatever is approved next. So do
+      // the rooms a person picked for it (DOR-3017).
       configManager.set('extensions', {
         ...extensions,
         approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
-        approvedSources: remainingSources,
-        approvedPermissions: remainingPermissions,
+        approvedSources: withoutExtension(sources, id),
+        approvedPermissions: withoutExtension(permissions, id),
+        roomAccess: withoutExtension(extensions.roomAccess, id),
       });
       logConfigWrite(
         'withdrawing an extension run approval',

@@ -25,6 +25,7 @@ import { configManager } from '../core/config-manager.js';
 import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
+import { watchRoomAwaiting } from './awaiting/room-awaiting.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -59,11 +60,15 @@ import type { RoomMirrorAccess, RoomMirrorWritePolicy } from './service/room-ser
 import { RoomStore } from './room-store.js';
 import { createRoomMessageLookup } from './session-bindings/room-message-lookup.js';
 import { setRoomMessageLookup } from '../session/chat-messages/room-message-stamps.js';
+import { setStoredEntryHoldReader } from '../core/turn-power/turn-levels.js';
+import { storedEntryHoldReader } from './limits/stored-entry-hold.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { storedUsageLimit } from './notices/usage-limit.js';
+import { getRoomSeatMover } from './reseat/create-seat-mover.js';
+import { roomOutsidersReader } from './reseat/room-outsiders.js';
 import { clearStaleReceipts } from './receipts/turn-receipts.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
@@ -396,6 +401,9 @@ function safeJson(raw: string): unknown {
   }
 }
 
+/** Stops the current `room_awaiting` watch; replaced when a subsystem is built. */
+let stopAwaitingWatch: (() => void) | undefined;
+
 /**
  * Wire the rooms subsystem from the DB handle.
  *
@@ -444,6 +452,8 @@ export function createRoomSubsystem(opts: {
   const authors = new AuthorRegistry(opts.db, agentLookup);
   // A room post that reaches a room-attached chat shows its real author there (DOR-2113).
   setRoomMessageLookup(createRoomMessageLookup(store, authors));
+  // A Wi-Fi post's hold, read from its row after a restart (DOR-3037).
+  setStoredEntryHoldReader(storedEntryHoldReader(opts.db));
   const mirrorRuntime = opts.createMirrorRuntime?.({ store, authors, attachments });
   const broadcaster = new RoomBroadcaster();
   // **One canvas service per process, built here and registered here.** It is
@@ -548,6 +558,15 @@ export function createRoomSubsystem(opts: {
     // A failed turn whose account ran out of usage says when it can answer
     // again (DOR-2823). Read at the moment of failure, never cached.
     usageLimitFor: storedUsageLimit,
+    // Re-seating: a seat whose account runs out moves to another account and
+    // keeps answering. The mover is built by the rooms startup step, after
+    // this graph, so it is read per turn.
+    seatMover: getRoomSeatMover,
+    // Whether a room's lines may name the owner's accounts (Security Must 7):
+    // anything outside or marked in its posts, and any member who is not the
+    // owner's own (an outside author, or a person who is not the owner) even
+    // before they have said a word.
+    roomHasOutsiders: roomOutsidersReader(opts.db, store, authors),
     bridges,
     agents: agentLookup,
     turns:
@@ -646,6 +665,9 @@ export function createRoomSubsystem(opts: {
     // server start.
     isRoomMuted: readRoomMuted,
   });
+  // The last subsystem built owns the live awaiting-count watch (DOR-3236).
+  stopAwaitingWatch?.();
+  stopAwaitingWatch = watchRoomAwaiting(store.sessionLedger, service);
   // **Here, not at a boot-time hook, and the difference is the ordering bug the
   // reservation exists to prevent.** `dorkos` has to be held before ANY author
   // can be minted — an agent whose manifest name is `DorkOS` that joins a room

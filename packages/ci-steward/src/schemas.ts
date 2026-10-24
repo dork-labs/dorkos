@@ -272,6 +272,20 @@ export type QuarantineConfig = z.infer<typeof QuarantineConfigSchema>;
 export const RequiredChecksSchema = z
   .object({
     ruleset: z.number().int().positive(),
+    workflows: z
+      .array(
+        z
+          .object({
+            ruleset_name: z.string().min(1),
+            repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+            repository_id: z.number().int().positive(),
+            path: z.string().regex(/^\.github\/workflows\/[\w.-]+\.ya?ml$/),
+            ref: z.string().regex(/^refs\/heads\/[\w./-]+$/),
+            bypass_actors: z.array(z.never()).length(0),
+          })
+          .strict()
+      )
+      .default([]),
     contexts: z
       .array(z.string().min(1))
       .min(1)

@@ -26,6 +26,7 @@ import { RoomLimitsSection } from './RoomLimitsSection';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
 import { RoomPanelNotice } from './RoomPanelNotice';
+import { ReseatAgentDialog } from '@/layers/features/reseat-agent';
 
 /**
  * What the add-agents picker says in a one-to-one direct message.
@@ -130,6 +131,8 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
 
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
+  // The agent whose "Continue on another account…" picker is open.
+  const [reseating, setReseating] = useState<RoomRosterEntry | null>(null);
   /**
    * The one member whose loudness scale is open, by author id.
    *
@@ -517,6 +520,11 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
                   // lands when that menu closes is a decision only the menu can
                   // make. See `RoomMemberRow`.
                   onRemoveRequested={() => setPendingRemoval(member.authorId)}
+                  reseat={
+                    detail.archived
+                      ? undefined
+                      : { roomId, onRequested: () => setReseating(member) }
+                  }
                   confirmingRemoval={pendingRemoval === member.authorId}
                   onConfirmRemoval={() => confirmRemoval(member)}
                   onCancelRemoval={() => setPendingRemoval(null)}
@@ -602,6 +610,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           <Suspense fallback={null}>
             <RoomFilesSection
               roomId={roomId}
+              canSetUp={detail.viewerCan?.setUpFiles === true}
               // Changing a room's files is for somebody IN the room, while it
               // is live: an archived room and a reader who only sees it would
               // both be refused, so neither is offered the controls.
@@ -616,6 +625,17 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
       {/* Nothing to say about a room still being read: the footer's two facts
           are when it was made and whether it is archived. */}
       {detail !== null && <RoomDetailsFooter room={detail} />}
+      {reseating !== null && (
+        <ReseatAgentDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReseating(null);
+          }}
+          roomId={roomId}
+          authorId={reseating.authorId}
+          agentName={reseating.author.displayName}
+        />
+      )}
     </div>
   );
 }

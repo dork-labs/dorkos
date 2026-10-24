@@ -27,3 +27,24 @@ export function serverSentence(error: unknown): string | null {
     /[.!?]$/.test(error.message.trim());
   return written ? error.message : null;
 }
+
+/**
+ * Refusal codes for an action this device may not take by design: the Wi-Fi
+ * level (`NOT_FROM_WIFI`) and the owner-at-this-computer bar. Neither is a
+ * fault, so a surface shows the server's sentence calmly, never as an error.
+ */
+const AWAY_FROM_THE_COMPUTER_CODES = new Set(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER']);
+
+/**
+ * The server's sentence for an action refused because of where this device
+ * is, or `null` for any other failure.
+ *
+ * @param error - What the transport rejected with.
+ */
+export function awayFromTheComputerSentence(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const code = (error as Error & { code?: unknown }).code;
+  if (typeof code !== 'string' || !AWAY_FROM_THE_COMPUTER_CODES.has(code)) return null;
+  const message = error.message.trim();
+  return /[.!?]$/.test(message) ? message : null;
+}

@@ -17,7 +17,12 @@ import type {
   SessionRelayLinkBody,
   SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
-import { useExperimentEnabledState, useIsHub, useLocalCaller } from '@/layers/entities/config';
+import {
+  useExperimentEnabledState,
+  useIsHub,
+  useLocalCaller,
+  useTrustedConnection,
+} from '@/layers/entities/config';
 import { useTransport } from '@/layers/shared/model';
 import { WEB_ACCESS_STATUS_KEY as statusKey } from './query-keys';
 
@@ -28,8 +33,13 @@ export const SESSION_RELAY_EXPERIMENT = 'sessionRelay.enabled';
 export interface WebAccess {
   /** Whether the section shows at all: the experiment is on, and this is not a hub. */
   available: boolean;
-  /** Whether this browser is on the computer DorkOS runs on. */
+  /** Whether this browser is on the computer DorkOS runs on, where passkeys are added. */
   atThisComputer: boolean;
+  /**
+   * Whether the owner may change the link here: at that computer or over an
+   * encrypted connection (DOR-3172), never plain-`http` Wi-Fi.
+   */
+  canChange: boolean;
   /** Where the link stands; `undefined` until loaded. */
   status: SessionRelayStatus | undefined;
   /** The last change's failure, in a sentence; `null` when none. */
@@ -61,6 +71,7 @@ export function useWebAccess(): WebAccess {
   const { enabled } = useExperimentEnabledState(SESSION_RELAY_EXPERIMENT);
   const isHub = useIsHub();
   const atThisComputer = useLocalCaller();
+  const canChange = useTrustedConnection();
   const available = enabled && !isHub;
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +93,7 @@ export function useWebAccess(): WebAccess {
   return {
     available: available && status.isSuccess,
     atThisComputer,
+    canChange,
     status: status.data,
     error,
     busy: change.isPending,

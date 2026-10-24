@@ -89,6 +89,9 @@ export const GENERIC_EVENTS = [
   // claim-time, where `room_activity` above is durable and entry-time — which is
   // exactly why it is a sixth name rather than a payload field on the fifth.
   'room_presence',
+  // How many of a room's turns are waiting on a person changed (DOR-3236).
+  // Ephemeral like `room_presence`, and its own name for the same reason.
+  'room_awaiting',
   // Somebody moved their read cursor — the same person on a second device, most
   // of the time. One event for every kind of thread a person reads (a room, an
   // agent session, the inbox), so a subscriber filters on `threadKind` rather

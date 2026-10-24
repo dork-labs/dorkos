@@ -28,3 +28,12 @@ export {
 export { stripFrameAncestors, isUtf8OrUnspecified } from './proxy-headers.js';
 export { probeLoopbackPort } from './probe.js';
 export { injectDevtoolsScript, DEVTOOLS_AGENT_SCRIPT } from './devtools-inject.js';
+export {
+  FrameBridgeLedger,
+  frameBridgeLedger,
+  servedFileKey,
+  previewPageKey,
+  bridgeKeyFor,
+  bridgeTargetForUrl,
+  FRAME_BRIDGE_AGENT_NOTES,
+} from './bridge-ledger.js';

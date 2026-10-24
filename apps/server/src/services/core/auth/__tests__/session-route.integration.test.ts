@@ -4,6 +4,7 @@
  * A sign-in works only on the route it was made on (F4 part 1, DOR-2969),
  * through real Better Auth, the real chain and the real stream and MCP gates.
  */
+import { NOT_FROM_WIFI } from '../sessions/wifi-level.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -187,7 +188,9 @@ describe('a sign-in works only on the route it was made on', () => {
       body: undefined,
       ...factsVia('wifi', cookie),
     });
-    expect(mcp).toMatchObject({ allowed: true, user: { route: 'wifi' } });
+    // On its own route a Wi-Fi sign-in is still no identity at `/mcp`: only a
+    // key speaks for an agent tool there (DOR-2969 part 3).
+    expect(mcp.allowed).toBe(false);
   });
 
   it('reads with the whole cookie jar, snapshot included, only on its own route', async () => {
@@ -284,10 +287,18 @@ describe('a sign-in works only on the route it was made on', () => {
           keyId: made.body.id,
         });
         expect(refused.status).toBe(403);
-        expect(refused.body).toEqual({
-          code: API_KEY_NEEDS_THIS_COMPUTER,
-          message: 'API keys can only be made on this computer.',
-        });
+        // Wi-Fi meets the Wi-Fi level first, which refuses every key route there.
+        expect(refused.body).toEqual(
+          ingress === 'wifi'
+            ? {
+                code: NOT_FROM_WIFI,
+                error: 'API keys are managed only at this computer.',
+              }
+            : {
+                code: API_KEY_NEEDS_THIS_COMPUTER,
+                message: 'API keys can only be made on this computer.',
+              }
+        );
       }
     }
     expect(keys()).toBe(before + 1);

@@ -10,7 +10,7 @@ import { appRoutes } from '@/layers/shared/lib';
  *
  * **Every create surface in the sidebar is mounted here**, and nowhere else:
  * the channel dialog, the direct-message picker, the agent-creation store, the
- * smart-group rule form. A Library section's hover `+` runs no handler of its
+ * smart-group rule form. A section's hover `+` runs no handler of its
  * own — it calls `openMenu(id)` on the create-flow store, which opens *this*
  * menu on the matching item. `one-create-surface.test.ts` is the guard that
  * keeps it that way.
@@ -51,7 +51,7 @@ import {
   opensAgentSession,
 } from '@/layers/features/room-management';
 import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
-import { offersGroupAffordances } from '../model/rules/build-library-sections';
+import { offersGroupAffordances } from '../model/rules/build-sections';
 import {
   activeNowPreset,
   byRuntimePresets,

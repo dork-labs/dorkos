@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect } from '../../fixtures';
 import {
   SERVER_ROUND_TRIP_MS,
@@ -330,39 +331,6 @@ test.describe('Home is the #team room @smoke', () => {
     });
   });
 
-  test('saying something here puts #team in Today (DOR-1156)', async ({
-    basePage,
-    homeSurface,
-    dashboardSidebar,
-    teamRoomApi,
-    page,
-  }) => {
-    await basePage.goto();
-    await basePage.waitForAppReady();
-    await basePage.ensureSidebarOpen();
-
-    // **Home is arrived at, not opened.** `/` renders #team, but the router
-    // reports no conversational target there — so the room gets no anchor row
-    // and no interaction record, and this browser has never clicked it in the
-    // sidebar either. Today genuinely does not have it.
-    const teamRow = dashboardSidebar.todayRows.filter({ hasText: 'team' });
-    await expect(teamRow).toHaveCount(0);
-
-    const said = `today check ${teamRoomApi.runId}`;
-    await homeSurface.composerField.click();
-    await homeSurface.composerField.fill(said);
-    await homeSurface.composerField.press('Enter');
-
-    // The post lands…
-    await expect(page.getByTestId('room-timeline')).toContainText(said, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    // …and the room the operator wrote in is now one of the places they have
-    // been today. Deleting the write in the room target's `send` reddens
-    // exactly this line.
-    await expect(teamRow).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-  });
-
   test('naming an agent stands the default agent down', async ({
     basePage,
     homeSurface,
@@ -576,17 +544,39 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     // one that can qualify here wants more than one agent in the mesh. Seeded
     // rather than hoped for: every other test in this file puts its agents away
     // at teardown.
+    const quietAgents = [];
     for (const suffix of ['a', 'b']) {
-      await teamRoomApi.createAgent(`Quiet${suffix}${teamRoomApi.runId}`);
+      quietAgents.push(await teamRoomApi.createAgent(`Quiet${suffix}${teamRoomApi.runId}`));
     }
     await expect
       .poll(() => teamRoomApi.registeredAgentCount(), { timeout: SERVER_ROUND_TRIP_MS })
       .toBeGreaterThanOrEqual(2);
 
-    // This serial file has already driven real turns, so the schedule suggestion
-    // is earned too: agents have run and there is no schedule yet. Read those
-    // two inputs explicitly so the ordered dismissal proof below fails if a
-    // future setup change silently removes either candidate.
+    // The schedule suggestion is earned too: an agent has run and there is no
+    // schedule yet. Earlier tests in this serial file usually drove a turn, but
+    // this one must not lean on them — run alone (`:518`) it found no session.
+    // So it earns its own: one chat with an agent it just made, which this
+    // test-mode leg runs for free.
+    const sessionsBefore = (await (await request.get('/api/sessions')).json()) as {
+      sessions: unknown[];
+    };
+    if (sessionsBefore.sessions.length === 0) {
+      const started = await request.post(`/api/sessions/${randomUUID()}/messages`, {
+        data: { content: 'Say hello', cwd: quietAgents[0]!.path, create: true },
+      });
+      expect(started.ok(), `starting a chat answered ${started.status()}`).toBe(true);
+      await expect
+        .poll(
+          async () =>
+            ((await (await request.get('/api/sessions')).json()) as { sessions: unknown[] })
+              .sessions.length,
+          { timeout: SERVER_ROUND_TRIP_MS }
+        )
+        .toBeGreaterThan(0);
+    }
+
+    // Read both inputs explicitly so the ordered dismissal proof below fails if
+    // a future setup change silently removes either candidate.
     const [sessionsResponse, tasksResponse] = await Promise.all([
       request.get('/api/sessions'),
       request.get('/api/tasks'),

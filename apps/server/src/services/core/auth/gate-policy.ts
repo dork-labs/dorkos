@@ -190,3 +190,41 @@ export function isAtThisComputer(
   if (!isContainerPortRequest(requestClass, live)) return false;
   return facts.user?.credential === 'cookie' || !live().ownerExists();
 }
+
+/**
+ * Whether a request from another device came over an encrypted connection, so
+ * a signed-in person on it gets exactly what they get at this computer
+ * (DOR-3172). Where someone connects from never changes what they may do; how
+ * well DorkOS knows it is them does, and plain `http` is the one way in where
+ * anyone on the same network can copy the sign-in.
+ *
+ * Decided only by the listener the request arrived on, never by a header
+ * (Security's rule): `X-Forwarded-Proto` and its kin are written by whoever
+ * sends the request, so a forged one changes nothing here.
+ *
+ * - **The own tunnel and managed remote access**: their marked listeners,
+ *   `https` at the tunnel's edge, then forwarded over loopback.
+ * - **A TLS socket**: the request reached DorkOS's own `https` listener
+ *   (`http/tls-listener.ts`). Test runtime only until DOR-3173: in production
+ *   this list is the tunnel and managed remote access alone.
+ * - **Never Wi-Fi**: that listener is plain `http`, and its cookie drops
+ *   `Secure` to work there (`lan-access/lan-cookies.ts`).
+ * - **Never a plain `http` socket**, a proxy's say-so, the relay or a hub
+ *   (which has its own bar).
+ *
+ * This answers only "is the connection private". Who is asking is the bar's
+ * own question, and every caller pairs it with one.
+ *
+ * @param facts - The request's TCP peer, raw headers, ingress and socket.
+ */
+export function isOnEncryptedConnection(
+  facts: ClassifierFacts & { readonly connectionEncrypted?: boolean }
+): boolean {
+  const requestClass = classifyRequest(facts, currentServerRole());
+  if (requestClass.kind !== 'other-device') return false;
+  if (requestClass.route === 'own-tunnel' || requestClass.route === 'managed') return true;
+  if (requestClass.route !== 'network') return false;
+  // DorkOS's own https listener opens only on a test home for now (DOR-3173
+  // settles its certificate), so a TLS socket counts only under the test runtime.
+  return env.DORKOS_TEST_RUNTIME === true && facts.connectionEncrypted === true;
+}

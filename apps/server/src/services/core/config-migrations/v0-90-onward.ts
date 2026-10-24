@@ -682,3 +682,79 @@ export function raiseEngagedWindowDefaults(store: {
   const posts = store.get('rooms.engagedWindowPosts');
   if (posts === 5 || posts === undefined) store.set('rooms.engagedWindowPosts', 15);
 }
+
+/**
+ * The one registered Claude account the `'0.124.1'` migration keeps out of
+ * automatic moves (Re-seat P0, Security's review). Named only here: everything
+ * else reads the flag the migration writes, never this id.
+ */
+const KEPT_FROM_AUTO_MOVES_ACCOUNT_ID = 'claude-ab1';
+
+/**
+ * Migration body: keep one registered Claude account out of automatic moves,
+ * by setting `noAutoMove: true` on its row (Re-seat P0).
+ *
+ * A tightening, and a narrow one. It touches only the first row whose id is
+ * {@link KEPT_FROM_AUTO_MOVES_ACCOUNT_ID} (the row every reader lists), and
+ * only when that row carries no `noAutoMove` at all, so a choice already
+ * written is never overwritten and running it twice changes nothing. Every
+ * other row, and every other member of that row, is kept as stored. A config
+ * with no such row is left alone.
+ *
+ * Writes the whole `runtimes` section, as `seedAccountProjectRules` does. The
+ * permission-history line this owes is written at the first boot after, once
+ * the Activity service exists (`permissions/kept-from-auto-moves.ts`).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function keepAccountOutOfAutoMoves(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  const accounts = (block as Record<string, unknown>).accounts;
+  if (!Array.isArray(accounts)) return;
+  const index = accounts.findIndex(
+    (row: unknown) =>
+      !!row &&
+      typeof row === 'object' &&
+      (row as Record<string, unknown>).id === KEPT_FROM_AUTO_MOVES_ACCOUNT_ID
+  );
+  if (index === -1 || 'noAutoMove' in (accounts[index] as Record<string, unknown>)) return;
+  const rows = accounts.map((row: unknown, at: number) =>
+    at === index ? { ...(row as Record<string, unknown>), noAutoMove: true } : row
+  );
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), accounts: rows },
+  });
+}
+
+/**
+ * Seed `ui.dmView: false` and `ui.showSessions: false` where the stored `ui`
+ * section lacks them (DOR-3074).
+ *
+ * Two nested leaves inside a section every stored config already carries, and
+ * conf's pre-migration merge is shallow, so this body is the only thing that
+ * writes them to disk. Absence is tested with `in`, so a choice a person made is
+ * never rewritten, and running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedUiDmViewLeaves(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui === null || typeof ui !== 'object' || Array.isArray(ui)) return;
+  if ('dmView' in ui && 'showSessions' in ui) return;
+  store.set('ui', {
+    ...ui,
+    ...(!('dmView' in ui) && { dmView: false }),
+    ...(!('showSessions' in ui) && { showSessions: false }),
+  });
+}

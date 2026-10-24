@@ -9,7 +9,7 @@
  * - **Claude Code** renders a skill (`SKILL.md`) or command (`commands/*.md`)
  *   when it is used, plugin skills included
  *   (https://code.claude.com/docs/en/skills.md). From the CLI bundled with the
- *   Agent SDK (0.3.280): a block is ``/```!\s*\n?([\s\S]*?)\n?```/g`` over the
+ *   Agent SDK (0.3.280, unchanged at 0.3.304): a block is ``/```!\s*\n?([\s\S]*?)\n?```/g`` over the
  *   whole text, not anchored to a line, so ```` ```!sh ```` and a block inside
  *   a blockquote run too; an inline command is ``/(?<=^|\s)!`([^`]+)`/gm``
  *   after single-line code spans not preceded by `!` are blanked. DorkOS's

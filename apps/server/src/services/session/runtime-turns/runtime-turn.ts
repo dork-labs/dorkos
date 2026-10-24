@@ -253,7 +253,14 @@ async function projectRuntimeTurn(
     // No `userMessage`: nobody typed one. `origin: 'runtime'` is what keeps the
     // client from counting this as a person's turn, ageing their sign-in cards,
     // or blanking the reply before it.
-    await feedProjector(projector, guarded, { origin: 'runtime' });
+    await feedProjector(projector, guarded, {
+      origin: 'runtime',
+      // The process outlives this turn too, so a helper still running when it
+      // ends is not lost (FB-18).
+      ...(runtime.liveHelperIds !== undefined
+        ? { stillLive: () => runtime.liveHelperIds!(sessionId) }
+        : {}),
+    });
   } catch (err) {
     said.error ??= err instanceof Error ? err.message : String(err);
     logger.warn('[runtime-turn] failed to project a turn the agent started', {

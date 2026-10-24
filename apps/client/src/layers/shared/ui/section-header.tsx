@@ -6,15 +6,15 @@
  * two hover treatments, two menu wirings and two ideas about where the "…"
  * sits. A group IS a section, so it gets the section header.
  *
- * **And it is now the only header in the panel.** Heads up, Today, Getting
- * started, Pins, Channels, Direct messages, Agents and every section the
- * operator makes are all this component: 11px, medium, `--sidebar-header-x`,
- * no icon. The zone `<h2>` above it is gone (`specs/sidebar-simplification`
- * D1) — three levels in a 272px panel was one more than anybody could read.
+ * **And it is now the only header in the panel.** Channels, Direct messages,
+ * Add-ons and every section the operator makes are all this component: 11px,
+ * medium, `--sidebar-header-x`, no icon. There is no level above it
+ * (`specs/sidebar-simplification` D1) — three levels in a 272px panel was one
+ * more than anybody could read.
  *
  * @module shared/ui/section-header
  */
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import {
@@ -93,28 +93,25 @@ export interface SectionHeaderProps {
   /** Width class for the menus. */
   menuWidth?: string;
   /**
-   * The section is asking to be read — the same unread emphasis
-   * {@link SidebarRow} wears, on a header.
+   * The one mark a folded header carries — a working dot.
    *
-   * **This is how a folded section keeps its `activity` tier.** Collapsing may
-   * never lose signal (BC-31), and the two-tier system says `activity` is a
-   * bold label and NOTHING else — no badge, no dot (design-decisions §18). So
-   * `trailing` cannot carry it: a mark there would be the third weight the
-   * system deliberately does not have. Without this prop a collapsed section
-   * holding unread activity was indistinguishable from a quiet one.
-   */
-  emphasized?: boolean;
-  /**
-   * What a folded header says about what it is hiding — "12 · 3 unread".
-   *
-   * Sits at the right of the label, inboard of the chevron, and is the whole of
-   * BC-31 now that headers fold everywhere: folding Heads up must not be a way
-   * to make a permission prompt disappear quietly, so its roll-up carries the
-   * needs-you count.
+   * **Never a count.** A folded section keeps its unread rows on screen below
+   * the header (BC-31), so the header has no unread to report; what is left is
+   * whether anything inside is working, which has no row of its own to stay
+   * behind. Sits at the right of the label, inboard of the chevron.
    */
   trailing?: ReactNode;
   /** Rendered immediately after the label — a smart group's rule glyph. */
   adornment?: ReactNode;
+  /**
+   * How many rows the fold hides. A collapsed header with one or more says
+   * "· 12 more" after its name, and a screen reader hears "12 more" as the
+   * toggle's description (DOR-3200).
+   *
+   * Read only while {@link collapsed}: an open section hides nothing, and a
+   * fold that hides nothing (every row stayed on screen) says nothing.
+   */
+  hiddenCount?: number;
   /**
    * An inline editor that REPLACES the label — renaming a group. The "⋮" is
    * withdrawn while it is up, so the menu that opened the editor cannot offer a
@@ -191,9 +188,9 @@ export function SectionHeader({
   nodes = [],
   actionsLabel,
   menuWidth = 'w-48',
-  emphasized = false,
   trailing,
   adornment,
+  hiddenCount = 0,
   editor,
   level = 3,
   controlsId,
@@ -205,36 +202,34 @@ export function SectionHeader({
   const isMobile = useIsMobile();
   const pointer = isMobile ? 'coarse' : 'fine';
   const height = SECTION_HEADER_HEIGHT[pointer];
+  const hiddenId = useId();
+  const showsHidden = collapsed === true && hiddenCount > 0;
   // One line, whether it comes from the label button or the plain span: 11px
   // medium at `--sidebar-header-x`, and nothing else. Spelled once so a section
   // that cannot fold cannot end up looking like a different kind of thing.
   const line = cn(
     'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 text-2xs font-medium',
     SECTION_HEADER_INSET,
-    height,
-    emphasized && 'text-sidebar-foreground font-semibold'
+    height
   );
-  // The right cluster inside the label line: what the fold is hiding, then the
-  // chevron that unhides it. `ml-auto` on the group rather than on either piece,
-  // so a header with no roll-up still parks its chevron at the right edge.
+  // The right cluster inside the label line: the trailing mark, then the
+  // chevron. `ml-auto` on the group rather than on either piece, so a header
+  // with no mark still parks its chevron at the right edge.
   const rightCluster = (
-    // **Capped at half the line, and the cap is the priority rule.** `flex-none`
-    // here put every pixel of shortfall on the label, so a 272px panel folded
-    // "Channels" into "Chann…" to make room for "12 · 3 unread · 1 working". The
-    // section's NAME is what a person navigates by; the roll-up is what they
-    // read once they are looking, and it truncates from its own half. Same
-    // budget-in-CSS idiom the row uses for `who › title` (`row-grammar.ts`).
+    // **Capped at half the line, and the cap is the priority rule.** The
+    // section's NAME is what a person navigates by; whatever sits beside it
+    // gives way first. Same budget-in-CSS idiom the row uses for
+    // `who › title` (`row-grammar.ts`).
     <span className="ml-auto flex max-w-[50%] min-w-0 items-center gap-1.5 pl-1.5">
       {trailing !== undefined && (
-        // `/70` rather than `/50`: this is 11px text and owes 4.5:1 like every
-        // other label in the panel, and `/50` measures 3.2:1 on the light
-        // theme's zone tint. It reads as secondary because it is not `medium`
-        // and the label is.
+        // `/70` rather than `/50`: anything written here is 11px text and owes
+        // 4.5:1 like every other label in the panel, and `/50` measures 3.2:1
+        // on the light theme's zone tint.
         <span
           // It fades in over 120 ms rather than appearing (spec D5). The fold
-          // that produced it is a spring, and a count snapping into existence
+          // that produced it is a spring, and a mark snapping into existence
           // halfway through one reads as a second, unrelated event. `motion-safe`
-          // and nothing else: under a reduced-motion preference the count is
+          // and nothing else: under a reduced-motion preference the mark is
           // simply there, which is the same rule the chevron beside it follows.
           className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in text-2xs truncate font-normal tabular-nums"
         >
@@ -283,13 +278,38 @@ export function SectionHeader({
         // the state (`aria-expanded={false}`) where assistive tech is most
         // likely to follow it.
         aria-controls={collapsed ? undefined : controlsId}
+        // **A description, not part of the name**, so the toggle is still
+        // called by its section's name alone and reads "DorkOS, collapsed,
+        // 12 more" — the name, the `aria-expanded` state, then this.
+        aria-describedby={showsHidden ? hiddenId : undefined}
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           line,
           'hover:text-sidebar-foreground focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2'
         )}
       >
-        <span className="truncate">{label}</span>
+        {/* The name and its count share one gapless box, so the space before
+            the "·" is a typed space rather than the line's flex gap — one
+            space, "DorkOS · 12 more", never a gap plus a space. */}
+        <span className="flex min-w-0 items-center">
+          <span className="truncate">{label}</span>
+          {showsHidden && (
+            // Tertiary ink and regular weight: it is about the name, and
+            // quieter than it. Never truncated — the name gives way first,
+            // because a cut-off number says nothing. `whitespace-pre` keeps the
+            // leading space a flex item would otherwise drop. Hidden from the
+            // name and read back as the description: a node `aria-describedby`
+            // points at directly is read even inside `aria-hidden`, and the "·"
+            // is left out of it.
+            <span
+              aria-hidden
+              className="text-muted-foreground shrink-0 font-normal whitespace-pre tabular-nums"
+            >
+              {' · '}
+              <span id={hiddenId}>{hiddenCount} more</span>
+            </span>
+          )}
+        </span>
         {adornment}
         {rightCluster}
       </button>

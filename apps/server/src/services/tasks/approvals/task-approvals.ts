@@ -35,6 +35,8 @@ import {
   effectiveTiming,
   effectiveWork,
 } from '../timing/effective-timing.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { markScheduleOrigin } from './marked-schedules.js';
 
 /**
  * What {@link TaskApprovals.rekeyMigratedFile} did with one migrated row.
@@ -119,10 +121,24 @@ export class TaskApprovals {
         approvedContentKey: effectiveContentKey(row),
         previousApprovalKey: null,
         followedAgentChanges: null,
+        // A person approved it, so it is theirs now: the marks it waited on are cleared (DOR-3036).
+        originMarks: null,
       })
       .where(eq(pulseSchedules.id, id))
       .run();
     this.notifyApproved(row.agentId);
+  }
+
+  /**
+   * Keep a marked turn's marks on a schedule it wrote, and park it for a person (DOR-3036,
+   * `marked-schedules.ts`). An unmarked turn changes nothing.
+   *
+   * @param id - The schedule.
+   * @param marks - The marks of the turn that created or edited it.
+   * @returns Whether it was marked, and so now waits for a person.
+   */
+  markOrigin(id: string, marks: TurnMarks): boolean {
+    return markScheduleOrigin(this.db, id, marks);
   }
 
   /**

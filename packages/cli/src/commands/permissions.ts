@@ -39,6 +39,7 @@ import {
   type PermissionsResponse,
   type PermissionState,
 } from '@dorkos/shared/permissions';
+import { skipRow, type UndoRowLabels } from './permission-undo-rows.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
@@ -491,37 +492,8 @@ function defaultKeyOf(
   return area ? { kind: 'action', action: target.id, area: area.id } : undefined;
 }
 
-/**
- * A recorded value as the undo report says it, read by what the key is: `ask`
- * is the state Ask for an area and the stop Ask first for Files & commands.
- */
-function valueText(value: string | null, key: PermissionUndoSkip['change']['key']): string {
-  if (value === null) return 'not set';
-  const labels: Record<string, string> =
-    key.kind === 'files' ? STOP_LABEL : key.kind === 'preset' ? PRESET_LABEL : STATE_LABEL;
-  return labels[value] ?? value;
-}
-
-/** One skipped or conflicting change, as a table row. */
-function skipRow(skip: PermissionUndoSkip): string[] {
-  const { change } = skip;
-  const who = change.target.kind === 'agent' ? change.target.agentName : 'Everyone';
-  const what =
-    change.key.kind === 'area'
-      ? change.key.area
-      : change.key.kind === 'action'
-        ? change.key.action
-        : change.key.kind === 'files'
-          ? `files${change.key.runtime ? ` (${change.key.runtime})` : ''}`
-          : 'preset';
-  const why =
-    skip.reason === 'changed-since'
-      ? `changed since: now ${valueText(skip.current, change.key)}`
-      : skip.reason === 'floor'
-        ? 'would set something that always asks to Allowed'
-        : 'no longer exists';
-  return [who, what, valueText(change.before, change.key), why];
-}
+/** The words the undo report reads values with. */
+const UNDO_LABELS: UndoRowLabels = { stop: STOP_LABEL, preset: PRESET_LABEL, state: STATE_LABEL };
 
 /**
  * Implements `dorkos permissions undo <id> [--force]`.
@@ -561,7 +533,12 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     );
     if (result.skipped.length > 0) {
       console.log('Left alone:');
-      console.log(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], result.skipped.map(skipRow)));
+      console.log(
+        renderTable(
+          ['FOR', 'SETTING', 'WOULD SET', 'WHY'],
+          result.skipped.map((skip) => skipRow(skip, UNDO_LABELS))
+        )
+      );
     }
     return 0;
   } catch (err) {
@@ -569,7 +546,12 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
       const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
       if (conflicts.length > 0) {
-        console.error(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], conflicts.map(skipRow)));
+        console.error(
+          renderTable(
+            ['FOR', 'SETTING', 'WOULD SET', 'WHY'],
+            conflicts.map((skip) => skipRow(skip, UNDO_LABELS))
+          )
+        );
       }
       console.error(`Run \`dorkos permissions undo ${eventId} --force\` to set it back anyway.`);
     }

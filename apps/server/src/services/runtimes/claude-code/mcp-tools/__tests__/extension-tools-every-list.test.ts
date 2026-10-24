@@ -49,7 +49,7 @@ import {
   alwaysLoadedToolsFor,
   inSessionToolName,
 } from '../tool-exposure.js';
-import { DORKOS_AGENT_TOOLS, READ_ONLY_TOOLS } from '../../messaging/interactive-handlers.js';
+import { DORKOS_AGENT_TOOLS, READ_ONLY_TOOLS } from '../../tool-gate/auto-allow.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../../../../core/external-mcp/tool-security.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import {

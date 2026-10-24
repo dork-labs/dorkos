@@ -31,6 +31,9 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 beforeEach(() => {
+  // Run inside an agent session, the CLI inherits that agent's token; this
+  // seam must prove it sends none, so it starts from none.
+  vi.stubEnv('DORKOS_AGENT_TOKEN', '');
   vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });

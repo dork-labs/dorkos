@@ -63,7 +63,7 @@ const NO_SHARED_SIDEBAR: Record<string, string> = {
  * The header rather than the line, because Prettier decides how many lines the
  * call takes: a title long enough to wrap leaves `test.describe(` alone on its
  * own line with the tag on the next one, and a line-at-a-time reader calls that
- * untagged. (It did, on `sidebar-today.spec.ts`, the moment formatting ran.)
+ * untagged. (It did, on one of these specs, the moment formatting ran.)
  *
  * @param source - The spec's text.
  */

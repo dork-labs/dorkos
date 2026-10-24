@@ -510,6 +510,11 @@ export const permissionsDomain: CapabilityDomain = {
         "otherwise; every change is recorded. 'default' removes a change so the setting falls " +
         'back a layer. Safety limits and Reach & secrets can be Blocked or Ask, never Allowed. ' +
         'Say plainly what you are changing and why.',
+      // An agent's change that could loosen any agent's settings, its own or
+      // another's or everyone's, always asks a person (DOR-3107, Security and
+      // the PM): only a person's yes may move the floor up. Blocked can only
+      // tighten, so it stays free.
+      alwaysAsksForInput: (input) => (input as { state?: string } | undefined)?.state !== 'blocked',
       tier: 'act',
       // Not a floor since ADR 261006-225605: an agent may change permissions as a
       // person may, and the change is recorded with who made it.

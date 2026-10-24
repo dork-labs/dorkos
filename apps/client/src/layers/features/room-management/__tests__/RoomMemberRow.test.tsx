@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { QueryClientProvider } from '@tanstack/react-query';
+import type { AuthorRef, ReseatOptions, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { createMockTransport } from '@dorkos/test-utils';
+import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
+import { TransportProvider } from '@/layers/shared/model';
 import { hashToHslColor, type AgentVisual } from '@/layers/shared/lib';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
@@ -41,7 +45,17 @@ function member(author: Partial<AuthorRef> & Pick<AuthorRef, 'kind'>): RoomRoste
 const AGENT = member({ kind: 'agent', agentRef: 'ref-ana' });
 const PERSON = member({ kind: 'human', id: 'me', displayName: 'Dorian' });
 
-function renderRow(overrides: Partial<RoomMemberRowProps> = {}) {
+/** A seat that has answered here, with one other account that can take it. */
+const MOVABLE: ReseatOptions = {
+  current: { id: 'claude4', label: 'Claude4' },
+  seated: true,
+  accounts: [{ id: 'claude3', label: 'Claude3', color: '#336699', eligible: true, reason: '' }],
+};
+
+function renderRow(overrides: Partial<RoomMemberRowProps> = {}, reseatOptions = MOVABLE) {
+  const transport = createMockTransport({
+    getRoomReseatOptions: vi.fn().mockResolvedValue(reseatOptions),
+  });
   const props: RoomMemberRowProps = {
     member: AGENT,
     roomKind: 'channel',
@@ -64,7 +78,16 @@ function renderRow(overrides: Partial<RoomMemberRowProps> = {}) {
     dormantReasonId: null,
     ...overrides,
   };
-  return { ...render(<RoomMemberRow {...props} />), props };
+  return {
+    ...render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <TransportProvider transport={transport}>
+          <RoomMemberRow {...props} />
+        </TransportProvider>
+      </QueryClientProvider>
+    ),
+    props,
+  };
 }
 
 /** The tinted disc. */
@@ -280,6 +303,57 @@ describe('RoomMemberRow', () => {
       fireEvent.click(pill, { clientX: 103, clientY: 104, detail: 1 });
 
       expect(props.onExpandedChange).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('Continue on another account…', () => {
+    it('is in the "…" menu on desktop when the seat can move, and opens the picker', async () => {
+      const onRequested = vi.fn();
+      renderRow({ reseat: { roomId: 'room-1', onRequested } });
+
+      fireEvent.pointerDown(screen.getByLabelText('Ana actions'), { button: 0, ctrlKey: false });
+      const item = await screen.findByRole('menuitem', { name: 'Continue on another account…' });
+      await waitFor(() => expect(item).not.toHaveAttribute('data-disabled'));
+      fireEvent.click(item);
+
+      expect(onRequested).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not offered where the seat cannot move', async () => {
+      renderRow();
+
+      fireEvent.pointerDown(screen.getByLabelText('Ana actions'), { button: 0, ctrlKey: false });
+      await screen.findByRole('menuitem', { name: 'Remove from this room' });
+      expect(
+        screen.queryByRole('menuitem', { name: 'Continue on another account…' })
+      ).not.toBeInTheDocument();
+    });
+
+    it('sits above Remove in the opened row on a phone', async () => {
+      viewport('phone');
+      const onRequested = vi.fn();
+      renderRow({ expanded: true, reseat: { roomId: 'room-1', onRequested } });
+
+      const button = screen.getByRole('button', { name: 'Continue on another account…' });
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+
+      expect(onRequested).toHaveBeenCalledTimes(1);
+    });
+
+    it('is shown but disabled on a phone when the agent has not answered here yet', async () => {
+      viewport('phone');
+      const onRequested = vi.fn();
+      renderRow(
+        { expanded: true, reseat: { roomId: 'room-1', onRequested } },
+        { current: null, accounts: [], seated: false }
+      );
+
+      expect(await screen.findByText('Ana hasn’t answered here yet')).toBeInTheDocument();
+      const button = screen.getByRole('button', { name: /Continue on another account…/ });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(onRequested).not.toHaveBeenCalled();
     });
   });
 

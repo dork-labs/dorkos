@@ -56,6 +56,7 @@ import type { ServerRefs } from '../server-refs.js';
 import { currentServerRole } from '../../lib/server-role.js';
 import { isAgentComputer } from '../../services/core/server-role/role-checks.js';
 import { runsSchedules } from '../../services/core/agent-computer/sealed.js';
+import { getLatestVersion } from '../../services/core/update-checker.js';
 import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
 import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
 import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
@@ -124,6 +125,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     // it; a hub with no Cloud key wakes nobody.
     setHubRelayWaker(hubRelayWake());
   }
+  // Start the npm update check now, in the background, so the first settings
+  // read already knows the latest version without waiting on it (DOR-3226).
+  void getLatestVersion();
   /** The canvas sweep, listing the default folder only when a session is marked gone. */
   const sweepCanvases = (): Promise<number> =>
     sweepOrphanedCanvases(peekCanvasService(), async () => {

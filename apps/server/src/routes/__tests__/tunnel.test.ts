@@ -70,6 +70,11 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
+// The install's owner is `u1`.
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'u1',
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
@@ -533,6 +538,24 @@ describe('Tunnel Route', () => {
 
         expect(res.status).toBe(200);
         expect(tunnelManager.start).toHaveBeenCalled();
+      });
+
+      it('refuses a signed-in person who is not the owner, and anyone on another device', async () => {
+        mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
+        mockConfigGet.mockImplementation((key: string) =>
+          key === 'auth' ? { enabled: true } : undefined
+        );
+        const guest = await request(appWithCaller({ userId: 'guest', credential: 'cookie' })).post(
+          '/api/tunnel/start'
+        );
+        expect(guest.status).toBe(403);
+        expect(guest.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+        const away = await request(appWithCaller({ userId: 'u1', credential: 'cookie' }))
+          .post('/api/tunnel/start')
+          .set('X-Forwarded-For', '203.0.113.9');
+        expect(away.status).toBe(403);
+        expect(away.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+        expect(tunnelManager.start).not.toHaveBeenCalled();
       });
 
       it('leaves /stop open to every caller (DOR-574)', async () => {

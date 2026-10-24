@@ -51,9 +51,11 @@ import {
 import {
   forgetMessageOrigin,
   holdTurnOriginFor,
+  noteHeldMessage,
   messageDispatched,
   messageTurnStarted,
 } from '../origin/outsider-turns.js';
+import { ceilingHoldsToDefault } from '../message-dispatcher/held-to-default.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -119,6 +121,8 @@ export interface DispatchSessionMessageOpts {
    * §4.7).
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
+  continuationHold?: true;
 }
 
 /**
@@ -606,6 +610,11 @@ async function launchSessionMessage(
   const isNewSession = await holdTurnOriginFor(messageId, () =>
     runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
+  // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
+  // A continuation's hold does not: it carries no new words (DOR-3203).
+  if (ceilingHoldsToDefault(opts.permissionCeiling) && !opts.continuationHold) {
+    noteHeldMessage(messageId);
+  }
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)
@@ -709,6 +718,7 @@ async function launchSessionMessage(
       ...(opts.permissionCeiling !== undefined
         ? { permissionCeiling: opts.permissionCeiling }
         : {}),
+      ...(opts.continuationHold ? { continuationHold: true as const } : {}),
       projector,
       runtime,
       onError: (err) => {

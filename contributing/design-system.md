@@ -51,7 +51,7 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 | `bg-card`                | `0 0% 100%`  | Elevated cards, popovers                                                         |
 | `text-foreground`        | `0 0% 9%`    | Body text                                                                        |
 | `text-muted-foreground`  | `0 0% 32%`   | Labels, metadata                                                                 |
-| `text-status-warning-fg` | `38 92% 28%` | Warning text: 4.68:1 or better on the page, cards, the sidebar and its zone tint |
+| `text-status-warning-fg` | `38 92% 28%` | Warning text: 4.68:1 or better on the page, cards, the sidebar and its tint ramp |
 | `text-brand-text`        | `24 90% 29%` | Orange text: 4.66:1 or better, its own `bg-brand/15` badge tint included         |
 | `border-border`          | `0 0% 83%`   | Card borders, inputs                                                             |
 
@@ -319,8 +319,8 @@ it would never win against `turn-streaming` and would hide what the agent is doi
 report a number. Held drafts live in the composer's own queue panel instead (see Composer,
 below).
 
-**The announcer rule: one live region, counts not verbs** — the same principle §Zones already
-states for the Heads up zone's badge, applied to the lane. `role="status" aria-live="polite"`
+**The announcer rule: one live region, counts not verbs** — the same principle the sidebar's
+accessibility contract states for the phone's needs-you count, applied to the lane. `role="status" aria-live="polite"`
 wraps the lane's own text, so a change in WHAT it says (presence count, stalled, ask headline)
 is announced, but a `turn-streaming` verb changing every couple of seconds while a turn works is
 not — a screen reader is not a siren. The Ask card that grows out of rung 1 is announced
@@ -366,7 +366,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
-- **Zones, not temporal grouping**: rows are grouped into Heads up, Getting started, Today and Library — see [Zones and Sections](#zones-and-sections) below — never by session date.
+- **Places, never sessions or threads** (DOR-3092): from the top, the Threads and Directory doors, your own sections, Channels, Direct messages and Add-ons — see [Sections](#sections) below. An agent is one row, as its direct message. Sessions are reached through ⌘K and the agent's profile, threads through the Threads page.
 - **Rows**: `SidebarModelRow` draws each row from `buildSidebarModel`'s output; `isActive` highlights whichever row matches the current route.
 - **Header block**: `SidebarHeaderBlock`, mounted in `Sidebar` above the body-swap region — persistent chrome that survives a `sidebar.body` takeover (spec BC-43→46). A button named after the operator ("Dorian's team"), opening you (your profile) / DorkOS account / Settings above the destinations and a quiet version line below them (DOR-2628); the `NewMenu` (Session, Channel, Direct message, Agent…, Agent group — every create surface in the sidebar, and nowhere else); and `SidebarSearchPill`, the ⌘K pill.
 - **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding) and `SidebarFooterStrip` — one slim tinted row of destinations (Home, Team, Marketplace, Connections), a `⋯` menu holding the `sidebar.footer` slot, and ✦ Ask DorkBot. No logo, no version line, no `border-t`: separation is a step up the `--sidebar-accent` ramp (spec `sidebar-now-today-library` BC-47, R1)
@@ -380,16 +380,16 @@ Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new
 
 | Level        | Class                                                  | What it does                          |
 | ------------ | ------------------------------------------------------ | ------------------------------------- |
-| Zone card    | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
+| Search pill  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
 | Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel   |
-| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the zone tint         |
+| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the recessive tint    |
 | Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
 
-**Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a zone tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
+**Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a surface tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
 
-Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-zone-*` variable — one ramp is the point.
+Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-*` tint variable — one ramp is the point.
 
-Label-on-zone-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
+Label-on-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
 
 #### Where that check lives, and how to not fool yourself with it
 
@@ -400,7 +400,7 @@ The showcase is **`/dev/sidebar-model`** (`apps/client/src/dev/showcases/Sidebar
 **Guard it with something that moves when the page moves.** The first attempt here was `expect(evaluated).toBeGreaterThan(200)`, and a floor is not coverage: at 1600×2400 the page evaluated 260 nodes and cleared the bar while missing two injected 1.91:1 labels, and at 1600×4000 it evaluated 322 and missed the same two. The number went up as the page got taller; it just never went up as fast as the page did. So assert page-relatively instead, and prefer both:
 
 - **The content fits the viewport** — compare the axe context's height against `window.innerHeight` before running axe. This is what actually guarantees the grid covers everything, and it fails with the real reason ("the page outgrew the viewport") rather than a threshold nobody can interpret.
-- **Every element of some class you own was evaluated** — resolve axe's reported targets back to elements and assert a known set is among them. The sidebar-model spec uses its reason chips: one per zone, section and row, spread top to bottom, so the denominator grows on its own when the page does.
+- **Every element of some class you own was evaluated** — resolve axe's reported targets back to elements and assert a known set is among them. The sidebar-model spec uses its reason chips: one per section and row, spread top to bottom, so the denominator grows on its own when the page does.
 
 A threshold is not coverage unless it moves with the thing it measures.
 
@@ -415,14 +415,14 @@ A muted row keeps **full label contrast** and gives up its attention signals ins
 
 Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims `muted` rows with `opacity-60` over a label that is only 5.9:1 to begin with, which measures **2.6:1 in light and 3.6:1 in dark**; no opacity value clears 4.5:1 from that starting point. Reducing contrast also spends the accessibility budget of exactly the readers least able to afford it. Replacing the dim in `shared/ui/sidebar-row.tsx` is **DOR-1098**.
 
-### Zones and Sections
+### Sections
 
-A nav panel has **two levels and one header style** (`specs/sidebar-simplification` D1, 2026-08-19). It used to have three — a zone label, a section header and rows, each starting on its own x — and a 272px panel cannot teach three.
+A nav panel has **two levels and one header style** (`specs/sidebar-simplification` D1, 2026-08-19): a section header and its rows. It once had a third — zones (Heads up, Getting started, Today, Library), each a landmark above its sections — and a 272px panel cannot teach three. The zones went with the sidebar's new shape (DOR-3092).
 
-- **Zone** — a landmark with no chrome of its own (Heads up, Getting started, Today, Library). It draws no heading; it groups, tints and names itself for assistive tech through `aria-label`. `ZONE_LABEL.library` is an accessible name that is never painted. The first zone's label became **Heads up** on 2026-08-11 (DOR-1155) — label only; its id is still `now` in the model, the DOM and config.
-- **Section** — a header and its rows. Heads up, Today, Getting started, Pins, Channels, Direct messages, Agents and every section a person makes are all the same header, and all but Getting started fold.
+- **Top items** — a headerless block of doors at the head of the list: Threads and Directory. A top item never shows before its page exists, and the block never folds.
+- **Section** — a header and its rows. Channels, Direct messages, Add-ons and every section a person makes are all the same header.
 
-**Every header folds.** Click anywhere on it, or press Enter/Space; `Alt`/`Option`-click folds or unfolds every header in the panel. A folded header keeps its roll-up as trailing text — "12 · 3 unread · 1 working" — so folding never loses signal, and Heads up's roll-up counts what NEEDS answering rather than its rows, so folding it can never quietly hide a permission prompt.
+**Every header folds.** Click anywhere on it, or press Enter/Space; `Alt`/`Option`-click folds or unfolds every header in the panel. A folded header keeps its unread rows on screen beneath it, and one dot when a member is working, so folding never hides a message nobody has read. A header never carries a count.
 
 Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, **11px medium**, `text-sidebar-foreground/70`, with **no icon**: the rows underneath carry the glyph, and a `#` above a list of `#` rows says the same thing twice. ALL-CAPS with letterspacing reads dated at small sizes.
 
@@ -457,7 +457,7 @@ Every horizontal inset in the sidebar comes off three custom properties, declare
 | `--sidebar-header-x` | 12px  | Where every section header's label starts.                                       |
 | `--sidebar-row-x`    | 20px  | Where a row's 18px glyph slot starts. The label follows at 20 + 18 + 8 = **46**. |
 
-**Two tokens, because there are two levels.** A third — `--sidebar-nested-x` — indented a hand-made section's members back when a section rendered inside Agents; sections are peers of Channels and Agents now (`specs/sidebar-simplification` D3), so nothing in the panel is nested and the token went with its last consumer.
+**Two tokens, because there are two levels.** A third — `--sidebar-nested-x` — indented a hand-made section's members back when a section rendered inside Agents; sections are peers of Channels and Direct messages now (`specs/sidebar-simplification` D3), so nothing in the panel is nested and the token went with its last consumer.
 
 Never write a sidebar inset as a literal. `apps/e2e/tests/dashboard-sidebar/sidebar-row-gutter.spec.ts` reads these tokens out of the live document and measures the computed padding against them, so retuning one moves every header, every row and the glyph-action overlay together — and changing one half alone goes red with the number it actually got.
 
@@ -465,11 +465,11 @@ Never write a sidebar inset as a literal. `apps/e2e/tests/dashboard-sidebar/side
 
 #### Accessibility contract
 
-This is the whole contract a zoned nav panel must meet, and it is what shipped: `SidebarZone.tsx`, `SidebarSection.tsx` and `use-live-region-text.ts` implement it, and `DashboardSidebar.tsx` composes them. Treat it as the spec those components are checked against, not a future one.
+This is the whole contract a nav panel must meet, and it is what shipped: `SidebarSections.tsx` and `SidebarSection.tsx` implement it, and `DashboardSidebar.tsx` composes them. Treat it as the spec those components are checked against, not a future one.
 
-- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-label="{label}">` with **no visible heading** — the section header inside it is what a person reads. Sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`.
-- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the section's first stop, which is its header. `ArrowDown`/`ArrowUp` move within the section (header → its `+` → the rows), `Home`/`End` jump to the **first and last row** (never to the header or the `+` — the header is one `ArrowUp` off the top, and it is where you go to fold a section rather than to start reading it), and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty. A **mounted inline editor keeps its own tab stop**: a rename field is up because somebody is typing in it, and stamping it `-1` with everything else is what made it impossible to Tab out of and back into.
-- **One live region, counts only.** A single visually-hidden `aria-live="polite" aria-atomic="true"` element inside the Heads up zone announces how many things need you ("2 agents need you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
+- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`, the one landmark. Sections are `<h3>` containing a `<button aria-expanded aria-controls>`.
+- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the section's first stop, which is its header. `ArrowDown`/`ArrowUp` move within the section (header → its `+` → the rows), `Home`/`End` jump to the **first and last row** (never to the header or the `+` — the header is one `ArrowUp` off the top, and it is where you go to fold a section rather than to start reading it), and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections, so sixty direct messages are one tab stop rather than sixty. A **mounted inline editor keeps its own tab stop**: a rename field is up because somebody is typing in it, and stamping it `-1` with everything else is what made it impossible to Tab out of and back into.
+- **One live region, counts only.** The desktop panel no longer lists what needs you (the Inbox does), so it announces nothing. On a phone a single visually-hidden `aria-live="polite" aria-atomic="true"` element beside the tab bar announces how many things need you ("2 agents need you"), debounced 1s (`widgets/mobile-tabs`, `use-live-region-text.ts`). Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
 - **Only "working" animates.** The status dot uses `STATUS_DOT_PULSE` (`shared/ui/status-dot.ts`), which is `motion-safe:animate-pulse`; its ping halo carries `motion-reduce:hidden`. Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion`, and the celebratory moments (the welcome-back glow, the all-clear beat) do not render at all under it.
 - **Hover-revealed chrome always has two other paths.** `focus-visible` reveals it on the keyboard, and on touch it is either always visible or reachable by long-press (see [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives)). Nothing may be reachable by hover alone.
 - **Every drag has a keyboard and pointer alternate** (WCAG 2.5.7). Reorder, pin/unpin and move-to-group are all reachable from the row kebab and the context menu on every platform. `KeyboardSensor` and `sortableKeyboardCoordinates` stay wired, and the `buildSidebarAnnouncements` strings (`features/dashboard-sidebar/model/use-sidebar-dnd.ts`) are preserved verbatim.
@@ -944,16 +944,18 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 
 Unread carries two different facts, and they get two different marks. Collapsing them into one badge spends the scarce signal on the common case.
 
-| Tier                | Means                                                        | Renders as                                 |
-| ------------------- | ------------------------------------------------------------ | ------------------------------------------ |
-| **Activity**        | Something happened here                                      | Bold label only — no dot, no badge         |
-| **Directed at you** | A mention, a permission prompt, a reply that needs an answer | A numbered badge (`bg-primary` count pill) |
+| Tier                | Means                                                        | Renders as                         |
+| ------------------- | ------------------------------------------------------------ | ---------------------------------- |
+| **Activity**        | Something happened here                                      | Bold label only — no dot, no badge |
+| **Directed at you** | A mention, a permission prompt, a reply that needs an answer | Bold, plus a numbered `CountPill`  |
 
 Rules that come with it:
 
 - **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
 - **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
-- **A collapsed container keeps its signal.** Collapsing a section rolls its unread state up onto the collapsed row — never hides it.
+- **The count pill is neutral.** `CountPill` (`shared/ui/count-pill.tsx`) is neutral ink on a neutral tint (`bg-foreground/10 text-foreground`), never brand or warning colour, and caps at `9+` while its label reads the real number. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **Mute keeps a mention's count, and only that.** A muted row loses its bold, but an @mention of you still shows its number. This holds for a muted direct message too: it counts real @mentions only, never every message. Mute means "stop pulling at me", so a DM that kept counting every message through mute would make mute a lie. Do not "fix" it.
+- **A collapsed container keeps its signal, as rows.** A folded section keeps its unread rows on screen under the header, drawn as they are when open. A section header never carries a count; its one mark is a working dot.
 - **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
 
 ### 3-State Status Pattern

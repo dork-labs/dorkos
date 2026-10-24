@@ -351,6 +351,12 @@ describe('/api/rooms', () => {
 
       expect(asHuman.body.viewerIsOperator).toBe(true);
       expect(asAgent.body.viewerIsOperator).toBe(false);
+      expect(asHuman.body.viewerCan).toEqual({ setUpFiles: true });
+      expect(asAgent.body.viewerCan).toEqual({ setUpFiles: false });
+
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      const archived = await request(testServer).get(`/api/rooms/${room.id}`);
+      expect(archived.body.viewerCan).toEqual({ setUpFiles: false });
     });
   });
 

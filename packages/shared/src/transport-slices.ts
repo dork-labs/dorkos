@@ -2,9 +2,11 @@ import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.j
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
  * community connections, remote communities, commitments, heartbeats, the first
- * run, message history, held connected-app actions, a hub's linked computers, a
- * space's docs), joined here so `transport.ts` extends one name. Nothing
- * consuming the port sees a difference.
+ * run, message history, held connected-app actions, a hub's linked computers,
+ * a canvas document's route controls, a space's docs, a person's signed-in
+ * devices, an account's automatic moves, a framed page's script decision, an
+ * agent's level), joined here so `transport.ts` extends one name. Nothing consuming
+ * the port sees a difference.
  *
  * @module shared/transport-slices
  */
@@ -23,7 +25,12 @@ import type { HistoryTransport } from './transport-history.js';
 import type { ConnectorHoldTransport } from './transport-connector-holds.js';
 import type { HubComputersTransport, SessionRelayTransport } from './transport-hub.js';
 import type { SignInLandingTransport } from './transport-sign-in-landing.js';
+import type { CanvasDocRouteTransport } from './transport-canvas-doc-routes.js';
+import type { SignedInDevicesTransport } from './signed-in-devices.js';
 import type { DocLinksTransport } from './transport-doc-links.js';
+import type { AccountAutoMoveTransport } from './transport-account-auto-move.js';
+import type { FrameBridgeTransport } from './transport-frame-bridge.js';
+import type { AgentLevelTransport } from './transport-agent-level.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -45,4 +52,9 @@ export interface TransportSlices
     HubComputersTransport,
     SessionRelayTransport,
     SignInLandingTransport,
-    DocLinksTransport {}
+    CanvasDocRouteTransport,
+    SignedInDevicesTransport,
+    DocLinksTransport,
+    AccountAutoMoveTransport,
+    FrameBridgeTransport,
+    AgentLevelTransport {}

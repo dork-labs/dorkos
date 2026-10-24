@@ -257,7 +257,7 @@ export function TaskRow({
         >
           <StatusDot task={task} />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               {shouldShowAgent && agent ? (
                 <>
                   <AgentAvatar
@@ -266,7 +266,13 @@ export function TaskRow({
                     size="xs"
                     className="shrink-0"
                   />
-                  <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
+                  <span
+                    data-slot="task-agent-name"
+                    className="max-w-[40%] min-w-0 shrink truncate text-sm font-medium"
+                    title={getAgentDisplayName(agent)}
+                  >
+                    {getAgentDisplayName(agent)}
+                  </span>
                   {isSystem && (
                     <Badge size="xs" variant="outline" className="px-1 leading-tight">
                       <Shield className="mr-0.5 size-2.5" />
@@ -283,10 +289,12 @@ export function TaskRow({
                 </>
               ) : null}
               <span
+                data-slot="task-name"
+                title={task.displayName ?? task.name}
                 className={
                   shouldShowAgent && (agent || task.agentId)
-                    ? 'text-muted-foreground text-xs'
-                    : 'text-sm font-medium'
+                    ? 'text-muted-foreground min-w-0 truncate text-xs'
+                    : 'min-w-0 truncate text-sm font-medium'
                 }
               >
                 {task.displayName ?? task.name}

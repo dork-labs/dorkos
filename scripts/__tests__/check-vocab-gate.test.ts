@@ -487,7 +487,7 @@ describe('withSpaceSource', () => {
   const roots = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
 
   it('adds the space source while it lives outside every product root', () => {
-    expect(withSpaceSource(roots, 'apps/community/src')).toEqual([...roots, 'apps/community/src']);
+    expect(withSpaceSource(roots, 'apps/space/src')).toEqual([...roots, 'apps/space/src']);
   });
 
   it('adds nothing once a product root already holds it, so no hit is reported twice', () => {
@@ -512,9 +512,9 @@ describe('collectFiles', () => {
       'apps/client/src/dev/showcases/FooShowcase.tsx',
       'apps/client/src/node_modules/pkg/index.ts',
       'apps/site/src/components/Bar.tsx',
-      'apps/community/src/browser/admission.ts',
-      'apps/community/src/browser/admission.test.ts',
-      'apps/community/src/browser/Chooser.test.tsx',
+      'apps/space/src/browser/admission.ts',
+      'apps/space/src/browser/admission.test.ts',
+      'apps/space/src/browser/Chooser.test.tsx',
     ];
     for (const p of paths) {
       const full = join(root, p);
@@ -522,17 +522,16 @@ describe('collectFiles', () => {
       writeFileSync(full, 'export const x = 1;');
     }
 
-    const found = collectFiles(
-      ['apps/client/src', 'apps/site/src', 'apps/community/src'],
-      root
-    ).map((f) => f.slice(root.length + 1));
+    const found = collectFiles(['apps/client/src', 'apps/site/src', 'apps/space/src'], root).map(
+      (f) => f.slice(root.length + 1)
+    );
 
     // A colocated `*.test.ts(x)` beside its source is skipped like `__tests__/` is.
     expect(found.sort()).toEqual(
       [
         'apps/client/src/layers/features/foo/Foo.tsx',
         'apps/site/src/components/Bar.tsx',
-        'apps/community/src/browser/admission.ts',
+        'apps/space/src/browser/admission.ts',
       ].sort()
     );
   });

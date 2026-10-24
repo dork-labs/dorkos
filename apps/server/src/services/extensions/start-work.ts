@@ -36,6 +36,7 @@ import {
   type StartWorkRequest,
 } from '@dorkos/shared/extension-decision-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
+import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -130,6 +131,19 @@ async function renameNowOrLater(
   }
 }
 
+/**
+ * The runtime default, plus a caller's own bound when there is one: a list
+ * ceiling, which the runtime resolves to the strictest of its bounds.
+ *
+ * @param extra - The caller's bound, if any.
+ */
+function withRuntimeDefault(extra: TurnPermissionCeiling | undefined): TurnPermissionCeiling {
+  const bounds = (extra === undefined ? [] : Array.isArray(extra) ? extra : [extra]).filter(
+    (bound) => bound !== 'runtime-default'
+  ) as TurnPermissionBound[];
+  return bounds.length === 0 ? 'runtime-default' : ['runtime-default', ...bounds];
+}
+
 /** The start-work seam. See the module documentation. */
 export class StartWorkService {
   private readonly launching: Launching = new Map();
@@ -172,6 +186,8 @@ export class StartWorkService {
    * @param extensionId - The extension starting it.
    * @param input - The project, prompt, title and reason.
    * @param via - Where the call came from; see {@link StartWorkVia}.
+   * @param opts.permissionCeiling - The loosest level the chat's first turn may
+   *   run at: the runtime's default when a person asked over Wi-Fi (DOR-3037).
    * @returns The new chat's id.
    * @throws StartWorkError when a rule refuses it (nothing was started).
    * @throws StartWorkInputError when the input breaks a length rule.
@@ -179,7 +195,8 @@ export class StartWorkService {
   async start(
     extensionId: string,
     input: unknown,
-    via: StartWorkVia
+    via: StartWorkVia,
+    opts: { permissionCeiling?: TurnPermissionCeiling } = {}
   ): Promise<{ sessionId: string }> {
     const parsed = StartWorkRequestSchema.safeParse(input);
     if (!parsed.success) throw new StartWorkInputError(describeInputProblem(input));
@@ -231,6 +248,13 @@ export class StartWorkService {
         meshCore: undefined,
         // A chat minted here is in no room.
         roomSessionPlace: undefined,
+        // An extension's prompt is not the owner's words, and the route cannot tell
+        // a click from page code: the chat carries the outsider mark and runs no
+        // looser than the runtime default (DOR-3036, `specs/turn-marks`).
+        // A caller's own bound (a Wi-Fi sign-in's, DOR-3037) is added to that cap,
+        // never put in its place: a list holds every bound at once, so a looser one
+        // cannot lift the runtime default.
+        permissionCeiling: withRuntimeDefault(opts.permissionCeiling),
         countsTowardLaunchCap: true,
         onSettled: () => {
           settled = true;

@@ -13,6 +13,7 @@ import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
 import {
+  CountPill,
   SidebarRow,
   statusDotClass,
   type SidebarMenuNode,
@@ -38,7 +39,9 @@ import {
   roomDisplayTitle,
   useRoomWorking,
 } from '@/layers/entities/room';
+import { deriveUnreadSignal } from '../../model/rules/derive-unread-signal';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
+import { directedCountLabel } from './directed-count-label';
 import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
 import { buildRoomRowMenuNodes } from './RoomRowMenuItems';
 import { useRoomRowMenu, type RoomRowActs } from './use-room-row-menu';
@@ -122,8 +125,8 @@ interface RoomRowProps {
 }
 
 /**
- * One room in the sidebar — its mark, its name, an unread count when the reader
- * is behind, and everything you can do to it.
+ * One room in the sidebar — its mark, its name, its unread state, and
+ * everything you can do to it.
  *
  * **Memoized, and every prop it takes is stable across a render it does not
  * care about** (D8). Anything that moves per render — a callback built inline, a
@@ -133,13 +136,24 @@ interface RoomRowProps {
  * {@link useRoomRowMenu}). Before that, one preferences write re-rendered every
  * room row in the panel and rebuilt seven mutation hooks apiece.
  *
- * The badge reads `unreadCount` strictly: `null` means "you are not in this
- * room", which is not the same as `0` ("you are in it and caught up"), so a
- * room the operator has never joined shows no badge rather than a zero.
+ * **Unread is two tiers, decided by {@link deriveUnreadSignal}.** New messages
+ * make the name bold and add nothing else; only messages aimed at you get a
+ * number — an @mention of you anywhere, or any new message in a direct
+ * message, which is addressed to you by nature. A channel with forty new
+ * messages that nobody named you in is a bold name, not a 40. Mute takes the
+ * bold away and keeps a mention's count, because being named by hand is not
+ * the room pulling at you.
+ *
+ * `unreadCount` is read strictly: `null` means "you are not in this room",
+ * which is not the same as `0` ("you are in it and caught up"), so a room the
+ * operator has never joined is neither bold nor counted.
  *
  * The row's accessible name is built from its parts — `RoomTitle` contributes
- * `#general`, the badge contributes `3 unread` — so no part names the room a
- * second time.
+ * `#general`, the pill contributes `3 mentions` — so no part names the room a
+ * second time. Resting the pointer on the row shows the room's last line.
+ *
+ * A direct message shows whether its agent is working as a soft dot on the
+ * face; a channel, which has no face, carries the same dot after its name.
  *
  * The actions live in {@link RoomRowMenuItems}, which builds them once and
  * renders the same list into the right-click ContextMenu and the "…"
@@ -165,6 +179,13 @@ export const RoomRow = memo(function RoomRow({
 }: RoomRowProps) {
   const unread = hasUnread(room);
   const working = useRoomWorking(room.id, room.working);
+  const isDm = room.kind === 'dm';
+  const signal = deriveUnreadSignal({
+    unreadCount: room.unreadCount,
+    directed: isDm,
+    ...(room.mentionCount === undefined ? {} : { mentionCount: room.mentionCount }),
+    muted: isMuted,
+  });
   const title = roomDisplayTitle(room);
   const faces = sidebarItemFaces(visual);
 
@@ -321,10 +342,16 @@ export const RoomRow = memo(function RoomRow({
   const isMember = room.unreadCount !== null;
   // **What mute removes is what was asking** (DOR-1098). A muted row keeps its
   // name at full contrast — that is the part still worth reading — and loses the
-  // bold, the unread badge and the working dot. It used to keep all three and
-  // dim the lot, which made the name hard to read and left the signals shouting
-  // through the dimming.
+  // bold and the working dot. It used to keep both and dim the lot, which made
+  // the name hard to read and left the signals shouting through the dimming.
+  // A mention's count is the one signal that stays: `deriveUnreadSignal` has
+  // already let it through mute, and nothing here takes it back.
   const quiet = isMuted || !isMember;
+  const countKind = isDm && !isMuted ? 'messages' : 'mentions';
+  const showWorking = working > 0 && !quiet;
+  // The row's own tooltip carries the name and the last line together, so the
+  // name drops its browser tooltip whenever there is a line to show.
+  const hasHint = (room.lastLine ?? '').trim().length > 0;
 
   const menuNodes = acts
     ? buildRoomRowMenuNodes({
@@ -357,21 +384,29 @@ export const RoomRow = memo(function RoomRow({
     <>
       {awake && <RoomRowActsBearer room={room} isActive={isActive} onReady={setActs} />}
       <SidebarRow
-        glyph={<RoomAvatar room={room} participants={room.participants} visuals={faces} />}
+        glyph={
+          <RoomAvatar
+            room={room}
+            participants={room.participants}
+            visuals={faces}
+            working={isDm && showWorking}
+          />
+        }
         title={
           allRetired ? (
             <>
-              <RoomTitle room={room} />
+              <RoomTitle room={room} tooltip={!hasHint} />
               <RetiredMark retired className="ml-1 shrink-0" />
             </>
           ) : (
-            <RoomTitle room={room} />
+            <RoomTitle room={room} tooltip={!hasHint} />
           )
         }
         titleText={title}
         isActive={isActive}
-        emphasized={unread && !quiet}
+        emphasized={signal.tier !== 'none' && !quiet}
         muted={quiet}
+        hint={room.lastLine ?? null}
         onSelect={onSelect}
         buttonRef={rowRef}
         menuNodes={menuNodes}
@@ -425,43 +460,35 @@ export const RoomRow = memo(function RoomRow({
             {isMuted && (
               <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
             )}
-            {working > 0 && !quiet && (
-              <span
-                // `img` because the dot has no text of its own: a bare
-                // `aria-label` on a generic element is not reliably read out,
-                // and a role is what turns this from decoration into something
-                // with a name.
-                role="img"
-                // The shared dot vocabulary — `statusDotClass('working')` is the
-                // success token plus the one pulse this cockpit spends on "right
-                // now". Deliberately NOT the brand tint of the unread badge it
-                // sits beside: two facts about one row have to be tellable apart
-                // at a glance, and a second orange mark next to an orange pill
-                // reads as part of it.
-                className={cn('size-1.5 rounded-full', statusDotClass('working'))}
-                // A dot, and nothing else. The unread badge beside it counts
-                // messages waiting to be read; this counts work in flight, which
-                // is a fact about right now that will be gone shortly and needs
-                // no number on screen to be useful. A reader who cannot see it
-                // gets the count in the label, where a number costs no room.
-                //
-                // Like the unread badge, it does not name the room again — the
-                // row's own name is already the first half of what a screen
-                // reader reads out.
-                aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
-              />
-            )}
-            {unread && !quiet && (
-              <span
-                className="bg-brand/15 text-brand-text text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
-                // The room is NOT named again here. This label joins the row's own
-                // name to make it, so repeating the room turned every unread row
-                // into "#general 3 unread in #general" — the same name twice, which
-                // is the defect this row was just fixed for.
-                aria-label={`${room.unreadCount} unread`}
-              >
-                {room.unreadCount}
-              </span>
+            {showWorking &&
+              (isDm ? (
+                // The face carries the dot (`RoomAvatar`'s `working`), and the
+                // face is hidden from assistive technology — so the words live
+                // here, where the row's name is built.
+                <span className="sr-only">
+                  {working === 1 ? '1 agent working' : `${working} agents working`}
+                </span>
+              ) : (
+                <span
+                  // `img` because the dot has no text of its own: a bare
+                  // `aria-label` on a generic element is not reliably read out,
+                  // and a role is what turns this from decoration into something
+                  // with a name.
+                  role="img"
+                  // The shared dot vocabulary — `statusDotClass('working')` is
+                  // the success token plus the one pulse this sidebar spends on
+                  // "right now".
+                  className={cn('size-1.5 rounded-full', statusDotClass('working'))}
+                  // A dot, and nothing else: work in flight is a fact about
+                  // right now that needs no number on screen. A reader who
+                  // cannot see it gets the count in the label, which does not
+                  // name the room again — the row's own name is already the
+                  // first half of what a screen reader reads out.
+                  aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+                />
+              ))}
+            {signal.tier === 'directed' && signal.count !== undefined && (
+              <CountPill count={signal.count} label={directedCountLabel(signal.count, countKind)} />
             )}
           </>
         }

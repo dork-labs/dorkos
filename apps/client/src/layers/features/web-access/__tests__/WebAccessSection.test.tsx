@@ -35,7 +35,7 @@ const LINKED: SessionRelayStatus = {
   pinnedAt: '2026-10-16T12:00:00.000Z',
 };
 
-function configFor(options: { on?: boolean; hub?: boolean; local?: boolean }) {
+function configFor(options: { on?: boolean; hub?: boolean; local?: boolean; trusted?: boolean }) {
   return {
     experiments: [
       {
@@ -48,12 +48,13 @@ function configFor(options: { on?: boolean; hub?: boolean; local?: boolean }) {
     ],
     serverRole: options.hub ? 'hub' : 'computer',
     isLocalCaller: options.local ?? true,
+    ...(options.trusted === undefined ? {} : { onTrustedConnection: options.trusted }),
   };
 }
 
 function renderSection(
   overrides: Partial<Transport>,
-  options: { on?: boolean; hub?: boolean; local?: boolean } = {}
+  options: { on?: boolean; hub?: boolean; local?: boolean; trusted?: boolean } = {}
 ) {
   const config = configFor(options);
   const transport = createMockTransport({
@@ -196,6 +197,28 @@ describe('WebAccessSection', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Unlink' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: 'Chat' })).toBeDisabled();
+  });
+
+  it('over an encrypted connection: every control works, as at this computer (DOR-3172)', async () => {
+    renderSection(
+      { getSessionRelayStatus: vi.fn().mockResolvedValue(LINKED) },
+      { local: false, trusted: true }
+    );
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Unlink' })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Chat' })).toBeEnabled();
+    expect(screen.queryByText('Change this on the computer DorkOS runs on.')).toBeNull();
+  });
+
+  it('over plain Wi-Fi: says where to go and disables every control', async () => {
+    renderSection(
+      { getSessionRelayStatus: vi.fn().mockResolvedValue(LINKED) },
+      { local: false, trusted: false }
+    );
+    expect(
+      await screen.findByText('Change this on the computer DorkOS runs on.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
   });
 
   it('lists the browsers that used chat from the web here, once linked', async () => {

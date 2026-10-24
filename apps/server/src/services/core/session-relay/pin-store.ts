@@ -35,6 +35,13 @@ import {
 } from '@dorkos/shared/session-relay-link';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
+import { recordAudit } from '../../audit/audit-trail.js';
+import {
+  approvalKeysPath,
+  readApprovalKeys,
+  removeApprovalKeysFile,
+} from './approval-key-store.js';
+import { approvalUserHandle, passkeyEnrolment } from './passkeys/passkey-enrolment.js';
 import { pinnableKey, signingKeyFromPem } from './channel.js';
 
 /** The folder the relay's files live in, inside the data folder. */
@@ -141,8 +148,56 @@ export async function writeRelayPin(
   dorkHome: string = resolveDorkHome()
 ): Promise<void> {
   const checked = RelayPinSchema.parse(pin);
+  const before = readRelayPin(dorkHome);
   await writeFileAtomic(path.join(folder(dorkHome), PIN_FILE), JSON.stringify(checked), {
     mode: FILE_MODE,
+  });
+  // A new link (another computer id or account) starts its passkeys afresh.
+  if (
+    !before ||
+    before.computerId !== checked.computerId ||
+    before.accountId !== checked.accountId
+  ) {
+    passkeyEnrolment().cancel();
+    if (before) dropStaleApprovalKeys(checked, dorkHome);
+    else dropOrphanApprovalKeys(dorkHome);
+  }
+}
+
+/**
+ * With no pin before this one, any keys file was written after an Unlink (a
+ * passkey finishing as the link went), so it belongs to no link: remove it,
+ * readable or not. Audited.
+ */
+function dropOrphanApprovalKeys(dorkHome: string): void {
+  if (!fs.existsSync(approvalKeysPath(dorkHome))) return;
+  removeApprovalKeysFile(dorkHome);
+  recordAudit({
+    action: 'relay.passkey.removed-stale',
+    operation: 'remove',
+    outcome: 'ok',
+    target: { type: 'session-relay', id: 'this-computer' },
+    summary: 'Removed approvals passkeys left from before this computer was linked',
+  });
+}
+
+/**
+ * Remove approvals passkeys made for another link: a keys file whose user
+ * handle is not this pin's (or any, when this pin names no account). Audited.
+ * A damaged file is left for the owner to remove in Settings.
+ */
+function dropStaleApprovalKeys(pin: RelayPin, dorkHome: string): void {
+  const keys = readApprovalKeys(dorkHome);
+  if (!keys) return;
+  const handle = pin.accountId ? approvalUserHandle(pin.accountId, pin.computerId) : null;
+  if (keys.userHandle === handle) return;
+  fs.rmSync(approvalKeysPath(dorkHome), { force: true });
+  recordAudit({
+    action: 'relay.passkey.removed-stale',
+    operation: 'remove',
+    outcome: 'ok',
+    target: { type: 'session-relay', id: 'this-computer' },
+    summary: `Removed ${keys.keys.length} approvals passkey(s) made for another hub account`,
   });
 }
 
@@ -186,7 +241,9 @@ export async function updateRelayPin(
 
 /**
  * Forget the pin: the relay is off from this moment, whether or not the
- * network is up. The computer key stays, so linking again keeps its identity.
+ * network is up. The approvals passkeys go with it, so a hub linked later
+ * never inherits them, and so does any passkey being added. The computer key stays, so linking again keeps its
+ * identity.
  * The caller passes the live dialer's close (`closeSessionRelay`), so an open
  * connection ends at once as well; the dialer also rechecks the pin on every
  * viewer report.
@@ -199,6 +256,9 @@ export function clearRelayPin(
   onCleared: () => void = () => undefined
 ): void {
   fs.rmSync(path.join(folder(dorkHome), PIN_FILE), { force: true });
+  removeApprovalKeysFile(dorkHome);
+  // A passkey being added now could only land for a link that is gone.
+  passkeyEnrolment().cancel();
   // An open connection ends now too, not only the next dial.
   onCleared();
 }

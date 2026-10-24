@@ -74,10 +74,11 @@ Skills load their description into every session (the retrieval index) and their
 | `debugging-systematically`       | Debugging methodology + DorkOS ground-truth paths                                                                    |
 | `debugging-test-failures`        | Test-failure diagnosis (portable twin of `/debug:test`)                                                              |
 | `debugging-typescript-errors`    | Type-error tracing (portable twin of `/debug:types`)                                                                 |
+| `deps-weekly`                    | Monday dependency upkeep from @dorkos-qa's heartbeat: `/app:upgrade` in a throwaway worktree, one PR per lane        |
 | `designing-frontend`             | Calm Tech design language, UI decisions                                                                              |
+| `maintaining-dependencies`       | Unattended dependency patching, advisories, red Dependabot PRs                                                       |
 | `maintaining-dev-playground`     | Dev playground coverage when editing UI components                                                                   |
 | `managing-specs`                 | Spec file management, timestamp ids, archive lifecycle                                                               |
-| `maintaining-dependencies`       | Unattended dependency patching, advisories, red Dependabot PRs                                                       |
 | `marketplace-dev`                | Marketplace package development                                                                                      |
 | `opensrc`                        | Fetching dependency source for implementation context                                                                |
 | `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                                                                      |
@@ -85,6 +86,7 @@ Skills load their description into every session (the retrieval index) and their
 | `reading-session-transcripts`    | DorkOS session URL → JSONL resolution (claude-code runtime)                                                          |
 | `receiving-code-review`          | Technical evaluation of inbound review feedback                                                                      |
 | `requesting-code-review`         | Dispatching code-reviewer for batch-level verification                                                               |
+| `runtime-watch`                  | Runtime release check from @dorkos-qa's heartbeat: pins vs npm, what changed, hands drift to DorkOS Code             |
 | `stewarding-ci-pipeline`         | CI change protocol: hypothesis + ledger, census, SLOs, ratchets, fence                                               |
 | `styling-with-tailwind-shadcn`   | Tailwind v4 + shadcn/Radix implementation patterns                                                                   |
 | `syncing-agent-skills`           | Cross-harness skill sync (`dorkos harness sync` first)                                                               |

@@ -41,3 +41,14 @@ export const renderSessionBody: ConversationBodyRenderer = (payload) => {
     <AssistantMessageContent message={message} />
   );
 };
+
+/**
+ * Draw a reply in a chat drawn as a DM (DOR-3075): what the agent said and
+ * asked, with its work left out. Asks, approvals, errors and notices stay
+ * inline; thinking, tool calls and todos are behind the line under the reply.
+ *
+ * @param message - An assistant message.
+ */
+export function renderReplyBody(message: ChatMessage) {
+  return <AssistantMessageContent message={message} show="reply" />;
+}

@@ -157,7 +157,11 @@ describe('private browser package boundaries', () => {
   it('exports implemented validation and the complete narrow lifecycle slice through the real package entry', () => {
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.private).toBe(true);
-    expect(manifest.dependencies).toEqual({ 'playwright-core': '1.63.0', zod: '^4.6.2' });
+    // Any zod 4 range: Dependabot moves the floor on every patch.
+    expect(manifest.dependencies).toEqual({
+      'playwright-core': '1.63.0',
+      zod: expect.stringMatching(/^\^4\.\d+\.\d+$/),
+    });
     const exports = Object.entries(manifest.exports) as [
       string,
       { types: string; default: string },

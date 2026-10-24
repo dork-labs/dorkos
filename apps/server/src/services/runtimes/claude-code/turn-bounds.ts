@@ -16,7 +16,11 @@ import type { AgentSession } from './agent-types.js';
 export function assignTurnBounds(
   session: Pick<
     AgentSession,
-    'unattendedApprovals' | 'unattendedTurn' | 'turnPermissionCeiling' | 'teammateTier'
+    | 'unattendedApprovals'
+    | 'unattendedTurn'
+    | 'turnPermissionCeiling'
+    | 'turnLevelMode'
+    | 'teammateTier'
   >,
   opts: MessageOpts | undefined
 ): void {
@@ -35,10 +39,20 @@ export function assignTurnBounds(
   } else {
     delete session.turnPermissionCeiling;
   }
-  // And the room a teammate's turn is fenced to (DOR-2955). Cleared the same
+  // The agent's level a chat that follows its agent up starts from (DOR-3175).
+  // Cleared when absent, so a later turn starts from the stored mode again.
+  if (opts?.levelPermissionMode !== undefined) {
+    session.turnLevelMode = opts.levelPermissionMode;
+  } else {
+    delete session.turnLevelMode;
+  }
+  // And the room a teammate's turn is fenced to (DOR-2955), or no room for a
+  // turn a teammate's mark reached one hop on (DOR-3036). Cleared the same
   // way, so the owner's next turn in this conversation reaches what it did.
   if (opts?.roomTurn?.teammate === true) {
     session.teammateTier = { roomId: opts.roomTurn.roomId };
+  } else if (opts?.teammate === true) {
+    session.teammateTier = { roomId: null };
   } else {
     delete session.teammateTier;
   }

@@ -62,7 +62,7 @@ export interface PinnedTriageHeaderProps {
  * (`usePendingApprovals`, kept in step by the global approval events) and their
  * own cards, so a decision answered here is the same decision answered in the
  * app header; what needs attention comes from `entities/attention` — the one
- * engine, shared with the sidebar's Heads up zone — through
+ * engine, shared with the Inbox and the phone's Home cards — through
  * `useAttentionRows`, which also carries the parked schedules and the
  * after-the-fact activity rows. The Shift Report card reads its own lens the
  * same way (`useShiftReport`), and dismissing it is a plain

@@ -34,7 +34,7 @@ describe('buildWaitingNotice', () => {
     const { text } = buildWaitingNotice('Ana', 'author-ana', 'approval');
 
     expect(text).toBe(
-      "Ana is waiting for you to approve something before it can carry on. Open Ana's chat to answer. It will wait, but not forever."
+      "Ana is waiting for your approval before it can answer. Open Ana's chat or Needs you to answer. New messages for Ana wait with it. It will wait, but not forever."
     );
   });
 
@@ -81,6 +81,23 @@ describe('buildTurnFailedNotice with a refusal (DOR-3012)', () => {
     expect(text).toContain('ran into a problem');
   });
 
+  // Purpose: when no other account had usage left, the line says so, names no account.
+  it('says no other account had usage left, and when the soonest one is back', () => {
+    const at = new Date();
+    at.setHours(16, 10, 0, 0);
+    const { text, notice } = copy.buildTurnFailedNotice(
+      'dorkos-qa',
+      'author-qa',
+      at.toISOString(),
+      undefined,
+      true
+    );
+    expect(notice).toBe('turn_failed');
+    expect(text).toMatch(
+      /^dorkos-qa is out of usage until 4:10\sPM, and no other account has any left, so it couldn't answer here\.$/
+    );
+  });
+
   // Purpose: running out of usage still wins; it says when it ends.
   it('lets an out-of-usage limit speak first', () => {
     const { text } = copy.buildTurnFailedNotice('Ana', 'author-ana', null, 'warm-ceiling');
@@ -118,7 +135,20 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     ...['warm-ceiling', 'pending-interaction', 'crash-loop', 'account-pin'].map((refusal) =>
       copy.buildTurnFailedNotice('Ana', 'author-ana', undefined, refusal)
     ),
+    copy.buildTurnFailedNotice('Ana', 'author-ana', null, undefined, true),
   ],
+  buildAgentReseatedNotice: () =>
+    [false, true].flatMap((hide) =>
+      (
+        [
+          { kind: 'limit', from: 'Claude4', to: 'Claude3' },
+          { kind: 'limit', from: null, to: 'Claude3' },
+          { kind: 'nearly-out', from: 'Claude4', to: 'Claude3' },
+          { kind: 'by-hand', by: 'Kai', to: 'Claude3' },
+          { kind: 'stranded' },
+        ] as const
+      ).map((reason) => copy.buildAgentReseatedNotice('Ana', 'author-ana', reason, hide))
+    ),
   buildAgentGoneNotice: () => [copy.buildAgentGoneNotice('Ana', 'author-ana')],
   buildRuntimeGoneNotice: () => [
     copy.buildRuntimeGoneNotice('Ana', 'author-ana', 'codex'),
@@ -145,6 +175,11 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     ),
   buildBridgeUndeliveredNotice: () => [copy.buildBridgeUndeliveredNotice('hello')],
   buildRoomArchivedNotice: () => [copy.buildRoomArchivedNotice('Ana', 'author-ana')],
+  buildHandleChangedNotice: () => [
+    copy.buildHandleChangedNotice('Dorian', 'Ana', 'author-ana', 'ana', 'ana-pm'),
+    copy.buildHandleChangedNotice('the operator', 'Ana', 'author-ana', null, 'ana'),
+    copy.buildHandleChangedNotice('Dorian', 'Ana', 'author-ana', 'ana', null),
+  ],
 };
 
 function everyNotice(): RoomEntryBody[] {
@@ -188,5 +223,41 @@ describe('notices that send the reader to a session (DOR-2077)', () => {
     // Purpose: prove the matcher can fail, so an empty violation list means something.
     expect(SENDS_TO_SESSION.test("Open Ana's chat to answer.")).toBe(true);
     expect(SENDS_TO_SESSION.test('Ana was busy in its own chat.')).toBe(false);
+  });
+});
+
+describe('buildAgentReseatedNotice', () => {
+  const line = (reason: copy.ReseatNoticeReason, hide = false) =>
+    copy.buildAgentReseatedNotice('dorkos-qa', 'author-qa', reason, hide);
+
+  // Purpose: each move reads as the agreed line, quiet, with the agent as subject.
+  it('writes the agreed line for each kind of move', () => {
+    expect(line({ kind: 'limit', from: 'Claude4', to: 'Claude3' })).toEqual({
+      text: "dorkos-qa ran out of usage on Claude4, so it's continuing on Claude3.",
+      notice: 'agent_reseated',
+      subjectAuthorId: 'author-qa',
+    });
+    expect(line({ kind: 'nearly-out', from: 'Claude4', to: 'Claude3' }).text).toBe(
+      'dorkos-qa is continuing on Claude3, because Claude4 is almost out of usage.'
+    );
+    expect(line({ kind: 'by-hand', by: 'Dorian', to: 'Claude3' }).text).toBe(
+      'Dorian moved dorkos-qa to Claude3.'
+    );
+    expect(line({ kind: 'stranded' }).text).toBe(
+      'dorkos-qa started a fresh chat here. Its earlier one had expired.'
+    );
+  });
+
+  // Purpose: Security Must 7 — no account names in a room with outsiders.
+  it('names no account in a room with outsiders', () => {
+    for (const reason of [
+      { kind: 'limit', from: 'Claude4', to: 'Claude3' },
+      { kind: 'nearly-out', from: 'Claude4', to: 'Claude3' },
+      { kind: 'by-hand', by: 'Dorian', to: 'Claude3' },
+    ] as const) {
+      const { text } = line(reason, true);
+      expect(text).toBe('dorkos-qa switched accounts to keep answering.');
+      expect(text).not.toMatch(/Claude/);
+    }
   });
 });

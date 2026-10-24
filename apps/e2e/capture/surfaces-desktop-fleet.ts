@@ -3,6 +3,7 @@ import { MULTI_SESSION_PROMPTS, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
   ensureDesktopSidebarExpanded,
+  openDirectChats,
   openLiveTurn,
   shoot,
   sleep,
@@ -12,7 +13,7 @@ import {
 
 /**
  * The fleet drive behind the `multi-session` shot: four agents put to work at
- * once, so the Now/Today sidebar has real concurrent conversations to summarise.
+ * once, so the sidebar has four agents busy at the same time.
  *
  * Split out of `surfaces-desktop` (which was over the 500-line limit) because
  * this is the one drive that runs several turns at once — it owns a turn
@@ -57,29 +58,27 @@ function planFleetTurns(): FleetTurn[] {
 }
 
 /**
- * Drive the fleet moment on the Now/Today/Library sidebar: the person starts a
- * new chat with each agent in turn, so the panel ends up holding four
- * concurrent conversations at once, three streaming green and one stopped
- * amber on a permission prompt, with Now summarising them above ("N working",
- * "sentinel › Waiting on you").
+ * Drive the fleet moment: the person starts a new chat with each agent in turn,
+ * so four agents are at work at once, three streaming and one stopped on a
+ * permission prompt, and the sidebar's Direct messages show all four.
  *
  * Two things about this shape are load-bearing:
  *
- * - **Every chat is one this person started.** Today lists the chats this
- *   person touched, and an agent click opens the one they touched last
- *   (DOR-2789). A turn started behind the app's back is neither, so it would
- *   draw no row, and clicking its agent would open an older chat instead.
- *   {@link openLiveTurn} opens a new chat and sends through the composer, the
- *   product's own path, and the chat page records the open.
+ * - **The agents' Direct chats are opened first.** The sidebar lists places,
+ *   never sessions: an agent appears in Direct messages once there is a direct
+ *   message with it ({@link openDirectChats}). Its row then shows it working
+ *   whichever of its chats the turn runs in.
  * - **Turns start one at a time.** A `demo-coding` turn only runs for about
  *   fourteen seconds; starting all four up front left the earliest ones
  *   finished before the still, and long finished before the end of the loop's
- *   hold. Starting each just before the next keeps every row live through both.
+ *   hold. Starting each just before the next keeps every agent busy through
+ *   both.
  *
  * The panel builds its rows from `SidebarRowModel` (`[data-sidebar-row]`).
  */
 export async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();
+  await openDirectChats(turns.map((turn) => turn.agent));
   for (const turn of turns) {
     await openLiveTurn(page, turn.scenario, turn.prompt, turn.agent);
     await sleep(MULTI_SESSION_SETTLE_MS);
@@ -87,27 +86,21 @@ export async function driveMultiSession(page: Page): Promise<void> {
   await waitForAppShell(page);
   await ensureDesktopSidebarExpanded(page);
 
-  const todayRows = page.locator('[data-sidebar-zone="today"] [data-sidebar-row]');
-  await todayRows.nth(turns.length - 1).waitFor({ timeout: WAIT_MS });
-  // A streaming row reserves a verb line and the leaf fills it in ("Editing a
-  // file…") — the proof the rows are live rather than merely present.
-  await page
-    .locator('[data-sidebar-zone="today"] [data-slot="sidebar-row-second-line"]')
-    .first()
+  const directMessages = page.locator('[data-sidebar-section="dms"]');
+  await directMessages
+    .locator('[data-sidebar-row]')
+    .nth(turns.length - 1)
     .waitFor({ timeout: WAIT_MS });
-  // Opening a conversation scrolls its Today row into view, which walks the
-  // panel down past Now. Bring Now back so the frame carries the whole story:
-  // what needs you, how much is running, and the four rows it is running in.
   // Scrolled by locator rather than by wheel — the panel is not the element
   // under the cursor after a row click, and a wheel aimed at a guessed point
   // silently did nothing.
-  await page.locator('[data-sidebar-zone="now"]').first().scrollIntoViewIfNeeded();
+  await directMessages.first().scrollIntoViewIfNeeded();
   await sleep(400);
 }
 
 /**
- * Capture the multi-session sidebar: the Now zone counting the running work and
- * naming what is blocked, over four live conversations in Today.
+ * Capture the multi-session sidebar: four agents at work, all in Direct
+ * messages, with the last one's chat open beside them.
  */
 export async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveMultiSession(page);

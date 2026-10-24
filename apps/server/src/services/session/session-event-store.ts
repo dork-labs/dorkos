@@ -220,16 +220,27 @@ export class SessionEventStore {
    * @param sessionId - DorkOS session identifier
    */
   readAll(sessionId: string): SessionEvent[] {
+    return this.readAllTimed(sessionId).map((row) => row.event);
+  }
+
+  /**
+   * {@link SessionEventStore.readAll}, each event beside the wall-clock its row
+   * was written at: its turn's end, for a turn flushed whole. What a rebuilt
+   * history dates its messages by (DOR-3074).
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readAllTimed(sessionId: string): { event: SessionEvent; createdAt: string }[] {
     const rows = this.db
       .select()
       .from(sessionEvents)
       .where(eq(sessionEvents.sessionId, sessionId))
       .orderBy(sessionEvents.seq)
       .all();
-    const events: SessionEvent[] = [];
+    const events: { event: SessionEvent; createdAt: string }[] = [];
     for (const row of rows) {
       const event = parsePayload(row);
-      if (event !== null) events.push(event);
+      if (event !== null) events.push({ event, createdAt: row.createdAt });
     }
     return events;
   }

@@ -12,6 +12,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
 import type { Db } from '@dorkos/db';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
@@ -61,6 +63,9 @@ import {
   writePlan,
 } from '../limit-plans.js';
 import { fireAutoHandoff } from '../auto-handoff.js';
+import { passedOnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
+import { chatHeardOutsider } from '../../origin/outsider-turns.js';
+import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 import {
   ContinueError,
   FLOW_UNREACHABLE_MESSAGE,
@@ -279,6 +284,7 @@ beforeEach(() => {
   store = new SessionLimitStore(db, () => new Date());
   setSessionLimitStore(store);
   runtimeRegistry.setDb(db);
+  setContinuationHoldDb(db);
   runtime = new FakeAgentRuntime('claude-code');
   runtimeRegistry.register(runtime as never);
   __resetAccountAdvisorForTests();
@@ -405,6 +411,18 @@ describe('without an advisor', () => {
     expect(endings('src-1')).toEqual([['moved', 'new-1', 'spare', null, null]]);
     // No turn was ever sent to the source session, on any runtime path.
     expect(runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('carries a Wi-Fi continue’s ceiling to the new session’s first turn (DOR-3037)', async () => {
+    await limitedSession('src-1');
+    await continueSession(
+      'src-1',
+      { account: 'spare' },
+      { ...deps, permissionCeiling: 'runtime-default' }
+    );
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
+      'runtime-default'
+    );
   });
 
   it('still points the old session at the new one when a plan write lands during the launch', async () => {
@@ -697,6 +715,19 @@ describe('states', () => {
     expect(call.sessionId).toBe('src-1');
     expect(call.origin).toEqual({ kind: 'interactive' });
     expect(call.request.content).toBe(MODEL_CONTINUE_PROMPT);
+  });
+
+  it('carries a Wi-Fi continue’s ceiling to the turn it sends, on either path (DOR-3037)', async () => {
+    installUsageStore([{ id: 'main', weekly: 60 }]);
+    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model', origin: 'room' });
+    await continueSession(
+      'src-1',
+      { model: 'sonnet' },
+      { ...deps, permissionCeiling: 'runtime-default' }
+    );
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
+      'runtime-default'
+    );
   });
 
   it('records resumed-model when the turn a model switch sends starts', async () => {
@@ -1174,6 +1205,59 @@ describe('core’s automatic handoff', () => {
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('holds an automatic move to the runtime default when the turn that ran out was (DOR-3037)', async () => {
+    adviseAuto();
+    const seam = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage() {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of seam.sendMessage('src-1', 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    await limitedSession('src-1');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
+      'runtime-default'
+    );
+  });
+
+  it('carries a stranger-reached chat’s marks to the chat that replaces it, held plainly (DOR-3204)', async () => {
+    adviseAuto();
+    const seam = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage() {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of seam.sendMessage('src-1', 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    await limitedSession('src-1');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    // Not a continuation's hold: the new chat reads the old one's words in its seed.
+    expect(call).not.toHaveProperty('continuationHold');
+    expect(call.permissionCeiling).toBe('runtime-default');
+    expect(chatHeardOutsider(call.sessionId!)).toBe(true);
+    expect(passedOnLevelOf(call.sessionId!)?.outsider).toBe(true);
+  });
+
   it('seeds an automatic move with the default summary when the advisor’s seed is too big', async () => {
     adviseAuto({
       carryOver: async () => ({ seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1) }),
@@ -1192,6 +1276,27 @@ describe('core’s automatic handoff', () => {
     const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
     expect(call.unattended).toBeUndefined();
     expect(call.countsTowardLaunchCap).toBeUndefined();
+  });
+
+  it('runs a person’s own continue here uncapped, even after a held turn (DOR-3037)', async () => {
+    const seam = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage() {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of seam.sendMessage('src-1', 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    await limitedSession('src-1');
+    await continueSession('src-1', { account: 'spare' }, deps);
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBeUndefined();
   });
 
   it('drops to ask and tells the person again when the target is no longer eligible', async () => {

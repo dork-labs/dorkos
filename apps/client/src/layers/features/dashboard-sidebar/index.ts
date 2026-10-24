@@ -1,8 +1,9 @@
 /**
- * Dashboard sidebar feature — Heads up, Today and Library, drawn from one pure
- * model (`model/build-sidebar-model.ts`).
+ * Dashboard sidebar feature — the places your conversations live (channels and
+ * direct messages) and the doors to the pages that hold the rest, drawn from
+ * one pure model (`model/build-sidebar-model.ts`).
  *
- * Only symbols consumed outside the feature are exported here; the zone
+ * Only symbols consumed outside the feature are exported here; the section
  * components, section chrome, menus and CRUD inputs are internal and imported
  * by relative path.
  *
@@ -28,7 +29,7 @@ export { useSwitchContextShortcut } from './model/use-switch-context-shortcut';
 // mounts THIS at both widths for the reason it always mounted that.
 export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
 export { YouRows } from './ui/context/YouRows';
-// The panel's one bottom card — arbitrated, pinned above the footer, and
+// The panel's one bottom card — arbitrated, held above the footer, and
 // mounted by the phone cockpit's Home panel too (spec `sidebar-simplification`
 // D4).
 export { SidebarBottomSlot } from './ui/bottom-slot/SidebarBottomSlot';
@@ -37,20 +38,19 @@ export type { UpdatePillProps } from './ui/bottom-slot/UpdatePill';
 export { useUpdateReady } from './ui/bottom-slot/use-update-ready';
 export type { UpdateReadiness } from './ui/bottom-slot/use-update-ready';
 // ── The panel, in parts, for the mobile tabs (P4) ──
-// A phone splits one sidebar across two destinations, so the widget assembles
-// the state once, builds the model once, and draws two subsets of the same
-// zones. That is why the model lives in this feature rather than a slice of its
-// own: a widget may import a feature, and drawing the same build twice is what
-// keeps Home and Library from disagreeing (spec §A1, P4).
+// A phone draws the same list on its Home tab, so the widget assembles the
+// state once, builds the model once, and draws the same sections the desktop
+// panel does. That is why the model lives in this feature rather than a slice
+// of its own: a widget may import a feature (spec §A1, P4).
 export { SidebarChrome } from './ui/SidebarChrome';
-export { SidebarZones } from './ui/SidebarZones';
+export { SidebarSections } from './ui/SidebarSections';
 export { useSidebarState } from './model/use-sidebar-state';
 export { useSidebarModel } from './model/use-sidebar-model';
 // The boot skeleton and the one reveal's numbers, for the Dev Playground's
 // "Sidebar Boot" page — which shows the REAL bones rather than a lookalike, so
 // a geometry regression shows up there too (spec `sidebar-simplification` D6).
 export { SidebarSkeleton } from './ui/boot/SidebarSkeleton';
-export { REVEAL_CONTAINER, REVEAL_ZONE, revealTransition } from './ui/boot/sidebar-reveal';
+export { REVEAL_CONTAINER, REVEAL_SECTION, revealTransition } from './ui/boot/sidebar-reveal';
 // The continuity layer, for the Dev Playground's "Sidebar Motion" page. Four
 // symbols and no loose constants: the page draws the SHIPPED fold body and the
 // SHIPPED drag chip, and builds its rows' motion through the same builder the
@@ -65,25 +65,6 @@ export { useArrivedRows } from './ui/motion/use-arrived-rows';
 // operator who only ever opens DorkOS on their phone keeps their old pins
 // forever.
 export { useLegacyPinMigration } from './model/use-legacy-pin-migration';
-// BC-11's debounce, for the one surface that has to announce Now's count from
-// OUTSIDE the zone: the phone's bottom bar. Its panels are `inert` whenever
-// they are put away, so the region inside the zone is out of the accessibility
-// tree exactly when the count matters, and the badge on the bar would otherwise
-// be a number nobody ever hears. One hook, so the bar's announcement is held
-// for the same second the panel's is.
-export { useLiveRegionText } from './model/use-live-region-text';
-// The zone enumeration and one zone's id — what the mobile tabs need to split
-// the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
-// deliberately NOT here: nothing outside the feature names them, and knip says
-// so.
-// `needsYouLiveRegionText` travels with them: the phone announces Heads up's
-// count from beside its tab bar, and that count can outlive the zone it is
-// normally read off — see the fallback in `MobileTabsLayout` (DOR-1391).
-export {
-  needsYouLiveRegionText,
-  SIDEBAR_ZONE_IDS,
-  type SidebarZoneId,
-} from './model/build-sidebar-model';
 export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one
@@ -94,10 +75,7 @@ export { GroupCreateInput } from './ui/GroupCreateInput';
 // The section-header menu builders — exported for the Dev Playground, which
 // shows the shared `SectionHeader` primitive wearing a real section's items.
 // The header itself is `shared/ui`'s now, and so is the row.
-export {
-  buildAgentsHeaderMenuNodes,
-  buildChannelsHeaderMenuNodes,
-} from './ui/SectionHeaderMenuItems';
+export { buildChannelsHeaderMenuNodes } from './ui/SectionHeaderMenuItems';
 // The chrome menus as data, for the same reason: the playground shows the
 // header block's menu at three rows and at six, and the New menu at both fleet
 // sizes, without standing up a roster and a router behind them.

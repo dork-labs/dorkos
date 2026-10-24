@@ -29,8 +29,8 @@ import { registerCapabilitiesAsMcpTools } from '../../../core/external-mcp/capab
 import { createDorkOsToolServer } from '../../claude-code/mcp-tools/index.js';
 import type { McpToolDeps } from '../../claude-code/mcp-tools/types.js';
 
-/** The seven tools in the Rooms area. */
-const ROOM_TOOLS = [
+/** The tools in the Rooms area, in-session or not. */
+const ROOM_AREA_TOOLS = [
   'create_room',
   'add_room_members',
   'remove_room_members',
@@ -38,7 +38,15 @@ const ROOM_TOOLS = [
   'leave_room',
   'archive_room',
   'merge_to_room_main',
+  'reseat_room_agent',
 ];
+
+/**
+ * The ones an agent's own (in-session) server offers. Moving an agent to
+ * another account is people-only for now, so it is on the external server
+ * alone (Re-seat, Security Must 5).
+ */
+const ROOM_TOOLS = ROOM_AREA_TOOLS.filter((name) => name !== 'reseat_room_agent');
 
 const registry = composeCapabilityRegistryForDocs();
 
@@ -70,7 +78,7 @@ async function listed(server: McpServer): Promise<string[]> {
 describe('resolveToolVisibility', () => {
   it('hides every Rooms tool and names the area when Rooms is Blocked', () => {
     const visibility = resolveToolVisibility({ areas: { rooms: 'blocked' } });
-    expect([...visibility.hiddenToolNames].sort()).toEqual([...ROOM_TOOLS].sort());
+    expect([...visibility.hiddenToolNames].sort()).toEqual([...ROOM_AREA_TOOLS].sort());
     expect(visibility.blockedAreas).toEqual(['rooms']);
   });
 
@@ -132,7 +140,7 @@ describe('the builders', () => {
 
     const blockedNames = await listed(blockedServer);
     const allowedNames = await listed(allowedServer);
-    for (const tool of ROOM_TOOLS) {
+    for (const tool of ROOM_AREA_TOOLS) {
       expect(blockedNames).not.toContain(tool);
       expect(allowedNames).toContain(tool);
     }

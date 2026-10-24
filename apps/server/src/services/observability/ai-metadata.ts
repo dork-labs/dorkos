@@ -69,6 +69,31 @@ export function isAiBridgeEnabled(): boolean {
   return bridge !== null;
 }
 
+/**
+ * A turn's own cost from what its runtime reported, or `undefined` when it reported none. For a
+ * runtime whose status `costUsd` is the session's RUNNING total there is no fallback to it.
+ */
+function turnCostOf(runtimeType: string, state: HarvestState): number | undefined {
+  return state.turnCostUsd ?? (RUNNING_COST_RUNTIMES.has(runtimeType) ? undefined : state.costUsd);
+}
+
+/**
+ * Read one turn's own cost off its events as they pass, the way the trace and the telemetry bridge
+ * read it: `see` each event, then `costUsd` once the turn ends (`undefined` when none was reported).
+ *
+ * @param runtimeType - The runtime the turn ran on.
+ */
+export function turnCostReader(runtimeType: string): {
+  see: (event: StreamEvent) => void;
+  costUsd: () => number | undefined;
+} {
+  const state: HarvestState = {};
+  return {
+    see: (event) => harvestEvent(event, state),
+    costUsd: () => turnCostOf(runtimeType, state),
+  };
+}
+
 /** Whether either observability output (span or bridge) is active for a turn. */
 export function isAiObservabilityActive(): boolean {
   return isTracingEnabled() || bridge !== null;
@@ -164,8 +189,7 @@ export async function* observeRuntimeTurn(
     // is no fallback: a turn whose share could not be derived (the first result
     // of a resumed session after a restart, `sdk/turn-usage.ts`) reports no cost
     // rather than the whole session's.
-    const costUsd =
-      state.turnCostUsd ?? (RUNNING_COST_RUNTIMES.has(runtimeType) ? undefined : state.costUsd);
+    const costUsd = turnCostOf(runtimeType, state);
     if (span) {
       span.setAttr(ATTR.EVENT_COUNT, count);
       span.setAttr(ATTR.GEN_AI_SYSTEM, runtimeType);

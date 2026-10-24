@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus, ShieldAlert } from 'lucide-react';
+import { Lock, Plus, ShieldAlert } from 'lucide-react';
 import {
   Button,
   FieldCard,
   FieldCardContent,
   Input,
   Label,
+  Notice,
   Select,
   SelectContent,
   SelectItem,
@@ -15,12 +16,14 @@ import {
   Textarea,
 } from '@/layers/shared/ui';
 import { useAddAgentMcpServer } from '@/layers/entities/agent';
+import { useOnWifi } from '@/layers/entities/config';
 import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type {
   AddAgentMcpServerInput,
   AgentMcpMutationResult,
   CapabilityApprovalRequired,
 } from '@dorkos/shared/transport';
+import { awayFromTheComputerSentence } from '@/layers/shared/lib';
 import { AddedServerSignin } from './AddedServerSignin';
 
 /** Every transport kind a managed server can use, across all runtimes. */
@@ -129,6 +132,13 @@ export function AddMcpServerForm({
   const [headersText, setHeadersText] = useState('');
   const [pending, setPending] = useState<CapabilityApprovalRequired | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A refusal because of where this device is (Wi-Fi) is by design, so it reads calmly.
+  const [errorIsCalm, setErrorIsCalm] = useState(false);
+  const fail = useCallback((err: unknown) => {
+    const away = awayFromTheComputerSentence(err);
+    setErrorIsCalm(away !== null);
+    setError(away ?? (err instanceof Error ? err.message : 'Couldn’t add the server.'));
+  }, []);
   // The sign-in step, from two sources and one dismissal (DOR-1004). `signinFor`
   // is what the add itself revealed; `oauthDetectedFor` is what the roster's
   // later probe revealed. Both are DERIVED into one answer rather than mirrored
@@ -139,7 +149,10 @@ export function AddMcpServerForm({
 
   const nameValid = NAME_PATTERN.test(name) && name.length <= 64;
   const connectionValid = kind === 'stdio' ? command.trim().length > 0 : url.trim().length > 0;
-  const canSubmit = nameValid && connectionValid && !addServer.isPending;
+  // Adding a server runs a command or reaches an address from this computer,
+  // which a Wi-Fi sign-in may not do: say so up front instead of after a try.
+  const onWifi = useOnWifi();
+  const canSubmit = nameValid && connectionValid && !addServer.isPending && !onWifi;
 
   const buildConnection = useCallback((): McpServerTransport => {
     if (kind === 'stdio') {
@@ -200,9 +213,9 @@ export function AddMcpServerForm({
       if (result.status === 'approval_required') setPending(result.approval);
       else settleAdded(result, input);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
+      fail(err);
     }
-  }, [addServer, buildInput, settleAdded]);
+  }, [addServer, buildInput, settleAdded, fail]);
 
   const confirm = useCallback(async () => {
     if (!pending) return;
@@ -211,11 +224,14 @@ export function AddMcpServerForm({
     try {
       const result = await addServer.mutateAsync({ input, approval: pending });
       if (result.status === 'ok') settleAdded(result, input);
-      else setError('The server still needs approval. Try again.');
+      else {
+        setErrorIsCalm(false);
+        setError('The server still needs approval. Try again.');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
+      fail(err);
     }
-  }, [addServer, buildInput, pending, settleAdded]);
+  }, [addServer, buildInput, pending, settleAdded, fail]);
 
   const activeSignin =
     signinFor ??
@@ -267,7 +283,14 @@ export function AddMcpServerForm({
           <pre className="bg-muted text-foreground overflow-x-auto rounded-md px-3 py-2 font-mono text-xs">
             {kind === 'stdio' ? previewCommand : url.trim()}
           </pre>
-          {error && <p className="text-destructive text-xs">{error}</p>}
+          {error &&
+            (errorIsCalm ? (
+              <Notice tone="info" role="status" className="text-xs">
+                {error}
+              </Notice>
+            ) : (
+              <p className="text-destructive text-xs">{error}</p>
+            ))}
           <div className="flex justify-end gap-2">
             <Button
               variant="ghost"
@@ -295,6 +318,14 @@ export function AddMcpServerForm({
   return (
     <FieldCard>
       <FieldCardContent className="space-y-3">
+        {onWifi && (
+          <Notice tone="info" role="status" className="text-xs">
+            <span className="flex items-center gap-1.5">
+              <Lock className="size-3.5 shrink-0" aria-hidden />
+              Adding a server only works at this computer. You’re on Wi-Fi.
+            </span>
+          </Notice>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="mcp-name">Name</Label>
           <Input
@@ -385,7 +416,15 @@ export function AddMcpServerForm({
           </>
         )}
 
-        {error && <p className="text-destructive text-xs">{error}</p>}
+        {error &&
+          !(onWifi && errorIsCalm) &&
+          (errorIsCalm ? (
+            <Notice tone="info" role="status" className="text-xs">
+              {error}
+            </Notice>
+          ) : (
+            <p className="text-destructive text-xs">{error}</p>
+          ))}
         <Separator />
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={reset} className="focus-visible:ring-2">

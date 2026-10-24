@@ -129,9 +129,20 @@ export function launchDispatchInner(
         ? { newSessionPermissionMode: turn.newSessionPermissionMode }
         : {}),
       ...(() => {
-        const ceiling = launchCeiling(clientId, messageId, turn.permissionCeiling);
+        const ceiling = launchCeiling(
+          clientId,
+          messageId,
+          turn.permissionCeiling,
+          getMessageQueueStore()?.get(messageId)?.heldToDefault === true
+        );
         return ceiling !== undefined ? { permissionCeiling: ceiling } : {};
       })(),
+      // A continuation's hold marks nothing only while its words are the system's own: once
+      // somebody rewords the row (from Wi-Fi, say), its hold is theirs and marks (DOR-3203).
+      ...(turn.continuationHold &&
+      (getMessageQueueStore()?.get(messageId)?.content ?? plan.content) === plan.content
+        ? { continuationHold: true as const }
+        : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),

@@ -35,6 +35,13 @@ import { PRESS_MARK, PRESS_ROW } from './press';
 import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
+import {
+  TOOLTIP_MUTED_TEXT,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './tooltip';
 
 /**
  * The horizontal inset every sidebar row pays, and the only place it is paid.
@@ -153,9 +160,12 @@ export const sidebarRowVariants = cva(
       state: {
         /** The thing currently on screen. Top of the `--sidebar-accent` ramp. */
         active: 'bg-sidebar-accent text-sidebar-accent-foreground',
-        /** Asking to be read — bold label, no badge (the two-tier unread sense). */
+        /**
+         * Asking to be read — bold, full ink (the two-tier unread sense). A count
+         * pill, when there is one, is the caller's trailing content, not this.
+         */
         emphasized:
-          'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground font-medium',
+          'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground font-semibold',
         /** Not asking for anything. Full label contrast, one hover step. */
         quiet:
           'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',
@@ -305,7 +315,7 @@ function assignRef<T>(ref: Ref<T> | undefined, element: T | null): void {
  */
 export interface SidebarRowMotion extends Pick<
   MotionProps,
-  'layout' | 'layoutDependency' | 'initial' | 'animate' | 'exit' | 'transition'
+  'layout' | 'layoutDependency' | 'layoutId' | 'initial' | 'animate' | 'exit' | 'transition'
 > {
   /**
    * The row turned up while the operator was looking, so it tints once.
@@ -348,6 +358,12 @@ export type SidebarRowMenu =
       menuWidth?: never;
       onMenuIntent?: never;
     };
+
+/**
+ * How long the pointer rests on a row before its {@link SidebarRowProps.hint}
+ * opens. Long enough that sweeping down the list opens nothing.
+ */
+const HINT_DELAY_MS = 600;
 
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
@@ -473,6 +489,15 @@ export interface SidebarRowProps {
   reservesVerbLine?: boolean;
   /** One line about the last thing that happened here, or `null` for none. */
   preview?: string | null;
+  /**
+   * A line shown in a tooltip while the pointer rests on the row — a room's
+   * last message. Absent, `null` or blank draws no tooltip at all.
+   *
+   * The tooltip leads with the row's name, so a name cut short is still
+   * readable in full. While there is one, the row's `title` attribute is
+   * dropped: the browser's own tooltip would open on top of it.
+   */
+  hint?: string | null;
   /** This row is the thing currently on screen. */
   isActive?: boolean;
   /** The row is asking to be read — unread, in the two-tier sense (bold, no badge). */
@@ -566,6 +591,7 @@ export function SidebarRow({
   secondLine,
   reservesVerbLine,
   preview,
+  hint,
   menuNodes = [],
   actionsLabel,
   menuWidth,
@@ -600,12 +626,15 @@ export function SidebarRow({
   //   not it is live, and a node that renders `null` is still an ELEMENT — so
   //   `??`, which falls back only on `undefined`, never reached the preview.
   // - Keying only on `reservesVerbLine` ate the preview of every BUSY ROOM.
-  //   `library-rows.ts` and `select-today-items.ts` both set
+  //   The sidebar's room rows (`section-rows.ts`) set
   //   `reservesVerbLine: (room.working ?? 0) > 0` on rows that carry a preview
   //   and no verb node at all, so those rows rendered an empty line.
   //
   // A verb node when there is one, the preview otherwise.
   const previewLine = preview?.trim() ? preview : null;
+  const hintLine = hint?.trim() ? hint : null;
+  const rowState = sidebarRowState({ isActive, muted, emphasized });
+  const rowLabel = composeRowLabel(who, plainTitle);
   const second = reservesVerbLine === true ? (secondLine ?? previewLine) : previewLine;
   // The reservation, watched in development for the one thing it must not
   // contain. See {@link useReservationGuard}.
@@ -641,15 +670,18 @@ export function SidebarRow({
         ref={rowRef}
         type="button"
         onClick={onSelect}
-        title={composeRowLabel(who, plainTitle) || undefined}
+        title={hintLine === null ? rowLabel || undefined : undefined}
         aria-current={isActive ? 'page' : undefined}
         data-slot={dataSlot}
+        // Which rung the row stands on, readable without parsing its classes —
+        // what a browser test asks to tell an unread row from a read one.
+        data-row-state={rowState}
         {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
         className={cn(
           sidebarRowVariants({
             pointer,
             lines: showSecondLine ? 'two' : 'one',
-            state: sidebarRowState({ isActive, muted, emphasized }),
+            state: rowState,
           }),
           className,
           // LAST, deliberately — after the caller's `className` too. This is the
@@ -729,6 +761,33 @@ export function SidebarRow({
       </button>
     );
 
+  // **Its own provider, with a delay.** The app's provider opens tooltips at
+  // once, which is right for an icon button and wrong for a list: moving the
+  // pointer down the sidebar would flash a tooltip for every row it crossed.
+  // The touch layout draws none — there is no resting pointer to show it to.
+  const hinted =
+    hintLine !== null && editor === undefined && !isMobile ? (
+      <TooltipProvider delayDuration={HINT_DELAY_MS}>
+        <Tooltip>
+          <TooltipTrigger asChild>{row}</TooltipTrigger>
+          <TooltipContent side="right" align="start" className="max-w-64">
+            {/* The row's name above the line, so a name the row had to cut
+                short is still readable in full while the pointer rests. */}
+            {rowLabel !== '' && (
+              <span data-slot="sidebar-row-hint-name" className={cn('block', TOOLTIP_MUTED_TEXT)}>
+                {rowLabel}
+              </span>
+            )}
+            <span data-slot="sidebar-row-hint" className="line-clamp-3">
+              {hintLine}
+            </span>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : (
+      row
+    );
+
   const inside = (
     <>
       <div
@@ -756,7 +815,7 @@ export function SidebarRow({
           hideActionsTrigger={editor !== undefined}
           {...(onMenuIntent === undefined ? {} : { onMenuIntent })}
         >
-          {row}
+          {hinted}
           {glyphAction !== undefined && editor === undefined && !isMobile && (
             <button
               type="button"
@@ -824,6 +883,7 @@ export function SidebarRow({
       {...SIDEBAR_MENU_ITEM_ATTRS}
       layout={rowMotion.layout}
       layoutDependency={rowMotion.layoutDependency}
+      layoutId={rowMotion.layoutId}
       initial={rowMotion.initial}
       animate={rowMotion.animate}
       exit={rowMotion.exit}

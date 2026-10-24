@@ -1,7 +1,7 @@
 /**
- * The bottom bar: four destinations, one of them counted.
+ * The bottom bar: three destinations, one of them counted.
  *
- * **A nav, not a tablist.** Three of the four show a panel and the fourth opens
+ * **A nav, not a tablist.** Two of the three show a panel and the third opens
  * a conversation, and a `tablist` whose members are not all tabs is a lie a
  * screen reader repeats. This is the same shape — and the same `aria-current`
  * vocabulary — the desktop footer strip uses for the same job.
@@ -70,7 +70,7 @@ export function MobileTabBar({
         const Icon = tab.icon;
         const here = tab.id === current;
         // Only a destination that may be counted is ever asked for a count, so
-        // Library is badgeless by construction rather than by today's numbers.
+        // every other destination is badgeless by construction.
         const badge = tab.badged && needsYouCount > 0 ? needsYouCount : null;
         // A destination that performs an act needs the thing it acts on. Only
         // DorkBot is one, and only the roster can say.
@@ -113,7 +113,7 @@ export function MobileTabBar({
                   // system requires of every label. 70% lands at #565656 (5.99:1
                   // light, 7.84:1 dark), which clears it in both. Caught by the
                   // showcase page's axe gate once the bar was drawn there, which
-                  // is the same way `SidebarZone` found the same defect at `/50`.
+                  // is how the sidebar's own headings were caught at `/50`.
                   'text-sidebar-foreground/70 hover:text-sidebar-foreground font-medium',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
@@ -129,11 +129,10 @@ export function MobileTabBar({
                   // bar. Saying it twice from two places is how a fleet of
                   // thirty agents turns a screen reader into a siren.
                   //
-                  // **The region it defers to used to be the wrong one.** It
-                  // was the one inside Now's zone, which lives inside a panel
-                  // marked `inert` whenever it is put away — so for every
-                  // moment the operator was in a conversation this number was
-                  // silent and nothing else was saying it (P4.2).
+                  // **Outside the panels, deliberately.** A region inside one
+                  // would be `inert` whenever it is put away — so for every
+                  // moment the operator was in a conversation this number would
+                  // be silent and nothing else saying it (P4.2).
                   aria-hidden
                   // Amber, the one colour this product spends on "somebody is
                   // waiting for you" (design-decisions §18).

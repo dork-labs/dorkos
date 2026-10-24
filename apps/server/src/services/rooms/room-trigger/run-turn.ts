@@ -7,6 +7,7 @@
  *
  * @module server/services/rooms/room-trigger/run-turn
  */
+import { isOwnCircle, posterCapsFor, type OwnCircle } from '../limits/own-circle.js';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
@@ -18,6 +19,7 @@ import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import { type LateRoomReply, type RoomTurnReply } from '../room-turn-port.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { prepareSeat, reseatAfterLimit, settleSeatLaunch } from './reseat.js';
 
 /** The body of {@link RoomTriggerDispatcher.runOne}, already inside its scope. */
 export async function runOneInDispatch(
@@ -86,6 +88,22 @@ export async function runOneInDispatch(
     });
     // A space's local copy, where every message nobody vouched for is a teammate's (DOR-2955).
     const inSpaceRoom = self.deps.isSpaceRoom?.(room.id) === true;
+    // Marks, not levels, between the owner's own agents (DOR-3107): decided on
+    // every turn, and each poster's own cap read ahead of the ceiling.
+    const answered = target.answers ?? [entry];
+    const ownCircle = isOwnCircle(turnContext.context, room.id, {
+      inSpaceRoom,
+      bridged: self.deps.bridgedFraming(room.id) !== null,
+    });
+    const circle: OwnCircle = ownCircle
+      ? {
+          ownCircle,
+          posterCap: await posterCapsFor(self.deps.authors, answered, self.deps.posterLevel),
+        }
+      : { ownCircle };
+    // The seat this turn runs on: moved first when its transcript expired or
+    // its account is nearly out, and carrying a move's one-shot launch.
+    const launch = await prepareSeat(self, room, entry, target);
     const result = await self.deps.runner.run({
       room,
       authorId: target.authorId,
@@ -97,6 +115,7 @@ export async function runOneInDispatch(
       worktree: place.worktree,
       ...roomLaunchStepFor(self.deps, room.id, target.authorId, target.agentPath, place),
       sessionId: target.sessionId,
+      ...launch,
       entry,
       // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
       // off the author's stored key, and read HERE because this is where the
@@ -117,11 +136,11 @@ export async function runOneInDispatch(
       ),
       // And the turn itself is held to the strictest of its senders' levels,
       // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
-      ...ceilingForEntries(self.deps.authors, target.answers ?? [entry], inSpaceRoom),
+      ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id, circle),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).
-      ...teammateOf(self.deps.authors, target.answers ?? [entry], inSpaceRoom),
+      ...teammateOf(self.deps.authors, target.answers ?? [entry], inSpaceRoom, room.id),
       // The message, unchanged. A trigger asks the agent exactly what was
       // said; only the welcome-back offer below asks something else.
       prompt: entry.body.text,
@@ -167,6 +186,9 @@ export async function runOneInDispatch(
     // again when Ana is free") invites a message that would land ABOVE the
     // advanced cursor and arrive with no context at all.
     if (result.unanswered === 'busy') self.rewindClaimCursor(room, entry, target);
+    // Anything but a busy refusal launched on this session, so a moved seat's
+    // one-shot launch is spent.
+    else settleSeatLaunch(self, room.id, target.authorId, target.sessionId);
 
     // The turn ran on a session; that session is the one this agent must
     // resume here next time. It is not always the one the room asked with —
@@ -218,6 +240,10 @@ export async function runOneInDispatch(
         // now on carries `working_late` because it reads the same flag.
         self.publishPresence(claim, 'working_late');
       }
+    } else if (await reseatAfterLimit(self, room, entry, target, result)) {
+      // Its account ran out and the seat moved (or nothing had usage left):
+      // that path wrote the room's line and queued the re-run, claim held.
+      outcome = 'failed';
     } else {
       outcome = self.deliver({ room, entry, target, reply: result });
     }

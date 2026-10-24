@@ -9,10 +9,16 @@
  *
  * @module server/services/rooms/messages/room-entry-writer
  */
-import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
+import type { TurnPermissionBound, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import {
+  noteEntryHeldToDefault,
+  noteEntryLevel,
+  noteEntryMarks,
+} from '../../core/turn-power/turn-levels.js';
+import { NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
-import type { DbTransaction } from '@dorkos/db';
+import { roomEntries, type DbTransaction } from '@dorkos/db';
+import { and, eq } from 'drizzle-orm';
 import type { Room, RoomAttachment, RoomEntry, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -94,6 +100,42 @@ export interface RoomExternalPostInput {
    * synchronous and the ref shares this transaction.
    */
   recordRef?: (entryId: string, tx: DbTransaction) => void;
+}
+
+/**
+ * What a post's author hands on to the turns it starts: the level its turn ran
+ * at; `'runtime-default'`, a hold to the runtime's default (a post from Wi-Fi,
+ * DOR-3037); or only marks when the level is unknown (DOR-3107), which may
+ * carry that hold too (an unverified agent's post from Wi-Fi). A hold only
+ * ever lowers: a held post is never read as the owner's own circle.
+ */
+export type PostAuthorBound = TurnPermissionBound | { marks: TurnMarks; heldToDefault?: true };
+
+/**
+ * What a person's post hands on to the turns it starts, as `RoomService.post`
+ * takes it: `'runtime-default'` from Wi-Fi (DOR-3037), or marks kept on its row
+ * in the insert's own transaction, with that hold beside them from Wi-Fi. A
+ * mini app's reply carries the outsider mark (DOR-3017).
+ */
+export type PersonPostBound = 'runtime-default' | { marks: TurnMarks; heldToDefault?: true };
+
+/**
+ * The bound `RoomService.post` hands its post. A post from an agent named by a
+ * header nothing verifies is kept as an outsider's (DOR-3107; trust first
+ * covers only a verified own agent's unknown marks), with any marks and Wi-Fi
+ * hold it came with, so neither reading can loosen the other.
+ *
+ * @param unverifiedAgent - The post is from an agent nothing verified.
+ * @param bound - What the post came with.
+ */
+export function postAuthorBound(
+  unverifiedAgent: boolean,
+  bound?: PersonPostBound
+): PostAuthorBound | undefined {
+  if (!unverifiedAgent) return bound;
+  const kept =
+    bound === 'runtime-default' ? { marks: NO_MARKS, heldToDefault: true as const } : bound;
+  return { ...kept, marks: { ...kept?.marks, outsider: true } };
 }
 
 /** The shared write half of every post that reaches a room's log. */
@@ -239,9 +281,10 @@ export class RoomEntryWriter {
        * The level the author's turn ran at, from `postLevelFor`, kept with the
        * post so the turns it starts are held to it. Only a tool post a verified
        * session made carries one; never derived from `input.sessionId`, which a
-       * request body can name.
+       * request body can name. `'runtime-default'` holds the turns to the
+       * runtime's default: a person's post from Wi-Fi (DOR-3037).
        */
-      authorLevel?: TurnPermissionLevel;
+      authorLevel?: PostAuthorBound;
     }
   ): PostedEntry {
     const roomId = room.id;
@@ -313,11 +356,30 @@ export class RoomEntryWriter {
     // `transactional` above — see `opts.bind`. Built only when there is one, so
     // an ordinary post pays nothing here either.
     const bindAfterInsert = opts?.bind;
+    // Marks kept without a level (an unverified caller's, or an unknown
+    // sender's) are written in the insert's own transaction (DOR-3107): a post
+    // whose marks could not be written must not land and read as trusted later.
+    // A post held to the default (a person's or an agent's from Wi-Fi,
+    // DOR-3037) says so on its row the same way, so the hold outlives a restart.
+    const kept = opts?.authorLevel;
+    const keptMarks = typeof kept === 'object' && 'marks' in kept ? kept.marks : undefined;
+    const held =
+      kept === 'runtime-default' ||
+      (typeof kept === 'object' && 'marks' in kept && kept.heldToDefault === true);
     const bindTransactional =
-      bindAfterInsert || mirrorWrite
+      bindAfterInsert || mirrorWrite || keptMarks || held
         ? (tx: DbTransaction) => {
             bindAfterInsert?.(id, tx);
             mirrorWrite?.enqueue(id, tx);
+            if (keptMarks || held) {
+              tx.update(roomEntries)
+                .set({
+                  ...(keptMarks ? { turnMarks: JSON.stringify(keptMarks) } : {}),
+                  ...(held ? { heldToDefault: true } : {}),
+                })
+                .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, id)))
+                .run();
+            }
           }
         : undefined;
     const entry = this.store.appendEntry(
@@ -360,7 +422,11 @@ export class RoomEntryWriter {
     // The level the author's turn runs at, kept with the post BEFORE anything
     // it triggers is dispatched: a turn this post starts runs no looser than
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
-    noteEntryLevel(entry.id, opts?.authorLevel);
+    // A level, or only marks when the level is unknown (DOR-3107); a hold to
+    // the default (DOR-3037) is kept beside the marks, never instead of them.
+    if (held) noteEntryHeldToDefault(entry.id);
+    if (keptMarks) noteEntryMarks(entry.id, keptMarks, roomId);
+    else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must

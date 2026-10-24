@@ -1,5 +1,5 @@
 /**
- * When you switch conversations, the anchor comes to you (BC-36).
+ * When you switch conversations, the row that lights comes to you (BC-36).
  *
  * @module features/dashboard-sidebar/model/use-scroll-to-active
  */
@@ -32,19 +32,17 @@ const ACTIVE_ROW_SELECTOR = '[aria-current="page"]';
  *   panel smooth-scrolled itself while the operator was doing nothing. The
  *   boot's own positioning is a layout effect with `behavior: 'auto'`, so the
  *   open row is simply already in view in the first painted frame.
- * - **Never outside Today.** The search is scoped to the container this hook
- *   is given, so a collapsed Library section is never opened to reach a copy of
- *   the same conversation inside it (BC-33 leaves that copy to take the active
- *   tint if it happens to be visible).
+ * - **Never into a folded section.** The search is for a row that is drawn,
+ *   so a folded section is never opened to reach a row inside it.
  * - **Instant under `prefers-reduced-motion`.** `behavior: 'auto'` — the row
  *   still comes into view, it just does not travel there.
  *
  * `block: 'nearest'` for the same reason: a row already on screen is left
  * exactly where it is.
  *
- * @param containerRef - The Today zone's own element.
- * @param anchorKey - The open conversation's row key, or `null` when nothing
- *   conversational is open.
+ * @param containerRef - The panel's list of sections.
+ * @param anchorKey - What is open, as a row key, or `null` when nothing the
+ *   panel lists is open.
  * @param settled - Whether the panel's boot gate has opened. Until it has,
  *   there is no "before" to compare an anchor against.
  */

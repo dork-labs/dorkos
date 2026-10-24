@@ -69,6 +69,22 @@ export class RoomTurnRuntimeGoneError extends Error {
   }
 }
 
+/**
+ * A moved seat's one-shot launch, as the dispatch takes it: each field only
+ * when set, so an absent one is never sent as `undefined`.
+ *
+ * @param request - The turn.
+ */
+export function seatLaunchOf(request: Pick<RoomTurnRequest, 'accountHint' | 'seedContext'>): {
+  accountHint?: string;
+  seedContext?: string;
+} {
+  return {
+    ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
+    ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
+  };
+}
+
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {
   /** The room the answer will be posted into. */
@@ -110,6 +126,14 @@ export interface RoomTurnRequest {
   prepareLaunch?: (sessionId: string) => Promise<{ files?: RoomContextFiles }>;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
+  /**
+   * The account a seat just moved to (re-seat) starts on: a launch hint, which
+   * the runtime honours only for a session with no transcript yet, so the
+   * agent's "Runs on" is never changed. Set once, on the moved seat's first turn.
+   */
+  accountHint?: string;
+  /** What a moved seat's first turn is told about the session it replaces. */
+  seedContext?: string;
   /** The entry that triggered this turn. */
   entry: RoomEntry;
   /**

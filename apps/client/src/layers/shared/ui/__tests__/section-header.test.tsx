@@ -208,39 +208,68 @@ describe('SectionHeader', () => {
     expect(screen.queryByLabelText('Clients section actions')).not.toBeInTheDocument();
   });
 
-  it('renders a collapsed section’s rollup in the trailing slot', () => {
+  it('renders a folded section’s mark in the trailing slot', () => {
     render(
       <SectionHeader
         label="Channels"
         collapsed
         onToggle={vi.fn()}
-        trailing={<span>3 unread</span>}
+        trailing={<span role="img" aria-label="Agents working" />}
       />
     );
-    expect(screen.getByText('3 unread')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Agents working' })).toBeInTheDocument();
   });
 
-  // A folded section may not lose its `activity` tier (BC-31), and that tier is
-  // a bold label and nothing else — no badge, no dot (design-decisions §18). So
-  // the emphasis has to live on the label itself; there is nowhere else it is
-  // allowed to go. Asserted on the CLASS rather than on a screenshot because
-  // jsdom has no computed font weight to read.
-  it('wears the unread emphasis on its own label, so a folded section keeps its activity tier', () => {
-    const { rerender } = render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
-    const quiet = screen.getByRole('button', { name: 'Channels' });
-    expect(quiet.className).toContain('text-sidebar-foreground/70');
-    expect(quiet.className).not.toContain('font-semibold');
-
-    rerender(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} emphasized />);
-    const loud = screen.getByRole('button', { name: 'Channels' });
-    expect(loud.className).toContain('font-semibold');
-    expect(loud.className).not.toContain('text-sidebar-foreground/70');
+  // Folding keeps a section's unread rows on screen (BC-31), so the header
+  // itself never goes bold and never carries a count: the weight belongs to
+  // the rows that earned it.
+  it('keeps a folded label at its quiet weight', () => {
+    render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
+    const header = screen.getByRole('button', { name: 'Channels' });
+    expect(header.className).toContain('text-sidebar-foreground/70');
+    expect(header.className).not.toContain('font-semibold');
   });
 
-  it('emphasises a header that cannot collapse too — Pinned is a label, not a button', () => {
-    render(<SectionHeader label="Pinned" emphasized />);
-    const label = screen.getByText('Pinned').parentElement;
-    expect(label?.className).toContain('font-semibold');
+  describe('"· N more" on a folded header (DOR-3200)', () => {
+    it('says how many rows the fold hides, after the name', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      // One space before the dot, typed rather than a flex gap (DOR-3200).
+      expect(toggle.textContent).toBe('DorkOS · 12 more');
+    });
+
+    it('reads "DorkOS, collapsed, 12 more" to a screen reader', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      // The name stays the section's name; the state and the count follow it.
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle).toHaveAccessibleDescription('12 more');
+    });
+
+    it('says nothing when the fold hides nothing', () => {
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={0} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).not.toHaveTextContent('more');
+      expect(toggle).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('says nothing while the section is open', () => {
+      render(
+        <SectionHeader label="DorkOS" collapsed={false} hiddenCount={12} onToggle={vi.fn()} />
+      );
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).not.toHaveTextContent('more');
+      expect(toggle).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('keeps the whole header a 44px target on a phone', () => {
+      phone = true;
+      useEmulatedViewport();
+      render(<SectionHeader label="DorkOS" collapsed hiddenCount={12} onToggle={vi.fn()} />);
+      const toggle = screen.getByRole('button', { name: 'DorkOS' });
+      expect(toggle).toHaveTextContent('· 12 more');
+      expect(toggle.className).toContain('h-11');
+    });
   });
 
   describe('on touch (DOR-1083)', () => {

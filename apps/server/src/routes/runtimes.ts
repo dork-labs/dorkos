@@ -84,6 +84,7 @@ import { readQuery } from '../http/request-query.js';
 import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
 import {
   refuseNonLocalProvisioning,
+  refuseCredentialChange,
   refuseNonLoopback,
   requestProtocol,
   streamSseAction,
@@ -222,7 +223,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * key (paste-key path). Returns only `{ ok }` (+ honest error) — never the key.
    */
   router.post('/opencode/openrouter/key', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const parsed = OpenRouterKeyBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
@@ -248,7 +249,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * (with a loopback callback embedding the state) plus the state to poll.
    */
   router.post('/opencode/openrouter/oauth/start', (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     return c.json(startOpenRouterOAuth(openRouterCallbackBase(c)));
   });
@@ -444,7 +445,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * keyed by an arbitrary provider id.)
    */
   router.post('/opencode/provider/credential', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const parsed = ProviderCredentialBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
@@ -675,7 +676,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * secret. Loopback-only.
    */
   router.post('/:type/credential', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const type = c.req.param('type');
     const parsed = SecretBodySchema.safeParse(readJsonBody(c));
@@ -719,7 +720,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * against the known account roots, both before anything spawns.
    */
   router.post('/:type/login', async (c) => {
-    const refused = refuseNonLoopback(c);
+    const refused = refuseCredentialChange(c);
     if (refused) return refused;
     const type = c.req.param('type');
     if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type)) {

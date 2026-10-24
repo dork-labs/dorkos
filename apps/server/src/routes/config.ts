@@ -3,6 +3,11 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
+import {
+  trustStopPatchRaises,
+  wifiRaiseRefusal,
+} from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -44,9 +49,14 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
+import {
+  frontDoorPathsOf,
+  frontDoorSubjectOf,
+} from '../services/core/operator/front-door-settings.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
+  refuseFrontDoorChange,
   refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
@@ -63,7 +73,12 @@ import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
-import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  gateAccessFor,
+  isAtThisComputer,
+  isOnEncryptedConnection,
+} from '../services/core/auth/gate-policy.js';
+import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -127,6 +142,11 @@ router.get('/', async (c) => {
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
     isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    // Where the owner may change the front door and the session relay: the
+    // desk, or any encrypted connection (DOR-3172).
+    onTrustedConnection:
+      isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
+    callerRoute: requestSessionRoute(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
@@ -375,6 +395,10 @@ router.get('/', async (c) => {
       // notice (ADR 261006-225605). The app decides from it whether to show
       // the notice at all. `?? null` covers the pre-migration read window only.
       trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
+      // Whether the working session behind a chat can be opened
+      // (DOR-3074): Settings shows it back as a switch and the chat header
+      // reads it. `?? false` covers the pre-migration read window only.
+      showSessions: configManager.get('ui')?.showSessions ?? false,
     },
     // The permission preset, so the app can tell a Trusted install from a
     // Careful one without a second request (`trustPosture`), and the apps the
@@ -529,6 +553,22 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
         };
       }
 
+      // ## THE FRONT-DOOR BAR — how DorkOS is reached is changed at this computer
+      //
+      // The Owner-only front-door settings (`front-door-settings.ts`, DOR-2969)
+      // take the bar every front-door route runs: the owner, using the app, at
+      // this computer. Never Wi-Fi, a tunnel, the relay, an agent or a key, so
+      // a device reached from outside cannot widen its own reach.
+      const frontDoorPaths = frontDoorPathsOf(paths);
+      const frontDoor =
+        frontDoorPaths.length > 0
+          ? refuseFrontDoorChange(caller, frontDoorSubjectOf(frontDoorPaths[0]!))
+          : undefined;
+      if (frontDoor) {
+        const { status, code, error } = frontDoor;
+        return { status, code, error, message: error, paths: frontDoorPaths };
+      }
+
       return undefined;
     },
   };
@@ -596,12 +636,20 @@ async function awaitAccountReconcile(): Promise<void> {
 router.patch('/', async (c) => {
   try {
     const accountsBefore = claudeAccountFields();
+    const patch = readJsonBody(c);
+    // From Wi-Fi, a Files & commands stop may tighten, never loosen (DOR-3037).
+    if (
+      isFromWifi(honoRequestFacts(c)) &&
+      trustStopPatchRaises(patch, configManager.get('runtimes'))
+    ) {
+      return c.json(wifiRaiseRefusal(), 403);
+    }
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
     // adds is who the caller is and what a refusal looks like over HTTP.
     const result = applyGuardedConfigWrite({
-      patch: readJsonBody(c),
+      patch,
       authority: requestConfigWriteAuthority(honoRequestFacts(c)),
       source: 'PATCH /api/config',
       // This route cannot say WHO is calling it, and does not pretend to. With

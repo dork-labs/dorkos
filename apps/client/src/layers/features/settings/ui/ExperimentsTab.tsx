@@ -16,6 +16,7 @@
 import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { ShowSessionsRow } from './tabs/ShowSessionsRow';
 
 /**
  * Turn a dot-path into the nested patch body `PATCH /api/config` deep-merges.
@@ -90,6 +91,9 @@ export function ExperimentsTab() {
             checked={devtoolsOpen}
             onCheckedChange={() => toggleDevtools()}
           />
+          {/* The other "show me what is underneath" switch. Drawn only while
+              the DM view is on, which is the only time it changes anything. */}
+          <ShowSessionsRow />
         </FieldCardContent>
       </FieldCard>
 

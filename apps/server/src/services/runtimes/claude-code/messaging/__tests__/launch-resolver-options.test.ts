@@ -16,11 +16,15 @@ import { projectSlug } from '../../sessions/project-slug.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
+import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
+import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { assignTurnBounds } from '../../turn-bounds.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -145,7 +149,8 @@ describe('the launch options every Claude Code turn is given', () => {
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    expect(unmatched).toHaveLength(1);
+    // The teammate fence, then the held turn's ask (DOR-3204).
+    expect(unmatched).toHaveLength(2);
     const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,
@@ -162,6 +167,30 @@ describe('the launch options every Claude Code turn is given', () => {
     session.teammateTier = { roomId: 'room-answered' };
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
+  it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
+    // DOR-3204. Unregistered, a held turn runs whatever the folder's allow rules allow, unasked.
+    const session = makeSession();
+    const options = await captureSdkOptions(undefined, session);
+    const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    const hook = unmatched[1]!.hooks[0]!;
+    const call = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'Bash',
+      tool_input: { command: 'python3 -c 1' },
+      tool_use_id: 'tool-1',
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(call, 'tool-1', signal)).toEqual({});
+    session.turnPermissionCeiling = 'runtime-default';
+    expect(await hook(call, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
     });
   });
 
@@ -250,6 +279,42 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(asked[1]?.teammate).toBeUndefined();
     expect(reach(teammate)).toEqual([]);
     expect(reach(owner)).toContain('/elsewhere/private-repo');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>mock</env>',
+      stable: '<env>mock</env>',
+    });
+  });
+
+  it('holds a chat a teammate’s mark reached to the same tier, fenced to no room (DOR-3036)', async () => {
+    // Red when: the launcher reads only `roomTurn.teammate`, so a chat one hop on from a
+    // teammate's turn gets the owner's notes, profile and grants back.
+    const asked: Array<Record<string, unknown> | undefined> = [];
+    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => {
+      asked.push(options as Record<string, unknown> | undefined);
+      return { text: '<env>mock</env>', stable: '<env>mock</env>' };
+    });
+    const session = makeSession();
+    const launch = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session,
+      opts: makeOpts(),
+      messageOpts: {
+        teammate: true,
+        additionalDirectories: [{ path: '/elsewhere/private-repo', access: 'read' }],
+      },
+      effectiveCwd: '/mock/project',
+    });
+    assignTurnBounds(session, { teammate: true });
+
+    expect(asked[0]).toMatchObject({ memory: false, teammate: true });
+    expect(
+      (launch.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
+        ?.permissions?.additionalDirectories ?? []
+    ).toEqual([]);
+    expect(session.teammateTier).toEqual({ roomId: null });
+    assignTurnBounds(session, undefined);
+    expect(session.teammateTier).toBeUndefined();
     vi.mocked(buildSystemPromptAppend).mockResolvedValue({
       text: '<env>mock</env>',
       stable: '<env>mock</env>',
@@ -478,6 +543,53 @@ describe('the launch options every Claude Code turn is given', () => {
   });
 });
 
+// DOR-3107 (Security): an agent at Full autonomy never calls the tool gate, so
+// a marked turn must LAUNCH at the capped mode. Each cap is taken from where
+// that mark is set, so a source that loosens its cap fails here.
+describe('a marked turn on an agent at Full autonomy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One turn as the runtime starts it: its bounds first, then the launch. */
+  async function launchAs(opts: MessageOpts | undefined, session: AgentSession): Promise<Options> {
+    assignTurnBounds(session, opts);
+    return captureSdkOptions(opts, session);
+  }
+
+  /** A session whose own saved mode is Full autonomy. */
+  function bypassSession(): AgentSession {
+    return { ...makeSession(), permissionMode: 'bypassPermissions' };
+  }
+
+  it.each([
+    ['a Telegram or Slack message (the relay adapter)', 'runtime-default' as const],
+    ['a turn relayed from the web', RELAY_TURN_CEILING],
+    ['a room post from an outsider', 'runtime-default' as const],
+    ['a space teammate’s post', ['runtime-default', READ_ONLY_LEVEL] as const],
+  ])('launches at the runtime’s Default for %s', async (_name, ceiling) => {
+    const options = await launchAs(
+      { permissionCeiling: ceiling as TurnPermissionCeiling },
+      bypassSession()
+    );
+    expect(options.permissionMode).not.toBe('bypassPermissions');
+    expect(['default', 'plan']).toContain(options.permissionMode);
+  });
+
+  it('launches at Full autonomy for the owner’s own turn', async () => {
+    const options = await launchAs(undefined, bypassSession());
+    expect(options.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('launches at Full autonomy for another of the owner’s agents at Full autonomy', async () => {
+    const options = await launchAs(
+      { permissionCeiling: { asks: 'never', reach: 'everything' } },
+      bypassSession()
+    );
+    expect(options.permissionMode).toBe('bypassPermissions');
+  });
+});
+
 describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
   const CLAUDE_MD_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
 
@@ -525,6 +637,12 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
           'Edit(//rooms/r1/repo/**)',
           'Write(//rooms/r1/repo/**)',
           'NotebookEdit(//rooms/r1/repo/**)',
+          // Then the folders only a person may change, on every turn.
+          ...['permissions', 'session-relay'].flatMap((folder) =>
+            ['Edit', 'Write', 'NotebookEdit'].map(
+              (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
+            )
+          ),
         ],
       },
     });

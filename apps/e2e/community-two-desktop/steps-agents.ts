@@ -27,10 +27,11 @@ import {
   type SilenceWatch,
 } from './availability.js';
 import { directMessageStep } from './steps-dms.js';
+import { teammateLimitStep } from './steps-teammate-limit.js';
 import { PRIVATE_CHANNEL, type Entry, type Room, type World } from './world.js';
 
 /**
- * Steps 20-23b (22b in `steps-dms.ts`): each member enrolls their own local agent under the
+ * Steps 20-23b (22b in `steps-dms.ts`, 22c in `steps-teammate-limit.ts`): each member enrolls their own local agent under the
  * Community's agent limit and the other member's app shows it as available,
  * a private channel admits only its members and their agents, a mention is
  * answered by the scripted test runtime (no model, no spend), and a packaged
@@ -224,7 +225,7 @@ export async function agentSteps(w: World): Promise<void> {
         await productCheck(
           'An agent past the limit is refused with a reason the person can act on',
           'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
-            '(apps/community/src/routes/community/agents/enrollment.ts), but the DorkOS app answers POST ' +
+            '(apps/server/src/services/spaces/routes/community/agents/enrollment.ts), but the DorkOS app answers POST ' +
             '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Space unavailable." because fail() in ' +
             'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
             'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
@@ -397,6 +398,8 @@ export async function agentSteps(w: World): Promise<void> {
 
   if (runs('22b')) await directMessageStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
   else skip('22b');
+  if (runs('22c')) await teammateLimitStep(w, { bAgent: bAgent!, openAgents });
+  else skip('22c');
 
   // What A's app saw while B's app was closed, or why it could not watch; step 23b judges it.
   let closedWatch: SilenceWatch | Error | undefined;

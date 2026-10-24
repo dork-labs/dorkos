@@ -17,7 +17,7 @@
  *
  * @module services/core/capabilities/registry
  */
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { startedByOutsider } from '../turn-power/turn-marks.js';
 import { createHash } from 'node:crypto';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
@@ -831,7 +831,7 @@ export function composeRegistry(
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
-        ...(supplied.sessionId && turnStartedByOutsider(supplied.sessionId)
+        ...(supplied.sessionId && startedByOutsider(supplied.sessionId)
           ? { turnStartedByOutsider: true }
           : {}),
       };

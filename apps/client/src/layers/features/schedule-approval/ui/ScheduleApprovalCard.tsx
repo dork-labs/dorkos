@@ -42,6 +42,7 @@ import {
 import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-approvals';
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
+import { ScheduleOriginMarks } from './ScheduleOriginMarks';
 
 /** What a person answered, once they have. */
 type Decision = 'approved' | 'rejected';
@@ -193,8 +194,10 @@ export function ScheduleApprovalCard({
   // lands and a mode the runtime no longer declares.
   const currentLabel = power.current?.label ?? permissionModeLabel(task.permissionMode);
   // Lifted out of `power` so the JSX below narrows it once rather than
-  // asserting it non-null inside every closure that reads it.
-  const raise = power.raise;
+  // asserting it non-null inside every closure that reads it. A schedule written
+  // in a marked turn is approved at the level it asked for or not at all
+  // (DOR-3036): no raise beside it.
+  const raise = task.originMarks ? null : power.raise;
 
   // The conversation this was proposed in, when there is one to name. Read
   // under the PROPOSING session's directory rather than whatever this window
@@ -404,6 +407,8 @@ export function ScheduleApprovalCard({
           {dorkosWrote ? reason : <>“{reason}”</>}
         </p>
       )}
+
+      {task.originMarks && <ScheduleOriginMarks marks={task.originMarks} />}
 
       {/* What the agent (or the file) changed since the person approved it
           (DOR-2323): the old and the new value, side by side, so approving

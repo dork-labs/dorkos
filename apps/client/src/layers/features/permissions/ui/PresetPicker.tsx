@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { reportPermissionFailure } from '../lib/report-failure';
 import type {
   PermissionPreset,
   PermissionSurface,
@@ -120,10 +120,7 @@ export function PresetPicker({ surface }: PresetPickerProps) {
         surface,
         ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
       },
-      {
-        onError: (err) =>
-          toast.error(err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'),
-      }
+      { onError: reportPermissionFailure }
     );
 
   const choose = (preset: PermissionPreset) => {

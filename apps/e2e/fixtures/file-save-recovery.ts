@@ -130,16 +130,21 @@ export function refuseReceipt(db: Database.Database, documentId: string): () => 
   );
   return () => db.exec(`DROP TRIGGER IF EXISTS ${name}`);
 }
-/** Reload the actual session and wait for the existing document recovery panel. */
+/**
+ * Reload the actual session and wait until its previous-saves check settles.
+ *
+ * Returns the notice region, which exists only when the file needs the person:
+ * a healthy file shows nothing above it, so callers assert its presence or
+ * absence themselves.
+ */
 export async function remountRecovery(page: Page) {
   await page.reload();
   const panel = new RightPanelPage(page);
   await panel.ensureTabStripOpen();
   await panel.selectView('Canvas');
   await page.getByRole('tab', { name: 'Ordinary save receipt', exact: true }).click();
+  await expect(page.getByText('Checking previous saves…', { exact: true })).toHaveCount(0);
   const evidence = page.getByRole('region', { name: 'Previous file saves' });
-  await expect(evidence).toBeVisible();
-  await expect(evidence.getByText('Checking previous saves…', { exact: true })).toHaveCount(0);
   // The original physical document must still be selectable; reload never opens a replacement document.
   await expect(page.getByRole('button', { name: 'Edit file', exact: true })).toHaveAttribute(
     'data-document-save-observation',

@@ -543,6 +543,51 @@ describe('ScheduleRow', () => {
       expect(screen.getByText('🤖')).toBeTruthy();
     });
 
+    it('keeps long agent and schedule names on one truncated line', () => {
+      const agent = {
+        id: 'agent-1',
+        name: 'an agent name that is much too long for a phone row',
+        icon: '🤖',
+        color: '#6366f1',
+        description: '',
+        runtime: 'claude-code' as const,
+        capabilities: [],
+        behavior: { responseMode: 'always' as const },
+        registeredAt: new Date().toISOString(),
+        registeredBy: 'test',
+        mcpServers: [],
+        personaEnabled: true,
+        isSystem: false,
+        workspace: { mode: 'home' as const },
+      };
+      const Wrapper = createWrapper(createMockTransport());
+      const { container } = render(
+        <Wrapper>
+          <TaskRow
+            task={{
+              ...activeSchedule,
+              agentId: agent.id,
+              displayName: 'A schedule name that also cannot fit on a phone row',
+            }}
+            agent={agent}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+          />
+        </Wrapper>
+      );
+
+      const agentName = container.querySelector('[data-slot="task-agent-name"]');
+      const taskName = container.querySelector('[data-slot="task-name"]');
+      expect(agentName).toHaveClass('min-w-0', 'truncate');
+      expect(taskName).toHaveClass('min-w-0', 'truncate');
+      expect(agentName).toHaveAttribute('title', agent.name);
+      expect(taskName).toHaveAttribute(
+        'title',
+        'A schedule name that also cannot fit on a phone row'
+      );
+    });
+
     it('draws the agent as an agent — square, filled, Bot-marked — not a bare colour dot', () => {
       const agent = {
         id: 'agent-1',

@@ -133,6 +133,18 @@ export const ClaudeCodeAccountSchema = z.object({
    * project". The `'0.93.0'` migration still writes `null` onto stored rows.
    */
   onlyProjects: TolerantProjectRootListSchema.optional(),
+  /**
+   * `true` when a person said never to move agents to this account on their
+   * own: a room seat whose account runs out skips it, though a person may
+   * still move a seat to it by naming it. Absent or `false` means it may be
+   * picked, which is how every account behaved before the flag existed.
+   *
+   * Optional rather than defaulted, for the reason `onlyProjects` is: rows are
+   * shared with flow and written by hand, so most carry no such field. A
+   * value that is not a boolean reads as absent rather than failing the
+   * config. The `'0.124.1'` migration sets it on one account.
+   */
+  noAutoMove: z.boolean().optional().catch(undefined),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -539,6 +551,9 @@ export function readClaudeAccountSettings(
       // Absent (a row written before the rule existed, or by an older flow)
       // reads as `null`, any project: today's behaviour.
       onlyProjects: readProjectRootList(row.onlyProjects),
+      // Only a stored `true` keeps an account out of automatic moves; a row
+      // without the field stays without it.
+      ...('noAutoMove' in row ? { noAutoMove: row.noAutoMove === true } : {}),
     });
   }
   return { defaultAccount, accounts, warnings };

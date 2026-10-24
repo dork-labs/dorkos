@@ -8,6 +8,7 @@
  * @module shared/lib/transport/permission-methods
  */
 import type {
+  AgentLevelResponse,
   AgentPermissionsResponse,
   PatchAgentPermissionsBody,
   PatchPermissionDefaultsBody,
@@ -33,6 +34,10 @@ export function createPermissionMethods(baseUrl: string) {
 
     getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse> {
       return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/permissions`);
+    },
+
+    getAgentLevel(agentId: string): Promise<AgentLevelResponse> {
+      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/level`);
     },
 
     setPermissionPreset(

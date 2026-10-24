@@ -14,7 +14,7 @@
  *
  * @module routes/extensions-trusted-sources
  */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import { TrustedSourceRequestSchema } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -26,6 +26,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 
 /** The code every refusal to change trusted sources carries. */
 export const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
@@ -44,6 +45,15 @@ const TRUST_BAR: PersonBarCopy = {
     `asking, and that is a decision only a person makes. Ask the person to turn the ` +
     `extension on in DorkOS; the app offers to trust its source right after.`,
 };
+
+/**
+ * The front-door bar (DOR-2969): which sources DorkOS trusts is a package
+ * source setting, so only the owner, at this computer, changes it.
+ */
+function refuseAwayFromTheComputer(c: Context<ApiEnv>): Response | undefined {
+  const refusal = refuseFrontDoorChange(honoRequestFacts(c), 'which sources DorkOS trusts');
+  return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
+}
 
 /**
  * Mount the trusted-source routes onto the extensions router.
@@ -68,7 +78,7 @@ export function registerTrustedSourceRoutes(
   // comes from can be trusted: trust is granted once per PROVEN source.
   router.post('/trusted-sources', async (c) => {
     try {
-      const refused = refusedNotAPerson(c, TRUST_BAR);
+      const refused = refusedNotAPerson(c, TRUST_BAR) ?? refuseAwayFromTheComputer(c);
       if (refused) return refused;
       const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;
@@ -108,7 +118,7 @@ export function registerTrustedSourceRoutes(
   // already turned on stay on; new copies from the source ask again.
   router.delete('/trusted-sources', async (c) => {
     try {
-      const refused = refusedNotAPerson(c, TRUST_BAR);
+      const refused = refusedNotAPerson(c, TRUST_BAR) ?? refuseAwayFromTheComputer(c);
       if (refused) return refused;
       const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;

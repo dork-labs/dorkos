@@ -10,21 +10,25 @@ import { useNow } from '@/layers/shared/model';
  *
  * @module features/profile/ui/ProfileView
  */
-import { Suspense, type CSSProperties } from 'react';
+import { Suspense, useRef, type CSSProperties } from 'react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
+import { useDmViewEnabled } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useOpenDirectChat, useRoomBoundSession } from '@/layers/entities/room';
+import { useSessionListStore } from '@/layers/entities/session';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { useCommitments } from '@/layers/entities/commitment';
 import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
+import { useAgentLevel } from '@/layers/entities/permissions';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
 import { describeReportsTo } from '../lib/profile-reports-to';
 import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
+import { useOpenFoldFor, useShowProfileRow } from '../model/use-profile-fold-links';
 import {
   beneathMemberId,
   currentPage,
@@ -54,6 +58,11 @@ export interface ProfileViewProps {
    * session. Hides Message: the composer is right there.
    */
   inOwnSession?: boolean;
+  /**
+   * Leave out the model, account and chat count (DOR-3075): docked beside a
+   * DM while Show sessions is off.
+   */
+  quietSessionDetail?: boolean;
   /** What is pushed on top of the profile. */
   stack: ProfileStackState;
   /** Push a page, or a chained profile. */
@@ -74,6 +83,7 @@ export function ProfileView({
   roster,
   home,
   inOwnSession,
+  quietSessionDetail = false,
   stack,
   onPush,
   onPop,
@@ -108,6 +118,19 @@ export function ProfileView({
   // The Heartbeat row's words, read for every agent for the same reason. The
   // page reads the same key live, so opening it is a cache hit too.
   const heartbeat = useAgentHeartbeat(commitmentAgentId ?? null);
+  // The Level row: what the agent actually runs at, resolved by the server.
+  // Asked only where the Permissions row is drawn — the same audience.
+  const level = useAgentLevel(ownsWork ? member.id : undefined);
+  // How many of this agent's chats are mid-turn, for the status line. A count,
+  // so the selector's answer is a stable primitive.
+  const agentPath = member.agent?.projectPath ?? null;
+  const runningChats = useSessionListStore((state) =>
+    agentPath === null
+      ? 0
+      : Object.entries(state.statusCwds).filter(
+          ([id, cwd]) => cwd === agentPath && state.statuses[id]?.lifecycle === 'streaming'
+        ).length
+  );
   // Ticks the row's "next in 12 min", which moves with no new data.
   const now = useNow(30_000);
   // Where this agent works in the room the page is showing, when one is. Answers
@@ -115,6 +138,9 @@ export function ProfileView({
   // route that is not a room — resolving exactly as it always did.
   const resolveRoomSession = useRoomBoundSession();
   const openDirectChat = useOpenDirectChat();
+  // With the DM view on, Message is always the DM (DOR-3074): the agent's
+  // session in this room moved to its card, behind Show sessions.
+  const dmView = useDmViewEnabled();
 
   const ctx: ProfileRowsContext = {
     relationship,
@@ -130,8 +156,13 @@ export function ProfileView({
         }
       : null,
     heartbeat: heartbeat.data ?? null,
+    level: level.data ?? null,
     now,
+    quietSessionDetail,
   };
+  const groups = rowsFor(member, ctx);
+  // Folds are remembered per viewer, so the person looking is the key.
+  const viewerId = roster.find((row) => row.isSelf)?.id ?? 'local';
 
   // Three ways to have no button, and they are all the same answer: don't draw
   // one. Nowhere to open a session (every person today — §8), your own profile,
@@ -151,7 +182,7 @@ export function ProfileView({
     // — a mention pill, the face beside a message, a roster row — arrives
     // through this one button, so naming the room's session here is what fixes
     // all of them at once.
-    const inRoom = await resolveRoomSession(target.projectPath);
+    const inRoom = dmView ? null : await resolveRoomSession(target.projectPath);
     if (inRoom !== null) {
       // The session id ALONE, no `dir` — the same shape the live lane's own
       // link uses. A room turn does not necessarily run in the agent's own
@@ -181,17 +212,28 @@ export function ProfileView({
   // on. Gated on the same condition rather than waved through, because it is an
   // editor and `?profilePage=appearance` is an address anyone can type.
   const canEditAppearance = relationship === 'managed';
+  // The Handle page has a row on your own profile; on an agent you manage its
+  // control is the pencil beside the @handle, gated the same way.
+  const canEditHandle = relationship === 'managed';
   const reachable =
     page !== null &&
     (page === 'appearance'
       ? canEditAppearance
-      : rowsFor(member, ctx).some((group) =>
-          group.rows.some((row) => row.kind === 'nav' && row.page === page)
-        ));
+      : (page === 'handle' && canEditHandle) ||
+        groups.some((group) => group.rows.some((row) => row.kind === 'nav' && row.page === page)));
   // What is actually on screen, which is what the frame is keyed on — a page
   // the gate turned away is the root, and must animate and remount like one.
   const shown = reachable ? page : null;
   const definition = shown ? profilePage(shown) : null;
+  // A page pushed from inside a fold — by a deep link, ⌘K or a tap — opens that
+  // fold, so popping back lands focus on the row that pushed it.
+  useOpenFoldFor({
+    groups,
+    viewerId,
+    match: shown ? (row) => row.kind === 'nav' && row.page === shown : null,
+  });
+  const rootRef = useRef<HTMLDivElement>(null);
+  useShowProfileRow({ groups, viewerId, rootRef, memberId: member.id });
   const PageContent = definition?.component;
 
   // A chained profile is a frame like a page is, and needs the same way out.
@@ -207,6 +249,7 @@ export function ProfileView({
 
   return (
     <div
+      ref={rootRef}
       data-slot="profile"
       data-member-id={member.id}
       data-home={home}
@@ -249,8 +292,13 @@ export function ProfileView({
                   canEditAppearance ? () => onPush({ kind: 'page', page: 'appearance' }) : undefined
                 }
                 actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
+                runningChats={runningChats}
+                // An agent you manage: a person may rename it (DOR-3156).
+                onEditHandle={
+                  canEditHandle ? () => onPush({ kind: 'page', page: 'handle' }) : undefined
+                }
               />
-              <ProfileRows member={member} ctx={ctx} onPush={onPush} />
+              <ProfileRows member={member} ctx={ctx} onPush={onPush} viewerId={viewerId} />
             </div>
           )}
         </ProfileStack>

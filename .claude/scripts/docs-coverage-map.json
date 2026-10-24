@@ -71,7 +71,7 @@
         "apps/server/src/services/workspace/",
         "specs/central-workspace-disposal/",
         "specs/managed-remote-app-consumer/",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -101,13 +101,22 @@
       ]
     },
     {
+      "guide": "design-review.md",
+      "description": "The design review checklist: what passes a review or audit, numbered rules, measured floors (type, icons, targets, contrast, focus), phone tokens, severity mapped to the audit charter",
+      "patterns": [
+        "audits/ui.md",
+        ".agents/skills/auditing-ui/",
+        "packages/ui/src/touch-target.ts"
+      ]
+    },
+    {
       "guide": "shared-ui.md",
       "description": "Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades",
       "patterns": [
         "packages/ui/",
         "apps/design-system/",
         "apps/client/src/layers/shared/ui/",
-        "apps/community/src/browser/components/Admission"
+        "apps/client/src/space/components/Admission"
       ]
     },
     {
@@ -446,7 +455,7 @@
       "guide": "community-server.md",
       "description": "Independent Community: browser, admission, native local participation, streams, files, exports, recovery and Postgres checks",
       "patterns": [
-        "apps/community/",
+        "apps/space/",
         "community-wire",
         "community-pg"
       ]
@@ -455,8 +464,8 @@
       "guide": "official-community-operations.md",
       "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
       "patterns": [
-        "apps/community/src/live/monitoring.ts",
-        "apps/community/load/",
+        "apps/server/src/services/spaces/live/monitoring.ts",
+        "apps/space/load/",
         "official-community-operations"
       ]
     },
@@ -542,7 +551,7 @@
     },
     {
       "guide": "sidebar-model.md",
-      "description": "The sidebar's pure model: zone/section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
+      "description": "The sidebar's pure model: section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
       "patterns": [
         "features/dashboard-sidebar/model/",
         "entities/interactions/"
@@ -637,7 +646,7 @@
       "patterns": [
         "apps/server/src/services/",
         "transport.ts",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -646,7 +655,7 @@
     },
     {
       "doc": "docs/concepts/sidebar.mdx",
-      "description": "Sidebar concepts: Heads up, Today, sections, one door, and the phone tabs",
+      "description": "Sidebar concepts: places not sessions, Threads and Directory, sections, and the phone tabs",
       "patterns": [
         "apps/client/src/layers/features/dashboard-sidebar/",
         "apps/client/src/layers/widgets/mobile-tabs/"
@@ -815,7 +824,7 @@
       "description": "Step-by-step `dorkos community deploy` walkthrough: plan, consent, stops and resume, owner setup, first invite, connecting DorkOS, removal",
       "patterns": [
         "packages/cli/src/commands/community-deploy/",
-        "apps/community/src/browser/components/(Admission|Manage)"
+        "apps/client/src/space/components/(Admission|Manage)"
       ]
     },
     {
@@ -834,7 +843,7 @@
       "patterns": [
         "apps/server/src/services/",
         "transport.ts",
-        "apps/community/",
+        "apps/space/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -1047,7 +1056,7 @@
       "doc": "docs/guides/dorkos-community.mdx",
       "description": "The DorkOS Community Space guide (gated: not open yet), join/leave, display name, report, rules, moderation",
       "patterns": [
-        "apps/community/",
+        "apps/space/",
         "specs/official-community-space/"
       ]
     },

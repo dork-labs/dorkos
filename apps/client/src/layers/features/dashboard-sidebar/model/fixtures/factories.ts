@@ -3,7 +3,7 @@
  *
  * @module features/dashboard-sidebar/model/fixtures/factories
  */
-import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type {
   AgentRosterEntry,
@@ -15,11 +15,8 @@ import type {
 /**
  * The instant every fixture reasons from: 09:15 on 9 August 2026, **local**.
  *
- * Local rather than a fixed epoch on purpose. Every time-dependent rule in the
- * model is stated in local terms — the 04:00 overnight boundary, the calendar
- * day the digest is once per — so a fixture pinned to a UTC instant would
- * archive different rows on a machine in Auckland than on one in California,
- * and the same test would pass in one office and fail in the other.
+ * Local rather than a fixed epoch so a timestamp in a fixture reads the same
+ * on every machine that runs it.
  */
 export const FIXTURE_NOW = new Date(2026, 7, 9, 9, 15, 0, 0).getTime();
 
@@ -90,23 +87,46 @@ export function person(
 }
 
 /**
- * A thread, with everything a fixture does not care about filled in.
+ * An agent on a direct message's roster, under the handle the server gives it.
  *
- * @param overrides - What this particular thread is.
+ * @param path - The agent's directory.
+ * @param displayName - What it is called.
  */
-export function thread(
-  overrides: Partial<ThreadSummary> & Pick<ThreadSummary, 'roomId' | 'roomTitle' | 'rootEntryId'>
-): ThreadSummary {
+export function agentMember(
+  path: string,
+  displayName: string
+): NonNullable<RoomSummary['participants']>[number] {
   return {
-    roomKind: 'channel',
-    roomSlug: overrides.roomTitle.replace(/^#/, ''),
-    rootAuthorId: 'person:dorian',
-    rootPreview: 'Anything else to change here?',
-    replyCount: 3,
-    unreadCount: 0,
-    lastActivityAt: hoursAgo(3),
-    ...overrides,
+    id: `agent:${path}`,
+    kind: 'agent',
+    displayName,
+    handle: null,
+    agentRef: agentAuthorRef(path),
   };
+}
+
+/**
+ * An agent's direct message: the operator and the one agent, which the
+ * sidebar draws as the agent's own row.
+ *
+ * @param id - The room id.
+ * @param path - The agent's directory.
+ * @param displayName - What the agent is called.
+ * @param overrides - Anything else particular about the room.
+ */
+export function agentDm(
+  id: string,
+  path: string,
+  displayName: string,
+  overrides: Partial<RoomSummary> = {}
+): RoomSummary {
+  return room({
+    id,
+    kind: 'dm',
+    title: displayName,
+    participants: [person('person:dorian', 'Dorian'), agentMember(path, displayName)],
+    ...overrides,
+  });
 }
 
 /**
@@ -125,7 +145,6 @@ export function agent(
     namespace: null,
     isSystem: false,
     lastActivityAt: FIXTURE_NOW - 2 * HOUR,
-    lastInteractionAt: null,
     attention: 'active',
     ...overrides,
   };
@@ -153,8 +172,6 @@ export function prefs(overrides: Partial<SidebarModelPrefs> = {}): SidebarModelP
     groups: [],
     muted: [],
     sections: {},
-    gettingStarted: { retired: [] },
-    digest: {},
     ...overrides,
   };
 }
@@ -162,7 +179,7 @@ export function prefs(overrides: Partial<SidebarModelPrefs> = {}): SidebarModelP
 /**
  * A complete {@link SidebarState} with every field at its empty value.
  *
- * Fixtures spread over this rather than repeating seventeen fields each, which
+ * Fixtures spread over this rather than repeating every field each, which
  * is also what keeps them honest when the state type grows: a new field lands
  * here once and every fixture stays complete.
  *
@@ -173,29 +190,15 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     now: FIXTURE_NOW,
     sessions: [],
     workingSessionIds: [],
+    blockedSessionIds: [],
     liveSessionCwds: {},
-    sessionStatuses: {},
     rooms: [],
-    threads: [],
     agents: [],
     displayNames: {},
-    attention: [],
-    recents: { items: [], automated: [] },
     prefs: prefs(),
-    interactions: {},
-    userLastMessageAt: {},
-    lastTouchedByYouAt: {},
     mentions: {},
     addOns: [],
     activeTarget: null,
-    journey: {
-      discoveredUnregisteredPaths: [],
-      nonSystemAgentCount: 0,
-      hasEverStartedSession: false,
-      hasPostedInTeam: true,
-      hasDorkBotSession: true,
-    },
-    digest: { finishedWhileAwayCount: 0, idleWhileAwayCount: 0 },
     ...overrides,
   };
 }

@@ -28,11 +28,15 @@
 #                                        acceptance/{Dockerfile,run.sh,run.mjs,
 #                                        driver.spec.ts}. The three folders come
 #                                        from ci/space-server.env (DOR-3007):
-#                                        all apps/community today, and after the
+#                                        all apps/space today, and after the
 #                                        program merge the space's own folders
 #                                        inside apps/server and apps/client, so
 #                                        the rest of apps/server stays out
 #   ci/space-server.env                  where those folders are
+#   apps/client/vite.space.config.ts     the build of the space's web pages
+#   Dockerfile, .dockerignore            the space image is the Dockerfile's
+#                                        `space` target (step 7f)
+#   scripts/space-image/                 what the space image may install
 #   apps/{client,server}/src/…communit…  the local app's half of the journey:
 #                                        any file or directory named for
 #                                        communities, in ANY case, so the
@@ -48,6 +52,8 @@
 #   packages/shared/src/…communit…       the contracts both halves speak
 #                                        (community-adapter, community schemas),
 #                                        same case rule
+#   packages/shared/src/space-page/      what the space page and the space
+#                                        server share (server-merge step 7)
 #   packages/db/src/schema/communities/  the local mirror tables
 #                                        (community-mirrors.ts backs the
 #                                        proof's offline step)
@@ -124,8 +130,13 @@ SCOPE_PATTERNS=(
   "$(folder "$SPACE_SRC_DIR")"
   "$(folder "$SPACE_WEB_DIR")"
   '^ci/space-server\.env$'
+  '^apps/client/vite\.space\.config\.ts$'
+  '^Dockerfile$'
+  '^\.dockerignore$'
+  '^scripts/space-image/'
   "^apps/(client|server)/src/.*${communit}"
   "^packages/shared/src/.*${communit}"
+  '^packages/shared/src/space-page/'
   '^packages/db/src/schema/communities/'
   '^packages/cloud-api/'
   '^packages/connector-providers/'

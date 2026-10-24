@@ -1,0 +1,893 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { type Page } from '@playwright/test';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
+import { test, expect } from './csp.js';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { Pool } from 'pg';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { hashSecret } from '../../server/src/services/spaces/security.js';
+import { registerShortNamePages } from '../../server/src/services/spaces/short-names/pages.js';
+import { sweepImports } from '../../server/src/services/spaces/imports/worker.js';
+import { createBlobStore } from '../../server/src/services/spaces/storage/factory.js';
+
+// COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
+const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =
+  process.env;
+if (!adminUrl)
+  throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
+const dbName = `community_browser_host_${randomUUID().replaceAll('-', '')}`;
+const dbUrl = new URL(adminUrl);
+dbUrl.pathname = `/${dbName}`;
+const admin = new Pool({ connectionString: adminUrl });
+const operator = { email: 'operator@keys.test', password: 'password1234' };
+let pool: Pool;
+let server: ReturnType<typeof serve>;
+let baseUrl: string;
+let blobDir: string;
+let config: ReturnType<typeof parseConfig>;
+
+async function freePort() {
+  const socket = createServer();
+  await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
+  const address = socket.address();
+  if (!address || typeof address === 'string') throw new Error('No browser test port');
+  await new Promise<void>((resolve) => socket.close(() => resolve()));
+  return address.port;
+}
+
+/** Capture one state at desktop and phone width, then restore the page's own viewport. */
+async function shot(page: Page, name: string) {
+  if (!shots) return;
+  const original = page.viewportSize();
+  // Phone first: most of these pages load at phone width, and resizing a loaded page up and
+  // back down can leave the channel drawer open, which no one loading it on a phone would see.
+  for (const [label, size] of [
+    ['mobile', { width: 390, height: 844 }],
+    ['desktop', { width: 1440, height: 900 }],
+  ] as const) {
+    await page.setViewportSize(size);
+    await page.screenshot({ path: join(shots, `${name}-${label}.png`), fullPage: true });
+  }
+  if (original) await page.setViewportSize(original);
+}
+
+test.beforeAll(async () => {
+  await admin.query(`CREATE DATABASE ${dbName}`);
+  await migrate(dbUrl.toString());
+  pool = new Pool({ connectionString: dbUrl.toString() });
+  blobDir = await mkdtemp(join(tmpdir(), 'community-browser-host-'));
+  const port = await freePort();
+  baseUrl = `http://127.0.0.1:${port}`;
+  config = parseConfig({
+    COMMUNITY_DATABASE_URL: dbUrl.toString(),
+    COMMUNITY_AUTH_SECRET: 'a'.repeat(32),
+    COMMUNITY_INVITE_SECRET: 'b'.repeat(32),
+    COMMUNITY_BOOTSTRAP_SECRET: 'c'.repeat(32),
+    COMMUNITY_PUBLIC_URL: baseUrl,
+    COMMUNITY_STORAGE_PATH: blobDir,
+  });
+  const app = createCommunityApp({ config, pool });
+  const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
+  app.use('/assets/*', serveStatic({ root: staticRoot }));
+  for (const path of ['/', '/host', '/c/:communityId', '/c/:communityId/*'])
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
+  registerShortNamePages(app, {
+    indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+    reservedNames: config.reservedShortNames,
+  });
+  server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+
+  const post = (path: string, body: unknown, cookie = '') =>
+    fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        origin: baseUrl,
+        'content-type': 'application/json',
+        ...(cookie ? { cookie } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  const grant = await post('/api/v1/bootstrap/preflight', { secret: config.bootstrapSecret });
+  const cookie = grant.headers
+    .getSetCookie()
+    .map((header) => header.split(';')[0])
+    .join('; ');
+  const completed = await post(
+    '/api/v1/bootstrap/complete',
+    {
+      secret: config.bootstrapSecret,
+      accountName: 'Host Operator',
+      email: operator.email,
+      password: operator.password,
+      communityName: 'First Place',
+      channelName: 'general',
+    },
+    cookie
+  );
+  expect(completed.status).toBe(201);
+});
+
+test.afterAll(async () => {
+  if (server) {
+    if ('closeAllConnections' in server) server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  await pool?.end();
+  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+  await admin.end();
+  if (blobDir) await rm(blobDir, { recursive: true, force: true });
+});
+
+test('a host operator creates a key, sees it once, replaces it, and revokes it', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const section = page.getByRole('region', { name: 'API keys' });
+    await expect(section.getByText('No keys yet.')).toBeVisible();
+    // The ownership permission says only what the server does now.
+    await expect(
+      section.getByText(
+        'This server refuses every request for now, until owners can answer them.',
+        {
+          exact: false,
+        }
+      )
+    ).toBeVisible();
+    await expect(section.getByLabel('Key name')).toHaveAttribute('data-slot', 'input');
+    await expect(section.getByRole('button', { name: 'Create key' })).toHaveAttribute(
+      'type',
+      'submit'
+    );
+
+    // A wrong password creates nothing and says why.
+    await section.getByLabel('Key name').fill('Provisioning script');
+    await section.getByLabel('Create spaces').check();
+    await section.getByLabel('Your password').fill('not-my-password');
+    await section.getByRole('button', { name: 'Create key' }).click();
+    await expect(section.getByRole('alert')).toContainText(
+      'That password is not right. No key was created.'
+    );
+    await expect(section.getByRole('alert')).toHaveAttribute('data-slot', 'notice');
+    expect((await pool.query('SELECT 1 FROM host_api_keys')).rowCount).toBe(0);
+
+    await section.getByLabel('Your password').fill(operator.password);
+    await section.getByRole('button', { name: 'Create key' }).click();
+    const secretField = section.getByLabel('API key', { exact: true });
+    await expect(secretField).toHaveValue(/^dkh_[A-Za-z0-9_-]{43}$/);
+    const secret = await secretField.inputValue();
+    const stored = await pool.query<{ secret_hash: string; scopes: string[] }>(
+      'SELECT secret_hash,scopes FROM host_api_keys'
+    );
+    expect(stored.rows).toEqual([
+      { secret_hash: hashSecret(secret), scopes: ['communities:read', 'communities:write'] },
+    ]);
+    const card = section.getByRole('article', { name: 'Provisioning script key' });
+    await expect(card).toContainText(secret.slice(0, 10));
+    await expect(card).toContainText('Created by Host Operator');
+    await expect(card).toContainText('Expires');
+    await expect(card).not.toContainText(secret.slice(10));
+    await shot(page, 'host-api-key-created');
+
+    // The secret is not in the page after a reload.
+    await page.reload();
+    await expect(section.getByRole('article', { name: 'Provisioning script key' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(secret.slice(10));
+
+    await section
+      .getByRole('article', { name: 'Provisioning script key' })
+      .getByRole('button', { name: 'Replace' })
+      .click();
+    const replace = page.getByRole('dialog', { name: 'Replace “Provisioning script”?' });
+    await replace.getByLabel('Your password').fill(operator.password);
+    await replace.getByRole('button', { name: 'Replace key' }).click();
+    await expect(replace).toBeHidden();
+    await expect(section.getByLabel('API key', { exact: true })).not.toHaveValue(secret);
+    await expect(section).toContainText('The key it replaces stops working');
+    await expect(section.getByRole('article', { name: 'Provisioning script key' })).toHaveCount(2);
+
+    const live = section
+      .getByRole('article', { name: 'Provisioning script key' })
+      .filter({ has: page.getByRole('button', { name: 'Revoke' }) });
+    await live.first().getByRole('button', { name: 'Revoke' }).click();
+    const revoke = page.getByRole('dialog', { name: 'Revoke “Provisioning script”?' });
+    await expect(revoke).toContainText('lose access right away');
+    await expect(revoke.getByRole('button', { name: 'Cancel' })).toBeVisible();
+    await shot(page, 'host-api-key-revoke');
+    await revoke.getByRole('button', { name: 'Revoke key' }).click();
+    await expect(section.getByRole('status')).toContainText('Revoked “Provisioning script”');
+    expect(
+      (await pool.query('SELECT 1 FROM host_api_keys WHERE revoked_at IS NOT NULL')).rowCount
+    ).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a host operator sets a community limit beside its current use, on a phone', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place space' });
+    await record.getByText('Limits', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place limits' });
+    await expect(form).toContainText('1 now');
+    await expect(form.getByLabel('Most members')).toHaveValue('');
+    await form.getByLabel('Most members').fill('1');
+    await form.getByLabel('Most storage (MiB)').fill('5');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect(form).toContainText('Limits saved.');
+    const stored = await pool.query(
+      'SELECT max_active_members,max_storage_bytes::int AS bytes FROM community_limits'
+    );
+    expect(stored.rows).toEqual([{ max_active_members: 1, bytes: 5 * 1024 * 1024 }]);
+    await shot(page, 'host-community-limits');
+    // Empty means no limit again.
+    await form.getByLabel('Most members').fill('');
+    await form.getByLabel('Most storage (MiB)').fill('');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect
+      .poll(async () => (await pool.query('SELECT max_active_members FROM community_limits')).rows)
+      .toEqual([{ max_active_members: null }]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an invitation to a full community says so before sign-up, and that the link still works', async ({
+  browser,
+}) => {
+  const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0].id;
+  const ownerContext = await browser.newContext();
+  const guest = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const signedIn = await ownerContext.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const invite = await ownerContext.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(invite.status()).toBe(201);
+    const { token } = (await invite.json()) as { token: string };
+    await pool.query(
+      `INSERT INTO community_limits(community_id,max_active_members) VALUES($1,1)
+       ON CONFLICT(community_id) DO UPDATE SET max_active_members=1`,
+      [communityId]
+    );
+
+    const page = await guest.newPage();
+    await page.goto(`${baseUrl}/c/${communityId}/join#invite=${encodeURIComponent(token)}`);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('This space is full. Ask its owner to make room.');
+    await expect(alert).toContainText(
+      'Your invitation still works. Open it again once the owner has made room.'
+    );
+    await expect(alert).not.toContainText('new invitation link');
+    await expect(page.getByLabel('Password')).toHaveCount(0);
+    await shot(page, 'join-full-community');
+  } finally {
+    await pool.query('DELETE FROM community_limits');
+    await ownerContext.close();
+    await guest.close();
+  }
+});
+
+test('a host holds a community with a notice members can see, then deletes it after the notice', async ({
+  browser,
+}) => {
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place space' });
+    await record.getByRole('button', { name: 'Hold', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
+    const notice = new Date(Date.now() + 20 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+    await dialog.getByLabel('Delete after (optional)').fill(notice);
+    await dialog.getByRole('button', { name: 'Hold space' }).click();
+    await expect(record).toContainText('On hold. Deletion notice:');
+
+    // Members see the hold and the date on every channel, and cannot post.
+    await page.goto(`${baseUrl}/c/${communityId}`);
+    const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
+    await expect(banner).toContainText(
+      'This space is on hold by its server admin. You can read it but not post.'
+    );
+    await expect(banner).toContainText('The server admin plans to delete it after');
+    await expect(banner).toContainText('The owner can export it until then.');
+    await expect(
+      page.getByText('This space is on hold by its server admin, so no one can post.')
+    ).toBeVisible();
+    await shot(page, 'held-community-banner');
+
+    // The owner's settings explain the hold and keep export within reach.
+    await page.goto(`${baseUrl}/c/${communityId}/settings`);
+    await expect(page.getByRole('heading', { name: 'On hold' }).first()).toBeVisible();
+    await expect(
+      page.getByText(/Archive, restore, and ownership transfer are unavailable/u)
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export this space' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Archive space' })).toHaveCount(0);
+    await shot(page, 'held-owner-settings');
+
+    // Once the notice date has passed, the host can delete it, confirming the id's end.
+    await pool.query(
+      "UPDATE communities SET deletion_notice_at=now()-interval '1 minute' WHERE id=$1",
+      [communityId]
+    );
+    await page.goto(`${baseUrl}/host`);
+    await record.getByRole('button', { name: 'Delete', exact: true }).click();
+    const confirm = page.getByRole('dialog', { name: 'Delete First Place?' });
+    await expect(confirm.getByRole('button', { name: 'Delete space' })).toBeDisabled();
+    await confirm.getByLabel(/Type the last eight characters/u).fill(communityId.slice(-8));
+    await confirm.getByRole('button', { name: 'Delete space' }).click();
+    await expect(record).toContainText('Deletion requested by the server admin.');
+    // The owner sees who started it, cannot cancel it, and is told export has ended.
+    await page.goto(`${baseUrl}/c/${communityId}/deletion`);
+    await expect(page.getByText(/The server admin started this deletion/u)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
+    await shot(page, 'host-deletion-owner-view');
+    await page.goto(`${baseUrl}/host`);
+    await record.getByRole('button', { name: 'Cancel deletion' }).click();
+    await expect(record).toContainText('On hold.');
+    await record.getByRole('button', { name: 'Release hold' }).click();
+    await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a hold turns an open channel read-only without a retry loop, and a release brings live updates back', async ({
+  browser,
+}) => {
+  // Purpose (spec `community-hold-keeps-access`, AC-2b): fails if a hold leaves the page retrying
+  // its live stream in a loop, or if the page never resumes live updates after the release.
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const streamOpens: number[] = [];
+  page.on('response', (response) => {
+    if (/\/channels\/[^/]+\/events$/u.test(new URL(response.url()).pathname))
+      streamOpens.push(response.status());
+  });
+  const lifecycle = async (action: 'hold' | 'release') => {
+    const version = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0].lifecycle_version;
+    const response = await context.request.patch(
+      `${baseUrl}/api/v1/host/communities/${communityId}/lifecycle`,
+      {
+        headers: { origin: baseUrl },
+        data:
+          action === 'hold'
+            ? { action, lifecycleVersion: version, deletionNoticeAt: null }
+            : { action, lifecycleVersion: version },
+      }
+    );
+    expect(response.status(), action).toBe(200);
+  };
+  try {
+    await page.clock.install();
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/c/${communityId}`);
+    await expect(page.getByLabel('Message #general')).toBeVisible();
+    await expect.poll(() => streamOpens).toEqual([200]);
+
+    // The hold closes the open stream as read-only: the banner shows, no error does.
+    await lifecycle('hold');
+    const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
+    await expect(banner).toBeVisible();
+    await expect(page.getByText('Your access to this channel has changed.')).toHaveCount(0);
+    await expect(page.getByText(/Live updates paused/u)).toHaveCount(0);
+
+    // Approving an installation while held says the connection will only read.
+    const challenge = createHash('sha256')
+      .update(randomBytes(32).toString('base64url'))
+      .digest('base64url');
+    const started = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/pairings/start`,
+      { data: { installName: 'Held laptop', challenge, scopes: ['read'] } }
+    );
+    expect(started.status()).toBe(201);
+    const approval = await context.newPage();
+    await approval.goto((await started.json()).approvalUrl);
+    await expect(
+      approval.getByText(
+        'The space is on hold, so this connection can only read. Connect again after the hold ends to post.'
+      )
+    ).toBeVisible();
+    await approval.close();
+
+    // A page that still believes the community is active opens the stream, which the hold
+    // refuses. It must try again at most once a minute, never in a loop.
+    await page.route('**/api/v1/memberships', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const membership of body.memberships) membership.lifecycle = 'active';
+      await route.fulfill({ response, json: body });
+    });
+    await page.clock.runFor(5_000);
+    await expect.poll(() => streamOpens).toEqual([200, 423]);
+    // Two minutes in five-second steps, letting each step's requests finish in real time, so a
+    // retry scheduled after a refused request would show up as another open.
+    const advance = async (ms: number) => {
+      for (let passed = 0; passed < ms; passed += 5_000) {
+        await page.clock.runFor(5_000);
+        await new Promise((resolve) => setTimeout(resolve, 75));
+      }
+    };
+    await advance(120_000);
+    expect(streamOpens.length).toBeLessThanOrEqual(4);
+    expect(streamOpens.slice(1).every((status) => status === 423)).toBe(true);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.clock.runFor(5_000);
+    await expect(banner).toBeVisible();
+    const refused = streamOpens.length;
+    await advance(120_000);
+    expect(streamOpens.length).toBe(refused);
+
+    // The release is noticed on the next lifecycle check; the stream reopens and a new
+    // message arrives live, with nobody signing in or reconnecting.
+    await lifecycle('release');
+    await page.clock.runFor(5_000);
+    await expect(banner).toHaveCount(0);
+    await expect.poll(() => streamOpens.at(-1)).toBe(200);
+    const channelId = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM channels WHERE community_id=$1 AND name='general'",
+        [communityId]
+      )
+    ).rows[0].id;
+    const posted = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/channels/${channelId}/entries`,
+      {
+        headers: { origin: baseUrl },
+        data: { text: 'Back after the hold', idempotencyKey: 'after-hold' },
+      }
+    );
+    expect(posted.status()).toBe(201);
+    await expect(page.getByText('Back after the hold')).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a host sees a legal hold and holds a suspended community in one step', async ({
+  browser,
+}) => {
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const version = async () =>
+      (
+        await pool.query<{ lifecycle_version: number }>(
+          'SELECT lifecycle_version FROM communities WHERE id=$1',
+          [communityId]
+        )
+      ).rows[0].lifecycle_version;
+    const suspended = await context.request.patch(
+      `${baseUrl}/api/v1/host/communities/${communityId}/lifecycle`,
+      {
+        headers: { origin: baseUrl },
+        data: { action: 'suspend', lifecycleVersion: await version() },
+      }
+    );
+    expect(suspended.ok()).toBe(true);
+    const held = await context.request.put(
+      `${baseUrl}/api/v1/host/communities/${communityId}/legal-hold`,
+      { headers: { origin: baseUrl }, data: { reference: 'Case 42' } }
+    );
+    expect(held.ok()).toBe(true);
+
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place space' });
+    await expect(record).toContainText('Legal hold since');
+    await expect(record).toContainText('(Case 42)');
+    await expect(record).toContainText('can’t be deleted until the hold is released');
+    await shot(page, 'legal-hold-record');
+
+    // A suspended community offers Hold, and says it goes straight to the hold.
+    await record.getByRole('button', { name: 'Hold', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
+    await expect(dialog).toContainText('goes straight from suspended to on hold');
+    await shot(page, 'hold-from-suspended-dialog');
+    await dialog.getByRole('button', { name: 'Hold space' }).click();
+    await expect(record).toContainText('On hold.');
+    await record.getByRole('button', { name: 'Release hold' }).click();
+    await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+    const released = await context.request.delete(
+      `${baseUrl}/api/v1/host/communities/${communityId}/legal-hold`,
+      { headers: { origin: baseUrl } }
+    );
+    expect(released.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    await expect(record).not.toContainText('Legal hold since');
+  } finally {
+    await context.close();
+  }
+});
+
+test('saving limits leaves a file-space limit set through the API exactly as it was', async ({
+  browser,
+}) => {
+  // Purpose: the form shows MiB rounded to two places; saving it after changing only the member
+  // limit must not rewrite 10,000,000 bytes as the rounded 9.54 MiB.
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  await pool.query(
+    `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes)
+     VALUES($1,NULL,10000000)
+     ON CONFLICT(community_id) DO UPDATE SET max_active_members=NULL,max_storage_bytes=10000000`,
+    [communityId]
+  );
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place space' });
+    await record.getByText('Limits', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place limits' });
+    await expect(form.getByLabel('Most storage (MiB)')).toHaveValue('9.54');
+    await form.getByLabel('Most members').fill('50');
+    await form.getByRole('button', { name: 'Save limits' }).click();
+    await expect(form).toContainText('Limits saved.');
+    const stored = await pool.query(
+      'SELECT max_active_members,max_storage_bytes::bigint::text AS bytes FROM community_limits WHERE community_id=$1',
+      [communityId]
+    );
+    expect(stored.rows).toEqual([{ max_active_members: 50, bytes: '10000000' }]);
+  } finally {
+    await pool.query('DELETE FROM community_limits');
+    await context.close();
+  }
+});
+
+/** Set up a second community the operator owns, with its own channel, off-screen. */
+async function secondCommunity(operatorCookie: string) {
+  const client = await pool.connect();
+  let communityId: string;
+  try {
+    await client.query('BEGIN');
+    communityId = (
+      await client.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Second Place','pending_owner') RETURNING id"
+      )
+    ).rows[0].id;
+    const owner = await client.query<{ id: string }>(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       SELECT $1,id,'Host Operator','host-operator','owner' FROM "user" WHERE email=$2
+       RETURNING id`,
+      [communityId, operator.email]
+    );
+    await client.query(
+      'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+      [communityId, 'host-operator', owner.rows[0].id]
+    );
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [communityId]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  const channel = await fetch(`${baseUrl}/api/v1/communities/${communityId}/channels`, {
+    method: 'POST',
+    headers: { origin: baseUrl, 'content-type': 'application/json', cookie: operatorCookie },
+    body: JSON.stringify({ name: 'lobby', visibility: 'public' }),
+  });
+  expect(channel.status).toBe(201);
+  return communityId;
+}
+
+test('a community opens at its short address, and an old address moves to the new one', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const firstId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseUrl });
+  const page = await context.newPage();
+  const outsider = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const operatorCookie = (await context.cookies(baseUrl))
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join('; ');
+    const secondId = await secondCommunity(operatorCookie);
+    const named = await context.request.put(
+      `${baseUrl}/api/v1/host/communities/${secondId}/short-name`,
+      { headers: { origin: baseUrl }, data: { shortName: 'second-home' } }
+    );
+    expect(named.status()).toBe(200);
+
+    // The host names the first community from its record.
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place space' });
+    await record.getByText('Web address', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place web address' });
+    await form.getByLabel('Short name').fill('First-Place');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('Web address saved.');
+    await expect(record).toContainText('/first-place ·');
+    await shot(page, 'host-web-address');
+
+    // Each name opens its own community, and the address bar keeps the name.
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+    await page.goto(`${baseUrl}/second-home`);
+    await expect(page.getByRole('heading', { name: '# lobby' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '# general' })).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe('/second-home');
+
+    // Settings under the name offer the community's address to copy, never an invitation.
+    await page.goto(`${baseUrl}/first-place/settings`);
+    await expect(page.getByRole('heading', { name: 'Your space' })).toBeVisible();
+    const address = page.getByLabel('Address', { exact: true });
+    await expect(address).toHaveValue(`${baseUrl}/first-place`);
+    await page.getByRole('button', { name: 'Copy link' }).first().click();
+    await expect(page.getByText('Link copied.')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      `${baseUrl}/first-place`
+    );
+    await shot(page, 'community-address');
+
+    // Another spelling of a name moves to its one spelling, on the server and in the browser.
+    await page.goto(`${baseUrl}/First-Place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+    await page.goto(`${baseUrl}/%66irst-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+
+    // After a rename, the old address still opens the community and shows the new one.
+    await page.goto(`${baseUrl}/host`);
+    await record.getByText('Web address', { exact: true }).click();
+    await form.getByLabel('Short name').fill('first-place-two');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('Web address saved.');
+    const retired = form.getByRole('list', { name: 'Old addresses that still lead here' });
+    await expect(retired.getByRole('listitem')).toHaveCount(1);
+    await expect(retired.locator('.font-mono')).toHaveText(['/first-place']);
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/first-place-two');
+
+    // Releasing an old address asks first; cancelling keeps it.
+    await page.goto(`${baseUrl}/host`);
+    await record.getByText('Web address', { exact: true }).click();
+    await retired.getByRole('button', { name: 'Release' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Release /first-place?' });
+    await expect(confirm).toBeVisible();
+    await shot(page, 'host-release-address');
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(retired.getByRole('listitem')).toHaveCount(1);
+    await retired.getByRole('button', { name: 'Release' }).click();
+    await confirm.getByRole('button', { name: 'Release address' }).click();
+    await expect(form).toContainText('Released /first-place.');
+    await expect(retired).toHaveCount(0);
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByText('No space at this address.')).toBeVisible();
+
+    // A lookup that fails for a reason other than "no such name" offers a retry, not the chooser.
+    let failed = false;
+    await page.route('**/api/v1/community-names/*', async (route) => {
+      if (failed) return route.fallback();
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'UNAVAILABLE', message: 'Try again shortly.' }),
+      });
+    });
+    await page.goto(`${baseUrl}/first-place-two`);
+    await expect(page.getByRole('alert')).toContainText('Couldn’t open this space.');
+    await expect(page.getByText('No space at this address.')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    await page.unroute('**/api/v1/community-names/*');
+
+    // An address that leads nowhere says only that.
+    await page.goto(`${baseUrl}/nobody-here`);
+    await expect(page.getByText('No space at this address.')).toBeVisible();
+
+    // A signed-in person who is not a member goes back to the chooser, as at /c/<uuid>.
+    const invite = await context.request.post(`${baseUrl}/api/v1/communities/${secondId}/invites`, {
+      headers: { origin: baseUrl },
+      data: { seats: 1 },
+    });
+    expect(invite.status()).toBe(201);
+    const { token } = (await invite.json()) as { token: string };
+    const tenant = `${baseUrl}/api/v1/communities/${secondId}`;
+    const headers = { origin: baseUrl };
+    expect(
+      (
+        await outsider.request.post(`${tenant}/invites/preflight`, { headers, data: { token } })
+      ).ok()
+    ).toBe(true);
+    expect(
+      (
+        await outsider.request.post(`${baseUrl}/api/auth/sign-up/email`, {
+          headers,
+          data: { name: 'Rin', email: 'rin@names.test', password: 'password1234' },
+        })
+      ).ok()
+    ).toBe(true);
+    expect(
+      (await outsider.request.post(`${tenant}/invites/bind`, { headers, data: {} })).ok()
+    ).toBe(true);
+    expect(
+      (await outsider.request.post(`${tenant}/invites/redeem`, { headers, data: {} })).ok()
+    ).toBe(true);
+    const outsiderPage = await outsider.newPage();
+    await outsiderPage.goto(`${baseUrl}/first-place-two`);
+    await expect(outsiderPage).toHaveURL(`${baseUrl}/`);
+    await expect(outsiderPage.getByRole('status')).toHaveText(
+      'That space is not available to this account.'
+    );
+
+    // A community suspended while someone has it open by its name sends them to the chooser.
+    await page.goto(`${baseUrl}/second-home`);
+    await expect(page.getByRole('heading', { name: '# lobby' })).toBeVisible();
+    await pool.query(
+      "UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now() WHERE id=$1",
+      [secondId]
+    );
+    await expect(page).toHaveURL(`${baseUrl}/`, { timeout: 15_000 });
+    await expect(page.getByRole('status')).toHaveText(
+      'That space is not available to this account.'
+    );
+
+    // Server-minted links keep the UUID, never the name.
+    const firstInvite = await context.request.post(
+      `${baseUrl}/api/v1/communities/${firstId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(firstInvite.status()).toBe(201);
+  } finally {
+    await pool.query('DELETE FROM community_short_names');
+    await context.close();
+    await outsider.close();
+  }
+});
+
+test('a host moves a community in from its owner’s export and watches it through to ready', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const blobStore = createBlobStore(config);
+  // The server under test runs no background worker; each step of the import is one sweep.
+  const work = async () => {
+    for (let round = 0; round < 10; round++) {
+      const result = await sweepImports(pool, blobStore, config.limits);
+      if (!result.claimed) return;
+    }
+  };
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const section = page.getByRole('region', { name: 'Move a space here' });
+    await section.getByLabel('Name of the moved space').fill('Moved Place');
+    // The file chooser is a button whose visible words are its name, and keyboard focus on it
+    // shows a ring even though the file input inside it is invisible.
+    const chooser = section.getByLabel('Choose export file');
+    const shadow = () =>
+      chooser.evaluate((input) => getComputedStyle(input.closest('label')!).boxShadow);
+    const resting = await shadow();
+    await section.getByLabel('Name of the moved space').press('Tab');
+    await expect(chooser).toBeFocused();
+    await expect.poll(shadow).not.toBe(resting);
+    await chooser.setInputFiles(
+      fileURLToPath(
+        new URL(
+          '../../server/src/services/spaces/__tests__/fixtures/owner-export-v1.zip',
+          import.meta.url
+        )
+      )
+    );
+    await expect(section).toContainText('owner-export-v1.zip will be sent when the import starts.');
+    await section.getByRole('button', { name: 'Start import' }).click();
+    await expect(section).toContainText('Export received. It is being checked now.');
+    // The upload details are still shown once, for anyone else who holds the file.
+    await expect(section.getByLabel('Upload token')).toHaveValue(/.+/);
+    const card = page.getByRole('article', { name: 'Moved Place space' });
+    await expect(card).toContainText('Import: Checking the export');
+    await shot(page, 'host-import-checking');
+
+    await work();
+    await page.reload();
+    await expect(card).toContainText('Import: Checked. Ready to import.');
+    await expect(card).toContainText(
+      '3 channels, 9 messages, 2 files (1 KiB), 3 past members, 1 past agent.'
+    );
+    // Nobody can claim it while it is being imported.
+    await expect(card.getByRole('button', { name: 'Reissue owner claim' })).toHaveCount(0);
+
+    await card.getByRole('button', { name: 'Import now' }).click();
+    await expect(card).toContainText('Import: Importing');
+    await work();
+    await page.reload();
+    await expect(card).toContainText('Import: Imported. Send an owner claim to finish.');
+    await expect(card.getByRole('button', { name: 'Cancel import' })).toHaveCount(0);
+    const restored = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM entries e JOIN community_imports i
+         ON i.community_id=e.community_id WHERE i.state='ready'`
+    );
+    expect(restored.rows[0].n).toBe(9);
+    await shot(page, 'host-import-ready');
+  } finally {
+    await context.close();
+  }
+});

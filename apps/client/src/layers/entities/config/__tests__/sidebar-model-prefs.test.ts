@@ -36,18 +36,14 @@ describe('toSidebarModelPrefs', () => {
         },
       ],
       muted: [{ kind: 'room', roomId: '01JNOISY' }],
-      sections: { agents: { collapsed: true, sortMode: 'recent', displayFilter: 'active' } },
-      gettingStarted: { retired: ['suggestion:groups-hint'] },
-      digest: { lastShownDate: '2026-08-09' },
+      sections: { dms: { collapsed: true, sortMode: 'recent' } },
     });
 
     expect(toSidebarModelPrefs(stored)).toEqual({
       pinned: [{ kind: 'agent', path: '/a' }],
       groups: stored.groups,
       muted: [{ kind: 'room', roomId: '01JNOISY' }],
-      sections: { agents: { collapsed: true, sortMode: 'recent', displayFilter: 'active' } },
-      gettingStarted: { retired: ['suggestion:groups-hint'] },
-      digest: { lastShownDate: '2026-08-09' },
+      sections: { dms: { collapsed: true, sortMode: 'recent' } },
     } satisfies SidebarModelPrefs);
   });
 
@@ -57,8 +53,6 @@ describe('toSidebarModelPrefs', () => {
       groups: [],
       muted: [],
       sections: {},
-      gettingStarted: { retired: [] },
-      digest: { lastShownDate: undefined },
     });
   });
 
@@ -71,21 +65,6 @@ describe('toSidebarModelPrefs', () => {
       name: 'no sections',
       stored: { ...SIDEBAR_PREFS_DEFAULTS, sections: undefined },
       expected: { sections: {} },
-    },
-    {
-      name: 'no gettingStarted',
-      stored: { ...SIDEBAR_PREFS_DEFAULTS, gettingStarted: undefined },
-      expected: { gettingStarted: { retired: [] } },
-    },
-    {
-      name: 'gettingStarted with no retired list',
-      stored: { ...SIDEBAR_PREFS_DEFAULTS, gettingStarted: {} },
-      expected: { gettingStarted: { retired: [] } },
-    },
-    {
-      name: 'no digest',
-      stored: { ...SIDEBAR_PREFS_DEFAULTS, digest: undefined },
-      expected: { digest: {} },
     },
     {
       name: 'no pinned',
@@ -108,14 +87,7 @@ describe('toSidebarModelPrefs', () => {
     const view = toSidebarModelPrefs(stored as SidebarPrefs);
     expect(view).toMatchObject(expected);
     // Totality, asserted as a whole rather than one key at a time.
-    for (const key of [
-      'pinned',
-      'groups',
-      'muted',
-      'sections',
-      'gettingStarted',
-      'digest',
-    ] as const) {
+    for (const key of ['pinned', 'groups', 'muted', 'sections'] as const) {
       expect(view[key]).toBeDefined();
     }
   });

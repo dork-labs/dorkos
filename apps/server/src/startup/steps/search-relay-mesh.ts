@@ -359,6 +359,9 @@ export async function startSearchRelayAndMesh(
           // The sweep's own write is not an outside change.
           if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
           else await write();
+          // Never moves the person-set floor (DOR-3107): the fold reads fields
+          // an agent can write into its own file, so a loosening it carries is
+          // the agent's word, not a person's. A tightening still applies.
         },
         retireAgentContext: () => configManager.retireAgentContext(),
         activity: activityService,

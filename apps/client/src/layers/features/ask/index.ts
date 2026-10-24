@@ -3,8 +3,8 @@
  *
  * A tool approval, a question and an MCP elicitation are one object to whoever
  * is being asked, so they are one card family here. It is drawn on five
- * surfaces: the header tray, the sidebar's Heads up rows, the home triage
- * header, a room's live lane, and inline in the session that raised it. Answer
+ * surfaces: the header tray, the phone's Home cards, the home triage header, a
+ * room's live lane, and inline in the session that raised it. Answer
  * it once and it resolves everywhere, because every copy reads the same
  * fleet-wide list (`entities/attention`) and the same resolution event.
  *
@@ -23,7 +23,7 @@ export { AskReceiptLine } from './ui/AskReceiptLine';
 // The three prompts the transcript renders inline. They moved here from
 // `features/chat/ui/tools/` with the rest of the family; the session's message
 // renderer composes them, which is UI composition across features.
-export { ApprovalPrompt } from './ui/ApprovalPrompt';
+export { ApprovalPrompt, WIFI_ALWAYS_ALLOW_LINE } from './ui/ApprovalPrompt';
 export type { ApprovalPromptHandle } from './ui/ApprovalPrompt';
 export { QuestionPrompt } from './ui/QuestionPrompt';
 export type { QuestionPromptHandle } from './ui/QuestionPrompt';

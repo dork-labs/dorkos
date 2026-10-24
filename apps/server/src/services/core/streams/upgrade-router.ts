@@ -41,6 +41,8 @@ import { gateAccessFor } from '../auth/gate-policy.js';
 import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
 import { admitHubRequest, trackHubConnection } from '../hub/hub-serving.js';
+import { registerLiveConnection } from '../auth/sessions/live-connections.js';
+import { refuseUpgradeFromWifi } from '../auth/sessions/wifi-level.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -260,9 +262,15 @@ export function attachUpgradeRouter(
       return;
     }
     trackHubConnection(socket);
-    // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
-    // and is never read.
+    // The terminal's socket, and anything else the Wi-Fi level refuses
+    // (`../auth/sessions/wifi-level.ts`): the same list the HTTP chain reads.
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (refuseUpgradeFromWifi(req, url.pathname)) {
+      refuse(socket, 403, 'Forbidden');
+      return;
+    }
+    // `url` above: `req.url` is origin-form (`/api/...`); the base only
+    // satisfies the parser and is never read.
     const claimed = routes
       .map((route) => ({ route, match: route.pattern.exec(url.pathname) }))
       .find((candidate): candidate is { route: UpgradeRoute; match: RegExpExecArray } =>
@@ -286,6 +294,8 @@ export function attachUpgradeRouter(
      */
     const deliver = claimed.route.credential === 'required' ? 'close-frame' : 'handshake';
 
+    /** The identity the credential gate resolved, for {@link closeOnSignOut}. */
+    let locals: StreamUpgradeLocals = {};
     void (async () => {
       /** Resolve the decision; every refusal path returns one rather than replying. */
       const decide = async (): Promise<UpgradeDecision> => {
@@ -300,7 +310,6 @@ export function attachUpgradeRouter(
 
         // The credential gate runs HERE rather than inside each route, so a new
         // route cannot forget it — see `UpgradeRoute.credential`.
-        let locals: StreamUpgradeLocals = {};
         if (claimed.route.credential === 'required') {
           const auth = await authorizeStreamUpgrade(req);
           if (admission.isClosed) {
@@ -350,6 +359,7 @@ export function attachUpgradeRouter(
       (claimed.route.webSocketServer ?? wss).handleUpgrade(req, socket, head, (ws) => {
         if (decision.ok) {
           decision.open(ws);
+          closeOnSignOut(ws, locals);
           // Managed remote access counts it only now, past every check above.
           noteUpgradeAdmitted(req, ws);
           return;
@@ -358,4 +368,21 @@ export function attachUpgradeRouter(
       });
     })();
   });
+}
+
+/**
+ * Close a socket when the sign-in that opened it ends (DOR-2969), with the
+ * same `4401` a refused handshake gets, so the client stops and asks for a
+ * sign-in rather than retrying. Only a cookie session names a sign-in.
+ *
+ * @param ws - The open socket.
+ * @param locals - The identity the credential gate resolved.
+ */
+function closeOnSignOut(ws: WebSocket, locals: StreamUpgradeLocals): void {
+  const user = locals.user;
+  if (user?.credential !== 'cookie' || !user.sessionId) return;
+  const unregister = registerLiveConnection(user.sessionId, user.userId, () =>
+    ws.close(STREAM_CLOSE_CODE_BASE + 401, 'Signed out')
+  );
+  ws.once('close', unregister);
 }

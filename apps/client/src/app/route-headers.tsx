@@ -3,3 +3,4 @@ export const ConnectionsBar = () => <TitleBar title="Connections" />;
 export const MarketplaceBar = () => <TitleBar title="Marketplace" />;
 export const MarketplaceSourcesBar = () => <TitleBar title="Marketplace sources" />;
 export const FeedbackRequestsBar = () => <TitleBar title="Your reports" />;
+export const ThreadsBar = () => <TitleBar title="Threads" />;

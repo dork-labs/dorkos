@@ -101,6 +101,24 @@ describe('"N changes" counts the stops that differ from the preset', () => {
 });
 
 describe("an agent's own Files & commands stop", () => {
+  it('adds how many existing chats the new level reaches to its one line (DOR-3175)', async () => {
+    const world = createPermissionWorld({
+      preset: 'balanced',
+      agents: TWO_AGENTS,
+      levelReach: async (changes) =>
+        changes.some((c) => c.key.kind === 'files')
+          ? { line: '2 chats follow it', rose: [] }
+          : undefined,
+    });
+    await world.service.setAgent(
+      'agent-test',
+      { filesAndCommands: 'ask', surface: 'agent-page' },
+      LOCAL
+    );
+    expect(world.events).toHaveLength(1);
+    expect(world.events[0]!.summary).toMatch(/ · 2 chats follow it$/);
+  });
+
   it('stores it, records one event, and reports it resolved with its source', async () => {
     const world = createPermissionWorld({ preset: 'balanced', agents: TWO_AGENTS });
     await world.service.setAgent(

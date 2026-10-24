@@ -5,6 +5,7 @@ import {
   attemptShot,
   mintVideoDir,
   newCaptureContext,
+  openDirectChats,
   openLiveTurn,
   seedThemeOnContext,
   SETTLE_MS,
@@ -54,7 +55,7 @@ const MOBILE_FLEET: readonly { agent: string; prompt: string; scenario: string }
  * by any navigation, so every pass through the drive raises it again.
  *
  * @param page - The phone page.
- * @param tab - Which destination: `home` is Now + Today.
+ * @param tab - Which destination: `home` is the sidebar's list, with answer cards on top.
  */
 async function openMobileTab(page: Page, tab: 'home'): Promise<void> {
   await page.getByTestId(`mobile-tab-${tab}`).tap({ timeout: WAIT_MS });
@@ -64,19 +65,19 @@ async function openMobileTab(page: Page, tab: 'home'): Promise<void> {
 
 /**
  * Drive the phone's Home panel: the person starts a new chat with each agent in
- * turn, so Home ends up showing Now (what is running, and who stopped to ask)
- * over the two live conversations in Today, one green and one amber.
+ * turn, so Home ends up showing the card for the one who stopped to ask, over
+ * Direct messages with both agents in it.
  *
  * Same two rules as the desktop fleet drive (`driveMultiSession`), for the same
- * reasons: Today lists only the chats this person touched (DOR-2789), so each
- * one is started through the composer ({@link openLiveTurn}); and each turn
- * starts just before the next, so both rows are still live when the shutter
- * falls.
+ * reasons: the agents' Direct chats are opened first, because the sidebar lists
+ * an agent once there is a direct message with it; and each turn starts just
+ * before the next, so both are still running when the shutter falls.
  *
- * The bottom bar keeps Now/Today and the open chat apart, so Home is raised at
- * the end for the shot itself.
+ * The bottom bar keeps Home and the open chat apart, so Home is raised at the
+ * end for the shot itself.
  */
 async function driveMobileSessions(page: Page): Promise<void> {
+  await openDirectChats(MOBILE_FLEET.map((entry) => entry.agent));
   for (const entry of MOBILE_FLEET) {
     await openLiveTurn(page, entry.scenario, entry.prompt, entry.agent);
     await sleep(600);
@@ -84,12 +85,9 @@ async function driveMobileSessions(page: Page): Promise<void> {
   await waitForAppShell(page);
   await openMobileTab(page, 'home');
   await page
-    .locator('[data-sidebar-zone="today"] [data-sidebar-row]')
+    .locator('[data-sidebar-section="dms"] [data-sidebar-row]')
     .nth(MOBILE_FLEET.length - 1)
     .waitFor({ timeout: WAIT_MS });
-  // Opening a conversation scrolls its Today row into view; put Now back on
-  // top so the panel reads from the summary down to the rows it summarises.
-  await page.locator('[data-sidebar-zone="now"]').first().scrollIntoViewIfNeeded();
   await sleep(400);
 }
 
@@ -162,8 +160,8 @@ async function recordMobileChatLoop(browser: Browser, rec: RunRecorder): Promise
 /**
  * Capture the mobile set: Home-panel, streaming-chat, and tool-approval light
  * stills, plus the mobile chat loop (whose dark poster is extracted from the
- * loop's own first frame at process time). Runs late so the Now zone carries
- * the whole stack's outstanding work, not just this drive's.
+ * loop's own first frame at process time). Runs late so Home's answer cards
+ * carry the whole stack's outstanding asks, not just this drive's.
  */
 export async function captureMobile(browser: Browser, rec: RunRecorder): Promise<void> {
   const ctx = await newMobileContext(browser);

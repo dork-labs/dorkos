@@ -4,6 +4,7 @@ import {
   useExtensionRegistry,
   createInitialSlots,
   isExtensionContributionId,
+  type RightPanelContribution,
 } from '@/layers/shared/model';
 
 import { initializeExtensions } from '../init-extensions';
@@ -198,6 +199,92 @@ describe('initializeExtensions — right-panel contributions', () => {
     for (const pathname of ['/', '/team', '/tasks', '/marketplace']) {
       expect(terminal?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
     }
+  });
+});
+
+describe('initializeExtensions — the right panel beside a DM (DOR-3075)', () => {
+  beforeEach(() => {
+    useExtensionRegistry.setState({ slots: createInitialSlots() });
+    initializeExtensions();
+  });
+
+  const transport = createMockTransport({ supportsTerminal: true, supportsWorkbenchServe: true });
+
+  /** The titles of the tabs a context shows, in strip order. */
+  function tabsFor(ctx: Parameters<NonNullable<RightPanelContribution['visibleWhen']>>[0]) {
+    return useExtensionRegistry
+      .getState()
+      .getContributions('right-panel')
+      .filter((c) => !c.isGlobal && (!c.visibleWhen || c.visibleWhen(ctx)))
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+      .map((c) => c.title);
+  }
+
+  it('leaves a session’s panel exactly as it was with the DM view off', () => {
+    const before = tabsFor({ pathname: '/session', transport });
+    expect(before).toEqual([
+      'Profile',
+      'Chat',
+      'Files',
+      'Computer',
+      'Canvas',
+      'Page previews',
+      'Browser',
+      'Terminal',
+    ]);
+    expect(tabsFor({ pathname: '/session', transport, directMessage: null })).toEqual(before);
+    expect(before).not.toContain('Work');
+  });
+
+  it('gives a DM a session’s tabs plus Work, with the session’s machinery behind Show sessions', () => {
+    const dm = { kind: 'one-to-one' as const, showSessions: false };
+    expect(tabsFor({ pathname: '/session', transport, directMessage: dm })).toEqual([
+      'Profile',
+      'Files',
+      'Computer',
+      'Canvas',
+      'Page previews',
+      'Browser',
+      'Work',
+    ]);
+  });
+
+  it('adds Terminal and the session readout to a DM with Show sessions on', () => {
+    const dm = { kind: 'one-to-one' as const, showSessions: true };
+    expect(tabsFor({ pathname: '/session', transport, directMessage: dm })).toEqual([
+      'Profile',
+      'Chat',
+      'Files',
+      'Computer',
+      'Canvas',
+      'Page previews',
+      'Browser',
+      'Work',
+      'Terminal',
+    ]);
+  });
+
+  it('scopes a group DM’s tabs to the picked member, and shows Work only once one is picked', () => {
+    const group = { kind: 'group' as const, showSessions: false };
+    expect(tabsFor({ pathname: '/channels', transport, directMessage: group })).not.toContain(
+      'Work'
+    );
+    const picked = tabsFor({
+      pathname: '/channels',
+      transport,
+      directMessage: group,
+      explicitAgentPath: '/agents/qa',
+    });
+    expect(picked).toEqual(expect.arrayContaining(['Room', 'Profile', 'Computer', 'Work']));
+  });
+
+  it('never shows Work beside a channel or a session', () => {
+    const work = useExtensionRegistry
+      .getState()
+      .getContributions('right-panel')
+      .find((c) => c.id === 'work');
+    expect(work?.visibleWhen?.({ pathname: '/channels', explicitAgentPath: '/a' })).toBe(false);
+    expect(work?.visibleWhen?.({ pathname: '/session', directMessage: null })).toBe(false);
   });
 });
 

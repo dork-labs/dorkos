@@ -39,6 +39,7 @@ import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
 import { hasRenderableUsage } from '../lib/account-usage-status';
+import { isPhoneDensity, type StatusDensity } from './status-budget';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { isBypassPermissionMode, isBypassSemantics, type ChipState } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
@@ -110,6 +111,13 @@ export interface StatusPromotionContext {
    * "make it the default" offer with it. Absent reads as closed.
    */
   permissionPickerOpen?: boolean;
+  /**
+   * Whether this browser reached DorkOS over Wi-Fi, where every turn runs at
+   * the runtime's default at most (DOR-3037). The Permissions item then stays
+   * on the line whatever the chat's own mode: it is what a person acts on
+   * there. Absent reads as not Wi-Fi.
+   */
+  onWifi?: boolean;
   /**
    * The way of working this runtime offers and whether the session is in it, or
    * `null` when the runtime offers none (most of them) — the same rule every
@@ -348,6 +356,33 @@ export interface StatusBarItemConfig {
    * "100% · old", about 36px past its slot, and it cannot give any of that up.
    */
   wide?: (ctx: StatusPromotionContext) => boolean;
+  /**
+   * Set when the item is the line's one control a person acts on, so below the
+   * `full` tier it is held: the budget gives it a slot before ranking the rest,
+   * and the row never squeezes it (see `applyStatusBudget` and `StatusLine`).
+   * At phone width the agent's name gives up its letters instead.
+   *
+   * One item only, deliberately. A held item costs the row pixels it can never
+   * take back, and its value is bounded below `full`, which is what makes the
+   * hold affordable. `permission` is the one.
+   */
+  held?: true;
+  /**
+   * Whether the item, at this density, is a control whose whole face is one
+   * icon or one short word, so the row neither squeezes it nor pads it.
+   *
+   * A shrinkable item gets a 40px floor so its glyph never paints into a
+   * neighbour. That floor is wrong both ways for a face this small: around a
+   * lone 15px icon it is ~25px of nothing the agent's name could have used, and
+   * a one-word mode like "Plan" squeezed toward it clips to "Pl…", which names
+   * nothing. A snug item is `shrink-0` with no floor, so it costs exactly its
+   * content.
+   *
+   * It does not count against the budget's rigid cap: that cap guards the row
+   * from items wider than the floor they would otherwise shrink to, and a snug
+   * face is at or below it.
+   */
+  snug?: (density: StatusDensity) => boolean;
 }
 
 /** Human-readable labels for each popover group, used as section headers. */
@@ -456,6 +491,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
       ctx.runtime.type !== 'doe' &&
       (!ctx.runtime.isDefault || ctx.runtime.canSelect),
     severity: runtimeSeverity,
+    // At phone width it is the runtime's icon alone (Test Mode's flask).
+    snug: isPhoneDensity,
   },
   {
     key: 'account',
@@ -560,6 +597,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Shield,
+    held: true,
     // Both PROMOTE (is this worth a slot at all) and SEVERITY (how urgent a
     // slot) read the same fact, `isElevatedPermissionMode` — they used to
     // agree by accident (both switched on the mode's name) and a fix to only
@@ -583,13 +621,19 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // is pointing at it (see `permissionPickerOpen`). On a narrow, full line
     // that rank can push a lower item off while the picker is open; keeping
     // the popover under the cursor is worth it.
-    promote: (ctx) => isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true,
+    //
+    // On Wi-Fi it shows whatever the mode (DOR-3037): the chip says the level
+    // every turn sent from here runs at, and is how a person changes it.
+    promote: (ctx) =>
+      isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true || ctx.onWifi === true,
     severity: (ctx) => {
       const bypassed = ctx.permissionDescriptor
         ? isBypassSemantics(ctx.permissionDescriptor)
         : isBypassPermissionMode(ctx.permissionMode);
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
-      return isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true
+      return isElevatedPermissionMode(ctx) ||
+        ctx.permissionPickerOpen === true ||
+        ctx.onWifi === true
         ? SEVERITY.PERMISSION_ELEVATED
         : SEVERITY.QUIET;
     },
@@ -606,6 +650,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // all, so this costs a slot on Claude sessions only.
     promote: (ctx) => ctx.plan !== null,
     severity: (ctx) => (ctx.plan?.active ? SEVERITY.PLAN_ACTIVE : SEVERITY.QUIET),
+    // A mode switch, like the permission chip: "Plan" whole, never "Pl…".
+    snug: () => true,
   },
   {
     key: 'subagents',

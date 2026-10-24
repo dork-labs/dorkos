@@ -1793,6 +1793,46 @@ describe('feedProjector — stranded background children', () => {
     expect(projector.getStatus().runningSubagentCount).toBe(0);
   });
 
+  // FB-18: on a warm process the stream is one turn's window, so a helper that
+  // outlives the reply is still running when it ends. Calling it lost made the
+  // helper strip go blank while the helper kept working.
+  it('spares the children the runtime still names as running', async () => {
+    const projector = new SessionStateProjector('strand-6');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'background_task_started', data: { taskId: 'helper', description: 'sleep' } };
+      yield { type: 'background_task_started', data: { taskId: 'gone', description: 'lint' } };
+      yield { type: 'done', data: { sessionId: 'strand-6' } };
+    }
+
+    await feedProjector(projector, turn(), { stillLive: () => ['helper'] });
+
+    const terminal = ingestSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'subagent_update' && e.status !== 'running');
+    // Only the child the runtime no longer sees is called lost.
+    expect(terminal).toEqual([{ type: 'subagent_update', taskId: 'gone', status: 'untracked' }]);
+    expect(projector.listRunningSubagents()).toEqual(['helper']);
+  });
+
+  it('sweeps every child when the runtime cannot say what is running', async () => {
+    const projector = new SessionStateProjector('strand-7');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'background_task_started', data: { taskId: 'helper' } };
+      yield { type: 'done', data: { sessionId: 'strand-7' } };
+    }
+
+    await feedProjector(projector, turn(), {
+      stillLive: () => {
+        throw new Error('pump gone');
+      },
+    });
+
+    expect(projector.getStatus().runningSubagentCount).toBe(0);
+  });
+
   // Nothing running, nothing swept: an ordinary turn gains no events at all.
   it('adds nothing to a turn that had no children', async () => {
     const projector = new SessionStateProjector('strand-4');

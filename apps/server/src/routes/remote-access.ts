@@ -7,14 +7,18 @@
  * Starting setup (`POST /enrolment`), choosing a mode (`POST /mode`) and
  * withdrawing (`POST /withdraw`) decide who can reach this computer, and how,
  * and withdrawing ends a person's consent. They are a person's, at this
- * computer, so each runs these bars in this order:
+ * computer or on an encrypted connection, so each runs these bars in this
+ * order:
  *
  * 1. the cookie bar under login (`requireOperatorCookieUnderLogin`): a
  *    per-user API key is not a person;
  * 2. the trusted-caller bar (`trustedCaller`): an agent, or a caller holding an
  *    approval token, is refused in every posture;
- * 3. the local-caller bar (`isAtThisComputer`): a phone over a tunnel, managed
- *    access itself, or another device on the network is refused;
+ * 3. the connection bar (`isAtThisComputer`, or `isOnEncryptedConnection`,
+ *    DOR-3172): plain-`http` Wi-Fi and a bare network bind are refused; the
+ *    own tunnel, managed access itself and DorkOS's own `https` listener pass;
+ * 3b. the front-door bar (`refuseFrontDoorChange`, DOR-2969): only the
+ *    install's owner using the app, never an API key;
  * 4. for anything managed, a real login (`canExpose`), answered with the same
  *    `AUTH_REQUIRED_FOR_EXPOSURE` the person's own tunnel uses, so the client
  *    routes the person into creating an owner account.
@@ -41,7 +45,11 @@ import type { RemoteAccessReport } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { requireOperatorCookieUnderLogin, readCallerAuthority } from '../lib/caller-authority.js';
+import {
+  refuseFrontDoorChange,
+  requireOperatorCookieUnderLogin,
+  readCallerAuthority,
+} from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import {
   AUTH_REQUIRED_FOR_EXPOSURE,
@@ -61,7 +69,7 @@ import {
   type ManagedRemoteCoordinator,
 } from '../services/core/remote/managed-remote-coordinator.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';
 
 /** Refusal code for a remote access action from anywhere but this computer. */
 export const REMOTE_SETUP_NEEDS_THIS_COMPUTER = 'REMOTE_SETUP_NEEDS_THIS_COMPUTER';
@@ -106,7 +114,7 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
     logger.warn('[RemoteAccess] Refused a remote access action from an agent');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
-  if (!isAtThisComputer(caller)) {
+  if (!isAtThisComputer(caller) && !isOnEncryptedConnection(caller)) {
     return c.json(
       {
         error: 'Remote access can only be changed on the computer DorkOS runs on.',
@@ -115,6 +123,9 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
       403
     );
   }
+  // The front-door bar: the install's owner, using the app, never a key.
+  const frontDoor = refuseFrontDoorChange(caller, 'remote access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   return undefined;
 }
 

@@ -110,11 +110,7 @@ import {
   useRightPanelShortcut,
   RIGHT_PANEL_GROUP_ID,
 } from '@/layers/features/right-panel';
-import {
-  useLegacyProfileLinkRedirect,
-  useProfileDockDeepLink,
-  useProfileShortcut,
-} from '@/layers/features/profile';
+import { useProfileRootLinks, useProfileShortcut } from '@/layers/features/profile';
 
 /**
  * How long a config read may hang before the shell calls the server unreachable.
@@ -144,9 +140,9 @@ interface SidebarSlot {
    * rather than the built-in roster.
    *
    * The two widths spend a takeover differently: on desktop it replaces the
-   * whole body, and on a phone it replaces the Library tab and leaves Home
-   * standing (P4). So the shell has to say which kind of body this is, rather
-   * than the mobile layout guessing from a key string.
+   * whole body, and on a phone it replaces the list under Home and leaves the
+   * answer cards above it standing (P4). So the shell has to say which kind of
+   * body this is, rather than the mobile layout guessing from a key string.
    */
   isTakeover: boolean;
 }
@@ -277,9 +273,9 @@ export function AppShell() {
   useProfileShortcut();
   useControlCenterShortcut();
   // Mounted at the shell, not inside the panel: a link that opens the profile
-  // has to work when the profile is not already what you are looking at.
-  useLegacyProfileLinkRedirect();
-  useProfileDockDeepLink();
+  // has to work when the profile is not already what you are looking at, and a
+  // profile opened elsewhere never follows you into a chat (FB-60).
+  useProfileRootLinks();
   useRightPanelPersistence();
   // In-window tabs (DOR-540): location sync, the tab keys, Recently closed and
   // restored-tab tidying. All no-op outside the desktop shell (DOR-568).
@@ -936,12 +932,12 @@ export function AppShell() {
                     </main>
                   </SidebarInset>
                 </SidebarProvider>
-                {/* ── The phone cockpit: four destinations, no drawer ──
+                {/* ── The phone cockpit: three destinations, no drawer ──
                       A sibling of the provider rather than a child of it, so
                       the bar reserves its own room at the bottom of the shell
                       and no routed page has to know it exists to avoid being
-                      covered by it. Its panels are what Now, Today and Library
-                      look like when they get the whole screen. */}
+                      covered by it. Its Home panel is the sidebar's list with
+                      the whole screen to itself. */}
                 {isMobile && (
                   <MobileTabsLayout takeover={sidebarSlot.isTakeover ? sidebarSlot.body : null} />
                 )}

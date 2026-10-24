@@ -17,6 +17,7 @@ import {
   rewriteUpstreamLocation,
 } from '../preview-listener.js';
 import { WorkbenchTokenSigner } from '../token.js';
+import { frameBridgeLedger, previewPageKey } from '../bridge-ledger.js';
 
 const signer = new WorkbenchTokenSigner({ secret: 'preview-listener-test-secret' });
 
@@ -169,6 +170,20 @@ beforeAll(async () => {
           'Content-Security-Policy-Report-Only': "script-src 'none'; frame-ancestors 'none'",
         });
         res.end('<html><head><title>dev</title></head><body>hi</body></html>');
+        return;
+      }
+      if (url.startsWith('/bare-charset')) {
+        // No charset on the header, and a body `<meta charset>` that would
+        // re-decode the page if the header did not settle it.
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><head></head><body><meta charset="iso-2022-jp">hi</body></html>');
+        return;
+      }
+      if (url.startsWith('/icons')) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(
+          `<html><head><title>icons</title></head><body>${'<svg><path d="M0 0"/></svg>'.repeat(200)}</body></html>`
+        );
         return;
       }
       if (url.startsWith('/echo')) {
@@ -921,3 +936,45 @@ async function reserveClosedPort(): Promise<number> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   return port;
 }
+
+describe('PreviewListenerManager — the canvas can ask why (DOR-3131)', () => {
+  afterEach(() => frameBridgeLedger.clear());
+
+  it('instruments a page whose body is full of inline SVG, and records that it did', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    const res = await fetchPreview(listenPort, '/icons/a%20b?x=1', { headers: { cookie } });
+    expect(res.body).toContain('dorkos-doc');
+    expect(res.body.indexOf('dorkos-doc')).toBeLessThan(res.body.indexOf('<svg>'));
+    // The canvas asks with the path as it opened it; the query is ignored.
+    expect(frameBridgeLedger.status(previewPageKey(upstreamPort, '/icons/a b'))).toEqual({
+      bridge: 'added',
+    });
+  });
+
+  it('sends an instrumented page as certain UTF-8 when the dev server named no charset', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    const res = await fetchPreview(listenPort, '/bare-charset', { headers: { cookie } });
+    expect(res.body).toContain('dorkos-doc');
+    // Exactly one Content-Type, and it is UTF-8: the body was never read, so a
+    // body `<meta charset>` must not be able to change how the page decodes.
+    const fields = res.rawHeaders.filter(
+      (_, i) => i % 2 === 0 && /^content-type$/i.test(res.rawHeaders[i])
+    );
+    expect(fields).toHaveLength(1);
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+  });
+
+  it('records the stable reason for each page it served unchanged', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    await fetchPreview(listenPort, '/', { headers: { cookie } });
+    await fetchPreview(listenPort, '/latin1.html', { headers: { cookie } });
+    await fetchPreview(listenPort, '/huge.html', { headers: { cookie } });
+    await fetchPreview(listenPort, '/app.css', { headers: { cookie } });
+    const status = (path: string) => frameBridgeLedger.status(previewPageKey(upstreamPort, path));
+    expect(status('/')).toEqual({ bridge: 'refused', reason: 'csp' });
+    expect(status('/latin1.html')).toEqual({ bridge: 'refused', reason: 'encoding' });
+    expect(status('/huge.html')).toEqual({ bridge: 'refused', reason: 'oversize' });
+    // Not a page, so nothing to say about it.
+    expect(status('/app.css')).toEqual({ bridge: 'unknown' });
+  });
+});

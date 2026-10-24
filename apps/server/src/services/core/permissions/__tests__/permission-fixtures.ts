@@ -4,6 +4,7 @@
  * Activity log that records what was emitted. Every piece is a real value the
  * service reads and writes, so a test asserts on the state it left behind.
  */
+import type { PermissionServiceDeps } from '../permission-service-deps.js';
 import type {
   AgentPermissions,
   PermissionConfigInput,
@@ -63,6 +64,8 @@ export function createPermissionWorld(
     arrivalsHealthy?: boolean;
     /** Extra actions beside the fixture ones, e.g. a running extension's tools. */
     extraActions?: PermissionActionInfo[];
+    /** The note a change to agents' levels carries (DOR-3175). */
+    levelReach?: PermissionServiceDeps['levelReach'];
   } = {}
 ) {
   const config = {
@@ -155,6 +158,7 @@ export function createPermissionWorld(
     actions: () => [...FIXTURE_ACTIONS, ...(options.extraActions ?? [])],
     arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
+    ...(options.levelReach ? { levelReach: options.levelReach } : {}),
   });
 
   return {

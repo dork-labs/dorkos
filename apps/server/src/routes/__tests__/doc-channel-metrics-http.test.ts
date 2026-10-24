@@ -30,6 +30,7 @@ import { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
 import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
 import { initAuth, readOwnerAccount, getAuth } from '../../services/core/auth/index.js';
+import { endRestartWindowForTests } from '../../services/core/auth/sessions/live-connections.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import {
@@ -127,6 +128,8 @@ function grant(limits?: { envelopeBytes?: number; eventsPerMinute?: number }) {
   return granted.grant;
 }
 beforeAll(async () => {
+  // One test reads through a cached cookie, which a just-started server skips.
+  endRestartWindowForTests();
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-metrics-http-'));
   initConfigManager(dir);
   db = createDb(path.join(dir, 'http.db'));

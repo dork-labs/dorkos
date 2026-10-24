@@ -146,9 +146,9 @@ The header components live in `apps/client/src/layers/widgets/one-bar/` — a wi
 
 **The swap region is now exactly the body.** `AppShell.tsx` wraps only `sidebarSlot.body` in the animated swap. The header block above it and `SidebarFooter` (→ `SidebarFooterStrip`) below it are both siblings outside it, so a takeover replaces the roster and leaves the panel's identity and its destinations standing. The navigation used to render inside `DashboardSidebar` — which _is_ the body — so navigating to `/marketplace` destroyed it; it moved out with the sidebar redesign's zone shell, and moved again into the footer strip when the panel went down to one nav implementation (spec `sidebar-now-today-library` BC-47).
 
-**The rule is that only the body swaps.** The header block and the footer strip are both persistent chrome and both belong outside the swap region, so a takeover replaces the middle of the panel and nothing else — the operator never loses the New menu or the destination icons to somebody's extension, and there is always a way back out of a contributed body. It is a review blocker to render either piece inside `sidebarSlot.body`, and `app-shell-slots.test.tsx` asserts both stay mounted across a takeover, with zones present and with zones absent.
+**The rule is that only the body swaps.** The header block and the footer strip are both persistent chrome and both belong outside the swap region, so a takeover replaces the middle of the panel and nothing else — the operator never loses the New menu or the destination icons to somebody's extension, and there is always a way back out of a contributed body. It is a review blocker to render either piece inside `sidebarSlot.body`, and `app-shell-slots.test.tsx` asserts both stay mounted across a takeover, with the built-in sections and with a contributed body.
 
-**On a phone the sidebar is not mounted at all.** Below 768px `AppShell` selects `widgets/mobile-tabs`'s `MobileTabsLayout` instead — four destinations along the bottom, no drawer and no hamburger (spec `sidebar-now-today-library` §9, P4.1). A contributed `sidebar.body` takeover replaces **Library** there and leaves Home standing, which is the one place mobile deliberately differs from desktop: Heads up and Today are what needs you, and browsing somebody's extension is not a reason to stop being told. So a takeover has three shapes to keep working in, not two: desktop with zones, desktop with a takeover body, and the phone's Library panel.
+**On a phone the sidebar is not mounted at all.** Below 768px `AppShell` selects `widgets/mobile-tabs`'s `MobileTabsLayout` instead — three destinations along the bottom (Home, DorkBot, You), no drawer and no hamburger (spec `sidebar-now-today-library` §9, P4.1). Home is the sidebar's list with the answer cards for whatever needs you above it. A contributed `sidebar.body` takeover replaces the list there and leaves the answer cards standing, which is the one place mobile deliberately differs from desktop: browsing somebody's extension is not a reason to stop being told something needs you. So a takeover has three shapes to keep working in, not two: desktop with the built-in sections, desktop with a takeover body, and the phone's Home panel.
 
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 
@@ -526,7 +526,7 @@ A session's canvas is the same table under a `session:` scope (spec `canvas-agen
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
 
-**Actual wiring:** `GET /api/rooms` lists local rooms through caller-aware `RoomService` operations, not through the single-identity local port. Qualified routes and the subscription runtime lazily obtain owner-qualified remote Community implementations; qualified `/api/communities/:ref/rooms/:roomId` routes and the remote-room SSE stream serve the local app's authorized Community channels. The Buzz implementation is not exported or registered at startup. The independent `apps/community` service retains browser chat, invitations, files, exports, pairing, and its own authority. See [Community development](community-server.md).
+**Actual wiring:** `GET /api/rooms` lists local rooms through caller-aware `RoomService` operations, not through the single-identity local port. Qualified routes and the subscription runtime lazily obtain owner-qualified remote Community implementations; qualified `/api/communities/:ref/rooms/:roomId` routes and the remote-room SSE stream serve the local app's authorized Community channels. The Buzz implementation is not exported or registered at startup. The independent `apps/space` service retains browser chat, invitations, files, exports, pairing, and its own authority. See [Community development](community-server.md).
 
 ## Memory Provider (the fifth seam)
 
@@ -650,7 +650,7 @@ Before the permission-areas system existed, this section described a stronger-lo
 
 ## Module Layout
 
-Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/community/src/app.ts` for the independent Community API.
+Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/server/src/services/spaces/app.ts` for the independent Community API.
 
 | Area                  | Location                                                            | Responsibility                                                                  |
 | --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -662,7 +662,7 @@ Use [project structure](project-structure.md) for the repository map and [system
 | Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server     | Rooms, scheduling, message routing and discovery                                |
 | Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server  | Account actions, remote community seam and agent memory                         |
 | Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server | Transactions, activation and harness projection                                 |
-| Independent Community | `apps/community/src/`                                               | Hono API, browser, PostgreSQL and blob storage                                  |
+| Independent Community | `services/spaces/` under the server; `apps/space/` (build, web)     | Hono API, browser, PostgreSQL and blob storage                                  |
 | Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
 
 ## Claude Code Binary Resolution
@@ -800,13 +800,14 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 **Native dependencies:** `better-sqlite3` (via `@dorkos/db`) and `node-pty` (via the CLI) are required at runtime but cannot be inlined by esbuild. They are direct dependencies in `packages/cli/package.json` so `npm install -g` builds them. `node-pty` ships no Linux prebuilds and compiles via node-gyp; `better-sqlite3` has official Linux prebuilds for Node 24 and vendors its own SQLite. Install environments need build tools (`python3`, `build-essential` on Linux — no `libsqlite3-dev`; Xcode CLI tools on macOS).
 
-**Docker image:** One multi-stage `Dockerfile` at the repo root produces four build targets:
+**Docker image:** One multi-stage `Dockerfile` at the repo root produces these build targets, plus `hub` and `hub-smoke`:
 
 | Target                | Purpose                                                                 | Command                                |
 | --------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
 | `smoke`               | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
 | `integration`         | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
 | `runtime`             | Published product image — starts a DorkOS server on `DORKOS_PORT`       | `pnpm docker:build && pnpm docker:run` |
+| `space`               | The space server's image (`ghcr.io/dork-labs/dorkos-community`)         | `docker build --target space .`        |
 | `builder` / `install` | Internal stages — toolchain + global npm install, not run directly      | —                                      |
 
 `runtime` is the last stage, so a bare `docker build .` produces it. Install mode is selected by the `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to run the integration target against the published npm package. The `integration` and `runtime` targets set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.

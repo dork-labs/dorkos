@@ -1416,6 +1416,15 @@ contractSuite(
       expect: { status: 404, body: NOT_FOUND },
     },
     {
+      // The forced-limit seam for re-seating (DOR-3143): a shipped server can
+      // never be told to fake an account running out.
+      name: 'PUT /api/test/account-world does not exist outside test mode',
+      method: 'PUT',
+      path: '/api/test/account-world',
+      body: { accounts: [{ id: 'claude4' }], startAccount: 'claude4' },
+      expect: { status: 404, body: NOT_FOUND },
+    },
+    {
       name: 'GET /api/test/mcp-oauth/mcp does not exist outside test mode',
       path: '/api/test/mcp-oauth/mcp',
       expect: { status: 404, body: NOT_FOUND },

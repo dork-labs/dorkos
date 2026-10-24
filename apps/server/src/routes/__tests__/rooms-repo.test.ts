@@ -174,6 +174,32 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(await gitInRepo(['rev-parse', '--abbrev-ref', 'HEAD'], store, roomId)).toBe('main');
     expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
     expect(existsSync(store.sidecarPath(roomId))).toBe(true);
+
+    const history = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+    expect(history.status).toBe(200);
+    expect(history.body.entries).toEqual([
+      expect.objectContaining({
+        kind: 'notice',
+        body: expect.objectContaining({
+          text: 'You set up files for this room.',
+          notice: 'files_set_up',
+        }),
+      }),
+    ]);
+  });
+
+  it('refuses an archived room and writes nothing', async () => {
+    const roomId = await channel();
+    const archived = await request(testServer)
+      .patch(`/api/rooms/${roomId}`)
+      .send({ archived: true });
+    expect(archived.status).toBe(200);
+
+    const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ROOM_ARCHIVED');
+    expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
   it('answers 409 with the binding it already had, and makes no second commit', async () => {

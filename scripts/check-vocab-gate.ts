@@ -10,8 +10,8 @@
  * runs it on every change instead of once.
  *
  * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, `apps/server/src`, and
- * the space server's source (the space's own website, DOR-2653; its folder is
- * `SPACE_SRC_DIR` in `ci/space-server.env`, `apps/community/src` today) —
+ * the space server's code and its web page (DOR-2653; their folders are
+ * `SPACE_SRC_DIR` and `SPACE_WEB_DIR` in `ci/space-server.env`) —
  * every workspace whose strings can reach a screen a DorkOS user reads,
  * including server-authored copy the client renders verbatim (a provisioning
  * error, an MCP tool title) — for TypeScript/TSX source, using the real
@@ -230,7 +230,13 @@ export interface Violation {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Workspaces that render product copy a DorkOS user reads. */
-const PRODUCT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
+const PRODUCT_SCAN_ROOTS = [
+  'apps/client/src',
+  'apps/site/src',
+  'apps/server/src',
+  // Copy the space's web page and the space server share (server-merge step 7).
+  'packages/shared/src/space-page',
+];
 
 /**
  * Add the space server's source to the scan roots unless a root already holds it.
@@ -250,9 +256,12 @@ export function withSpaceSource(roots: readonly string[], spaceSrcDir: string): 
   return covered ? [...roots] : [...roots, spaceSrcDir];
 }
 
+const SPACE_SERVER = readSpaceServer(join(SCRIPT_DIR, '..'));
+// The space's web page is product copy too; it sits outside the server's code from the move
+// into apps/server (server-merge step 7) until it joins apps/client.
 const DEFAULT_SCAN_ROOTS = withSpaceSource(
-  PRODUCT_SCAN_ROOTS,
-  readSpaceServer(join(SCRIPT_DIR, '..')).spaceSrcDir
+  withSpaceSource(PRODUCT_SCAN_ROOTS, SPACE_SERVER.spaceSrcDir),
+  SPACE_SERVER.spaceWebDir
 );
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
@@ -270,7 +279,7 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
 /**
  * A colocated test file (`admission.test.ts` beside `admission.ts`, the
- * `apps/community` habit). Excluded for the same reason `__tests__/` is: its
+ * `apps/space` habit). Excluded for the same reason `__tests__/` is: its
  * fixtures echo arbitrary strings that are not this repo's authored copy.
  */
 const TEST_FILE = /\.test\.tsx?$/;

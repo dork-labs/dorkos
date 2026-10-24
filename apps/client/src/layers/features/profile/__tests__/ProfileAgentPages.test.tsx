@@ -35,6 +35,7 @@ import { ProfileView } from '../ui/ProfileView';
 import { profilePage, isProfilePageAvailable } from '../ui/pages/registry';
 import { isProfilePickAvailable } from '../ui/popovers/registry';
 import { profileStack, type ProfilePageId, type ProfileStackState } from '../model/profile-stack';
+import { openEveryProfileFold, resetProfileFolds } from './profile-fold-helpers';
 
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), message: vi.fn() }));
 vi.mock('sonner', () => ({
@@ -182,6 +183,8 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  resetProfileFolds();
+  openEveryProfileFold(ROSTER);
   vi.clearAllMocks();
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,

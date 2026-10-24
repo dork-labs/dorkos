@@ -74,6 +74,9 @@ import {
   WorkbenchSignResponseSchema,
   WorkbenchProbeRequestSchema,
   WorkbenchProbeResponseSchema,
+  WorkbenchBridgeStatusRequestSchema,
+  WorkbenchBridgeStatusResponseSchema,
+  StreamHealthReportSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -265,6 +268,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import {
+  AgentLevelResponseSchema,
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
@@ -1144,6 +1148,31 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/stream-health',
+  tags: ['Sessions'],
+  summary: 'Report a turn a window missed',
+  description:
+    'Called by the app when the fleet-wide `/api/events` stream says this session ran a ' +
+    "turn and the window's own `/api/sessions/{id}/events` stream delivered none of it. " +
+    'The window reconnects on its own; the server only logs the report, beside its own ' +
+    'count of open windows and live subscribers for the session, so the miss can be found ' +
+    'later. Changes nothing.',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: { content: { 'application/json': { schema: StreamHealthReportSchema } } },
+  },
+  responses: {
+    204: { description: 'Logged' },
+    400: {
+      description:
+        'The id is not a session id (`INVALID_SESSION_ID`), or the body is not a report (`VALIDATION_ERROR`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/sessions/{id}/chat-messages',
   tags: ['Sessions'],
@@ -1865,6 +1894,33 @@ registry.registerPath({
     200: {
       description: 'Whether something accepted a connection on that port',
       content: { 'application/json': { schema: WorkbenchProbeResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/workbench/bridge',
+  tags: ['Workbench'],
+  summary: 'Why a framed page has no DorkOS scripts',
+  description:
+    'Reports whether DorkOS added its frame scripts (the page channel and the DevTools ' +
+    'shim) the last time it served this page into the embedded browser, and the stable ' +
+    'reason when it did not. Names a file under a `cwd` the way the sign route does, or a ' +
+    'path on a dev server port. `unknown` when DorkOS has not served that page as HTML.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: WorkbenchBridgeStatusRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The recorded decision for that page',
+      content: { 'application/json': { schema: WorkbenchBridgeStatusResponseSchema } },
     },
     400: {
       description: 'Invalid body',
@@ -6007,6 +6063,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{id}/level',
+  tags: ['Permissions'],
+  summary: 'Read the level an agent runs at',
+  description:
+    'The Files & commands level a new chat of this agent starts at, before any per-chat limit, ' +
+    "the level its runtime's agents get by default, and whether a person's setting holds it lower.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "The agent's level",
+      content: { 'application/json': { schema: AgentLevelResponseSchema } },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'patch',
   path: '/api/agents/{id}/permissions',
   tags: ['Permissions'],
@@ -6504,7 +6581,8 @@ registry.registerPath({
     },
     401: roomAgentUnverified,
     403: {
-      description: 'An agent caller tried to change a handle (`OPERATOR_ONLY`)',
+      description:
+        "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on plain-http Wi-Fi tried to change an agent's (`NOT_FROM_WIFI`)",
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
@@ -6513,7 +6591,7 @@ registry.registerPath({
     },
     409: {
       description:
-        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)',
+        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`HANDLE_RESERVED`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`HANDLE_LOOKALIKE`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -6632,7 +6710,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Give a room files of its own',
   description:
-    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
+    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. An archived room answers 409 `ROOM_ARCHIVED`; bring it back before giving it files. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
   request: { params: RoomIdParams },
   responses: {
     201: {
@@ -6649,7 +6727,7 @@ registry.registerPath({
     404: roomNotFound,
     409: {
       description:
-        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
+        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), is archived (`ROOM_ARCHIVED`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
       content: {
         'application/json': {
           schema: z.object({

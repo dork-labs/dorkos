@@ -20,6 +20,7 @@ import { and, authors, eq, handleTombstones, isNotNull, ne, sql, type Db } from 
 import { normalizeHandle, validateHandle } from '@dorkos/shared/handle';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import { RoomError } from '../room-errors.js';
+import { handleSkeleton } from './handle-skeleton.js';
 
 /**
  * Who is asking for a handle: their row id, and the identity their row is keyed
@@ -81,10 +82,11 @@ export class AuthorHandleStore {
   /**
    * Set an author's handle, or clear it when the input is empty.
    *
-   * The one write path, so the three refusals are stated once:
+   * The one write path, so the refusals are stated once:
    * `INVALID_HANDLE` for a spelling the grammar rejects, `HANDLE_TAKEN` for a
    * handle live on another author, `HANDLE_RESERVED` for one tombstoned outside
-   * the claimant's lineage. Three codes rather than one, because they are three
+   * the claimant's lineage, `HANDLE_LOOKALIKE` for one that reads as either
+   * (`d0rian` beside `dorian`, DOR-3156). Separate codes, because they are
    * different things a person does about it — fix the spelling, pick another,
    * or ask whoever had it. Collapsing them would make the message do work the
    * code should.
@@ -161,7 +163,7 @@ export class AuthorHandleStore {
 
   /**
    * Write a tombstone for a handle nobody holds — the seeded broadcast
-   * reservations (`everyone`, `here`, `channel`).
+   * reservations (`everyone`, `here`, `channel`, `room`).
    *
    * Idempotent, and the same table and the same index as a released handle, so
    * the refusal that protects them is the one that already exists rather than a
@@ -199,7 +201,7 @@ export class AuthorHandleStore {
       .where(and(sql`lower(${authors.handle}) = ${wanted}`, ne(authors.id, claimant.id)))
       .get();
     if (live) {
-      throw new RoomError('HANDLE_TAKEN', `@${wanted} is already somebody else's handle.`);
+      throw new RoomError('HANDLE_TAKEN', `@${wanted} is taken. Pick a different one.`);
     }
 
     const lineage = this.lineageOf(claimant);
@@ -208,12 +210,67 @@ export class AuthorHandleStore {
       .from(handleTombstones)
       .where(sql`lower(${handleTombstones.handle}) = ${wanted}`)
       .all();
-    if (tombstoned.some((row) => !lineage.has(row.authorId))) {
+    const owners = tombstoned.filter((row) => !lineage.has(row.authorId));
+    if (owners.length > 0) {
+      // A seeded word (`room`, `everyone`, `dorkos`) is held by the system
+      // author; anything else is a handle somebody gave up. Two sentences,
+      // because "you used it before" reads oddly for `room` (designer, 18:43).
       throw new RoomError(
         'HANDLE_RESERVED',
-        `@${wanted} belonged to somebody else and stays reserved to them.`
+        owners.some((row) => this.isSystemAuthor(row.authorId))
+          ? `@${wanted} is reserved for DorkOS. Pick a different one.`
+          : `@${wanted} used to belong to someone else and stays theirs. Pick a different one.`
       );
     }
+
+    const lookalike = this.lookalikeOf(wanted, lineage);
+    if (lookalike !== undefined) {
+      throw new RoomError(
+        'HANDLE_LOOKALIKE',
+        `@${wanted} looks too much like @${lookalike}. Pick a different one.`
+      );
+    }
+  }
+
+  /** Whether an author row is the system author, which holds the seeded words. */
+  private isSystemAuthor(authorId: string): boolean {
+    return (
+      this.db.select({ kind: authors.kind }).from(authors).where(eq(authors.id, authorId)).get()
+        ?.kind === 'system'
+    );
+  }
+
+  /**
+   * A handle outside the claimant's lineage, live or released, that reads the
+   * same as `wanted` once both are skeletoned (`handle-skeleton.ts`), or
+   * `undefined`. An exact match never reaches here: the two checks above it
+   * refuse that with their own codes.
+   *
+   * **Released handles count, and so do the seeded reservations.** `d0rkos`
+   * would wear the room's own voice as surely as `dorkos` would, and a freed
+   * handle stays its old owner's to come back to.
+   *
+   * @param wanted - The normalized handle being claimed.
+   * @param lineage - The claimant's own rows, whose handles never count.
+   */
+  private lookalikeOf(wanted: string, lineage: ReadonlySet<string>): string | undefined {
+    const skeleton = handleSkeleton(wanted);
+    const live = this.db
+      .select({ handle: authors.handle, id: authors.id })
+      .from(authors)
+      .where(isNotNull(authors.handle))
+      .all()
+      .filter((row) => !lineage.has(row.id))
+      .map((row) => row.handle!);
+    const released = this.db
+      .select({ handle: handleTombstones.handle, authorId: handleTombstones.authorId })
+      .from(handleTombstones)
+      .all()
+      .filter((row) => !lineage.has(row.authorId))
+      .map((row) => row.handle);
+    return [...live, ...released].find(
+      (other) => other.toLowerCase() !== wanted && handleSkeleton(other) === skeleton
+    );
   }
 
   /**

@@ -92,7 +92,7 @@ export type CommunityWireStanding = z.infer<typeof CommunityWireStandingSchema>;
 export const COMMUNITY_RULES_MAX_LENGTH = 20_000;
 /** A space's rules and the version the caller accepted. Version 0 means no rules. */
 export const CommunityWireRulesSchema = z.strictObject({
-  text: z.string().nullable(),
+  text: z.string().max(COMMUNITY_RULES_MAX_LENGTH).nullable(),
   version: z.int().nonnegative(),
   acceptedVersion: z.int().nonnegative(),
 });

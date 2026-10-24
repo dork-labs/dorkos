@@ -88,7 +88,7 @@ interface RoomThreadPanelProps {
    * landing with it. Absent for every other way a thread is opened.
    */
   landOnRow?: () => string | undefined;
-  /** True when this is the mobile full-screen push rather than the side panel. */
+  /** True when this is the phone's full-screen sheet rather than the side panel. */
   pushed: boolean;
   /** Close the panel. */
   onClose: () => void;
@@ -126,8 +126,9 @@ interface RoomThreadPanelProps {
  *
  * Three ways out, because the panel is a mode and a mode needs an unmissable
  * exit: the close button, Escape, and clicking another thread's reply row
- * (which switches rather than stacking). On a phone it is a full-screen push
- * and the button becomes Back, naming the room it returns to.
+ * (which switches rather than stacking). On a phone it is a full-screen sheet
+ * (`RoomThreadSheet`, which adds a swipe to the right), the button becomes Back
+ * naming the room it returns to, and the root stays pinned under the header.
  */
 export function RoomThreadPanel({
   room,
@@ -196,7 +197,11 @@ export function RoomThreadPanel({
   // really are; the feed says it cannot number what it is showing.
   const knownReplies = root?.threadReplyCount;
   const partial = knownReplies !== undefined && knownReplies > replies.length;
-  const articleCount = root === undefined || partial ? -1 : 1 + replies.length;
+  // **On a phone the root is pinned under the header, outside the feed**, so a
+  // long thread never scrolls away the message it is about. The feed then holds
+  // the replies alone, and numbers them from one.
+  const rootInFeed = !pushed;
+  const articleCount = root === undefined || partial ? -1 : (rootInFeed ? 1 : 0) + replies.length;
   // What the line under the root says — the same number the room's own reply
   // row shows for this thread.
   const replyCount = honestReplyCount(replies.length, knownReplies);
@@ -273,7 +278,7 @@ export function RoomThreadPanel({
           ? 'thread-orphan'
           : 'thread-waiting';
       built.push({ kind: 'notice', id, at: '', body: null });
-    } else {
+    } else if (rootInFeed) {
       built.push({
         kind: 'message',
         id: root.id,
@@ -294,7 +299,7 @@ export function RoomThreadPanel({
       });
     }
     return built;
-  }, [root, replies, authors, agents.faces, historyFailed, historyLoaded]);
+  }, [root, rootInFeed, replies, authors, agents.faces, historyFailed, historyLoaded]);
 
   const renderRow = useCallback<ConversationRowRenderer>(
     (row) => {
@@ -331,36 +336,20 @@ export function RoomThreadPanel({
             (id: string) => (root?.id === id ? root : replies.find((reply) => reply.id === id))
           )}
           feedPosition={{
-            // After the root where there is one. An orphaned thread numbers from
-            // its first surviving reply rather than leaving a gap for the message
-            // that is gone: Page Down can only reach what is here, and the count
-            // should promise nothing else.
-            index: isRoot ? 1 : (root === undefined ? 0 : 1) + replyIndex + 1,
+            // After the root where the feed holds one. An orphaned thread — or a
+            // pinned root — numbers from the first reply rather than leaving a
+            // gap: Page Down can only reach what is here, and the count should
+            // promise nothing else.
+            index: isRoot ? 1 : (root === undefined || !rootInFeed ? 0 : 1) + replyIndex + 1,
             total: articleCount,
           }}
         />
       );
       if (isRoot) {
-        if (replyCount === 0) return message;
-        // The line between the root and its replies (DOR-2110). Replies sit
-        // flush with the root — the panel IS the thread, so an indent only
-        // spent its width saying so twice — and this rule is what tells the
-        // message everything hangs off from the answers to it. Decoration to
-        // the feed, like the connectors it replaced: the feed's own count
-        // already tells a screen reader how many replies there are.
         return (
           <>
             {message}
-            <div
-              aria-hidden
-              data-testid="room-thread-divider"
-              className="flex items-center gap-2 px-[var(--msg-padding-x)] pt-1 pb-2"
-            >
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {replyCount === 1 ? '1 reply' : `${replyCount} replies`}
-              </span>
-              <span className="bg-border h-px flex-1" />
-            </div>
+            <ReplyCountRule count={replyCount} />
           </>
         );
       }
@@ -382,6 +371,7 @@ export function RoomThreadPanel({
     },
     [
       root,
+      rootInFeed,
       replies,
       replyCount,
       arrivals,
@@ -434,49 +424,73 @@ export function RoomThreadPanel({
           onKeyDown={handleKeyDown}
           className={cn(
             'bg-card flex min-h-0 flex-col outline-none',
-            // The push IS the room on a phone — it takes the whole surface, with a
-            // Back button where the header's close would be. The side panel fills
+            // The sheet IS the screen on a phone — it takes the whole surface,
+            // with a Back button where the header's close would be. The side panel fills
             // the pane `RoomThreadSplit` gives it, which owns its width, its
             // bounds and the handle that drags it.
             pushed ? 'h-full w-full' : 'w-full border-l'
           )}
         >
-          <header className="flex items-center gap-2 border-b px-3 py-2">
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={pushed ? `Back to ${roomDisplayTitle(room)}` : 'Close thread'}
-              className={cn(
-                'focus-ring text-muted-foreground hover:text-foreground relative -ml-1 rounded p-1',
-                // 24px of button, and on a phone this is Back — the control a
-                // reader reaches for most and the one that costs the most to miss.
-                // The glyph stays 16px so the header keeps its height; the target
-                // grows to 44px with 10px of reach on every side.
-                //
-                // **The one invisible reach left on this surface, and deliberately
-                // so.** Everywhere else the rule is now "grow the real box", because
-                // reach that overlaps a neighbour is worse than no reach at all —
-                // the pills and the thread reply row collided exactly that way. This
-                // one is the exception because it is alone: the panel header holds
-                // no other control, only the thread title beside it, which is text
-                // and takes no taps. Measured in Chromium at 390×844 — 44×42
-                // effective, inside a 62px header, colliding with nothing. Reach is
-                // safe when there is nothing to reach into; that is the test to
-                // apply before copying this anywhere else.
-                'after:absolute after:-inset-2.5 md:after:hidden'
-              )}
-            >
-              {pushed ? (
-                <ChevronLeft aria-hidden className="size-4" />
-              ) : (
+          {pushed ? (
+            // The phone's header: Back, named for the room it returns to, the
+            // way a phone's own back button names where it goes. A real 44px
+            // box rather than invisible reach — it carries words now, and a
+            // target a reader can see is one they can aim at.
+            <header className="flex items-center gap-2 border-b px-1 py-1">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={`Back to ${roomDisplayTitle(room)}`}
+                data-testid="room-thread-back"
+                className="focus-ring text-muted-foreground hover:text-foreground flex h-11 min-w-0 items-center gap-1 rounded px-2 text-sm"
+              >
+                <ChevronLeft aria-hidden className="size-4 shrink-0" />
+                <span className="truncate">{roomDisplayTitle(room)}</span>
+              </button>
+              <p className="ml-auto shrink-0 pr-3 text-sm font-medium">Thread</p>
+            </header>
+          ) : (
+            <header className="flex items-center gap-2 border-b px-3 py-2">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close thread"
+                className="focus-ring text-muted-foreground hover:text-foreground relative -ml-1 rounded p-1"
+              >
                 <X aria-hidden className="size-4" />
-              )}
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Thread</p>
-              <p className="text-muted-foreground truncate text-xs">{roomDisplayTitle(room)}</p>
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Thread</p>
+                <p className="text-muted-foreground truncate text-xs">{roomDisplayTitle(room)}</p>
+              </div>
+            </header>
+          )}
+
+          {/* On a phone the message the thread hangs off stays put under the
+              header while its replies scroll — capped, so a long one scrolls
+              inside its own box rather than taking the screen. */}
+          {pushed && root !== undefined && (
+            <div
+              data-testid="room-thread-pinned-root"
+              className="max-h-[40%] shrink-0 overflow-y-auto border-b pt-2"
+            >
+              <RoomMessage
+                roomId={room.id}
+                entry={root}
+                rowId={threadPanelRowId(root.id)}
+                author={toMessageAuthor(displayAuthorIdOf(root, authors), authors, agents.faces)}
+                authorRef={authors.get(root.authorId)}
+                authors={authors}
+                viewerAuthorId={room.viewerAuthorId}
+                authorNames={authorNames}
+                reactionFrequents={reactionFrequents}
+                streamStalled={streamStalled}
+                isMember={isMember}
+                grouping={{ position: 'only' }}
+              />
+              <ReplyCountRule count={replyCount} />
             </div>
-          </header>
+          )}
 
           <Conversation.Timeline
             ref={timelineRef}
@@ -512,8 +526,8 @@ export function RoomThreadPanel({
           in the place the work is happening.
 
           **The stalled rung is this lane's only on a phone**, which is the rule
-          the notice it replaces carried: on a phone the thread REPLACES the
-          room, so the room's own lane is off screen and the reader would have no
+          the notice it replaces carried: on a phone the thread COVERS the
+          room, so the room's own lane is out of sight and the reader would have no
           way to know the conversation had stopped hearing. Beside a room that is
           already saying it, repeating it would be the same sentence twice. */}
           <RoomLiveLane
@@ -540,5 +554,32 @@ export function RoomThreadPanel({
         </section>
       </Conversation.Root>
     </AgentInfoProvider>
+  );
+}
+
+/**
+ * The line between a thread's root and its replies (DOR-2110).
+ *
+ * Replies sit flush with the root — the panel IS the thread, so an indent only
+ * spent its width saying so twice — and this rule is what tells the message
+ * everything hangs off from the answers to it. Decoration, like the connectors
+ * it replaced: the feed's own count already tells a screen reader how many
+ * replies there are.
+ *
+ * @param props.count - How many replies the thread has. None draws nothing.
+ */
+function ReplyCountRule({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <div
+      aria-hidden
+      data-testid="room-thread-divider"
+      className="flex items-center gap-2 px-[var(--msg-padding-x)] pt-1 pb-2"
+    >
+      <span className="text-muted-foreground shrink-0 text-xs">
+        {count === 1 ? '1 reply' : `${count} replies`}
+      </span>
+      <span className="bg-border h-px flex-1" />
+    </div>
   );
 }

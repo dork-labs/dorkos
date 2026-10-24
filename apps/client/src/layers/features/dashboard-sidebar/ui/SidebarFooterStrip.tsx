@@ -18,10 +18,9 @@ import { appRoutes } from '@/layers/shared/lib';
  * update genuinely is ready — used to be stacked on top of this strip; it is a
  * candidate in the sidebar's bottom slot now (`UpdatePill.tsx`, spec
  * `sidebar-simplification` D4), so it takes its turn against the other cards
- * rather than adding a fourth thing to the bottom of the panel. Updates never
- * enter Heads up — Heads up means your agents need you.
+ * rather than adding a fourth thing to the bottom of the panel.
  *
- * **A mini app's page is not a fifth destination.** Library's Add-ons section
+ * **A mini app's page is not a fifth destination.** The Add-ons section
  * lists those pages (spec `mini-app-placement` Part 2, superseding
  * `flow-multiproject` N10's "no sidebar entry"), so this strip stays the four
  * places DorkOS itself goes.

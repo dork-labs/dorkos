@@ -3,7 +3,7 @@
  *
  * @module features/dashboard-sidebar/ui/motion/SidebarFoldBody
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { foldTransition } from './sidebar-motion';
 
@@ -13,6 +13,13 @@ export interface SidebarFoldBodyProps {
   open: boolean;
   /** The section's rows. */
   children: ReactNode;
+  /**
+   * What stays on screen once the section is folded — the rows still asking
+   * for something (BC-31). Drawn only after the body has finished closing, so
+   * a row is never in the document twice: once in the body on its way out and
+   * once here.
+   */
+  whenFolded?: ReactNode;
 }
 
 /**
@@ -34,24 +41,34 @@ export interface SidebarFoldBodyProps {
  * this fold: a demo that re-implemented it would go on looking right after a
  * retune moved the real one.
  *
- * @param props - Whether the section is open, and what is in it.
+ * @param props - Whether the section is open, what is in it, and what stays
+ *   once it is folded.
  */
-export function SidebarFoldBody({ open, children }: SidebarFoldBodyProps) {
+export function SidebarFoldBody({ open, children, whenFolded }: SidebarFoldBodyProps) {
   const reducedMotion = useReducedMotion();
+  // Whether the body has finished leaving. Starts true for a section that is
+  // folded when the panel paints, goes false the moment it opens, and true
+  // again only when the exit completes — which is what keeps `whenFolded` from
+  // landing beside rows still animating out.
+  const [closed, setClosed] = useState(!open);
+  if (open && closed) setClosed(false);
   return (
-    <AnimatePresence initial={false}>
-      {open && (
-        <motion.div
-          key="body"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={foldTransition(reducedMotion)}
-          className="overflow-hidden"
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <>
+      <AnimatePresence initial={false} onExitComplete={() => setClosed(true)}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={foldTransition(reducedMotion)}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!open && closed && whenFolded}
+    </>
   );
 }

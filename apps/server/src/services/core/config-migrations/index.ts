@@ -99,6 +99,8 @@ import {
   seedLanAccess,
   seedMaxWarmProcesses,
   raiseEngagedWindowDefaults,
+  keepAccountOutOfAutoMoves,
+  seedUiDmViewLeaves,
 } from './v0-90-onward.js';
 
 /**
@@ -1322,4 +1324,18 @@ export const CONFIG_MIGRATIONS = {
   // section lacks it, and touches nothing else (DOR-3012). See
   // `seedMaxWarmProcesses`.
   '0.123.0': seedMaxWarmProcesses,
+  // v0.124.0 is the newest tag, and this ships in the 0.124.1 patch, so it
+  // opens 0.124.1. Frozen from merge; anything further opens `'0.125.0'`.
+  //
+  // Sets `noAutoMove: true` on one registered Claude account row that lacks
+  // the field, and touches nothing else (Re-seat P0). See
+  // `keepAccountOutOfAutoMoves`; the history line it owes is written at boot.
+  '0.124.1': keepAccountOutOfAutoMoves,
+  // 0.124.1 above is the patch's key, so this opens 0.125.0. Frozen from merge;
+  // anything further opens `'0.126.0'`.
+  //
+  // Writes `ui.dmView: false` and `ui.showSessions: false` where the stored
+  // `ui` section lacks them, and touches nothing else (DOR-3074). See
+  // `seedUiDmViewLeaves`.
+  '0.125.0': seedUiDmViewLeaves,
 } as const;

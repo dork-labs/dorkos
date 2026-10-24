@@ -14,7 +14,7 @@
  * - Dropping the desk guard reddens "refuses a turn that would stand anywhere
  *   but the agent's home": the runtime is called in a room's folder.
  */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -352,6 +352,7 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 }));
 
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
+const { createAgentLevelReader } = await import('../../core/permissions/agent-level.js');
 const { initPermissionGate, resetPermissionGate } =
   await import('../../core/capabilities/permission-enforcement.js');
 const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
@@ -2936,6 +2937,95 @@ describe('what power a room turn runs at (DOR-1917)', () => {
 
     expect(triggered[0].settings).toEqual({ model: 'opus' });
     expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
+  });
+
+  /**
+   * The profile's Level row reads the level a launch gets, never a copy of the
+   * rule (Security, 2026-10-20). Each case runs a real room turn and the row's
+   * reader over the same agent and the same gate, and the two must agree.
+   */
+  describe("the profile's Level row", () => {
+    /** The row's reader, over this file's one agent and runtime. */
+    function levelReader() {
+      return createAgentLevelReader({
+        agentPath: () => '/repo/ana',
+        runtimeType: async () => 'claude-code',
+        capabilities: () => getCapabilities() as RuntimeCapabilities,
+      });
+    }
+
+    it('reads the mode a room turn launches at when a person held the agent at Ask', async () => {
+      runtimesConfig = atStop('autonomy');
+      agentManifest = { runtime: 'claude-code' };
+      // The agent's file says Full autonomy; the person-set floor says Ask, and
+      // the gate's reader takes the stricter of the two.
+      initPermissionGate({
+        readAgentPermissions: async () => ({ filesAndCommands: 'ask' }),
+        personSetFilesAndCommands: () => 'ask',
+      });
+      try {
+        await createSessionRoomTurnRunner().run(request());
+        const level = await levelReader()('agent-ana');
+        expect(level?.effectiveMode).toBe(triggered[0].newSessionPermissionMode);
+        expect(level).toEqual({
+          effective: 'ask',
+          effectiveMode: 'default',
+          declared: 'autonomy',
+          cappedByPerson: true,
+        });
+      } finally {
+        resetPermissionGate();
+      }
+    });
+
+    it('reads Full autonomy, uncapped, when nothing holds the agent', async () => {
+      runtimesConfig = atStop('autonomy');
+      agentManifest = { runtime: 'claude-code' };
+      initPermissionGate({
+        readAgentPermissions: async () => undefined,
+        personSetFilesAndCommands: () => null,
+      });
+      try {
+        await createSessionRoomTurnRunner().run(request());
+        const level = await levelReader()('agent-ana');
+        expect(level?.effectiveMode).toBe(triggered[0].newSessionPermissionMode);
+        expect(level).toEqual({
+          effective: 'autonomy',
+          effectiveMode: 'bypassPermissions',
+          declared: 'autonomy',
+          cappedByPerson: false,
+        });
+      } finally {
+        resetPermissionGate();
+      }
+    });
+
+    it('does not say "by you" when the agent tightened itself below what a person set', async () => {
+      runtimesConfig = atStop('autonomy');
+      agentManifest = { runtime: 'claude-code' };
+      initPermissionGate({
+        readAgentPermissions: async () => ({ filesAndCommands: 'ask' }),
+        personSetFilesAndCommands: () => 'act',
+      });
+      try {
+        await createSessionRoomTurnRunner().run(request());
+        const level = await levelReader()('agent-ana');
+        expect(level?.effectiveMode).toBe(triggered[0].newSessionPermissionMode);
+        expect(level?.effective).toBe('ask');
+        expect(level?.cappedByPerson).toBe(false);
+      } finally {
+        resetPermissionGate();
+      }
+    });
+
+    it('answers null for an id no agent has', async () => {
+      const reader = createAgentLevelReader({
+        agentPath: () => undefined,
+        runtimeType: async () => 'claude-code',
+        capabilities: () => undefined,
+      });
+      expect(await reader('nobody')).toBeNull();
+    });
   });
 });
 

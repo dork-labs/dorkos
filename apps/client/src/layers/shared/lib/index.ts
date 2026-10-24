@@ -166,6 +166,10 @@ export {
   // semantics rather than compared as ids, for the reason that module exists:
   // an id table is right until a runtime ships a mode nobody added to it.
   isTightening,
+  // Whether one level is no looser than another: the chip reads it to show
+  // the level a Wi-Fi turn actually runs at (DOR-3037).
+  isNoLooserThan,
+  levelOfMode,
   actsWithoutAsking,
   isSilentReadOnly,
   isWorkingMode,
@@ -415,8 +419,9 @@ export type { DecisionRefusal } from './decision-refusal';
 // Every link into a conversation — navigate targets and hrefs alike (DOR-2077).
 export { SESSION_ROUTE, sessionHref, toSession, sessionSearchSchema } from './session-link';
 export type { SessionTarget, SessionSearch } from './session-link';
-export { serverSentence } from './server-sentence';
+export { awayFromTheComputerSentence, serverSentence } from './server-sentence';
 
 export { appRoutes } from './route-factory';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
+export { WORK_PANEL_ID } from './right-panel-tab-ids';

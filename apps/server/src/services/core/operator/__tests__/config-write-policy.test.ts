@@ -20,10 +20,10 @@ import { PROTECTIVE_CARRYOVERS } from '../../safe-defaults/protected-state.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
-  OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { OPERATOR_ONLY_STAKES } from '../operator-only-stakes.js';
 import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
@@ -103,6 +103,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
@@ -190,6 +191,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      // An account a person kept out of automatic moves (Re-seat P0).
+      'runtimes.claudeCode.accounts[].noAutoMove',
       // Where each account may work, and which accounts each project may use:
       // they bound where a credential is used (spec flow-multiproject §8).
       'runtimes.claudeCode.accounts[].onlyProjects',
@@ -254,6 +257,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].ownerKey',
+      // How a chat with one agent is drawn, and whether its session shows
+      // (DOR-3074): an experiment, and the readings about an agent's own work.
+      'ui.dmView',
+      'ui.showSessions',
       'ui.trustNoticeSeenAt',
       // Three uploads.* leaves a person can tighten past the shipped default,
       // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
@@ -485,6 +492,16 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
     ).toEqual(['runtimes.claudeCode.accounts[].color', 'runtimes.claudeCode.accounts[].id']);
   });
 
+  it('refuses an agent clearing an account’s keep-out-of-automatic-moves flag (Re-seat P0)', () => {
+    // A person set it; clearing it would let a seat move onto an account the
+    // person reserved, so the flag alone, with nothing else on the row, is caught.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ noAutoMove: false }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].noAutoMove']);
+  });
+
   it('names only the element fields the patch actually writes', () => {
     expect(
       findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
@@ -512,6 +529,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.accounts[].path',
     ]);
@@ -865,6 +883,15 @@ describe('describeOperatorOnlyRefusal', () => {
     expect(message).not.toMatch(/who can reach this instance/i);
     expect(message).not.toMatch(/credentials/i);
     expect(message).not.toMatch(/speak on their own/i);
+  });
+
+  it('names the DM view and Show sessions as what the chat shows you (DOR-3074)', () => {
+    const message = describeOperatorOnlyRefusal(['ui.dmView', 'ui.showSessions']);
+    expect(message).toContain(
+      'How your chats are drawn, and what they show you about the work behind them: ' +
+        'ui.dmView, ui.showSessions.'
+    );
+    expect(operatorOnlyAreasForPatch({ ui: { showSessions: false } })).toEqual(['safety']);
   });
 
   it('stays honest about a path with no stake on file', () => {

@@ -1,12 +1,9 @@
 /**
  * "All clear ✓" — what the pinned section says on its way out.
  *
- * The sidebar's beat (`features/dashboard-sidebar/model/use-all-clear-beat`),
- * promoted to the Inbox by design decision §7.4 and kept component-local rather
- * than lifted: the two answer different questions ("did Heads up empty" versus
- * "did the pinned section empty while somebody was looking at it"), and a shared
- * hook would have to take both as parameters, which is a hook with two callers
- * and no idea.
+ * Promoted to the Inbox from the sidebar's old Heads up zone by design decision
+ * §7.4. The sidebar no longer lists what needs you, so this is the one visible
+ * beat left.
  *
  * @module widgets/inbox-bell/model/use-pinned-drain-beat
  */
@@ -16,7 +13,7 @@ import { useReducedMotion } from 'motion/react';
 /**
  * How long "All clear ✓" stays before the section folds away.
  *
- * 2.5 seconds, the same as the sidebar's — long enough to register as an answer
+ * 2.5 seconds — long enough to register as an answer
  * to the work just finished, short enough that nobody waits for it.
  */
 export const ALL_CLEAR_BEAT_MS = 2_500;
@@ -35,10 +32,6 @@ export const ALL_CLEAR_BEAT_MS = 2_500;
  * be missing, so suppressing it costs nothing.
  *
  * ## This is the VISIBLE beat only, and it has no sound in it
- *
- * The whole rule — two visual beats, one chime, and why that is not a
- * duplicate — is stated once, in the sidebar's `use-all-clear-beat`. What
- * follows is this half of it.
  *
  * The all-clear chime deliberately does not hang off this hook, and the reason
  * is the open-gate above. A check mark nobody can see is worth skipping; a sound

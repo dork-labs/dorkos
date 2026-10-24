@@ -141,6 +141,37 @@ function interactionIdOf(request: ServerRequest, params: Params): string {
   return str(params.approvalId) ?? str(params.itemId) ?? `codex-request-${String(request.id)}`;
 }
 
+/**
+ * The card input, with what widens the approval beyond one plain command
+ * spelled out: a `kind` other than `command` (`writeStdin` types into a
+ * terminal already running) and any `additionalPermissions`. The owner sees
+ * them, and approvals from the web refuse them (`relay-approvable.ts`).
+ * Left unchanged when neither is present.
+ */
+function withApprovalScope(input: string, params: Params): string {
+  const kind = params.kind;
+  const extra = params.additionalPermissions;
+  const widened =
+    (kind !== undefined && kind !== null && kind !== 'command') ||
+    (extra !== undefined && extra !== null);
+  if (!widened) return input;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    parsed = null;
+  }
+  const object =
+    parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Params)
+      : {};
+  return JSON.stringify({
+    ...object,
+    ...(kind !== undefined && kind !== null ? { kind } : {}),
+    ...(extra !== undefined && extra !== null ? { additionalPermissions: extra } : {}),
+  });
+}
+
 function commandApproval(
   request: ServerRequest,
   params: Params,
@@ -154,10 +185,11 @@ function commandApproval(
   const sessionScoped = decisions === undefined || decisions.includes('acceptForSession');
   const network = params.networkApprovalContext as { host?: unknown } | null | undefined;
   const host = str(network?.host);
-  const input =
+  const base =
     params.command !== undefined && params.command !== null
       ? JSON.stringify({ command: params.command, cwd: params.cwd })
       : ((itemId && turn.inputOf(itemId)) ?? '{}');
+  const input = withApprovalScope(base, params);
   return {
     kind: 'approval',
     interactionId: interactionIdOf(request, params),

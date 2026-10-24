@@ -28,14 +28,14 @@ interface PromoCardProps {
  * The sidebar took every hairline out in favour of one `--sidebar-accent` ramp,
  * and this card kept an outline, a `--card` fill and a `--muted` plate under its
  * icon — three shades the panel around it no longer has. It now spells its rest
- * and hover states exactly as `SidebarZone` and `SidebarRow` spell theirs: `/40`
+ * and hover states exactly as `SidebarSection` and `SidebarRow` spell theirs: `/40`
  * at rest, `/70` under the pointer. `--muted` is deliberately absent for the
  * reason those two give — it is lighter than the panel in light mode and darker
  * in dark, so anything tinted with it separates in opposite directions between
  * the themes.
  *
  * The glyph sits in `SidebarRow`'s own 18px square rather than on a plate of its
- * own, so a card under Library lines its icon up with every row above it.
+ * own, so a card under the list lines its icon up with every row above it.
  *
  * **There is always a way to say no.** The card carries its own `×`, and it is
  * the whole difference between an offer and an ad: this card had no dismiss
@@ -72,8 +72,8 @@ export function PromoCard({ promo }: PromoCardProps) {
         </span>
         <span className="min-w-0 flex-1">
           {/* `/90` and `/70`: the title is what the eye lands on and the line
-              under it is the aside, and both clear 4.5:1 on the zone tint in
-              both themes — the measurement `SidebarZone`'s heading records. */}
+              under it is the aside, and both clear 4.5:1 on the sidebar in
+              both themes, measured by the sidebar showcase's axe gate. */}
           <span className="text-sidebar-foreground/90 text-control block truncate font-medium">
             {promo.content.title}
           </span>

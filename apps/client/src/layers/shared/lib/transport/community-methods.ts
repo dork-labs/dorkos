@@ -9,8 +9,11 @@ import {
   CommunityConnectionPollResponseSchema,
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
+  CommunityWakeAgentsFromSchema,
   type CommunityConnectionTransport,
 } from '@dorkos/shared/community-connections';
+import { CommunityTeammateSpendSchema } from '@dorkos/shared/community-teammates';
+import { COMMUNITY_SPACE_READ_SCHEMAS } from '@dorkos/shared/community-space-settings';
 import {
   CommunityNavigationResolveResponseSchema,
   CommunityNavigationStateSchema,
@@ -65,6 +68,38 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
       return CommunityDisconnectImpactSchema.parse(
         await fetchJSON(baseUrl, `${path(ref)}/disconnect-impact`)
       );
+    },
+    async getCommunityWakeAgentsFrom(ref) {
+      return CommunityWakeAgentsFromSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/wake-agents-from`)
+      );
+    },
+    async setCommunityWakeAgentsFrom(ref, wakeAgentsFrom) {
+      return CommunityWakeAgentsFromSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/wake-agents-from`, {
+          method: 'PUT',
+          body: JSON.stringify({ wakeAgentsFrom }),
+        })
+      );
+    },
+    async getCommunityTeammateSpend(ref) {
+      return CommunityTeammateSpendSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/teammate-spend`)
+      );
+    },
+    async setCommunityTeammateSpendLimit(ref, monthlyLimitUsd) {
+      return CommunityTeammateSpendSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/teammate-spend`, {
+          method: 'PUT',
+          body: JSON.stringify({ monthlyLimitUsd }),
+        })
+      );
+    },
+    async readCommunitySpace(ref, read) {
+      // A fixed read name, never a path: the server asks the space for one fixed path per read.
+      return COMMUNITY_SPACE_READ_SCHEMAS[read].parse(
+        await fetchJSON(baseUrl, `${path(ref)}/space/${read}`)
+      ) as never;
     },
     async getCommunityNavigation() {
       return CommunityNavigationStateSchema.parse(

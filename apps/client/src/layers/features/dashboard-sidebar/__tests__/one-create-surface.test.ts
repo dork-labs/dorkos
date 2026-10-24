@@ -162,27 +162,7 @@ describe('AC-7 — one create surface', () => {
     ['the channel dialog', /\bChannelCreateDialog\b/, ['ui/NewMenu.tsx']],
     ['the direct-message picker', /\bNewDirectMessageMenu\b/, ['ui/NewMenu.tsx']],
     ['the smart-group rule form in create mode', /mode="create"/, ['ui/NewMenu.tsx']],
-    [
-      'the agent-creation flow',
-      /\buseAgentCreationStore\b/,
-      [
-        'ui/NewMenu.tsx',
-        // Not a create surface: P2.2's `suggestion:add-agent` row is a computed
-        // Getting-started suggestion that retires the moment it is done (§8).
-        // It opens the SAME flow this menu's "Agent" item opens, and the id it
-        // stands for is in the vocabulary above. A suggestion is a thing the
-        // sidebar computed for you once; a create surface is a control that is
-        // always there.
-        //
-        // `ui/SidebarZones.tsx` was the second entry here, for the day-one
-        // invitation drawn when Library held nothing at all. That card is gone
-        // (DOR-1138). Its condition was reachable, but only before the fleet
-        // query answered or while it failed — a hydration gap, not day one — so
-        // it flashed "Add more agents" on every cold load rather than greeting
-        // a new operator. Day-one guidance is the Getting started zone's.
-        'ui/SidebarChrome.tsx',
-      ],
-    ],
+    ['the agent-creation flow', /\buseAgentCreationStore\b/, ['ui/NewMenu.tsx']],
   ];
 
   it.each(SURFACES)('reaches %s from exactly these modules', (_name, re, callers) => {
@@ -193,19 +173,19 @@ describe('AC-7 — one create surface', () => {
 
   it('leaves the inline section editor in ONE place, reached from the menu', () => {
     // BC-45's one survivor: `GroupCreateInput` keeps its editor, but its
-    // trigger is the New menu's item, not a button of its own. It mounts above
-    // the first section rather than under Agents (D3), which is why the one
-    // file naming it is the zone.
-    expect(filesMatching(/<GroupCreateInput/)).toEqual(['ui/SidebarZone.tsx']);
+    // trigger is the New menu's item, not a button of its own. It mounts right
+    // under the top items, where a new section lands (D3), which is why the
+    // one file naming it is the list.
+    expect(filesMatching(/<GroupCreateInput/)).toEqual(['ui/SidebarSections.tsx']);
     expect(SOURCE.get('ui/useSectionChrome.tsx')).toMatch(/openNewMenu\(item\)/);
   });
 
   it('gives every section “+” the same deep link and no handler of its own', () => {
     const chrome = SOURCE.get('ui/useSectionChrome.tsx') ?? '';
     const actions = [...chrome.matchAll(/deepLinkAction\('([a-z-]+)'/g)].map((m) => m[1]!);
-    expect(actions).toEqual(['new-channel', 'new-message', 'new-agent']);
+    expect(actions).toEqual(['new-channel', 'new-message']);
     // …and there is exactly one `SidebarGroupAction` in the file, the shared
-    // one those three all go through.
+    // one both go through.
     expect(chrome.match(/<SidebarGroupAction/g)).toHaveLength(1);
   });
 });

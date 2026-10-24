@@ -43,6 +43,7 @@ import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
+import { registerExtensionRoomRoutes } from './extensions-rooms.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
@@ -617,6 +618,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   registerTrustedSourceRoutes(router, extensionManager, activity);
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
+  registerExtensionRoomRoutes(router, extensionManager, SAFE_EXT_ID);
 
   return router;
 }

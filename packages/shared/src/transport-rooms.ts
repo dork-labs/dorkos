@@ -24,6 +24,7 @@ import type {
   RoomFileSaveResponse,
 } from './room-files.js';
 import type {
+  EnableRoomRepoResponse,
   RoomMainRepairRequest,
   RoomMainRepairResult,
   RoomMergeResult,
@@ -39,6 +40,8 @@ import type {
   DirectChat,
   OpenDirectChatRequest,
   HaltRoomResponse,
+  ReseatOptions,
+  ReseatSeatRequest,
   PromoteHoldResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
@@ -131,6 +134,8 @@ export interface RoomTransport {
    *   may not see it — the two are deliberately indistinguishable.
    */
   getRoom(id: string): Promise<RoomWithRoster>;
+  /** Give a live room shared files. The install owner is the only allowed caller. */
+  enableRoomRepo(id: string): Promise<EnableRoomRepoResponse>;
   /**
    * Patch a room's title, topic or archived flag.
    *
@@ -435,6 +440,30 @@ export interface RoomTransport {
    */
   haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse>;
   /**
+   * Where an agent's seat in this room could move: the account it runs on now
+   * and every Claude account it may move to, best first, each saying whether it
+   * can take the agent now (re-seat). Only a person may ask.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   */
+  getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions>;
+  /**
+   * Move an agent's seat in this room to another account, so it keeps
+   * answering there. Its next turn starts fresh on that account with a summary
+   * of where it was. Only a person may.
+   *
+   * @param id - The room.
+   * @param authorId - The agent.
+   * @param request - The account to move to; none for the best one.
+   * @returns The seat's new session.
+   */
+  reseatRoomAgent(
+    id: string,
+    authorId: string,
+    request: ReseatSeatRequest
+  ): Promise<{ sessionId: string }>;
+  /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.
    *
@@ -542,12 +571,13 @@ export interface RoomTransport {
    * (spec `handles` S6): nothing agent-reachable may write a handle, and an
    * invariant kept in one place is a test rather than a convention.
    *
-   * Three refusals, and they are three different things for the person to do
-   * about it, so a caller that collapses them into one message is throwing away
-   * the answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a
-   * handle they released, or a broadcast word like `everyone`) and
-   * `INVALID_HANDLE` (the spelling itself is not addressable). Each arrives as
-   * the `code` on the thrown error.
+   * Four refusals, and they are different things for the person to do about
+   * it, so a caller that collapses them into one message is throwing away the
+   * answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a handle
+   * they released, or a broadcast word like `everyone`), `HANDLE_LOOKALIKE`
+   * (it reads as somebody else's, like `d0rian` beside `dorian`; the message
+   * names whose) and `INVALID_HANDLE` (the spelling itself is not
+   * addressable). Each arrives as the `code` on the thrown error.
    *
    * @param authorId - Whose handle to set.
    * @param handle - The new handle, without the `@`. Empty clears it.

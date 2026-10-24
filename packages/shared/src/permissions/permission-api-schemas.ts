@@ -214,6 +214,26 @@ export const AgentPermissionsResponseSchema = z
 /** `GET /api/agents/:id/permissions` response. */
 export type AgentPermissionsResponse = z.infer<typeof AgentPermissionsResponseSchema>;
 
+/**
+ * `GET /api/agents/:id/level`: the level a new chat of this agent actually
+ * starts at, before any per-chat limit. Read-only; there is no write path.
+ */
+export const AgentLevelResponseSchema = z
+  .object({
+    /** The stop a launch resolves for this agent, or `null` for the runtime's own default. */
+    effective: PermissionStopSchema.nullable(),
+    /** That stop as the agent's runtime names its mode, or `null` when the runtime decides. */
+    effectiveMode: z.string().nullable(),
+    /** The stop this runtime's agents get with nothing set for this one, or `null` for none. */
+    declared: PermissionStopSchema.nullable(),
+    /** True when what a person set for this agent holds it below `declared`. */
+    cappedByPerson: z.boolean(),
+  })
+  .openapi('AgentLevelResponse');
+
+/** `GET /api/agents/:id/level` response. */
+export type AgentLevelResponse = z.infer<typeof AgentLevelResponseSchema>;
+
 /** `PUT /api/permissions/preset` body. */
 export const SetPermissionPresetBodySchema = z
   .object({

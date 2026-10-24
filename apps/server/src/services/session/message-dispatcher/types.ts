@@ -235,6 +235,8 @@ export interface DispatchMessageOpts {
    * `MessageOpts.permissionCeiling` is the authority on what it means.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling is a continuation's hold. Passed straight through; see `MessageOpts.continuationHold`. */
+  continuationHold?: true;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -387,6 +389,12 @@ export interface DispatchPlan {
   /** When it started spending that budget. */
   startedWaitingAt: number;
   /**
+   * When it first waited on a person's answer the session's turn was parked on
+   * (DOR-3113). Set from then on, it keeps waiting while that turn runs, the
+   * minutes after the answer included, up to the park ceiling.
+   */
+  personWaitSince?: number;
+  /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be
    * given up on (either refusing mode) — unless {@link DispatchPlan.answered},
@@ -464,6 +472,7 @@ export interface DispatchPlan {
     | 'settings'
     | 'newSessionPermissionMode'
     | 'permissionCeiling'
+    | 'continuationHold'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'

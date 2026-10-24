@@ -8,6 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
 import { FALLBACK_PAGE_FILE, FALLBACK_PAGE_SOURCE_DIR } from './src/shared/fallback-page';
+import { STOPPED_PAGE_FILE, STOPPED_PAGE_SOURCE_DIR } from './src/shared/stopped-page';
 import { clientDefines } from '../client/vite-define';
 
 const clientRoot = path.resolve(__dirname, '../client');
@@ -63,6 +64,13 @@ function emitFallbackPage(): Plugin {
         type: 'asset',
         fileName: FALLBACK_PAGE_FILE,
         source: fs.readFileSync(path.join(__dirname, FALLBACK_PAGE_SOURCE_DIR, FALLBACK_PAGE_FILE)),
+      });
+      // The "DorkOS stopped" page (DOR-3229): the same arrangement, for the
+      // screen a window shows once restarting the server has given up.
+      this.emitFile({
+        type: 'asset',
+        fileName: STOPPED_PAGE_FILE,
+        source: fs.readFileSync(path.join(__dirname, STOPPED_PAGE_SOURCE_DIR, STOPPED_PAGE_FILE)),
       });
     },
   };

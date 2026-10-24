@@ -4,14 +4,15 @@ import {
   FolderTree,
   Gauge,
   Globe,
+  ListTree,
   PanelRight,
   Monitor,
   Puzzle,
   SquareTerminal,
-  User,
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
+import { WORK_PANEL_ID } from '@/layers/shared/lib';
 
 /** The extension registry's `register` action (idempotent per slot + id). */
 type RegisterFn = ReturnType<typeof useExtensionRegistry.getState>['register'];
@@ -21,7 +22,7 @@ import {
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
-import { PROFILE_PANEL_ID } from '@/layers/features/profile';
+import { PROFILE_PANEL_ID, ProfileTabIcon } from '@/layers/features/profile';
 import { ROOM_PANEL_ID } from '@/layers/features/room-management';
 import { routeShowsRoom } from '@/layers/entities/room';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
@@ -170,7 +171,8 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   register('right-panel', {
     id: PROFILE_PANEL_ID,
     title: 'Profile',
-    icon: User,
+    // Whose profile it is, at a glance (FB-60).
+    icon: ProfileTabIcon,
     component: lazy(() =>
       import('@/layers/features/profile').then((m) => ({ default: m.ProfileDock }))
     ),
@@ -201,7 +203,10 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/status').then((m) => ({ default: m.SessionInspector }))
     ),
-    visibleWhen: ({ pathname }) => pathname === '/session',
+    // In a DM the session's own readout is session detail, there only with
+    // Show sessions on (DOR-3075). Everywhere else exactly as before.
+    visibleWhen: ({ pathname, directMessage }) =>
+      pathname === '/session' && sessionDetailShows(directMessage),
     priority: 12,
   });
 
@@ -278,8 +283,40 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/terminal').then((m) => ({ default: m.TerminalPanel }))
     ),
-    visibleWhen: ({ pathname, transport }) =>
-      pathname === '/session' && transport?.supportsTerminal === true,
+    visibleWhen: ({ pathname, transport, directMessage }) =>
+      pathname === '/session' &&
+      transport?.supportsTerminal === true &&
+      sessionDetailShows(directMessage),
     priority: 25,
   });
+
+  // Work (DOR-3075): every step the agent took, turn by turn, behind a DM.
+  // Only beside a DM, so with the DM view off it never shows. In a group DM it
+  // is about the member picked at the top of the panel, so it waits for one.
+  // Priority 24 puts it after Browser and before Terminal.
+  register('right-panel', {
+    id: WORK_PANEL_ID,
+    title: 'Work',
+    icon: ListTree,
+    component: lazy(() =>
+      import('@/layers/widgets/session').then((m) => ({ default: m.WorkPanel }))
+    ),
+    visibleWhen: ({ directMessage, explicitAgentPath }) =>
+      directMessage?.kind === 'one-to-one' ||
+      (directMessage?.kind === 'group' && explicitAgentPath != null),
+    priority: 24,
+  });
+}
+
+/**
+ * Whether a tab that shows the session's own machinery shows here: always,
+ * except in a chat with one agent drawn as a DM, where it waits for Show
+ * sessions (DOR-3075).
+ *
+ * @param directMessage - The DM the panel sits beside, or null/undefined.
+ */
+function sessionDetailShows(
+  directMessage: { kind: 'one-to-one' | 'group'; showSessions: boolean } | null | undefined
+): boolean {
+  return directMessage?.kind !== 'one-to-one' || directMessage.showSessions;
 }

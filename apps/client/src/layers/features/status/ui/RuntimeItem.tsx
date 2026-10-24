@@ -58,6 +58,11 @@ interface RuntimeItemProps {
    */
   compact?: boolean;
   /**
+   * The runtime's icon alone, with its name in the tooltip and accessible name.
+   * The status line sets it at phone width, where the agent's name needs the room.
+   */
+  iconOnly?: boolean;
+  /**
    * The started session's Claude account, or `null` pre-launch and for runtimes
    * with no account concept.
    *
@@ -102,6 +107,7 @@ export function RuntimeItem({
   onChangeRuntime,
   canSelect,
   compact,
+  iconOnly,
   account: sessionAccount,
 }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -140,8 +146,26 @@ export function RuntimeItem({
   // In the status line the model half stays off: the model has its own item when
   // pinned, and the Chat details panel names it regardless.
   const shownModel = compact ? null : model;
-  const chip = (
+  const descriptor = getRuntimeDescriptor(runtime);
+  const RuntimeIcon = descriptor.icon;
+  // Icon only: the name moves to the tooltip's first line and the accessible name.
+  const identity = iconOnly ? (
+    <RuntimeIcon aria-hidden className="size-(--size-icon-xs) shrink-0" />
+  ) : (
     <RuntimeIdentity runtime={runtime} model={shownModel} iconClassName="size-(--size-icon-xs)" />
+  );
+  const nameLine = iconOnly ? <span className="block">{descriptor.label}</span> : null;
+  const chip = iconOnly ? (
+    <span
+      role="img"
+      aria-label={descriptor.label}
+      data-testid="runtime-item-icon"
+      className="inline-flex items-center"
+    >
+      {identity}
+    </span>
+  ) : (
+    identity
   );
 
   // Which account this session is actually spending, for the tooltip (DOR-1970).
@@ -157,6 +181,7 @@ export function RuntimeItem({
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
         <TooltipContent side="top">
+          {nameLine}
           <span className="block">{'Set when the chat starts. It can’t change after.'}</span>
           {accountLine && <span className="block">{accountLine}</span>}
         </TooltipContent>
@@ -169,11 +194,14 @@ export function RuntimeItem({
   // identity chip, no dropdown affordance — but still worth a tooltip when
   // there is an account to name, which is the whole point of DOR-1970.
   if (!canChangeRuntime) {
-    if (!accountLine) return chip;
+    if (!accountLine && !nameLine) return chip;
     return (
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
-        <TooltipContent side="top">{accountLine}</TooltipContent>
+        <TooltipContent side="top">
+          {nameLine}
+          {accountLine && <span className="block">{accountLine}</span>}
+        </TooltipContent>
       </Tooltip>
     );
   }
@@ -182,12 +210,12 @@ export function RuntimeItem({
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <button className={STATUS_ITEM_TRIGGER_CLASS}>
-            <RuntimeIdentity
-              runtime={runtime}
-              model={shownModel}
-              iconClassName="size-(--size-icon-xs)"
-            />
+          <button
+            className={STATUS_ITEM_TRIGGER_CLASS}
+            aria-label={iconOnly ? `Runs on: ${descriptor.label}` : undefined}
+            title={iconOnly ? descriptor.label : undefined}
+          >
+            {identity}
           </button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">

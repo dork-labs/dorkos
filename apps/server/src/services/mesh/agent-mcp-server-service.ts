@@ -33,6 +33,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
 import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
 import { ensureAgentBrowserStateFile } from './agent-browser-preset.js';
+import { guardAgentBrowsers } from '../browser/agent-browser-guard.js';
 
 /** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
 export const RESERVED_MCP_SERVER_NAME = 'dorkos';
@@ -601,12 +602,12 @@ export class AgentMcpServerService {
   injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection> {
     const entry = this.injectionEntryFor(cwd);
     if (!entry) return {};
-    // A signed-in browser whose session file was deleted after it was added
-    // (`dorkos browser forget --all` on an older CLI, or by hand) would fail
-    // every browser tool rather than start signed out, so put an empty one
-    // back on the way out. An `existsSync` per enabled browser server.
-    for (const connection of Object.values(entry.servers)) ensureAgentBrowserStateFile(connection);
-    return this.mergeOAuthHeaders(entry.agentId, entry.servers);
+    // Every agent browser leaves here with its session file in place (an empty
+    // one when it was deleted), scrubbed of Cloud sign-ins, and blocked from the
+    // Cloud origin; one that cannot be guarded is left out (DOR-3196).
+    return guardAgentBrowsers(this.mergeOAuthHeaders(entry.agentId, entry.servers), {
+      logger: this.logger,
+    });
   }
 
   /**

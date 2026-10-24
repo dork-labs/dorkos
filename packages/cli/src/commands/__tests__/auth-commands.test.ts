@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,6 +142,77 @@ describe('auth-commands', () => {
       const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
       expect(persisted.auth.enabled).toBe(true);
       expect(logs.some((l) => l.includes('Restart'))).toBe(true);
+    });
+
+    it('ends only the sign-in its own sign-up made, through Better Auth', async () => {
+      const context = await auth.$context;
+      const deleteSession = vi.spyOn(context.internalAdapter, 'deleteSession');
+      const signUp = auth.api.signUpEmail.bind(auth.api);
+      let made: string | null | undefined;
+      const watched = {
+        ...auth,
+        api: {
+          ...auth.api,
+          signUpEmail: async (input: Parameters<OwnerAuth['api']['signUpEmail']>[0]) => {
+            const result = await signUp(input);
+            made = result.token;
+            return result;
+          },
+        },
+      } as OwnerAuth;
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth: watched,
+        db,
+        configStore: createFileConfigStore(tmpDir),
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      expect(made).toEqual(expect.any(String));
+      expect(deleteSession).toHaveBeenCalledOnce();
+      expect(deleteSession).toHaveBeenCalledWith(made);
+    });
+
+    it('still turns the password on when ending its sign-in fails, and says so', async () => {
+      const context = await auth.$context;
+      vi.spyOn(context.internalAdapter, 'deleteSession').mockRejectedValueOnce(
+        new Error('database is locked')
+      );
+      const configStore = createFileConfigStore(tmpDir);
+      const captured = captureIo();
+      const code = await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore,
+        prompt: throwingPrompt,
+        io: captured.io,
+      });
+      expect(code).toBe(0);
+      const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));
+      expect(persisted.auth.enabled).toBe(true);
+      expect(captured.errors.join('\n')).toContain('database is locked');
+      expect(captured.errors.join('\n')).toContain('next time DorkOS starts');
+    });
+
+    it('keeps no sign-in of its own, so a first browser sign-in is the only one (DOR-3097)', async () => {
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: createFileConfigStore(tmpDir),
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      expect(db.select().from(session).all()).toEqual([]);
+
+      const signInApi = auth as unknown as {
+        api: {
+          signInEmail(input: { body: { email: string; password: string } }): Promise<unknown>;
+        };
+      };
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      expect(db.select().from(session).all()).toHaveLength(1);
     });
 
     it('resolves credentials from stdin when no flags are given (non-TTY)', async () => {

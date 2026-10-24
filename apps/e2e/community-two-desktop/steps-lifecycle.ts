@@ -103,7 +103,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
         await transfer(owner, 'Desktop B');
         // A is now a member, so A's own page offers leaving instead of transfer.
         // The space server's own leave button, found by the scope it describes: its label is
-        // the server's copy (apps/community), left for DOR-2653.
+        // the server's copy (apps/space), left for DOR-2653.
         await expect(owner.locator(LEAVE_BUTTON)).toBeVisible();
         await expect(owner.locator('#successor')).toHaveCount(0);
         const roles = Object.fromEntries(

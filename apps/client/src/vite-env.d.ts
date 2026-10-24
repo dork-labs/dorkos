@@ -265,6 +265,13 @@ declare global {
      */
     getFullscreenState?(): Promise<boolean>;
     /**
+     * Subscribe to whether the desktop app is restarting a server that
+     * stopped on its own (DOR-3229), for the "Restarting DorkOS…" bar.
+     *
+     * @returns An unsubscribe function that removes the listener.
+     */
+    onServerRestarting?(cb: (restarting: boolean) => void): () => void;
+    /**
      * Subscribe to this window's OS-level focus state (DOR-254). Deliberately
      * the window's own `focus`/`blur`, not the document's: clicking into an
      * `<iframe>` the app hosts (an MCP app frame, an embedded browser)

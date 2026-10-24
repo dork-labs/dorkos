@@ -67,7 +67,13 @@ const TSCONFIG_PATH = path.join(SERVER_ROOT, 'tsconfig.json');
  * Deriving it the other way (anything containing `__tests__`) would miss an entry
  * that quarantines something else, which is a case worth failing on.
  */
-const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
+const STRUCTURAL_EXCLUDES = [
+  'node_modules',
+  'dist',
+  'src/core-extensions/**',
+  // Checked by tsconfig.spaces.json instead (server-merge step 7).
+  'src/services/spaces/**',
+];
 
 /**
  * How many test files are quarantined right now.

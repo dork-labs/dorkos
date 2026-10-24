@@ -111,8 +111,8 @@ describe('DeadLetterSection', () => {
     it('shows the aggregated count', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      // 15044 → "15,044" with toLocaleString
-      expect(screen.getByText('15,044')).toBeInTheDocument();
+      // Formatted in the reader's locale ("15,044" in English, "15.044" in German).
+      expect(screen.getByText((15044).toLocaleString())).toBeInTheDocument();
     });
 
     it('renders multiple cards for multiple groups', () => {

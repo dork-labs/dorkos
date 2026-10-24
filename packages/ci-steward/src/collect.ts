@@ -369,7 +369,11 @@ function collectDay(
   // the next run fetches it again instead of trusting it forever.
   const dayFailures: string[] = [];
   const warnings: string[] = [];
-  const required = requiredWorkflowPaths(workflows, files.requiredChecks?.contexts ?? []);
+  const required = requiredWorkflowPaths(
+    workflows,
+    files.requiredChecks?.contexts ?? [],
+    files.requiredChecks?.workflows ?? []
+  );
   const mapGate = gateMapper(workflows);
   const fetched = fetchRuns(gh, repo, day, partial ? now : undefined);
   dayFailures.push(...fetched.failures);

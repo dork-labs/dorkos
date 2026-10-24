@@ -35,6 +35,12 @@ vi.mock('../../lib/boundary.js', () => ({
   BoundaryError: class BoundaryError extends Error {},
 }));
 
+// The cockpit's user owns this install, so it may change front-door settings
+// such as `mcp.apiKey` at this computer (DOR-2969).
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_cockpit',
+}));
+
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
@@ -54,6 +60,7 @@ const SESSION_ID = '11111111-2222-4333-8444-555555555555';
 describe('a standing Full-autonomy default, end to end', () => {
   let tmpDir: string;
   let fake: FakeAgentRuntime;
+  let db: ReturnType<typeof createTestDb>;
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-default-stop-e2e-'));
@@ -71,7 +78,8 @@ describe('a standing Full-autonomy default, end to end', () => {
     fake.getSession.mockResolvedValue(null);
     runtimeRegistry.register(fake);
     runtimeRegistry.setDefault('fake');
-    runtimeRegistry.setDb(createTestDb());
+    db = createTestDb();
+    runtimeRegistry.setDb(db);
 
     const configRouter = (await import('../config.js')).default;
     const { createSessionRoutes } = await import('../sessions.js');
@@ -132,6 +140,42 @@ describe('a standing Full-autonomy default, end to end', () => {
       .patch(`/api/sessions/${SESSION_ID}`)
       .send({ permissionMode: autonomyModeId() });
     expect(patched.status).toBe(200);
+  });
+
+  it('keeps a mode a person set on a chat as a cap its agent never lifts (DOR-3175)', async () => {
+    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+    const { createChatRiseFacts, setChatRiseFacts } =
+      await import('../../services/core/turn-power/chat-rise-facts.js');
+    const { setContinuationHoldDb } =
+      await import('../../services/core/turn-power/continuation-hold.js');
+    const facts = createChatRiseFacts(db);
+    setChatRiseFacts(facts);
+    setContinuationHoldDb(db);
+    try {
+      await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
+      const { sessionMetadata, eq } = await import('@dorkos/db');
+      db.update(sessionMetadata)
+        .set({ lastTurnHeld: false })
+        .where(eq(sessionMetadata.sessionId, SESSION_ID))
+        .run();
+      expect(facts.mayRise(SESSION_ID)).toBe(true);
+
+      // A change that sets no mode marks nothing.
+      await request(fixtureServer)
+        .patch(`/api/sessions/${SESSION_ID}`)
+        .send({ effort: 'high' })
+        .expect(200);
+      expect(facts.mayRise(SESSION_ID)).toBe(true);
+
+      await request(fixtureServer)
+        .patch(`/api/sessions/${SESSION_ID}`)
+        .send({ permissionMode: 'default' })
+        .expect(200);
+      expect(facts.mayRise(SESSION_ID)).toBe(false);
+    } finally {
+      setChatRiseFacts(null);
+      setContinuationHoldDb(undefined);
+    }
   });
 
   it('seeds a room turn from the same standing default, and a binding from nothing', async () => {

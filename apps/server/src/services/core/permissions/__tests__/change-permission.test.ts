@@ -87,12 +87,49 @@ describe('permissions.change', () => {
     expect(world.agentArea('agent-test', 'rooms')).toBeUndefined();
   });
 
-  it('runs without a card under Trusted, where Permissions is Allowed', async () => {
+  // DOR-3107 (Security and the PM): an agent's change that could loosen any
+  // agent's settings always asks a person, whatever the preset, and nothing is
+  // written until the person says yes. Only Blocked, which can only tighten,
+  // still runs on its own where Permissions is Allowed.
+  it('asks before loosening another agent, even under Trusted', async () => {
     preset = 'trusted';
-    const { result, decision } = await call(OPEN_TEST_BOT_ROOMS);
+    const { decision } = await call(OPEN_TEST_BOT_ROOMS);
+    expect(decision?.outcome).toBe('approval_required');
+    expect(world.agentArea('agent-test', 'rooms')).toBeUndefined();
+  });
+
+  it('asks before an agent loosens itself, and writes nothing until a person says yes', async () => {
+    preset = 'trusted';
+    own = { actions: { 'permissions.change': 'allowed' } };
+    const self: AgentIdentity = { ...DORKBOT, agentPath: '/agents/test-bot' };
+    const raise = { target: 'agent-test', area: 'rooms', state: 'allowed' };
+    let refusal: unknown;
+    try {
+      await registry.invoke('permissions.change', raise, { identity: self });
+    } catch (err) {
+      refusal = err;
+    }
+    expect(refusal).toBeInstanceOf(CapabilityGateRefusal);
+    const decision = (refusal as CapabilityGateRefusal).decision;
+    expect(decision.outcome).toBe('approval_required');
+    expect(world.agentArea('agent-test', 'rooms')).toBeUndefined();
+
+    if (decision.outcome !== 'approval_required') throw new Error('expected a card');
+    approvals.grant(decision.payload.approvalId);
+    await registry.invoke('permissions.change', raise, {
+      identity: self,
+      approvalToken: decision.payload.approvalToken,
+    });
+    expect(world.agentArea('agent-test', 'rooms')).toBe('allowed');
+  });
+
+  it('runs without a card under Trusted when the change can only tighten', async () => {
+    preset = 'trusted';
+    const block = { target: 'agent-test', area: 'rooms', state: 'blocked' };
+    const { result, decision } = await call(block);
     expect(decision).toBeUndefined();
     expect(result).toBeDefined();
-    expect(world.agentArea('agent-test', 'rooms')).toBe('allowed');
+    expect(world.agentArea('agent-test', 'rooms')).toBe('blocked');
     expect(approvals.listPending()).toEqual([]);
     // The history names the agent and claims no yes nobody gave.
     const [changed] = world.events.filter((e) => e.eventType === 'permission.changed');
@@ -103,17 +140,11 @@ describe('permissions.change', () => {
     expect(changed!.metadata).not.toHaveProperty('approvalId');
   });
 
-  it('runs when the agent itself holds an Allowed for it, now that Permissions is not a floor', async () => {
-    own = { actions: { 'permissions.change': 'allowed' } };
-    const { decision } = await call(OPEN_TEST_BOT_ROOMS);
-    expect(decision).toBeUndefined();
-    expect(world.agentArea('agent-test', 'rooms')).toBe('allowed');
-  });
-
-  it('offers Always allow on its card', async () => {
+  // Every loosening asks (DOR-3107), so an Always allow would do nothing.
+  it('never offers Always allow on its card', async () => {
     await call(OPEN_TEST_BOT_ROOMS);
     const [pending] = approvals.listPending();
-    expect(pending).toMatchObject({ area: 'permissions', alwaysOffered: true });
+    expect(pending).toMatchObject({ area: 'permissions', alwaysOffered: false });
   });
 
   it('writes the change once approved, with one event saying who asked', async () => {

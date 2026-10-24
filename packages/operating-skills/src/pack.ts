@@ -6,6 +6,7 @@
  * @module pack
  */
 import { operatingDorkos } from './skills/operating-dorkos.js';
+import { continuingOnAnotherAccount } from './skills/continuing-on-another-account.js';
 import { managingAgents } from './skills/managing-agents.js';
 import { schedulingTasks } from './skills/scheduling-tasks.js';
 import { usingTheMarketplace } from './skills/using-the-marketplace.js';
@@ -356,8 +357,13 @@ export interface OperatingSkill {
  *   the agent's token, and that an edit re-asks only for a file or package task
  *   or on Careful. An agent seeded at 41 would tell a person a live schedule is
  *   waiting on them.
+ * - 43: `continuing-on-another-account` joins the pack (Re-seat P0). A room or
+ *   DM seat whose account runs out now moves to another account and answers
+ *   the same message again; an agent that does not know wakes in a fresh
+ *   session and answers twice. The new skill seeds without a bump; the bump is
+ *   for the sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
  */
-export const OPERATING_SKILLS_VERSION = 42;
+export const OPERATING_SKILLS_VERSION = 43;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -374,4 +380,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   usingTheAgentBrowser,
   workingWithSpinOffChats,
   workingOnAHeartbeat,
+  continuingOnAnotherAccount,
 ];

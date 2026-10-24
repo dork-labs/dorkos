@@ -21,6 +21,7 @@
  *
  * @module server/services/rooms/room-service
  */
+import type { ReseatOptions } from '@dorkos/shared/room-schemas';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -59,7 +60,11 @@ import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
 import type { RoomFollowService } from './follow/room-follow-service.js';
-import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
+import {
+  postAuthorBound,
+  type PersonPostBound,
+  type RoomExternalPostInput,
+} from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
   MemberRoomSummary,
@@ -223,6 +228,19 @@ export class RoomService {
   /** Stop everything running in one room. See {@link RoomTurnControl.haltRoom}. */
   haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {
     return this.parts.turnControl.haltRoom(roomId, viewerAuthorId);
+  }
+  /** Move an agent's seat to another account. See {@link RoomTurnControl.reseatAgent}. */
+  reseatAgent(
+    roomId: string,
+    authorId: string,
+    viewerAuthorId: string,
+    opts?: { accountId?: string; markedTurn?: boolean }
+  ): Promise<{ sessionId: string }> {
+    return this.parts.turnControl.reseatAgent(roomId, authorId, viewerAuthorId, opts);
+  }
+  /** The accounts an agent's seat may move to. See {@link RoomTurnControl.reseatOptions}. */
+  reseatOptions(roomId: string, authorId: string, viewerAuthorId: string): Promise<ReseatOptions> {
+    return this.parts.turnControl.reseatOptions(roomId, authorId, viewerAuthorId);
   }
   /** Stop one agent in a room. See {@link RoomTurnControl.haltAgent}. */
   haltAgent(roomId: string, authorId: string, viewerAuthorId: string): Promise<number> {
@@ -447,9 +465,23 @@ export class RoomService {
     this.triggers.dispatch(room, entry);
   }
 
-  /** Write a post. See {@link RoomPosting.post}. */
-  post(roomId: string, input: RoomPostInput): PostedEntry {
-    return this.parts.posting.post(roomId, input);
+  /**
+   * Write a post. See {@link RoomPosting.post}.
+   *
+   * @param roomId - The room.
+   * @param input - The post itself.
+   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP
+   *   routes): kept marked as an outsider's ({@link postAuthorBound}).
+   * @param authorBound - What the post hands on to the turns it starts; see
+   *   {@link PersonPostBound}.
+   */
+  post(
+    roomId: string,
+    input: RoomPostInput,
+    unverifiedAgent = false,
+    authorBound?: PersonPostBound
+  ): PostedEntry {
+    return this.parts.posting.post(roomId, input, postAuthorBound(unverifiedAgent, authorBound));
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
@@ -460,6 +492,7 @@ export class RoomService {
       replyTo?: string;
       attachmentIds?: readonly string[];
       callerSessionId?: string;
+      callerAgentVerified?: boolean;
     }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
@@ -471,6 +504,14 @@ export class RoomService {
     opts: { limit: number; before?: number; threadRootEntryId?: string }
   ): RoomEntry[] {
     return this.parts.reads.readHistory(roomId, viewerAuthorId, opts);
+  }
+  /** Whether a room mirrors a Community's. See {@link RoomStore.isRemoteTimelineRoom}. */
+  isMirroredRoom(roomId: string): boolean {
+    return this.parts.core.store.isRemoteTimelineRoom(roomId);
+  }
+  /** One entry by id, for a member. See {@link RoomReads.readEntry}. */
+  readEntry(roomId: string, viewerAuthorId: string, entryId: string): RoomEntry | null {
+    return this.parts.reads.readEntry(roomId, viewerAuthorId, entryId);
   }
   /** The messages in one room that match some words. See {@link RoomSearch.searchHistory}. */
   searchHistory(

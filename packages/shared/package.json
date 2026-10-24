@@ -169,6 +169,10 @@
       "types": "./src/agent-browser.ts",
       "default": "./dist/agent-browser.js"
     },
+    "./cloud-origin": {
+      "types": "./src/cloud-origin.ts",
+      "default": "./dist/cloud-origin.js"
+    },
     "./browser-schemas": {
       "types": "./src/browser-schemas.ts",
       "default": "./dist/browser-schemas.js"
@@ -248,6 +252,14 @@
     "./community-connections": {
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
+    },
+    "./community-teammates": {
+      "types": "./src/community-teammates.ts",
+      "default": "./dist/community-teammates.js"
+    },
+    "./community-space-settings": {
+      "types": "./src/community-space-settings.ts",
+      "default": "./dist/community-space-settings.js"
     },
     "./community-release-manifest": {
       "types": "./src/community-release-manifest.ts",
@@ -397,9 +409,21 @@
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
     },
+    "./session-relay-agent-computer": {
+      "types": "./src/session-relay-agent-computer.ts",
+      "default": "./dist/session-relay-agent-computer.js"
+    },
+    "./bounded-json": {
+      "types": "./src/bounded-json.ts",
+      "default": "./dist/bounded-json.js"
+    },
     "./transport-hub": {
       "types": "./src/transport-hub.ts",
       "default": "./dist/transport-hub.js"
+    },
+    "./signed-in-devices": {
+      "types": "./src/signed-in-devices.ts",
+      "default": "./dist/signed-in-devices.js"
     },
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
@@ -529,6 +553,10 @@
       "types": "./src/canvas-channel-schemas.ts",
       "default": "./dist/canvas-channel-schemas.js"
     },
+    "./canvas-doc-routes": {
+      "types": "./src/canvas-doc-routes.ts",
+      "default": "./dist/canvas-doc-routes.js"
+    },
     "./canvas-doc-frame-wire": {
       "types": "./src/canvas-doc-frame-wire.ts",
       "default": "./dist/canvas-doc-frame-wire.js"
@@ -572,6 +600,10 @@
     "./file-save/recovery": {
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
+    },
+    "./space-page": {
+      "types": "./src/space-page/index.ts",
+      "default": "./dist/space-page/index.js"
     }
   },
   "scripts": {
@@ -587,7 +619,7 @@
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
     "ulidx": "^2.4.1",
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

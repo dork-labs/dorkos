@@ -26,15 +26,16 @@
  *
  * @module services/notifications/notification-registry
  */
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { runtimeSigninTitle, runtimeSigninBody } from './runtime-signin-copy.js';
 import {
   NOTIFICATION_KINDS,
+  signinSubjectId,
   type NotificationActionDTO,
   type NotificationKind,
   type NotificationSubjectType,
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
-import { formatResetTime, limitWindowPhrase, ownerReplacementWhen } from './notification-copy.js';
+import { formatResetTime, limitWindowPhrase } from './notification-copy.js';
 import {
   EXTENSION_DECISION_PUSH_WINDOW_MS,
   extensionDecisionEscalation,
@@ -42,6 +43,7 @@ import {
   subjectIdForCopy,
 } from './extension-decision-copy.js';
 import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
+import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -249,6 +251,10 @@ export interface NotificationPayloads extends DeclaredPayloads {
    * and the episode, and nothing about the session that tripped over it.
    */
   'signin.required': {
+    /** The account whose sign-in stopped working. */
+    accountRoot?: string;
+    /** Its display name, never a credential. */
+    accountName?: string;
     /** The runtime type, e.g. `claude-code`. */
     runtime: string;
     /**
@@ -375,27 +381,6 @@ export interface NotificationPayloads extends DeclaredPayloads {
     /** When a reading confirmed the reset, ISO 8601: the reset's identity when `resetsAt` is unknown. */
     resetConfirmedAt: string;
   };
-  /**
-   * Someone asked the host to make someone else the owner of a community this person owns, or
-   * that request completed (DOR-2543). Raised from the owner's own connection list, the only
-   * connection the Community tells; see `emitters/community-owner-replacement.ts`.
-   */
-  'community.owner-replacement': {
-    /** The owner's connection ref: the subject, and where "Open" goes. */
-    ref: string;
-    /** What this DorkOS calls the community. */
-    communityLabel: string;
-    replacementId: string;
-  } & (
-    | {
-        phase: 'open';
-        /** The new owner can take over at any time now. */
-        claimable: boolean;
-        /** The earliest it can happen, ISO 8601; `null` until the owner's notice resolves. */
-        claimableAfter: string | null;
-      }
-    | { phase: 'completed'; newOwnerDisplayName: string }
-  );
   /** The one-time offer to run cheap checks on DorkOS credits (spec `heartbeats` §6.3). */
   'heartbeat.credits-offer': Record<string, never>;
   /** The daily digest. */
@@ -684,12 +669,6 @@ const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
  * so a different refusal is still told at once.
  */
 const CREDITS_REFUSED_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
-
-/**
- * How long one owner-replacement notice stays deduped: longer than any request can stay open,
- * which is the Community's longest wait (180 days) plus its 14-day claim window.
- */
-const OWNER_REPLACEMENT_DEDUPE_WINDOW_MS = 210 * 24 * 60 * 60 * 1000;
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -1006,14 +985,7 @@ const ENTRIES: NotificationRegistryMap = {
     // next month as it was that night, and the resolution row that follows says
     // plainly that it came back.
     //
-    // **One row per RUNTIME, even when a machine runs several accounts on it**
-    // (DOR-1682). A Claude credential belongs to an account root, and DorkOS
-    // supports several; the watch tracks each of them separately, but reports one
-    // condition per runtime, because `subjectId` below is the runtime type and
-    // the app's standing banner reads the newest row per runtime. A second dead
-    // account therefore adds nothing to the inbox — what it adds is that this
-    // row's resolution waits for it: the "working again" row is written when the
-    // LAST failing account proves itself, never when the first does.
+    // Each account owns its subject and escalation episode.
     kind: 'signin.required',
     tier: 'blocking',
     storage: 'standing-recorded',
@@ -1021,7 +993,7 @@ const ENTRIES: NotificationRegistryMap = {
     // turn that tripped over it. Clicking through opens Settings → Runtimes,
     // which is where signing in again actually happens.
     subjectType: 'system',
-    locate: (p) => ({ subjectId: p.runtime }),
+    locate: (p) => ({ subjectId: signinSubjectId(p.runtime, p.accountRoot) }),
     // **Past tense on both edges, because a stored row outlives what it
     // describes.** `session.error` set the pattern with "stopped on an error",
     // and the reason is the same: the raise row sits in the inbox long after
@@ -1035,25 +1007,14 @@ const ENTRIES: NotificationRegistryMap = {
     // The third sentence is the restart case, and it is deliberately NOT the
     // all-clear: boot closes an episode it can never see the end of, and saying
     // "working again" there would be DorkOS asserting something nobody checked.
-    title: (p) => {
-      const name = runtimeDisplayName(p.runtime);
-      if (!p.clearedAt) return `Your ${name} sign-in stopped working`;
-      return p.closedAtBoot
-        ? `DorkOS restarted while your ${name} sign-in was broken`
-        : `Your ${name} sign-in is working again`;
-    },
-    body: (p) => {
-      if (!p.clearedAt) return 'Scheduled tasks and agent replies cannot run until you sign in.';
-      return p.closedAtBoot
-        ? 'It stopped tracking that. If the sign-in is still broken, the next task or reply will say so.'
-        : undefined;
-    },
-    // ONE per runtime per EPISODE, however many tasks, rooms and relay
+    title: runtimeSigninTitle,
+    body: runtimeSigninBody,
+    // One per account episode, however many tasks, rooms and relay
     // deliveries trip over the same dead credential — the watch's own store is
     // what collapses them, synchronously, before any of them can say anything.
     // The `since` is what keeps a SECOND episode distinct from the first; see
     // the payload field for why the ledger makes that non-negotiable.
-    dedupeKey: (p) => `signin:${p.runtime}:${p.since}`,
+    dedupeKey: (p) => `signin:${signinSubjectId(p.runtime, p.accountRoot)}:${p.since}`,
     // **Zero, and it has to be.** The two rows of one episode share this key by
     // design — that shared string is what files them, the escalation timer and
     // the resolution under one identity. Any positive window would therefore
@@ -1232,35 +1193,6 @@ const ENTRIES: NotificationRegistryMap = {
     }),
   },
 
-  'community.owner-replacement': {
-    // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list and
-    // its hourly background check (`community-owner-notice-sweep.ts`, DOR-2760).
-    // `notable`, never `blocking`: nothing is stuck, the wait is at least a week, and the
-    // Community also emails the owner; it badges the bell and never reaches a phone.
-    kind: 'community.owner-replacement',
-    tier: 'notable',
-    storage: 'event',
-    // There is no community subject type; the subject id is the connection ref, which the
-    // app's link turns into that community's page.
-    subjectType: 'system',
-    locate: (p) => ({ subjectId: p.ref }),
-    title: (p) =>
-      p.phase === 'open'
-        ? `Someone asked to take over ${p.communityLabel}`
-        : `${p.newOwnerDisplayName} is now the owner of ${p.communityLabel}`,
-    body: (p) =>
-      p.phase === 'open'
-        ? `Unless you keep ownership, the host can make someone else its owner ${ownerReplacementWhen(p)}. Open the space to keep it.`
-        : 'You are still a member.',
-    actions: () => OPEN_ACTION,
-    dedupeKey: (p) => `owner-replacement:${p.ref}:${p.replacementId}:${p.phase}`,
-    // Longer than any request can stay open (the Community's longest wait, 180 days, plus its
-    // 14-day claim window). The table keeps only 30 days, so the emitter's own ledger is what
-    // makes it once for the whole life of a request.
-    dedupeWindowMs: OWNER_REPLACEMENT_DEDUPE_WINDOW_MS,
-    relay: 'never',
-  },
-
   'heartbeat.credits-offer': {
     // Raised once per computer by `heartbeats/triage/triage-checks.ts`, while
     // nobody has answered. `quiet`: an offer is never an alarm.
@@ -1367,6 +1299,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
  * connection list, and an hourly background check, by `emitters/community-owner-replacement.ts`.
  *
+ * `community.teammate-limit` joined them in DOR-2956. It is raised by a space's spending
+ * counter (`communities/remote/wake/teammate-spend.ts`) once a month, when teammates' turns
+ * reach the limit the owner set. `community.teammate-limits-reset` joined with it: raised once
+ * when the counter's file could not be read and was set aside.
+ *
  * `connector.destructive_pending` and `connector.destructive_executed` joined
  * them in DOR-2739. They are raised by
  * `services/connectors/execution/destructive-hold.ts` around an agent's
@@ -1401,7 +1338,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'credits.refused',
   'extension.approval',
   'extension.decision',
-  'community.owner-replacement',
+  ...COMMUNITY_NOTIFICATION_KINDS,
   'heartbeat.credits-offer',
   'connector.destructive_pending',
   'connector.destructive_executed',

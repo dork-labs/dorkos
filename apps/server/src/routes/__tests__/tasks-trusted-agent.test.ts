@@ -31,6 +31,11 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { raiseStanding } from '../../services/notifications/standing-events.js';
+import type { StreamEvent } from '@dorkos/shared/types';
+import {
+  countWhileRunning,
+  resetLiveOutsiderTurns,
+} from '../../services/core/turn-power/live-outsider-turns.js';
 
 const posture = vi.hoisted(() => ({ preset: 'trusted' as 'trusted' | 'careful' }));
 
@@ -198,6 +203,52 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
       .send({ prompt: 'Delete the queue.' });
 
     expect(res.body.status).toBe('pending_approval');
+  });
+
+  // DOR-3036: an agent's HTTP call names no chat, so its turn is read through its agent.
+  describe('while one of the agent’s turns that read a stranger’s words runs', () => {
+    /** Start a marked turn of the agent and keep it running until the returned stop. */
+    async function markedTurnRunning(): Promise<() => Promise<void>> {
+      const turn = countWhileRunning(
+        { cwd: '/tmp/agents/nb' },
+        { outsider: true },
+        (async function* () {
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+      await turn.next();
+      return async () => void (await turn.return(undefined));
+    }
+
+    afterEach(() => resetLiveOutsiderTurns());
+
+    it('parks its schedule on Trusted, with the mark kept for the card', async () => {
+      const stop = await markedTurnRunning();
+      const res = await agentCreates();
+      await stop();
+
+      expect(res.body.status).toBe('pending_approval');
+      expect(res.body.originMarks).toEqual({ outsider: true });
+      // Announced as waiting for a person, never as armed by the agent.
+      expect(vi.mocked(raiseStanding)).toHaveBeenCalledWith('schedule.parked', expect.anything());
+      expect(emit).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'schedule.armed_by_agent' })
+      );
+    });
+
+    it('re-parks a live schedule it edits, whatever the edit', async () => {
+      const created = (await agentCreates()).body as Task;
+      expect(created.status).toBe('active');
+      const stop = await markedTurnRunning();
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${created.id}`)
+        .set(...AGENT)
+        .send({ enabled: true });
+      await stop();
+
+      expect(res.body.status).toBe('pending_approval');
+      expect(res.body.originMarks).toEqual({ outsider: true });
+    });
   });
 
   it('parks a schedule from a caller it cannot identify', async () => {

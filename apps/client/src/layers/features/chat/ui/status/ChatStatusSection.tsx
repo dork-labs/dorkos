@@ -11,6 +11,7 @@ import {
   useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
+import { useOnWifi } from '@/layers/entities/config';
 import { useProjectForCwd } from '@/layers/entities/project';
 import {
   useCapabilitiesForRuntime,
@@ -20,6 +21,7 @@ import {
 import {
   StatusLine,
   SessionPopover,
+  WifiTurnCapPill,
   AutoModeConfirmDialog,
   UsageRevealPopover,
   useGitStatus,
@@ -36,6 +38,7 @@ import {
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
+  isPhoneDensity,
   useMakeDefaultStop,
   MakeDefaultStopLine,
   type StatusPromotionContext,
@@ -49,6 +52,7 @@ import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
 import { ExtensionStatusRows } from './ExtensionStatusItems';
+import { DirectMessageSafetyLine } from './DirectMessageSafetyLine';
 
 /**
  * The stable stand-in for "this runtime's capability profile has not arrived".
@@ -77,6 +81,15 @@ interface ChatStatusSectionProps {
   agentEmoji?: string;
   /** Agent working directory path (used for context menu actions). */
   agentPath?: string;
+  /**
+   * Draw no status line (DOR-3074): a chat drawn as a direct message keeps the
+   * model, account, permission mode, usage and git behind its session view
+   * instead. Safety and limits stay: the Wi-Fi notice and a nearly full
+   * context show on a quiet line of their own (`DirectMessageSafetyLine`), and
+   * what a typed command opens (`/context`, the Full-autonomy question) still
+   * opens. The session shortcut does nothing, having no popover to open.
+   */
+  lineHidden?: boolean;
 }
 
 /**
@@ -102,9 +115,11 @@ export function ChatStatusSection({
   agentColor,
   agentEmoji,
   agentPath,
+  lineHidden = false,
 }: ChatStatusSectionProps) {
   // The real width of the bar, not a viewport breakpoint — see `useStatusBudget`.
   const { ref: barRef, budget } = useStatusBudget();
+  const onWifi = useOnWifi();
   // Resolved first so the client-known runtime can scope every runtime-aware
   // query below (status/model/auto-mode), even before the session has a
   // server-side row to resolve `sessionId` against.
@@ -321,7 +336,9 @@ export function ChatStatusSection({
   });
 
   const [sessionOpen, setSessionOpen] = useState(false);
-  useSessionPopoverShortcut(() => setSessionOpen((o) => !o));
+  // A DM draws no popover to open, so the shortcut does nothing there; it
+  // would otherwise open one later, unasked, in the session view (DOR-3074).
+  useSessionPopoverShortcut(() => !lineHidden && setSessionOpen((o) => !o));
 
   const promotionContext: StatusPromotionContext = {
     cwd: status.cwd,
@@ -338,6 +355,8 @@ export function ChatStatusSection({
     // Holds the item on the line while its picker is open, so choosing the
     // safest stop does not pull the popover out from under the person.
     permissionPickerOpen: pickerOpen,
+    // From Wi-Fi the chip says what every turn runs at, so it always shows.
+    onWifi,
     // `null` on a runtime with no way of working to offer, which is most of them.
     plan: workingMode ? { active: planActive } : null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
@@ -416,7 +435,7 @@ export function ChatStatusSection({
   });
 
   const { items, overflow } = applyStatusBudget(
-    selectPromotedItems({ ctx: promotionContext, pins, nodes }),
+    selectPromotedItems({ ctx: promotionContext, pins, nodes, density: budget.density }),
     budget
   );
 
@@ -426,43 +445,52 @@ export function ChatStatusSection({
     // shrink the box that decides how much the line may hold.
     // `relative` for the offer overlay below, which floats above this strip
     // rather than taking a row in it — see `MakeDefaultStopLine`'s `placement`.
-    <div ref={barRef} className="relative pt-2">
+    <div ref={barRef} className={lineHidden ? 'relative' : 'relative pt-2'}>
       {/* The offer, when the dial's popover is shut. Floating, so the composer
           never gains a blank line for a remark that is usually not there. */}
-      {!pickerOpen && makeDefault.line && (
+      {!lineHidden && !pickerOpen && makeDefault.line && (
         <MakeDefaultStopLine {...makeDefault.line} placement="overlay" />
       )}
-      <StatusLine
-        items={items}
-        trailing={
-          <SessionPopover
-            open={sessionOpen}
-            onOpenChange={setSessionOpen}
-            diagnostics={diagnostics}
-            controls={{
-              // The same switch the line's chip carries, so a bar too narrow to
-              // hold the chip cannot take planning away.
-              plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
-            }}
-            promotionContext={promotionContext}
-            overflowCount={overflow}
-            addOns={
-              extensionItems.visible.length > 0 ? (
-                <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
-              ) : undefined
-            }
-            urgentAction={
-              promotedCompactAction
-                ? {
-                    label: `Compact chat · ${compaction.percent}% full`,
-                    onAction: compaction.onCompact,
-                    pending: compaction.pending,
-                  }
-                : null
-            }
-          />
-        }
-      />
+      {lineHidden && <DirectMessageSafetyLine compaction={compaction} />}
+      {!lineHidden && (
+        <StatusLine
+          items={items}
+          nameFirst={isPhoneDensity(budget.density)}
+          trailing={
+            <span className="flex items-center gap-2">
+              {/* From Wi-Fi every turn asks before acting (DOR-3037): outside the
+                budget, so a busy line never hides it. */}
+              <WifiTurnCapPill compact={budget.density !== 'full'} />
+              <SessionPopover
+                open={sessionOpen}
+                onOpenChange={setSessionOpen}
+                diagnostics={diagnostics}
+                controls={{
+                  // The same switch the line's chip carries, so a bar too narrow to
+                  // hold the chip cannot take planning away.
+                  plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
+                }}
+                promotionContext={promotionContext}
+                overflowCount={overflow}
+                addOns={
+                  extensionItems.visible.length > 0 ? (
+                    <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
+                  ) : undefined
+                }
+                urgentAction={
+                  promotedCompactAction
+                    ? {
+                        label: `Compact chat · ${compaction.percent}% full`,
+                        onAction: compaction.onCompact,
+                        pending: compaction.pending,
+                      }
+                    : null
+                }
+              />
+            </span>
+          }
+        />
+      )}
       {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
       <UsageRevealPopover
         usage={usage ?? null}

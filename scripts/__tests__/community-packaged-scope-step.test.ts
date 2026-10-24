@@ -256,7 +256,7 @@ describe('community-packaged scope step', () => {
         .split('\n')
         .filter((line) => !line.trim().startsWith('#'))
         .join('\n');
-      expect(code, name).not.toContain('apps/community');
+      expect(code, name).not.toContain('apps/space');
       expect(code, name).toContain('- name: Read where the space server lives');
     }
   });

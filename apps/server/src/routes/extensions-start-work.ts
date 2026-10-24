@@ -24,6 +24,8 @@ import { getStartWorkService, StartWorkInputError } from '../services/extensions
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the route says when the bar refuses it. */
@@ -77,7 +79,9 @@ export function registerExtensionStartWorkRoute(
       return c.json({ error: 'DorkOS cannot start chats yet. Try again in a moment.' }, 503);
     }
     try {
-      return c.json(await service.start(id, readJsonBody(c, { emptyAs: {} }), 'api'));
+      // From Wi-Fi, the chat's first turn runs at the runtime's default at most (DOR-3037).
+      const ceiling = wifiTurnCeiling(honoRequestFacts(c));
+      return c.json(await service.start(id, readJsonBody(c, { emptyAs: {} }), 'api', ceiling));
     } catch (err) {
       if (err instanceof StartWorkError) {
         return c.json({ error: err.message, code: err.code }, STATUS_FOR[err.code]);

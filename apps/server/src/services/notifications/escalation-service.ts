@@ -179,10 +179,23 @@ export interface EscalationServiceDeps {
   now?: () => number;
 }
 
+/** Chat-leg failures a person can fix, so worth a warning when they happen. */
+const RELAY_MISSES_WORTH_A_WARNING: ReadonlySet<string> = new Set([
+  'INITIATE_NOT_ALLOWED',
+  'NOT_OPTED_IN',
+  'NO_ACTIVE_SESSIONS',
+  'SEND_FAILED',
+]);
+
+/** How often the same chat-leg failure is warned about. */
+const RELAY_MISS_WARN_EVERY_MS = 6 * 60 * 60 * 1000;
+
 /** The escalation ladder. */
 export class EscalationService {
   /** Live timers by subject key. Single digits in practice. */
   private readonly armed = new Map<string, ReturnType<typeof setTimeout>>();
+  /** When each reason a chat leg could not be sent was last warned about. */
+  private readonly relayMissWarnedAt = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly deps: EscalationServiceDeps) {
@@ -368,6 +381,21 @@ export class EscalationService {
       }
       if (relay?.ok) {
         this.recordEscalation(subjectKey, relayLedgerChannel(relay), relayDetail(relay));
+      }
+
+      // A chat connection that exists but cannot carry the ping is worth a
+      // warning even when the push reached a device (DOR-3114): a disconnected
+      // Telegram, or "Agent can start conversations" off, failed every ping
+      // in silence. At most once per reason every few hours.
+      if (relay && !relay.ok && RELAY_MISSES_WORTH_A_WARNING.has(relay.reason)) {
+        const last = this.relayMissWarnedAt.get(relay.reason) ?? 0;
+        if (this.now() - last >= RELAY_MISS_WARN_EVERY_MS) {
+          this.relayMissWarnedAt.set(relay.reason, this.now());
+          logger.warn('[Escalation] A chat connection could not carry a ping', {
+            subjectKey,
+            relay,
+          });
+        }
       }
 
       if (push.delivered === 0 && !relay?.ok) {
