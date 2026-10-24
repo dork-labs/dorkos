@@ -13,6 +13,8 @@
  * pictures. It never clicks. The only state it writes is the theme key in a throwaway browser
  * context's localStorage.
  *
+ * It refuses any --url on port 4242, the operator's own DorkOS (guards.mjs).
+ *
  * Usage:
  *   node measure.mjs --url http://localhost:6241 --routes /,/settings --out /tmp/audit
  *     [--viewports 390x844,375x667,768x1024,1440x900] [--themes light,dark]
@@ -22,7 +24,8 @@
  *     [--ignore '<css>']   # skip anything inside these (e.g. the playground's own chrome)
  *
  * Playwright: resolves `playwright-core`, then `playwright`, then `@playwright/test` (this repo
- * has the last in apps/e2e). Set PLAYWRIGHT_FROM=<dir> to resolve from somewhere else, and
+ * has the last in apps/e2e), from PLAYWRIGHT_FROM, then this folder, then apps/e2e, never the
+ * current directory. Set PLAYWRIGHT_FROM=<dir> to resolve from somewhere else, and
  * CHROME_PATH=<binary> to use a specific Chromium (e.g. a headless shell).
  *
  * Output (in --out): shots/<route>/<w>x<h>-<theme>[-<mode>].png, measure.json (every flag plus
@@ -34,6 +37,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { focusWalkPage } from './focus-walk.mjs';
+import { playwrightRoots, refuseOperatorUrl } from './guards.mjs';
 import { measureInPage } from './in-page.mjs';
 import { writeReport } from './report.mjs';
 
@@ -58,6 +62,11 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 if (!args.url) {
   console.error('measure.mjs: --url is required (see the header of this file for usage)');
+  process.exit(2);
+}
+const refusal = refuseOperatorUrl(args.url);
+if (refusal) {
+  console.error(refusal);
   process.exit(2);
 }
 const base = String(args.url).replace(/\/$/, '');
@@ -86,13 +95,8 @@ const floors = JSON.parse(
 
 // ---------------------------------------------------------------- playwright
 function loadChromium() {
-  const roots = [
-    process.env.PLAYWRIGHT_FROM,
-    process.cwd(),
-    here,
-    resolve(here, '../../../../../apps/e2e'),
-  ].filter(Boolean);
-  for (const root of roots) {
+  // Never the current directory (DOR-3281): see guards.mjs.
+  for (const root of playwrightRoots({ here })) {
     const req = createRequire(join(resolve(root), 'noop.js'));
     for (const name of ['playwright-core', 'playwright', '@playwright/test']) {
       try {
