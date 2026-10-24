@@ -17,7 +17,7 @@
  *        └─ SessionCrashRecovery.dispatch
  *                 └─ SessionTurnWindows.dispatch   ← boundary asked again; the ingress
  *                          └─ SessionPump.dispatch
- *                                   └─ createPumpLauncher → query()
+ *                                   └─ createPumpLaunchOptions → query()
  * ```
  *
  * ## The opt-in is asymmetric, and P5's comparison runs depend on knowing it
@@ -178,7 +178,7 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { createPumpLauncher, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { createPumpLaunchOptions, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
 import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
@@ -1316,7 +1316,7 @@ export class PersistentDispatch {
           since: Date.now(),
         });
       },
-      launch: createPumpLauncher(
+      ...createPumpLaunchOptions(
         session,
         opts,
         () => {

@@ -48,6 +48,7 @@ import type {
   PumpControlQuery,
   PumpLauncher,
   PumpQuery,
+  SessionPumpOptions,
   Quietness,
 } from './session-pump-contract.js';
 import { createTrackedSpawn } from './tracked-spawn.js';
@@ -126,6 +127,18 @@ export function createPumpLauncher(
       resume: session.hasStarted ? session.sdkSessionId : 'N/A',
     });
     return live;
+  };
+}
+
+/** Keep the account-health seam beside the launcher that pins that account. */
+export function createPumpLaunchOptions(
+  ...args: Parameters<typeof createPumpLauncher>
+): Pick<SessionPumpOptions, 'launch' | 'credentialAccountRoot'> {
+  const session = args[0];
+  return {
+    launch: createPumpLauncher(...args),
+    credentialAccountRoot: () =>
+      session.launchedPerToken ? undefined : session.launchedAccountRoot,
   };
 }
 

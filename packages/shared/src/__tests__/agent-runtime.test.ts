@@ -281,6 +281,20 @@ describe('RuntimeCapabilities shape', () => {
 });
 
 describe('deriveRuntimeReadiness', () => {
+  it('keeps an unreadable sign-in unknown and never offers a login', () => {
+    expect(
+      deriveRuntimeReadiness('claude-code', [
+        { name: 'Claude Code CLI', description: '', status: 'satisfied' },
+        {
+          name: 'Claude Code authentication',
+          description: '',
+          status: 'unknown',
+          reason: 'credentials_unreadable',
+        },
+      ])
+    ).toEqual({ state: 'unknown' });
+  });
+
   it('legacy shape: a binary-only claude-code (no auth check) still reads ready', () => {
     // Backward-compat: a runtime that declares no auth check is treated as
     // "auth not required" so old single-dependency shapes never regress.
