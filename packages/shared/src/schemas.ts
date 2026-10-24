@@ -41,7 +41,11 @@ import type { PermissionStop } from './agent-runtime.js';
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
-import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.js';
+import {
+  ChatMessageStampSchema,
+  QueuedChatEntrySchema,
+  RoomMessageStampSchema,
+} from './chat-messages.js';
 
 extendZodWithOpenApiOnce();
 
@@ -1259,7 +1263,11 @@ export const QueuedMessageSchema = z
   .object({
     /** Server-minted id; the same id the delivery outcome correlates on. */
     id: z.string(),
-    /** The person's words, pristine — context injection never mutates them. */
+    /**
+     * The person's words, pristine — context injection never mutates them. On
+     * a row another chat sent, the senders' words joined, never the envelope
+     * the model is handed (DOR-3060); {@link fromChats} says who sent them.
+     */
     content: z.string(),
     /** The disposition as REQUESTED, not as applied. */
     disposition: MessageDispositionSchema,
@@ -1272,6 +1280,11 @@ export const QueuedMessageSchema = z
      * (DOR-2065). The rows behind it wait too, in order.
      */
     waitingOn: QueuedWaitingOnSchema.optional(),
+    /**
+     * Present when other chats sent this row (`enqueuedBy` starts `chat:`): one
+     * entry per message, in the order they were sent (DOR-3060).
+     */
+    fromChats: z.array(QueuedChatEntrySchema).optional(),
   })
   .openapi('QueuedMessage');
 
