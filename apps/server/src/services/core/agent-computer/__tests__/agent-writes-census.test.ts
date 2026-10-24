@@ -169,6 +169,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/connectors/connections/:connectionId/events/source',
       'PUT /api/connectors/providers/:provider/credential',
       'PUT /api/connectors/sessions/:sessionId/connections/:connectionId',
+      'PUT /api/community-connections/:ref/teammate-spend',
     ],
   ],
   [
@@ -195,6 +196,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/workbench/probe',
       'POST /api/workbench/sign',
       'PUT /api/read-cursors/:kind/:id',
+      'POST /api/sessions/:id/stream-health',
+      'POST /api/workbench/bridge',
     ],
   ],
   [
@@ -222,6 +225,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/extensions/:id/project-settings',
       'PUT /api/extensions/:id/secrets/:key',
       'PUT /api/extensions/:id/settings/:key',
+      'POST /api/extensions/:id/rooms/:roomId/threads/:entryId/replies',
+      'PUT /api/extensions/:id/room-access',
+      'PUT /api/extensions/:id/rooms/:roomId/threads/:entryId/read',
     ],
   ],
   [
@@ -269,6 +275,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/sign-in-landings/:id/retry',
       'POST /api/tunnel/start',
       'POST /api/tunnel/stop',
+      'ALL /api/devices/*',
+      'DELETE /api/devices/sessions/:id',
+      'POST /api/devices/sign-out-all',
+      'DELETE /api/session-relay/passkeys',
+      'DELETE /api/session-relay/passkeys/:credentialId',
+      'POST /api/session-relay/passkeys/finish',
+      'POST /api/session-relay/passkeys/start',
     ],
   ],
   [
@@ -327,6 +340,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/test/seed-bridge',
       'POST /api/test/seed-oauth-mcp-agent',
       'POST /api/test/step',
+      'DELETE /api/test/account-world',
+      'PUT /api/test/account-world',
+      'POST /api/test/doc-routes/configure',
     ],
   ],
   [
@@ -415,6 +431,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/rooms/:id/canvas/:documentId/diff',
       'PUT /api/rooms/:id/files/content',
       'PUT /api/rooms/:id/follow',
+      'POST /api/rooms/:id/members/:authorId/reseat',
     ],
   ],
   [
@@ -436,6 +453,11 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/approvals/:id/grant',
       'POST /api/permissions/history/:eventId/undo',
       'PUT /api/permissions/preset',
+      'POST /api/canvas/docs/:id/routes/:routeId/approve',
+      'POST /api/canvas/docs/:id/routes/:routeId/review',
+      'POST /api/canvas/docs/:id/routes/:routeId/revoke',
+      'POST /api/canvas/docs/:id/work/:batchId/clear',
+      'POST /api/canvas/docs/:id/work/:batchId/replay',
     ],
   ],
   [
@@ -460,6 +482,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/runtimes/claude-code/accounts/:id/only-projects',
       'PUT /api/runtimes/claude-code/project-accounts',
       'PUT /api/runtimes/doe/inference',
+      'PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
     ],
   ],
 ];
