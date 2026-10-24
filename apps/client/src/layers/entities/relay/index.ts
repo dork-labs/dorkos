@@ -19,6 +19,7 @@ export {
   useAdapterCatalog,
   useAddAdapter,
   useRemoveAdapter,
+  useConfirmAdapterReferences,
   useUpdateAdapterConfig,
   useTestAdapterConnection,
   CATALOG_KEY,
@@ -46,3 +47,11 @@ export {
   DEAD_LETTER_REASON_FALLBACK,
   deadLetterReasonLabel,
 } from './lib/dead-letter-reasons';
+export {
+  pausedConfirmHint,
+  pausedMeta,
+  pausedNotSent,
+  pausedReferenceList,
+  pausedRowHint,
+  pausedRowMeta,
+} from './lib/paused-copy';

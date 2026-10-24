@@ -16,7 +16,8 @@ import type { WaitingQueueState } from './use-waiting-queue';
 export type WaitingQueueCounts = Pick<
   WaitingQueueState,
   'approvals' | 'schedules' | 'asks' | 'extensionApprovals' | 'extensionDecisions'
->;
+> &
+  Partial<Pick<WaitingQueueState, 'pausedConnections'>>;
 
 /**
  * Say what is waiting, one kind in its own words or every kind present by name.
@@ -39,7 +40,16 @@ export function describeWaitingQueue(queue: WaitingQueueCounts): string {
   const asks = queue.asks.length;
   const extensions = queue.extensionApprovals.length;
   const decisions = queue.extensionDecisions.length;
+  const paused = queue.pausedConnections?.length ?? 0;
 
+  if (paused > 0) {
+    if (approvals + schedules + asks + extensions + decisions === 0) {
+      return paused === 1
+        ? '1 connection is paused until you confirm what it sends.'
+        : `${paused} connections are paused until you confirm what they send.`;
+    }
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} are waiting on you.`;
+  }
   if (approvals + schedules + asks + extensions + decisions === 0) return '';
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
     const subject = decisions === 1 ? '1 decision is' : `${decisions} decisions are`;

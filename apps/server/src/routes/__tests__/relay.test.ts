@@ -840,6 +840,7 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
     ]),
     addAdapter: vi.fn().mockResolvedValue(undefined),
     removeAdapter: vi.fn().mockResolvedValue(undefined),
+    confirmReferences: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     testConnection: vi.fn().mockResolvedValue({ ok: true }),
     resolveAdapterName: vi.fn((id: string) => id),
@@ -1059,8 +1060,61 @@ describe('Adapter routes', () => {
         'wh-new',
         { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } },
         undefined,
-        undefined
+        undefined,
+        'person'
       );
+    });
+
+    it('lets only a person confirm a paused connection (DOR-3271)', async () => {
+      const refused = await request(server)
+        .post('/api/relay/adapters/wh-1/confirm-references')
+        .set('X-DorkOS-Agent', 'agent-1');
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('person_only');
+      expect(vi.mocked(adapterManager.confirmReferences)).not.toHaveBeenCalled();
+
+      const missing = await request(server).post('/api/relay/adapters/wh-1/confirm-references');
+      expect(missing.status).toBe(400);
+
+      const ok = await request(server)
+        .post('/api/relay/adapters/wh-1/confirm-references')
+        .send({ fingerprint: 'abc' });
+      expect(ok.status).toBe(200);
+      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenCalledWith(
+        'wh-1',
+        'abc',
+        false
+      );
+
+      const undoRefused = await request(server)
+        .delete('/api/relay/adapters/wh-1/confirm-references')
+        .set('X-DorkOS-Agent', 'agent-1');
+      expect(undoRefused.status).toBe(403);
+      const undo = await request(server).delete('/api/relay/adapters/wh-1/confirm-references');
+      expect(undo.status).toBe(200);
+      expect(vi.mocked(adapterManager.confirmReferences)).toHaveBeenLastCalledWith(
+        'wh-1',
+        null,
+        true
+      );
+    });
+
+    it('tells the manager an agent wrote it when the caller names an agent (DOR-3271)', async () => {
+      await request(server)
+        .post('/api/relay/adapters')
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({
+          type: 'webhook',
+          id: 'wh-agent',
+          config: { inbound: { subject: 'relay.webhook.agent', secret: 'secret-long-enough' } },
+        });
+      await request(server)
+        .patch('/api/relay/adapters/wh-agent/config')
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({ config: { outbound: { url: 'https://example.com/x' } } });
+
+      expect(vi.mocked(adapterManager.addAdapter).mock.calls.at(-1)?.[5]).toBe('agent');
+      expect(vi.mocked(adapterManager.updateConfig).mock.calls.at(-1)?.[2]).toBe('agent');
     });
 
     it('returns 400 when body missing required fields', async () => {
@@ -1177,10 +1231,11 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith('tg-main', {
-        token: 'new-token',
-        mode: 'webhook',
-      });
+      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith(
+        'tg-main',
+        { token: 'new-token', mode: 'webhook' },
+        'person'
+      );
     });
 
     it('returns 404 when not found', async () => {
@@ -1213,10 +1268,11 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith('telegram', {
-        token: 'test-token',
-        mode: 'polling',
-      });
+      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith(
+        'telegram',
+        { token: 'test-token', mode: 'polling' },
+        'person'
+      );
     });
 
     it('returns 200 with { ok: false, error } on failure', async () => {

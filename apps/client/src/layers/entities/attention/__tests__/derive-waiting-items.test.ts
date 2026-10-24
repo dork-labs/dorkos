@@ -74,3 +74,22 @@ describe('deriveWaitingItems — what extensions ask (spec flow-multiproject §7
     expect(items[1].id).toBe('extension-decision:01J0000000000000000000000D');
   });
 });
+
+describe('deriveWaitingItems — connections paused until their owner confirms (DOR-3271)', () => {
+  it('adds one item per paused connection, keyed by what it was listed with', () => {
+    const items = deriveWaitingItems({
+      approvals: [],
+      asks: [],
+      schedules: [],
+      pausedConnections: [
+        {
+          id: 'wh',
+          name: 'Deploy hooks',
+          kind: 'Webhook',
+          confirmation: { references: [], fingerprint: 'fp-1', notSent: 0 },
+        },
+      ],
+    });
+    expect(items).toEqual([{ id: 'connection:wh:fp-1', kind: 'connection-confirmation' }]);
+  });
+});
