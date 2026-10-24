@@ -1,6 +1,18 @@
 import { vi } from 'vitest';
+import type { Transport } from '@dorkos/shared/transport';
 /** Credential actions are always fake in a mock transport. */
-export function runtimeSigninTransportMocks() {
+export function runtimeSigninTransportMocks(): Pick<
+  Transport,
+  | 'storeRuntimeCredential'
+  | 'storeProviderCredential'
+  | 'getOpenCodeDirectSetup'
+  | 'checkProviderCredential'
+  | 'getRuntimeKeyStatus'
+  | 'checkRuntimeCredential'
+  | 'getClaudeSigninPolicy'
+  | 'changeClaudeSigninPolicy'
+  | 'delegateRuntimeLogin'
+> {
   return {
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
