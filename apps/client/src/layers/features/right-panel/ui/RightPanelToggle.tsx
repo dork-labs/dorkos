@@ -62,7 +62,7 @@ export function RightPanelToggle() {
       <TooltipTrigger asChild>
         <motion.button
           aria-label={ariaLabel}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground relative flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground relative flex size-11 items-center justify-center rounded-md transition-colors md:size-7"
           onClick={toggleRightPanel}
           // Hover is a tint, not a jump: this is always-on chrome, and the
           // rest of the app's icon buttons answer the cursor the same way.
@@ -70,7 +70,7 @@ export function RightPanelToggle() {
           whileTap={{ scale: 0.97 }}
           transition={{ type: 'spring', stiffness: 600, damping: 35 }}
         >
-          <Icon className="size-4" />
+          <Icon className="size-(--size-icon-sm)" />
           {/* Hidden while the panel is open: an open panel is itself the
               acknowledgement that the operator is looking, whether or not the
               tab on screen right now happens to be the one carrying the count
