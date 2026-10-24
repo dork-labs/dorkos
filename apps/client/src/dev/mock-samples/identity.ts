@@ -231,6 +231,7 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     origin: 'local',
     agent: {
       manifestId: 'agent-warden',
+      authorId: 'author-warden',
       runtime: 'claude-code',
       model: 'opus-4.8',
       healthStatus: 'active',

@@ -20,7 +20,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { TLSSocket } from 'node:tls';
 import type { Context, Hono } from 'hono';
 import type { Auth } from '../services/core/auth/index.js';
-import { buildAuthRateLimiter } from '../middleware/auth-rate-limit.js';
+import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../middleware/auth-rate-limit.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
 import { classifyRequest, type RequestClass } from '../lib/request-classifier.js';
@@ -59,6 +59,7 @@ export interface BetterAuthOptions {
  */
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
+  app.use(buildAccountSignInLimiter());
   app.all('/api/auth/*', async (c) => {
     const facts = honoRequestFacts(c);
     const setupCode = facts.headers[SETUP_CODE_HEADER];

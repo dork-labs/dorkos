@@ -23,10 +23,8 @@ import {
 import { requireSynchronous } from '../../../session/private-messages/synchronous-source.js';
 import { DocChannelStore, type DocBatchRow } from '../store.js';
 import type { DocChannelGrants } from '../grants.js';
-import type { DocGrantActor } from '../grant-policy.js';
 import { appendDocStatus } from '../status.js';
 import { DocBatchAdmission } from './batch-admission.js';
-import { replayExpiredDocBatch } from './replay.js';
 import { consumeAcceptedDocWakes, type DocRecoveryCursor, type DocRecoveryPage } from './resume.js';
 
 import {
@@ -64,7 +62,7 @@ export interface DocPumpObservation {
   batchId: string;
   documentId: string;
   routeId: string;
-  outcome: 'routed' | 'waiting' | 'expired' | 'cancelled' | 'warning' | 'rejected' | 'replayed';
+  outcome: 'routed' | 'waiting' | 'expired' | 'cancelled' | 'warning' | 'rejected';
   reason?: string;
   nextEligibleAt?: string;
 }
@@ -293,20 +291,6 @@ export class DocBatchDeliveryPump {
       .get();
     result.nextEligibleAt = pending?.next ?? null;
     return result;
-  }
-  /** Explicit replay requires authenticated ownership; it never resumes claimed or started work. */
-  replayExpired(batchId: string, grantId: string, actor: DocGrantActor): string {
-    const nextId = replayExpiredDocBatch(
-      this.options.store,
-      this.options.grants,
-      batchId,
-      grantId,
-      actor,
-      this.options.now().toISOString()
-    );
-    const batch = this.options.store.getBatch(nextId)!;
-    this.notify(() => this.options.observe?.(this.event(batch, 'replayed')));
-    return nextId;
   }
   /** Boot recovery must finish first; only unclaimed receipts may resume through the existing pump. */
   async resumeAccepted(): Promise<number> {

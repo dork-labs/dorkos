@@ -169,6 +169,10 @@
       "types": "./src/agent-browser.ts",
       "default": "./dist/agent-browser.js"
     },
+    "./cloud-origin": {
+      "types": "./src/cloud-origin.ts",
+      "default": "./dist/cloud-origin.js"
+    },
     "./browser-schemas": {
       "types": "./src/browser-schemas.ts",
       "default": "./dist/browser-schemas.js"
@@ -252,6 +256,10 @@
     "./community-teammates": {
       "types": "./src/community-teammates.ts",
       "default": "./dist/community-teammates.js"
+    },
+    "./community-space-settings": {
+      "types": "./src/community-space-settings.ts",
+      "default": "./dist/community-space-settings.js"
     },
     "./community-release-manifest": {
       "types": "./src/community-release-manifest.ts",

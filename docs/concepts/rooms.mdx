@@ -65,10 +65,9 @@ in the sidebar. There's only one way in to an agent, so it only ever shows up on
 more and you start a group message**, named after whoever's in it (like "Ana and Kai"). Add
 somebody to a group later and the name keeps up, unless you've renamed the DM yourself.
 
-You can still end up with a one-on-one line to an agent: an agent can open one to tell you
-something, and a chat connected from Telegram or Slack is one too. Those show up under **Today**
-when there's something new in them, and the agent's own row gets a dot. They don't sit in the
-sidebar as a second list — search with ⌘K, or open the agent's profile, to find one any time.
+An agent can also open a one-on-one line to tell you something. That puts the agent under
+**Direct messages** in the sidebar, as one row: clicking it opens the same chat. A chat connected
+from Telegram or Slack keeps its own row, because there's a real person on the other end.
 
 Ask for the same group again later and DorkOS reopens that DM instead of starting a new
 one. There's no way to end up with two group messages to the same people.
@@ -579,9 +578,16 @@ A handle uses lowercase letters, numbers, dots, underscores and hyphens. It runs
 characters and starts and ends with a letter or a number. Two handles can never differ only by
 capitals, and no two agents can share one.
 
-**Changing a handle is safe.** Rename an agent whenever you like. Every message you already sent
-still reaches the same agent, because DorkOS worked out who you meant when you sent it. The handle
-you leave behind stays yours. Nobody else can claim it, and you can take it back.
+**Changing a handle is safe.** Change yours on your profile, and an agent's on the agent's profile.
+Every message you already sent still reaches the same agent, because DorkOS worked out who you meant
+when you sent it. The handle left behind stays with whoever had it. Nobody else can claim it, and they
+can take it back. Each room the agent is in gets one quiet line saying who renamed it.
+
+When you pick a handle, DorkOS turns it down if it looks like someone else's, like `@d0rian` next
+to `@dorian`.
+
+Renaming an agent needs a secure connection: this computer, your tunnel, or an `https` address. A
+phone on your Wi-Fi can rename you, but not an agent, until Wi-Fi connections are encrypted.
 
 **People writing in from Telegram get a handle too.** Theirs always carries the service they came
 from, like `@miguel.telegram`. Somebody on another service can rename themselves anything they like
@@ -593,8 +599,8 @@ that chat to Full autonomy. When one of your agents asks another for help in a r
 second agent works with no more power than the first one had at that moment. Your own messages run
 at the level you chose.
 
-Four names are held back so nothing can pretend to be them. `@dorkos` is the room's own voice.
-`@everyone`, `@here` and `@channel` are reserved.
+Five names are held back so nothing can pretend to be them. `@dorkos` is the room's own voice.
+`@everyone`, `@here`, `@channel` and `@room` are reserved.
 
 **Deleting an agent keeps its handle.** Its old messages are still in the room and still have to say
 who wrote them. So a new agent you build later with the same name gets the numbered form,
@@ -778,6 +784,10 @@ in the room itself. The file says which of the two it is, so you're never guessi
 
 ## Good to know
 
+- **Threads have their own page.** Reply to a message and you start a thread. Every thread
+  you're in is on the **Threads** page at the top of the sidebar, newest reply first, and you can
+  answer one right there. On a phone, a thread opens as a full screen over its room. Tap back or
+  swipe right to return to the same spot in the room.
 - **Mentioning someone.** Type `@` followed by their handle to address just them. It's how you get
   an answer in a channel, and it's useful in a group DM. A display name is not an address: only a
   handle reaches somebody. Get it wrong and DorkOS just treats it as plain text; nothing breaks.

@@ -38,6 +38,13 @@ test.describe('Profile — a page pushes in @smoke', () => {
     const docked = page.locator('[data-slot="profile"][data-home="docked"]');
     await expect(docked).toBeVisible();
 
+    // Chats lives in the Work fold, closed by default since the profile
+    // redesign (DOR-3171): open it the way a person does, by its header.
+    const work = docked.getByRole('button', { name: /^Work/ });
+    await expect(work).toHaveAttribute('aria-expanded', 'false');
+    await work.click();
+    await expect(work).toHaveAttribute('aria-expanded', 'true');
+
     const sessionsRow = docked.locator('[data-profile-row="sessions"]');
     await expect(sessionsRow).toBeVisible();
     await sessionsRow.click();

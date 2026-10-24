@@ -34,6 +34,7 @@ import { parseEntryBody } from '../room-rows.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import { countAwaitingByRoom } from '../awaiting/room-awaiting.js';
 
 /** Every read that answers "what rooms are there, and where am I in them". */
 export class RoomDirectory {
@@ -88,9 +89,19 @@ export class RoomDirectory {
    * still costs two.
    *
    * `viewerHasPosted` says whether this viewer has ever written in the room
-   * themselves — one query for the whole list ({@link RoomStore.roomsPostedInBy}),
+   * themselves — one query for the whole list (`RoomListReads.roomsPostedInBy`),
    * and the fact that tells a room somebody has merely joined from one they have
    * taken part in.
+   *
+   * `mentionCount` is how many of the unread entries name this viewer, counted
+   * above the same cursor as `unreadCount` and absent wherever that is `null`.
+   * It is asked only of a room that has unread at all — a room with nothing
+   * above the cursor has nothing above it that could name anybody — so a
+   * caught-up sidebar pays nothing for it.
+   *
+   * `lastLine` is the newest top-level message's text, one query for the whole
+   * list (`RoomListReads.lastLines`). For anyone but the owner it is read above
+   * their `joinedSeq`, so it never quotes what was said before they joined.
    *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
@@ -114,7 +125,8 @@ export class RoomDirectory {
     filter: { kind?: RoomKind; includeArchived?: boolean } = {}
   ): RoomSummary[] {
     const cursors = this.cursorsFor(viewerAuthorId);
-    const visible = this.visibility.seesEveryRoom(viewerAuthorId)
+    const seesEveryRoom = this.visibility.seesEveryRoom(viewerAuthorId);
+    const visible = seesEveryRoom
       ? this.store
           .listRooms(filter)
           // Cached remote rows share this table, but remote membership is not
@@ -139,16 +151,39 @@ export class RoomDirectory {
       visible.filter((room) => room.kind === 'dm').map((room) => room.id)
     );
     // One query for the whole list, asked once here rather than per room — see
-    // `RoomStore.roomsPostedInBy`. A room absent from the set is one this viewer
+    // `RoomListReads.roomsPostedInBy`. A room absent from the set is one this viewer
     // has never written in, which is a real `false` and not a missing answer:
     // the log is right here and it has been read.
-    const postedIn = this.store.roomsPostedInBy(viewerAuthorId);
+    const postedIn = this.store.listReads.roomsPostedInBy(viewerAuthorId);
     const bridges = this.bridges.findBridgesByRooms(visible.map((room) => room.id));
+    // What a non-owner may be shown starts where they joined: the same floor
+    // the room's history reads hold them to (`RoomVisibility.requireHistoryFloor`),
+    // so a row's last line can never quote what was said before they arrived.
+    // The owner reads the whole log of every room on their own machine.
+    const joinedAt = seesEveryRoom
+      ? new Map<string, number>()
+      : new Map(this.store.listMembershipsFor(viewerAuthorId).map((m) => [m.roomId, m.joinedSeq]));
+    const lastLines = this.store.listReads.lastLines(
+      visible.map((room) => ({ roomId: room.id, floor: joinedAt.get(room.id) ?? 0 }))
+    );
+    // Turns waiting on a person, per room, read once from the server's own
+    // session state (DOR-3236). A count only.
+    const awaiting = countAwaitingByRoom(this.store.sessionLedger);
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
+      const unreadCount = cursor === undefined ? null : this.store.countUnread(room.id, cursor);
       return {
         ...room,
-        unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
+        unreadCount,
+        ...(cursor === undefined
+          ? {}
+          : {
+              mentionCount:
+                unreadCount === 0
+                  ? 0
+                  : this.store.listReads.countUnreadMentions(room.id, cursor, viewerAuthorId),
+            }),
+        lastLine: lastLines.get(room.id) ?? null,
         participants: participants.get(room.id) ?? null,
         bridge: bridgeInfo(bridges.get(room.id)),
         viewerHasPosted: postedIn.has(room.id),
@@ -158,6 +193,8 @@ export class RoomDirectory {
         // be indistinguishable from "this server does not know", which is the
         // one thing it is never true of: the claim map is right here.
         working: this.triggers.workingCount(room.id),
+        // Always a number, for the reason `working` is.
+        awaiting: awaiting.get(room.id) ?? 0,
       };
     });
   }

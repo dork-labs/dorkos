@@ -26,9 +26,10 @@
  *
  * @module services/notifications/notification-registry
  */
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { runtimeSigninTitle, runtimeSigninBody } from './runtime-signin-copy.js';
 import {
   NOTIFICATION_KINDS,
+  signinSubjectId,
   type NotificationActionDTO,
   type NotificationKind,
   type NotificationSubjectType,
@@ -250,6 +251,10 @@ export interface NotificationPayloads extends DeclaredPayloads {
    * and the episode, and nothing about the session that tripped over it.
    */
   'signin.required': {
+    /** The account whose sign-in stopped working. */
+    accountRoot?: string;
+    /** Its display name, never a credential. */
+    accountName?: string;
     /** The runtime type, e.g. `claude-code`. */
     runtime: string;
     /**
@@ -980,14 +985,7 @@ const ENTRIES: NotificationRegistryMap = {
     // next month as it was that night, and the resolution row that follows says
     // plainly that it came back.
     //
-    // **One row per RUNTIME, even when a machine runs several accounts on it**
-    // (DOR-1682). A Claude credential belongs to an account root, and DorkOS
-    // supports several; the watch tracks each of them separately, but reports one
-    // condition per runtime, because `subjectId` below is the runtime type and
-    // the app's standing banner reads the newest row per runtime. A second dead
-    // account therefore adds nothing to the inbox — what it adds is that this
-    // row's resolution waits for it: the "working again" row is written when the
-    // LAST failing account proves itself, never when the first does.
+    // Each account owns its subject and escalation episode.
     kind: 'signin.required',
     tier: 'blocking',
     storage: 'standing-recorded',
@@ -995,7 +993,7 @@ const ENTRIES: NotificationRegistryMap = {
     // turn that tripped over it. Clicking through opens Settings → Runtimes,
     // which is where signing in again actually happens.
     subjectType: 'system',
-    locate: (p) => ({ subjectId: p.runtime }),
+    locate: (p) => ({ subjectId: signinSubjectId(p.runtime, p.accountRoot) }),
     // **Past tense on both edges, because a stored row outlives what it
     // describes.** `session.error` set the pattern with "stopped on an error",
     // and the reason is the same: the raise row sits in the inbox long after
@@ -1009,25 +1007,14 @@ const ENTRIES: NotificationRegistryMap = {
     // The third sentence is the restart case, and it is deliberately NOT the
     // all-clear: boot closes an episode it can never see the end of, and saying
     // "working again" there would be DorkOS asserting something nobody checked.
-    title: (p) => {
-      const name = runtimeDisplayName(p.runtime);
-      if (!p.clearedAt) return `Your ${name} sign-in stopped working`;
-      return p.closedAtBoot
-        ? `DorkOS restarted while your ${name} sign-in was broken`
-        : `Your ${name} sign-in is working again`;
-    },
-    body: (p) => {
-      if (!p.clearedAt) return 'Scheduled tasks and agent replies cannot run until you sign in.';
-      return p.closedAtBoot
-        ? 'It stopped tracking that. If the sign-in is still broken, the next task or reply will say so.'
-        : undefined;
-    },
-    // ONE per runtime per EPISODE, however many tasks, rooms and relay
+    title: runtimeSigninTitle,
+    body: runtimeSigninBody,
+    // One per account episode, however many tasks, rooms and relay
     // deliveries trip over the same dead credential — the watch's own store is
     // what collapses them, synchronously, before any of them can say anything.
     // The `since` is what keeps a SECOND episode distinct from the first; see
     // the payload field for why the ledger makes that non-negotiable.
-    dedupeKey: (p) => `signin:${p.runtime}:${p.since}`,
+    dedupeKey: (p) => `signin:${signinSubjectId(p.runtime, p.accountRoot)}:${p.since}`,
     // **Zero, and it has to be.** The two rows of one episode share this key by
     // design — that shared string is what files them, the escalation timer and
     // the resolution under one identity. Any positive window would therefore

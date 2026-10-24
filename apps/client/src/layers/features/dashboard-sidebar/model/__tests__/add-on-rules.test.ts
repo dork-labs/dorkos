@@ -1,8 +1,8 @@
 /**
- * Library's Add-ons section — the pages mini apps add (spec
- * `mini-app-placement` Part 2): present only with a page to list, last in
- * Library, foldable under its own stored id, and never something the operator
- * can drag, pin, mute or be badged by.
+ * The Add-ons section — the pages mini apps add (spec `mini-app-placement`
+ * Part 2): present only with a page to list, last in the list, foldable under
+ * its own stored id, and never something the operator can drag, pin, mute or be
+ * badged by.
  *
  * @module features/dashboard-sidebar/model/__tests__/add-on-rules
  */
@@ -10,29 +10,21 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSidebarModel,
   persistedSectionId,
-  SIDEBAR_FOLDING_SECTION_IDS,
-  SIDEBAR_LIBRARY_SECTION_IDS,
-  type SidebarModel,
+  SIDEBAR_SECTION_IDS,
   type SidebarSectionModel,
 } from '../build-sidebar-model';
 import { addOn, busyFixture, emptyState, powerFixture, prefs } from '../fixtures';
 import { rowKey } from '../rules/targets';
 import type { SidebarState } from '../sidebar-state';
 
-/** The Library sections of one state. */
+/** Every section of one state. */
 function library(state: SidebarState): SidebarSectionModel[] {
-  return buildSidebarModel(state).zones.find((zone) => zone.id === 'library')?.sections ?? [];
+  return buildSidebarModel(state).sections;
 }
 
 /** The Add-ons section of one state, if the model emitted one. */
 function addOns(state: SidebarState): SidebarSectionModel | undefined {
   return library(state).find((section) => section.id === 'addons');
-}
-
-/** Every row key in one zone of a built model. */
-function zoneKeys(model: SidebarModel, zoneId: string): string[] {
-  const zone = model.zones.find((entry) => entry.id === zoneId);
-  return zone?.sections.flatMap((section) => section.rows.map((row) => rowKey(row.target))) ?? [];
 }
 
 const FLOW = addOn('flow', '', 'Flow');
@@ -47,27 +39,27 @@ describe('the Add-ons section', () => {
     expect(addOns(powerFixture)).toBeUndefined();
   });
 
-  it('is the whole of Library when pages are all there is', () => {
+  it('stands with nothing else but the top items and Direct messages', () => {
     // A fresh install with one mini app: no rooms, no agents, and still a
-    // Library to put the page in.
+    // place to put the page.
     const ids = library(emptyState({ addOns: [FLOW] })).map((section) => section.id);
-    expect(ids).toEqual(['addons']);
+    expect(ids).toEqual(['top', 'dms', 'addons']);
   });
 
-  it('sits last, after Agents and after the operator’s own sections', () => {
+  it('sits last, after Direct messages and after the operator’s own sections', () => {
     const state: SidebarState = { ...powerFixture, addOns: [FLOW] };
     const ids = library(state).map((section) => section.id);
     expect(ids.at(-1)).toBe('addons');
-    expect(ids.indexOf('addons')).toBe(ids.indexOf('agents') + 1);
-    expect(SIDEBAR_LIBRARY_SECTION_IDS.at(-1)).toBe('addons');
+    expect(ids.indexOf('addons')).toBe(ids.indexOf('dms') + 1);
+    expect(SIDEBAR_SECTION_IDS.at(-1)).toBe('addons');
   });
 
   it('lists one row per page, by its own title, in the order it was given', () => {
-    // The assembly hook hands pages over already sorted by title; Library
+    // The assembly hook hands pages over already sorted by title; the section
     // never reorders what it is given.
     const section = addOns({ ...busyFixture, addOns: [FLOW, FLOW_SETTINGS, SOCIAL] });
     expect(section?.label).toBe('Add-ons');
-    expect(section?.reason).toBe('library:addons');
+    expect(section?.reason).toBe('section:addons');
     expect(section?.rows.map((row) => row.primary)).toEqual([
       'Flow',
       'Flow settings',
@@ -80,7 +72,7 @@ describe('the Add-ons section', () => {
     expect(row?.target).toEqual({ kind: 'add-on', extensionId: 'flow', path: 'settings' });
     expect(row?.glyph).toEqual({ kind: 'page-icon', pageId: 'flow:settings' });
     expect(row?.key).toBe('add-on:flow:settings');
-    expect(row?.reason).toBe('library:add-on');
+    expect(row?.reason).toBe('addons:page');
   });
 
   it('gives a home page and a page under it two different keys', () => {
@@ -114,7 +106,7 @@ describe('the Add-ons section', () => {
     }
   });
 
-  it('folds under its own stored id, and says how many pages it holds', () => {
+  it('folds under its own stored id, and keeps nothing on screen when nothing is unread', () => {
     const open = addOns({ ...busyFixture, addOns: [FLOW, SOCIAL] });
     expect(open?.collapsible).toBe(true);
     expect(open?.collapsed).toBe(false);
@@ -125,23 +117,13 @@ describe('the Add-ons section', () => {
       prefs: prefs({ ...busyFixture.prefs, sections: { addons: { collapsed: true } } }),
     });
     expect(folded?.collapsed).toBe(true);
-    expect(folded?.rollup).toEqual({ count: 2, unread: { tier: 'none' }, workingCount: 0 });
+    expect(folded?.rollup).toEqual({ keptRows: [], workingCount: 0, hiddenCount: 2 });
   });
 
   it('has somewhere to store its fold', () => {
     // Without it, the header's toggle would return early and the fold would
     // look like a dead control.
-    expect(SIDEBAR_FOLDING_SECTION_IDS).toContain('addons');
+    expect(SIDEBAR_SECTION_IDS).toContain('addons');
     expect(persistedSectionId('addons')).toBe('addons');
-  });
-
-  it('keeps an open page out of Today', () => {
-    // A page is not a conversation: having one open must not pin anything into
-    // Today the way an open session or room does.
-    const target = { kind: 'add-on', extensionId: 'flow', path: '' } as const;
-    const onPage = buildSidebarModel({ ...busyFixture, addOns: [FLOW], activeTarget: target });
-    const offPage = buildSidebarModel({ ...busyFixture, addOns: [FLOW], activeTarget: null });
-    expect(zoneKeys(onPage, 'today')).not.toContain(rowKey(target));
-    expect(zoneKeys(onPage, 'today')).toEqual(zoneKeys(offPage, 'today'));
   });
 });

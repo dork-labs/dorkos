@@ -40,7 +40,7 @@ function addOnRow(page: SidebarAddOnPage, titleShared: boolean): SidebarRowModel
     unread: { tier: 'none' },
     muted: false,
     draggable: false,
-    reason: 'library:add-on',
+    reason: 'addons:page',
   };
 }
 

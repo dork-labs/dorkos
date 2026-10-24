@@ -127,32 +127,77 @@ describe('an agent you manage', () => {
     agent: { ...MANAGED.agent!, projectPath: '/Users/dorian/code/dorkos' },
   };
 
-  it('draws setup, then work, then the toolkit — in three groups', () => {
+  it('keeps five rows in view, then folds Work, Setup and Files', () => {
     const groups = build(WITH_FOLDER);
-    expect(groups.map((group) => group.id)).toEqual(['setup', 'work', 'toolkit']);
+    // `needs-you` is empty with nothing overdue, so it is dropped.
+    expect(groups.map((group) => group.id)).toEqual(['essentials', 'work', 'setup', 'files']);
+    expect(groups.map((group) => group.fold?.title ?? null)).toEqual([
+      null,
+      'Work',
+      'Setup',
+      'Files',
+    ]);
     expect(shape(groups)).toEqual([
+      // No Handle row: on an agent the pencil beside the @handle opens that
+      // page (DOR-3156), so the row would say the header twice.
       'About nav',
       'Runs on pick',
-      'Personality pick',
+      'Level nav',
       'Reports to pick',
-      'Folder copy',
+      'Rooms nav',
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
       'Heartbeat nav',
-      'Rooms nav',
-      'Notifications nav',
       'Activity nav',
+      'Personality pick',
+      'Folder copy',
+      'Notifications nav',
       'Skills nav',
       'MCP servers nav',
-      'Permissions nav',
       'Connections nav',
+      'Permissions nav',
       'Instructions nav',
       'Boundaries nav',
-      // The third convention file, beside the other two rather than in a group
-      // of its own: what an agent is told, what it must not do, and what it has
-      // learned are the same kind of thing to a person looking for them.
+      // The third convention file, beside the other two: what an agent is
+      // told, what it must not do, and what it has learned are the same kind
+      // of thing to a person looking for them.
       'Memory nav',
+    ]);
+  });
+
+  it('sums each fold up in one line, dropping what is not known yet', () => {
+    const fold = (id: string, over: Partial<ProfileRowsContext> = {}) =>
+      build(WITH_FOLDER, over).find((group) => group.id === id)!.fold!.summary;
+    const facts = {
+      sessions: { count: 200, newestAt: null },
+      tasks: { count: 12, nextRunAt: null },
+      skills: 3,
+      tools: 0,
+      personality: 'Custom',
+      tasksAvailable: true,
+    };
+    expect(fold('work', { facts, commitments: { open: 5, overdue: 0 } })).toBe(
+      '200 chats · 12 schedules · 5 open'
+    );
+    expect(fold('setup', { facts })).toBe('Custom personality · 0 servers');
+    expect(fold('files')).toBe('SOUL.md · NOPE.md · MEMORY.md');
+    // Unknown parts are dropped, never shown as "0" — and no schedules at all
+    // where the server has tasks switched off.
+    expect(fold('work', { facts: { ...facts, sessions: null, tasksAvailable: false } })).toBe(null);
+    expect(fold('setup', { facts: { ...facts, personality: null, tools: null } })).toBeNull();
+  });
+
+  it('puts Needs you first, tinted, only while a promise is overdue', () => {
+    expect(build(WITH_FOLDER, { commitments: { open: 5, overdue: 0 } })[0]!.id).toBe('essentials');
+    const [needs] = build(WITH_FOLDER, { commitments: { open: 5, overdue: 1 } });
+    expect(needs!.rows).toEqual([
+      expect.objectContaining({
+        id: 'needs-you',
+        tone: 'attention',
+        value: '1 overdue',
+        page: 'commitments',
+      }),
     ]);
   });
 
@@ -202,12 +247,13 @@ describe('an agent you manage', () => {
 
 describe('someone else’s agent', () => {
   it('shows only what a teammate should see, and none of it as a control', () => {
+    // No Level: what an agent may do is its owner's to read, not a teammate's.
     expect(shape(build(OTHERS_AGENT))).toEqual([
       'About text',
       'Runs on text',
+      'Rooms nav',
       'Commitments nav',
       'Heartbeat nav',
-      'Rooms nav',
     ]);
   });
 
@@ -273,14 +319,15 @@ describe('DorkBot', () => {
     expect(shape(build(DORKBOT))).toEqual([
       'About locked',
       'Runs on pick',
-      'Personality pick',
+      'Level nav',
+      'Rooms nav',
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
       'Heartbeat nav',
-      'Rooms nav',
-      'Notifications nav',
       'Activity nav',
+      'Personality pick',
+      'Notifications nav',
       'Skills nav',
       'MCP servers nav',
       'Permissions nav',
@@ -349,5 +396,94 @@ describe('rooms, wherever they appear', () => {
 
   it('says nothing at all rather than "0" while nobody has read them', () => {
     expect(flat(build(SELF)).find((row) => row.id === 'rooms')!.value).toBeNull();
+  });
+});
+
+describe('beside a DM with Show sessions off (DOR-3075)', () => {
+  const ids = (groups: ProfileRowGroup[]) => flat(groups).map((row) => row.id);
+
+  it('leaves out what the agent runs on and how many chats it has', () => {
+    const quiet = ids(build(MANAGED, { quietSessionDetail: true }));
+    expect(quiet).not.toContain('runs-on');
+    expect(quiet).not.toContain('sessions');
+    // Everything else stays.
+    expect(quiet).toContain('about');
+    expect(quiet).toContain('tasks');
+  });
+
+  it('drops the chat count from the Work summary too', () => {
+    const work = build(MANAGED, {
+      quietSessionDetail: true,
+      facts: {
+        sessions: { count: 3, newestAt: null },
+        tasks: { count: 1, nextRunAt: null },
+        skills: null,
+        tools: null,
+        personality: null,
+        tasksAvailable: true,
+      },
+    }).find((group) => group.id === 'work')!;
+    expect(work.fold!.summary).toBe('1 schedule');
+  });
+
+  it('keeps them everywhere else, exactly as before', () => {
+    expect(ids(build(MANAGED))).toEqual(expect.arrayContaining(['runs-on', 'sessions']));
+    expect(ids(build(MANAGED, { quietSessionDetail: false }))).toEqual(ids(build(MANAGED)));
+  });
+});
+
+describe('the Level row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(MANAGED, over)).find((r) => r.id === 'level')!;
+
+  it('says Full autonomy for an agent nothing holds back', () => {
+    const level = row({
+      level: {
+        effective: 'autonomy',
+        effectiveMode: 'bypassPermissions',
+        declared: 'autonomy',
+        cappedByPerson: false,
+      },
+    });
+    expect(level.value).toBe('Full autonomy');
+    expect(level.valueNote).toBeUndefined();
+    expect(level.hint).toBe('Before any per-chat limits.');
+    expect(level.page).toBe('permissions');
+  });
+
+  it('says who holds it there when a person capped it', () => {
+    const level = row({
+      level: {
+        effective: 'ask',
+        effectiveMode: 'default',
+        declared: 'autonomy',
+        cappedByPerson: true,
+      },
+    });
+    expect(level.value).toBe('Ask');
+    expect(level.valueNote).toBe('held there by you');
+    expect(level.hint).toBe('Set to Full autonomy. Before any per-chat limits.');
+  });
+
+  it('names no person when the agent held itself lower', () => {
+    const level = row({
+      level: {
+        effective: 'ask',
+        effectiveMode: 'default',
+        declared: 'autonomy',
+        cappedByPerson: false,
+      },
+    });
+    expect(level.value).toBe('Ask');
+    expect(level.valueNote).toBeUndefined();
+  });
+
+  it('says nothing while unknown, and Runtime default when nothing is set anywhere', () => {
+    expect(row({ level: null }).value).toBeNull();
+    expect(
+      row({
+        level: { effective: null, effectiveMode: null, declared: null, cappedByPerson: false },
+      }).value
+    ).toBe('Runtime default');
   });
 });

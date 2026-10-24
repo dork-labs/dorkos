@@ -9,6 +9,7 @@
  * @module services/core/cloud/cloud-api-origin
  */
 import { links } from '@dorkos/shared/links';
+import { cloudOriginEntries, type CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { DEFAULT_CLOUD_URL } from '../auth/cloud-link-client.js';
 import { env } from '../../../env.js';
 
@@ -38,4 +39,16 @@ export function resolveCloudApiBaseUrl(): string {
   if (env.DORKOS_CLOUD_API_URL) return trimSlashes(env.DORKOS_CLOUD_API_URL);
   const cloudUrl = trimSlashes(env.DORKOS_CLOUD_URL);
   return cloudUrl && !isDefaultWebsite(cloudUrl) ? cloudUrl : DEFAULT_CLOUD_API_URL;
+}
+
+/**
+ * The Cloud origin list agent browsers are kept off (DOR-3196): production,
+ * plus the Cloud address this server is configured with. Read from this
+ * server's own environment, never from an agent, a manifest or a request.
+ */
+export function cloudOriginsForThisServer(): CloudOriginEntry[] {
+  return cloudOriginEntries({
+    DORKOS_CLOUD_URL: env.DORKOS_CLOUD_URL,
+    DORKOS_CLOUD_API_URL: env.DORKOS_CLOUD_API_URL,
+  });
 }

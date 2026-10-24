@@ -178,6 +178,12 @@ export function sweepEvictedSessions(port: SessionEndingPort): void {
     const projector = peekProjector(sessionId);
     if (!projector) continue;
     projector.markInterrupted();
+    // Disposing ends any window's stream still reading this projector, so the
+    // window reconnects and hears the session's next turn rather than sitting
+    // on a feed nothing will write to again. Logged, because "the app stopped
+    // showing replies until I refreshed" starts here when it goes wrong.
+    const endedStreams = projector.liveSubscriberCount();
     disposeProjector(sessionId);
+    logger.info('[ClaudeCodeRuntime] evicted an idle session', { sessionId, endedStreams });
   }
 }

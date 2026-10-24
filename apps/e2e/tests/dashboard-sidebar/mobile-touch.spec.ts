@@ -50,8 +50,8 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   /** The long-press sheet, by the page object that owns it. */
   const sheet = (page: Page) => page.getByTestId('sidebar-menu-sheet');
 
-  /** Go to one of the four destinations and wait for its panel to be usable. */
-  async function goTo(page: Page, id: 'home' | 'library' | 'you') {
+  /** Go to one of the destinations and wait for its panel to be usable. */
+  async function goTo(page: Page, id: 'home' | 'you') {
     await page.getByTestId(`mobile-tab-${id}`).click();
     await expect(page.getByTestId(`mobile-tab-panel-${id}`)).toBeVisible();
   }
@@ -80,7 +80,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     await roomsApi.createChannel(slug);
     await basePage.goto();
     await basePage.waitForAppReady();
-    await goTo(page, 'library');
+    await goTo(page, 'home');
 
     const row = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
     await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
@@ -119,14 +119,17 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     roomsPage,
     dashboardSidebar,
   }) => {
-    // Seeded wide enough that Library genuinely scrolls — a "scroll" on a list
-    // that fits is a press that happens to move.
-    for (let i = 0; i < 12; i += 1) {
+    // Seeded wide enough that Home genuinely scrolls — a "scroll" on a list
+    // that fits is a press that happens to move. Twenty-four, not twelve: at
+    // twelve the list scrolled far enough to hide the row only when a
+    // neighbour's rooms were on the server too, which made the press below
+    // pass or fail by shard.
+    for (let i = 0; i < 24; i += 1) {
       await roomsApi.createChannel(`e2e-touch-scroll-${i}-${roomsApi.runId}`);
     }
     await basePage.goto();
     await basePage.waitForAppReady();
-    await goTo(page, 'library');
+    await goTo(page, 'home');
 
     const row = roomsPage.rowIn(roomsPage.channels, `#e2e-touch-scroll-0-${roomsApi.runId}`);
     await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
@@ -194,7 +197,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
      * control that widens its own reach with a pseudo-element measures as a
      * thumb finds it.
      */
-    async function measurePanel(id: 'home' | 'library' | 'you'): Promise<[string, number][]> {
+    async function measurePanel(id: 'home' | 'you'): Promise<[string, number][]> {
       await goTo(page, id);
       const panel = page.getByTestId(`mobile-tab-panel-${id}`);
       await settleBottomSlot(panel);
@@ -226,11 +229,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
       return measured;
     }
 
-    const measured = [
-      ...(await measurePanel('home')),
-      ...(await measurePanel('library')),
-      ...(await measurePanel('you')),
-    ];
+    const measured = [...(await measurePanel('home')), ...(await measurePanel('you'))];
     // The bottom bar too — it is on screen at every moment and it is the one
     // control an operator presses most.
     const tabs = page.locator('[data-mobile-tab]');
@@ -241,7 +240,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     const short = measured.filter(([, height]) => height < 40);
     expect(short, `controls under 40px: ${JSON.stringify(short)}`).toEqual([]);
     // …and the ones the redesign actually grew reach the 44 they claim.
-    const rows = measured.filter(([name]) => name.startsWith('library:'));
+    const rows = measured.filter(([name]) => name.startsWith('home:'));
     expect(rows.length).toBeGreaterThan(0);
     for (const [name, height] of rows) {
       expect(height, name).toBeGreaterThanOrEqual(TOUCH_TARGET_PX - 1);
@@ -297,7 +296,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     basePage,
   }) => {
     // **Found by measuring, not by looking.** The current destination and the
-    // other three came back as one colour 12% of alpha apart —
+    // others came back as one colour 12% of alpha apart —
     // `oklab(0.2044 … / 0.7224)` against `… / 0.6` — which is no distinction at
     // all, and colour was the only channel carrying it (spec R2, "colour is
     // never the sole indicator").
@@ -311,7 +310,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
         return { color: style.color, weight: Number(style.fontWeight) };
       });
     const here = await read('you');
-    const elsewhere = await read('library');
+    const elsewhere = await read('home');
 
     expect(here.color).not.toBe(elsewhere.color);
     expect(here.weight).toBeGreaterThan(elsewhere.weight);
@@ -334,7 +333,7 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
       await goTo(page, 'home');
       await shoot(page, testInfo, `home-${theme}`);
 
-      await goTo(page, 'library');
+      await goTo(page, 'home');
       const row = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
       await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
       await dashboardSidebar.longPress(row, { holdMs: HOLD_MS });

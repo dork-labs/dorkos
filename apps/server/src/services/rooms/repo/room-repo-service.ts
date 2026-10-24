@@ -309,6 +309,10 @@ export class RoomRepoService {
     const room = this.deps.getRoom(roomId, callerAuthorId);
     if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
 
+    if (room.archived) {
+      throw new RoomError('ROOM_ARCHIVED', 'Bring this room back before setting up files.');
+    }
+
     if (!this.deps.isOwnerAuthor(callerAuthorId)) {
       throw new RoomError('OPERATOR_ONLY', 'Only you can give a room files of its own');
     }

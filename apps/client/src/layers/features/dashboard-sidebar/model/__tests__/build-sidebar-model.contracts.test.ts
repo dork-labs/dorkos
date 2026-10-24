@@ -1,5 +1,5 @@
 /**
- * The contracts that must hold for EVERY fixture — purity, provenance, zone
+ * The contracts that must hold for EVERY fixture — purity, provenance, section
  * shape, and the promises that are stated as "never".
  *
  * @module features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts
@@ -68,7 +68,7 @@ function pureModuleSources(): { file: string; source: string }[] {
  * or a single side effect — into the module.
  *
  * `@/layers/entities/session` is here on purpose and with an honest caveat. The
- * model needs `partitionSessionsByOwnership`, and FSD says cross-module imports go
+ * model needs `nonAutomatedSessionIds`, and FSD says cross-module imports go
  * through the barrel, which re-exports React components. So "this module cannot
  * see React" is false transitively and always was; what these tests actually
  * hold is the thing that matters — no module HERE reads a clock, holds state,
@@ -77,23 +77,19 @@ function pureModuleSources(): { file: string; source: string }[] {
 const ALLOWED_VALUE_IMPORTS = [
   '@dorkos/shared/smart-groups',
   // `agentAuthorRef` — the wire contract's own hash from an agent's directory to
-  // the handle a room roster names it by. The one-door rule has to match a
-  // direct message's roster back to the fleet (`hand-made-dm.ts`), and this is
+  // the handle a room roster names it by. An agent's direct message is drawn as
+  // the agent, which means matching the room's roster back to the fleet
+  // (`agent-direct-messages.ts`), and this is
   // the function BOTH ends already use; a second hash here would be a second
   // answer to "which agent is this author". It is a schema module: pure
   // declarations and pure helpers, no clock and no state.
   '@dorkos/shared/room-schemas',
   '@/layers/entities/session',
-  // The cockpit's 4am day boundary, which the command palette also reads so
-  // that a conversation Today has retired can say so in ⌘K. A leaf module by
-  // deliberate construction — it imports NOTHING, and it is kept off the
-  // `shared/lib` barrel precisely so this entry can be the narrow thing it
-  // looks like rather than a door onto the transport. The barrel itself stays
-  // banned.
-  '@/layers/shared/lib/overnight-boundary',
   // The last segment of a path, which names an agent row after its folder when
-  // nothing has given it a display name. Kept off the `shared/lib` barrel for
-  // the same reason as the boundary above — it imports NOTHING — and shared
+  // nothing has given it a display name. A leaf module by deliberate
+  // construction — it imports NOTHING, and it is kept off the `shared/lib`
+  // barrel precisely so this entry can be the narrow thing it looks like rather
+  // than a door onto the transport. The barrel itself stays banned. Shared
   // rather than copied, so these rows and the session bar's directory fallback
   // read a path the same way. Other spellings of "basename" still exist in the
   // client for other jobs (tool labels, file chips); this is not a claim that
@@ -148,13 +144,10 @@ function illegalDateUses(source: string): string[] {
 /** Walk every node the model emits, so an assertion cannot miss a branch. */
 function* walk(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
   const model = buildSidebarModel(state);
-  for (const zone of model.zones) {
-    yield { kind: 'zone' as const, reason: zone.reason, zone };
-    for (const section of zone.sections) {
-      yield { kind: 'section' as const, reason: section.reason, zone, section };
-      for (const row of section.rows) {
-        yield { kind: 'row' as const, reason: row.reason, zone, section, row };
-      }
+  for (const section of model.sections) {
+    yield { kind: 'section' as const, reason: section.reason, section };
+    for (const row of section.rows) {
+      yield { kind: 'row' as const, reason: row.reason, section, row };
     }
   }
 }
@@ -219,7 +212,7 @@ describe('R1 — the model can carry no verb, and the check for it can fail', ()
       'Refactor auth middleware to use JWT validation',
       'Scout › fix the flaky room test',
       '#general',
-      'today:interaction-recency',
+      'dms:pinned-agent',
       'Ana: ship it',
       // An ellipsis on its own is not a verb — a truncated preview is the most
       // common thing in the sidebar, and the matcher must not fire on one.
@@ -248,14 +241,14 @@ describe('R1 — the model can carry no verb, and the check for it can fail', ()
 
   it('has no way to be handed activity in the first place', () => {
     // The strongest form of the guarantee, and the reason the scan above finds
-    // nothing: `SidebarState` is typed to carry lifecycle and NOT activity, so
-    // a verb cannot reach `buildSidebarModel` even by mistake. The acceptance
-    // criterion asked for "a fixture whose sessions carry activity"; the type
-    // makes such a fixture unconstructible, which is a stronger answer than any
-    // fixture would have been.
+    // nothing: `SidebarState` carries which sessions are live — ids, and where
+    // they run — and NOT what they are doing, so a verb cannot reach
+    // `buildSidebarModel` even by mistake. The type makes a fixture whose
+    // sessions carry activity unconstructible, which is a stronger answer than
+    // any fixture would have been.
     const STATE_FILE = join(MODEL_DIR, 'sidebar-state.ts');
     const stateSource = stripComments(readFileSync(STATE_FILE, 'utf8'), STATE_FILE);
-    expect(stateSource).toMatch(/sessionStatuses:\s*Readonly<Record<string,\s*SessionLifecycle>>/);
+    expect(stateSource).toMatch(/workingSessionIds:\s*readonly string\[\]/);
     expect(stateSource).not.toMatch(/SessionActivity/);
   });
 
@@ -267,16 +260,16 @@ describe('R1 — the model can carry no verb, and the check for it can fail', ()
     );
     expect(reserving.length).toBeGreaterThan(0);
     for (const { row } of reserving) {
-      expect(row.preview ?? '').not.toMatch(VERB_SHAPE);
+      expect(row.primary).not.toMatch(VERB_SHAPE);
     }
   });
 });
 
-/** Every row a fixture produces, with the zone it came from. */
+/** Every row a fixture produces, with the section it came from. */
 function rowsOf(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
-  const out: { zoneId: string; row: SidebarRowModel }[] = [];
+  const out: { sectionId: string; row: SidebarRowModel }[] = [];
   for (const node of walk(state)) {
-    if (node.kind === 'row') out.push({ zoneId: node.zone.id, row: node.row });
+    if (node.kind === 'row') out.push({ sectionId: node.section.id, row: node.row });
   }
   return out;
 }
@@ -304,7 +297,7 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
   // this, and the exemption is granted on a promise nobody checks. Listing
   // them by name rather than deriving the list is the point — deriving it from
   // the whitelist would make a new entry silently self-approving.
-  it.each(['overnight-boundary', 'basename'])(
+  it.each(['basename'])(
     'holds `shared/lib/%s` to the leaf promise that put it on the whitelist',
     (moduleName) => {
       // The whitelist entry above is worth exactly as much as this assertion.
@@ -385,7 +378,7 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
 });
 
 describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
-  it('P1 AC-2 — every zone, section and row carries a well-formed reason', () => {
+  it('P1 AC-2 — every section and row carries a well-formed reason', () => {
     const nodes = [...walk(state)];
     expect(nodes.length).toBeGreaterThan(0);
     for (const node of nodes) {
@@ -393,97 +386,54 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     }
   });
 
-  it('BC-1 — no empty zone, and no section with zero rows and no rollup', () => {
-    for (const node of walk(state)) {
-      if (node.kind === 'zone') {
-        expect(node.zone.sections.length).toBeGreaterThan(0);
-        const rows = node.zone.sections.flatMap((section) => section.rows);
-        expect(rows.length, `zone ${node.zone.id} is empty`).toBeGreaterThan(0);
+  it('BC-1 — no section with zero rows, but the one the operator made', () => {
+    // A section the operator MADE is the exception: a section that disappeared
+    // the instant it was created could never be dragged into.
+    for (const section of buildSidebarModel(state).sections) {
+      if (section.reason === 'section:group') continue;
+      expect(section.rows.length, `empty section ${section.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('opens with the top items and always has Direct messages', () => {
+    const ids = buildSidebarModel(state).sections.map((section) => section.id);
+    expect(ids[0]).toBe('top');
+    expect(ids).toContain('dms');
+  });
+
+  it('lists places, never a session', () => {
+    for (const { row } of rowsOf(state)) expect(row.target.kind).not.toBe('session');
+  });
+
+  it('BC-28 — two levels: the list holds sections, and a section holds rows', () => {
+    for (const section of buildSidebarModel(state).sections) {
+      expect(section).not.toHaveProperty('subsections');
+    }
+  });
+
+  it('R3 — a door and a mini app’s page are never drag sources', () => {
+    for (const { sectionId, row } of rowsOf(state)) {
+      if (row.target.kind === 'command' || row.target.kind === 'add-on') {
+        expect(row.draggable, `${sectionId}/${row.key}`).toBe(false);
       }
-      // One exception, and only one: a section the operator MADE. Everything
-      // else here appears because something is in it, so an empty one is a box
-      // with nothing to say — but a section that disappeared the instant it was
-      // created could never be dragged into, and Library's whole promise is
-      // that the structure you built stays where you put it.
-      if (node.kind === 'section' && node.section.reason !== 'library:group') {
-        expect(node.section.rows.length, `empty section ${node.section.id}`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('BC-2 — no zone carries a collapsed field', () => {
-    for (const zone of buildSidebarModel(state).zones) {
-      expect(Object.keys(zone)).not.toContain('collapsed');
-    }
-  });
-
-  it('BC-3 — zones come in the fixed order', () => {
-    const order = ['getting-started', 'now', 'today', 'library'];
-    const ids = buildSidebarModel(state).zones.map((zone) => zone.id);
-    const positions = ids.map((id) => order.indexOf(id));
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    expect(ids.filter((id) => id === 'now' || id === 'getting-started').length).toBeLessThanOrEqual(
-      1
-    );
-  });
-
-  it('BC-5 — Heads up holds nothing but attention rows and the working rollup', () => {
-    const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
-    for (const row of now?.sections.flatMap((section) => section.rows) ?? []) {
-      expect(['attention', 'rollup']).toContain(row.target.kind);
-      expect(row.unread.tier).toBe('none');
-      if (row.target.kind === 'rollup') {
-        expect(['working', 'now-overflow']).toContain(row.target.rollup);
-      }
-    }
-  });
-
-  it('BC-8 — Heads up never emits more than five rows', () => {
-    const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
-    const rows = now?.sections.flatMap((section) => section.rows) ?? [];
-    expect(rows.length).toBeLessThanOrEqual(5);
-  });
-
-  it('BC-21 — no session row ever appears in Heads up', () => {
-    for (const { zoneId, row } of rowsOf(state)) {
-      if (zoneId === 'now') expect(row.target.kind).not.toBe('session');
-    }
-  });
-
-  it('BC-28 — two levels: a zone holds sections, and a section holds rows', () => {
-    // The model no longer has a place to nest a section, so this asserts the
-    // shape rather than a depth limit: every section a zone emits is a peer.
-    for (const zone of buildSidebarModel(state).zones) {
-      for (const section of zone.sections) {
-        expect(section).not.toHaveProperty('subsections');
-      }
-    }
-  });
-
-  it('R3 — every row outside Library is undraggable', () => {
-    for (const { zoneId, row } of rowsOf(state)) {
-      if (zoneId !== 'library') expect(row.draggable, `${zoneId}/${row.key}`).toBe(false);
     }
   });
 
   it('row keys are unique within a section', () => {
-    // Per section, not per zone: a pinned agent renders in Pins AND in Agents,
-    // and the anchor renders in Today AND in Library (BC-33 — dual presence is
-    // intentional). React keys only have to be unique among siblings.
-    for (const zone of buildSidebarModel(state).zones) {
-      for (const section of zone.sections) {
-        const keys = section.rows.map((row) => row.key);
-        expect(new Set(keys).size, `duplicate key in ${zone.id}/${section.id}`).toBe(keys.length);
-      }
+    // Per section, not per panel: an agent filed into a section of the
+    // operator's own can also be drawn by a smart section's rules. React keys
+    // only have to be unique among siblings.
+    for (const section of buildSidebarModel(state).sections) {
+      const keys = section.rows.map((row) => row.key);
+      expect(new Set(keys).size, `duplicate key in ${section.id}`).toBe(keys.length);
     }
   });
 
   it('carries no verb text, timestamp or countdown', () => {
-    // Every field a phrase could hide in, not just the three that used to be
-    // checked — `reason` is a string the rules BUILD, so it is the likeliest
-    // place a verb would arrive by accident.
+    // Every field a phrase could hide in — `reason` is a string the rules
+    // BUILD, so it is the likeliest place a verb would arrive by accident.
     for (const { row } of rowsOf(state)) {
-      const text = [row.primary, row.secondary, row.preview, row.reason].filter(Boolean).join(' ');
+      const text = [row.primary, row.secondary, row.reason].filter(Boolean).join(' ');
       expect(text).not.toMatch(/\d+\s?(s|m|h|d)\s?ago/i);
       expect(text, `verb text in a row: ${text}`).not.toMatch(VERB_SHAPE);
     }

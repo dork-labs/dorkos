@@ -8,6 +8,7 @@ import { Input } from '@/layers/shared/ui';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import { useDocFrameChannel } from '../model/use-doc-frame-channel';
+import { useFrameBridgeRefusal } from '../model/use-frame-bridge-refusal';
 import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import { useResolvedFrame } from '../model/use-resolved-frame';
 import { BrowserBody } from './BrowserPreviewFrame';
@@ -17,6 +18,7 @@ import {
   loopbackStrategy,
   normalizeAddressInput,
 } from '../lib/browser-url';
+import { FrameBridgeNotice } from './FrameBridgeNotice';
 
 interface CanvasBrowserContentProps {
   /**
@@ -146,6 +148,8 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     bridgeEligibility: resolved?.bridgeEligibility ?? null,
     resolvedSource: resolved?.src ?? null,
   });
+  // Why DorkOS could not add its scripts to this page, said in one line.
+  const bridgeRefusal = useFrameBridgeRefusal({ iframeRef, target, cwd, resolved, reloadNonce });
 
   // Which room this browser is showing a page FOR, or null where the canvas is
   // this browser's own. Read from the store rather than the route: the room
@@ -281,6 +285,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
           Page is offline. Reload to reconnect.
         </p>
       )}
+      {bridgeRefusal !== null && <FrameBridgeNotice reason={bridgeRefusal} />}
 
       <BrowserBody
         target={target}

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The whole sidebar is one pure function: `buildSidebarModel(state) → SidebarModel`. Every zone, section, row, order, cap, rollup and badge is decided there, by a small named rule, and every node it emits carries a `reason` saying why it exists. Components render the result and hold no rules of their own.
+The whole sidebar is one pure function: `buildSidebarModel(state) → SidebarModel`. Every section, row, order, rollup and badge is decided there, by a small named rule, and every node it emits carries a `reason` saying why it exists. Components render the result and hold no rules of their own.
 
 This guide is how you change that model without breaking the thing it exists to protect. Read it before you add a rule, add a fixture, or review a PR that touches `features/dashboard-sidebar/model/`.
 
@@ -26,11 +26,11 @@ The sections below follow `writing-developer-guides`, with one deliberate insert
 | Contracts that hold for all fixtures       | `apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts` |
 | The fixtures, drawn (`/dev/sidebar-model`) | `apps/client/src/dev/showcases/SidebarModelShowcases.tsx`                                                 |
 | The same fixtures, in a browser            | `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`                                         |
-| "When did I last open this?"               | `apps/client/src/layers/entities/interactions/`                                                           |
+| Which sections exist, and in what order    | `apps/client/src/layers/features/dashboard-sidebar/model/rules/build-sections.ts`                         |
+| An agent's direct message as its one row   | `apps/client/src/layers/features/dashboard-sidebar/model/rules/agent-direct-messages.ts`                  |
 | The snapshot's one assembly hook           | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-state.ts`                            |
-| Today's two hand-behaviours                | `model/use-today-order-hold.ts`, `model/use-scroll-to-active.ts`, drawn by `ui/TodayZone.tsx`             |
-| The digest's content and its one write     | `apps/client/src/layers/features/dashboard-sidebar/model/use-digest-facts.ts`                             |
 | The one call that builds the model         | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-model.ts`                            |
+| The renderer (maps sections, nothing else) | `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarSections.tsx`                                |
 | The behavioural contracts (BC-\*)          | `specs/sidebar-now-today-library/02-specification.md` §B                                                  |
 | The locked design decisions                | `specs/sidebar-now-today-library/design-decisions.md`                                                     |
 
@@ -38,7 +38,7 @@ The sections below follow `writing-developer-guides`, with one deliberate insert
 
 **A change that puts a verb, a countdown, or a relative timestamp into the sidebar model is a blocker in review.** Not a nit, not a follow-up — the change is rejected and the reviewer cites this line.
 
-Here is why. A fleet of thirty agents emits an activity event roughly every two seconds per working session. If "editing RoomRow.tsx" lived on a row in the model, every one of those events would rebuild the entire tree — every zone, every section, every row — to change four words in one place. Rows would also reorder while somebody was reading them, which is the exact failure the redesign was built to remove (Risk R1 in the spec).
+Here is why. A fleet of thirty agents emits an activity event roughly every two seconds per working session. If "editing RoomRow.tsx" lived on a row in the model, every one of those events would rebuild the entire tree — every section, every row — to change four words in one place. Rows would also reorder while somebody was reading them, which is the exact failure the redesign was built to remove (Risk R1 in the spec).
 
 So the split is:
 
@@ -46,7 +46,7 @@ So the split is:
 - **Text comes from activity.** The leaf row component subscribes to the verb itself, so one event re-renders one row.
 - **Relative time is the same problem wearing a different hat.** "3m ago" has to be redrawn as the clock moves. Rows carry the instants they are ordered by, and the component formats them.
 
-The model also has no clock of its own. `state.now` is passed in — coarse on purpose — which is what makes the 4am overnight boundary and the once-a-day digest ordinary table tests instead of timer mocks.
+The model also has no clock of its own. `state.now` is passed in — coarse on purpose — which is what makes a smart section's "active in the last N days" an ordinary table test instead of a timer mock.
 
 Three tests enforce this, and they are written so they can actually fail:
 
@@ -58,118 +58,81 @@ Three tests enforce this, and they are written so they can actually fail:
 
 ## When to Use What
 
-| You want to change…                                   | Put it here                                                        | Why                                                                                 |
-| ----------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Which rows appear, in what order, under what cap      | A rule in `model/rules/`                                           | It is a decision, and decisions are table-testable functions                        |
-| What a row's live status text says                    | The row component, via a leaf subscription                         | The standing rule above                                                             |
-| A time-of-day boundary or a "once per day" behaviour  | A rule, reading `state.now`                                        | Passing the clock in is what makes it testable                                      |
-| Where a fact comes from (an API, a store, the router) | The state assembly hook, feeding `SidebarState`                    | The model reads a snapshot; it never fetches                                        |
-| A colour, a size, a hover treatment                   | The component, using the tokens in `contributing/design-system.md` | The model emits semantic ids (`glyph: { kind: 'icon', icon: 'error' }`), not styles |
-| What a preference is called on disk                   | `packages/shared/src/config-schema.ts`                             | The model reads a view of prefs; `@dorkos/shared` owns the stored schema            |
+| You want to change…                                   | Put it here                                                        | Why                                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Which rows appear, and in what order                  | A rule in `model/rules/`                                           | It is a decision, and decisions are table-testable functions                          |
+| What a row's live status text says                    | The row component, via a leaf subscription                         | The standing rule above                                                               |
+| Anything that depends on the time                     | A rule, reading `state.now`                                        | Passing the clock in is what makes it testable                                        |
+| Where a fact comes from (an API, a store, the router) | The state assembly hook, feeding `SidebarState`                    | The model reads a snapshot; it never fetches                                          |
+| A colour, a size, a hover treatment                   | The component, using the tokens in `contributing/design-system.md` | The model emits semantic ids (`glyph: { kind: 'icon', icon: 'threads' }`), not styles |
+| What a preference is called on disk                   | `packages/shared/src/config-schema.ts`                             | The model reads a view of prefs; `@dorkos/shared` owns the stored schema              |
 
 ## Core Patterns
 
 ### The shape
 
-Four levels, and no more:
+**The sidebar lists places, never sessions or threads** (DOR-3092). Every row is a channel, a direct message, a mini app's page, or a door to a page that holds the rest. Three levels, and no more:
 
 ```
 SidebarModel
-└── zones: SidebarZoneModel[]        // getting-started | now, then today, then library
-    ├── label                         // a landmark heading; never a collapse control
-    ├── liveRegionText?               // Heads up only — a count, never a verb
-    └── sections: SidebarSectionModel[]
-        ├── label: string | null      // null = a headerless body (Heads up and Today)
-        ├── collapsible / collapsed   // now, today, getting-started, and every Library section may fold
-        ├── rollup?                   // the signal that survives folding
-        └── rows: SidebarRowModel[]   // a section's members. There is nothing below them
-            ├── target                // what clicking it does
-            ├── glyph / primary / secondary
-            ├── status                // an avatar dot, from lifecycle
-            ├── reservesVerbLine      // whether a second line exists, not what it says
-            ├── unread                // { tier: 'none'|'activity'|'directed', count? }
-            └── reason                // why this row is here
+└── sections: SidebarSectionModel[]   // top, your sections, channels, dms, addons
+    ├── label: string | null          // null = the headerless top items, and nothing else
+    ├── collapsible / collapsed       // every section but the top items folds
+    ├── rollup?                       // the signal that survives folding
+    └── rows: SidebarRowModel[]       // a section's members. There is nothing below them
+        ├── target                    // what clicking it does
+        ├── glyph / primary / secondary
+        ├── reservesVerbLine          // whether a second line exists, not what it says
+        ├── unread                    // { tier: 'none'|'activity'|'directed', count? }
+        └── reason                    // why this row is here
 ```
 
-Two shapes are worth knowing before you read the code:
+The order is fixed and never varies with content:
 
-- **A zone with nothing to say is absent**, not empty. `bodyZone()` returns `undefined` for an empty body, so no caller can push an empty box into `zones`.
-- **`getting-started` is not a fifth zone.** It is the day-one life stage of Heads up and shares its slot, which is why the two are never both present.
+1. **`top`** — the doors: Threads (`/threads`) and Directory (`/team`). **A top item never shows before its page exists**, so a new door lands here only with its page.
+2. **Your sections** (`group:<id>`), hand-made or rule-based, right under the doors.
+3. **`channels`**, sorted by name unless the header menu says otherwise.
+4. **`dms`** — always present. An agent's one-to-one direct message is drawn as the AGENT (`agent-direct-messages.ts`): its face, its name, its menu, opening its Direct chat (DOR-2997). A pinned agent with no direct message yet is here too. The last row is a door: "Message an agent or person", or "Message an agent" (Directory narrowed to agents) when the section is otherwise empty.
+5. **`addons`** — one row per page a mini app lists, only once there is one.
+
+Two rules worth knowing before you read the code:
+
+- **A section with nothing in it is absent**, not empty — except Direct messages (its empty state is how you start one) and a section the operator made (it has to exist to be dragged into).
+- **An agent is one row.** It is drawn in Direct messages, or in the section that holds it (filed by hand, or matched by a smart section's rules), never both. A smart match its section's display filter hides stays in Direct messages. Every other agent lives in the Directory.
+- **A row never moves under the person using the panel.** A smart section's members change on their own, so an agent can drift between it and Direct messages. While the pointer is over the list or focus is in it, `useHeldSections` holds every row in the section it was in (`rules/hold-section-moves.ts`) and the moves land when they leave; the person's own changes (a drag, a pin) retake the snapshot and land at once. An agent row carries its key as motion's `layoutId`, so a move slides for 200 ms ease-out (instant under reduced motion).
 
 ### Reading a `reason`
 
-Every zone, section and row carries `reason`, formatted `<namespace>:<rule>` — lowercase letters and hyphens, exactly one colon, asserted for every node of every fixture. It is the answer to "why is this row here?" in devtools, and it is also the handle tests grab.
+Every section and row carries `reason`, formatted `<namespace>:<rule>` — lowercase letters and hyphens, exactly one colon, asserted for every node of every fixture. It is the answer to "why is this row here?" in devtools, and it is also the handle tests grab.
 
-| Namespace          | Sits on                                 | Values you will see                                                                                                                                                                                                                                      |
-| ------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zone:`            | a zone                                  | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                                                         |
-| `now:`             | the Heads up body section, and its rows | `now:body`; then `now:permission-prompt`, `now:question`, `now:schedule-approval`, `now:error`                                                                                                                                                           |
-| `getting-started:` | the day-one body section                | `getting-started:body`                                                                                                                                                                                                                                   |
-| `today:`           | Today's body section, and most rows     | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                                                               |
-| `anchor:`          | one Today row                           | `anchor:active-session` — first because you have it open                                                                                                                                                                                                 |
-| `rollup:`          | a row standing for other rows           | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                                                              |
-| `suggestion:`      | a Getting-started row                   | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                                                        |
-| `library:`         | Library's sections and rows             | sections `library:pins`, `library:channels`, `library:dms`, `library:agents`, `library:addons`, `library:group`; rows `library:pinned`, `library:channel`, `library:dm`, `library:agent`, `library:group-member`, `library:all-agents`, `library:add-on` |
+| Namespace   | Sits on                 | Values you will see                                                                                                |
+| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `section:`  | a section               | `section:top`, `section:group`, `section:channels`, `section:dms`, `section:addons`                                |
+| `top:`      | a door in the top items | `top:threads`, `top:directory`                                                                                     |
+| `group:`    | a row in your section   | `group:member`                                                                                                     |
+| `channels:` | a Channels row          | `channels:channel`                                                                                                 |
+| `dms:`      | a Direct messages row   | `dms:agent`, `dms:pinned-agent`, `dms:conversation` (people or several agents), `dms:message-someone`, `dms:empty` |
+| `addons:`   | an Add-ons row          | `addons:page`                                                                                                      |
 
-`library:all-agents` is the Agents section's last row — the door to the Team page, present whenever the roster holds more than the section is drawing (D3). It replaced `library:reveal`, an "N inactive" row that took a click and answered nothing (DOR-1105).
+`addons` rows target `{ kind: 'add-on' }` and carry a `page-icon` glyph the renderer resolves from the extension registry, because the model holds no components (spec `mini-app-placement` Part 2). They are never dragged, pinned, muted or unread, and the section is a `computed` drop target, so a row dropped on it is refused with a sentence. `useSidebarState` feeds the pages in as `SidebarState.addOns` and, on an `/x/…` address, sets `activeTarget` to the deepest listed page that holds it (`listedPageAt`), so exactly one row is current. Two listed pages with one title stay two rows: each gets `primary` = extension id and `secondary` = title, so it reads `flow › Settings`. Inside a space, `SidebarSections` replaces the panel with the space's channels but still draws this one section below them, and Alt-click there folds only it.
 
-`library:addons` is the Add-ons section, last in Library: one `library:add-on` row per page a mini app lists (spec `mini-app-placement` Part 2). Its rows target `{ kind: 'add-on' }` and carry a `page-icon` glyph the renderer resolves from the extension registry, because the model holds no components. They are never dragged, pinned, muted or unread, and the section is a `computed` drop target, so a row dropped on it is refused with a sentence. `useSidebarState` feeds the pages in as `SidebarState.addOns` and, on an `/x/…` address, sets `activeTarget` to the deepest listed page that holds it (`listedPageAt`), so exactly one row is current. Two listed pages with one title stay two rows: each gets `primary` = extension id and `secondary` = title, so it reads `flow › Settings`. Inside a space, `SidebarZones` replaces the panel with the space's channels but still draws this one section below them (where Library is drawn), and Alt-click there folds only it.
-
-Two things that look like each other and are not:
-
-- A hand-made section's **id** is `group:<groupId>` — a raw id, so it is not reason-shaped. Its **reason** is `library:group`. The `group` spelling is the STORED one: what a person reads says "section" everywhere (D3), and `ui.sidebar.groups` is not renamed because it is persisted.
-- A suggestion's reason, its row key, and the token written into `prefs.gettingStarted.retired[]` are all the same string. One spelling, so renaming a suggestion can never un-retire it.
+A hand-made section's **id** is `group:<groupId>` — a raw id, so it is not reason-shaped. Its **reason** is `section:group`. The `group` spelling is the STORED one: what a person reads says "section" everywhere (D3), and `ui.sidebar.groups` is not renamed because it is persisted.
 
 ### How the rules compose
 
-`buildSidebarModel` reads as the order the decisions happen in. Each rule decides one thing, and a rule that needs another rule's answer takes it as an argument instead of reaching for it.
+`buildSidebarModel` is one call: `buildSections(state)`. Each rule decides one thing, and a rule that needs another rule's answer takes it as an argument instead of reaching for it. `buildSections` builds the lookup maps once (`byPath`, `rooms`, the mute index, the agents' direct messages), works out which agents and rooms are filed into a hand-made section, and then emits the sections in their fixed order.
 
-Today is the part where the order carries meaning, so it is worth reading once:
-
-```typescript
-const anchor = anchorKey(state); // what the operator has open, or null
-const eligible = applyMuteRules(selectTodayItems(state), muteIndex(state.prefs), {
-  dropMuted: true,
-  ...(anchor === null ? {} : { exemptKey: anchor }),
-});
-const today = pinActiveAnchor(
-  orderToday(
-    archiveOvernight(eligible, state, { ...(anchor === null ? {} : { anchorKey: anchor }) }),
-    state
-  ),
-  state
-);
-// … the digest is spliced in below the anchor, and then:
-revealAutomated(today, state); // the runs, if the operator opened the reveal
-```
-
-Who is eligible → what mute removes → what the overnight boundary removes → what order the rest come in → and only then which one is pinned first. The anchor is exempted at every step before the last, so nothing can mute, archive or cap the conversation you have open out of first place.
-
-**Whose a chat is comes first, and it is what you did in it, not how it started** (spec `your-activity-first` D7, D10). `selectTodayItems` splits the whole recent window with `partitionSessionsByOwnership` from `entities/session`: a chat is **yours** when you opened it on the chat page or wrote in it, on any device (`Session.lastTouchedByYouAt`, `userLastMessageAt`), or when nothing but a person started it. A **spin-off** (started by another chat) or an **automated** chat (room, task, agent, channel, extension) that you never touched waits behind the reveal row. Only your chats touched since 04:00 are Today's. The split runs before any cap, and nothing slices the window first: `useSidebarState` reads the whole shared `useRecentSessions` entry, which already carries every chat you touched since 04:00 beyond its limit (`touchedSince`). Slicing first is what once dropped a chat you typed in when ten agent chats were newer.
-
-**The order key is `max(local opened, lastTouchedByYouAt, userLastMessageAt)`** (`lastInteractionAt` in `rules/order-today.ts`). The local open record is written by the chat page when it shows a chat (`useRecordChatOpened` in `entities/session`), never by a click handler, so a deep link, a reload or a notification counts as much as a sidebar click. One exception: the chat the app lands on is sent to the server only, so it does not end the absence "While you were away…" reports (BC-22). `lastTouchedByYouAt` is the server's copy of the same fact, so the desktop, the phone and a second browser agree.
-
-`revealAutomated` runs after every one of them, and that is the point: an automated run put into the candidate list would be sorted by an interaction recency it does not have, measured for a staleness it does not have, and would spend places from the soft cap that belong to the conversations the operator was actually in. It appends, so the runs hang off the bottom of the finished list.
-
-**Pass the exemption arguments or the promise silently stops being true.** `applyMuteRules`' `exemptKey` and `archiveOvernight`'s third argument are the only mechanisms that spare the anchor — `archive-overnight.ts` filters on `row.key === exemptions.anchorKey` and nothing else. Both parameters are optional (`exemptions: ArchiveExemptions = {}`), so a composition that omits them compiles, passes typecheck, and quietly archives the conversation the operator is looking at.
-
-`rules/targets.ts` is the exception to "one rule per file". It holds the spellings every rule shares — `rowKey`, `interactionKeyOf`, `anchorKey`, `basename`, `epochMs`. `anchorKey` lives there because three rules need the answer, and a rule importing another rule to ask one question is how a cycle starts.
+`rules/targets.ts` is the exception to "one rule per file". It holds the spellings every rule shares — `rowKey` and `sameTarget`.
 
 ### The units, which are not all the same
 
-Getting one of these wrong fails silently. `epochMs` turns an unparseable value into `null`, which the model reads as "never", so the list quietly falls back to alphabetical order and nothing throws.
+Getting one of these wrong fails silently: an unparseable time reads as "never", so a section sorted by recent activity quietly falls back to key order and nothing throws.
 
-| Field                             | Unit                                           |
-| --------------------------------- | ---------------------------------------------- |
-| `state.now`                       | epoch milliseconds                             |
-| `AgentRosterEntry.lastActivityAt` | epoch milliseconds, or `null`                  |
-| `state.interactions`              | **ISO-8601 strings** (`InteractionTimestamps`) |
-| `state.userLastMessageAt`         | **ISO-8601 strings**                           |
-| `state.lastTouchedByYouAt`        | **ISO-8601 strings**                           |
-| `SidebarAttentionSignal.since`    | **ISO-8601 string**                            |
-| `prefs.digest.lastShownDate`      | a local date key, `YYYY-MM-DD`                 |
-
-`SidebarState.interactions` is typed as the interaction store's own exported `InteractionTimestamps`, not as a hand-written `Record<string, string>`. Both compile; only one of them breaks the build if the store ever changes what it puts in the value. There is an end-to-end test (`__tests__/interaction-seam.test.ts`) that carries real store output into `buildSidebarModel`, plus a case proving the failure it guards against.
+| Field                             | Unit                          |
+| --------------------------------- | ----------------------------- |
+| `state.now`                       | epoch milliseconds            |
+| `AgentRosterEntry.lastActivityAt` | epoch milliseconds, or `null` |
+| `RoomSummary.lastActivityAt`      | **ISO-8601 string**           |
 
 ## Anti-Patterns
 
@@ -199,41 +162,41 @@ import type { InteractionTimestamps } from '@/layers/entities/interactions';
 
 ```typescript
 // ❌ Asking another rule a question. This is how an import cycle starts.
-import { pinActiveAnchor } from './pin-active-anchor';
+import { indexAgentDms } from './agent-direct-messages';
 
 // ✅ Take the answer as an argument, or move the shared question to targets.ts.
-export function myRule(rows: readonly SidebarRowModel[], anchor: string | null) { … }
+export function myRule(rows: readonly SidebarRowModel[], dms: AgentDmIndex) { … }
 ```
 
 ```typescript
 // ❌ Editing a shared fixture so your test passes. Several tasks read these.
-busyFixture.attention = [];
+busyFixture.rooms = [];
 
 // ✅ Build the variant locally with a spread.
-const state = { ...busyFixture, attention: [] };
+const state = { ...busyFixture, rooms: [] };
 ```
 
 ```typescript
 // ❌ A reason the format check rejects, and a reader cannot decode.
 reason: 'row',              // no namespace
-reason: 'today:Recency',    // uppercase
+reason: 'dms:Agent',        // uppercase
 reason: `group:${group.id}` // a raw id, not a rule name
 
 // ✅ <namespace>:<rule>, lowercase and hyphens.
-reason: 'today:interaction-recency',
+reason: 'dms:agent',
 ```
 
 ## Adding a Rule
 
-1. **Name the contract first.** Find the BC number your rule implements in `specs/sidebar-now-today-library/02-specification.md` §B. If there is no contract, you are changing behaviour that was decided elsewhere — settle that before writing code.
+1. **Name the contract first.** Find the ticket or BC number your rule implements (`specs/sidebar-now-today-library/02-specification.md` §B for the older ones). If there is no contract, you are changing behaviour that was decided elsewhere — settle that before writing code.
 
-2. **Create one file for one decision**: `model/rules/<verb>-<noun>.ts`, matching the existing names (`select-now-items`, `order-today`, `derive-unread-signal`). Open it with a module docblock that says what it decides and cites the BC.
+2. **Create one file for one decision**: `model/rules/<verb>-<noun>.ts`, matching the existing names (`apply-mute-rules`, `derive-unread-signal`, `roll-up-collapsed-section`). Open it with a module docblock that says what it decides and cites the BC.
 
 3. **Take what you need as arguments.** A selector takes `state`. A transformer takes `(rows, state)`. Never import a sibling rule to ask it a question — if two rules need the same answer, it belongs in `rules/targets.ts`.
 
    ```typescript
    /**
-    * System agents sink to the bottom of a Library section (BC-nn — put the
+    * System agents sink to the bottom of a section (BC-nn — put the
     * real contract number here; the spec's run to BC-51).
     *
     * @module features/dashboard-sidebar/model/rules/demote-system-agents
@@ -260,13 +223,13 @@ reason: 'today:interaction-recency',
    }
    ```
 
-4. **Obey the two purity limits.** Value imports may only be relative siblings, `@dorkos/shared/smart-groups`, `@/layers/entities/session`, or `@/layers/shared/lib/overnight-boundary` — the day boundary, reached by its leaf path because the `shared/lib` barrel is still banned; anything else must be `import type`. Read time only from `state.now` — the only legal `Date` shapes are `new Date(<argument>)` and `Date.parse(`. The whitelist itself lives in `build-sidebar-model.contracts.test.ts`, which also asserts that leaf really imports nothing.
+4. **Obey the two purity limits.** Value imports may only be relative siblings or an entry on the whitelist (`ALLOWED_VALUE_IMPORTS`); anything else must be `import type`. Read time only from `state.now` — the only legal `Date` shapes are `new Date(<argument>)` and `Date.parse(`. The whitelist itself lives in `build-sidebar-model.contracts.test.ts`, which also asserts that leaf really imports nothing.
 
 5. **Stamp a `reason`** on every node you create, matching `/^[a-z-]+:[a-z-]+$/`. Reuse an existing namespace from the table above unless your rule genuinely introduces a new kind of provenance.
 
-6. **Compose it where its inputs are ready.** There are two composition points, and picking the wrong one is the easiest mistake to make. A rule that shapes a zone is composed in `buildSidebarModel` itself. A rule that shapes one Library section is composed inside `buildLibrarySections`, which builds Library's sections and rows and is the only place their intermediate lists exist. If the position in the pipeline carries meaning, say so in a comment there — the Today block is the worked example.
+6. **Compose it inside `buildSections`**, which is the only place the sections' intermediate lists exist. If the position in the pipeline carries meaning, say so in a comment there.
 
-7. **Write the table test** in the `__tests__/` file for that zone: `now-rules.test.ts`, `today-rules.test.ts`, `library-rules.test.ts`, `getting-started.test.ts`, or `derive-rules.test.ts` for the small shared derivations. Test the rule directly with literals, and assert the end-to-end effect through `buildSidebarModel` on a fixture.
+7. **Write the table test**: `sections-rules.test.ts` for what a section holds, `add-on-rules.test.ts` for Add-ons, or `derive-rules.test.ts` for the small shared derivations. Test the rule directly with literals, and assert the end-to-end effect through `buildSidebarModel` on a fixture.
 
 8. **Verify**, in this order:
 
@@ -282,7 +245,7 @@ reason: 'today:interaction-recency',
 
 The four journey fixtures (`first-run`, `quiet`, `busy`, `power`) are a deliverable, not test scaffolding. The same four drive three things: the model's table tests, the Dev Playground's `SidebarModelShowcases`, and the browser spec `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`. So what a reviewer looks at and what CI asserts are the same states, by construction — build any new surface against these rather than seeding a fresh state beside them.
 
-**Most of the time you do not want a new fixture — you want a variant.** Build it locally with a spread (`{ ...busyFixture, attention: [] }`). The shared files are read by several tasks at once, and editing one turns your tweak into somebody else's failing expectation.
+**Most of the time you do not want a new fixture — you want a variant.** Build it locally with a spread (`{ ...busyFixture, rooms: [] }`). The shared files are read by several tasks at once, and editing one turns your tweak into somebody else's failing expectation.
 
 Add a fifth journey only when it is a genuinely different stage of the product, not a variation on an existing one. Then:
 
@@ -290,16 +253,14 @@ Add a fifth journey only when it is a genuinely different stage of the product, 
 
    ```typescript
    import type { SidebarState } from '../sidebar-state';
-   import { agent, emptyState, hoursAgo, session } from './factories';
+   import { agent, emptyState, FIXTURE_NOW, HOUR } from './factories';
 
    const TANGERINE = '/Users/dev/code/tangerine';
 
    /** An operator returning after a week away — everything is stale. */
    export const dormantFixture: SidebarState = emptyState({
-     agents: [agent(TANGERINE, { lastActivityAt: null })],
-     sessions: [session({ id: 'ses-old', title: 'Ship the parser', cwd: TANGERINE })],
+     agents: [agent(TANGERINE, { lastActivityAt: FIXTURE_NOW - 9 * 24 * HOUR })],
      displayNames: { [TANGERINE]: 'tangerine' },
-     interactions: { 'session:ses-old': hoursAgo(9 * 24) },
    });
    ```
 
@@ -313,9 +274,9 @@ Add a fifth journey only when it is a genuinely different stage of the product, 
    pnpm vitest run apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts
    ```
 
-4. **It appears in the Dev Playground on its own**, so a journey can be looked at and not only asserted on. `SidebarModelShowcases` (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`, at `/dev/sidebar-model`) iterates `SIDEBAR_FIXTURES`, so a fifth entry there draws a fifth panel with no edit to the page. Check it in both themes; the browser spec's expectations are per-fixture tables (`EXPECTED_ZONES`, `EXPECTED_NOW`) that a new journey needs a row in.
+4. **It appears in the Dev Playground on its own**, so a journey can be looked at and not only asserted on. `SidebarModelShowcases` (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`, at `/dev/sidebar-model`) iterates `SIDEBAR_FIXTURES`, so a fifth entry there draws a fifth panel with no edit to the page. Check it in both themes; the browser spec's expectations are per-fixture tables that a new journey needs a row in.
 
-Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a fixed UTC epoch. Every time-dependent rule is stated in local terms — the 4am boundary, the calendar day the digest is once per — so a fixture pinned to UTC would archive different rows in Auckland than in California, and the same test would pass in one office and fail in the other.
+Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a fixed UTC epoch, so a time-dependent rule reads the same in every office.
 
 ## Troubleshooting
 
@@ -327,37 +288,27 @@ Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a f
 ### `reads no clock it was not given` fails
 
 **Cause**: a `Date` use that is not `new Date(<argument>)` or `Date.parse(`, or a reference to `performance`, `Math.random`, or `Intl`.
-**Fix**: take the instant from `state.now`. For a calendar day, use `localDateKey(state.now)` — `Intl` is banned here and `toISOString()` answers in UTC, which would roll the digest over in the middle of somebody's evening.
+**Fix**: take the instant from `state.now`. `Intl` is banned here, and `toISOString()` answers in UTC, which would put a local boundary in the middle of somebody's evening.
 
-### `every zone, section and row carries a well-formed reason` fails
+### `every section and row carries a well-formed reason` fails
 
 **Cause**: a `reason` with no colon, two colons, uppercase, or an interpolated id.
 **Fix**: `<namespace>:<rule>`, both halves lowercase with hyphens. Ids belong in `key` and `id`, never in `reason`.
 
-### Today comes out alphabetical instead of by recency
+### An agent shows up twice
 
-**Cause**: almost always a unit mismatch. `state.interactions`, `state.userLastMessageAt` and `state.lastTouchedByYouAt` hold ISO-8601 strings; epoch milliseconds satisfy the `string` type, parse to `NaN`, and are read as "never opened".
-**Fix**: emit ISO. `__tests__/interaction-seam.test.ts` is the test that proves both directions of this.
-
-### A Today row moved while somebody was reading it
-
-**Cause**: the zone was drawn by `SidebarZone` directly rather than by `TodayZone`, so nothing held the order (BC-17), or a wrapper was added between them that swallowed the pointer and focus handlers.
-**Fix**: `SidebarZones` routes `zone.id === 'today'` to `TodayZone`, which owns the wrapper the handlers sit on. Hold the ORDER only — the rows themselves are this frame's, so a badge clearing and a verb starting still land while the hold is on.
+**Cause**: a new code path drew an agent row without asking whether it is already filed. Direct messages skips every agent in a hand-made section (`groupedAgents` in `build-sections.ts`), and the agent's own direct message is folded into its row rather than drawn as a room (`agentPathOf`).
+**Fix**: route the new row through `directMessageRows` or `groupSection`, never beside them. `sections-rules.test.ts` holds the one-row-per-agent cases.
 
 ### The panel scrolled when nothing was opened
 
 **Cause**: `useScrollToActive` gained a dependency beyond the anchor's key. It has exactly one on purpose: a verb, an unread change or a whole model rebuild must move nothing (BC-36).
 **Fix**: keep the effect keyed on `anchorKey` alone, and keep the mount-time latch that stops arriving on a page from counting as a switch.
 
-### The digest appeared for a moment and vanished
-
-**Cause**: the model was handed the LIVE `prefs.digest.lastShownDate`. Rendering the row writes today's date (BC-22), and reading that write back makes the rule refuse the row on the very next rebuild.
-**Fix**: `useSidebarState` hands the model the date this tab loaded with (`useDigestFacts().lastShownDate`) and nothing else touches that one field.
-
 ### The build-budget test fails
 
 **Cause**: `build-sidebar-model.performance.test.ts` asserts the whole panel builds for a 32-agent fleet in under 5ms. A rule that sorts inside a loop, or rebuilds a `Map` per row, will cross it.
-**Fix**: build lookup maps once at the top of the rule, as `buildLibrarySections` does with `byPath` and `rooms`.
+**Fix**: build lookup maps once at the top of the rule, as `buildSections` does with `byPath` and `rooms`.
 
 ## Related
 

@@ -870,8 +870,9 @@ test.describe('Rooms — the menu on a touch screen', () => {
 test.describe('Rooms — a thread on a phone', () => {
   // The same iPhone the room-sheet phone spec measures on (`PHONE`), with touch
   // emulation, because both halves matter here too: under 768px `useIsMobile`
-  // chooses the push over the side panel, and the pointer decides how it is
-  // reached.
+  // chooses the full-screen sheet over the side panel, and the pointer decides
+  // how it is reached. The sheet's own gestures (the swipe, the pinned root, the
+  // reduced-motion cut) are `threads/phone-thread-sheet.spec.ts`.
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   test('the thread takes the whole screen, and Back returns to the room', async ({
@@ -879,10 +880,10 @@ test.describe('Rooms — a thread on a phone', () => {
     roomsApi,
     roomsPage,
   }) => {
-    // A phone has no room for a column beside a column, so the thread IS the
-    // screen — a real drill-in push, not a sheet over a room you cannot use.
-    // What makes that a claim rather than a class name is geometry plus
-    // absence: the panel fills the viewport, and the room is genuinely gone.
+    // A phone has no room for a column beside a column, so the thread takes
+    // the whole screen, as a sheet over the room (DOR-3078). What makes that a
+    // claim rather than a class name is geometry plus inertness: the panel
+    // fills the viewport, and the room underneath cannot be reached.
     const slug = `e2e-thread-phone-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
     await roomsApi.postEntries(room.id, ['why is the build slow?']);
@@ -896,18 +897,16 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsPage.replyRow(root).click();
     await expect(roomsPage.threadPanel).toBeVisible();
 
-    // The room is unmounted, which is the honest reading of a push: there is
-    // one screen, and this is it. A drawer would have left the timeline behind
-    // it and this assertion is what tells the two apart.
-    await expect(roomsPage.entries).toHaveCount(0);
-    await expect(roomsPage.composer(`#${slug}`)).toHaveCount(0);
+    // The room stays mounted underneath, which is what keeps the reader's
+    // place in it, and is `inert` while it is covered: focus, taps and a
+    // screen reader stay in the thread.
+    await expect(page.getByTestId('room-under-thread')).toHaveAttribute('inert', '');
 
     // Full width, and reaching the bottom of the window. Measured against the
     // viewport rather than against a class.
     //
-    // Polled to its resting place first: the push really slides in now (it
-    // enters from 16px to the right), so a single measurement taken on the way
-    // catches it mid-travel — this read 14px before the poll was added. What is
+    // Polled to its resting place first: the sheet slides in from the right,
+    // so a single measurement taken on the way catches it mid-travel. What is
     // being asserted is where the panel COMES TO REST, not where it passes
     // through.
     await expect
@@ -917,8 +916,8 @@ test.describe('Rooms — a thread on a phone', () => {
     expect(panel.width).toBeGreaterThanOrEqual(389);
 
     // **Down to the bottom of the screen, which now has chrome at the bottom of
-    // it.** P4 gave the phone four permanent destinations along the bottom
-    // (`MobileTabsLayout`), so the routed page — and the push inside it — ends
+    // it.** P4 gave the phone permanent destinations along the bottom
+    // (`MobileTabsLayout`), so the routed page — and the sheet inside it — ends
     // 56px up. The claim is unchanged: nothing between the thread and the
     // bottom of the window is wasted. It is asserted as a chain rather than
     // against a bare `844 - 8`, so it still reaches the window: the panel
@@ -939,6 +938,7 @@ test.describe('Rooms — a thread on a phone', () => {
 
     await back.click();
     await expect(roomsPage.threadPanel).toHaveCount(0);
+    await expect(page.getByTestId('room-under-thread')).not.toHaveAttribute('inert', '');
     await expect(roomsPage.entries).toHaveCount(1);
     await expect(roomsPage.composer(`#${slug}`)).toBeVisible();
   });
@@ -948,12 +948,11 @@ test.describe('Rooms — a thread on a phone', () => {
     roomsApi,
     roomsPage,
   }) => {
-    // The push UNMOUNTS the room, so coming back mounts a brand new scroller at
-    // the top — and neither the room id nor its newest entry changed, so
-    // nothing about the room changed, so nothing would re-pin it. Measured on
-    // this exact viewport: 1148px before opening the thread, 0px after closing
-    // it. The reader pressed Back and silently landed on the oldest message in
-    // the room.
+    // When the thread was a push that unmounted the room, coming back mounted
+    // a brand new scroller at the top. Measured on this exact viewport: 1148px
+    // before opening the thread, 0px after closing it — the reader pressed Back
+    // and silently landed on the oldest message in the room. The sheet keeps
+    // the room mounted underneath; this is what holds it to that.
     const slug = `e2e-thread-scroll-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
     // Enough history that the room genuinely scrolls on a 844px-tall phone.
@@ -978,7 +977,6 @@ test.describe('Rooms — a thread on a phone', () => {
 
     await roomsPage.replyRow(roomsPage.entries.last()).click();
     await expect(roomsPage.threadPanel).toBeVisible();
-    await expect(roomsPage.entries).toHaveCount(0);
 
     await roomsPage.backToRoom(`#${slug}`).click();
     await roomsPage.waitForHistory(30, SERVER_ROUND_TRIP_MS);
@@ -996,10 +994,11 @@ test.describe('Rooms — a thread on a phone', () => {
     // The other half, and the harder one: the test above leaves at the bottom,
     // where "put me back" and "open at the newest message" are the same answer.
     // A reader who has scrolled INTO the history has to come back to the message
-    // they were reading — which the timeline can only do by remembering a ROW,
-    // because its own total height is an estimate until it settles (measured on
-    // this viewport: a remembered 900px offset was carried to 0 by the
-    // end-anchor as the list shrank from 16 000px to 4 159px).
+    // they were reading. The sheet keeps the room mounted, so nothing should
+    // move at all; if a remount ever came back, only a remembered ROW would
+    // restore it, because the timeline's total height is an estimate until it
+    // settles (measured on this viewport: a remembered 900px offset was carried
+    // to 0 by the end-anchor as the list shrank from 16 000px to 4 159px).
     const slug = `e2e-thread-resume-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
     await roomsApi.postEntries(
@@ -1020,7 +1019,7 @@ test.describe('Rooms — a thread on a phone', () => {
     // a reply they can SEE — so the tap moves nothing. This spec reproduces
     // exactly that, because the thing under test — does coming back restore the
     // reader's row? — is only meaningful if the reader's row does not move
-    // between the test recording it and the thread taking the room away.
+    // between the test recording it and the thread covering the room.
     //
     // The old synthetic `scrollTop = scrollHeight / 2` jump broke that twice
     // over: it remembered a row against the virtualizer's pre-settle height
@@ -1055,15 +1054,12 @@ test.describe('Rooms — a thread on a phone', () => {
     // — there is no reposition between recording the row and leaving it).
     await roomsPage.replyRows.first().click();
     await expect(roomsPage.threadPanel).toBeVisible();
-    await expect(roomsPage.entries).toHaveCount(0);
 
     await roomsPage.backToRoom(`#${slug}`).click();
     await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
 
     // The same message at the top of the viewport, and the room did NOT decide
-    // to open at its newest message instead. The second assertion names the
-    // mechanism: `remembered` is the landing that read the row back.
-    await expect.poll(() => roomsPage.timeline.getAttribute('data-landed-on')).toBe('remembered');
+    // to open at its newest message instead.
     expect(await roomsPage.settledTopVisibleEntryText()).toBe(topBefore);
   });
 });

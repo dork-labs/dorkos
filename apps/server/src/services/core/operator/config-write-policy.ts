@@ -336,6 +336,13 @@ export const CONFIG_WRITE_POLICY = {
   // nothing by itself, which is why it is `no-risk` in the safe-defaults table;
   // a record of what a person was told is still not an agent's to forge.
   'ui.trustNoticeSeenAt': 'operator-only',
+  // How a chat with one agent is drawn, and whether its working session can be
+  // opened (DOR-3074). Like every experiment, `ui.dmView` is a person's to
+  // try, never an agent's. `ui.showSessions` decides whether the model,
+  // account and context of a chat stay in view: an agent that turned it off
+  // would hide from the person the readings about its own work.
+  'ui.dmView': 'operator-only',
+  'ui.showSessions': 'operator-only',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing

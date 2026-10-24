@@ -281,7 +281,7 @@ class MockBrowserWindowImpl {
   loadURL = vi.fn(async (url: string): Promise<void> => {
     this.currentUrl = url;
   });
-  loadFile = vi.fn(async (filePath: string): Promise<void> => {
+  loadFile = vi.fn(async (filePath: string, _options?: unknown): Promise<void> => {
     this.currentUrl = pathToFileURL(filePath).href;
   });
   /** Test helper — put the window on `url` without going through a load. */

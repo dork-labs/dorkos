@@ -17,8 +17,7 @@ import { cn } from '@/layers/shared/lib';
  * How many rows stand under each header bone.
  *
  * Eight rows in three groups, which is what a real panel looks like above the
- * fold on a laptop: a short Heads up or Today, then two longer Library
- * sections. The shape matters more than the count — the eye is measuring the
+ * fold on a laptop: the two top items, then Channels and Direct messages. The shape matters more than the count — the eye is measuring the
  * panel's rhythm, and three equal blocks would read as a placeholder.
  */
 const ROWS_PER_SECTION = [2, 3, 3] as const;

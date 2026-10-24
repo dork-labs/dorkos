@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { SessionConnectorAttachmentStore } from '../../services/connectors/attachment-store.js';
 import { takeDailySnapshot } from '@dorkos/db';
 import { logError, logger } from '../../lib/logger.js';
+import { watchSessionStreamHealth } from '../../services/core/streams/session-stream-watch.js';
 import {
   SessionEventStore,
   wireSessionEventStore,
@@ -39,6 +40,10 @@ import {
 import { getStartWorkService } from '../../services/extensions/start-work.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import {
+  createChatRiseFacts,
+  setChatRiseFacts,
+} from '../../services/core/turn-power/chat-rise-facts.js';
 import { installSessionStatusHydration } from '../../services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from '../../services/session/fleet/session-context-store.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
@@ -119,6 +124,9 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // holding their history, their idle in-memory copies are swept (DOR-2897).
   const sessionEventStore = new SessionEventStore(db);
   wireSessionEventStore(sessionEventStore);
+  // Warn when a turn starts that no open window will see — the trail a chat
+  // that "only showed the reply after a refresh" leaves in the log.
+  watchSessionStreamHealth();
 
   // An agent that was waiting on a person when the last process stopped is not
   // waiting any more — its turn died with that process, and nothing can hand it
@@ -185,6 +193,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   runtimeRegistry.setDb(db);
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
+  // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
+  setChatRiseFacts(createChatRiseFacts(db));
 
   // Usage and context shown the moment a session opens, before any turn (spec
   // `claude-account-fleet` §6 U): every new projector is stamped from the usage

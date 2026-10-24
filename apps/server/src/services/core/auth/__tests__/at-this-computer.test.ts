@@ -24,6 +24,7 @@ import { honoListener, listeningServer } from '@dorkos/test-utils/listening-serv
 const mockEnv = vi.hoisted(() => ({
   DORKOS_ALLOW_INSECURE_BIND: false,
   DORKOS_SERVER_ROLE: 'computer' as 'computer' | 'hub',
+  DORKOS_TEST_RUNTIME: false,
 }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 // The gate policy's other inputs. `isAtThisComputer` reads neither: whether
@@ -32,7 +33,7 @@ vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 vi.mock('../../config-manager.js', () => ({ configManager: { get: () => undefined } }));
 vi.mock('../index.js', () => ({ hasAnyUser: () => false }));
 
-const { isAtThisComputer } = await import('../gate-policy.js');
+const { isAtThisComputer, isOnEncryptedConnection } = await import('../gate-policy.js');
 const { honoRequestFacts } = await import('../../../../http/request-facts.js');
 const { markIngress } = await import('../../remote/ingress-mark.js');
 
@@ -57,7 +58,10 @@ honoApp.get('/probe', (c) => {
     configurable: true,
   });
   if (viaIngress) markIngress(c.env.incoming, viaIngress);
-  return c.json({ local: isAtThisComputer(honoRequestFacts(c)) });
+  return c.json({
+    local: isAtThisComputer(honoRequestFacts(c)),
+    encrypted: isOnEncryptedConnection(honoRequestFacts(c)),
+  });
 });
 
 const server = listeningServer(honoListener(honoApp));
@@ -65,6 +69,7 @@ const server = listeningServer(honoListener(honoApp));
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
   mockEnv.DORKOS_SERVER_ROLE = 'computer';
+  mockEnv.DORKOS_TEST_RUNTIME = false;
   currentPeer = '127.0.0.1';
   viaIngress = null;
 });
@@ -161,5 +166,66 @@ describe('isAtThisComputer', () => {
     expect(await probe('localhost:4242')).toBe(false);
     mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
     expect(await probe('localhost:4242')).toBe(false);
+  });
+});
+
+// Where a signed-in person connects from changes nothing on an encrypted
+// connection (DOR-3172). Encrypted is decided by the listener, never a header.
+describe('isOnEncryptedConnection', () => {
+  async function encrypted(
+    headers: Record<string, string> = {},
+    peer: string | null = '127.0.0.1'
+  ): Promise<boolean> {
+    currentPeer = peer;
+    const res = await request(server).get('/probe').set('Host', 'localhost:4242').set(headers);
+    expect(res.status).toBe(200);
+    return res.body.encrypted as boolean;
+  }
+
+  it('counts the own tunnel and managed remote access', async () => {
+    for (const ingress of ['own-tunnel', 'managed'] as const) {
+      viaIngress = ingress;
+      expect(await encrypted()).toBe(true);
+    }
+  });
+
+  it('never counts plain-http Wi-Fi, the relay or this computer itself', async () => {
+    for (const ingress of ['wifi', 'relay'] as const) {
+      viaIngress = ingress;
+      expect(await encrypted({ 'x-forwarded-proto': 'https' })).toBe(false);
+    }
+    viaIngress = null;
+    expect(await encrypted()).toBe(false);
+  });
+
+  it('never believes a header: plain http claiming https stays plain', async () => {
+    const forged = { 'x-forwarded-proto': 'https', 'x-forwarded-for': '100.64.0.7' };
+    expect(await encrypted(forged)).toBe(false);
+    expect(await encrypted(forged, '192.168.86.200')).toBe(false);
+    expect(await encrypted({ forwarded: 'proto=https' }, '192.168.86.200')).toBe(false);
+  });
+
+  it('counts a TLS socket from another device only under the test runtime', () => {
+    const facts = (peer: string, encrypted: boolean) => ({
+      headers: { host: 'box.example:4443' },
+      peerAddress: peer,
+      ingress: 'direct' as const,
+      connectionEncrypted: encrypted,
+    });
+    // Production: the tunnel and managed remote access only (DOR-3173 first).
+    expect(isOnEncryptedConnection(facts('192.168.86.200', true))).toBe(false);
+    mockEnv.DORKOS_TEST_RUNTIME = true;
+    expect(isOnEncryptedConnection(facts('192.168.86.200', true))).toBe(true);
+    expect(isOnEncryptedConnection(facts('192.168.86.200', false))).toBe(false);
+    // A TLS socket marked as Wi-Fi is still Wi-Fi.
+    expect(isOnEncryptedConnection({ ...facts('192.168.86.200', true), ingress: 'wifi' })).toBe(
+      false
+    );
+  });
+
+  it('never counts a hub: it has its own bar', async () => {
+    mockEnv.DORKOS_SERVER_ROLE = 'hub';
+    viaIngress = 'own-tunnel';
+    expect(await encrypted()).toBe(false);
   });
 });

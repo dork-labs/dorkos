@@ -3,16 +3,15 @@
  * Writing a message records the operator's interaction with the conversation
  * and its agent (DOR-1156).
  *
- * Today's order key is `max(userLastMessageAt, userLastOpenedAt)` (spec
- * `sidebar-now-today-library` BC-16). No route on the wire carries the first
- * half yet, so the second half is the whole key — and until this change the
- * only thing that ever wrote it was a click on a sidebar row. A person could
- * type into an agent all afternoon and Today would say they had never been
- * there.
+ * ⌘K's "Recent" and "jump back in" order by when the operator last looked at
+ * a conversation (spec `sidebar-now-today-library` BC-16). No route on the wire
+ * carries when they last wrote, so the open record is the whole key — and until
+ * this change the only thing that ever wrote it was a click on a sidebar row. A
+ * person could type into an agent all afternoon and those lists would say they
+ * had never been there.
  *
- * The rows those records produce are asserted end to end in
- * `src/__tests__/send-lands-in-today.test.tsx`; this file is about WHICH ids
- * get a record, which is where the rekey and the kickoff live.
+ * This file is about WHICH ids get a record, which is where the rekey and the
+ * kickoff live.
  *
  * @module features/chat/__tests__/send-records-interaction
  */

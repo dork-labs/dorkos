@@ -362,7 +362,9 @@ export interface DependencyCheck {
   /** What this dependency is for. */
   description: string;
   /** Current status. */
-  status: 'satisfied' | 'missing' | 'outdated';
+  status: 'satisfied' | 'missing' | 'outdated' | 'unknown';
+  /** A passive diagnostic classification, distinct from a missing sign-in. */
+  reason?: 'credentials_unreadable';
   /** Installed version, if detected. */
   version?: string;
   /** Minimum required version, if applicable. */
@@ -416,7 +418,7 @@ export interface RuntimeReadiness {
    * e.g. Claude's delegated host login or a detected local model); otherwise
    * `connect`.
    */
-  state: 'ready' | 'connect';
+  state: 'ready' | 'connect' | 'unknown';
   /** The single Connect action to present; absent when `state` is `ready`. */
   connect?: RuntimeConnectAction;
 }
@@ -547,6 +549,7 @@ export function deriveRuntimeReadiness(
   // required), so treat auth as satisfied.
   const authReady = authCheck ? authCheck.status === 'satisfied' : true;
 
+  if (binaryReady && authCheck?.status === 'unknown') return { state: 'unknown' };
   if (binaryReady && authReady) return { state: 'ready' };
 
   const name = runtimeDisplayName(type);
@@ -1211,6 +1214,29 @@ export interface MessageOpts extends SessionSettings {
    * `@dorkos/shared/permission-semantics`.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /**
+   * The `'runtime-default'` bound in {@link permissionCeiling} is a
+   * continuation's hold (DOR-3203), not a stranger's words: a turn that picks
+   * a chat up on its own while the chat's latest turn was held (an approval's
+   * answer, a resume, a wake after a restart). It clamps the turn's power and
+   * nothing more, so the turn neither records itself as held nor marks what it
+   * posts as an outsider's. Only real outsider words do either. Runtimes
+   * ignore it; the turn-level record reads it.
+   */
+  continuationHold?: true;
+  /**
+   * The mode THIS turn starts from in place of the session's stored one: its
+   * agent's current level, for a chat that follows its agent up (DOR-3175).
+   * Set only at the registry's seam (`agent-level-bound.ts`), only for a chat a
+   * person never set a mode on, that nothing outside reached and nothing
+   * marked, and only when the level is looser than the stored mode.
+   *
+   * Per TURN and never written to the session's stored settings: the stored
+   * mode stays what it was, and a later lower level holds the next turn down
+   * again. Still held to {@link MessageOpts.permissionCeiling}. A runtime with
+   * no per-session mode ignores it.
+   */
+  levelPermissionMode?: PermissionModeId;
   /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the

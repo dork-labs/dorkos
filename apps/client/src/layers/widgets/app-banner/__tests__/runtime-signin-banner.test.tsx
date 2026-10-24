@@ -13,7 +13,14 @@
  * leaves every pure test green while the app draws nothing.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, renderHook, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import {
+  render as rtlRender,
+  renderHook,
+  screen,
+  cleanup,
+  waitFor,
+  fireEvent,
+} from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
@@ -241,7 +248,7 @@ describe('runtime-signin descriptor', () => {
 
     render(descriptor.render());
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude Code sign-in stopped working. Agents and tasks wait until you sign in again.'
+      'Claude Code is signed out. Its agents and tasks wait until you sign in.'
     );
   });
 
@@ -265,9 +272,7 @@ describe('runtime-signin descriptor', () => {
     await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
 
     render(findSigninDescriptor(result.current)!.render());
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Codex and Claude Code sign-ins stopped working.'
-    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Codex and Claude Code are signed out.');
   });
 
   it('counts the rest once more runtimes are dead than the row names', () => {
@@ -277,7 +282,7 @@ describe('runtime-signin descriptor', () => {
       <RuntimeSigninBanner runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']} />
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude Code, Codex and OpenCode sign-ins stopped working, and 1 more.'
+      'Claude Code, Codex and OpenCode and 1 more are signed out.'
     );
   });
 
@@ -287,7 +292,7 @@ describe('runtime-signin descriptor', () => {
     await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
 
     render(findSigninDescriptor(result.current)!.render());
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review sign-ins' }));
     expect(openSettings).toHaveBeenCalledWith('runtimes');
   });
 
@@ -354,7 +359,7 @@ describe('the banner and DorkOS credits', () => {
     renderWithCredits({});
     const trigger = await screen.findByTestId('signin-banner-credits');
     await waitFor(() => expect(trigger).toHaveTextContent('Use DorkOS credits'));
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review sign-ins' })).toBeInTheDocument();
   });
 
   it('leads with signing in again for a sign-in that ran out', async () => {
@@ -363,5 +368,81 @@ describe('the banner and DorkOS credits', () => {
     await waitFor(() => expect(transport.checkRequirements).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId('signin-banner-credits')).not.toBeInTheDocument();
+  });
+});
+
+/** Render the banner with the same account/config providers as the app shell. */
+function render(node: ReactNode) {
+  return rtlRender(node, { wrapper: harness(createMockTransport()) });
+}
+
+describe('account-targeted sign-in', () => {
+  it('keeps Claude5 standing after Claude4 recovers', () => {
+    expect(
+      deadSigninRuntimes([
+        signinRow('claude-code:/accounts/five', '2026-09-01T10:00:00.000Z'),
+        signinRow('claude-code:/accounts/four', '2026-09-01T10:00:00.000Z'),
+        recoveryRow('claude-code:/accounts/four', '2026-09-01T10:05:00.000Z'),
+      ])
+    ).toEqual(['claude-code:/accounts/five']);
+  });
+
+  it('names Claude5 and signs in its folder even when Main is the default', async () => {
+    const login = vi.fn().mockResolvedValue({ ok: true });
+    const transport = createMockTransport({
+      delegateRuntimeLogin: login,
+      getConfig: vi.fn().mockResolvedValue({
+        claudeCode: {
+          resolvedAccount: '/accounts/main',
+          inherited: true,
+          accounts: [
+            {
+              id: 'five',
+              path: '/accounts/five',
+              label: 'Claude5',
+              color: '#aabbcc',
+              colorIsDefault: true,
+              isAccountRoot: true,
+            },
+          ],
+        },
+      }),
+    });
+    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/five']} />, {
+      wrapper: harness(transport),
+    });
+    const button = await screen.findByRole('button', { name: 'Sign in to Claude5' });
+    expect(screen.getByRole('alert')).toHaveTextContent('Claude5 is signed out');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(login).toHaveBeenCalledWith('claude-code', {
+        accountRoot: '/accounts/five',
+        sessionId: undefined,
+      })
+    );
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(openSettings).not.toHaveBeenCalled();
+  });
+  it('offers one review action for two accounts and opens Runtimes', () => {
+    render(
+      <RuntimeSigninBanner
+        runtimes={['claude-code:/accounts/five', 'claude-code:/accounts/four']}
+      />
+    );
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review sign-ins' }));
+    expect(openSettings).toHaveBeenCalledWith('runtimes');
+  });
+  it('names the account when signing in does not work', async () => {
+    const transport = createMockTransport({
+      delegateRuntimeLogin: vi.fn().mockRejectedValue(new Error('Unavailable')),
+    });
+    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/Claude5']} />, {
+      wrapper: harness(transport),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
+    expect(await screen.findByText('Couldn’t sign in to Claude5. Try again.')).toBeInTheDocument();
   });
 });

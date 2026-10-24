@@ -17,23 +17,42 @@
  * @module services/runtimes/claude-code/turn-permission
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import { ceilingCarriesOutsider, clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
 /**
- * The mode this turn runs at: the session's own mode, held to the turn's
- * ceiling when it carries one.
+ * The mode this turn runs at: the session's own mode (or, for a chat that
+ * follows its agent up, the agent's level this turn starts from, DOR-3175),
+ * held to the turn's ceiling when it carries one.
  *
- * @param session - The session's chosen mode and the current turn's ceiling.
+ * @param session - The session's chosen mode, this turn's level, and its ceiling.
  */
 export function turnPermissionMode<M extends string | undefined>(session: {
   permissionMode: M;
+  turnLevelMode?: string;
   turnPermissionCeiling?: TurnPermissionCeiling;
 }): M | string {
+  const mode: M | string = session.turnLevelMode ?? session.permissionMode;
   const ceiling = session.turnPermissionCeiling;
-  if (ceiling === undefined || session.permissionMode === undefined) return session.permissionMode;
-  return clampClaudeMode(session.permissionMode, ceiling);
+  if (ceiling === undefined || mode === undefined) return mode;
+  return clampClaudeMode(mode, ceiling);
+}
+
+/**
+ * Set the mode a person chose for the conversation. It replaces the agent's
+ * level a running turn started from (DOR-3175): the chat runs at the person's
+ * choice from here.
+ *
+ * @param session - The session.
+ * @param mode - The mode the person chose.
+ */
+export function setChosenMode(
+  session: { permissionMode: string; turnLevelMode?: string },
+  mode: string
+): void {
+  session.permissionMode = mode;
+  delete session.turnLevelMode;
 }
 
 /**
@@ -86,6 +105,8 @@ export function neverAsks(session: CeilingedMode<string | undefined>): boolean {
 export interface CeilingedMode<M extends string | undefined> {
   /** The mode a person chose for the conversation. */
   permissionMode: M;
+  /** The agent's level this turn starts from instead, when it follows its agent up (DOR-3175). */
+  turnLevelMode?: string;
   /** This turn's ceiling, assigned on every send. */
   turnPermissionCeiling?: TurnPermissionCeiling;
   /** The ceiling background work an earlier ceilinged turn left running carries. */
@@ -168,6 +189,23 @@ export function ceilingOn(session: {
   if (stranger(session.turnPermissionCeiling) || stranger(session.backgroundPermissionCeiling))
     return 'stranger';
   return heldToACeiling(session) ? 'held' : 'none';
+}
+
+/**
+ * Whether the gate is held for words DorkOS cannot vouch for (DOR-3204): this turn's ceiling, or
+ * the one background work carries, holds the `runtime-default` bound or a level marked as having
+ * read an outsider's words. Wider than `ceilingOn(…) === 'stranger'` on purpose: a marked level
+ * that reached a ceiling without the bound beside it is still a stranger's turn.
+ *
+ * @param session - This turn's ceiling and the one background work carries.
+ */
+export function heldForOutsider(session: {
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): boolean {
+  return [session.turnPermissionCeiling, session.backgroundPermissionCeiling].some(
+    (ceiling) => ceiling !== undefined && ceilingCarriesOutsider(ceiling)
+  );
 }
 
 /**

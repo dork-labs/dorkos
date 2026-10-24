@@ -109,7 +109,7 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 let agentHeader: string | undefined;
 
 /** The listener a request arrived through, when not the main one (DOR-2969). */
-let arrivedVia: 'wifi' | 'own-tunnel' | undefined;
+let arrivedVia: 'wifi' | 'own-tunnel' | 'managed' | undefined;
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -2150,6 +2150,23 @@ describe('GET /api/config', () => {
     expect(res.body.ui.trustNoticeSeenAt).toBe(seenAt);
   });
 
+  it('reports Show sessions and the DM view off, and reads both back once set (DOR-3074)', async () => {
+    const dmViewOf = (body: { experiments: { key: string; enabled: boolean }[] }) =>
+      body.experiments.find((experiment) => experiment.key === 'ui.dmView')?.enabled;
+    const before = await request(server).get('/api/config').expect(200);
+    expect(before.body.ui.showSessions).toBe(false);
+    expect(dmViewOf(before.body)).toBe(false);
+
+    await request(server)
+      .patch('/api/config')
+      .send({ ui: { showSessions: true, dmView: true } })
+      .expect(200);
+
+    const after = await request(server).get('/api/config').expect(200);
+    expect(after.body.ui.showSessions).toBe(true);
+    expect(dmViewOf(after.body)).toBe(true);
+  });
+
   // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
   // DOR-2739): a Full autonomy default is a setting like any other.
   it('takes Full autonomy as a default with nothing to acknowledge first', async () => {
@@ -2282,17 +2299,27 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
-  it.each([
-    ['Wi-Fi', 'wifi'],
-    ['the own tunnel', 'own-tunnel'],
-  ] as const)("refuses the owner's own sign-in over %s", async (_l, via) => {
-    arrivedVia = via;
+  it("refuses the owner's own sign-in over plain-http Wi-Fi", async () => {
+    arrivedVia = 'wifi';
     const res = await request(server)
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
     expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
     expect(res.body.paths).toEqual(['auth.enabled']);
+  });
+
+  // An encrypted connection is the desk, for the owner (DOR-3172).
+  it.each([
+    ['the own tunnel', 'own-tunnel'],
+    ['managed remote access', 'managed'],
+  ] as const)("lets the owner's own sign-in over %s change one", async (_l, via) => {
+    arrivedVia = via;
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ tunnel: { domain: 'me.ngrok.app' } })
+      .expect(200);
+    expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
   it('refuses a signed-in person at this computer who is not the owner', async () => {

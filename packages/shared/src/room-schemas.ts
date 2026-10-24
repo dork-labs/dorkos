@@ -186,6 +186,9 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  *   one, somebody moved it, or its earlier session had expired. Quiet, with the
  *   agent as subject; in a room with outsiders it names no account. Nothing is
  *   wrong and nobody needs to act, which is why it is not `turn_failed`.
+ * - `handle_changed` — a person gave an agent here a new handle (DOR-3156).
+ *   Quiet, with the agent as subject; it names the old handle and the new one,
+ *   because the reader's next mention is what changes. A bridge never sends it.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -221,6 +224,8 @@ export const RoomNoticeCodeSchema = z
     'bridge_history_note',
     'room_archived',
     'agent_reseated',
+    'handle_changed',
+    'files_set_up',
   ])
   .openapi('RoomNoticeCode');
 
@@ -604,6 +609,15 @@ export const RoomSchema = z
 
 export type Room = z.infer<typeof RoomSchema>;
 
+/** Longest last-line preview a {@link RoomSummary} carries. */
+export const ROOM_LAST_LINE_MAX_CHARS = 120;
+
+/**
+ * The most @mentions a {@link RoomSummary} counts in one room. The sidebar draws
+ * anything past nine as `9+`, so ten is enough to know it is past nine.
+ */
+export const ROOM_MENTION_COUNT_CAP = 10;
+
 /**
  * A room as the sidebar reads it: the room, this viewer's unread count, and —
  * for a direct message — who it is with.
@@ -632,11 +646,36 @@ export const RoomSummarySchema = RoomSchema.extend({
     .describe(
       "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
     ),
+  awaiting: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "How many of this room's turns are stopped, waiting on a person — a tool approval, a question or an MCP prompt — right now. `0` when none are. The server always sends it; it is optional only so a caller that predates it still parses. Read from the server's own session state (a live pending interaction on a session bound to this room), never from anything an agent reports, and a count only: no session, prompt or tool is named. A folded sidebar section keeps a room with one on screen. The `room_awaiting` event carries the same count when it changes."
+    ),
   viewerHasPosted: z
     .boolean()
     .optional()
     .describe(
       'Whether the viewer has ever written in this room themselves. Derived from the log on every read, so it cannot drift; membership does not imply it and neither does reading. The server always sends it, and it is optional for the same reason `working` is — a caller that predates it still parses. **Absent means "this source cannot say", never `false`**: a client reads it to decide whether to nudge somebody to say hello, and a missing field read as "never posted" would nudge an operator who has been talking in #team for months.'
+    ),
+  mentionCount: z
+    .number()
+    .int()
+    .min(0)
+    .max(ROOM_MENTION_COUNT_CAP)
+    .optional()
+    .describe(
+      `How many entries above the viewer's read cursor @mention the viewer, thread replies included, counted up to ${ROOM_MENTION_COUNT_CAP}: ${ROOM_MENTION_COUNT_CAP} means "${ROOM_MENTION_COUNT_CAP} or more", since a sidebar draws anything past nine as 9+ and counting further would only cost reads. Counted from the room log, never from notifications, so clearing a notification does not clear it and reading the room does. Absent when the viewer is not a member (there is no cursor to count above, exactly as \`unreadCount\` is \`null\`) and from a source that cannot count it. A person naming themselves is not counted.`
+    ),
+  lastLine: z
+    .string()
+    .max(ROOM_LAST_LINE_MAX_CHARS)
+    .nullable()
+    .optional()
+    .describe(
+      `The newest top-level message's text as one plain line: basic markdown (code fences, inline code, bold, links) taken out, whitespace collapsed, and cut to ${ROOM_LAST_LINE_MAX_CHARS} characters with no ellipsis added. \`null\` when there is no top-level message with text the viewer may read — a member who is not the owner is never shown a message from before they joined; absent from a source that cannot say. Thread replies are skipped: the room's own last line is what its row stands for.`
     ),
 }).openapi('RoomSummary');
 
@@ -791,6 +830,14 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .optional()
     .describe(
       'Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means "this source cannot say", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn.'
+    ),
+  viewerCan: z
+    .object({
+      setUpFiles: z.boolean(),
+    })
+    .optional()
+    .describe(
+      'Actions THIS reader may take in this room. The server still enforces every action; this only keeps refused controls off the screen. Absent means this source cannot say.'
     ),
   reactionFrequents: z
     .array(z.string())
@@ -1881,7 +1928,7 @@ export const SetAuthorHandleRequestSchema = z
       .string()
       .max(64)
       .describe(
-        'The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED.'
+        'The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN, HANDLE_RESERVED or HANDLE_LOOKALIKE.'
       ),
   })
   .openapi('SetAuthorHandleRequest');

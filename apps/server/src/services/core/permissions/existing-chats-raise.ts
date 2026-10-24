@@ -346,8 +346,12 @@ async function agentLevel(
  * Whether a chat's mode is one a person picks on purpose rather than lands on:
  * Plan, or a mode at the Ask stop other than the runtime's default (Claude
  * Code's Never ask, which refuses what is not allowed instead of asking).
+ * Also read at every turn start, where such a chat keeps its mode (DOR-3175).
+ *
+ * @param declared - The chat's runtime's declared modes.
+ * @param modeId - The chat's stored mode.
  */
-function isChosenMode(declared: DeclaredModes, modeId: string): boolean {
+export function isChosenMode(declared: DeclaredModes, modeId: string): boolean {
   if (modeId === PLAN_MODE_ID) return true;
   const mode = declared.values.find((m) => m.id === modeId);
   return mode !== undefined && mode.stop === 'ask' && modeId !== declared.default;

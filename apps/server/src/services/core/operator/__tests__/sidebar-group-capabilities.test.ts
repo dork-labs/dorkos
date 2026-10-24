@@ -336,7 +336,7 @@ describe('the sidebar-section capabilities', () => {
     it('MOVES an item that is already in another section, and says where from', async () => {
       // Membership is single-parent everywhere the app writes it — the client's
       // own `moveToGroup` lifts a ref out of every section before filing it, and
-      // `build-library-sections.ts` assumes that when it works out who is still
+      // `build-sections.ts` assumes that when it works out who is still
       // ungrouped. An append would put one row in two sections, a state no
       // surface in the app can produce and none knows how to undo.
       seed(THREE_SECTIONS());

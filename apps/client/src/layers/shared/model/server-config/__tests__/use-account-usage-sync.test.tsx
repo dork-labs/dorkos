@@ -47,7 +47,7 @@ function renderSync(queryClient: QueryClient) {
 describe('useAccountUsageSync', () => {
   it('subscribes to account_usage', () => {
     renderSync(createTestQueryClient());
-    expect([...handlers.keys()]).toEqual(['account_usage']);
+    expect([...handlers.keys()]).toEqual(['notification', 'account_usage']);
   });
 
   it('upserts an event into its runtime’s cached usage with no request', () => {
@@ -80,5 +80,12 @@ describe('useAccountUsageSync', () => {
     handlers.get('account_usage')!({ ...ACCT_2, runtime: 'codex', accountId: 'default' });
 
     expect(queryClient.getQueryData(accountKeys.usage('codex'))).toBeUndefined();
+  });
+  it('refreshes account state when a sign-in episode changes', () => {
+    const queryClient = createTestQueryClient();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    renderSync(queryClient);
+    handlers.get('notification')!({ kind: 'signin.required' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: accountKeys.all });
   });
 });

@@ -21,6 +21,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Chat: sending, steering and answering inside a chat, at the chat’s own level': [
     'POST /api/direct-chats',
     'POST /api/sessions/:id/opened',
+    'POST /api/sessions/:id/stream-health',
     'POST /api/sessions/:id/interrupt',
     'POST /api/sessions/:id/wait',
     'POST /api/sessions/:id/fork',
@@ -55,7 +56,6 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/rooms/:id/members',
     'PATCH /api/rooms/:id/members/:authorId',
     'DELETE /api/rooms/:id/members/:authorId',
-    'PATCH /api/rooms/authors/:authorId/handle',
     'POST /api/rooms/:id/halt',
     'POST /api/rooms/:id/halt/:authorId',
     'POST /api/rooms/:id/holds/:authorId/promote',
@@ -133,6 +133,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/workspaces/ports',
     'POST /api/workspaces/:id/pin',
     'POST /api/workbench/probe',
+    'POST /api/workbench/bridge',
     'POST /api/workbench/sign',
     'POST /api/marketplace/packages/:name/preview',
     'POST /api/marketplace/packages/:name/check-files',
@@ -163,6 +164,11 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/push/subscriptions',
     'DELETE /api/push/subscriptions/:id',
     'DELETE /api/devices/sessions/:id',
+  ],
+  // DOR-3156/3172: the route reads whose handle it is and whether the socket is
+  // encrypted, so the path alone cannot.
+  'Handles: a person’s own anywhere; an agent’s refused by the route on plain-http Wi-Fi': [
+    'PATCH /api/rooms/authors/:authorId/handle',
   ],
   'Work and agents at the chat level: tasks, commitments, pausing, agent settings': [
     'DELETE /api/tasks/:id',
@@ -216,6 +222,11 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'POST /api/canvas/docs/:id/routes/:routeId/review',
       'POST /api/canvas/docs/:id/routes/:routeId/approve',
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
+    ],
+  'Document work review: one run under a route that is already allowed, or clearing it, which only narrows':
+    [
+      'POST /api/canvas/docs/:id/work/:batchId/replay',
+      'POST /api/canvas/docs/:id/work/:batchId/clear',
     ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/desktop/sign-in',

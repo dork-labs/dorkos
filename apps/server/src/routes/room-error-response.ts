@@ -38,6 +38,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   INVALID_SLUG: 400,
   HANDLE_TAKEN: 409,
   HANDLE_RESERVED: 409,
+  HANDLE_LOOKALIKE: 409,
   INVALID_HANDLE: 400,
   NESTED_THREAD: 400,
   // A 500 for the same reason `RESERVED_NATURAL_KEY` is one: no request can

@@ -267,3 +267,18 @@ export function factsRateLimit(
     };
   };
 }
+
+/**
+ * A limiter counted by the account a request names, never by address. Only
+ * for a limit that sits beside an address limiter, never in place of one: the
+ * per-account password limit (`middleware/auth-rate-limit.ts`, DOR-3172)
+ * exists precisely to see a guesser spread across addresses, which
+ * `rateLimitKey` cannot. Kept here so every limiter is still built in this
+ * module (`rate-limit-key-coverage.test.ts`).
+ *
+ * @param policy - The window, the limit and the bucket bound.
+ * @returns The limiter; key each hit by the account.
+ */
+export function createAccountRateLimiter(policy: RateLimitPolicy): RateLimiter {
+  return createRateLimiter(policy);
+}

@@ -235,6 +235,8 @@ export interface DispatchMessageOpts {
    * `MessageOpts.permissionCeiling` is the authority on what it means.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling is a continuation's hold. Passed straight through; see `MessageOpts.continuationHold`. */
+  continuationHold?: true;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -470,6 +472,7 @@ export interface DispatchPlan {
     | 'settings'
     | 'newSessionPermissionMode'
     | 'permissionCeiling'
+    | 'continuationHold'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'

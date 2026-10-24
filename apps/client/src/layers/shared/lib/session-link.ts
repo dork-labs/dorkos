@@ -96,6 +96,10 @@ export const sessionSearchSchema = mergeDialogSearch(
       .catch(undefined),
     seed: z.literal('dorkbot-help').optional().catch(undefined),
     continuedFrom: z.string().optional(),
+    // Which face of an agent's Direct chat is on screen (DOR-3074): the DM by
+    // default, or `session` for the working session behind it. A real param
+    // rather than local state, so Back, Forward and desktop tabs keep it.
+    view: z.literal('session').optional().catch(undefined),
   })
 );
 

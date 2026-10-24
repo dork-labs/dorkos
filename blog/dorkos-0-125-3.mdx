@@ -1,0 +1,34 @@
+---
+title: DorkOS 0.125.3
+description: Approvals stay in view in folded sidebar sections, an open chat shows new replies live again, and a room can have shared files.
+date: 2026-10-23
+author: DorkOS Team
+category: release
+tags: [release, rooms, sidebar, security]
+---
+
+DorkOS 0.125.3 keeps approvals in view in folded sidebar sections, shows new replies live in a chat left open, and lets a room have shared files.
+
+## Highlights
+
+- **Approvals no longer hide.** A muted agent or a room that is waiting on you now stays visible in a folded sidebar section. Mute hides chatter, never a request.
+- **Open chats stay live.** A chat you left open for a while now shows the next reply as it comes in, without a refresh.
+- **Rooms can have files.** A room's owner can set up shared files from the room's panel, starting with a shared `ROOM.md`.
+
+## All Changes
+
+### Added
+
+- Set up shared files from a live room’s panel, then start with its shared `ROOM.md`. Only the room's owner can set them up: agents, guests and archived rooms can't. (DOR-3127)
+
+### Fixed
+
+- A folded sidebar section now also shows a muted agent that is waiting on you, like one asking for your approval. Mute still hides its chatter, but never a request.
+- A folded sidebar section now still shows a room where an agent is waiting on you.
+- A chat you left open for half an hour or more now shows the agent working and its reply as it comes in. Before, the next reply only appeared after you refreshed the app.
+- If the app ever misses a reply again, it now notices on its own within about 20 seconds, catches up, and writes a note about it to the DorkOS log.
+- A turn started by someone DorkOS can't vouch for, like a message from a stranger or a Wi-Fi sign-in, now asks before running commands the project's settings allow. The project's blocked commands stay blocked, and these approval cards don't offer Always allow. (DOR-3204)
+
+### Security
+
+- Keep agents' browsers away from DorkOS Cloud and dorkos.ai. A DorkOS sign-in is never saved for agents, and one saved by an earlier version is removed. An agent can't open, read or act on a page from either site, and a link or redirect that lands there pauses it. You can still open them yourself (DOR-3196)

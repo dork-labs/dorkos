@@ -10,10 +10,18 @@
  * level on that turn's words. {@link ceilingForContinuation} is the one answer
  * those paths ask.
  *
- * Written by the turn-level seam on every turn (`recordTurnLevels`), and only
- * when the answer changes, so the hot path adds no write for an ordinary turn.
- * A chat with no record (never ran since this existed, or no database) reads as
- * held: an automatic path errs toward asking.
+ * Written by the turn-level seam on every turn a person, an agent or a stranger
+ * starts (`recordTurnLevels`), and only when the answer changes, so the hot path
+ * adds no write for an ordinary turn. A turn this hold itself clamped
+ * (`MessageOpts.continuationHold`) writes nothing: it read no new words, so it
+ * leaves the answer the last real turn gave.
+ *
+ * A chat with no record reads as NOT held (DOR-3203). Only a turn that really
+ * read words DorkOS cannot vouch for writes `true`, and every chat that ran
+ * before the column existed is settled to `false` by its migration; reading
+ * "nothing recorded" as held clamped every such chat woken after the 0.124.1
+ * upgrade, and each clamped turn then recorded itself as held. A record that
+ * exists but cannot be READ is the other case: it may say held, so it is.
  *
  * @module services/core/turn-power/continuation-hold
  */
@@ -42,7 +50,7 @@ export function setContinuationHoldDb(handle: Db | undefined): void {
 
 /**
  * Record whether a chat's latest turn read outsider words. Never throws: a
- * failed write leaves the last answer, and no record reads as held.
+ * failed write leaves the last answer.
  *
  * @param sessionId - The id the turn was sent under.
  * @param held - Whether the turn read words DorkOS cannot vouch for.
@@ -73,8 +81,10 @@ export function noteTurnHold(sessionId: string, held: boolean): void {
 }
 
 /**
- * Whether a chat's latest turn was held: read under the chat's first id, and
- * `true` when nothing is recorded or the record cannot be read.
+ * Whether a chat's latest turn was held, read under the chat's first id.
+ * `false` when nothing is recorded, or when there is no database to record in
+ * (tests, and nothing writes a hold there either); `true` when the record
+ * cannot be read, since it may say held.
  *
  * @param sessionId - The chat.
  */
@@ -82,28 +92,37 @@ export function lastTurnHeld(sessionId: string): boolean {
   const key = primaryOf(sessionId);
   const cached = written.get(key);
   if (cached !== undefined) return cached;
-  if (!db) return true;
+  if (!db) return false;
   try {
     const row = db
       .select({ held: sessionMetadata.lastTurnHeld })
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, key))
       .get();
-    return row?.held !== false;
-  } catch {
+    return row?.held === true;
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read the turn hold; holding the turn', {
+      sessionId: key,
+      err: err instanceof Error ? err.message : String(err),
+    });
     return true;
   }
 }
 
 /**
  * The ceiling a turn that picks a chat up on its own carries, as the spread a
- * dispatch takes: the runtime's default when the chat's latest turn was held
- * (or nothing is recorded), nothing otherwise.
+ * dispatch takes: the runtime's default when the chat's latest turn was held,
+ * nothing otherwise. The hold is named as a continuation's
+ * (`continuationHold`), so the turn it clamps is held in power only: it
+ * neither records itself as held nor marks what it posts as an outsider's.
  *
  * @param sessionId - The chat.
  */
 export function ceilingForContinuation(sessionId: string): {
   permissionCeiling?: TurnPermissionBound;
+  continuationHold?: true;
 } {
-  return lastTurnHeld(sessionId) ? { permissionCeiling: 'runtime-default' } : {};
+  return lastTurnHeld(sessionId)
+    ? { permissionCeiling: 'runtime-default', continuationHold: true }
+    : {};
 }

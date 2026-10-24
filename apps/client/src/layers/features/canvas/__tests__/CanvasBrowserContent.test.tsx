@@ -70,6 +70,7 @@ vi.mock('@/layers/shared/model', () => {
       createProxyUrl,
       probeLoopbackPort,
       openRoomCanvasDocument,
+      getFrameBridgeStatus: async () => ({ bridge: 'unknown' }),
     }),
     // The DevTools bridge this component mounts asks `useSessionId` which
     // conversation is open, and that reads the route's search params. No

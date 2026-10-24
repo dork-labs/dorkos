@@ -1,6 +1,6 @@
 /**
- * The subset of the `codex app-server` protocol DorkOS speaks (codex-cli
- * 0.154.0; research `20261005_codex-app-server-protocol-0154.md`).
+ * The subset of the `codex app-server` protocol DorkOS speaks (taken at codex-cli
+ * 0.154.0, re-pinned at 0.163.0; research `20261005_codex-app-server-protocol-0154.md`).
  *
  * Hand-written on purpose: the generated TypeScript is hundreds of files and
  * carries no runtime check. What keeps these types honest is
@@ -18,7 +18,7 @@
  * The Codex version this protocol subset was taken from. Held equal to the
  * committed snapshot's `binaryVersion` by `protocol-schemas.test.ts`.
  */
-export const PINNED_CODEX_APP_SERVER_VERSION = '0.154.0';
+export const PINNED_CODEX_APP_SERVER_VERSION = '0.163.0';
 
 /** Client → server requests DorkOS sends. */
 export const CLIENT_REQUEST_METHODS = [
@@ -52,6 +52,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   'error',
   'thread/started',
   'thread/status/changed',
+  'thread/readState/changed',
   'thread/archived',
   'thread/deleted',
   'thread/unarchived',
@@ -59,7 +60,9 @@ export const SERVER_NOTIFICATION_METHODS = [
   'thread/reverted',
   'skills/changed',
   'thread/name/updated',
+  'thread/attachment/updated',
   'thread/goal/updated',
+  'thread/prediction/updated',
   'thread/goal/cleared',
   'thread/queue/changed',
   'project/changed',
@@ -94,6 +97,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   'mcpServer/startupStatus/updated',
   'mcpServer/event/stream/notification',
   'account/updated',
+  'account/gatewayOAuth/changed',
   'account/rateLimits/updated',
   'app/list/updated',
   'remoteControl/status/changed',

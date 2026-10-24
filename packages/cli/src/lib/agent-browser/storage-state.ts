@@ -4,7 +4,10 @@
  *
  * The file holds live cookies. It is written `0600`, atomically (a reader sees
  * the old file or the new one, never half of one), and nothing in this module
- * ever prints a value from it.
+ * ever prints a value from it. It never holds a DorkOS Cloud sign-in: every
+ * write and every read drops the Cloud origin's cookies and page storage
+ * (`@dorkos/shared/cloud-origin`, DOR-3196), because every agent's browser
+ * starts from this file.
  *
  * @module lib/agent-browser/storage-state
  */
@@ -18,6 +21,8 @@ import {
   type StorageStateOrigin,
 } from '@dorkos/shared/agent-browser';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
+import { cloudOriginEntries, withoutCloudOrigin } from '@dorkos/shared/cloud-origin';
+import { env } from '../../env.js';
 import type { CdpPipe } from './cdp-pipe.js';
 
 /** A cookie as Chrome's `Storage.getCookies` reports it (the fields used here). */
@@ -138,14 +143,30 @@ export async function collectStorageState(
 }
 
 /**
- * Write the saved session: `0600`, atomically, parent folder `0700`.
+ * The Cloud origin list for this computer: production, plus the Cloud address
+ * the operator configured in the environment, the same two variables the
+ * server reads.
+ */
+function cliCloudOrigins() {
+  return cloudOriginEntries({
+    DORKOS_CLOUD_URL: env.DORKOS_CLOUD_URL,
+    DORKOS_CLOUD_API_URL: env.DORKOS_CLOUD_API_URL,
+  });
+}
+
+/**
+ * Write the saved session: `0600`, atomically, parent folder `0700`, with
+ * every Cloud cookie and Cloud page storage left out.
  *
  * @param file - The storage-state path.
  * @param state - What to save.
+ * @returns What was saved, which is `state` without the Cloud origin.
  */
-export async function writeStorageState(file: string, state: StorageState): Promise<void> {
+export async function writeStorageState(file: string, state: StorageState): Promise<StorageState> {
+  const saved = withoutCloudOrigin(state, cliCloudOrigins()).state;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  await writeFileAtomic(file, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await writeFileAtomic(file, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
+  return saved;
 }
 
 /** Thrown when the saved session file exists but cannot be read as one. */
@@ -160,7 +181,9 @@ export class UnreadableStorageStateError extends Error {
 }
 
 /**
- * Read the saved session, or `null` when there is none yet.
+ * Read the saved session, or `null` when there is none yet. A Cloud sign-in
+ * saved by an older version is left out of what is returned; the server
+ * removes it from the file itself.
  *
  * @param file - The storage-state path.
  * @throws {UnreadableStorageStateError} When the file is there but is not a session.
@@ -174,7 +197,7 @@ export function readStorageState(file: string): StorageState | null {
     throw err;
   }
   try {
-    return StorageStateSchema.parse(JSON.parse(raw));
+    return withoutCloudOrigin(StorageStateSchema.parse(JSON.parse(raw)), cliCloudOrigins()).state;
   } catch {
     throw new UnreadableStorageStateError(file);
   }

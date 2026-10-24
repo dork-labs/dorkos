@@ -1,4 +1,5 @@
 /** Independently authenticated loopback listener for runtime connector tools. */
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../../core/capabilities/mcp-input/limits.js';
 import { createServer, type IncomingMessage, type RequestListener, type Server } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
@@ -48,7 +49,7 @@ async function closeServer(server: Server): Promise<void> {
 /** The JSON-RPC answer to a body that could not be read, and to any other error. */
 const PARSE_ERROR = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null };
 
-const parseJson = bodyParser.json({ limit: '1mb' });
+const parseJson = bodyParser.json({ limit: MCP_MAX_REQUEST_BODY_BYTES });
 
 /**
  * The listener's routes and middleware, in Express's order: the rate limit,

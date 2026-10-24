@@ -37,7 +37,6 @@ import {
   presetTableFor,
   resolveFilesAndCommands,
 } from '@dorkos/shared/permissions';
-import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import {
   extensionDomainName,
@@ -58,7 +57,6 @@ import {
   type PermissionChangeRecord,
   type PermissionWriter,
 } from './permission-history.js';
-import type { ActivityService } from '../../activity/activity-service.js';
 import { undoPermissionChange } from './permission-undo.js';
 import {
   ARRIVAL_NOTE,
@@ -76,7 +74,10 @@ import {
 } from './permission-values.js';
 import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
+import type { PermissionServiceDeps } from './permission-service-deps.js';
+
 export { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE, PermissionError } from './permission-values.js';
+export type { PermissionServiceDeps, StoredTrustStops } from './permission-service-deps.js';
 
 /** One action as the permission pages list it. */
 export interface PermissionActionInfo {
@@ -114,52 +115,6 @@ export interface PermissionAgentRef {
 
 /** One agent with a Files & commands stop of its own, as the overview lists it. */
 type DefaultFilesException = PermissionsResponse['filesAndCommands']['exceptions'][number];
-
-/** The stored Files & commands stops: the global one, and each runtime's own. */
-export interface StoredTrustStops {
-  /** `runtimes.defaultTrustStop`. */
-  global: PermissionStop | null;
-  /** Each runtime's own stop, by runtime id (`claude-code`, `codex`, `opencode`). */
-  perRuntime: Readonly<Record<string, PermissionStop | null>>;
-}
-
-/** Everything the service reads and writes through. */
-export interface PermissionServiceDeps {
-  /** The install's `permissions` config section, read and written whole. */
-  config: {
-    get: () => PermissionConfigInput & { upgradeSweptVersion: string | null };
-    set: (next: PermissionConfigInput & { upgradeSweptVersion: string | null }) => void;
-    /** The stored Files & commands stops. */
-    trustStops: () => StoredTrustStops;
-    /** Write the global Files & commands stop (`null` = not set). */
-    setGlobalTrustStop: (stop: PermissionStop | null) => void;
-    /**
-     * Write one runtime's own Files & commands stop (`null` = not set). Returns
-     * false for a runtime this build does not know, which writes nothing.
-     */
-    setRuntimeTrustStop: (runtime: string, stop: PermissionStop | null) => boolean;
-  };
-  /** The registered agents and the manifest write-through. */
-  agents: {
-    list: () => PermissionAgentRef[];
-    /** Read an agent's stored overrides fresh off its manifest file. */
-    readPermissions: (projectPath: string) => Promise<AgentPermissions | undefined>;
-    /** Write an agent's overrides through the manifest (absent = inherit all). */
-    writePermissions: (agentId: string, next: AgentPermissions | undefined) => Promise<void>;
-    /**
-     * The agent's settings exactly as its file holds them, for the arrival
-     * screen, which must see what it is narrowing. Defaults to
-     * {@link readPermissions}.
-     */
-    readStoredPermissions?: (projectPath: string) => Promise<AgentPermissions | undefined>;
-  };
-  /** Every action an agent can reach, with its area. Read per call. */
-  actions: () => PermissionActionInfo[];
-  /** Whether the record of screened arrivals can be read and saved. */
-  arrivalsHealthy?: () => boolean;
-  /** The Activity log, absent in a process with none. */
-  activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
-}
 
 /** How far back the agent page looks for a change made outside DorkOS. */
 const OUTSIDE_HISTORY_DEPTH = 50;
@@ -397,7 +352,13 @@ export class PermissionService {
     record: Omit<PermissionChangeRecord, 'actionTitle'>,
     titles: (id: string) => string
   ) {
-    await recordPermissionChange(this.deps.activity, { ...record, actionTitle: titles });
+    // How many existing chats a change to a level reaches (DOR-3175).
+    const reach = await this.deps.levelReach?.(record.changes);
+    await recordPermissionChange(this.deps.activity, {
+      ...record,
+      ...(reach ? { reach } : {}),
+      actionTitle: titles,
+    });
   }
 
   /**

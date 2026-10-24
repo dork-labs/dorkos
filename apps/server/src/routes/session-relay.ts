@@ -13,13 +13,15 @@
  *   the writes below; it closes the relay and pauses the link, as Pause does,
  *   so it needs no password: it only narrows access.
  * - `POST /link`, `PATCH /level`, `POST /pause`, `POST /resume` and
- *   `DELETE /link`: behind {@link requirePersonAtThisComputer}, the owner at
- *   this computer using the app, so nothing reached from the web (the relay
- *   itself included) can link a computer, raise what the web may do, or undo
- *   a pause. Linking also needs an owner account, since the relay only ever
- *   serves one.
+ *   `DELETE /link`: behind {@link requirePersonAtThisComputer}, the owner
+ *   using the app at this computer or signed in on an encrypted connection
+ *   (DOR-3172), so neither the relay itself nor a plain-`http` Wi-Fi sign-in
+ *   can link a computer, raise what the web may do, or undo a pause. Linking
+ *   also needs an owner account, since the relay only ever serves one.
  * - `/passkeys`: the approvals passkeys a web approval is signed with, behind
- *   the same two bars (`routes/session-relay-passkeys.ts`, B4c).
+ *   the same two bars held to this computer (`routes/session-relay-passkeys.ts`,
+ *   B4c): a passkey strengthens a sign-in, so it is added where the owner is
+ *   already proved best.
  * - **The owner's password, on top, for every change that opens access or
  *   raises it**: linking, raising the level to Full control, resuming, and
  *   adding or removing an approvals passkey. The
@@ -57,6 +59,7 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody } from '../lib/route-utils.js';
@@ -369,11 +372,24 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     return c.json(deps.presence());
   });
 
-  // The approvals passkeys, behind the same two bars (B4c).
+  /**
+   * The person bar, held to this computer: an approvals passkey is a stronger
+   * proof of who you are, so it is added only where the owner already is
+   * proved best, and its ceremony finishes on the loopback return page anyway.
+   */
+  function refusePersonHere(c: Context<ApiEnv>): Response | undefined {
+    if (isAtThisComputer(honoRequestFacts(c))) return refusePerson(c);
+    return c.json(
+      errorBody('Change this on the computer DorkOS runs on.', SESSION_RELAY_NEEDS_THIS_COMPUTER),
+      403
+    );
+  }
+
+  // The approvals passkeys, behind the same two bars at this computer (B4c).
   router.route(
     '/passkeys',
     createSessionRelayPasskeyRoutes(deps.passkeys, {
-      refusePerson,
+      refusePerson: refusePersonHere,
       refusePassword,
       readPin: deps.readPin,
     })

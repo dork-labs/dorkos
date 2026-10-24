@@ -10,7 +10,7 @@
  *    conversation's working directory, and starting the next session where the
  *    last one is happening is what "last used" means while you are in it.
  * 2. **The agent you opened most recently**, from `entities/interactions` —
- *    the same per-person record Today is ordered by. It survives a reload and
+ *    the same per-person record the session switcher reads. It survives a reload and
  *    is still right after you navigate away to Marketplace or Team.
  * 3. **Nobody.** The item still works: `useStartNewSession()` with no directory
  *    opens a conversation in the server's own root. The note line is simply not

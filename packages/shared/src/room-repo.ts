@@ -105,6 +105,12 @@ export const RoomRepoCapsSchema = z
 /** The caps a room repo carries. See {@link RoomRepoCapsSchema}. */
 export type RoomRepoCaps = z.infer<typeof RoomRepoCapsSchema>;
 
+/** What `POST /api/rooms/{id}/repo` returns after the room has shared files. */
+export interface EnableRoomRepoResponse {
+  /** The room's existing or newly-created binding. */
+  repo: RoomRepoSidecar;
+}
+
 /**
  * `room-repo.json` — the file-first record that a room has a repo.
  *

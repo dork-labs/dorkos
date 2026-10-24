@@ -52,7 +52,7 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
       <ResponsiveSheetContent
         data-slot="profile-sheet"
         style={{ '--identity-color': face.color } as CSSProperties}
-        className="flex flex-col gap-0 overflow-hidden p-0"
+        className="flex flex-col gap-0 overflow-hidden p-0 outline-none"
         // Hand focus back to whatever opened this sheet, rather than Radix's
         // own default (DOR-1274). Radix restores to whatever had focus at MOUNT
         // time, which for several openers — a hover card's "View profile"
@@ -67,6 +67,13 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
         // one is on screen, but `open()` only captures on the FIRST open of a
         // chain — the root is the identity the capture was made under, and the
         // one `takeProfileOpener` checks it against (adversarial review).
+        // Focus lands on the sheet itself, not its first control: Radix's
+        // default put a focus ring on the face the moment the sheet opened
+        // (the redesign sign-off). Tab still starts at the face.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+        }}
         onCloseAutoFocus={(event) => {
           const opener = takeProfileOpener(view.stack.rootMemberId);
           if (opener === null || !opener.isConnected) return;

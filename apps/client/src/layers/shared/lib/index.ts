@@ -424,3 +424,4 @@ export { awayFromTheComputerSentence, serverSentence } from './server-sentence';
 export { appRoutes } from './route-factory';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
+export { WORK_PANEL_ID } from './right-panel-tab-ids';

@@ -14,6 +14,7 @@
  *
  * @module features/conversation/ui/message/MessageGutter
  */
+import type { ReactElement, ReactNode } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { useAppStore, type MessageAuthor as MessageAuthorIdentity } from '@/layers/shared/model';
 import { formatAbsoluteTime, formatTime } from '../../lib/format-entry-time';
@@ -38,6 +39,11 @@ export interface MessageGutterProps {
   onViewProfile?: () => void;
   /** True when this message's author is the person reading. */
   isSelf?: boolean;
+  /**
+   * Wrap the avatar, when the host puts something over it: an agent's card
+   * (DOR-3074). Omitted, the avatar is drawn as it always was.
+   */
+  renderAvatar?: (avatar: ReactElement) => ReactNode;
   className?: string;
 }
 
@@ -47,6 +53,7 @@ export function MessageGutter({
   at,
   onViewProfile,
   isSelf,
+  renderAvatar,
   className,
 }: MessageGutterProps) {
   const { slots, position } = useMessageStyles();
@@ -60,32 +67,32 @@ export function MessageGutter({
 
   return (
     <div data-slot="message-gutter" className={cn(slots.gutter(), className)}>
-      {opensAuthorGroup(position) ? (
-        <MessageAuthorAvatar author={author} onViewProfile={onViewProfile} isSelf={isSelf} />
-      ) : (
-        time.length > 0 && (
-          // A `<time>` with its own date on it, and the whole date as the title
-          // a pointer reveals — a conversation scrolled back a week otherwise
-          // shows nothing but clock readings that nothing anywhere can date.
-          //
-          // Revealed by FOCUS as well as by hover. It was hover-only in one of
-          // the two rows this replaces, so a keyboard reader crossing a run of
-          // messages from one person had no way to see when any of them was
-          // said.
-          <time
-            dateTime={at}
-            title={formatAbsoluteTime(at ?? '')}
-            className={cn(
-              slots.avatarTimestamp(),
-              showTimestamps
-                ? 'text-msg-timestamp'
-                : 'group-focus-within:text-msg-timestamp group-hover:text-msg-timestamp text-transparent'
-            )}
-          >
-            {time}
-          </time>
-        )
-      )}
+      {opensAuthorGroup(position)
+        ? (renderAvatar ?? ((avatar: ReactElement) => avatar))(
+            <MessageAuthorAvatar author={author} onViewProfile={onViewProfile} isSelf={isSelf} />
+          )
+        : time.length > 0 && (
+            // A `<time>` with its own date on it, and the whole date as the title
+            // a pointer reveals — a conversation scrolled back a week otherwise
+            // shows nothing but clock readings that nothing anywhere can date.
+            //
+            // Revealed by FOCUS as well as by hover. It was hover-only in one of
+            // the two rows this replaces, so a keyboard reader crossing a run of
+            // messages from one person had no way to see when any of them was
+            // said.
+            <time
+              dateTime={at}
+              title={formatAbsoluteTime(at ?? '')}
+              className={cn(
+                slots.avatarTimestamp(),
+                showTimestamps
+                  ? 'text-msg-timestamp'
+                  : 'group-focus-within:text-msg-timestamp group-hover:text-msg-timestamp text-transparent'
+              )}
+            >
+              {time}
+            </time>
+          )}
     </div>
   );
 }

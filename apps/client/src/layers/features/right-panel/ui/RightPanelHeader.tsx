@@ -251,7 +251,14 @@ function TabStrip({
           // which clips the active tab's `shadow-sm` and the focus ring against the
           // scroll box. The `-my-1 py-1` pair gives both 4px of room without making
           // the header any taller.
-          className="-my-1 overflow-x-auto overflow-y-hidden py-1"
+          //
+          // Below desktop (DOR-3075) the strip also snaps to a tab's start and
+          // keeps a fade's width of room past its last tab, so a resting strip
+          // and a strip scrolled to its end never leave a tab half-drawn under
+          // the fade beside the panel's buttons. The docked desktop strip is
+          // unchanged.
+          data-testid="right-panel-tabs-scroller"
+          className="-my-1 overflow-x-auto overflow-y-hidden py-1 max-lg:snap-x max-lg:snap-proximity max-lg:scroll-px-6 max-lg:pe-6"
         >
           <TabsList
             ref={tablistRef}
@@ -264,7 +271,7 @@ function TabStrip({
               return (
                 <div
                   key={contribution.id}
-                  className="group/view relative flex shrink-0 items-center py-2 md:py-0"
+                  className="group/view relative flex shrink-0 items-center py-2 max-lg:snap-start md:py-0"
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>

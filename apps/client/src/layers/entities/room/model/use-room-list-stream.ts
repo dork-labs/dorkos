@@ -143,11 +143,16 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
 
   queryClient.setQueriesData<RoomSummary[]>({ queryKey: roomKeys.lists() }, (rooms) =>
     Array.isArray(rooms)
-      ? rooms.map((room) =>
-          room.id === event.threadId && room.unreadCount !== null
-            ? { ...room, unreadCount: Math.min(room.unreadCount, event.unreadCount) }
-            : room
-        )
+      ? rooms.map((room) => {
+          if (room.id !== event.threadId || room.unreadCount === null) return room;
+          const unreadCount = Math.min(room.unreadCount, event.unreadCount);
+          // Mentions are a subset of the unread entries, so they can never
+          // outnumber them: a cursor that cleared the room clears its mention
+          // count too, without a round trip to recount it.
+          return room.mentionCount === undefined
+            ? { ...room, unreadCount }
+            : { ...room, unreadCount, mentionCount: Math.min(room.mentionCount, unreadCount) };
+        })
       : rooms
   );
 
@@ -255,6 +260,9 @@ export function useRoomListStream(): void {
   useEventSubscription(ROOM_LIST_EVENTS[2], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[3], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[4], refresh);
+  // A room whose turns started or stopped waiting on a person (DOR-3236): the
+  // list carries the count a folded section keeps the room on screen for.
+  useEventSubscription('room_awaiting', refresh);
 
   // The open room's own cache entry, kept honest independently of the list
   // above: `useRoom` never refetches on its own (`staleTime: Infinity` —

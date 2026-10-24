@@ -1,9 +1,9 @@
 /**
- * One section of one zone — a header and its rows (BC-28 → BC-31).
+ * One section — a header and its rows (BC-28 → BC-31).
  *
  * It composes `SectionHeader` and `SidebarModelRow` and decides nothing:
  * membership, order, the rollup arithmetic and whether the section exists at
- * all were all settled in `buildLibrarySections`. What lives here is chrome —
+ * all were all settled in `buildSections`. What lives here is chrome —
  * the collapse write, the drop zone, the roving tab stop, and the per-section
  * create affordance.
  *
@@ -13,7 +13,7 @@ import { memo, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
-import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
+import { SectionHeader, SidebarGroup, SidebarMenu, statusDotClass } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
@@ -28,12 +28,13 @@ import { useSectionChrome } from './useSectionChrome';
  * The sections whose membership changes without the operator asking for it, and
  * which therefore say so when it does (spec D5, "Arrive, settle, no pulse").
  *
- * Heads up and Today, and deliberately nothing else. A Library section only ever
- * changes because somebody dragged, renamed or created something — the act is
- * its own explanation, and a row announcing an arrival the operator just caused
- * is the decoration this rule exists to keep out.
+ * Direct messages, and deliberately nothing else: an agent or a person can
+ * start a conversation with you, and its row arriving is news. Every other
+ * section only changes because somebody dragged, renamed or created something —
+ * the act is its own explanation, and a row announcing an arrival the operator
+ * just caused is the decoration this rule exists to keep out.
  */
-const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['now', 'today']);
+const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['dms']);
 
 /**
  * The section header, memoized — because a draggable one is rebuilt on every
@@ -57,46 +58,38 @@ const MemoSectionHeader = memo(SectionHeader);
  * The ungrouped section a section id names, or `undefined` for one that is not
  * an ungrouped section at all.
  *
- * Three ids and no fallback. Pins is its own container, a hand-made section is
- * its own, and Heads up / Today / Getting started / Add-ons fill themselves —
- * none of them is "ungrouped", so none of them may borrow Agents' name for a
- * drag announcement that would then say "Over Agents." about a row that is
- * nowhere near it.
+ * Two ids and no fallback. A hand-made section is its own container, and the
+ * top items and Add-ons fill themselves — none of them is "ungrouped", so none
+ * of them may borrow another section's name for a drag announcement.
  *
  * @param id - The section's id.
  */
 function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId | undefined {
-  return id === 'channels' || id === 'dms' || id === 'agents' ? id : undefined;
+  return id === 'channels' || id === 'dms' ? id : undefined;
 }
 
 /**
  * The drag container a section's rows belong to.
  *
- * Pins is its own container; Channels, Direct messages and Agents are all
- * "ungrouped" — landing in any of them takes a row out of its section — and a
- * hand-made section is its own. Heads up, Today, Getting started and Add-ons
- * fill themselves, so they are `computed`, which the drop reducer rejects with
- * a sentence rather than in silence (R3).
+ * Channels and Direct messages are both "ungrouped" — landing in either takes
+ * a row out of its section — and a hand-made section is its own. The top items
+ * and Add-ons fill themselves, so they are `computed`, which the drop reducer
+ * rejects with a sentence rather than in silence (R3).
  *
  * @param id - The section's id.
  */
 export function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
-  if (id === 'pins') return { kind: 'pinned' };
   if (id.startsWith('group:')) return { kind: 'group', groupId: id.slice('group:'.length) };
-  if (id === 'now' || id === 'today' || id === 'getting-started' || id === 'addons') {
-    return { kind: 'computed', zone: id };
-  }
-  const section = ungroupedSectionId(id);
-  // Reached only after pins, hand-made sections and the computed zones have
-  // been answered above, so the fallback is unreachable in practice — spelled
-  // out rather than defaulted so a new Library section shows up as a wrong
-  // announcement here instead of silently becoming Agents everywhere.
-  return { kind: 'ungrouped', section: section ?? 'agents' };
+  if (id === 'top' || id === 'addons') return { kind: 'computed', section: id };
+  // Reached only after hand-made sections and the computed ones have been
+  // answered above, so the fallback is unreachable in practice — spelled out
+  // rather than defaulted so a new section shows up as a wrong announcement
+  // here instead of silently becoming Direct messages everywhere.
+  return { kind: 'ungrouped', section: ungroupedSectionId(id) ?? 'dms' };
 }
 
 /** The row-key prefix a section's rows drag under. */
 function containerPrefix(id: SidebarSectionModel['id']): string {
-  if (id === 'pins') return 'pinned';
   if (id.startsWith('group:')) return id.slice('group:'.length);
   return 'ungrouped';
 }
@@ -105,7 +98,7 @@ function containerPrefix(id: SidebarSectionModel['id']): string {
 export interface SidebarSectionProps {
   /** The section the model emitted. */
   section: SidebarSectionModel;
-  /** Fold or unfold every Library section at once — Alt/Option-click (BC-30). */
+  /** Fold or unfold every section at once — Alt/Option-click (BC-30). */
   onToggleAll: () => void;
 }
 
@@ -114,8 +107,9 @@ export interface SidebarSectionProps {
  *
  * **The whole header row is the toggle** and every destination is a leaf row,
  * so select-versus-expand is never ambiguous (BC-29). A collapsed section keeps
- * its rollup in the header's trailing slot, so folding never loses signal
- * (BC-31).
+ * its unread rows on screen under the header, so folding never loses signal
+ * (BC-31). The header carries no unread count — only "· N more", the rows the
+ * fold hides (DOR-3200).
  *
  * @param props - The section and the all-sections toggle.
  */
@@ -132,9 +126,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 
   // What this section's rows measure their FLIP against, and what "a row I have
   // not seen before" is asked of. One string, so both answers come from the same
-  // walk and cannot disagree about what order the section is in — including
-  // while Today's hold has frozen it, since the held rows ARE `section.rows` by
-  // the time they reach here.
+  // walk and cannot disagree about what order the section is in.
   const layoutKey = sectionLayoutKey(section.rows);
   const announcesArrivals = ANNOUNCES_ARRIVALS.has(section.id);
   // The boot gate, not this component's mount: rows turning up while the panel
@@ -158,10 +150,10 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 
   const rows = (
     <SidebarMenu id={bodyId}>
-      {/* **`initial={false}`, so boot never animates** (D5). Only the two
-          sections that announce arrivals are wrapped: everywhere else a row has
-          no `exit`, and an `AnimatePresence` around it would be a presence
-          wrapper per row bought for nothing. */}
+      {/* **`initial={false}`, so boot never animates** (D5). Only the section
+          that announces arrivals is wrapped: everywhere else a row has no
+          `exit`, and an `AnimatePresence` around it would be a presence wrapper
+          per row bought for nothing. */}
       {announcesArrivals ? <AnimatePresence initial={false}>{list}</AnimatePresence> : list}
     </SidebarMenu>
   );
@@ -179,11 +171,13 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   // what stops {@link MemoSectionHeader} from bailing out.
   const trailing = useMemo(
     () =>
-      section.collapsed && section.rollup !== undefined ? (
-        <SectionRollup section={section} />
+      section.collapsed && (section.rollup?.workingCount ?? 0) > 0 ? (
+        <FoldedWorkingDot count={section.rollup?.workingCount ?? 0} />
       ) : undefined,
     [section]
   );
+  const keptRows = section.collapsed ? (section.rollup?.keptRows ?? []) : [];
+  const keptLayoutKey = sectionLayoutKey(keptRows);
 
   /**
    * The header, drawn with or without the drag layer's activators.
@@ -208,12 +202,8 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {...(chrome.hasSectionAction ? { hasSectionAction: true } : {})}
       {...(chrome.adornment === undefined ? {} : { adornment: chrome.adornment })}
       {...(chrome.editor === undefined ? {} : { editor: chrome.editor })}
-      // Folded and holding unread: the label goes bold, whichever tier it is.
-      // `directed` also spells its count out in the roll-up; `activity` is a
-      // bold label and nothing else (design-decisions §18), so the weight is
-      // where it lives.
-      emphasized={section.collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
       {...(trailing === undefined ? {} : { trailing })}
+      {...(section.collapsed && section.rollup ? { hiddenCount: section.rollup.hiddenCount } : {})}
     />
   );
 
@@ -235,8 +225,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       data-sidebar-section={section.id}
       {...roving}
     >
-      {/* A headerless body — Heads up, Today, Getting started — is a zone's single
-          section and carries no label of its own; the zone's <h2> names it. */}
+      {/* A headerless body — the top items — carries no label of its own. */}
       {section.label === null ? null : groupId !== null ? (
         <Sortable id={`group-header::${groupId}`} data={{ type: 'group', groupId }}>
           {(b) => (
@@ -263,8 +252,29 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {chrome.dialogs}
       {/* **The fold, as a height spring** (spec D5) — `SidebarFoldBody` owns the
           numbers and the unmount, and the Dev Playground draws the same
-          component rather than a copy of it. */}
-      <SidebarFoldBody open={!section.collapsed}>
+          component rather than a copy of it. What folding leaves on screen
+          (BC-31) is the rows still asking for something, drawn exactly as they
+          are when the section is open, and only once the body has finished
+          leaving so no row is ever drawn twice. They are not drag sources —
+          the model says so — because a folded section has nowhere to drop. */}
+      <SidebarFoldBody
+        open={!section.collapsed}
+        whenFolded={
+          keptRows.length > 0 ? (
+            <SidebarMenu data-slot="sidebar-section-kept">
+              {keptRows.map((row) => (
+                <SidebarModelRow
+                  key={`${prefix}-${row.key}`}
+                  row={row}
+                  keyPrefix={prefix}
+                  layoutKey={keptLayoutKey}
+                  {...(sectionId === undefined ? {} : { sectionId })}
+                />
+              ))}
+            </SidebarMenu>
+          ) : undefined
+        }
+      >
         <Droppable
           id={`container::${bodyId}`}
           data={{ type: 'container', container: sectionContainer(section.id) }}
@@ -282,49 +292,22 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
 }
 
 /**
- * What a folded section says about what it is hiding, as one line of text
- * (BC-31, D1).
+ * The one mark a folded header carries: a dot while any of its members are
+ * working (BC-31).
  *
- * **Words, not marks.** It used to be a dot and a pill — two shapes borrowed
- * from the row vocabulary, sitting on a header where no row was. Now that every
- * header in the panel folds, folding is an ordinary act and its receipt is an
- * ordinary sentence: "12 · 3 unread". A screen reader gets the same string.
+ * **Never a number.** Unread needs no mark here at all — the rows asking for
+ * something stay on screen under the folded header — but work in flight has
+ * no row of its own to stay behind, so the header says it, once, without
+ * counting it — "Agent working" or "Agents working", never a number.
  *
- * Heads up says "2 need you" instead of a row count, because its rows include
- * the "N working" report — which needs nobody — and folding it must never be a
- * quiet way to hide a permission prompt.
- *
- * Renders nothing while the section is open: the rows say it better.
- *
- * @param props - The section.
+ * @param props.count - How many members are working; only one-or-more matters.
  */
-function SectionRollup({ section }: { section: SidebarSectionModel }) {
-  const rollup = section.rollup;
-  if (!section.collapsed || rollup === undefined) return null;
-  const parts: string[] = [];
-  const working = rollup.workingCount > 0 ? `${rollup.workingCount} working` : null;
-  if (rollup.needsYouCount !== undefined) {
-    // **Heads up counts what needs answering, and never a bare item count.**
-    // Its rows include the "N working" report, which needs nobody — so a Heads
-    // up holding only that report folded to "1", which reads as one thing
-    // waiting on you when nothing is. With nothing to answer, the fold says
-    // what is actually in there: the work.
-    if (rollup.needsYouCount > 0) parts.push(`${rollup.needsYouCount} need you`);
-    else if (working !== null) parts.push(working);
-  } else {
-    parts.push(`${rollup.count}`);
-  }
-  if (rollup.unread.tier === 'directed' && (rollup.unread.count ?? 0) > 0) {
-    parts.push(`${rollup.unread.count} unread`);
-  } else if (rollup.unread.tier === 'activity') {
-    // Tier one is a bold label and nothing else (design-decisions §18) — which
-    // the header wears through `emphasized`. "new" is here so a reader who
-    // cannot see the weight is told the same thing, and it is deliberately not
-    // the word "unread": beside "3 unread" on the same line, a bare "unread"
-    // read as a truncated count rather than as a different tier.
-    parts.push('new');
-  }
-  // Already spent above when Heads up had nothing to answer.
-  if (working !== null && !parts.includes(working)) parts.push(working);
-  return <>{parts.join(' · ')}</>;
+function FoldedWorkingDot({ count }: { count: number }) {
+  return (
+    <span
+      role="img"
+      aria-label={count === 1 ? 'Agent working' : 'Agents working'}
+      className={cn('inline-block size-1.5 rounded-full', statusDotClass('working'))}
+    />
+  );
 }

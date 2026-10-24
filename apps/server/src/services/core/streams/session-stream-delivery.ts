@@ -38,6 +38,7 @@ import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { askEntitlement } from '../../session/asks/ask-entitlement.js';
 import { logger } from '../../../lib/logger.js';
 import { peekCanvasService, sessionScope } from '../../canvas/index.js';
+import { openSessionStream, openSessionStreamCount } from './session-stream-watch.js';
 
 /** Everything a caller must resolve before a session stream can be delivered. */
 export interface SessionStreamPlan {
@@ -117,6 +118,13 @@ export async function deliverSessionStream(
   let iterator: AsyncIterator<SessionEvent> | undefined;
   /** The seq space every `id:` line below is stamped from. */
   let generation = UNOWNED_STREAM_GENERATION;
+  // The stream's own lifecycle, logged so a window that stopped hearing a chat
+  // leaves a trail: how it joined, how it left, and how many were watching.
+  const openedAt = Date.now();
+  let frames = 0;
+  let joined: 'cold' | 'resume' | undefined;
+  let releaseOpen: (() => void) | undefined;
+  let ended: 'window-left' | 'feed-retired' | 'error' = 'window-left';
 
   try {
     documents = attachDocumentStream(serialized, plan.documentNotifications);
@@ -144,6 +152,7 @@ export async function deliverSessionStream(
             .subscribeSession(ctx, sessionId, resume.seq, sink.signal)
             [Symbol.asyncIterator]();
           generation = serving;
+          joined = 'resume';
         } catch (err) {
           if (!(err instanceof StaleResumeCursorError)) throw err;
           logger.info('[session stream] unservable resume cursor — falling back to cold snapshot', {
@@ -191,12 +200,25 @@ export async function deliverSessionStream(
         [Symbol.asyncIterator]();
       // Same tick as the subscribe above, for the reason given at the top.
       generation = runtime.streamGeneration(ctx, sessionId);
+      joined = 'cold';
     }
+
+    releaseOpen = openSessionStream(chatIds);
+    logger.info('[session stream] a window subscribed', {
+      sessionId,
+      joined,
+      openWindows: openSessionStreamCount(sessionId),
+    });
 
     documents?.start();
     for (;;) {
       const { value, done } = await iterator.next();
-      if (done || sink.closed) break;
+      if (done || sink.closed) {
+        // `done` with the reader still here means the feed itself ended: the
+        // projector was retired, and the window has to reconnect to hear more.
+        if (done && !sink.closed) ended = 'feed-retired';
+        break;
+      }
       // The live half of the same rule. Only the three prompt events are
       // withheld: `interaction_resolved` names no tool and closing a card
       // nobody received is harmless, and everything else on this stream is the
@@ -207,8 +229,10 @@ export async function deliverSessionStream(
         data: stampEvent(chatIds, value),
         id: streamFrameId(sessionId, generation, value.seq),
       });
+      frames += 1;
     }
   } catch (err) {
+    ended = 'error';
     if (!sink.closed) {
       logger.warn('[session stream] error', {
         sessionId,
@@ -221,5 +245,15 @@ export async function deliverSessionStream(
     void iterator?.return?.();
     sink.end();
     documents?.stop();
+    if (releaseOpen) {
+      releaseOpen();
+      logger.info('[session stream] a window dropped', {
+        sessionId,
+        reason: ended,
+        frames,
+        durationMs: Date.now() - openedAt,
+        openWindows: openSessionStreamCount(sessionId),
+      });
+    }
   }
 }

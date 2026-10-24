@@ -8,6 +8,7 @@ import {
 } from '@dorkos/shared/canvas-channel-schemas';
 import type { RequestFacts } from '../../../../http/request-facts.js';
 import { resolveWithinCwd, sha256 } from '../../../../lib/file-route-guards.js';
+import { BoundaryError } from '../../../../lib/boundary.js';
 import { CanonicalFileIdentityChangedError } from './canonical-writer.js';
 import type { FileSaveIntentRow } from './file-save-intents.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
@@ -72,7 +73,30 @@ export function captureDocumentSaveOperator(
   return { owner, actor };
 }
 
-/** Derive a current source from the installed operator and registered session, never a caller path. */
+/**
+ * Resolve a document's root folder. A folder that is gone (deleted or moved
+ * since the document was opened) leaves a document this lane will never save,
+ * so it is "not available" rather than a fault worth retrying.
+ */
+async function realRoot(folder: string): Promise<string> {
+  try {
+    return await fs.realpath(folder);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR')
+      throw new DocChannelNotFoundError({ cause: error });
+    throw error;
+  }
+}
+
+/**
+ * Derive a current source from the installed operator and registered session, never a caller path.
+ *
+ * The root is the session's agent directory, or for a chat with no agent the
+ * folder the server recorded when the document was opened
+ * ({@link readSessionDocSourceDescriptor}). Either way the recorded folder must
+ * be that root, and the file must resolve inside it.
+ */
 export async function resolveCurrentDocumentSaveSource(
   deps: DocumentFileSaveDependencies,
   documentId: string,
@@ -91,13 +115,17 @@ export async function resolveCurrentDocumentSaveSource(
     !source.matchRoot
   )
     throw new DocChannelNotFoundError();
-  const root = await fs.realpath(source.rootCandidate);
-  if (
-    (await fs.realpath(source.resolvedCwd)) !== root ||
-    (await fs.realpath(source.matchRoot)) !== root
-  )
+  const root = await realRoot(source.rootCandidate);
+  if ((await realRoot(source.resolvedCwd)) !== root || (await realRoot(source.matchRoot)) !== root)
     throw new DocChannelNotFoundError();
-  const actual = await resolveWithinCwd(source.resolvedCwd, source.sourcePath);
+  // The document's own file must stay inside its root and the boundary. A file
+  // that does not is a document this lane will not save, not a server fault.
+  const actual = await resolveWithinCwd(source.resolvedCwd, source.sourcePath).catch(
+    (error: unknown) => {
+      if (error instanceof BoundaryError) throw new DocChannelNotFoundError({ cause: error });
+      throw error;
+    }
+  );
   const channel = deps.channels.getChannel(source.id);
   if (!channel) throw new DocChannelNotFoundError();
   const incarnation: CanvasDocIncarnation = {

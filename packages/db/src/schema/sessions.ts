@@ -47,6 +47,12 @@ export const sessionMetadata = sqliteTable(
     // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
     // NULL = "no explicit preference; use the runtime's default."
     permissionMode: text('permission_mode'),
+    // Whether a person set `permissionMode` on this chat themselves (DOR-3175).
+    // A mode a person picked is a cap the agent's level never raises past; a
+    // seeded one follows the agent's level up and down. NULL = never set by a
+    // person since this column existed: read as seeded, as the DOR-3106 raise
+    // read an unknown launch.
+    permissionModeByPerson: integer('permission_mode_by_person', { mode: 'boolean' }),
     model: text('model'),
     effort: text('effort'),
     fastMode: integer('fast_mode', { mode: 'boolean' }),

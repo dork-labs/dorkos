@@ -701,7 +701,7 @@ describe('the auto-approval allow-lists are spelled the way the SDK sends names'
     // approval card, the four room verbs included, whose whole point is not to
     // raise one where nobody is watching to answer it.
     const { DORKOS_AGENT_TOOLS, IDENTITY_SCOPED_TOOLS } =
-      await import('../../messaging/interactive-handlers.js');
+      await import('../../tool-gate/auto-allow.js');
     const unqualified = [...DORKOS_AGENT_TOOLS, ...IDENTITY_SCOPED_TOOLS].filter(
       (name) => !name.startsWith(IN_SESSION_TOOL_PREFIX)
     );
@@ -715,7 +715,7 @@ describe('the auto-approval allow-lists are spelled the way the SDK sends names'
   it('covers every always-loaded room verb, so a room turn raises no card', async () => {
     // The two decisions have to agree: a tool put in the turn-1 prompt because a
     // room turn cannot afford a lookup must also skip the card that same turn.
-    const { DORKOS_AGENT_TOOLS } = await import('../../messaging/interactive-handlers.js');
+    const { DORKOS_AGENT_TOOLS } = await import('../../tool-gate/auto-allow.js');
     const roomVerbs = [...ALWAYS_LOADED_TOOLS].filter((name) => name !== 'list_capabilities');
     for (const verb of roomVerbs) {
       expect(DORKOS_AGENT_TOOLS.has(inSessionToolName(verb)), `${verb} would raise a card`).toBe(

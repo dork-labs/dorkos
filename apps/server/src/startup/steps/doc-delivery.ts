@@ -17,6 +17,7 @@ import { logger, logError } from '../../lib/logger.js';
 import { DocBatchDeliveryPump } from '../../services/canvas/doc-channel/delivery/pump.js';
 import { createPrivateDocPumpGates } from '../../services/canvas/doc-channel/delivery/private-gates.js';
 import { DocDeliveryRunner } from '../../services/canvas/doc-channel/delivery/runner.js';
+import { DocWorkReview } from '../../services/canvas/doc-channel/route-controls/work-review.js';
 import {
   onProjectorTurnBoundary,
   onProjectorInteractionChange,
@@ -162,15 +163,21 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
       nudgePrivateSession(sessionId, receiptIds);
       return undefined;
     },
-    observe: (event) => {
-      if (event.outcome === 'replayed') docDeliveryRunner?.wake();
-      return undefined;
-    },
   });
   const docDeliveryRunner = new DocDeliveryRunner({
     pump: docPump,
     now: () => new Date(),
     onError: (error) => logger.warn('[document delivery] Recovery will retry', logError(error)),
+  });
+  // A person's replay queues new work, and clearing in-doubt work frees its
+  // route: either way the runner looks again now rather than at its next wake.
+  const docWorkReview = new DocWorkReview({
+    db,
+    channels: docChannelHttp.channels,
+    grants: docChannelHttp.grants,
+    authorization: docChannelHttp.authorization,
+    readChannel: (documentId, actor) => docChannelHttp.service.readChannel(documentId, actor),
+    onChanged: () => docDeliveryRunner.wake(),
   });
   const stopDocInputHints = docChannelHttp.service.onCommittedInput(() =>
     docDeliveryRunner?.wake()
@@ -266,6 +273,7 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
   return {
     recoverAcceptedPrivateSessions,
     docDeliveryRunner,
+    docWorkReview,
     connectorAccess,
     connectorBroker,
     connectorHolds,

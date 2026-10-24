@@ -8,7 +8,7 @@
  *
  * **These files are read, never edited.** Several tasks consume them in
  * parallel. A test or showcase that needs a variant builds it locally with a
- * spread — `{ ...busyFixture, attention: [] }` — so nobody's tweak becomes
+ * spread — `{ ...busyFixture, rooms: [] }` — so nobody's tweak becomes
  * somebody else's failing expectation.
  *
  * @module features/dashboard-sidebar/model/fixtures
@@ -28,13 +28,14 @@ export {
   MINUTE,
   addOn,
   agent,
+  agentDm,
+  agentMember,
   emptyState,
   hoursAgo,
   person,
   prefs,
   room,
   session,
-  thread,
 } from './factories';
 
 /**

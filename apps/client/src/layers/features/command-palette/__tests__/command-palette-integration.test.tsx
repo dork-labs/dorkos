@@ -129,6 +129,10 @@ vi.mock('@/layers/shared/model', () => ({
   // `usePaletteActions` resolves which conversation a slash command runs in,
   // and that resolver asks the server when nothing is cached.
   useTransport: () => mockTransport,
+  // The DM view switch, read when an agent is picked (DOR-3074). Off here, so
+  // the pick opens the agent's latest chat as it always has.
+  readExperimentEnabled: () => false,
+  DM_VIEW_EXPERIMENT: 'ui.dmView',
   useReportIssue: () => vi.fn(),
   // `usePaletteActions` reads the feedback dialog's store, so the palette does
   // not render at all without it (DOR-902).

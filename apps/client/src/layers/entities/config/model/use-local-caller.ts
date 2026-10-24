@@ -46,3 +46,20 @@ import { useConfig } from './use-config';
 export function useLocalCaller(): boolean {
   return useConfig().data?.isLocalCaller !== false;
 }
+
+/**
+ * Read whether this browser may change the front-door settings and the session
+ * relay: at the machine DorkOS runs on, or over an encrypted connection
+ * (DOR-3172). Where someone connects from changes nothing for the owner there;
+ * plain-`http` Wi-Fi is the exception, because anyone on that network could
+ * copy the sign-in.
+ *
+ * Unknown reads as yes, for the reason {@link useLocalCaller} gives; a server
+ * too old to report it answers with {@link useLocalCaller}'s field instead.
+ *
+ * @returns `true` when the owner may change those here, or when that is not yet known.
+ */
+export function useTrustedConnection(): boolean {
+  const data = useConfig().data;
+  return (data?.onTrustedConnection ?? data?.isLocalCaller) !== false;
+}

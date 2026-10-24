@@ -733,3 +733,28 @@ export function keepAccountOutOfAutoMoves(store: {
     claudeCode: { ...(block as Record<string, unknown>), accounts: rows },
   });
 }
+
+/**
+ * Seed `ui.dmView: false` and `ui.showSessions: false` where the stored `ui`
+ * section lacks them (DOR-3074).
+ *
+ * Two nested leaves inside a section every stored config already carries, and
+ * conf's pre-migration merge is shallow, so this body is the only thing that
+ * writes them to disk. Absence is tested with `in`, so a choice a person made is
+ * never rewritten, and running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedUiDmViewLeaves(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui === null || typeof ui !== 'object' || Array.isArray(ui)) return;
+  if ('dmView' in ui && 'showSessions' in ui) return;
+  store.set('ui', {
+    ...ui,
+    ...(!('dmView' in ui) && { dmView: false }),
+    ...(!('showSessions' in ui) && { showSessions: false }),
+  });
+}

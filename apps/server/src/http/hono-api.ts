@@ -101,6 +101,7 @@ import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
+import { setHandleRenameActivity } from '../services/rooms/handles/rename-author-handle.js';
 import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
@@ -350,6 +351,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
+  // A person renaming an agent writes one Activity row (DOR-3156).
+  setHandleRenameActivity(deps.activity);
   app.route('/api/rooms', roomRoutes);
   app.route(
     '/api/direct-chats',

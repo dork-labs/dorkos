@@ -13,7 +13,7 @@
  *
  * @module features/conversation/ui/message/MessageAuthor
  */
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Slot } from 'radix-ui';
 import { cn } from '@/layers/shared/lib';
 import type { IdentityOrigin } from '@/layers/shared/lib';
@@ -43,6 +43,11 @@ export interface MessageAuthorProps {
    * `origin` is.
    */
   mark?: ReactNode;
+  /**
+   * Wrap the name, when the host puts something over it: an agent's card
+   * (DOR-3074). Omitted, the name is drawn as it always was.
+   */
+  renderName?: (name: ReactElement) => ReactNode;
   /** Render as the child element instead of a `div`. */
   asChild?: boolean;
   className?: string;
@@ -58,6 +63,7 @@ export function MessageAuthor({
   at,
   origin,
   mark,
+  renderName,
   asChild = false,
   className,
 }: MessageAuthorProps) {
@@ -67,10 +73,11 @@ export function MessageAuthor({
   if (!opensAuthorGroup(position)) return null;
 
   const Comp = asChild ? Slot.Root : 'div';
+  const name = <span className={slots.authorName()}>{author.displayName}</span>;
 
   return (
     <Comp id={id} data-slot="message-author" className={cn(slots.header(), className)}>
-      <span className={slots.authorName()}>{author.displayName}</span>
+      {renderName ? renderName(name) : name}
       {origin !== undefined && <OriginMark origin={origin} />}
       {mark}
       <RetiredMark retired={author.retired} />

@@ -2,6 +2,8 @@ import { localBrowserHost } from './startup/local-browser.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
+import { startTlsListener } from './http/tls-listener.js';
+import { resolveDorkHome } from './lib/dork-home.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { previewListeners } from './services/workbench-serve/index.js';
@@ -44,7 +46,8 @@ import {
 } from './services/core/hub-relay/index.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { shutdownUsageReporter } from './services/core/usage-reporter.js';
-import { flushServerError, captureServerError } from './services/core/error-reporter.js';
+import { flushServerError } from './services/core/error-reporter.js';
+import { createProcessFaultHandlers } from './lib/process/network-fault.js';
 import { shutdownAiMetadataReporter } from './services/core/ai-metadata-reporter.js';
 import { resolveTelemetryConsent } from '@dorkos/shared/telemetry-consent';
 import { keepAwakeService } from './services/core/keep-awake/index.js';
@@ -327,6 +330,15 @@ async function start() {
         attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
       });
 
+      // DorkOS's own https listener: test homes only, for now (DOR-3172).
+      tlsServer = startTlsListener(
+        env,
+        resolveDorkHome(),
+        (tls) => createFrontDoorServer(frontDoor, { tls }),
+        (opened) => attachUpgradeRouter(opened, upgradeRoutes, mainRequestAdmission),
+        logger
+      );
+
       // The two ngrok ingresses, each a loopback listener of its own: managed
       // access (edge-proof and host checks first) and the person's own tunnel.
       // Each marks what it admits, then hands requests to the same front door
@@ -393,6 +405,8 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 let docNotificationCleanup: (() => void) | undefined;
+/** DorkOS's own https listener, when its settings opened one (DOR-3172). */
+let tlsServer: import('node:http').Server | null = null;
 
 async function shutdownServices() {
   mainRequestAdmission.close();
@@ -505,6 +519,8 @@ async function shutdownServices() {
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
   await lanAccess.close();
+  tlsServer?.close();
+  tlsServer = null;
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();
   getCloudLinkManager().stop();
@@ -524,34 +540,32 @@ const shutdown = createSignalShutdown(shutdownServices);
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// Safety nets — log and exit gracefully on truly unhandled errors instead of
-// silently crashing. These should never fire if route-level error handling is
-// correct, but they prevent data loss if something slips through.
-process.on('uncaughtException', (err) => {
-  // The Error goes over whole, deliberately. Flattening it here — the
-  // `{ message, stack, name }` this used to build — put it out of reach of the
-  // clipping both reporters do, because both recognise an error by its type: a
-  // crash carrying a subprocess dump wrote a 1,200,561-byte NDJSON line where
-  // this shape writes 8,820 (DOR-1827). The serializer writes the same three
-  // fields — the message as `error`, which is what every other error line in
-  // the file calls it — plus `cause` and any `errno`/`code` the error carries.
-  logger.error('[DorkOS] Uncaught exception — shutting down', err);
-  // Fatal path: bounded-await the crash report so it actually reaches the
-  // network before we exit (a bare fire-and-forget would be dropped when the
-  // event loop stops on the next line). The timeout guards against a hung
-  // endpoint delaying shutdown.
-  void flushServerError(err).finally(() => process.exit(1));
+// Safety nets for what nothing caught (DOR-3229). An outbound connection that
+// drops or is reset is survived with one warning; anything else — a TypeError,
+// a database error, anything unknown — logs and exits non-zero, for the
+// supervisor to restart. The same split holds for both events.
+const processFaults = createProcessFaultHandlers({
+  warn: (message, data) => logger.warn(message, data),
+  fatal: (kind, value) => {
+    if (kind === 'unhandledRejection') {
+      // Nested, but still whole: the serializer walks into `reason` and writes
+      // `name`, `message` and `stack` there, bounded; hand-flattening it wrote
+      // 1,200,550 bytes where this writes 8,826 (DOR-1827).
+      logger.error('[DorkOS] Unhandled promise rejection — shutting down', { reason: value });
+    } else {
+      // The Error goes over whole, deliberately. Flattening it here put it out
+      // of reach of the clipping both reporters do, because both recognise an
+      // error by its type (DOR-1827).
+      logger.error('[DorkOS] Uncaught exception — shutting down', value);
+    }
+    // Fatal path: bounded-await the crash report so it actually reaches the
+    // network before we exit. The timeout guards against a hung endpoint
+    // delaying shutdown.
+    void flushServerError(value).finally(() => process.exit(1));
+  },
 });
-
-process.on('unhandledRejection', (reason) => {
-  // Nested, but still whole — see the uncaughtException handler above. The
-  // serializer walks into `reason` and writes `name`, `message` and `stack`
-  // there, bounded; hand-flattening it wrote 1,200,550 bytes where this
-  // writes 8,826 (DOR-1827). A non-Error reason is passed through as it was.
-  logger.error('[DorkOS] Unhandled promise rejection', { reason });
-  // Non-fatal (we don't exit), so fire-and-forget is fine here.
-  void captureServerError(reason);
-});
+process.on('uncaughtException', processFaults.onUncaughtException);
+process.on('unhandledRejection', processFaults.onUnhandledRejection);
 
 start().catch(async (err) => {
   mainRequestAdmission.close();

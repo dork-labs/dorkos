@@ -127,12 +127,21 @@ describe('useRoomListStream', () => {
     expect([...handlers.keys()].sort()).toEqual([
       'read_cursor',
       'room_activity',
+      'room_awaiting',
       'room_created',
       'room_member_added',
       'room_member_removed',
       'room_presence',
       'room_updated',
     ]);
+  });
+
+  it('refetches the list when a room starts or stops waiting on a person (DOR-3236)', () => {
+    // Unlike presence, this fires only when the count changes, and the list is
+    // where a folded section reads it from.
+    const { invalidated } = setup();
+    handlers.get('room_awaiting')!({ roomId: 'room-1', awaiting: 1 });
+    expect(invalidated.length).toBeGreaterThan(0);
   });
 
   it('feeds the working store from presence without refetching the list', () => {
@@ -269,6 +278,23 @@ describe('useRoomListStream', () => {
 
       expect(badge(queryClient, 'room-1')).toBe(2);
       expect(badge(queryClient, 'room-2')).toBe(4);
+    });
+
+    it('caps the mention count at what is still unread, and clears it with the room', () => {
+      const { queryClient } = setup();
+      queryClient.setQueryData(['rooms', 'list', null], [
+        { id: 'room-1', kind: 'channel', title: 'Backend', unreadCount: 6, mentionCount: 3 },
+      ] as unknown as RoomSummary[]);
+      const mentions = () =>
+        queryClient.getQueryData<RoomSummary[]>(['rooms', 'list', null])?.[0]?.mentionCount;
+
+      // Two messages still above the other device's cursor: at most two of them
+      // can name the reader.
+      handlers.get('read_cursor')!(cursorEvent({ unreadCount: 2 }));
+      expect(mentions()).toBe(2);
+
+      handlers.get('read_cursor')!(cursorEvent({ unreadCount: 0 }));
+      expect(mentions()).toBe(0);
     });
 
     it('moves the open room copy of the cursor, so the reader is not re-marked', () => {

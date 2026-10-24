@@ -810,7 +810,7 @@ export class AuthorRegistry {
       // retry: a caller that asked to mint an author and got a different address
       // than it derived needs to know.
       if (isUniqueViolation(err, 'authors_handle_unique')) {
-        throw new RoomError('HANDLE_TAKEN', `@${row.handle} is already somebody else's handle.`);
+        throw new RoomError('HANDLE_TAKEN', `@${row.handle} is taken. Pick a different one.`);
       }
       // A concurrent resolve of the SAME natural key. Re-reading returns the
       // winner's id rather than throwing on what is, to its caller, a read.

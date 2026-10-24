@@ -41,6 +41,30 @@ describe('an agent', () => {
     expect(profileStatusText(working, NOW).text).toBe('Working · 5 min');
   });
 
+  it('says how many chats are running once there is more than one', () => {
+    const working = withActivity(byId('agent-warden'), {
+      working: { roomId: 'r1', roomName: 'dorkos', since: ago(2 * 60_000) },
+      lastActiveAt: ago(2 * 60_000),
+    });
+
+    expect(profileStatusText(working, NOW, 2)).toEqual({
+      text: 'Working in #dorkos · 2 chats running',
+      live: true,
+    });
+    // One is the room turn itself: how long it has run says more.
+    expect(profileStatusText(working, NOW, 1).text).toBe('Working in #dorkos · 2 min');
+  });
+
+  it('is live while a chat is running even when no room turn is', () => {
+    const idle = withActivity(byId('agent-scout'), {
+      working: null,
+      lastActiveAt: ago(3 * 3_600_000),
+    });
+
+    expect(profileStatusText(idle, NOW, 1)).toEqual({ text: 'Working in 1 chat', live: true });
+    expect(profileStatusText(idle, NOW, 3).text).toBe('Working · 3 chats running');
+  });
+
   it('falls back to when it was last heard from', () => {
     const idle = withActivity(byId('agent-scout'), {
       working: null,

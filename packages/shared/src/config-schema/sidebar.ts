@@ -278,24 +278,20 @@ export const SidebarPrefsSchema = z.object({
    */
   muted: z.array(SidebarItemRefSchema).default(() => []),
   /**
-   * The Getting started zone's memory: which suggestions this person has
-   * finished with, so a suggestion never comes back once it has been retired —
-   * even if the condition that raised it becomes true again (BC-14).
-   *
-   * Ids are plain strings rather than an enum on purpose. The list outlives the
-   * suggestions in it: `'suggestion:groups-hint'` is a retired card the
-   * migration carries forward, and narrowing the type would make a stored
-   * history invalid every time the suggestion set changed.
+   * **Retired** (DOR-3092): the Getting started list left the sidebar, and
+   * nothing reads or writes this any more. It was the list's memory of which
+   * suggestions a person had finished with (BC-14). Kept so a stored config
+   * still parses; removing it needs a config migration, which a field nobody
+   * reads does not justify on its own.
    */
   gettingStarted: z
     .object({ retired: z.array(z.string()).default(() => []) })
     .default(() => ({ retired: [] })),
   /**
-   * The welcome-back digest's memory: the local date (`YYYY-MM-DD`) it was last
-   * shown on, so it appears at most once a day (BC-22). Absent until the first
-   * digest is shown; written by the client's `markDigestShown` the moment the
-   * row renders. Server-held rather than local, so the moment is once per day
-   * per account and not once per device.
+   * **Retired** (DOR-3092): the welcome-back digest row left the sidebar with
+   * Today, and nothing reads or writes this any more. It held the local date
+   * (`YYYY-MM-DD`) the digest was last shown on (BC-22). Kept so a stored
+   * config still parses, for the same reason as `gettingStarted`.
    */
   digest: z.object({ lastShownDate: z.string().optional() }).default(() => ({})),
 });

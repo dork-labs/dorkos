@@ -55,6 +55,8 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_OFFICIAL_SPACE_URL:
     'overrides spaces.official.url, which is documented with it in docs/getting-started/configuration.mdx; the official space has no link to put here yet',
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
+  DORKOS_UPDATE_CHECK_DISABLED:
+    'tests only — keeps a contract test server off the npm registry (DOR-3226)',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',
   DORKOS_TEST_RUNTIME_DOE: 'e2e only — the DorkOS runtime beside the fake one, on the fake Cloud',
@@ -66,6 +68,14 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
     'switches on DorkOS managed remote access (DOR-2086), which stays off until its live supplier acceptance passes; documenting it would offer a feature that does not work yet',
   DORKOS_SERVER_ROLE:
     'set only by DorkOS Cloud when it starts a hub (DOR-2934); a person running DorkOS on their own computer never sets it',
+  DORKOS_TLS_PORT:
+    'test homes only: DorkOS`s own https listener opens only under DORKOS_TEST_RUNTIME on a sentinel test home (DOR-3172, http/tls-listener.ts) until its certificate story ships (DOR-3173)',
+  DORKOS_TLS_CERT:
+    'test homes only: DorkOS`s own https listener opens only under DORKOS_TEST_RUNTIME on a sentinel test home (DOR-3172, http/tls-listener.ts) until its certificate story ships (DOR-3173)',
+  DORKOS_TLS_KEY:
+    'test homes only: DorkOS`s own https listener opens only under DORKOS_TEST_RUNTIME on a sentinel test home (DOR-3172, http/tls-listener.ts) until its certificate story ships (DOR-3173)',
+  DORKOS_TLS_HOST:
+    'test homes only: DorkOS`s own https listener opens only under DORKOS_TEST_RUNTIME on a sentinel test home (DOR-3172, http/tls-listener.ts) until its certificate story ships (DOR-3173)',
   DORKOS_HUB_INSTANCE_KEY:
     'a hub`s DorkOS Cloud key, set only by Cloud when it starts a hub (DOR-2935); a person running DorkOS never sets it',
 };

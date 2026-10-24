@@ -31,7 +31,8 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { configManager } from '../../core/config-manager.js';
 import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { ceilingForContinuation } from '../../core/turn-power/continuation-hold.js';
+import { lastTurnHeld } from '../../core/turn-power/continuation-hold.js';
+import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../extensions/start-work.js';
@@ -433,6 +434,9 @@ async function launchCarriedSession(
   // Nobody is watching a move the advisor's plan made: it runs like a timer-
   // fired schedule, and counts against the cap on sessions nobody typed into.
   const automatic = by === 'advisor';
+  // The seed carries the old chat's words, strangers' included, so the new chat starts with every
+  // mark the old one carried, as a moved room seat does (DOR-3204, Security).
+  carrySessionMarks(source.sessionId, newId);
   const result = await dispatchSessionMessage({
     origin: { kind: 'account-handoff' },
     sessionId: newId,
@@ -455,10 +459,12 @@ async function launchCarriedSession(
     // Held to the default when asked from Wi-Fi, or, for the advisor's own move,
     // when the chat's latest turn was (DOR-3037): nobody asked, and the seed
     // carries that turn's words on. A person's own continue here runs as asked.
+    // A plain hold, never a continuation's: this turn READS those words in its
+    // seed, so it is marked and recorded as held like the turn that read them.
     ...(launch.permissionCeiling !== undefined
       ? { permissionCeiling: launch.permissionCeiling }
-      : automatic
-        ? ceilingForContinuation(source.sessionId)
+      : automatic && lastTurnHeld(source.sessionId)
+        ? { permissionCeiling: 'runtime-default' as const }
         : {}),
   });
   if (isSessionLaunchRefusal(result)) {

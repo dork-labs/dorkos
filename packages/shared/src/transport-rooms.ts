@@ -24,6 +24,7 @@ import type {
   RoomFileSaveResponse,
 } from './room-files.js';
 import type {
+  EnableRoomRepoResponse,
   RoomMainRepairRequest,
   RoomMainRepairResult,
   RoomMergeResult,
@@ -133,6 +134,8 @@ export interface RoomTransport {
    *   may not see it — the two are deliberately indistinguishable.
    */
   getRoom(id: string): Promise<RoomWithRoster>;
+  /** Give a live room shared files. The install owner is the only allowed caller. */
+  enableRoomRepo(id: string): Promise<EnableRoomRepoResponse>;
   /**
    * Patch a room's title, topic or archived flag.
    *
@@ -568,12 +571,13 @@ export interface RoomTransport {
    * (spec `handles` S6): nothing agent-reachable may write a handle, and an
    * invariant kept in one place is a test rather than a convention.
    *
-   * Three refusals, and they are three different things for the person to do
-   * about it, so a caller that collapses them into one message is throwing away
-   * the answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a
-   * handle they released, or a broadcast word like `everyone`) and
-   * `INVALID_HANDLE` (the spelling itself is not addressable). Each arrives as
-   * the `code` on the thrown error.
+   * Four refusals, and they are different things for the person to do about
+   * it, so a caller that collapses them into one message is throwing away the
+   * answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a handle
+   * they released, or a broadcast word like `everyone`), `HANDLE_LOOKALIKE`
+   * (it reads as somebody else's, like `d0rian` beside `dorian`; the message
+   * names whose) and `INVALID_HANDLE` (the spelling itself is not
+   * addressable). Each arrives as the `code` on the thrown error.
    *
    * @param authorId - Whose handle to set.
    * @param handle - The new handle, without the `@`. Empty clears it.

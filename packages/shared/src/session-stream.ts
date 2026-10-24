@@ -800,6 +800,13 @@ export const SessionEventSchema = z
        * at the wire boundary, as for `chatMessages`.
        */
       roomMessage: RoomMessageStampSchema.optional(),
+      /**
+       * Server epoch ms when the turn opened, which is when the words that
+       * opened it were sent (DOR-3074). A log-backed runtime keeps no other
+       * record of that moment, so its rebuilt history reads its user message's
+       * time from here. Optional: a turn recorded before it existed has none.
+       */
+      at: z.number().optional(),
     }),
     // The end of an assistant turn.
     z.object({

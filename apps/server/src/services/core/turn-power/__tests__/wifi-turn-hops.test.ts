@@ -149,7 +149,7 @@ describe('a turn started from Wi-Fi', () => {
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [child]: 'bypassPermissions' });
     await run(runtime, ana, WIFI);
     const bound = markedBoundOf(ana, '/agents/ana');
-    expect(bound).toMatchObject({ outsider: true });
+    expect(bound).toEqual([expect.objectContaining({ outsider: true }), 'runtime-default']);
     await run(runtime, child, { permissionCeiling: bound! });
     expect(runsAt(sent.get(child))).toBe('default');
   });

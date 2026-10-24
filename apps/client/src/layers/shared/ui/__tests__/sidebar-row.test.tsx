@@ -158,9 +158,11 @@ describe('SidebarRow — state and chrome', () => {
 
   it('bolds an unread row, and stops when it is muted', () => {
     const { rerender } = render(<SidebarRow title="#general" emphasized />);
-    expect(row().className).toContain('font-medium');
+    expect(row().className).toContain('font-semibold');
+    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
     rerender(<SidebarRow title="#general" emphasized muted />);
-    expect(row().className).not.toContain('font-medium');
+    expect(row().className).not.toContain('font-semibold');
+    expect(row()).toHaveAttribute('data-row-state', 'quiet');
   });
 
   // The top of the ladder: open beats unread. A row you are looking at has
@@ -168,7 +170,7 @@ describe('SidebarRow — state and chrome', () => {
   it('leaves an open row on the open treatment even when it is also unread', () => {
     render(<SidebarRow title="#general" isActive emphasized />);
     expect(row().className).toContain('bg-sidebar-accent');
-    expect(row().className).not.toContain('font-medium');
+    expect(row().className).not.toContain('font-semibold');
   });
 
   it('swaps itself for an inline editor and withdraws the ⋮ while it is up', () => {
@@ -239,6 +241,31 @@ describe('SidebarRow — state and chrome', () => {
     render(<SidebarRow title="#general" onSelect={onSelect} />);
     fireEvent.click(row());
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
+describe('SidebarRow — the resting hint', () => {
+  it('shows its hint in a tooltip and drops the browser title, which would say something else', async () => {
+    render(<SidebarRow title="#general" hint="Shipped the fix, tests are green" />);
+    expect(row()).not.toHaveAttribute('title');
+    // Focus opens a Radix tooltip without the pointer delay, so the content is
+    // reachable in jsdom; a pointer resting on the row opens the same one.
+    fireEvent.focus(row());
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent('Shipped the fix, tests are green');
+    // Led by the name, so a name the row cut short is still readable in full.
+    expect(tip).toHaveTextContent(/^#general/);
+  });
+
+  it('keeps the browser title and draws no tooltip without a hint', () => {
+    const { rerender } = render(<SidebarRow title="#general" />);
+    expect(row()).toHaveAttribute('title', '#general');
+    fireEvent.focus(row());
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    // A blank hint is no hint.
+    rerender(<SidebarRow title="#general" hint="   " />);
+    expect(row()).toHaveAttribute('title', '#general');
   });
 });
 
@@ -497,7 +524,7 @@ describe('SidebarRow — the reserved verb line (BC-24, R1)', () => {
   });
 
   it('keeps the preview of a busy room, which reserves a line but has no verb node', () => {
-    // The shape `library-rows.ts` and `select-today-items.ts` already ship:
+    // The shape the sidebar's room rows (`section-rows.ts`) already ship:
     // `reservesVerbLine: (room.working ?? 0) > 0` on a row that carries a
     // preview and no verb node at all. Deciding the line's CONTENT from
     // `reservesVerbLine` — rather than only its EXISTENCE — emptied every one

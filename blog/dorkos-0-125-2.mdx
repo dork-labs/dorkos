@@ -1,0 +1,22 @@
+---
+title: DorkOS 0.125.2
+description: DorkOS keeps running when a network connection drops, and the app opens without waiting on the update check.
+date: 2026-10-22
+author: DorkOS Team
+category: release
+tags: [release, reliability, desktop]
+---
+
+DorkOS 0.125.2 keeps running when a network connection drops, opens without waiting on the update check, and keeps an agent waiting on you in view in a folded sidebar section.
+
+## The main thing to know
+
+- DorkOS no longer shuts down when a network connection drops or a remote server cuts it off, and the desktop app starts it again if it ever does stop.
+
+## All Changes
+
+### Fixed
+
+- A folded sidebar section now still shows an agent that is waiting on you, like one asking for your approval. Before, it stayed hidden until you opened the section.
+- The app no longer waits on a slow connection to check for updates. On bad Wi-Fi it could take up to 5 seconds to open. Now it opens right away and checks for updates in the background.
+- If DorkOS stops, the desktop app now starts it again on its own. If it can't, it says so and offers one button to try again.

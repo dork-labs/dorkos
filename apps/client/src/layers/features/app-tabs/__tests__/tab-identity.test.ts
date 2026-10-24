@@ -196,6 +196,33 @@ describe('a chat tab', () => {
   });
 });
 
+describe('a chat tab under the DM view (DOR-3074)', () => {
+  it('names an agent’s DM for the agent alone', () => {
+    const id = chatTabIdentity({
+      agentName: 'Scout',
+      visual: { emoji: '🔍' },
+      chatTitle: 'Direct',
+      agentKey: 'scout',
+      direct: 'dm',
+    });
+    expect(id).toMatchObject({ primary: 'Scout', accessibleName: 'Scout' });
+    expect(id.secondary).toBeUndefined();
+  });
+
+  it('says Session for the working session behind the DM', () => {
+    const id = chatTabIdentity({ agentName: 'Scout', chatTitle: 'Direct', direct: 'session' });
+    expect(id).toMatchObject({ primary: 'Scout', secondary: 'Session' });
+  });
+
+  it('reads the session view off the tab’s own href, and nothing else changes', () => {
+    expect(parseTabHref('/session?session=abc&view=session')).toMatchObject({
+      sessionId: 'abc',
+      sessionView: true,
+    });
+    expect(parseTabHref('/session?session=abc')).not.toHaveProperty('sessionView');
+  });
+});
+
 describe('smart names', () => {
   const id = chatTabIdentity({
     agentName: 'Scout',
@@ -406,6 +433,8 @@ describe('the route map (drift guard)', () => {
       '/signed-in': 'Signed in',
       '/tasks': 'Schedules',
       '/team': 'Team',
+      // The sidebar's Threads item opens it, and the tab says the same word.
+      '/threads': 'Threads',
       '/workspaces': 'Workspaces',
     });
   });

@@ -65,7 +65,11 @@ import type {
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
-import { credentialGated, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  credentialGated,
+  isAtThisComputer,
+  isOnEncryptedConnection,
+} from '../services/core/auth/gate-policy.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { currentServerRole } from './server-role.js';
@@ -74,7 +78,8 @@ import { currentServerRole } from './server-role.js';
  * The facts a bar needs to know whether the gate asked this request for a
  * credential ({@link credentialGated}): its TCP peer, headers and ingress.
  */
-type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>;
+type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'> &
+  Partial<Pick<RequestFacts, 'connectionEncrypted'>>;
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -310,29 +315,39 @@ export function isPersonAtTheApp(
 }
 
 /**
- * Why a caller may not use a switch reserved for the person at this computer:
- * `not-at-this-computer` for a request from anywhere else, `not-a-person` for
- * anything at this computer that is not the owner using the app.
+ * Why a caller may not use a switch reserved for the owner in person:
+ * `not-at-this-computer` for a request that is neither at this computer nor on
+ * an encrypted connection (plain-`http` Wi-Fi, a bare network bind, the
+ * relay), `not-a-person` for anything else that is not the owner using the app.
  */
 export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person';
 
 /**
- * The strictest person bar: the owner, at this computer, using the app. For
- * the switches that decide whether this computer can be reached from the web
- * at all (the session relay's link, level and pause, DOR-2946), which nothing
- * reached from the web may change, so the web can never raise its own reach.
+ * The strictest person bar: the owner, using the app, at this computer or on
+ * an encrypted connection. For the switches that decide how this computer is
+ * reached and who may sign in (the front door, the session relay's link,
+ * signing other devices out).
+ *
+ * Where the owner connects from changes nothing (DOR-3172): signed in over the
+ * own tunnel, managed remote access or DorkOS's own `https` listener, they get
+ * exactly what they get at the desk. Plain-`http` Wi-Fi is
+ * the exception, and it is about proof, not place: anyone on that network can
+ * copy the sign-in cookie, so a Wi-Fi sign-in does not prove the owner well
+ * enough for these.
  *
  * All of these must hold:
  *
- * - **At this computer** ({@link isAtThisComputer}): never the relay, Wi-Fi,
- *   a tunnel, managed remote, a hub, a proxy or a page on another site.
+ * - **At this computer** ({@link isAtThisComputer}), **or on an encrypted
+ *   connection** ({@link isOnEncryptedConnection}) with the owner's own
+ *   browser session. Never Wi-Fi, the relay, a hub (which has its own form of
+ *   this bar), a bare network bind or a page on another site.
  * - **No agent identity and no approval token**, in every posture.
  * - **A person's own credential, or none at all.** With a proved identity it
  *   must be a browser session (never a per-user API key) of the install's
- *   owner. With none, the gate must have been open (this computer does not ask
- *   for a password) AND the request must carry no `Authorization` header: an
- *   API key, an MCP token or a turn's bearer is a program, not the app, even
- *   where the open gate never read it.
+ *   owner. With none, the request must be at this computer, the gate must have
+ *   been open (this computer does not ask for a password) AND the request must
+ *   carry no `Authorization` header: an API key, an MCP token or a turn's
+ *   bearer is a program, not the app, even where the open gate never read it.
  *
  * The residual is DOR-505's: with the password off, a program on this machine
  * that sends no agent header and no bearer reads as the app.
@@ -343,7 +358,8 @@ export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person
 export function requirePersonAtThisComputer(
   facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
 ): PersonAtThisComputerRefusal | undefined {
-  if (!isAtThisComputer(facts)) return 'not-at-this-computer';
+  const here = isAtThisComputer(facts);
+  if (!here && !isOnEncryptedConnection(facts)) return 'not-at-this-computer';
   if (presentsAgentIdentity(facts)) return 'not-a-person';
   if (facts.headers[APPROVAL_TOKEN_HEADER] !== undefined) return 'not-a-person';
   if (facts.user) {
@@ -351,7 +367,8 @@ export function requirePersonAtThisComputer(
       ? undefined
       : 'not-a-person';
   }
-  if (credentialGated(facts)) return 'not-a-person';
+  // No proved identity: only the open gate at this computer stands for a person.
+  if (!here || credentialGated(facts)) return 'not-a-person';
   return facts.headers.authorization === undefined ? undefined : 'not-a-person';
 }
 
@@ -363,8 +380,10 @@ export const NEEDS_PERSON_AT_THIS_COMPUTER = 'NEEDS_PERSON_AT_THIS_COMPUTER';
  * reached, who may sign in, the credentials it holds, where code may come
  * from): {@link requirePersonAtThisComputer}, as the refusal a route answers
  * with. One function, so every front-door route refuses the same callers in
- * the same words: Wi-Fi, a tunnel, managed remote, the relay, an agent, an API
- * key, and any signed-in person who is not this install's owner.
+ * the same words: plain-`http` Wi-Fi, the relay, an agent, an API key, and any
+ * signed-in person who is not this install's owner. The owner signed in over
+ * the own tunnel, managed remote access or DorkOS's own `https` listener
+ * passes, as at the desk.
  *
  * A hub has no "this computer" (every request is remote), so there the bar is
  * the owner's own browser session, with no agent identity or approval token.

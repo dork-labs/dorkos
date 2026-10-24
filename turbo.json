@@ -59,10 +59,11 @@
     "build": {
       "dependsOn": ["generate:api-docs", "^build"],
       "outputs": ["dist/**", "dist-server/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
-      "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*"]
+      "env": ["NODE_ENV", "VITE_*", "!VITE_PORT", "NEXT_PUBLIC_*", "POSTHOG_*"]
     },
     "generate:api-docs": {
-      "cache": true
+      "cache": true,
+      "env": ["!VITE_PORT"]
     },
     "dev": {
       "dependsOn": ["^build"],

@@ -74,6 +74,8 @@ export type { StatusDensity, StatusBudget } from './model/status-budget';
 export { useStatusBudget } from './model/use-status-budget';
 export { SessionInspector, SessionReadout } from './ui/SessionInspector';
 export { useSessionDiagnostics } from './model/use-session-diagnostics';
+// The model's name in the status line's words, for a surface naming the same model.
+export { statusModelLabel } from './lib/status-labels';
 export { formatDiagnostics } from './model/session-diagnostics';
 export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';
 export { formatCost } from './lib/format-tokens';

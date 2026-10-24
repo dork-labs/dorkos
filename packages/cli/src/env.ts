@@ -20,6 +20,10 @@ const cliEnvSchema = z.object({
   LOCALAPPDATA: z.string().optional(),
   PROGRAMFILES: z.string().optional(),
   'PROGRAMFILES(X86)': z.string().optional(),
+  // The Cloud address the server is pointed at, so `dorkos browser` keeps the
+  // same Cloud origin out of saved sign-ins (lib/agent-browser/storage-state.ts).
+  DORKOS_CLOUD_URL: z.string().optional(),
+  DORKOS_CLOUD_API_URL: z.string().optional(),
 });
 
 export const env = cliEnvSchema.parse(process.env);

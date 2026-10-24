@@ -652,6 +652,8 @@ export function modelWindowKey(displayName: string): string | null {
  */
 export const AccountUsageSchema = z
   .object({
+    /** Last sign-in proof observed by this server; absence means not checked. */
+    signInState: z.enum(['signed-in', 'signed-out', 'unknown']).optional(),
     /** The runtime the account belongs to. */
     runtime: z.enum(LEDGER_RUNTIMES),
     /**
@@ -716,22 +718,10 @@ export const AccountUsageSchema = z
 export type AccountUsage = z.infer<typeof AccountUsageSchema>;
 
 /** The identity half of an {@link AccountUsage}, already resolved by the caller. */
-export interface AccountUsageIdentity {
-  /**
-   * The account's runtime, as the store knows it from the ledger's folder.
-   * Wins over the ledger's own field; absent falls back to that field, then
-   * `claude-code`.
-   */
+export type AccountUsageIdentity = Pick<AccountUsage, 'accountId' | 'path' | 'label' | 'color'> & {
+  /** An omitted runtime falls back to the ledger's, then Claude Code. */
   runtime?: LedgerRuntime;
-  /** Registry id, or `null` for an unregistered root. */
-  accountId: string | null;
-  /** The account's Claude config directory. */
-  path: string;
-  /** What the operator calls the account, or `null`. */
-  label: string | null;
-  /** The resolved display color (see {@link resolveAccountColor}). */
-  color: string;
-}
+};
 
 const KNOWN_WINDOW_ORDER = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'];
 

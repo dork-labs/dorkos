@@ -14,6 +14,7 @@ export {
   SESSION_LOOKUP_FAILED_MESSAGE,
 } from './lib/resolve-session-for-cwd';
 export type { ResolveSessionDeps, ResolvedSession } from './lib/resolve-session-for-cwd';
+export { agentChatTarget, type AgentChatTargetOptions } from './lib/agent-chat-target';
 export { beginSessionNavigation } from './lib/session-navigation-intent';
 export type { AppLocation } from './lib/session-navigation-intent';
 export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent-cwd';

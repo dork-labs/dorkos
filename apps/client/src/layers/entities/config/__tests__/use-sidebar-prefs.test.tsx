@@ -26,7 +26,6 @@ import {
   deleteGroup,
   reorderGroup,
   reorderWithinGroup,
-  reorderPinned,
   setGroupSortMode,
   setGroupCollapsed,
   isSectionCollapsed,
@@ -35,9 +34,6 @@ import {
   setSectionCollapsed,
   setSectionSortMode,
   setSectionDisplayFilter,
-  GROUPS_HINT_SUGGESTION_ID,
-  isSuggestionRetired,
-  retireSuggestion,
   setGroupDisplayFilter,
   setGroupMuted,
   muteItem,
@@ -390,12 +386,6 @@ describe('sidebar prefs pure helpers', () => {
       ],
     });
 
-    it('reorderPinned moves within range and is a safe no-op out of range', () => {
-      expect(reorderPinned(seeded, 0, 2).pinned).toEqual([agent('/b'), agent('/c'), agent('/a')]);
-      expect(reorderPinned(seeded, 0, 9)).toBe(seeded);
-      expect(reorderPinned(seeded, -1, 0)).toBe(seeded);
-    });
-
     it('reorderGroup moves within range and no-ops out of range', () => {
       expect(reorderGroup(seeded, 0, 1).groups.map((g) => g.id)).toEqual(['B', 'A']);
       expect(reorderGroup(seeded, 0, 5)).toBe(seeded);
@@ -481,27 +471,6 @@ describe('sidebar prefs pure helpers', () => {
       const base = prefs();
       setSectionCollapsed(base, 'channels', true);
       expect(base.sections).toEqual({});
-    });
-  });
-
-  describe('Getting started retirement', () => {
-    it('retires a suggestion once and stays retired', () => {
-      const once = retireSuggestion(prefs(), GROUPS_HINT_SUGGESTION_ID);
-      expect(once.gettingStarted.retired).toEqual([GROUPS_HINT_SUGGESTION_ID]);
-      expect(isSuggestionRetired(once, GROUPS_HINT_SUGGESTION_ID)).toBe(true);
-      // Idempotent, and the same reference back so a write is not queued twice.
-      expect(retireSuggestion(once, GROUPS_HINT_SUGGESTION_ID)).toBe(once);
-    });
-
-    it('keeps earlier retirements when a second suggestion is answered', () => {
-      const two = retireSuggestion(
-        retireSuggestion(prefs(), 'suggestion:ask-dorkbot'),
-        GROUPS_HINT_SUGGESTION_ID
-      );
-      expect(two.gettingStarted.retired).toEqual([
-        'suggestion:ask-dorkbot',
-        GROUPS_HINT_SUGGESTION_ID,
-      ]);
     });
   });
 

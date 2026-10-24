@@ -266,6 +266,22 @@ describe('AgentListItem', () => {
     expect(rowButton.querySelector('button')).toBeNull();
   });
 
+  // --- The Direct chat's unread (every DM message counts) ---
+
+  it('keeps a bold row bold: the rest weight does not override the unread rung', () => {
+    renderItem({ unread: { tier: 'directed', count: 3 } });
+    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
+    expect(row().className).toContain('font-semibold');
+    expect(row().className).not.toContain('font-medium');
+    expect(screen.getByLabelText('3 new messages')).toBeInTheDocument();
+  });
+
+  it('drops the bold for a muted agent but keeps a count that came through', () => {
+    renderItem({ isMuted: true, unread: { tier: 'directed', count: 1 } });
+    expect(row()).not.toHaveAttribute('data-row-state', 'emphasized');
+    expect(screen.getByLabelText('1 new message')).toBeInTheDocument();
+  });
+
   // --- Paused everywhere (spec audit-trail PR5) ---
 
   it('marks a paused agent with a pause glyph, and nothing otherwise', () => {
@@ -308,6 +324,20 @@ describe('AgentListItem', () => {
       });
       renderItem({ isMuted: true });
       expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
+    });
+
+    it('keeps the needs-you dot for a muted agent waiting on you (DOR-3236)', () => {
+      // Mute silences chatter, never a request: the dot shows beside the mute
+      // glyph, and the row stays muted.
+      mockAgentStatus.mockReturnValue({
+        kind: 'pendingApproval',
+        color: 'rgb(245,158,11)',
+        pulse: true,
+        label: 'Awaiting your approval',
+      });
+      renderItem({ isMuted: true });
+      expect(screen.getByTestId('activity-badge')).toHaveTextContent('Awaiting your approval');
+      expect(screen.getByLabelText('Muted')).toBeInTheDocument();
     });
 
     it('the row stays clickable while muted', () => {

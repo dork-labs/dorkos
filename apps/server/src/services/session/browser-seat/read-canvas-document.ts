@@ -15,6 +15,12 @@ import { FILE_LIMITS } from '../../../config/constants.js';
 import { canvasSourcePath, peekCanvasService, sessionScope } from '../../canvas/index.js';
 import { resolveWithinCwd } from '../../../lib/file-route-guards.js';
 import { logger } from '../../../lib/logger.js';
+import {
+  bridgeKeyFor,
+  bridgeTargetForUrl,
+  frameBridgeLedger,
+  FRAME_BRIDGE_AGENT_NOTES,
+} from '../../workbench-serve/bridge-ledger.js';
 
 /**
  * What an agent is told when it reaches this verb from a surface with no session
@@ -45,13 +51,17 @@ const UNTRUSTED_NOTE =
  * other does, so "a session is reachable by no agent but its own" is enforced by
  * the shape of the input rather than by a check a later refactor could drop.
  *
+ * A browser document also says whether DorkOS added its frame scripts the last
+ * time it served that page (`bridge`), and why not, so an agent building a page
+ * knows why `window.dorkos.channel` and the DevTools reads are missing.
+ *
  * @param documentId - The document, from `get_ui_state`.
- * @param context - Who is calling; only `sessionId` is read.
+ * @param context - Who is calling: `sessionId`, and `cwd` for a page's folder.
  * @returns The document's metadata and, where there is one, its content.
  */
 export async function readSessionCanvasDocument(
   documentId: string,
-  context: { sessionId?: string }
+  context: { sessionId?: string; cwd?: string }
 ): Promise<unknown> {
   const sessionId = context.sessionId;
   if (sessionId === undefined) return { error: SESSIONLESS_UI_ERROR };
@@ -88,7 +98,44 @@ export async function readSessionCanvasDocument(
   // A browser or url document is where it points and nothing else; a widget is
   // its definition; a json document is its data. All of them are already in the
   // row, because that is what the row IS for these types.
-  return { note: UNTRUSTED_NOTE, ...metadata, content: document.content };
+  const content = document.content;
+  if (content.type === 'browser' || content.type === 'url') {
+    // The folder the page was served from, and the root a file path is confined
+    // to: the row's own tree when it records one, else the CALLING session's
+    // folder from its verified context (never an argument). `bridgeKeyFor` runs
+    // the same boundary checks as the sign and serve routes against it, so this
+    // can name only a file the session could already have served, and it reads
+    // nothing but the recorded decision.
+    const cwd = canvas.resolvedTreeOf(scope, document.id) ?? context.cwd ?? null;
+    const bridge = await describeFrameBridge(content.url, cwd);
+    return { note: UNTRUSTED_NOTE, ...metadata, content, ...(bridge ? { bridge } : {}) };
+  }
+  return { note: UNTRUSTED_NOTE, ...metadata, content };
+}
+
+/**
+ * Whether DorkOS added its frame scripts the last time it served this page, in
+ * the words an agent can act on; nothing when DorkOS does not know.
+ *
+ * @param url - The browser document's URL.
+ * @param cwd - The folder a file path resolves against, or `null`.
+ */
+async function describeFrameBridge(
+  url: string,
+  cwd: string | null
+): Promise<Record<string, string> | undefined> {
+  const target = bridgeTargetForUrl(url, cwd);
+  if (!target) return undefined;
+  const status = frameBridgeLedger.status(await bridgeKeyFor(target));
+  if (status.bridge === 'added') return { status: 'added' };
+  if (status.bridge !== 'refused' || !status.reason) return undefined;
+  return {
+    status: 'refused',
+    reason: status.reason,
+    note:
+      'DorkOS served this page without window.dorkos.channel or the DevTools shim. ' +
+      FRAME_BRIDGE_AGENT_NOTES[status.reason],
+  };
 }
 
 /**

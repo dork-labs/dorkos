@@ -24,6 +24,8 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
+import { openProfileFolds, resetProfileFolds } from './profile-fold-helpers';
+import { useProfileFoldStore } from '../model/profile-folds';
 import {
   profileStack,
   type ProfileStackEntry,
@@ -87,9 +89,10 @@ async function renderProfile(
     stack?: ProfileStackState;
     inOwnSession?: boolean;
     onPush?: (e: ProfileStackEntry) => void;
+    url?: string;
   } = {}
 ) {
-  const harness = buildProfileDeepLinkHarness('/');
+  const harness = buildProfileDeepLinkHarness(options.url ?? '/');
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const transport = createMockTransport({
     getAgentByPath: vi.fn().mockResolvedValue(null),
@@ -150,6 +153,7 @@ function rowLabels(): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetProfileFolds();
   useInteractionStore.getState().reset();
   // jsdom ships no clipboard, and `useCopyFeedback` reaches for it directly.
   Object.defineProperty(navigator, 'clipboard', {
@@ -176,7 +180,7 @@ describe('the portrait, in one fixed order', () => {
     expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
     expect(screen.getByText(/Working in #team ·/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Managed by/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Message' })).toBeInTheDocument();
   });
 
   it('flags you, the system agent and the default one', async () => {
@@ -195,6 +199,40 @@ describe('the portrait, in one fixed order', () => {
   it('says nothing rather than an empty @ when there is no handle', async () => {
     await renderProfile({ ...byId('agent-cartographer'), ownerId: PRIYA.id });
     expect(screen.queryByRole('button', { name: 'Copy @handle' })).toBeNull();
+  });
+
+  it('puts a pencil beside an agent’s @handle that opens the Handle page', async () => {
+    const onPush = vi.fn();
+    await renderProfile(MANAGED, { onPush });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change @handle' }));
+
+    expect(onPush).toHaveBeenCalledWith({ kind: 'page', page: 'handle' });
+    // The handle itself still copies.
+    expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
+  });
+
+  it('draws no pencil where the handle is not yours to change', async () => {
+    await renderProfile(OTHERS_AGENT);
+    expect(screen.queryByRole('button', { name: 'Change @handle' })).toBeNull();
+    cleanup();
+
+    await renderProfile(DORKBOT);
+    expect(screen.queryByRole('button', { name: 'Change @handle' })).toBeNull();
+  });
+
+  it('lets a link open an agent’s Handle page, since the pencil is its control', async () => {
+    await renderProfile(MANAGED, {
+      stack: { ...profileStack(MANAGED.id), entries: [{ kind: 'page', page: 'handle' }] },
+    });
+    expect(await screen.findByRole('heading', { name: 'Handle' })).toBeInTheDocument();
+    cleanup();
+
+    // Not on someone else's agent: the gate turns the page away.
+    await renderProfile(OTHERS_AGENT, {
+      stack: { ...profileStack(OTHERS_AGENT.id), entries: [{ kind: 'page', page: 'handle' }] },
+    });
+    expect(screen.queryByRole('heading', { name: 'Handle' })).toBeNull();
   });
 
   it('copies the handle when you tap it, inline — no toast beside it', async () => {
@@ -280,21 +318,22 @@ describe('who it belongs to', () => {
 });
 
 describe('the one button', () => {
-  // It reads "Open session", not "Message": what it does is land on `/session`
-  // with this agent's directory, and a person who reads "Message" is promised
-  // a DM instead (spec `sidebar-simplification` §D2). Re-seed the old word and
-  // every case in this block goes red on the query alone.
-  it('says what it does rather than promising a message', async () => {
+  // "Message" again, now that it is true: the button opens the agent's one
+  // Direct chat with you (DOR-2997), so the word promises what it does. The
+  // kebab sits beside it, out of the top corner (the redesign spec).
+  it('reads Message, with the actions beside it', async () => {
     await renderProfile(MANAGED);
 
-    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+    const message = screen.getByRole('button', { name: 'Message' });
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    const kebab = screen.getByRole('button', { name: `Actions for ${MANAGED.displayName}` });
+    expect(message.parentElement).toBe(kebab.parentElement);
   });
 
   it('opens the agent’s Direct chat, and records the agent', async () => {
     const view = await renderProfile(MANAGED);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Message' }));
 
     // Talk is the agent's one standing chat with you (rule S12). The agent is
     // what is recorded: its chat is resolved by the server.
@@ -310,30 +349,30 @@ describe('the one button', () => {
 
   it('is gone on your own profile', async () => {
     await renderProfile(SELF);
-    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 
   it('is gone when the profile is docked in that agent’s own session', async () => {
     // The composer is right there. A button that scrolls you to where you
     // already are is the panel arguing with itself.
     await renderProfile(MANAGED, { inOwnSession: true });
-    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 
   it('is gone when there is nowhere for a session to open', async () => {
     // No session belongs to a person, and none to an identity that reaches us
     // over Telegram (§8). Never a dead button.
     await renderProfile(PRIYA);
-    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
     cleanup();
 
     await renderProfile(BRIDGED);
-    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
     cleanup();
 
     // An agent whose folder the roster cannot place is one we cannot open.
     await renderProfile(UNPLACED);
-    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 });
 
@@ -350,10 +389,12 @@ describe('the rows', () => {
     // Commitments and Heartbeat because anyone may read any agent's promises
     // and how it wakes.
     await renderProfile(OTHERS_AGENT);
+    await openProfileFolds();
     const kinds = [...document.querySelectorAll('[data-profile-row]')].map(
       (row) => `${row.getAttribute('data-profile-row')}:${row.getAttribute('data-row-kind')}`
     );
-    expect(kinds).toEqual(['runs-on:text', 'commitments:nav', 'heartbeat:nav', 'rooms:nav']);
+    // No Level, and no Setup or Files: those are not a teammate's to read.
+    expect(kinds).toEqual(['runs-on:text', 'rooms:nav', 'commitments:nav', 'heartbeat:nav']);
   });
 
   it('keeps DorkBot’s locked rows visible, and explains them on tap', async () => {
@@ -368,29 +409,92 @@ describe('the rows', () => {
     expect(about.getAttribute('aria-describedby')).not.toBeNull();
   });
 
-  it('draws the whole §1.4 list for an agent you manage, in order', async () => {
+  it('keeps five rows in view and folds the rest into Work, Setup and Files', async () => {
     await renderProfile(MANAGED);
+    expect(rowLabels()).toEqual(['about', 'runs-on', 'level', 'reports-to', 'rooms']);
+    const folds = [...document.querySelectorAll('[data-slot="profile-fold"] > button')];
+    expect(folds.map((fold) => fold.getAttribute('aria-expanded'))).toEqual([
+      'false',
+      'false',
+      'false',
+    ]);
+    expect(folds.map((fold) => fold.textContent)).toEqual([
+      expect.stringMatching(/^Work/),
+      expect.stringMatching(/^Setup/),
+      'FilesSOUL.md · NOPE.md · MEMORY.md',
+    ]);
+  });
+
+  it('folds, never cuts: the whole §1.4 list for an agent you manage, in order', async () => {
+    await renderProfile(MANAGED);
+    await openProfileFolds();
     expect(rowLabels()).toEqual([
       'about',
       'runs-on',
-      'personality',
+      'level',
       'reports-to',
-      'folder',
+      'rooms',
       'sessions',
       'tasks',
       'commitments',
       'heartbeat',
-      'rooms',
-      'notifications',
       'activity',
+      'personality',
+      'folder',
+      'notifications',
       'skills',
       'tools',
-      'permissions',
       'connections',
+      'permissions',
       'instructions',
       'boundaries',
       'memory',
     ]);
+  });
+
+  it('remembers an open fold for the viewer, on every agent they look at', async () => {
+    await renderProfile(MANAGED);
+    await userEvent.click(screen.getByRole('button', { name: /^Setup/ }));
+    expect(screen.getByRole('region', { name: 'Setup' })).toBeInTheDocument();
+    cleanup();
+
+    await renderProfile(DORKBOT);
+    expect(screen.getByRole('button', { name: /^Setup/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /^Work/ })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens the fold a deep-linked page lives in, so its row is there to come back to', async () => {
+    await renderProfile(MANAGED, {
+      stack: { ...profileStack(MANAGED.id), entries: [{ kind: 'page', page: 'skills' }] },
+    });
+    const viewer = ROSTER.find((member) => member.isSelf)!.id;
+    await waitFor(() =>
+      expect(useProfileFoldStore.getState().byViewer[viewer]).toEqual({
+        work: false,
+        setup: true,
+        files: false,
+      })
+    );
+  });
+
+  it('shows a row named by ?profileRow= without pushing its page', async () => {
+    const onPush = vi.fn();
+    await renderProfile(MANAGED, { url: '/?profileRow=memory', onPush });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Files/ })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      )
+    );
+    expect(document.querySelector('[data-profile-row="memory"]')).toBeInTheDocument();
+    expect(onPush).not.toHaveBeenCalled();
+  });
+
+  it('draws no rule between rows: whitespace and tint only', async () => {
+    await renderProfile(MANAGED);
+    const rows = document.querySelector('[data-slot="profile-rows"]') as HTMLElement;
+    expect(rows.className).not.toMatch(/border-t|divide-y/);
+    expect(rows.querySelector('.divide-y')).toBeNull();
   });
 
   it('draws a pick as a control, and opens its popover on tap', async () => {
@@ -411,19 +515,21 @@ describe('the rows', () => {
 
   it('gives DorkBot the same work rows and none of the identity ones', async () => {
     await renderProfile(DORKBOT);
+    await openProfileFolds();
     // Who DorkBot IS is part of DorkOS; how it SOUNDS is yours, and so is what
     // it runs on and what it has been doing.
     expect(rowLabels()).toEqual([
       'about',
       'runs-on',
-      'personality',
+      'level',
+      'rooms',
       'sessions',
       'tasks',
       'commitments',
       'heartbeat',
-      'rooms',
-      'notifications',
       'activity',
+      'personality',
+      'notifications',
       'skills',
       'tools',
       'permissions',
@@ -441,27 +547,13 @@ describe('the rows', () => {
 
   it('copies the real folder, not the shortened one, inline — no toast beside it', async () => {
     await renderProfile(MANAGED);
+    await openProfileFolds();
     const row = document.querySelector('[data-profile-row="folder"]')!;
 
     await userEvent.click(row);
 
     await waitFor(() => expect(row.querySelector('.lucide-check')).toBeInTheDocument());
     expect(toasts.success).not.toHaveBeenCalled();
-  });
-
-  it('draws the identity’s own colour as the rule above them', async () => {
-    // The panel's "whose this is" moment, and it does not move to say so
-    // (identity-micro-interactions §3D4). On the body rather than under the
-    // header, so it exists exactly when there is something to separate.
-    // The mix is a CLASS, not an inline declaration: it was inline only while
-    // the app's neutral `border-color` default outranked Tailwind's whole
-    // utilities layer (DOR-1024).
-    await renderProfile(SELF);
-    const rows = document.querySelector('[data-slot="profile-rows"]') as HTMLElement;
-    expect(rows.style.borderTopColor).toBe('');
-    expect(rows.className).toContain(
-      'border-t-[color-mix(in_oklch,var(--identity-color)_55%,transparent)]'
-    );
   });
 
   it('draws no body at all when this build has no row to put in it', async () => {

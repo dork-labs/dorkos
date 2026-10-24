@@ -48,6 +48,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/connections': 'the connections page',
   '/marketplace': 'the marketplace',
   '/feedback-requests': 'the feedback requests page',
+  '/threads': 'the threads page',
 };
 
 /** Everything the seed is composed from. Each field may be unknown. */

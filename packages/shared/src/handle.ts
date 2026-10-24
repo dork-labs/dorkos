@@ -52,11 +52,15 @@ export const SYSTEM_HANDLE = 'dorkos';
  *
  * **This is still not a blocklist.** Nothing consults a list of forbidden words
  * at any enforcement point; there is nothing to keep in sync across routes,
- * tools and the client. It is three rows in `handle_tombstones`, under the index
+ * tools and the client. It is a few rows in `handle_tombstones`, under the index
  * that already refuses a released handle. Discord pays a rule at every boundary;
- * we pay three rows at boot, once.
+ * we pay a few rows at boot, once.
+ *
+ * `room` joined the three when a person became able to rename an agent
+ * (DOR-3156): `@room` is Slack's spelling of the same broadcast, so a model
+ * writes it too.
  */
-export const BROADCAST_RESERVATIONS = ['everyone', 'here', 'channel'] as const;
+export const BROADCAST_RESERVATIONS = ['everyone', 'here', 'channel', 'room'] as const;
 
 /**
  * Every handle held back at boot, for a caller that SUGGESTS a handle and must

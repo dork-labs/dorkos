@@ -14,7 +14,7 @@ const BY_RUNTIME_PRESET_MIN_AGENTS = 2;
 
 // `meetsSmartGroupDisclosureThreshold` used to live here with its own pair of
 // constants — eight agents, two runtimes. `offersGroupAffordances`
-// (`model/rules/build-library-sections`) is the same predicate over the same
+// (`model/rules/build-sections`) is the same predicate over the same
 // numbers, and once the New menu became the one place a group is made, the two
 // gated the same item from two names. One gate, one name: presets appear
 // exactly when grouping does.

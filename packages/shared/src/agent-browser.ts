@@ -73,7 +73,10 @@ export interface AgentBrowserConnection {
  * its browser is written back. `--storage-state` seeds each of those in-memory
  * browsers from the operator's saved session. `--headless` keeps a window from
  * appearing for every session and lets it run on a machine with no screen;
- * dropping it from the entry shows the window.
+ * dropping it from the entry shows the window. The Cloud block is deliberately
+ * not baked in here: {@link withCloudOriginBlocked} adds it to every agent
+ * browser on its way to a runtime, so the list is always the current one, and
+ * a manifest written before the block existed starts blocked too.
  *
  * @param stateFile - Absolute path to the saved session file.
  * @returns The stdio connection to add under {@link AGENT_BROWSER_SERVER_NAME}.
@@ -94,26 +97,164 @@ export function agentBrowserConnection(stateFile: string): AgentBrowserConnectio
   };
 }
 
+const BLOCKED_ORIGINS_FLAG = '--blocked-origins';
+const CONFIG_FLAG = '--config';
+const STORAGE_STATE_FLAG = '--storage-state';
+
+/** A managed server connection, as far as this module reads one. */
+interface BrowserConnectionLike {
+  transport: string;
+  command?: string;
+  args?: readonly string[];
+  env?: Readonly<Record<string, string>>;
+}
+
+/** The command names Playwright MCP is published under. */
+const PLAYWRIGHT_MCP_BIN = /(^|[/\\])(playwright-mcp|mcp-server-playwright)(\.cmd|\.js)?$/;
+
+/**
+ * Whether a managed server connection is a Playwright MCP browser, by shape,
+ * so a renamed or hand-added one counts: the package anywhere in its command
+ * or arguments (`npx @playwright/mcp`, `npx --package=@playwright/mcp …`, a
+ * path into `node_modules/@playwright/mcp`), or one of its command names.
+ *
+ * @param connection - Any managed server connection.
+ */
+export function isPlaywrightBrowser(connection: BrowserConnectionLike): boolean {
+  if (connection.transport !== 'stdio') return false;
+  const words = [connection.command ?? '', ...(connection.args ?? [])];
+  return words.some((word) => word.includes('@playwright/mcp') || PLAYWRIGHT_MCP_BIN.test(word));
+}
+
+/**
+ * The value of a `--flag value` or `--flag=value` argument, every time it
+ * appears, and the arguments without it.
+ */
+function takeFlag(args: readonly string[], flag: string): { values: string[]; rest: string[] } {
+  const values: string[] = [];
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === flag) {
+      if (args[i + 1] !== undefined) values.push(args[i + 1]!);
+      i += 1;
+    } else if (arg.startsWith(`${flag}=`)) {
+      values.push(arg.slice(flag.length + 1));
+    } else {
+      rest.push(arg);
+    }
+  }
+  return { values, rest };
+}
+
+/** Flags that give the browser a sign-in, a profile or a route DorkOS cannot clean or block. */
+const UNGUARDABLE_FLAGS = [
+  '--extension',
+  '--executable-path',
+  '--no-isolated',
+  '--cdp-endpoint',
+  '--endpoint',
+  '--user-data-dir',
+  '--proxy-server',
+  CONFIG_FLAG,
+];
+
+/** The browsers the Cloud block works in: it relies on a Chrome launch flag. */
+const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
+
+/**
+ * Why an agent browser cannot be kept off the Cloud origin, or `undefined`
+ * when it can (DOR-3196). Such a browser is left out of an agent's session
+ * rather than started unguarded. It cannot be guarded when it:
+ *
+ * - attaches to a browser DorkOS does not launch, or keeps a profile on disk
+ *   (`--extension`, `--cdp-endpoint`, `--endpoint`, `--user-data-dir`,
+ *   `--no-isolated`, or no `--isolated`), or runs a browser binary DorkOS
+ *   did not choose (`--executable-path`): its sign-ins are not the saved
+ *   session DorkOS cleans, or the Chrome flag may not apply;
+ * - sends traffic through a proxy (`--proxy-server`), which the Chrome flag
+ *   that stops redirects does not reach;
+ * - runs a browser other than Chrome, Chromium or Edge, for the same reason;
+ * - brings its own config file (`--config`), which can do any of the above;
+ * - names its saved session more than once (the last one wins in Playwright,
+ *   so DorkOS could clean the wrong file);
+ * - sets any `PLAYWRIGHT_MCP_*` variable, the environment form of every flag.
+ *
+ * @param connection - A Playwright MCP browser connection.
+ */
+export function unguardableBrowserReason(connection: BrowserConnectionLike): string | undefined {
+  const args = connection.args ?? [];
+  const named = (flag: string) => args.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
+  const flag = UNGUARDABLE_FLAGS.find(named);
+  if (flag) return `it uses ${flag}`;
+  if (!args.includes('--isolated')) return 'it keeps a browser profile on disk (no --isolated)';
+  const browsers = takeFlag(args, '--browser').values;
+  if (browsers.some((browser) => !CHROMIUM_BROWSER.test(browser)))
+    return 'it runs a browser other than Chrome';
+  if (takeFlag(args, STORAGE_STATE_FLAG).values.length > 1)
+    return 'it names more than one saved session';
+  const variable = Object.keys(connection.env ?? {}).find((key) =>
+    key.startsWith('PLAYWRIGHT_MCP_')
+  );
+  if (variable) return `it sets ${variable}`;
+  return undefined;
+}
+
+/**
+ * A Playwright MCP browser connection that cannot reach the Cloud origin
+ * (DOR-3196). Two layers, because neither covers every path on its own (both
+ * measured against `@playwright/mcp` 0.0.82):
+ *
+ * - `--blocked-origins` aborts direct visits, iframes and popups with
+ *   `net::ERR_BLOCKED_BY_CLIENT`, but a route only sees the first request of a
+ *   redirect chain, so a link that answers 302 to Cloud gets through;
+ * - `--config` names a file whose Chrome launch flag makes the Cloud hosts
+ *   unresolvable (`net::ERR_NAME_NOT_RESOLVED`), which stops every hop of a
+ *   redirect and every request the page makes. The server writes that file
+ *   (`services/browser/agent-browser-guard.ts`).
+ *
+ * Neither reaches a request an agent's own Playwright code sends from Node
+ * (`browser_run_code_unsafe` and `page.request`); that is why the saved
+ * session never holds a Cloud sign-in in the first place. Only call this on a
+ * connection {@link unguardableBrowserReason} accepts. An operator's own
+ * `--blocked-origins` entries are kept beside the Cloud ones. A server that is
+ * not a Playwright MCP browser is returned unchanged.
+ *
+ * @param connection - Any managed server connection.
+ * @param guard - The Cloud list as `--blocked-origins` wants it, and the guarded config file.
+ */
+export function withCloudOriginBlocked<T extends BrowserConnectionLike>(
+  connection: T,
+  guard: { blockedOrigins: string; configFile: string }
+): T {
+  if (!isPlaywrightBrowser(connection)) return connection;
+  const blocked = takeFlag(connection.args ?? [], BLOCKED_ORIGINS_FLAG);
+  const { rest } = takeFlag(blocked.rest, CONFIG_FLAG);
+  const merged = [
+    ...new Set([guard.blockedOrigins, ...blocked.values].flatMap((value) => value.split(';'))),
+  ]
+    .filter(Boolean)
+    .join(';');
+  return {
+    ...connection,
+    args: [...rest, BLOCKED_ORIGINS_FLAG, merged, CONFIG_FLAG, guard.configFile],
+  };
+}
+
 /**
  * The saved session file a managed server loads, when the server is a
  * Playwright MCP browser started from one; `undefined` for anything else.
+ * When the flag appears more than once the last one is the one Playwright
+ * loads, so that is the one returned.
  *
  * Recognised by shape rather than by name, so a server the operator renamed
  * (or added by hand with a pinned Playwright version) is still recognised.
  *
  * @param connection - Any managed server connection.
  */
-export function agentBrowserStateFileOf(connection: {
-  transport: string;
-  args?: readonly string[];
-}): string | undefined {
-  if (connection.transport !== 'stdio' || !connection.args) return undefined;
-  const args = connection.args;
-  if (!args.some((arg) => arg.startsWith('@playwright/mcp'))) return undefined;
-  const flag = args.indexOf('--storage-state');
-  if (flag !== -1) return args[flag + 1];
-  const inline = args.find((arg) => arg.startsWith('--storage-state='));
-  return inline?.slice('--storage-state='.length);
+export function agentBrowserStateFileOf(connection: BrowserConnectionLike): string | undefined {
+  if (!isPlaywrightBrowser(connection)) return undefined;
+  return takeFlag(connection.args ?? [], STORAGE_STATE_FLAG).values.at(-1);
 }
 
 /**

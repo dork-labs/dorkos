@@ -177,7 +177,10 @@ describe('the readers', () => {
     expect(marksOf(plain, undefined)).toEqual({});
     expect(markedBoundOf(plain, undefined)).toBeUndefined();
     expect(marksOf(marked, undefined)).toEqual({ outsider: true });
-    expect(markedBoundOf(marked, undefined)).toMatchObject({ outsider: true });
+    expect(markedBoundOf(marked, undefined)).toEqual([
+      expect.objectContaining({ outsider: true }),
+      'runtime-default',
+    ]);
     expect(marksOf(undefined, '/agents/nobody-running')).toEqual({});
   });
 
@@ -293,5 +296,28 @@ describe('the readers', () => {
     noteTurnOrigin(stranger, { kind: 'relay-binding' } as never);
     expect(await list(stranger)).toMatchObject({ code: 'OUTSIDER_TURN' });
     expect(await list(fresh())).not.toMatchObject({ code: 'OUTSIDER_TURN' });
+  });
+});
+
+describe('the marks of a turn a continuation’s hold clamped (DOR-3203)', () => {
+  const teammate = { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'r', authorId: 'a' }] };
+
+  it('takes nothing from the hold itself', () => {
+    expect(marksForTurn({ permissionCeiling: 'runtime-default', continuationHold: true })).toEqual(
+      {}
+    );
+    expect(marksForTurn({ permissionCeiling: 'runtime-default' })).toEqual({ outsider: true });
+  });
+
+  it('keeps every other bound’s marks, a second runtime default included', () => {
+    expect(
+      marksForTurn({ permissionCeiling: ['runtime-default', teammate], continuationHold: true })
+    ).toEqual({ teammate: teammate.teammate });
+    expect(
+      marksForTurn({
+        permissionCeiling: ['runtime-default', 'runtime-default'],
+        continuationHold: true,
+      })
+    ).toMatchObject({ outsider: true });
   });
 });

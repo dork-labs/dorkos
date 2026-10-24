@@ -71,16 +71,32 @@ export interface ProfileStatus {
  *
  * @param member - The identity being drawn.
  * @param now - The clock. Injectable so a fixture reads the same at any hour.
+ * @param runningChats - How many of an agent's chats are mid-turn on this
+ *   client's live status feed; 0 for a person, or when none are.
  * @returns The sentence and whether it is live (see {@link ProfileStatus}).
  */
-export function profileStatusText(member: TeamMember, now: Date = new Date()): ProfileStatus {
+export function profileStatusText(
+  member: TeamMember,
+  now: Date = new Date(),
+  runningChats = 0
+): ProfileStatus {
   const agent = member.agent;
   if (agent) {
     const working = agent.activity.working;
+    // Two or more is the fact worth the words; one is the room turn itself,
+    // and then how long it has been going says more.
+    const running = runningChats > 1 ? `${runningChats} chats running` : null;
     if (working) {
       const elapsed = durationWords(working.since, now);
       const where = working.roomName ? ` in #${working.roomName}` : '';
-      return { text: `Working${where}${elapsed ? ` · ${elapsed}` : ''}`, live: true };
+      const detail = running ?? elapsed;
+      return { text: `Working${where}${detail ? ` · ${detail}` : ''}`, live: true };
+    }
+    if (runningChats > 0) {
+      return {
+        text: runningChats === 1 ? 'Working in 1 chat' : `Working · ${runningChats} chats running`,
+        live: true,
+      };
     }
     const last = agent.activity.lastActiveAt ? agoWords(agent.activity.lastActiveAt, now) : null;
     if (last) return { text: `Last active ${last}`, live: false };

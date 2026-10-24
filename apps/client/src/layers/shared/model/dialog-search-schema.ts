@@ -38,6 +38,9 @@ export const dialogSearchSchema = z.object({
   // to the profile feature and `shared/` may not import it; the feature parses
   // it back (`asProfilePageId`) and lands on the root when it names no page.
   profilePage: z.string().optional(),
+  // One row of that profile to show — its fold opened and the row scrolled
+  // into view — without pushing a page. A row id, parsed by the feature.
+  profileRow: z.string().optional(),
   // The Inbox: `open`, or the id of one waiting item to focus. Read once and
   // removed by `useInboxDeepLink`. Coerced because the app's search parser
   // reads a number-looking id as a number.
@@ -55,7 +58,8 @@ export type DialogSearch = z.infer<typeof dialogSearchSchema>;
  * (`dialog-search-schema.test.ts` fails otherwise).
  *
  * - **Modifiers** put something over the page you are on: a modal dialog, the
- *   right panel, a one-shot inbox focus, or a legacy key a redirect rewrites.
+ *   right panel, a one-shot inbox or profile-row focus, or a legacy key a
+ *   redirect rewrites.
  *   Opening or closing one is not going anywhere, so it rewrites the tab's
  *   current history entry instead of adding a Back step that reopens it.
  * - **Addresses** name a subject: which profile, which page of it, which agent.
@@ -72,6 +76,7 @@ export const DIALOG_MODIFIER_KEYS = [
   'panel',
   'agent',
   'hubTab',
+  'profileRow',
 ] as const satisfies readonly (keyof DialogSearch)[];
 
 /** The dialog params that are addresses, not modifiers — see {@link DIALOG_MODIFIER_KEYS}. */

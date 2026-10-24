@@ -175,6 +175,11 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     ),
   buildBridgeUndeliveredNotice: () => [copy.buildBridgeUndeliveredNotice('hello')],
   buildRoomArchivedNotice: () => [copy.buildRoomArchivedNotice('Ana', 'author-ana')],
+  buildHandleChangedNotice: () => [
+    copy.buildHandleChangedNotice('Dorian', 'Ana', 'author-ana', 'ana', 'ana-pm'),
+    copy.buildHandleChangedNotice('the operator', 'Ana', 'author-ana', null, 'ana'),
+    copy.buildHandleChangedNotice('Dorian', 'Ana', 'author-ana', 'ana', null),
+  ],
 };
 
 function everyNotice(): RoomEntryBody[] {

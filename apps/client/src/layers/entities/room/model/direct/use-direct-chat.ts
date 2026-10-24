@@ -15,7 +15,7 @@
  */
 import { useCallback, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   oneToOneDmAgentRef,
@@ -24,6 +24,11 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { newSessionTarget } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
+// The one place a door to an agent decides where it leads, the 403 fallback
+// included. An edge from this foundational slice to `session`, on purpose: the
+// fallback IS a session question (the agent's latest chat), and answering it
+// here would be a second copy of the sidebar's rule.
+import { agentChatTarget } from '@/layers/entities/session';
 import { useRooms } from '../use-rooms';
 
 /** What an agent's Direct chat is always called. It is never renamed. */
@@ -32,17 +37,30 @@ export const DIRECT_CHAT_TITLE = 'Direct';
 /** Query key for the Direct chat a session is. */
 export const directChatKey = (sessionId: string) => ['direct-chat', sessionId] as const;
 
+/** How {@link useDirectChat} reads. */
+export interface UseDirectChatOptions {
+  /**
+   * Whether to ask now. Defaults to `true`; a surface that only needs the
+   * answer while a setting is on (a desktop tab's title) passes that setting.
+   */
+  enabled?: boolean;
+}
+
 /**
  * The Direct chat this session is, or `null` when it is an ordinary chat.
  *
  * @param sessionId - The session on screen, or null for none.
+ * @param options - See {@link UseDirectChatOptions}.
  */
-export function useDirectChat(sessionId: string | null): UseQueryResult<DirectChat | null> {
+export function useDirectChat(
+  sessionId: string | null,
+  options?: UseDirectChatOptions
+): UseQueryResult<DirectChat | null> {
   const transport = useTransport();
   return useQuery({
     queryKey: directChatKey(sessionId ?? ''),
     queryFn: () => transport.findDirectChat(sessionId!),
-    enabled: sessionId !== null,
+    enabled: sessionId !== null && (options?.enabled ?? true),
     retry: false,
     // Which session is a Direct chat changes only when its DM gains a member.
     staleTime: 60_000,
@@ -63,7 +81,11 @@ export interface OpenDirectChatOptions {
 }
 
 /**
- * Open an agent's Direct chat: by its Mesh id, or by the direct message it is.
+ * Open an agent's Direct chat: by its directory, or by the direct message it is.
+ *
+ * Asked by directory, it is every door to an agent (its card, its profile,
+ * ⌘K, the New menu), and for anyone but the owner, whom the server refuses,
+ * it opens the agent's latest chat with them instead (`agentChatTarget`).
  *
  * @returns A function that opens it, resolving `false` when it could not.
  */
@@ -72,10 +94,19 @@ export function useOpenDirectChat(): (
   opts?: OpenDirectChatOptions
 ) => Promise<boolean> {
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useCallback(
     async (req, opts = {}) => {
       try {
+        if ('agentPath' in req && !opts.quiet) {
+          const found = await agentChatTarget({ queryClient, transport }, req.agentPath, {
+            ...(opts.runtime && { runtime: opts.runtime }),
+          });
+          if (!found) throw new Error('No chat with this agent could be found.');
+          await navigate({ ...found, ...(opts.replace && { replace: true }) });
+          return true;
+        }
         const chat = await transport.openDirectChat(req);
         const target = await newSessionTarget(transport, {
           session: chat.sessionId,
@@ -93,7 +124,7 @@ export function useOpenDirectChat(): (
         return false;
       }
     },
-    [transport, navigate]
+    [transport, queryClient, navigate]
   );
 }
 

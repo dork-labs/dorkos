@@ -226,6 +226,59 @@ describe('storage state file', () => {
     expect(readStorageState(file)).toEqual({ cookies: [], origins: [] });
   });
 
+  it('never saves a DorkOS Cloud sign-in, and keeps every other site (DOR-3196)', async () => {
+    const file = path.join(root, 'browser', 'storage-state.json');
+    const cookie = (domain: string, value: string) => ({
+      name: 'session',
+      value,
+      domain,
+      path: '/',
+      expires: -1,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax' as const,
+    });
+    const saved = await writeStorageState(file, {
+      cookies: [
+        cookie('cloud.dorkos.ai', 'cloud-secret'),
+        cookie('.app.cloud.dorkos.ai', 'cloud-secret'),
+        cookie('github.com', 'kept'),
+      ],
+      origins: [
+        { origin: 'https://cloud.dorkos.ai', localStorage: [{ name: 't', value: 'cloud-secret' }] },
+        { origin: 'https://github.com', localStorage: [{ name: 't', value: 'kept' }] },
+      ],
+    });
+    const raw = fs.readFileSync(file, 'utf8');
+    expect(raw).not.toContain('cloud-secret');
+    expect(raw).not.toContain('cloud.dorkos.ai');
+    expect(saved.cookies.map((c) => c.domain)).toEqual(['github.com']);
+    expect(readStorageState(file)?.origins.map((o) => o.origin)).toEqual(['https://github.com']);
+  });
+
+  it('reads an older file without its Cloud sign-in', () => {
+    const file = path.join(root, 'old.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        cookies: [
+          {
+            name: 's',
+            value: 'v',
+            domain: 'cloud.dorkos.ai',
+            path: '/',
+            expires: -1,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Lax',
+          },
+        ],
+        origins: [],
+      })
+    );
+    expect(readStorageState(file)).toEqual({ cookies: [], origins: [] });
+  });
+
   it('reads a missing file as no session, and a garbled one as an error that says what to do', () => {
     expect(readStorageState(path.join(root, 'nope.json'))).toBeNull();
     const bad = path.join(root, 'bad.json');

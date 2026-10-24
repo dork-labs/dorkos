@@ -1,6 +1,7 @@
 /**
  * The profile's body: groups of rows, separated by space rather than by labels
- * (spec `profile-unification` §1.3).
+ * (spec `profile-unification` §1.3). An agent's less-read rows sit in three
+ * folds — Work, Setup and Files — each opened per viewer (`profile-folds.ts`).
  *
  * @module features/profile/ui/ProfileRows
  */
@@ -12,6 +13,9 @@ import type { ProfileStackEntry } from '../model/profile-stack';
 import { isProfilePageAvailable } from './pages/registry';
 import { isProfilePickAvailable, profilePick } from './popovers/registry';
 import { ProfileRow } from './ProfileRow';
+import { ProfileAboutRow } from './ProfileAboutRow';
+import { ProfileFold } from './ProfileFold';
+import { useProfileFoldStore, useProfileFolds } from '../model/profile-folds';
 
 export interface ProfileRowsProps {
   /** The identity whose rows these are. */
@@ -20,6 +24,8 @@ export interface ProfileRowsProps {
   ctx: ProfileRowsContext;
   /** Push a page. */
   onPush: (entry: ProfileStackEntry) => void;
+  /** Who is looking, by roster id — whose remembered folds to draw. */
+  viewerId: string;
 }
 
 /**
@@ -32,7 +38,10 @@ export interface ProfileRowsProps {
  * plain fact it already carries, which is exactly how the same row reads on
  * someone else's agent. Nothing is ever drawn dead.
  */
-export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
+export function ProfileRows({ member, ctx, onPush, viewerId }: ProfileRowsProps) {
+  const folds = useProfileFolds(viewerId);
+  const setFold = useProfileFoldStore((s) => s.setFold);
+
   function draw(row: ProfileRowModel): ProfileRowModel {
     if (row.kind !== 'pick') return row;
     if (row.pick !== undefined && isProfilePickAvailable(row.pick)) return row;
@@ -62,41 +71,52 @@ export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
   // height of the panel is what the old drawer got wrong.
   if (groups.length === 0) return null;
 
+  function renderRow(row: ProfileRowModel) {
+    const pick = row.kind === 'pick' && row.pick ? profilePick(row.pick) : null;
+    const control = (
+      <ProfileRow
+        key={row.id}
+        row={row.id === 'about' && row.value ? { ...row, value: null } : row}
+        onNavigate={(nav) => nav.page && onPush({ kind: 'page', page: nav.page })}
+        pickContent={
+          pick
+            ? (close) => (
+                <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                  <pick.component member={member} onClose={close} />
+                </Suspense>
+              )
+            : undefined
+        }
+      />
+    );
+    // About reads as a paragraph: its label line keeps the row's kind, and the
+    // description sits under it, two lines and then "More".
+    if (row.id === 'about' && row.value) {
+      return <ProfileAboutRow key={row.id} header={control} text={row.value} />;
+    }
+    return control;
+  }
+
   return (
-    <div
-      data-slot="profile-rows"
-      // The identity accent, drawn as a static 2px rule in this identity's own
-      // colour (identity-micro-interactions §3D4). It lives on the body rather
-      // than under the header so it exists exactly when there is something to
-      // separate. The mix is a CLASS, the same shape `identityMarkRing` uses for
-      // its ring: an arbitrary value expresses a `color-mix()` of a custom
-      // property perfectly well. It was inline until DOR-1024 only because the
-      // neutral `border-color` default outranked the whole utilities layer.
-      className="flex flex-col gap-2.5 border-t-2 border-t-[color-mix(in_oklch,var(--identity-color)_55%,transparent)] px-2 pt-2 pb-4"
-    >
-      {groups.map((group) => (
-        <div key={group.id} className="divide-border/60 flex flex-col divide-y">
-          {group.rows.map((row) => {
-            const pick = row.kind === 'pick' && row.pick ? profilePick(row.pick) : null;
-            return (
-              <ProfileRow
-                key={row.id}
-                row={row}
-                onNavigate={(nav) => nav.page && onPush({ kind: 'page', page: nav.page })}
-                pickContent={
-                  pick
-                    ? (close) => (
-                        <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-                          <pick.component member={member} onClose={close} />
-                        </Suspense>
-                      )
-                    : undefined
-                }
-              />
-            );
-          })}
-        </div>
-      ))}
+    // Whitespace and tint, never a rule between rows (the house style): an
+    // open fold is the only thing with a ground of its own.
+    <div data-slot="profile-rows" className="flex flex-col gap-3 px-2 pt-2 pb-5">
+      {groups.map((group) =>
+        group.fold ? (
+          <ProfileFold
+            key={group.id}
+            fold={group.fold}
+            open={folds[group.fold.id]}
+            onOpenChange={(open) => setFold(viewerId, group.fold!.id, open)}
+          >
+            {group.rows.map(renderRow)}
+          </ProfileFold>
+        ) : (
+          <div key={group.id} className="flex flex-col">
+            {group.rows.map(renderRow)}
+          </div>
+        )
+      )}
     </div>
   );
 }

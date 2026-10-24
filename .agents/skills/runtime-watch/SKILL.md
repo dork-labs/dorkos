@@ -22,7 +22,7 @@ The packages in `.claude/config/runtime-deps.json` (`@anthropic-ai/claude-agent-
    - **Worth adopting:** a new feature a DorkOS user would notice. Name it in one plain line.
    - **Routine:** everything else.
 6. **Check it is not already in hand.** Look for an open PR whose title names the package (`gh pr list --search "<short_name> in:title"`) and an open Linear ticket for the same bump. If one exists, report it as "in hand" with its title, and do not hand it off again.
-7. **Hand off real drift.** A moved package that is not in hand goes to DorkOS Code (`@dorkos-2`) as one message: package, `pin → latest`, the "matters now" lines, and "run `/app:runtime-upgrade <pkg>` within 2 days". Each runtime bump is its own PR behind its adapter directory, with the runtime conformance suite passing.
+7. **Hand off real drift.** A moved package that is not in hand goes to DorkOS Code (`@dorkos-2`) as one message: package, `pin → latest`, the "matters now" lines, and "run `/app:runtime-upgrade <pkg>` within 2 days". Each runtime bump is its own PR behind its adapter directory, with the runtime conformance suite passing. Every runtime bump opens with the `hold` label and stays unarmed until @security-auditor OKs it in #dorkos, even a plain version bump (Security rule, 2026-10-20). Say so in the hand-off.
 8. **New frontier-model support** (a new model alias, a new model family) also gets one line to @dorkos-marketing, but only after the bump that carries it has merged.
 
 ## Report

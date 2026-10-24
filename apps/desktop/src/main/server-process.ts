@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, dialog } from 'electron';
 import log from 'electron-log';
 import { signInWindow, type WindowSignInOutcome } from './sign-in/window-sign-in';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
@@ -56,9 +56,6 @@ let readySince: number | null = null;
  * consumer re-derives from an exit code.
  */
 let expectedExit = false;
-
-/** Point-in-time accessor for the main window, stored the way `setupAutoUpdater` stores its own. */
-let getMainWindow: (() => BrowserWindow | null) | null = null;
 
 /** The in-flight `startServer` readiness wait, or `null` when not starting. */
 let pendingStart: {
@@ -217,7 +214,6 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
     code,
     output,
     uptimeMs,
-    getWindow: () => getMainWindow?.() ?? null,
     restart: () => startServer(),
   }).catch((err: unknown) => {
     // The recovery conversation itself fell over — a rejected dialog, a
@@ -241,9 +237,6 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
  * Once ready, the child is supervised: any exit that {@link stopServer} did
  * not ask for is treated as a crash, whatever its exit code.
  *
- * @param mainWindowAccessor - Point-in-time accessor for the current main
- *   window, used to anchor the crash dialog. Stored for the lifetime of the
- *   process, so a restart from that dialog keeps using it.
  * @returns The port number the server is listening on: the one someone pinned,
  *   or 4242 and the next free port after it when nobody has (see
  *   `server-port.ts`).
@@ -253,11 +246,8 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
  *   cannot be spawned; or if it exits or stays silent before signalling
  *   readiness (within {@link SERVER_READY_PARENT_TIMEOUT_MS}).
  */
-export async function startServer(
-  mainWindowAccessor?: () => BrowserWindow | null
-): Promise<number> {
+export async function startServer(): Promise<number> {
   installSafetyNet();
-  if (mainWindowAccessor) getMainWindow = mainWindowAccessor;
   if (state !== 'dead') {
     throw new Error(`Cannot start a second DorkOS server: the current one is ${state}.`);
   }

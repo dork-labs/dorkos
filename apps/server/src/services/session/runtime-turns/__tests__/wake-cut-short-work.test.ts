@@ -91,6 +91,27 @@ describe('a wake for a chat whose latest turn was held (DOR-3037)', () => {
     expect(bySession.get('sess-held')).toBe('runtime-default');
     expect(bySession.get('sess-free')).toBeUndefined();
   });
+
+  it('after a restart, holds a held chat and runs a chat with no record at its own level (DOR-3203)', async () => {
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    noteTurnHold('sess-held', true);
+    // A new process: the same rows, nothing in memory. `sess-old` ran before the
+    // hold was recorded, so it has no row at all.
+    setContinuationHoldDb(db);
+    ledger.hold({ key: 'k-h', sessionId: 'sess-held', cwd: '/projects/one', since: RECENT });
+    ledger.hold({ key: 'k-o', sessionId: 'sess-old', cwd: '/projects/two', since: RECENT });
+    await boot();
+    const bySession = new Map(
+      dispatchMessage.mock.calls.map((call) => [call[0].sessionId, call[0]])
+    );
+    expect(bySession.get('sess-held')).toMatchObject({
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
+    expect(bySession.get('sess-old')?.permissionCeiling).toBeUndefined();
+    expect(bySession.get('sess-old')?.continuationHold).toBeUndefined();
+  });
 });
 
 describe('a boot with background work a previous run left behind', () => {

@@ -87,6 +87,7 @@ Accessible Claude Code account/project JSONL, local Codex thread stores and the 
 | `/agents`              | Alias redirect to `/team`, preserving meaningful search.                  |
 | `/session`             | Existing identity or explicit draft; legacy private search canonicalizes. |
 | `/channels`            | Room/thread/entry context; team-room redirects preserve thread and entry. |
+| `/threads`             | Every thread the reader is in, across rooms; inherited root search.       |
 | `/connections`         | Connections search; legacy `?relay=` redirects here.                      |
 | `/marketplace`         | Validated marketplace search.                                             |
 | `/marketplace/sources` | Independent sibling page; never renders inside the marketplace page.      |

@@ -14,7 +14,7 @@
       // (it would bust the cache every commit, and is unnecessary because PostHog
       // symbolication matches on the content-derived chunkId). This override
       // REPLACES the root build task's env, so it repeats the full list.
-      "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*", "VERCEL_ENV"]
+      "env": ["NODE_ENV", "VITE_*", "!VITE_PORT", "NEXT_PUBLIC_*", "POSTHOG_*", "VERCEL_ENV"]
     }
   }
 }

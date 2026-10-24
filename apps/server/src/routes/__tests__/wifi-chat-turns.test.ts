@@ -2,6 +2,8 @@
  * A chat turn started from Wi-Fi runs at the runtime's default at most
  * (DOR-3037): a message, a widget's action, a queued message after a restart
  * or after somebody on Wi-Fi rewords it, and a chat's mode only goes down.
+ * Over an encrypted connection it runs as at the desk, and signing the
+ * sending device out stops it (DOR-3172).
  *
  * Driven over the real chat routes, the real dispatcher and a real SQLite
  * queue, against a runtime double whose `sendMessage` options are what the
@@ -76,9 +78,16 @@ import {
   resolveModeDecision,
 } from '../../services/runtimes/claude-code/turn-permission.js';
 import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
+import {
+  endSession,
+  resetLiveConnectionsForTests,
+} from '../../services/core/auth/sessions/live-connections.js';
+import { resetSignedInTurnsForTests } from '../../services/core/auth/sessions/signed-in-turns.js';
 import { WIFI_RAISE_REFUSAL } from '../../services/core/auth/sessions/wifi-raise-guard.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000e1';
+/** The Better Auth sign-in the requests carry. */
+const SIGN_IN = 'sign-in-phone';
 const target = swappableServer();
 let store: MessageQueueStore;
 
@@ -89,8 +98,14 @@ function app() {
       { path: '/api/sessions', routes: createSessionRoutes() },
       {
         before: async (c, next) => {
-          if (c.req.header('x-test-via') === 'wifi') markIngress(c.env.incoming, 'wifi');
-          c.set('user', { userId: 'owner', credential: 'cookie' });
+          const via = c.req.header('x-test-via');
+          if (via === 'wifi' || via === 'own-tunnel' || via === 'managed') {
+            markIngress(c.env.incoming, via);
+          }
+          // The desk with no password asked: no sign-in at all.
+          if (c.req.header('x-test-desk') !== '1') {
+            c.set('user', { userId: 'owner', credential: 'cookie', sessionId: SIGN_IN });
+          }
           await next();
         },
       }
@@ -149,6 +164,18 @@ describe('a message sent from Wi-Fi', () => {
     expect(resolveModeDecision(mode as 'default')).toBe('ask');
   });
 
+  // The cookie is the owner's own, and anyone on that network could have
+  // copied it: a copied Wi-Fi cookie still cannot start a turn at Full.
+  it('holds it there whoever sent the cookie: a copied one gets no more', async () => {
+    fakeRuntime.withScenarios([doneTurn]);
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('x-test-via', 'wifi')
+      .send({ content: 'replayed from a copied cookie' });
+    const ceiling = optsFor('replayed from a copied cookie')?.permissionCeiling;
+    expect(clampClaudeMode('bypassPermissions', ceiling!)).toBe('default');
+  });
+
   it('leaves a message sent at this computer at the agent’s own level', async () => {
     fakeRuntime.withScenarios([doneTurn]);
     const res = await request(app())
@@ -167,6 +194,93 @@ describe('a message sent from Wi-Fi', () => {
     expect(res.status).toBe(202);
     const call = fakeRuntime.sendMessage.mock.calls.at(-1);
     expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
+  });
+});
+
+describe('a message sent over an encrypted connection (DOR-3172)', () => {
+  it.each(['own-tunnel', 'managed'] as const)(
+    'runs at the agent’s own level over %s, as at the desk: Full asks nothing',
+    async (via) => {
+      fakeRuntime.withScenarios([doneTurn]);
+      const res = await request(app())
+        .post(`/api/sessions/${SESSION_ID}/messages`)
+        .set('x-test-via', via)
+        .send({ content: 'clean up the build folder' });
+      expect(res.status).toBe(202);
+      const ceiling = optsFor('clean up the build folder')?.permissionCeiling;
+      expect(ceiling).toBeUndefined();
+      expect(resolveModeDecision('bypassPermissions')).not.toBe('ask');
+    }
+  );
+});
+
+describe('signing out the device that sent it', () => {
+  afterEach(() => {
+    resetSignedInTurnsForTests();
+    resetLiveConnectionsForTests();
+  });
+
+  /** A turn that runs until `release` is called. */
+  function heldTurn(): { release: () => void; turn: () => AsyncGenerator<StreamEvent> } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    return {
+      release,
+      turn: async function* () {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await gate;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    };
+  }
+
+  it('stops the turn its window holds and removes its waiting messages', async () => {
+    const held = heldTurn();
+    fakeRuntime.withScenarios([held.turn, doneTurn]);
+    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'phone', acquiredAt: 0 });
+    fakeRuntime.interruptQuery.mockImplementation(async () => {
+      held.release();
+      return { outcome: 'interrupted', runtime: 'fake' } as never;
+    });
+    for (const content of ['a long job', 'queued behind it']) {
+      await request(app())
+        .post(`/api/sessions/${SESSION_ID}/messages`)
+        .set('x-test-via', 'own-tunnel')
+        .set('x-client-id', 'phone')
+        .send({ content });
+    }
+    expect(store.list(SESSION_ID).map((row) => row.content)).toContain('queued behind it');
+
+    endSession(SIGN_IN);
+
+    await vi.waitFor(() => expect(fakeRuntime.interruptQuery).toHaveBeenCalledWith(SESSION_ID));
+    expect(store.list(SESSION_ID)).toEqual([]);
+  });
+
+  it('leaves a turn the desk holds, and the desk’s waiting messages, alone', async () => {
+    const held = heldTurn();
+    fakeRuntime.withScenarios([held.turn, doneTurn, doneTurn]);
+    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'desk', acquiredAt: 0 });
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('x-client-id', 'desk')
+      .set('x-test-desk', '1')
+      .send({ content: 'the desk is working' });
+    store.enqueue({ sessionId: SESSION_ID, content: 'the desk queued this', clientId: 'desk' });
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('x-test-via', 'own-tunnel')
+      .set('x-client-id', 'phone')
+      .send({ content: 'the phone queued this' });
+
+    endSession(SIGN_IN);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(fakeRuntime.interruptQuery).not.toHaveBeenCalled();
+    const left = store.list(SESSION_ID).map((row) => row.content);
+    expect(left).toContain('the desk queued this');
+    expect(left).not.toContain('the phone queued this');
+    held.release();
   });
 });
 

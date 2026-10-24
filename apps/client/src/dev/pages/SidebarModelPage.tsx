@@ -3,7 +3,6 @@ import { TocSidebar } from '../TocSidebar';
 import { SIDEBAR_MODEL_SECTIONS } from '../sections/sidebar-model-sections';
 import { SidebarModelShowcases } from '../showcases/SidebarModelShowcases';
 import {
-  MobileCatchUpShowcase,
   MobileLongPressSheetShowcase,
   MobileTabBarShowcase,
 } from '../showcases/MobileTabsShowcases';
@@ -31,8 +30,8 @@ export function SidebarModelPage() {
       <header className="pb-4">
         <h1 className="text-xl font-bold">Sidebar Model</h1>
         <p className="text-muted-foreground text-sm">
-          One pure function decides every zone, section and row — and says why. Four journey
-          fixtures, both themes, no server.
+          One pure function decides every section and row — and says why. Four journey fixtures,
+          both themes, no server.
         </p>
       </header>
 
@@ -46,7 +45,6 @@ export function SidebarModelPage() {
           <SidebarModelShowcases />
           <MobileTabBarShowcase />
           <MobileLongPressSheetShowcase />
-          <MobileCatchUpShowcase />
         </div>
         <TocSidebar sections={SIDEBAR_MODEL_SECTIONS} />
       </div>

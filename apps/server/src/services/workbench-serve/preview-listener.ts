@@ -45,6 +45,7 @@ import type { AddressInfo } from 'node:net';
 import { WORKBENCH } from '../../config/constants.js';
 import { logger as defaultLogger } from '../../lib/logger.js';
 import { injectFrameScripts } from './frame-inject.js';
+import { frameBridgeLedger, previewPageKey } from './bridge-ledger.js';
 import {
   filterInboundSetCookies,
   filterOutboundCookies,
@@ -528,12 +529,19 @@ export class PreviewListenerManager {
       sendHtml(res, 502, errorPage('Preview failed', 'The dev server could not be reached.'));
     });
 
-    upstream.on('response', (upstreamRes) => this.#relay(upstreamRes, res, targetPort));
+    const page = previewPageKey(targetPort, req.url ?? '/');
+    upstream.on('response', (upstreamRes) => this.#relay(upstreamRes, res, targetPort, page));
     req.pipe(upstream);
   }
 
   /** Relay an upstream response, unframed and instrumented. */
-  #relay(upstreamRes: http.IncomingMessage, res: http.ServerResponse, targetPort: number): void {
+  #relay(
+    upstreamRes: http.IncomingMessage,
+    res: http.ServerResponse,
+    targetPort: number,
+    /** This page's ledger key: every HTML decision is recorded for the canvas (DOR-3131). */
+    page: string
+  ): void {
     // Admission sees every original enforcing field before framing cleanup.
     // A comma-list remains intact and is conservatively refused by the scanner.
     const enforcingPolicies = readContentSecurityPolicyHeaders(
@@ -569,12 +577,12 @@ export class PreviewListenerManager {
     }
 
     const contentType = upstreamRes.headers['content-type'];
-    const instrumentable =
-      typeof contentType === 'string' &&
-      contentType.includes('text/html') &&
-      isUtf8OrUnspecified(contentType);
+    const html = typeof contentType === 'string' && contentType.includes('text/html');
+    const instrumentable = html && isUtf8OrUnspecified(contentType);
 
     if (!instrumentable) {
+      // HTML in another charset is a page that cannot carry the scripts.
+      if (html) frameBridgeLedger.record(page, 'encoding');
       res.writeHead(upstreamRes.statusCode ?? 502, headers);
       upstreamRes.pipe(res);
       return;
@@ -598,6 +606,7 @@ export class PreviewListenerManager {
       buffered += chunk.length;
       if (buffered > WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
         overflowed = true;
+        frameBridgeLedger.record(page, 'oversize');
         this.#logger.warn('[workbench-preview] HTML too large to instrument', {
           targetPort,
           bytes: buffered,
@@ -615,7 +624,9 @@ export class PreviewListenerManager {
       if (overflowed) return;
       const raw = Buffer.concat(chunks);
       const decision = injectFrameScripts(raw, { contentType, enforcingPolicies });
-      if (decision.instrumented) headers['content-type'] = 'text/html; charset=utf-8';
+      frameBridgeLedger.record(page, decision.reason);
+      // Node lower-cases relayed header names, so this replaces the dev server's.
+      headers['content-type'] = decision.contentType;
       headers['content-length'] = decision.bytes.length;
       res.writeHead(upstreamRes.statusCode ?? 502, headers);
       res.end(decision.bytes);

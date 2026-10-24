@@ -87,7 +87,7 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     const snap = await runtime.getSessionSnapshot(CTX, SESSION_A);
 
     expect(snap.messages).toEqual([
-      { id: 'user-1', role: 'user', content: 'Hello' },
+      { id: 'user-1', role: 'user', content: 'Hello', timestamp: expect.any(String) },
       { id: 'assistant-1', role: 'assistant', content: 'Echo: Hello' },
     ]);
     expect(snap.inProgressTurn).toBeNull();

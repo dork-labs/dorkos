@@ -87,9 +87,13 @@ describe('GlobalTrustRow', () => {
   it('asks the question once, in the design’s words, and says what it governs', () => {
     renderRow();
     // Not "Where agents stop for you": DOR-853 reserves the bare word "agent"
-    // for a named fleet teammate, and this row governs new conversations.
-    expect(screen.getByText('Where new chats stop for you')).toBeInTheDocument();
+    // for a named fleet teammate, and this row governs conversations, the ones
+    // already open included from their next turn (DOR-3175).
+    expect(screen.getByText('Where chats stop for you')).toBeInTheDocument();
     expect(screen.getByText('Cards above use this unless set otherwise.')).toBeInTheDocument();
+    expect(screen.getByTestId('global-trust-row-timing')).toHaveTextContent(
+      'Applies to all chats from their next turn. Chats you set by hand only follow it down.'
+    );
     expect(screen.getByRole('radio', { name: 'Asks before acting' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeInTheDocument();

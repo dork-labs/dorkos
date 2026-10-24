@@ -104,6 +104,7 @@
 import type { EvalCase, RoomScriptResult } from '../types.js';
 import {
   finishTestTurns,
+  clearRoomLead,
   haltRoom,
   postAsAgent,
   postToRoom,
@@ -126,6 +127,7 @@ import {
   roomTurnsRanFor,
 } from '../oracles/rooms.js';
 import {
+  ADA,
   agentDir,
   mentionOf,
   openRoomFor,
@@ -133,20 +135,6 @@ import {
   setCollectDebounce,
 } from './rooms-setup.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
-
-/**
- * The one agent every structural case seats, in `mention-only`.
- *
- * The strictest mode that still answers, chosen so each case's trigger is
- * unambiguous: an `engaged` agent answers a mention AND anything inside its
- * window, so a green would not say which of the two fired.
- */
-const ADA: RoomAgentSpec = {
-  slug: 'ada',
-  displayName: 'Ada',
-  description: 'Answers questions about this project in the team channel.',
-  responseMode: 'mention-only',
-};
 
 /** How long the structural cases give the room to settle after a post. */
 const QUIET_MS = 2_000;
@@ -227,6 +215,9 @@ export const roomsAddressedRunsATurnCase: EvalCase = {
  * `rooms-unaddressed-is-free` — nobody was addressed, so nothing ran and
  * nothing was spent.
  *
+ * The channel has no lead: a lead answers a person's unaddressed post
+ * (DOR-2823), so this is the case where nobody owes one.
+ *
  * The other half of the addressing matrix, and the half with the money in it:
  * the per-room hourly ceiling is what the next person who DOES address an agent
  * needs, so an untriggered message must not eat it. Three oracles, because
@@ -250,6 +241,8 @@ export const roomsUnaddressedIsFreeCase: EvalCase = {
       timeoutMs: STRUCTURAL_TIMEOUT_MS,
     });
     try {
+      // A lead owes an answer to exactly this post (DOR-2823); with no lead, nobody does.
+      await clearRoomLead({ baseUrl: ctx.baseUrl, roomId: room.roomId });
       await postToRoom({
         baseUrl: ctx.baseUrl,
         roomId: room.roomId,

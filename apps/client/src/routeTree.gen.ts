@@ -19,6 +19,7 @@ import { Route as ShellFeedbackRequestsRouteImport } from './routes/_shell.feedb
 import { Route as ShellMarketplaceRouteImport } from './routes/_shell.marketplace'
 import { Route as ShellSessionRouteImport } from './routes/_shell.session'
 import { Route as ShellTeamRouteImport } from './routes/_shell.team'
+import { Route as ShellThreadsRouteImport } from './routes/_shell.threads'
 import { Route as ShellHomeIndexRouteImport } from './routes/_shell._home.index'
 import { Route as ShellHomeActivityRouteImport } from './routes/_shell._home.activity'
 import { Route as ShellHomeTasksRouteImport } from './routes/_shell._home.tasks'
@@ -75,6 +76,11 @@ const ShellTeamRoute = ShellTeamRouteImport.update({
   path: '/team',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellThreadsRoute = ShellThreadsRouteImport.update({
+  id: '/threads',
+  path: '/threads',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellHomeIndexRoute = ShellHomeIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/marketplace': typeof ShellMarketplaceRoute
   '/session': typeof ShellSessionRoute
   '/team': typeof ShellTeamRoute
+  '/threads': typeof ShellThreadsRoute
   '/activity': typeof ShellHomeActivityRoute
   '/tasks': typeof ShellHomeTasksRoute
   '/workspaces': typeof ShellHomeWorkspacesRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/marketplace': typeof ShellMarketplaceRoute
   '/session': typeof ShellSessionRoute
   '/team': typeof ShellTeamRoute
+  '/threads': typeof ShellThreadsRoute
   '/activity': typeof ShellHomeActivityRoute
   '/tasks': typeof ShellHomeTasksRoute
   '/workspaces': typeof ShellHomeWorkspacesRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/_shell/marketplace': typeof ShellMarketplaceRoute
   '/_shell/session': typeof ShellSessionRoute
   '/_shell/team': typeof ShellTeamRoute
+  '/_shell/threads': typeof ShellThreadsRoute
   '/_shell/_home/activity': typeof ShellHomeActivityRoute
   '/_shell/_home/tasks': typeof ShellHomeTasksRoute
   '/_shell/_home/workspaces': typeof ShellHomeWorkspacesRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/marketplace'
     | '/session'
     | '/team'
+    | '/threads'
     | '/activity'
     | '/tasks'
     | '/workspaces'
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
     | '/marketplace'
     | '/session'
     | '/team'
+    | '/threads'
     | '/activity'
     | '/tasks'
     | '/workspaces'
@@ -212,6 +223,7 @@ export interface FileRouteTypes {
     | '/_shell/marketplace'
     | '/_shell/session'
     | '/_shell/team'
+    | '/_shell/threads'
     | '/_shell/_home/activity'
     | '/_shell/_home/tasks'
     | '/_shell/_home/workspaces'
@@ -298,6 +310,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellTeamRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/threads': {
+      id: '/_shell/threads'
+      path: '/threads'
+      fullPath: '/threads'
+      preLoaderRoute: typeof ShellThreadsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/_home/': {
       id: '/_shell/_home/'
       path: '/'
@@ -377,6 +396,7 @@ interface ShellRouteChildren {
   ShellMarketplaceRoute: typeof ShellMarketplaceRoute
   ShellSessionRoute: typeof ShellSessionRoute
   ShellTeamRoute: typeof ShellTeamRoute
+  ShellThreadsRoute: typeof ShellThreadsRoute
   ShellMarketplaceSourcesRoute: typeof ShellMarketplaceSourcesRoute
   ShellXExtensionIdRoute: typeof ShellXExtensionIdRoute
   ShellXExtensionIdSplatRoute: typeof ShellXExtensionIdSplatRoute
@@ -391,6 +411,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellMarketplaceRoute: ShellMarketplaceRoute,
   ShellSessionRoute: ShellSessionRoute,
   ShellTeamRoute: ShellTeamRoute,
+  ShellThreadsRoute: ShellThreadsRoute,
   ShellMarketplaceSourcesRoute: ShellMarketplaceSourcesRoute,
   ShellXExtensionIdRoute: ShellXExtensionIdRoute,
   ShellXExtensionIdSplatRoute: ShellXExtensionIdSplatRoute,

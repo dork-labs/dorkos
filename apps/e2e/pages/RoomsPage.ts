@@ -128,8 +128,8 @@ export class RoomsPage {
   /**
    * One sidebar section, found by the model id it stamps on itself.
    *
-   * @param id - The section's `SidebarSectionModel['id']` — `'channels'`,
-   *   `'dms'`, `'agents'`, `'pins'`, or a `group:<id>`.
+   * @param id - The section's `SidebarSectionModel['id']` — `'top'`,
+   *   `'channels'`, `'dms'`, `'addons'`, or a `group:<id>`.
    */
   section(id: string): Locator {
     // Matched on the section's own model id rather than on its header's
@@ -144,8 +144,9 @@ export class RoomsPage {
    * One room's sidebar row, in the Channels or Direct messages section.
    *
    * Scoped to the two room sections rather than the whole sidebar because a
-   * room with activity also appears in "Jump back in" above them (team-room-home
-   * P1) — an unscoped match resolves to two elements and trips strict mode.
+   * room filed into a section of the operator's own is drawn there instead,
+   * and "Jump back in" (team-room-home P1) can draw a room too — an unscoped
+   * match can resolve to two elements and trip strict mode.
    *
    * @param spokenName - The room's spoken name: `#slug` for a channel, the title
    *   for a direct message.
@@ -169,9 +170,9 @@ export class RoomsPage {
     // the row unique — the only other button in the item is its "… actions"
     // trigger, which holds no room title — so the looser combinator costs
     // nothing and stops one more wrapper from doing this again.
-    return section
-      .locator('[data-slot="sidebar-menu-item"] button')
-      .filter({ has: this.page.locator(`[data-slot="room-title"][title="${spokenName}"]`) });
+    return section.locator('[data-slot="sidebar-menu-item"] button').filter({
+      has: this.page.locator(`[data-slot="room-title"][data-spoken-name="${spokenName}"]`),
+    });
   }
 
   /**

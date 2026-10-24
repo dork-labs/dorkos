@@ -3,7 +3,7 @@
  * no files, and nothing else.
  */
 import { describe, expect, it } from 'vitest';
-import { DORKOS_AGENT_TOOLS } from '../../../runtimes/claude-code/messaging/interactive-handlers.js';
+import { DORKOS_AGENT_TOOLS } from '../../../runtimes/claude-code/tool-gate/auto-allow.js';
 import { IN_SESSION_TOOL_PREFIX } from '../../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import {
   TEAMMATE_DORKOS_TOOLS,

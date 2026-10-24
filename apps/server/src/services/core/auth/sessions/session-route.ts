@@ -20,7 +20,10 @@
  * - **No route means this computer.** A session made before routes were
  *   recorded, or by in-process code, works only on `local`.
  * - **Wi-Fi sign-ins last 7 days at most**, counted from the sign-in, whatever
- *   use renews.
+ *   use renews. **Every other device's sign-in lasts 90 days at most**
+ *   (DOR-3172): use keeps one alive for 30 days at a time, but never past
+ *   that, so a copied cookie cannot live forever. This computer's own
+ *   sign-ins have no such limit: the desk is trusted as it always was.
  * - **The relay never mints one.** A relayed request is never a person signing
  *   in, so a session it would make is refused.
  *
@@ -45,6 +48,23 @@ export type SessionRoute = (typeof SESSION_ROUTES)[number];
 
 /** How long a Wi-Fi sign-in lasts at most, from the moment it was made: 7 days. */
 export const WIFI_SESSION_MAX_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * How long any other device's sign-in lasts at most, from the moment it was
+ * made, however often it is used: 90 days.
+ */
+export const OTHER_DEVICE_SESSION_MAX_SECONDS = 90 * 24 * 60 * 60;
+
+/**
+ * The longest a sign-in on this route may last from the moment it was made,
+ * or `null` when only its idle limit applies (this computer).
+ *
+ * @param route - The route the session is bound to.
+ */
+export function sessionMaxSeconds(route: SessionRoute): number | null {
+  if (route === 'local') return null;
+  return route === 'wifi' ? WIFI_SESSION_MAX_SECONDS : OTHER_DEVICE_SESSION_MAX_SECONDS;
+}
 
 /** Refusal code when a session would be made on a route that never makes one. */
 export const SESSION_ROUTE_REFUSED = 'SESSION_ROUTE_REFUSED';
@@ -72,7 +92,8 @@ export function requestSessionRoute(facts: ClassifierFacts): SessionRoute | null
 
 /**
  * The session-create hook's work: stamp the route the sign-in came in on,
- * overwriting anything else, and hold a Wi-Fi session to 7 days.
+ * overwriting anything else, and hold the session to its route's longest life
+ * ({@link sessionMaxSeconds}).
  *
  * @param data - The session row Better Auth is about to write.
  * @param now - The current time, for tests.
@@ -93,8 +114,9 @@ export function stampSessionRoute<T extends { expiresAt?: Date }>(
       message: 'Sign in on the computer DorkOS runs on.',
     });
   }
-  if (route !== 'wifi') return { ...data, route };
-  const cap = new Date(now + WIFI_SESSION_MAX_SECONDS * 1000);
+  const max = sessionMaxSeconds(route);
+  if (max === null) return { ...data, route };
+  const cap = new Date(now + max * 1000);
   const expiresAt = data.expiresAt && data.expiresAt < cap ? data.expiresAt : cap;
   return { ...data, route, expiresAt };
 }
@@ -123,11 +145,12 @@ export function sessionWorksOn(
   const stored = session.route ?? null;
   if (stored === null) return requestRoute === 'local';
   if (stored !== requestRoute) return false;
-  if (stored === 'wifi') {
+  const max = sessionMaxSeconds(requestRoute);
+  if (max !== null) {
     // No sign-in time to count from reads as too old.
     if (session.createdAt === undefined) return false;
     const age = now - new Date(session.createdAt).getTime();
-    if (!(age <= WIFI_SESSION_MAX_SECONDS * 1000)) return false;
+    if (!(age <= max * 1000)) return false;
   }
   return true;
 }

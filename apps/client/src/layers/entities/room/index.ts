@@ -26,6 +26,7 @@ export {
   useDirectChatRoomIds,
   useOpenDirectChat,
   type OpenDirectChatOptions,
+  type UseDirectChatOptions,
 } from './model/direct/use-direct-chat';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';

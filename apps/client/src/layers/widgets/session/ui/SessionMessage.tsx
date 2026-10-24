@@ -38,7 +38,10 @@ import {
   RoomPostMark,
   type InteractiveToolHandle,
 } from '@/layers/features/chat';
-import { renderSessionBody } from './render-session-body';
+import { countWorkSteps, hasWork } from '@/layers/features/chat';
+import { renderReplyBody, renderSessionBody } from './render-session-body';
+import { turnDuration } from '../lib/work-turns';
+import { WorkedLine, WorkingLine } from './work/WorkLines';
 
 interface SessionMessageProps {
   message: ChatMessage;
@@ -51,6 +54,12 @@ interface SessionMessageProps {
    * post from that room is from this chat, so its "in <room>" mark is dropped.
    */
   directRoomId?: string | null;
+  /**
+   * When this message arrived in this window, for a live message that has no
+   * server time yet (DOR-3074). Never set for history: a history row shows the
+   * time the server recorded, or none.
+   */
+  fallbackAt?: string;
   isNew?: boolean;
   isStreaming?: boolean;
   /**
@@ -101,6 +110,22 @@ interface SessionMessageProps {
    * directly — see `MessageContextValue.allowsDenyReason` (DOR-825).
    */
   allowsDenyReason?: boolean;
+  /**
+   * Fold a reply's work into one line under it (DOR-3075): set while the chat
+   * reads as a DM. Its thinking, tools and todos are then behind Show work,
+   * and a reply still being written says what the agent is doing, with Watch.
+   */
+  foldWork?: boolean;
+  /**
+   * When this reply's turn opened (ISO 8601), for the time on the folded
+   * line. Absent when no record says, and the line names no time.
+   */
+  turnStartedAt?: string;
+  /**
+   * Whether this is the reply still being written (DOR-3075): it draws the
+   * live line with Watch instead of its folded work. See `liveReplyId`.
+   */
+  liveReply?: boolean;
   /**
    * Where this message sits in the transcript's feed, when it is rendering
    * inside one.
@@ -171,6 +196,10 @@ function SessionMessageRow({
   runtimeLabel,
   allowsDenyReason,
   directRoomId,
+  fallbackAt,
+  foldWork = false,
+  turnStartedAt,
+  liveReply = false,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -201,12 +230,14 @@ function SessionMessageRow({
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
 
-  const time = message.timestamp ? formatTime(message.timestamp) : '';
+  const writtenAt = message.timestamp || fallbackAt || '';
+  const time = writtenAt ? formatTime(writtenAt) : '';
   const showTime = time.length > 0;
   // One timestamp for the whole row: the author line draws it on a group start
   // and the gutter draws it on hover for a continuation.
-  const at = showTime ? message.timestamp : undefined;
+  const at = showTime ? writtenAt : undefined;
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
+  const foldsReply = foldWork && message.role === 'assistant';
 
   return (
     <MessageProvider
@@ -259,8 +290,20 @@ function SessionMessageRow({
                 : {})}
           />
           <Message.Content id={contentId}>
-            {renderSessionBody(message, { rowId: message.id, isStreaming })}
+            {foldsReply
+              ? renderReplyBody(message)
+              : renderSessionBody(message, { rowId: message.id, isStreaming })}
           </Message.Content>
+          {foldsReply && liveReply && <WorkingLine sessionId={sessionId} />}
+          {foldsReply && !liveReply && hasWork(message.parts ?? []) && (
+            <WorkedLine
+              sessionId={sessionId}
+              messageId={message.id}
+              steps={countWorkSteps(message.parts ?? [])}
+              duration={turnDuration(turnStartedAt, message.timestamp)}
+              describedBy={contentId}
+            />
+          )}
           {showRunWith && (
             <Message.Actions runWith={{ prompt: message.content, sessionId }} onExit={focusRow} />
           )}

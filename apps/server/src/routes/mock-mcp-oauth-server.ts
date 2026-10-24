@@ -43,6 +43,10 @@
  *
  * @module routes/mock-mcp-oauth-server
  */
+import {
+  MCP_SERVER_OPTIONS,
+  MCP_MAX_REQUEST_BODY_BYTES,
+} from '../services/core/capabilities/mcp-input/limits.js';
 import { createHash, randomBytes } from 'node:crypto';
 import bodyParser from 'body-parser';
 import { Hono, type Context } from 'hono';
@@ -204,7 +208,7 @@ function bearerToken(header: string | undefined): string | undefined {
 
 /** A fresh MCP server exposing a couple of dummy tools for `tools/list`. */
 function buildMockMcpServer(): McpServer {
-  const server = new McpServer({ name: 'mock-oauth-mcp', version: '1.0.0' });
+  const server = new McpServer({ name: 'mock-oauth-mcp', version: '1.0.0' }, MCP_SERVER_OPTIONS);
   server.registerTool('echo', { description: 'Echo the text back.' }, () => ({
     content: [{ type: 'text' as const, text: 'echo' }],
   }));
@@ -378,7 +382,10 @@ async function serveMcp(c: Context<ApiEnv>): Promise<Response> {
   // itself (`http/raw-node-stream.ts`).
   return streamToNodeResponse(c, async (res) => {
     const server = buildMockMcpServer();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES,
+    });
     res.on('close', () => {
       void transport.close().catch(() => {});
       void server.close().catch(() => {});

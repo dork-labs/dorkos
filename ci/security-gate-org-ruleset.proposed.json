@@ -1,0 +1,31 @@
+{
+  "name": "DorkOS security gate from main",
+  "target": "branch",
+  "enforcement": "disabled",
+  "bypass_actors": [],
+  "conditions": {
+    "repository_name": {
+      "include": ["dorkos"],
+      "exclude": []
+    },
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "workflows",
+      "parameters": {
+        "do_not_enforce_on_create": false,
+        "workflows": [
+          {
+            "repository_id": 1155842647,
+            "path": ".github/workflows/security-gate.yml",
+            "ref": "refs/heads/main"
+          }
+        ]
+      }
+    }
+  ]
+}

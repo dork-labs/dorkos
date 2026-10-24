@@ -7,7 +7,7 @@
  *
  * The other property proved here is an absence: the room log is never trimmed.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
 import fs from 'node:fs';
@@ -18,6 +18,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { RoomStore, type NewRoomEntry } from '../room-store.js';
 import { isDmMemberSetTaken } from '../manage/room-dm-key.js';
+import { toLastLine } from '../manage/room-list-reads.js';
+import { ROOM_LAST_LINE_MAX_CHARS, ROOM_MENTION_COUNT_CAP } from '@dorkos/shared/room-schemas';
 import { EVENT_LOG_MAX_EVENTS } from '../../session/replay/event-log.js';
 
 const require = createRequire(import.meta.url);
@@ -979,7 +981,7 @@ describe('RoomStore.listEntriesByAuthor', () => {
   });
 });
 
-describe('RoomStore.roomsPostedInBy', () => {
+describe('RoomListReads.roomsPostedInBy', () => {
   it('names every room an author wrote in, and no room they only sat in', () => {
     const store = new RoomStore(createTestDb());
     seedRoom(store);
@@ -990,8 +992,8 @@ describe('RoomStore.roomsPostedInBy', () => {
     // Somebody else talking in room-3 must not put it in Ana's set.
     store.appendEntry(entry({ id: 'c', authorId: 'bo', roomId: 'room-3' }));
 
-    expect([...store.roomsPostedInBy('ana')].sort()).toEqual([ROOM_ID, 'room-2']);
-    expect([...store.roomsPostedInBy('bo')]).toEqual(['room-3']);
+    expect([...store.listReads.roomsPostedInBy('ana')].sort()).toEqual([ROOM_ID, 'room-2']);
+    expect([...store.listReads.roomsPostedInBy('bo')]).toEqual(['room-3']);
   });
 
   it('is empty for somebody who has never written anywhere', () => {
@@ -1001,7 +1003,7 @@ describe('RoomStore.roomsPostedInBy', () => {
     seedRoom(store);
     store.appendEntry(entry({ id: 'a', authorId: 'ana' }));
 
-    expect(store.roomsPostedInBy('bo').size).toBe(0);
+    expect(store.listReads.roomsPostedInBy('bo').size).toBe(0);
   });
 
   it('reads the author index instead of scanning the whole log', () => {
@@ -1022,6 +1024,175 @@ describe('RoomStore.roomsPostedInBy', () => {
 
     expect(detail).toContain('idx_room_entries_author_room');
     expect(detail).not.toContain('SCAN room_entries');
+  });
+});
+
+describe('RoomListReads.countUnreadMentions', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+    seedRoom(store);
+  });
+
+  it('counts only entries above the cursor that name the reader', () => {
+    store.appendEntry(entry({ id: 'e1', authorId: 'bo', mentions: ['ana'] })); // seq 1
+    store.appendEntry(entry({ id: 'e2', authorId: 'bo', mentions: [] })); // seq 2
+    store.appendEntry(entry({ id: 'e3', authorId: 'bo', mentions: ['ana', 'cy'] })); // seq 3
+
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(2);
+    // The cursor is exclusive: seq 1 is read once the cursor sits on it.
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 1, 'ana')).toBe(1);
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 3, 'ana')).toBe(0);
+  });
+
+  it("does not count somebody else's mentions", () => {
+    store.appendEntry(entry({ id: 'e1', authorId: 'bo', mentions: ['cy'] }));
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(0);
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'cy')).toBe(1);
+  });
+
+  it('counts a mention in a thread reply, which the room cursor also covers', () => {
+    store.appendEntry(entry({ id: 'root', authorId: 'bo' }));
+    store.appendEntry(
+      entry({
+        id: 'reply',
+        authorId: 'bo',
+        mentions: ['ana'],
+        parentEntryId: 'root',
+        threadRootEntryId: 'root',
+      })
+    );
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(1);
+  });
+
+  it('does not count a reader naming themselves', () => {
+    store.appendEntry(entry({ id: 'e1', authorId: 'ana', mentions: ['ana'] }));
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(0);
+  });
+
+  it('stops counting at the cap, since nothing reads past 9+', () => {
+    for (let i = 0; i < 14; i += 1) {
+      store.appendEntry(entry({ id: `m${i}`, authorId: 'bo', mentions: ['ana'] }));
+    }
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(ROOM_MENTION_COUNT_CAP);
+  });
+
+  it('is scoped to one room', () => {
+    seedRoom(store, 'room-2');
+    store.appendEntry(entry({ id: 'e1', roomId: 'room-2', authorId: 'bo', mentions: ['ana'] }));
+    expect(store.listReads.countUnreadMentions(ROOM_ID, 0, 'ana')).toBe(0);
+    expect(store.listReads.countUnreadMentions('room-2', 0, 'ana')).toBe(1);
+  });
+});
+
+describe('RoomListReads.lastLines', () => {
+  let db: ReturnType<typeof createTestDb>;
+  let store: RoomStore;
+  /** The whole log of every room, from the top. */
+  const whole = (...roomIds: string[]) => roomIds.map((roomId) => ({ roomId, floor: 0 }));
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new RoomStore(db);
+    seedRoom(store);
+    seedRoom(store, 'room-2');
+    seedRoom(store, 'room-3');
+  });
+
+  it('gives each room its newest top-level message, skipping later thread replies', () => {
+    store.appendEntry(entry({ id: 'old', body: { text: 'first' } }));
+    store.appendEntry(entry({ id: 'root', body: { text: 'the latest word' } }));
+    store.appendEntry(
+      entry({
+        id: 'reply',
+        body: { text: 'a reply in a thread' },
+        parentEntryId: 'root',
+        threadRootEntryId: 'root',
+      })
+    );
+    store.appendEntry(entry({ id: 'r2', roomId: 'room-2', body: { text: 'over here' } }));
+
+    const lines = store.listReads.lastLines(whole(ROOM_ID, 'room-2', 'room-3'));
+    expect(lines.get(ROOM_ID)).toBe('the latest word');
+    expect(lines.get('room-2')).toBe('over here');
+    // A room nobody has written in has no line.
+    expect(lines.get('room-3')).toBeNull();
+  });
+
+  it('never reads at or below the floor, so a late joiner sees nothing from before', () => {
+    store.appendEntry(entry({ id: 'e1', body: { text: 'before you came' } })); // seq 1
+    store.appendEntry(entry({ id: 'e2', body: { text: 'also before' } })); // seq 2
+    expect(store.listReads.lastLines([{ roomId: ROOM_ID, floor: 2 }]).get(ROOM_ID)).toBeNull();
+
+    store.appendEntry(entry({ id: 'e3', body: { text: 'after you came' } })); // seq 3
+    expect(store.listReads.lastLines([{ roomId: ROOM_ID, floor: 2 }]).get(ROOM_ID)).toBe(
+      'after you came'
+    );
+  });
+
+  it('collapses whitespace and cuts a long line without an ellipsis', () => {
+    store.appendEntry(entry({ id: 'e1', body: { text: `  two\n\nlines\t${'x'.repeat(300)}` } }));
+    const line = store.listReads.lastLines(whole(ROOM_ID)).get(ROOM_ID);
+    expect(line?.startsWith('two lines x')).toBe(true);
+    expect(line).toHaveLength(ROOM_LAST_LINE_MAX_CHARS);
+    expect(line?.endsWith('…')).toBe(false);
+  });
+
+  it('answers null for a newest message with no text', () => {
+    store.appendEntry(entry({ id: 'e1', body: { text: '   ' } }));
+    expect(store.listReads.lastLines(whole(ROOM_ID)).get(ROOM_ID)).toBeNull();
+  });
+
+  it('asks nothing for an empty list', () => {
+    expect(store.listReads.lastLines([]).size).toBe(0);
+  });
+
+  it('searches the primary key per room and never scans the log', () => {
+    // The shape that matters is invisible in the value returned: a version
+    // that started from `room_entries` read every room's whole log. So ask
+    // SQLite for the plan of the exact statement `lastLines` prepares.
+    store.appendEntry(entry({ id: 'e1', body: { text: 'hello' } }));
+    const sqlite = (db as unknown as { $client: import('better-sqlite3').Database }).$client;
+    const prepare = vi.spyOn(sqlite, 'prepare');
+    store.listReads.lastLines(whole(ROOM_ID, 'room-2'));
+    const statement = prepare.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes('json_each'));
+    prepare.mockRestore();
+    expect(statement).toBeDefined();
+
+    const plan = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${statement}`)
+      .all(JSON.stringify([[ROOM_ID, 0]])) as { detail: string }[];
+    const detail = plan.map((row) => row.detail).join('; ');
+    expect(detail).toMatch(/SEARCH n USING (INDEX|PRIMARY KEY)/);
+    expect(detail).not.toMatch(/SCAN (room_entries|n)\b/);
+  });
+});
+
+describe('toLastLine', () => {
+  it('never ends on half of an emoji', () => {
+    const text = `${'a'.repeat(ROOM_LAST_LINE_MAX_CHARS - 1)}🙂 and more`;
+    const line = toLastLine(text);
+    expect(line).toBe('a'.repeat(ROOM_LAST_LINE_MAX_CHARS - 1));
+  });
+
+  it('takes out the markdown people type, keeping the words', () => {
+    expect(toLastLine('**Shipped** the `fix`, see [the PR](https://x.test/1)')).toBe(
+      'Shipped the fix, see the PR'
+    );
+    expect(toLastLine('```ts\nconst a = 1;\n```')).toBe('const a = 1;');
+    expect(toLastLine('# Plan\n> quoted ~~old~~ ![chart](c.png)')).toBe('Plan quoted old chart');
+  });
+
+  it('strips before it cuts, so syntax never eats the budget', () => {
+    const line = toLastLine(`**${'b'.repeat(ROOM_LAST_LINE_MAX_CHARS)}**`);
+    expect(line).toBe('b'.repeat(ROOM_LAST_LINE_MAX_CHARS));
+  });
+
+  it('answers null for a message that was only markdown', () => {
+    expect(toLastLine('```\n```')).toBeNull();
   });
 });
 

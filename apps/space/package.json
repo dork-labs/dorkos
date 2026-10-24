@@ -35,9 +35,9 @@
     "better-auth": "1.7.6",
     "drizzle-orm": "0.45.3",
     "fflate": "0.8.3",
-    "hono": "4.13.9",
+    "hono": "4.13.11",
     "lucide-react": "1.48.0",
-    "nodemailer": "10.0.10",
+    "nodemailer": "10.1.4",
     "pg": "8.23.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -63,7 +63,7 @@
     "smtp-server": "3.19.16",
     "tsx": "4.23.15",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1",
+    "vite": "^6.4.4",
     "vitest": "^4.1.11",
     "yauzl": "3.4.0"
   }

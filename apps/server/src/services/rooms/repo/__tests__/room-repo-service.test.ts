@@ -37,6 +37,7 @@ import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
 const AGENT = 'author-agent';
+const GUEST = 'author-guest';
 
 /** The room the service is told about. */
 const ROOM: Room = {
@@ -66,6 +67,7 @@ describe('RoomRepoService', () => {
   let pinRefuses: boolean;
   /** The queue enable shares with merges — one instance, so a race is a real race. */
   let mutex: RoomRepoMutex;
+  let room: Room;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -108,6 +110,7 @@ describe('RoomRepoService', () => {
     await mkdir(dorkHome, { recursive: true });
     store = new RoomRepoStore(db, dorkHome);
     mutex = new RoomRepoMutex();
+    room = { ...ROOM };
     enabled = true;
     visible = true;
     operatorName = 'Dorian';
@@ -128,7 +131,7 @@ describe('RoomRepoService', () => {
       mutex,
       queueWaitMs: () => 5000,
       enabled: () => enabled,
-      getRoom: () => (visible ? ROOM : null),
+      getRoom: () => (visible ? room : null),
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => operatorName,
       pinRoomMd: (roomId, authorId) => {
@@ -283,6 +286,18 @@ describe('RoomRepoService', () => {
 
     it('refuses an agent, and leaves nothing behind', async () => {
       await expectRoomError(service.enable(ROOM_ID, AGENT), 'OPERATOR_ONLY');
+      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+      expect(store.getRow(ROOM_ID)).toBeNull();
+    });
+
+    it('refuses a person who does not own the install', async () => {
+      await expectRoomError(service.enable(ROOM_ID, GUEST), 'OPERATOR_ONLY');
+      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+    });
+
+    it('refuses an archived room, and leaves nothing behind', async () => {
+      room = { ...room, archived: true };
+      await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_ARCHIVED');
       expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
       expect(store.getRow(ROOM_ID)).toBeNull();
     });

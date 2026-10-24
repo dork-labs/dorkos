@@ -1,0 +1,46 @@
+name: security-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+
+permissions:
+  contents: read
+  statuses: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Security's list (#dorkos, 2026-10-22 04:56). The workflow and its
+  # implementation are themselves covered by .github/. Match both sides of renames.
+  SECURITY_PATH_PATTERN: '^(apps/server/src/services/core/(auth|turn-power|capabilities|session-relay|approvals)/|apps/server/src/services/core/mcp-tool-gate\.ts$|apps/server/src/lib/trusted-origins\.ts$|apps/server/src/services/communities/remote/|apps/server/src/env\.ts$|apps/server/src/index\.ts$|apps/server/src/lib/process/|apps/server/src/(http|routes)/|apps/server/src/services/(connectors|relay|extensions|mesh|browser|session/local-browser)/|apps/server/src/db/migrations/|drizzle/|packages/shared/src/schemas\.ts$|packages/cli/src/lib/agent-browser/|packages/(relay|mesh|a2a-gateway|extension-api|connector-providers|cloud-api)/|\.github/|scripts/(release|publish)|scripts/security-paths-check|tools/security-approve/|apps/desktop/src/preload/|apps/server/src/services/core/event-fan-out|apps/server/src/services/rooms/manage/room-membership\.ts$|apps/server/src/services/rooms/(service|awaiting)/room-awaiting\.ts$|apps/server/src/services/runtimes/(claude-code/(tool-gate/|turn-permission\.ts$|messaging/(interactive-handlers|launch-resolver|permission-mode-guard)\.ts$|mcp-tools/session-start-permission\.ts$)|shared/(permission-tool-filter|approval-verdict-block)\.ts$|opencode/messaging/approvals\.ts$|doe/approvals\.ts$)|apps/server/src/services/(spaces|identity|computers)/|apps/server/src/services/rooms/(limits|repo|turn-guards|session-bindings)/|apps/server/src/services/session/(origin|chat-messages|turn-identity)/|packages/shared/src/permissions/|packages/shared/src/(permission-semantics|config-permissions|agent-browser|agent-runtime|untrusted-text|approval-schemas|extension-approval-schemas|cloud-origin)\.ts$)|^\.agents/flow/|^\.dork/plugins/flow/config/|(^|/)package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|turn-ceiling|continuation-hold|agent-level'
+
+jobs:
+  security-gate:
+    # Enforcement requires the ruleset workflow source pinned to main. A named
+    # status check alone lets a candidate replace this YAML. See ci/security-gate-promotion.md.
+    permissions:
+      contents: read
+      statuses: read
+      pull-requests: read
+    env:
+      SECURITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require an immutable base SHA
+        run: '[[ "$SECURITY_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.SECURITY_BASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Security gate fixtures
+        run: node --test .github/scripts/security-*.test.mjs
+      - name: Check approval on each exact PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/security-gate.mjs

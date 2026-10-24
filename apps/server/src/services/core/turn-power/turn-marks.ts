@@ -160,15 +160,35 @@ export function marksOfCeiling(ceiling: TurnPermissionCeiling): TurnMarks {
  * The marks one turn carries from what it is sent with: its ceiling, and a stranger's line a room
  * shows it without asking it to answer (`roomTurn.outsiderInView`, fenced rather than ceilinged).
  *
+ * A continuation's hold (`MessageOpts.continuationHold`, DOR-3203) is the one `'runtime-default'`
+ * bound that marks nothing: the turn reads no new words, it only picks up a chat whose last turn
+ * was held. Any other bound beside it still marks, and a chat a stranger reached stays marked on
+ * everything it hands on (`chatHeardOutsider`).
+ *
  * @param opts - The send's options.
  */
 export function marksForTurn(opts: MessageOpts | undefined): TurnMarks {
-  const fromCeiling =
-    opts?.permissionCeiling !== undefined ? marksOfCeiling(opts.permissionCeiling) : NO_MARKS;
+  const ceiling =
+    opts?.continuationHold === true
+      ? withoutContinuationBound(opts.permissionCeiling)
+      : opts?.permissionCeiling;
+  const fromCeiling = ceiling !== undefined ? marksOfCeiling(ceiling) : NO_MARKS;
   return mergeMarks(
     fromCeiling,
     opts?.roomTurn?.outsiderInView === true ? { outsider: true } : NO_MARKS
   );
+}
+
+/** A ceiling with the one `'runtime-default'` bound a continuation's hold added taken out. */
+function withoutContinuationBound(
+  ceiling: TurnPermissionCeiling | undefined
+): TurnPermissionCeiling | undefined {
+  if (ceiling === undefined || ceiling === 'runtime-default') return undefined;
+  if (!Array.isArray(ceiling)) return ceiling;
+  const bounds = [...(ceiling as readonly (TurnPermissionLevel | 'runtime-default')[])];
+  const at = bounds.indexOf('runtime-default');
+  if (at !== -1) bounds.splice(at, 1);
+  return bounds.length === 0 ? undefined : bounds;
 }
 
 /**

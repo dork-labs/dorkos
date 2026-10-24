@@ -21,6 +21,7 @@ import {
   ListTodo,
   MessageCircle,
   MessageSquare,
+  MessageSquareReply,
   MessagesSquare,
   Puzzle,
   Settings,
@@ -257,6 +258,8 @@ export const ROUTE_IDENTITY: Record<string, RouteIdentity> = {
   // The page a sign-in's browser tab lands on (DOR-2985); rarely a tab, but named.
   '/signed-in': { primary: 'Signed in', Icon: KeyRound },
   '/tasks': { primary: 'Schedules', Icon: ListTodo },
+  // Matches the sidebar's Threads item, icon and all.
+  '/threads': { primary: 'Threads', Icon: MessageSquareReply },
   '/workspaces': { primary: 'Workspaces', Icon: FolderGit2 },
 };
 
@@ -418,6 +421,12 @@ export interface ChatTabInput {
   detail?: TabStatusDetail;
   /** When the chat last changed, epoch ms. */
   lastActiveAt?: number;
+  /**
+   * How an agent's Direct chat is open, with the DM view on (DOR-3074): `dm`
+   * names the tab for the agent alone, `session` adds "Session" for the
+   * working session behind it. Absent for every other chat.
+   */
+  direct?: 'dm' | 'session';
 }
 
 /**
@@ -433,7 +442,13 @@ export function chatTabIdentity(input: ChatTabInput): TabIdentity {
       ? { kind: 'emoji', emoji: input.visual.emoji, color: input.visual.color }
       : { kind: 'route', Icon: MessageSquare },
     primary: input.agentName || input.projectName || ROUTE_IDENTITY['/session']!.primary,
-    secondary: input.chatTitle || undefined,
+    // A DM is named for who it is with; its session says what it is.
+    secondary:
+      input.direct === 'dm'
+        ? undefined
+        : input.direct === 'session'
+          ? 'Session'
+          : input.chatTitle || undefined,
     status,
     statusSentence: status ? tabStatusSentence(status, input.detail) : undefined,
     lastActiveAt: input.lastActiveAt,

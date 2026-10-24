@@ -3,12 +3,12 @@
  * `profile-unification` §1.2).
  *
  * face → name + badges → `@handle` → one status sentence → who it belongs to →
- * one button. Nothing else lives up here; everything else is a row.
+ * Message, with ⋯ beside it. Nothing else lives up here; everything else is a row.
  *
  * @module features/profile/ui/ProfileHeader
  */
 import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Pencil } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP, PRESS_MARK } from '@/layers/shared/ui';
@@ -42,8 +42,12 @@ export interface ProfileHeaderProps {
    * dead affordance this design exists to remove.
    */
   onFaceActivate?: () => void;
-  /** The kebab's menu. `ProfileView` fills it with `ProfileActionsMenu`. */
+  /** The kebab's menu, beside Message. `ProfileView` fills it with `ProfileActionsMenu`. */
   actionsMenu?: ReactNode;
+  /** How many of an agent's chats are mid-turn right now, for the status line. */
+  runningChats?: number;
+  /** Open the Handle page. Passed only where the viewer may rename this identity. */
+  onEditHandle?: () => void;
 }
 
 /**
@@ -62,9 +66,11 @@ export function ProfileHeader({
   onOpenSession,
   onFaceActivate,
   actionsMenu,
+  runningChats = 0,
+  onEditHandle,
 }: ProfileHeaderProps) {
   const { copied, failed, copy } = useCopyFeedback();
-  const status = profileStatusText(member);
+  const status = profileStatusText(member, new Date(), runningChats);
   // Paused everywhere (spec `audit-trail` PR5): a flag on the name row, like
   // `system` and `default`. Asked only of an agent.
   const pause = useAgentPause(member.agent?.manifestId ?? null);
@@ -83,9 +89,8 @@ export function ProfileHeader({
   }
 
   return (
-    // `pt-8` clears the chrome row the sheet puts in this corner (its close X,
-    // and the kebab beside it) so the face is never crowded by controls that
-    // are not about the identity.
+    // `pt-8` clears the chrome row the sheet puts in this corner (its close X)
+    // so the face is never crowded by a control that is not about the identity.
     <div data-slot="profile-header" className="relative flex flex-col items-center px-4 pt-8 pb-4">
       {/* The identity's own colour, as a wash behind the face rather than as a
           ring on it. Static: this is the panel's "whose this is" moment, and the
@@ -98,17 +103,6 @@ export function ProfileHeader({
             'radial-gradient(ellipse 60% 100% at 50% 0%, color-mix(in oklch, var(--identity-color) 22%, transparent), transparent 70%)',
         }}
       />
-
-      {/* The sheet home puts its own close X in this corner (`SheetContent`
-          pins one at top-4 right-4), so the kebab steps aside for it there and
-          takes the corner everywhere else. Keyed off the home the profile root
-          publishes rather than a prop, so the header still knows nothing about
-          which panel it is in. */}
-      {actionsMenu && (
-        <div className="absolute top-2 right-2 z-10 group-data-[home=sheet]/profile:right-11">
-          {actionsMenu}
-        </div>
-      )}
 
       {onFaceActivate ? (
         <button
@@ -153,19 +147,45 @@ export function ProfileHeader({
         )}
       </div>
 
-      {/* Absent rather than a bare `@` — an empty handle reaches nobody. */}
-      {member.handle !== null && (
-        <button
-          type="button"
-          onClick={copyHandle}
-          aria-label={failed ? 'Couldn’t copy @handle. Try again' : 'Copy @handle'}
-          className={cn(
-            'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
-            failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+      {/* The handle, which copies on tap, and beside it a quiet pencil that
+          opens the Handle page on an agent you manage (DOR-3156). The pencil
+          is absolutely placed so the handle stays optically centred; it
+          shows on hover and focus, and always where touch is the pointer.
+          Absent rather than a bare `@` — an empty handle reaches nobody. */}
+      {(member.handle !== null || onEditHandle) && (
+        <span className="group/handle relative inline-flex max-w-full items-center">
+          {member.handle !== null && (
+            <button
+              type="button"
+              onClick={copyHandle}
+              aria-label={failed ? 'Couldn’t copy @handle. Try again' : 'Copy @handle'}
+              className={cn(
+                'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
+                failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {handleButtonLabel()}
+            </button>
           )}
-        >
-          {handleButtonLabel()}
-        </button>
+          {onEditHandle && (
+            <button
+              type="button"
+              onClick={onEditHandle}
+              aria-label={member.handle === null ? 'Add a handle' : 'Change @handle'}
+              // Focus comes back here when the Handle page is popped, as a
+              // nav row's does (`ProfileStack`).
+              data-profile-return="handle"
+              className={cn(
+                'focus-ring text-muted-foreground hover:text-foreground hover:bg-accent grid size-6 place-items-center rounded-md',
+                'opacity-0 transition-opacity duration-150 group-hover/handle:opacity-100 focus-visible:opacity-100',
+                'motion-reduce:transition-none pointer-coarse:size-11 pointer-coarse:opacity-100',
+                member.handle !== null && 'absolute top-1/2 left-full -translate-y-1/2'
+              )}
+            >
+              <Pencil aria-hidden className="size-3.5" />
+            </button>
+          )}
+        </span>
       )}
 
       <p className="mt-1 flex max-w-full items-center gap-1.5 text-xs">
@@ -217,13 +237,19 @@ export function ProfileHeader({
         )
       )}
 
-      {/* "Open session", not "Message": the button lands on `/session` with
-          this agent's directory, which is a session and not a DM. The old word
-          promised the other surface (spec `sidebar-simplification` §D2). */}
-      {onOpenSession && (
-        <Button size="sm" className="mt-3 w-full max-w-64" onClick={onOpenSession}>
-          Open chat
-        </Button>
+      {/* One primary action, and the rare ones beside it. "Message" is honest
+          again: the button opens the agent's one Direct chat with you, or what
+          it is doing in the room you are in (DOR-2997). The kebab left the top
+          corner, so the sheet's close X is the only control up there. */}
+      {(onOpenSession || actionsMenu) && (
+        <div className="mt-3 flex w-full max-w-74 items-center justify-center gap-2">
+          {onOpenSession && (
+            <Button size="sm" className="flex-1 max-md:h-11" onClick={onOpenSession}>
+              Message
+            </Button>
+          )}
+          {actionsMenu}
+        </div>
       )}
     </div>
   );

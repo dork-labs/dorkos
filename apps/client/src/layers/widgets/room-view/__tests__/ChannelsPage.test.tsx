@@ -911,30 +911,33 @@ describe('ChannelsPage — switching between threads', () => {
     await waitFor(() => expect(unanswered).toHaveFocus());
   });
 
-  it('puts the caret back on a phone, where the room is unmounted while the thread is open', async () => {
-    // The mobile shape is a different code path, not a narrower one: the room
-    // and the panel are siblings under one `AnimatePresence` in `mode="wait"`,
-    // so the room does not exist at all while the thread is up and the restore
-    // has to survive the panel's exit. Every other test in this file runs on
-    // the desktop branch, where the room never leaves.
+  it('opens a thread on a phone as a sheet OVER the room, which stays where it was', async () => {
+    // The phone's sheet slides in over the room rather than replacing it, so
+    // the room keeps its scroll position underneath: the very same timeline
+    // element is there before, during and after. While the sheet is up the room
+    // is `inert`, so focus and a screen reader stay in the thread.
     //
-    // What jsdom can and cannot show here is worth stating: `motion` resolves
-    // its exit immediately without a compositor, so this proves the mobile
-    // BRANCH restores focus, not that it survives a 150ms animation. The
-    // frame-by-frame proof of that is `use-restore-thread-focus.test.tsx`.
+    // jsdom runs no animation — `motion` resolves the slide immediately — so
+    // this proves the arrangement, not the 220ms it takes to get there.
     onPhone();
     const user = userEvent.setup();
     renderRoom();
 
+    const timeline = await screen.findByTestId('room-timeline');
     const row = (await screen.findAllByTestId('room-thread-replies'))[0]!;
     await user.click(row);
-    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
-    // The room really is gone — the push replaced it rather than covering it.
-    expect(screen.queryByTestId('room-timeline')).not.toBeInTheDocument();
+    const sheet = await screen.findByTestId('room-thread-sheet');
+    expect(within(sheet).getByTestId('room-thread-panel')).toBeInTheDocument();
+    // The room is still mounted — the same element — and put out of reach.
+    expect(screen.getByTestId('room-timeline')).toBe(timeline);
+    expect(screen.getByTestId('room-under-thread')).toHaveAttribute('inert');
 
     await user.click(screen.getByRole('button', { name: /^Back to/ }));
 
     await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    expect(screen.getByTestId('room-timeline')).toBe(timeline);
+    expect(screen.getByTestId('room-under-thread')).not.toHaveAttribute('inert');
+    // And the caret goes back to the line that opened it.
     await waitFor(() => expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus());
   });
 

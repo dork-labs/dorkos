@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.124.1",
+  "version": "0.125.4",
   "description": "You, multiplied. Build and run your business with an agent team. Your agents join your team chat, take on real work, and build the tools your company runs on.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -60,15 +60,15 @@
     "replay:community-contract": "tsx scripts/community-deploy-contract-replay.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.280",
+    "@anthropic-ai/claude-agent-sdk": "0.3.304",
     "@anthropic-ai/sdk": "^0.123.0",
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@composio/core": "0.21.0",
     "@inquirer/prompts": "^8.7.2",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@ngrok/ngrok": "^1.7.0",
-    "@openai/codex": "0.154.0",
-    "@openai/codex-sdk": "~0.154.0",
+    "@openai/codex": "0.163.0",
+    "@openai/codex-sdk": "~0.163.0",
     "@opencode-ai/sdk": "^1.19.3",
     "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",

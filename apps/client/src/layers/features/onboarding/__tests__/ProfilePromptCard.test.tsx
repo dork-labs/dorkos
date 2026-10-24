@@ -41,11 +41,8 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', async (importOriginal) => 
  * config state sees the card — across the split (spec `sidebar-simplification`
  * D4).
  */
-/** What the host tells the prompt; the sidebar passes the card's visibility. */
-let hostOptions: { gettingStartedCardShown?: boolean } = {};
-
 function PromptHost() {
-  const prompt = useProfilePrompt(hostOptions);
+  const prompt = useProfilePrompt();
   if (!prompt.visible) return null;
   return <ProfilePromptCard prompt={prompt} />;
 }
@@ -120,7 +117,6 @@ async function renderCard(overrides: CardConfigOverrides = {}) {
 describe('ProfilePromptCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    hostOptions = {};
     // The suite's own local `motion/react` shadow used to answer
     // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
     // every case here to "no preference" instead. Restored via the shared
@@ -191,14 +187,6 @@ describe('ProfilePromptCard', () => {
     // getting-started ProgressCard shows; its row is the single affordance.
     await renderCard({ onboarding: { dismissedAt: null } });
     expect(screen.queryByTestId('profile-prompt-card')).toBeNull();
-  });
-
-  it('asks when the host holds the getting-started card back (DOR-2845)', async () => {
-    // The sidebar hides the card while its own Getting started list shows, and
-    // says so; this prompt then takes its turn instead of waiting for nothing.
-    hostOptions = { gettingStartedCardShown: false };
-    await renderCard({ onboarding: { dismissedAt: null } });
-    expect(screen.getByTestId('profile-prompt-card')).toBeInTheDocument();
   });
 
   it('Save writes { profile: { roles } } and thanks-and-collapses', async () => {

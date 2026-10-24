@@ -73,7 +73,11 @@ import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
-import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  gateAccessFor,
+  isAtThisComputer,
+  isOnEncryptedConnection,
+} from '../services/core/auth/gate-policy.js';
 import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 
 const router = new Hono<ApiEnv>();
@@ -138,6 +142,10 @@ router.get('/', async (c) => {
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
     isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    // Where the owner may change the front door and the session relay: the
+    // desk, or any encrypted connection (DOR-3172).
+    onTrustedConnection:
+      isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
     callerRoute: requestSessionRoute(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     dismissedUpgradeVersions:
@@ -387,6 +395,10 @@ router.get('/', async (c) => {
       // notice (ADR 261006-225605). The app decides from it whether to show
       // the notice at all. `?? null` covers the pre-migration read window only.
       trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
+      // Whether the working session behind a chat can be opened
+      // (DOR-3074): Settings shows it back as a switch and the chat header
+      // reads it. `?? false` covers the pre-migration read window only.
+      showSessions: configManager.get('ui')?.showSessions ?? false,
     },
     // The permission preset, so the app can tell a Trusted install from a
     // Careful one without a second request (`trustPosture`), and the apps the

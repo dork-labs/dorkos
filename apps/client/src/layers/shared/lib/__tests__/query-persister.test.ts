@@ -72,7 +72,6 @@ describe('the sidebar’s local memory', () => {
       ['the config the panel is arranged by', configKeys.current()],
       ['the room list', ['rooms', 'list', null]],
       ['the room list filtered to one kind', ['rooms', 'list', 'channel']],
-      ['today’s threads', ['rooms', 'threads']],
       ['where the fleet’s agents live', ['mesh', 'agent-paths']],
       ['every agent’s real name and face', ['agents', 'resolved', '/a', '/b']],
       ['the recent-sessions window', ['recent-sessions', 24]],
@@ -82,12 +81,13 @@ describe('the sidebar’s local memory', () => {
     });
 
     it.each([
-      // The three Heads up sources. Deliberately cold: a stale "three things
-      // need you" that resolves to zero is a confident lie, and the boot gate’s
-      // 1500 ms ceiling means a cold one cannot hold the reveal shut.
+      // What is waiting on a person. Deliberately cold: a stale "three things
+      // need you" that resolves to zero is a confident lie.
       ['tool approvals waiting on a person', ['approvals', 'pending']],
       ['questions an agent parked on', ['interactions', 'pending']],
       ['scheduled runs waiting for a yes', ['schedule-approvals', 'pending']],
+      // Threads are a page of their own, not part of the sidebar's first paint.
+      ['the thread list', ['rooms', 'threads']],
       // A conversation belongs to the transcript store, never to localStorage.
       ['a room’s history', ['rooms', 'entries', 'room-1']],
       ['one session’s transcript', ['sessions', 'detail', 's-1', '/repo']],

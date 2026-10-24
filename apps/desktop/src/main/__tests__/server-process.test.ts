@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { MockServerProcess } from './server-child-mock';
-import type { ShowMessageBox } from './electron-mock';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
 
 /**
@@ -12,16 +11,6 @@ import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
  * it are asserting on that exact policy.
  */
 const SHUTDOWN_GRACE_MS = 5_000;
-
-/**
- * How many times the fake user will click the leftmost button before giving up
- * and quitting.
- *
- * Bounds every retry-loop test: an implementation whose cap has been removed
- * still terminates, so the test fails on a clean assertion instead of running
- * until the worker dies.
- */
-const IMPATIENT_USER_CLICKS = 8;
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-log', () => import('./electron-log-mock'));
@@ -155,11 +144,6 @@ function stubPackagedPaths(
   };
 }
 
-/** A dialog that never settles — for tests that only care that it was shown. */
-function pendingDialog(): ShowMessageBox {
-  return () => new Promise<Electron.MessageBoxReturnValue>(() => {});
-}
-
 /**
  * Poll until `predicate` holds, on `setImmediate` so real socket I/O (the
  * free-port probe each restart makes) can complete between turns.
@@ -176,38 +160,6 @@ async function until(label: string, predicate: () => boolean): Promise<void> {
   if (!predicate()) throw new Error(`timed out waiting for ${label} after ${SPAWN_WAIT_MS}ms`);
 }
 
-type ElectronMock = Awaited<ReturnType<typeof getElectronMock>>;
-
-/** Every `dialog.showMessageBox` call so far. */
-function dialogCalls(dialog: ElectronMock['dialog']): unknown[][] {
-  return vi.mocked(dialog.showMessageBox).mock.calls as unknown[][];
-}
-
-/**
- * The options of the `index`-th message box, whether it was shown anchored to
- * a window (two arguments) or unanchored (one).
- */
-function dialogOptions(dialog: ElectronMock['dialog'], index: number): Electron.MessageBoxOptions {
-  const call = dialogCalls(dialog)[index];
-  if (!call) throw new Error(`no message box was shown at index ${index}`);
-  return (call.length > 1 ? call[1] : call[0]) as Electron.MessageBoxOptions;
-}
-
-/**
- * A fake user who clicks "Restart Server" `times` times and then quits.
- *
- * Always finite on purpose. A recovery loop still running when a test ends
- * keeps spawning children into the shared `forkedChildren` array and calling
- * the shared dialog mock, which breaks whatever test runs next — the loop must
- * be driven to an end, not abandoned.
- */
-function userClicksRestart(dialog: ElectronMock['dialog'], times: number): void {
-  dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-    response: dialogCalls(dialog).length > times ? 1 : 0,
-    checkboxChecked: false,
-  }));
-}
-
 /**
  * Await a `startServer()` call expected to reject, and hand back its error.
  *
@@ -221,11 +173,6 @@ async function startupError(started: Promise<number>): Promise<Error> {
     return err as Error;
   }
   throw new Error('expected startServer() to reject, but it resolved');
-}
-
-/** The `detail` of the `index`-th message box. */
-function dialogDetail(dialog: ElectronMock['dialog'], index: number): string {
-  return dialogOptions(dialog, index).detail ?? '';
 }
 
 /**
@@ -267,6 +214,15 @@ beforeEach(async () => {
   forkedChildren = childProcess.forkedChildren;
   (await getLogMock()).resetLogMock();
   await pinFreePort();
+  // A crash outside 'the crash monitor' starts restarts nobody drives. Waits
+  // of days keep them from ever spawning into a later test; that block sets
+  // millisecond waits of its own.
+  const { setRestartTimingForTests } = await import('../server-crash-recovery');
+  setRestartTimingForTests({
+    firstDelayMs: 1_000_000_000,
+    maxDelayMs: 1_000_000_000,
+    noticeDelayMs: 1_000_000_000,
+  });
 });
 
 afterEach(() => {
@@ -523,8 +479,6 @@ describe('startServer — the readiness handshake', () => {
   });
 
   it('ignores a late exit from a child it already gave up on', async () => {
-    const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer } = await import('../server-process');
 
     const failing = startServer();
@@ -533,10 +487,12 @@ describe('startServer — the readiness handshake', () => {
     await expect(failing).rejects.toThrow();
     expect(abandoned.killed).toBe(true);
 
-    // Its exit lands after the supervisor moved on; it is not a crash.
+    // Its exit lands after the supervisor moved on; it is not a crash, so
+    // nothing restarts.
     abandoned.emitExit(1);
+    await flush();
 
-    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(forkCount()).toBe(1);
   });
 
   it('refuses to start a second server on top of a running one', async () => {
@@ -812,10 +768,24 @@ describe('what a packaged server child is told about the machine it runs on', ()
 });
 
 describe('the crash monitor', () => {
-  it('treats a clean exit after startup as a crash and stops reporting a port (C1)', async () => {
+  /** Restart with millisecond waits, so every try runs without real seconds passing. */
+  async function fastRestarts(): Promise<void> {
+    const { setRestartTimingForTests } = await import('../server-crash-recovery');
+    setRestartTimingForTests({ firstDelayMs: 1, maxDelayMs: 2, noticeDelayMs: 0 });
+  }
+
+  /** Every `server:restarting` value sent to `win` so far. */
+  function restartingSignals(win: { webContents: { send: { mock: { calls: unknown[][] } } } }) {
+    return win.webContents.send.mock.calls
+      .filter(([channel]) => channel === 'server:restarting')
+      .map(([, value]) => value);
+  }
+
+  beforeEach(fastRestarts);
+
+  it('treats a clean exit after startup as a crash and restarts on its own (C1)', async () => {
     const { dialog } = await getElectronMock();
     const { default: log } = await getLogMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, getServerPort } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -824,103 +794,60 @@ describe('the crash monitor', () => {
     child.emitExit(0);
 
     expect(log.error).toHaveBeenCalled();
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
     expect(getServerPort()).toBeNull();
+    const replacement = await devChildAt(1);
+    replacement.emitReady();
+    await until('the replacement to serve', () => getServerPort() !== null);
+    // Nobody is asked first (DOR-3229).
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
   it('treats death by signal (exit code null) as a crash (C1)', async () => {
-    const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, getServerPort } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
     child.emitExit(null);
 
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
     expect(getServerPort()).toBeNull();
+    const replacement = await devChildAt(1);
+    replacement.emitReady();
+    await until('the replacement to serve', () => getServerPort() !== null);
   });
 
-  it('logs and surfaces the crash even when no window is focused (H2)', async () => {
-    const { BrowserWindow, dialog } = await getElectronMock();
-    const { default: log } = await getLogMock();
-    // The app is in the background — the single most likely real crash.
-    BrowserWindow.getFocusedWindow = vi.fn(() => null);
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
-    const { startServer } = await import('../server-process');
-
-    const { child } = await startReadyServer(startServer);
-    child.emitExit(1);
-
-    expect(log.error).toHaveBeenCalled();
-    // Nothing to anchor to, so the dialog is shown unanchored rather than
-    // skipped: one argument, the options.
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]).toHaveLength(1);
-  });
-
-  it('anchors the dialog to the tracked main window, not the focused one (H2)', async () => {
-    const { BrowserWindow, dialog } = await getElectronMock();
+  it('restarts onto the same address, reloads the window, and reports the live port', async () => {
+    const { BrowserWindow } = await getElectronMock();
     const tracked = new BrowserWindow({ width: 1200, height: 800 });
-    const somethingElse = new BrowserWindow({ width: 400, height: 300 });
-    BrowserWindow.getFocusedWindow = vi.fn(() => somethingElse);
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
-    const { startServer } = await import('../server-process');
-
-    const { child } = await startReadyServer(
-      startServer,
-      () => tracked as unknown as Electron.BrowserWindow
-    );
-    child.emitExit(1);
-
-    expect(vi.mocked(dialog.showMessageBox).mock.calls[0][0]).toBe(tracked);
-  });
-
-  it('restarts on request onto the same address, reloads the window, and reports the live port', async () => {
-    const { BrowserWindow, dialog } = await getElectronMock();
-    const tracked = new BrowserWindow({ width: 1200, height: 800 });
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: 0,
-      checkboxChecked: false,
-    }));
     const { startServer, getServerPort } = await import('../server-process');
 
-    const { port, child } = await startReadyServer(
-      startServer,
-      () => tracked as unknown as Electron.BrowserWindow
-    );
+    const { port, child } = await startReadyServer(startServer);
     child.emitExit(1);
 
     const replacement = await devChildAt(1);
     replacement.emitReady();
-    await flush();
+    await until('the window to be reloaded', () => tracked.reload.mock.calls.length > 0);
 
     const newPort = Number(replacement.env.DORKOS_PORT);
     // The dead server let its port go, so the replacement asks for the same
     // one and gets it. A bookmark, an MCP client config, and a `dorkos://`
-    // link all survive a crash because of this — before, every restart moved
-    // the app to a fresh random port.
+    // link all survive a crash because of this.
     expect(newPort).toBe(port);
-    // The reported port is the live child's, not a value left over from the
-    // dead one — the property that has to hold whether or not it changed.
     expect(getServerPort()).toBe(newPort);
     // Dev renderer comes from electron-vite, so it only needs a reload to
     // re-read the port over IPC.
     expect(tracked.reload).toHaveBeenCalledTimes(1);
+    // The restarting bar is on while it restarts, and off once it is back.
+    expect(restartingSignals(tracked).at(-1)).toBe(false);
   });
 
   it('moves a packaged window to the restarted server’s origin', async () => {
     const restorePaths = stubPackagedPaths();
     try {
-      const { app, BrowserWindow, dialog } = await getElectronMock();
+      const { app, BrowserWindow } = await getElectronMock();
       app.isPackaged = true;
       const tracked = new BrowserWindow({ width: 1200, height: 800 });
-      dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-        response: 0,
-        checkboxChecked: false,
-      }));
       const { startServer, getServerPort } = await import('../server-process');
 
-      const started = startServer(() => tracked as unknown as Electron.BrowserWindow);
+      const started = startServer();
       const child = await utilityChildAt(0);
       child.emitReady();
       await started;
@@ -928,11 +855,10 @@ describe('the crash monitor', () => {
       child.emitExit(1);
       const replacement = await utilityChildAt(1);
       replacement.emitReady();
-      await flush();
+      await until('the window to move', () => tracked.loadURL.mock.calls.length > 0);
 
       // A packaged renderer is served *by* the server, so it has to be sent
-      // back to the origin — its connection died with the old process, whether
-      // or not the replacement came back on the same port.
+      // back to the origin — its connection died with the old process.
       const newPort = Number(replacement.env.DORKOS_PORT);
       expect(getServerPort()).toBe(newPort);
       expect(tracked.loadURL).toHaveBeenCalledWith(`http://localhost:${newPort}`);
@@ -942,12 +868,10 @@ describe('the crash monitor', () => {
     }
   });
 
-  it('catches a restart that fails, logs it, and asks again (H1)', async () => {
-    const { dialog } = await getElectronMock();
+  it('logs a restart that fails with its real error, and tries again (H1)', async () => {
     const { default: log } = await getLogMock();
     const { failNextFork } = await getChildProcessMock();
-    userClicksRestart(dialog, 1);
-    const { startServer } = await import('../server-process');
+    const { startServer, getServerPort } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
 
@@ -959,131 +883,111 @@ describe('the crash monitor', () => {
 
     failNextFork(new Error('spawn EACCES'));
     child.emitExit(1);
-    await until('the failed restart to be reported', () => dialogCalls(dialog).length >= 2);
+    // The first try fails to spawn; the second spawns the replacement.
+    const replacement = await devChildAt(1);
+    replacement.emitReady();
+    await until('the replacement to serve', () => getServerPort() !== null);
 
-    expect(log.error).toHaveBeenCalled();
-    // The failure is shown in the next prompt rather than swallowed.
-    expect(dialogDetail(dialog, 1)).toContain('spawn EACCES');
-    // The old `.then()` had no `.catch`, so this became an unhandled rejection
-    // with no dialog and no log.
+    const logged = vi.mocked(log.error).mock.calls.map((call) => call.map(String).join(' '));
+    expect(
+      logged.some((line) => line.includes('Restart 1 of 4 failed') && line.includes('spawn EACCES'))
+    ).toBe(true);
     expect(rejections).toEqual([]);
   });
 
-  it('stops offering a restart that keeps failing, and points at the logs instead', async () => {
-    const { app, dialog, shell } = await getElectronMock();
+  it('stops after its tries with the "DorkOS stopped" page, and notifies once', async () => {
+    const { BrowserWindow, Notification } = await getElectronMock();
+    const { default: log } = await getLogMock();
     const { failEveryFork } = await getChildProcessMock();
-    // The user takes the leftmost button — but only so many times. Bounding
-    // the fake user means an implementation with no cap terminates too, and
-    // fails on the assertions below rather than by killing the test worker.
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
-      checkboxChecked: false,
-    }));
+    const tracked = new BrowserWindow({ width: 1200, height: 800 });
+    // The app is in the background — the likeliest moment for a crash.
+    BrowserWindow.getFocusedWindow = vi.fn(() => null);
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
-
     // A failure no retry can get past — the shape of a `dorkos` CLI server
     // already holding the data directory.
     failEveryFork(new Error('Another DorkOS server is already using ~/.dork (pid 8123)'));
     child.emitExit(1);
 
-    await until('the retry offer to be withdrawn', () => app.quit.mock.calls.length > 0);
+    await until('the stopped page', () => tracked.loadFile.mock.calls.length > 0);
 
-    // Two offers to restart, then one final prompt that no longer offers it:
-    // the crash itself is the first failure, since the server never stayed up.
-    expect(dialogCalls(dialog)).toHaveLength(3);
-    for (const index of [0, 1]) {
-      expect(dialogOptions(dialog, index).buttons).toEqual(['Restart Server', 'Quit']);
-    }
-    expect(dialogOptions(dialog, 2).buttons).toEqual(['Open Logs', 'Quit']);
-    // The server's own explanation rides along to the end.
-    expect(dialogDetail(dialog, 2)).toContain('already using ~/.dork');
-    expect(shell.showItemInFolder).toHaveBeenCalledTimes(1);
-    expect(app.quit).toHaveBeenCalledTimes(1);
+    const [file, options] = tracked.loadFile.mock.calls[0] as unknown as [
+      string,
+      { query: { tries: string } },
+    ];
+    expect(file).toMatch(/server-stopped\.html$/);
+    // The real count from the cap, never a hard-coded one.
+    expect(options.query.tries).toBe('4');
+    // Each try's own words are in the log.
+    const logged = vi.mocked(log.error).mock.calls.map((call) => call.map(String).join(' '));
+    expect(logged.filter((line) => line.includes('already using ~/.dork'))).toHaveLength(4);
+    // One notification, because no DorkOS window was in front.
+    expect(Notification.instances).toHaveLength(1);
+    expect(Notification.instances[0]?.options).toMatchObject({
+      title: 'DorkOS stopped',
+      body: 'Click to restart',
+    });
+    expect(restartingSignals(tracked).at(-1)).toBe(false);
   });
 
   it('caps a server that keeps booting and dying, not just one that fails to spawn', async () => {
-    const { app, dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
-      checkboxChecked: false,
-    }));
-    const { startServer } = await import('../server-process');
+    const { BrowserWindow } = await getElectronMock();
+    const tracked = new BrowserWindow({ width: 1200, height: 800 });
+    const { startServer, getServerPort } = await import('../server-process');
 
-    const { getServerPort } = await import('../server-process');
     let { child } = await startReadyServer(startServer);
 
-    // Every restart *succeeds* and then dies seconds later: the renderer
-    // reloads onto the new port and re-issues whatever killed it. Counting
-    // only failed spawns never caps this, so the dialog loops forever.
-    for (let cycle = 0; cycle < IMPATIENT_USER_CLICKS; cycle++) {
+    // Every restart *succeeds* and then dies seconds later. Counting only
+    // failed spawns never caps this, so it would loop forever.
+    for (let cycle = 0; cycle < 8; cycle++) {
       child.emitExit(1);
-      // The shell either spawns a replacement or gives up; wait for whichever.
       await until(
         `the shell to answer crash #${cycle + 1}`,
-        () => forkCount() > cycle + 1 || app.quit.mock.calls.length > 0
+        () => forkCount() > cycle + 1 || tracked.loadFile.mock.calls.length > 0
       );
-      if (app.quit.mock.calls.length > 0) break;
+      if (tracked.loadFile.mock.calls.length > 0) break;
       child = await devChildAt(cycle + 1);
       child.emitReady();
       await until(`restart #${cycle + 1} to be serving`, () => getServerPort() !== null);
     }
 
-    await until('the app to give up', () => app.quit.mock.calls.length > 0);
-
-    const last = dialogOptions(dialog, dialogCalls(dialog).length - 1);
-    expect(last.buttons).toEqual(['Open Logs', 'Quit']);
-    // Bounded, and well short of the impatient user's limit.
-    expect(dialogCalls(dialog).length).toBeLessThanOrEqual(4);
+    await until('the app to give up', () => tracked.loadFile.mock.calls.length > 0);
+    // Four restarts and no more.
+    expect(forkCount()).toBe(5);
   });
 
-  it('starts a fresh incident when a server that had been up for a while dies', async () => {
-    const { dialog } = await getElectronMock();
-    // Two restarts, then quit at the prompt this test is about.
-    userClicksRestart(dialog, 2);
+  it('starts a fresh count when a server that had been up for a while dies', async () => {
+    const { BrowserWindow } = await getElectronMock();
+    const tracked = new BrowserWindow({ width: 1200, height: 800 });
     const { startServer, getServerPort } = await import('../server-process');
 
     let { child } = await startReadyServer(startServer);
 
-    // Two quick crashes put two failures on the counter.
-    for (let cycle = 0; cycle < 2; cycle++) {
+    // Three quick crashes use three of the four tries.
+    for (let cycle = 0; cycle < 3; cycle++) {
       child.emitExit(1);
       await until(`restart #${cycle + 1}`, () => forkCount() > cycle + 1);
       child = await devChildAt(cycle + 1);
       child.emitReady();
       await until(`restart #${cycle + 1} to be serving`, () => getServerPort() !== null);
     }
-    expect(dialogCalls(dialog)).toHaveLength(2);
 
     // This one served for an hour before dying. That is a working server, so
-    // its death opens a fresh incident rather than tripping the cap — a
-    // counter that only ever climbed would strand this user at 'Open Logs'.
+    // its death starts a fresh count rather than running the last try out.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+    const { failNextFork } = await getChildProcessMock();
+    failNextFork(new Error('spawn EAGAIN'));
     child.emitExit(1);
-    await until('the third prompt', () => dialogCalls(dialog).length > 2);
+    const replacement = await devChildAt(4);
+    replacement.emitReady();
+    await until('the replacement to serve', () => getServerPort() !== null);
 
-    expect(dialogOptions(dialog, 2).buttons).toEqual(['Restart Server', 'Quit']);
-  });
-
-  it('quits when the user declines the restart', async () => {
-    const { app, dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: 1,
-      checkboxChecked: false,
-    }));
-    const { startServer } = await import('../server-process');
-
-    const { child } = await startReadyServer(startServer);
-    child.emitExit(1);
-    await flush();
-
-    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(tracked.loadFile).not.toHaveBeenCalled();
   });
 
   it('stays quiet when the exit was the one stopServer asked for', async () => {
-    const { dialog } = await getElectronMock();
     const { startServer, stopServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -1091,15 +995,14 @@ describe('the crash monitor', () => {
     child.emitExit(0);
     await stopping;
     await flush();
+    await flush();
 
-    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(forkCount()).toBe(1);
   });
 });
 
 describe('stopServer', () => {
   it('returns promptly when the child has already exited (M1)', async () => {
-    const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, stopServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);

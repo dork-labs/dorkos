@@ -16,7 +16,7 @@
  * gate with no timeout turns one slow query into a permanently blank sidebar,
  * which is worse than the pop-in it was meant to fix.
  *
- * **The timeout degrades per zone, not per pixel** — see {@link fleetKnown}.
+ * **The timeout degrades per source, not per pixel** — see {@link fleetKnown}.
  * One source is not allowed to degrade quietly, because painting without it
  * would not be "missing rows" but "wrong rows".
  */
@@ -34,8 +34,6 @@ export interface BootQueryFacts {
   config: boolean;
   /** The room list — Channels and Direct messages. */
   rooms: boolean;
-  /** The thread list — Today's thread rows. */
-  threads: boolean;
   /** The fleet's directories — how many agent rows there will be. */
   mesh: boolean;
   /** The resolved manifests — every agent's real name and face (DOR-1143). */
@@ -48,24 +46,10 @@ export interface BootQueryFacts {
    * hold the gate shut forever on an install with no agents.
    */
   hasAgentPaths: boolean;
-  /** The recent-sessions window — Today's rows and the Agents section's order. */
+  /** The recent-sessions window — when each agent last ran, and who is live. */
   recents: boolean;
   /** The team roster — the header's team name. */
   roster: boolean;
-  /**
-   * Tool approvals waiting on a person — Heads up's largest source.
-   *
-   * A gate member since the adversarial review of D6: "paints once" has to
-   * include Heads up, and this query is already open and cheap. Left out, an
-   * install with a parked approval painted the panel and then grew a whole zone
-   * at the top a beat later, pushing everything below it down — the exact
-   * second beat the gate exists to remove.
-   */
-  approvals: boolean;
-  /** Questions an agent asked and is parked on — a Heads up row each. */
-  interactions: boolean;
-  /** Scheduled runs waiting for a person to approve them — Heads up rows too. */
-  scheduleApprovals: boolean;
 }
 
 /**
@@ -77,14 +61,10 @@ export function bootGateOpen(facts: BootQueryFacts): boolean {
   return (
     facts.config &&
     facts.rooms &&
-    facts.threads &&
     facts.mesh &&
     (facts.manifests || !facts.hasAgentPaths) &&
     facts.recents &&
-    facts.roster &&
-    facts.approvals &&
-    facts.interactions &&
-    facts.scheduleApprovals
+    facts.roster
   );
 }
 
@@ -92,7 +72,7 @@ export function bootGateOpen(facts: BootQueryFacts): boolean {
  * Whether the panel may draw anything whose identity comes from the fleet.
  *
  * **The one source that is not allowed to degrade on the timeout** (DOR-1143).
- * The other nine can: a pending room list reads as no rooms, and rooms arriving
+ * The others can: a pending room list reads as no rooms, and rooms arriving
  * late is a row appearing. Manifests are different in kind, because the fallback
  * for "no manifest" is a hash of the DIRECTORY and the real face is a hash of
  * the manifest's id — two different faces. So a panel that painted agent rows
@@ -102,8 +82,8 @@ export function bootGateOpen(facts: BootQueryFacts): boolean {
  * ceiling re-introduced it for exactly the installs that need it least: the slow
  * ones, where mesh and manifests are two SERIAL round trips.
  *
- * So the timeout opens the gate — the panel paints, Today paints, Channels
- * paint — and the rows drawn from the fleet stay withheld until their manifests
+ * So the timeout opens the gate — the panel paints, Channels paint — and the
+ * rows drawn from the fleet stay withheld until their manifests
  * land. The path-hash fallback keeps its one honest job: a directory the roster
  * has answered about and genuinely cannot name.
  *

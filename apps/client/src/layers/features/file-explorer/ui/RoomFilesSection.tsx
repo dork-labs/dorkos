@@ -19,10 +19,21 @@
  * @module features/file-explorer/ui/RoomFilesSection
  */
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FilePlus, FolderGit2, FolderPlus, Upload } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FilePlus, FolderGit2, FolderPlus, LoaderCircle, Upload } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
+import { roomKeys } from '@/layers/entities/room';
 import { useFileExplorerStore, type FileExplorerCommands } from '../model/file-explorer-store';
 import { createRoomFilesSource } from '../model/room-files-source';
 import { explorerDirQueryOptions } from '../model/source';
@@ -31,6 +42,7 @@ import { FileExplorer } from './FileExplorer';
 import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 import { PendingWorkBadge } from './PendingWorkBadge';
 import { RoomMainWarning } from './RoomMainWarning';
+import { errorCodeOf } from '../lib/error-code';
 
 /**
  * A thumb's reach on the header's add buttons: 44px on a touch screen, the
@@ -49,6 +61,29 @@ export interface RoomFilesSectionProps {
    * upload buttons, no row menus, no editing.
    */
   canChange: boolean;
+  /** Whether this reader may give a live room its first shared files. */
+  canSetUp?: boolean;
+}
+
+/** Calm, actionable setup refusals for the states the server names. */
+const SETUP_REFUSALS = new Map<string, string>([
+  ['ROOM_REPOS_DISABLED', 'Room files are turned off for this DorkOS.'],
+  ['ROOM_REPO_GIT_UNAVAILABLE', 'Git isn’t available on this computer.'],
+  ['MERGE_IN_FLIGHT', 'This room’s files are busy. Try again.'],
+  ['ROOM_ARCHIVED', 'Bring this room back before setting up files.'],
+  ['OPERATOR_ONLY', 'Only the owner can set up room files.'],
+]);
+
+function setupRefusal(error: unknown): string {
+  const named = SETUP_REFUSALS.get(errorCodeOf(error) ?? '');
+  if (named) return named;
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error && /fetch|offline|network/i.test(error.message))
+  ) {
+    return 'You’re offline. Try again when this computer reconnects.';
+  }
+  return 'Couldn’t set up files. Try again.';
 }
 
 /**
@@ -56,13 +91,14 @@ export interface RoomFilesSectionProps {
  *
  * @param props - The room.
  */
-export function RoomFilesSection({ roomId, canChange }: RoomFilesSectionProps) {
+export function RoomFilesSection({ roomId, canChange, canSetUp = false }: RoomFilesSectionProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const showHidden = useFileExplorerStore((s) => s.showHidden);
   // The pane's commands, published to this header rather than to the Files
   // tab's — that one belongs to the session tree.
   const [commands, setCommands] = useState<FileExplorerCommands | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
 
   const source = useMemo(
     () => createRoomFilesSource({ transport, queryClient, roomId, canChange }),
@@ -72,14 +108,35 @@ export function RoomFilesSection({ roomId, canChange }: RoomFilesSectionProps) {
   // The same query the explorer's own root level asks, by the same options — so
   // this is one request answering two questions rather than a probe of its own:
   // "does this room have files" and "what is in them" have the same answer.
-  const root = useQuery(explorerDirQueryOptions(source, ROOT_KEY, showHidden, queryClient));
+  const rootOptions = explorerDirQueryOptions(source, ROOT_KEY, showHidden, queryClient);
+  const root = useQuery(rootOptions);
+  const setup = useMutation({
+    mutationFn: async () => {
+      try {
+        return await transport.enableRoomRepo(roomId);
+      } catch (error) {
+        // Another successful press may have won the race. The room has files,
+        // which is the requested outcome, so refresh instead of apologising.
+        if (errorCodeOf(error) === 'ROOM_REPO_EXISTS') return null;
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      setSetupOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: rootOptions.queryKey }),
+        queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) }),
+      ]);
+    },
+  });
 
   // Only "this room has no files of its own" hides the section, and it arrives
   // as a LISTING that says so rather than as a rejection — see the source's
   // `list`. Anything else — the room is unreachable, this machine has no git —
   // is a real failure, and the section stays to say so where the tree would
   // have been, with the retry the explorer offers.
-  const answered = (root.isSuccess && root.data.absent !== true) || root.isError;
+  const absent = root.isSuccess && root.data.absent === true;
+  const answered = (root.isSuccess && !absent) || root.isError;
 
   // Sticky, and it has to be. The listing below is the SAME cache entry this
   // query is, so mounting the tree adds a second reader of it — and a second
@@ -93,7 +150,71 @@ export function RoomFilesSection({ roomId, canChange }: RoomFilesSectionProps) {
   // anything is committed, so nothing renders with the stale answer.
   const [answeredRoomId, setAnsweredRoomId] = useState<string | null>(null);
   if (answered && answeredRoomId !== roomId) setAnsweredRoomId(roomId);
-  if (!answered && answeredRoomId !== roomId) return null;
+  if (!answered && answeredRoomId !== roomId && !absent) return null;
+
+  if (absent) {
+    if (!canSetUp) return null;
+    const refusal = setup.isError ? setupRefusal(setup.error) : null;
+    return (
+      <section aria-label="Room files" className="space-y-2">
+        <header className="flex items-center gap-2">
+          <FolderGit2 className="text-muted-foreground size-(--size-icon-sm) shrink-0" />
+          <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            Files
+          </h3>
+        </header>
+        <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+          <p className="text-muted-foreground text-sm">This room has no shared files.</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="shrink-0 pointer-coarse:min-h-11"
+            onClick={() => {
+              setup.reset();
+              setSetupOpen(true);
+            }}
+          >
+            Set up files…
+          </Button>
+        </div>
+        {refusal !== null && (
+          <p role="alert" className="text-status-danger text-xs">
+            {refusal}
+          </p>
+        )}
+        <AlertDialog open={setupOpen} onOpenChange={setSetupOpen}>
+          <AlertDialogContent className="max-sm:top-auto max-sm:bottom-0 max-sm:translate-y-0 max-sm:rounded-b-none">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Set up files for this room?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This creates shared files and ROOM.md for everyone here. It can’t be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {refusal !== null && (
+              <p role="alert" className="text-status-danger text-sm">
+                {refusal}
+              </p>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel className="pointer-coarse:min-h-11">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="pointer-coarse:min-h-11"
+                disabled={setup.isPending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setup.mutate();
+                }}
+              >
+                {setup.isPending && <LoaderCircle className="animate-spin" />}
+                {setup.isPending ? 'Setting up…' : 'Set up files'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Room files" className="space-y-2">

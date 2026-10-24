@@ -42,7 +42,7 @@ import { DORKBOT_AGENT_NAME } from '../services/mesh/ensure-dorkbot.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials.js';
 import type { PresetFetch } from '../services/runtimes/doe/presets.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';
 
 /** What the routes build their deps from, per request. */
 export interface OnboardingRouterDeps {
@@ -125,7 +125,9 @@ export function createOnboardingRoutes(deps: OnboardingRouterDeps): Hono<ApiEnv>
   const router = new Hono<ApiEnv>();
 
   router.post('/first-run', async (c) => {
-    if (!isAtThisComputer(honoRequestFacts(c))) {
+    // Where the owner is changes nothing over an encrypted connection (DOR-3172).
+    const facts = honoRequestFacts(c);
+    if (!isAtThisComputer(facts) && !isOnEncryptedConnection(facts)) {
       return c.json({ error: 'Setup is only available on this computer.' }, 403);
     }
     const refused = refuseUnlessOwner(c);

@@ -3,6 +3,9 @@ import {
   AGENT_BROWSER_SERVER_NAME,
   StorageStateSchema,
   agentBrowserConnection,
+  isPlaywrightBrowser,
+  unguardableBrowserReason,
+  withCloudOriginBlocked,
   agentBrowserStateFileOf,
   hostBelongsToSite,
   normalizeSiteInput,
@@ -46,6 +49,113 @@ describe('agentBrowserConnection', () => {
   });
 });
 
+describe('withCloudOriginBlocked', () => {
+  const guard = { blockedOrigins: 'cloud.example;*.cloud.example', configFile: '/guard/c.json' };
+
+  it('adds the Cloud block and the guarded config', () => {
+    expect(withCloudOriginBlocked(agentBrowserConnection('/s.json'), guard).args).toEqual([
+      '-y',
+      '@playwright/mcp@0.0.82',
+      '--isolated',
+      '--headless',
+      '--storage-state',
+      '/s.json',
+      '--blocked-origins',
+      'cloud.example;*.cloud.example',
+      '--config',
+      '/guard/c.json',
+    ]);
+  });
+
+  it('keeps an operator block beside the Cloud one', () => {
+    const connection = {
+      transport: 'stdio',
+      args: ['@playwright/mcp@0.0.82', '--blocked-origins=ads.example;cloud.example', '--isolated'],
+    };
+    expect(withCloudOriginBlocked(connection, guard).args).toEqual([
+      '@playwright/mcp@0.0.82',
+      '--isolated',
+      '--blocked-origins',
+      'cloud.example;*.cloud.example;ads.example',
+      '--config',
+      '/guard/c.json',
+    ]);
+  });
+
+  it('is the same however many times it is applied', () => {
+    const once = withCloudOriginBlocked(agentBrowserConnection('/s.json'), guard);
+    expect(withCloudOriginBlocked(once, guard)).toEqual(once);
+  });
+
+  it('leaves every other server alone', () => {
+    const other = { transport: 'stdio', args: ['some-other-mcp', '--config', '/x.json'] };
+    expect(withCloudOriginBlocked(other, guard)).toBe(other);
+    const remote = { transport: 'http' };
+    expect(withCloudOriginBlocked(remote, guard)).toBe(remote);
+  });
+});
+
+describe('isPlaywrightBrowser', () => {
+  it.each([
+    { command: 'npx', args: ['-y', '@playwright/mcp@0.0.82'] },
+    { command: 'npx', args: ['--package=@playwright/mcp@0.0.82', 'playwright-mcp'] },
+    { command: 'node', args: ['/x/node_modules/@playwright/mcp/cli.js'] },
+    { command: 'playwright-mcp', args: [] },
+    { command: '/usr/local/bin/mcp-server-playwright', args: [] },
+  ])('recognises $command $args', (shape) => {
+    expect(isPlaywrightBrowser({ transport: 'stdio', ...shape })).toBe(true);
+  });
+
+  it('ignores anything else', () => {
+    expect(isPlaywrightBrowser({ transport: 'stdio', command: 'npx', args: ['other-mcp'] })).toBe(
+      false
+    );
+    expect(isPlaywrightBrowser({ transport: 'http', args: ['@playwright/mcp'] })).toBe(false);
+  });
+});
+
+describe('unguardableBrowserReason', () => {
+  const base = ['-y', '@playwright/mcp@0.0.82', '--isolated', '--storage-state', '/s.json'];
+
+  it('accepts the browser DorkOS adds', () => {
+    expect(unguardableBrowserReason(agentBrowserConnection('/s.json'))).toBeUndefined();
+    expect(
+      unguardableBrowserReason({ transport: 'stdio', args: [...base, '--browser', 'msedge'] })
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['--extension'],
+    ['--executable-path', '/opt/browser'],
+    ['--no-isolated'],
+    ['--cdp-endpoint', 'http://127.0.0.1:9222'],
+    ['--endpoint=ws://x'],
+    ['--user-data-dir', '/p'],
+    ['--proxy-server', 'http://proxy:8080'],
+    ['--config', '/mine.json'],
+    ['--browser', 'firefox'],
+    ['--browser=webkit'],
+    ['--storage-state=/other.json'],
+  ])('refuses %s', (...extra) => {
+    expect(
+      unguardableBrowserReason({ transport: 'stdio', args: [...base, ...extra] })
+    ).toBeTruthy();
+  });
+
+  it('refuses a profile on disk and a PLAYWRIGHT_MCP_ variable', () => {
+    expect(
+      unguardableBrowserReason({ transport: 'stdio', args: base.filter((a) => a !== '--isolated') })
+    ).toMatch(/--isolated/);
+    expect(
+      unguardableBrowserReason({
+        transport: 'stdio',
+        args: base,
+        env: { PLAYWRIGHT_MCP_STORAGE_STATE: '/x.json' },
+      })
+    ).toMatch(/PLAYWRIGHT_MCP_STORAGE_STATE/);
+  });
+});
+
 describe('agentBrowserStateFileOf', () => {
   it('finds the session file of a Playwright MCP server, whatever it is named', () => {
     expect(agentBrowserStateFileOf(agentBrowserConnection('/s.json'))).toBe('/s.json');
@@ -55,6 +165,20 @@ describe('agentBrowserStateFileOf', () => {
         args: ['@playwright/mcp@0.0.82', '--storage-state=/pinned.json'],
       })
     ).toBe('/pinned.json');
+  });
+
+  it('returns the last one when the flag repeats, the one Playwright loads', () => {
+    expect(
+      agentBrowserStateFileOf({
+        transport: 'stdio',
+        args: [
+          '@playwright/mcp@0.0.82',
+          '--storage-state',
+          '/first.json',
+          '--storage-state=/last.json',
+        ],
+      })
+    ).toBe('/last.json');
   });
 
   it('ignores servers that are not a seeded Playwright browser', () => {

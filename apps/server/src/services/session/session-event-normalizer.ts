@@ -1016,7 +1016,7 @@ export async function feedProjector(
 ): Promise<void> {
   // Callers spread only the fields they have, so nothing here is undefined.
   const { onTurnStart: _onTurnStart, stillLive: _stillLive, ...fields } = opts;
-  const start: RawOf<'turn_start'> = { type: 'turn_start', ...fields };
+  const start: RawOf<'turn_start'> = { type: 'turn_start', ...fields, at: Date.now() };
   // Two statements, and they must stay two. Folded into
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
   // short-circuits its own arguments, so a caller that passed no callback — which

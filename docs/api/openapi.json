@@ -829,6 +829,14 @@
       "AccountUsage": {
         "type": "object",
         "properties": {
+          "signInState": {
+            "type": "string",
+            "enum": [
+              "signed-in",
+              "signed-out",
+              "unknown"
+            ]
+          },
           "runtime": {
             "type": "string",
             "enum": [
@@ -6133,6 +6141,9 @@
               },
               "roomMessage": {
                 "$ref": "#/components/schemas/RoomMessageStamp"
+              },
+              "at": {
+                "type": "number"
               }
             },
             "required": [
@@ -8857,6 +8868,41 @@
           "agent"
         ]
       },
+      "StreamHealthReport": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "silent-turn",
+              "unrendered-turn"
+            ]
+          },
+          "silentMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connectionState": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "connected",
+              "reconnecting",
+              "disconnected"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "silentMs",
+          "lastSeq",
+          "connectionState"
+        ]
+      },
       "ChatActivityResponse": {
         "type": "object",
         "properties": {
@@ -9464,6 +9510,91 @@
         },
         "required": [
           "port"
+        ]
+      },
+      "WorkbenchBridgeStatusResponse": {
+        "type": "object",
+        "properties": {
+          "bridge": {
+            "type": "string",
+            "enum": [
+              "added",
+              "refused",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FrameBridgeRefusal"
+          }
+        },
+        "required": [
+          "bridge"
+        ]
+      },
+      "FrameBridgeRefusal": {
+        "type": "string",
+        "enum": [
+          "csp",
+          "encoding",
+          "oversize",
+          "no-head",
+          "markup",
+          "fixed-source"
+        ]
+      },
+      "WorkbenchBridgeStatusRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "serve"
+                ]
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "kind",
+              "cwd",
+              "path"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proxy"
+                ]
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "kind",
+              "port",
+              "path"
+            ]
+          }
         ]
       },
       "CommandRegistry": {
@@ -13657,6 +13788,12 @@
                 "type": "string",
                 "maxLength": 500
               },
+              "roseChats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "presetSnapshot": {
                 "type": "object",
                 "properties": {
@@ -14288,6 +14425,52 @@
           "source"
         ]
       },
+      "AgentLevelResponse": {
+        "type": "object",
+        "properties": {
+          "effective": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "effectiveMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "declared": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "cappedByPerson": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "effective",
+          "effectiveMode",
+          "declared",
+          "cappedByPerson"
+        ]
+      },
       "PatchAgentPermissionsBody": {
         "type": "object",
         "properties": {
@@ -14396,9 +14579,28 @@
                 "minimum": 0,
                 "description": "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
               },
+              "awaiting": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many of this room's turns are stopped, waiting on a person — a tool approval, a question or an MCP prompt — right now. `0` when none are. The server always sends it; it is optional only so a caller that predates it still parses. Read from the server's own session state (a live pending interaction on a session bound to this room), never from anything an agent reports, and a count only: no session, prompt or tool is named. A folded sidebar section keeps a room with one on screen. The `room_awaiting` event carries the same count when it changes."
+              },
               "viewerHasPosted": {
                 "type": "boolean",
                 "description": "Whether the viewer has ever written in this room themselves. Derived from the log on every read, so it cannot drift; membership does not imply it and neither does reading. The server always sends it, and it is optional for the same reason `working` is — a caller that predates it still parses. **Absent means \"this source cannot say\", never `false`**: a client reads it to decide whether to nudge somebody to say hello, and a missing field read as \"never posted\" would nudge an operator who has been talking in #team for months."
+              },
+              "mentionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10,
+                "description": "How many entries above the viewer's read cursor @mention the viewer, thread replies included, counted up to 10: 10 means \"10 or more\", since a sidebar draws anything past nine as 9+ and counting further would only cost reads. Counted from the room log, never from notifications, so clearing a notification does not clear it and reading the room does. Absent when the viewer is not a member (there is no cursor to count above, exactly as `unreadCount` is `null`) and from a source that cannot count it. A person naming themselves is not counted."
+              },
+              "lastLine": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 120,
+                "description": "The newest top-level message's text as one plain line: basic markdown (code fences, inline code, bold, links) taken out, whitespace collapsed, and cut to 120 characters with no ellipsis added. `null` when there is no top-level message with text the viewer may read — a member who is not the owner is never shown a message from before they joined; absent from a source that cannot say. Thread replies are skipped: the room's own last line is what its row stands for."
               }
             },
             "required": [
@@ -14737,6 +14939,18 @@
               "viewerIsOperator": {
                 "type": "boolean",
                 "description": "Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means \"this source cannot say\", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn."
+              },
+              "viewerCan": {
+                "type": "object",
+                "properties": {
+                  "setUpFiles": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "setUpFiles"
+                ],
+                "description": "Actions THIS reader may take in this room. The server still enforces every action; this only keeps refused controls off the screen. Absent means this source cannot say."
               },
               "reactionFrequents": {
                 "type": "array",
@@ -15250,7 +15464,9 @@
           "bridge_agent_swapped",
           "bridge_history_note",
           "room_archived",
-          "agent_reseated"
+          "agent_reseated",
+          "handle_changed",
+          "files_set_up"
         ]
       },
       "RoomMoment": {
@@ -16182,7 +16398,7 @@
           "handle": {
             "type": "string",
             "maxLength": 64,
-            "description": "The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED."
+            "description": "The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN, HANDLE_RESERVED or HANDLE_LOOKALIKE."
           }
         },
         "required": [
@@ -17258,6 +17474,10 @@
         "type": "object",
         "properties": {
           "manifestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorId": {
             "type": "string",
             "minLength": 1
           },
@@ -27371,6 +27591,681 @@
         }
       }
     },
+    "/api/canvas/docs/{id}/work": {
+      "get": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "List a document’s expired and in-doubt work",
+        "description": "Operator only. Work that expired unadmitted after 24 hours, or reached the agent with its result unknown, oldest first. Nothing here replays on its own. Event payloads are never returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The work waiting on a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "batchId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "routeId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "expired",
+                              "in_doubt"
+                            ]
+                          },
+                          "eventCount": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "since": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "format": "date-time"
+                          },
+                          "replay": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "no_grant",
+                              "route_changed",
+                              "inputs_gone",
+                              "route_busy",
+                              "still_running"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "batchId",
+                          "routeId",
+                          "status",
+                          "eventCount",
+                          "since",
+                          "replay"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/work/{batchId}/replay": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Run reviewed work again as new work",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Needs current ownership and the route's current grant, both checked again now. Queues the same inputs as a new batch and generation, once. In-doubt work also needs confirmRepeat: true, since it may already have run.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "batchId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmRepeat": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was replayed, with the new batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "replayed",
+                        "cleared"
+                      ]
+                    },
+                    "previousStatus": {
+                      "type": "string",
+                      "enum": [
+                        "expired",
+                        "in_doubt"
+                      ]
+                    },
+                    "nextBatchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "batchId",
+                    "routeId",
+                    "action",
+                    "previousStatus",
+                    "nextBatchId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/work/{batchId}/clear": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Set reviewed work aside without running it",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Needs current ownership; no grant, since it starts nothing. In-doubt work frees its route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "batchId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "routeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "replayed",
+                        "cleared"
+                      ]
+                    },
+                    "previousStatus": {
+                      "type": "string",
+                      "enum": [
+                        "expired",
+                        "in_doubt"
+                      ]
+                    },
+                    "nextBatchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "batchId",
+                    "routeId",
+                    "action",
+                    "previousStatus",
+                    "nextBatchId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the document is out of reach",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document, route or grant unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already reviewed, not reviewable, or still running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Document routes are not composed on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/holds/{holdId}/cancel": {
       "post": {
         "tags": [
@@ -33537,7 +34432,7 @@
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -33567,7 +34462,7 @@
           "Devices"
         ],
         "summary": "Sign out one device",
-        "description": "Ends one sign-in and closes every stream, socket and terminal it had open. Your own current sign-in from anywhere; any other only from a person at the computer DorkOS runs on.",
+        "description": "Ends one sign-in, closes every stream, socket and terminal it had open, and stops the chats it started. Your own current sign-in from anywhere; any other only from the owner at the computer DorkOS runs on or signed in over https, never plain-http Wi-Fi.",
         "parameters": [
           {
             "schema": {
@@ -33605,7 +34500,7 @@
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -33657,7 +34552,7 @@
           "Devices"
         ],
         "summary": "Sign out everywhere else",
-        "description": "Ends every sign-in but the asking one (all of them when the asker has none) and closes what each had open. Only from a person at the computer DorkOS runs on.",
+        "description": "Ends every sign-in but the asking one (all of them when the asker has none) and closes what each had open. Only from the owner at the computer DorkOS runs on or signed in over https, never plain-http Wi-Fi.",
         "responses": {
           "200": {
             "description": "How many sign-ins ended",
@@ -33701,7 +34596,7 @@
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -35441,6 +36336,9 @@
                         },
                         "roomMessage": {
                           "$ref": "#/components/schemas/RoomMessageStamp"
+                        },
+                        "at": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -36383,6 +37281,50 @@
           },
           "400": {
             "description": "The id is not a session id (`INVALID_SESSION_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/stream-health": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Report a turn a window missed",
+        "description": "Called by the app when the fleet-wide `/api/events` stream says this session ran a turn and the window's own `/api/sessions/{id}/events` stream delivered none of it. The window reconnects on its own; the server only logs the report, beside its own count of open windows and live subscribers for the session, so the miss can be found later. Changes nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamHealthReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Logged"
+          },
+          "400": {
+            "description": "The id is not a session id (`INVALID_SESSION_ID`), or the body is not a report (`VALIDATION_ERROR`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -37741,6 +38683,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkbenchProbeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/bridge": {
+      "post": {
+        "tags": [
+          "Workbench"
+        ],
+        "summary": "Why a framed page has no DorkOS scripts",
+        "description": "Reports whether DorkOS added its frame scripts (the page channel and the DevTools shim) the last time it served this page into the embedded browser, and the stable reason when it did not. Names a file under a `cwd` the way the sign route does, or a path on a dev server port. `unknown` when DorkOS has not served that page as HTML.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchBridgeStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The recorded decision for that page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchBridgeStatusResponse"
                 }
               }
             }
@@ -82419,6 +83401,47 @@
         }
       }
     },
+    "/api/agents/{id}/level": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read the level an agent runs at",
+        "description": "The Files & commands level a new chat of this agent starts at, before any per-chat limit, the level its runtime's agents get by default, and whether a person's setting holds it lower.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLevelResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rooms": {
       "get": {
         "tags": [
@@ -83518,7 +84541,7 @@
             }
           },
           "403": {
-            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`)",
+            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on plain-http Wi-Fi tried to change an agent's (`NOT_FROM_WIFI`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -83538,7 +84561,7 @@
             }
           },
           "409": {
-            "description": "The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)",
+            "description": "The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`HANDLE_RESERVED`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`HANDLE_LOOKALIKE`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -83831,7 +84854,7 @@
           "Rooms"
         ],
         "summary": "Give a room files of its own",
-        "description": "Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.",
+        "description": "Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. An archived room answers 409 `ROOM_ARCHIVED`; bring it back before giving it files. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.",
         "parameters": [
           {
             "schema": {
@@ -83893,7 +84916,7 @@
             }
           },
           "409": {
-            "description": "The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)",
+            "description": "The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), is archived (`ROOM_ARCHIVED`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)",
             "content": {
               "application/json": {
                 "schema": {

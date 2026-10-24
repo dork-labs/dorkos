@@ -14,6 +14,7 @@ export { permissionKeys } from './model/permission-keys';
 export { usePermissions } from './model/use-permissions';
 export { useCapabilitiesSync } from './model/use-capabilities-sync';
 export { useAgentPermissions } from './model/use-agent-permissions';
+export { useAgentLevel } from './model/use-agent-level';
 export { useOverridingAgents } from './model/use-overriding-agents';
 export { usePermissionHistory } from './model/use-permission-history';
 export { undoConflictsOf, useUndoPermission } from './model/use-undo-permission';

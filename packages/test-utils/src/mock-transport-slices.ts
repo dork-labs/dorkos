@@ -4,9 +4,11 @@
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
  * succeeds, sign-in landing pages, where no landing is held, a canvas
- * document's route controls, where no document declares a route, a space's
- * docs, where there are none, signed-in devices, where there are none, and an
- * account's automatic moves, where every change succeeds.
+ * document's route controls, where no document declares a route or has work
+ * to review, a space's docs, where there are none, signed-in devices, where
+ * there are none, an account's automatic moves, where every change succeeds,
+ * a framed page's script decision, which is never known, and an agent's
+ * level, where every agent runs at Full autonomy.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -34,12 +36,17 @@ type SliceMethods =
   | 'reviewCanvasDocRoute'
   | 'approveCanvasDocRoute'
   | 'revokeCanvasDocRoute'
+  | 'getCanvasDocWork'
+  | 'replayCanvasDocWork'
+  | 'clearCanvasDocWork'
   | 'getDocIndex'
   | 'resolveDocLink'
   | 'listSignedInDevices'
   | 'signOutDevice'
   | 'signOutEverywhereElse'
-  | 'setAccountNoAutoMove';
+  | 'setAccountNoAutoMove'
+  | 'getFrameBridgeStatus'
+  | 'getAgentLevel';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -81,10 +88,23 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     reviewCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
     approveCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
     revokeCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
+    getCanvasDocWork: vi
+      .fn()
+      .mockImplementation(async (documentId: string) => ({ documentId, items: [] })),
+    replayCanvasDocWork: vi.fn().mockRejectedValue(new Error('No such work')),
+    clearCanvasDocWork: vi.fn().mockRejectedValue(new Error('No such work')),
     getDocIndex: vi.fn().mockResolvedValue({ root: '/', docs: [], truncated: false }),
     resolveDocLink: vi.fn().mockResolvedValue({ doc: null, complete: true }),
     setAccountNoAutoMove: vi
       .fn()
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
+    // DorkOS has served no page into a frame, so the canvas says nothing.
+    getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
+    getAgentLevel: vi.fn().mockResolvedValue({
+      effective: 'autonomy',
+      effectiveMode: 'bypassPermissions',
+      declared: 'autonomy',
+      cappedByPerson: false,
+    }),
   };
 }

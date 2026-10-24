@@ -1,8 +1,8 @@
 /**
  * What YOU opened, when, and how often — one store, one key space, every kind.
  *
- * The sidebar's Today zone is ordered by the operator's own attention and never
- * by an agent's (spec `sidebar-now-today-library` BC-16), which needs a fact no
+ * "Recent" in ⌘K is ordered by the operator's own attention and never by an
+ * agent's (spec `sidebar-now-today-library` BC-16), which needs a fact no
  * server has: the moment this person last looked at this conversation. That is
  * what lives here, beside the count of how many times they have.
  *
@@ -16,10 +16,10 @@
  * rather than for one.
  *
  * **Two maps, added rather than merged.** The obvious shape is one record per
- * key holding both facts. It is not the shape here, because
- * `SidebarState.interactions` is `opened` itself — the sidebar reads the map
- * whole and parses its values — so merging would have rewritten a contract two
- * shipped phases already depend on to add a field only ⌘K reads. The two maps
+ * key holding both facts. It is not the shape here, because readers take
+ * `opened` whole and parse its values ({@link useInteractionTimestamps}) — so
+ * merging would have rewritten a contract they already depend on to add a
+ * field only ⌘K reads. The two maps
  * carry the same keys and are pruned together, which is the invariant
  * {@link prune} exists to keep.
  *
@@ -27,7 +27,7 @@
  * table is about `~/.dork/config.json` — the server-held prefs that follow you
  * between machines — and it calls this timestamp "a per-device notion by
  * definition". A per-device notion still has to survive a page reload, or
- * Today's order resets to nothing every time the tab is refreshed. So it is
+ * "Recent" resets to nothing every time the tab is refreshed. So it is
  * local to this browser and durable within it.
  *
  * @module entities/interactions/model/interaction-store
@@ -45,25 +45,20 @@ import { createJSONStorage, persist } from 'zustand/middleware';
  * than deferred.** ⌘K ranks them and they carry no history at all, so recording
  * them here is the obvious fix for the handicap
  * `features/command-palette/model/use-palette-items` documents — that file even
- * names this store as the escape hatch. It is not taken, because of a coupling
- * neither file can see alone: the sidebar's "While you were away…" digest
- * dissolves when the NEWEST record here moves, of whatever kind
- * (`use-digest-facts.ts`, BC-22). Recording an action would mean toggling the
- * theme from ⌘K puts away a summary of the night's work — the digest reporting
- * itself read by somebody who read nothing. The rule this store keeps is
- * therefore **a record is a place you went, not a thing you did**, and adding a
- * fourth kind means first giving the digest a way to say which kinds count.
+ * names this store as the escape hatch. It is not taken: every reader here
+ * treats a record as somewhere the person looked, and toggling the theme from
+ * ⌘K is not looking at anything. The rule this store keeps is **a record is a
+ * place you went, not a thing you did**.
  */
 export type InteractionKind = 'session' | 'room' | 'agent';
 
 /**
  * {@link interactionKey} → when the operator last opened it, **ISO-8601**.
  *
- * **The unit is part of the contract and is checked by the compiler.** The
- * sidebar model declares `SidebarState.interactions` as this exact type and
- * parses each value with `Date.parse`. Epoch milliseconds would sail through
- * that as a `string` and parse to `NaN`, which the model turns into "no
- * interaction time" — collapsing Today to alphabetical order with nothing
+ * **The unit is part of the contract and is checked by the compiler.** Readers
+ * declare this exact type and parse each value with `Date.parse`. Epoch
+ * milliseconds would sail through that as a `string` and parse to `NaN`, which
+ * a reader turns into "no interaction time" — losing the order with nothing
  * thrown and no test red. So the two ends share one named type rather than two
  * agreeing comments.
  */
@@ -270,8 +265,7 @@ export const useInteractionStore = create<InteractionState & InteractionActions>
 );
 
 /**
- * Every interaction timestamp, keyed by {@link interactionKey} — exactly the
- * shape `SidebarState.interactions` takes.
+ * Every interaction timestamp, keyed by {@link interactionKey}.
  *
  * A selector rather than a derived copy: the model wants the whole map at once
  * (it orders a list with it), and handing it the store's own object keeps the

@@ -1,5 +1,5 @@
 /**
- * The ⌘K pill: "Jump to anything…", under the header block (BC-46).
+ * The ⌘K pill: "Find a conversation…", under the header block (BC-46).
  *
  * It **opens the palette the rest of the app already opens** — the same
  * `globalPaletteOpen` flag the `⌘K` chord itself flips — rather than forking a
@@ -7,9 +7,11 @@
  * surface with half the results, which is the same defect as the scattered
  * create menus one row above it.
  *
- * "Jump to anything" and not "Search": ⌘K finds things — agents, sessions,
- * rooms, actions — by name and recency, and message-content search is a
- * separate surface it hands off to (§15).
+ * "Find a conversation" and not "Search": the list above lists places and no
+ * sessions, so this pill is how a conversation that is not a place — an
+ * agent's work chat above all — is found by name and recency. ⌘K finds agents,
+ * rooms and actions too, and message-content search is a separate surface it
+ * hands off to (§15).
  *
  * @module features/dashboard-sidebar/ui/SidebarSearchPill
  */
@@ -41,7 +43,7 @@ export function SidebarSearchPill() {
       )}
     >
       <Search className="size-(--size-icon-sm) shrink-0" />
-      <span className="truncate">Jump to anything…</span>
+      <span className="truncate">Find a conversation…</span>
       {/* The shared `Kbd` is `bg-muted` by default, and `--muted` is the one
           token this panel may not use: it sits lighter than the sidebar in
           light mode and darker in dark mode, so the separation flips direction

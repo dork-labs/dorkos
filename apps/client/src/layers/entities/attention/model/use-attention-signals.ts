@@ -1,14 +1,14 @@
 /**
  * "What needs me right now?", answered once for the whole cockpit.
  *
- * The sidebar's Heads up zone and the home surface's triage header ask the same
- * question of the same sources; before this they each assembled their own
- * answer inside a feature the other could not import. This is the shared one.
+ * The Inbox, the phone's Home cards and the home surface's triage header ask the
+ * same question of the same sources; before this they each assembled their own
+ * answer inside a feature the others could not import. This is the shared one.
  *
- * **Referential stability is a contract here, not a nicety.** The sidebar folds
- * this list into a snapshot that must not change identity when an agent calls a
- * tool (spec §H) — so every source is put behind a stability guard and the
- * result is memoized. A fresh array per render would rebuild the entire sidebar
+ * **Referential stability is a contract here, not a nicety.** Its readers fold
+ * this list into memoized views that must not change identity when an agent
+ * calls a tool (spec §H) — so every source is put behind a stability guard and
+ * the result is memoized. A fresh array per render would re-render every reader
  * every couple of seconds per working session.
  *
  * @module entities/attention/model/use-attention-signals
@@ -43,8 +43,8 @@ export function useAttentionSignals(): readonly AttentionSignal[] {
   const { approvals } = usePendingApprovals();
   // The schedules an agent parked. A first-class signal since DOR-1391 rather
   // than a list each surface joined on afterwards — `useAttentionRows`, the
-  // arrival watch behind the knock and the banner, and the sidebar's Heads up
-  // zone each used to compose it separately, and three compositions of one
+  // arrival watch behind the knock and the banner, and the sidebar's old
+  // needs-you list each used to compose it separately, and three compositions of one
   // question are three chances to answer it differently.
   const { schedules } = usePendingScheduleApprovals();
   const recent = useRecentSessions();

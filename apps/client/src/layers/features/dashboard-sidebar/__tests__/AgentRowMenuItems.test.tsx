@@ -50,6 +50,12 @@ const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const moveToGroupCalls: unknown[][] = [];
 const muteItemCalls: unknown[][] = [];
 const unmuteItemCalls: unknown[][] = [];
+const ungroupCalls: unknown[][] = [];
+/** The rooms' answer to "does this agent have a direct message?". */
+const hasDirectMessage = (): boolean => false;
+vi.mock('../model/has-direct-message', () => ({
+  useHasDirectMessage: () => hasDirectMessage,
+}));
 let mockMuted: SidebarItemRef[] = [];
 vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({ pinned: [], groups, sections: {}, muted: mockMuted }),
@@ -73,6 +79,10 @@ vi.mock('@/layers/entities/config', () => ({
     moveToGroupCalls.push(args);
     return args[0];
   },
+  ungroupKeepingInReach: (...args: unknown[]) => {
+    ungroupCalls.push(args);
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -92,6 +102,7 @@ beforeAll(() => {
 beforeEach(() => {
   mockUpdate.mockReset();
   moveToGroupCalls.length = 0;
+  ungroupCalls.length = 0;
   muteItemCalls.length = 0;
   unmuteItemCalls.length = 0;
   mockMuted = [];
@@ -378,7 +389,7 @@ describe('agent row menu end-to-end wiring', () => {
     expect(moveToGroupCalls).toEqual([[{ groups }, API_SERVER, 'g2']]);
   });
 
-  it('"Remove from section" commits moveToGroup(ref, null)', () => {
+  it('"Remove from section" ungroups through the rule that keeps an agent in reach', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
@@ -386,7 +397,12 @@ describe('agent row menu end-to-end wiring', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
-    expect(moveToGroupCalls).toEqual([[{ groups }, API_SERVER, null]]);
+    // The one helper that pins an agent with no direct message (DOR-3092),
+    // handed the rooms' answer — never a bare moveToGroup(ref, null).
+    expect(ungroupCalls).toEqual([
+      [{ groups }, { kind: 'item', ref: API_SERVER }, hasDirectMessage],
+    ]);
+    expect(moveToGroupCalls).toEqual([]);
   });
 
   it('"Mute agent" commits muteItem(ref)', () => {

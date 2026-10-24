@@ -210,10 +210,12 @@ describe('useOpenRoom', () => {
     // subscription — it feeds the sidebar's working dots and never the badge,
     // which is why the count is untouched by it. `read_cursor` does move the
     // badge: it is this same person reading on another device, and the tab has
-    // to stop asking for their attention when they do.
+    // to stop asking for their attention when they do. `room_awaiting` refetches
+    // the list for a folded section's kept rows (DOR-3236).
     expect([...streamHandlers.keys()].sort()).toEqual([
       'read_cursor',
       'room_activity',
+      'room_awaiting',
       'room_created',
       'room_member_added',
       'room_member_removed',

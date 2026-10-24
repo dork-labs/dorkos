@@ -303,7 +303,7 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
     expect(actions.filter((action) => action.startsWith('session-relay.'))).toEqual([]);
   }
 
-  it.each(['relay', 'own-tunnel', 'managed', 'wifi'] as const)(
+  it.each(['relay', 'wifi'] as const)(
     'refuses a request through %s, even with the owner’s session',
     async (ingress) => {
       const res = await send(request(app({ user: OWNER_COOKIE, ingress })));
@@ -311,6 +311,16 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
       expect(res.body.code).toBe(SESSION_RELAY_NEEDS_THIS_COMPUTER);
       expect(res.body.error).toBe('Change this on the computer DorkOS runs on.');
       unchanged();
+    }
+  );
+
+  // An encrypted connection is the desk, for the owner (DOR-3172): past this
+  // bar, the route answers as it does at this computer (a password, say).
+  it.each(['own-tunnel', 'managed'] as const)(
+    'lets the owner’s session through %s',
+    async (ingress) => {
+      const res = await send(request(app({ user: OWNER_COOKIE, ingress })));
+      expect(res.body.code).not.toBe(SESSION_RELAY_NEEDS_THIS_COMPUTER);
     }
   );
 
