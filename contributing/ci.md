@@ -105,8 +105,11 @@ initializer in `security-review-initialize.yml` can write, from trusted base cod
 SHA/state transition, recording that observation's status author and ID. Replacing
 a status with the same state adds no comment. It never renders `target_url`.
 After Security approves, rerun the PR verifier. A fully classified nonsensitive
-PR can pass read-only while initialization finishes; the queue requires the
-written status. The initial bootstrap PR fails closed while base lacks the code.
+PR with no security-review status can pass read-only as "no security paths
+(computed)". The queue can do the same using `base...queuedHead`, never the current
+PR's files. An explicit pending/failure cannot use computed clearance. Incomplete
+file lists, the PR endpoint's 3,000-file cap and the compare endpoint's 300-file
+cap fail closed. Both sides of renames are checked. The initial bootstrap PR fails closed while base lacks the code.
 
 Enforcement requires **Require workflows to pass**, sourced from
 `dork-labs/dorkos` at `refs/heads/main`, path
