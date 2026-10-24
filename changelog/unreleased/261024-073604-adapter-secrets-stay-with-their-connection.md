@@ -5,6 +5,7 @@ covers:
   - 'fix(relay): only a person can give a connection an env: or keychain: secret (DOR-3271)'
   - 'fix(relay): person approvals live in the encrypted store, and stored names cannot collide (DOR-3271)'
   - 'fix(relay): a paused connection drops and counts, and its owner confirms exactly what it sends (DOR-3271)'
+  - 'test(relay): the route census and shell mocks know the confirm routes and paused connections (DOR-3271)'
 ---
 
 ### Security
