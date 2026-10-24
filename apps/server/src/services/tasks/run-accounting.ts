@@ -44,6 +44,7 @@
  */
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import { createTaggedLogger } from '../../lib/logger.js';
+import type { CancelRunOutcome } from './run-cancel.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -78,6 +79,8 @@ type ActiveRun =
 /** The live runs of one scheduler, across both dispatch paths. */
 export class RunAccounting {
   private runs = new Map<string, ActiveRun>();
+  /** Relay runs nothing received yet, waiting to be offered once more (DOR-3033). */
+  private awaitingRetry = new Set<string>();
 
   /**
    * Build an empty registry.
@@ -107,13 +110,70 @@ export class RunAccounting {
    * @param maxRuntimeMs - The task's own deadline, when it has one.
    */
   addRelay(runId: string, maxRuntimeMs?: number | null): void {
-    const ttl = maxRuntimeMs ? maxRuntimeMs + RELAY_SLOT_GRACE_MS : RELAY_SLOT_DEFAULT_TTL_MS;
+    // The grace on both branches: the relay awaits a task's delivery until its
+    // deadline plus a grace (DOR-3033), and the slot must last as long.
+    const ttl = (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RELAY_SLOT_GRACE_MS;
     this.runs.set(runId, { kind: 'relay', expiresAt: Date.now() + ttl });
   }
 
   /** Give back a run's slot. */
   release(runId: string): void {
     this.runs.delete(runId);
+    this.awaitingRetry.delete(runId);
+  }
+
+  /**
+   * Mark, or clear, a relay run that nothing has received yet and that waits
+   * to be offered once more. A Stop on such a run ends it outright: there is
+   * no runner to ask, and the retry must not start it (DOR-3033 review).
+   *
+   * @param runId - The run.
+   * @param waiting - True while it waits for its retry.
+   */
+  setAwaitingRetry(runId: string, waiting: boolean): void {
+    if (waiting) this.awaitingRetry.add(runId);
+    else this.awaitingRetry.delete(runId);
+  }
+
+  /**
+   * End a run without the bus when this process can: one it drives itself is
+   * aborted, and a relay run nothing has received yet, waiting to be offered
+   * once more, is ended outright, so its retry sees a finished run and stands
+   * down (DOR-3033 review). Anything else needs a stop request on the bus.
+   *
+   * @param runId - The run to stop.
+   * @param store - Where the run's ending is written.
+   * @param reason - What the direct abort carries, so finalization knows a person stopped it.
+   * @returns `stopping` when it was stopped here, `undefined` when the bus must be asked.
+   */
+  stopHere(
+    runId: string,
+    store: Pick<TaskStore, 'updateRun'>,
+    reason: unknown
+  ): CancelRunOutcome | undefined {
+    const controller = this.directController(runId);
+    if (controller) {
+      controller.abort(reason);
+      return { state: 'stopping' };
+    }
+    if (!this.isAwaitingRetry(runId)) return undefined;
+    this.release(runId);
+    store.updateRun(runId, {
+      status: 'cancelled',
+      finishedAt: new Date().toISOString(),
+      durationMs: 0,
+      error: 'Stopped before it started.',
+    });
+    return { state: 'stopping' };
+  }
+
+  /**
+   * Whether a relay run is waiting for its retry, received by nothing yet.
+   *
+   * @param runId - The run.
+   */
+  isAwaitingRetry(runId: string): boolean {
+    return this.awaitingRetry.has(runId);
   }
 
   /**
