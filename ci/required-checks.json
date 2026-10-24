@@ -12,5 +12,15 @@
     "db-check",
     "openapi-fresh",
     "fixtures"
+  ],
+  "workflows": [
+    {
+      "ruleset_name": "DorkOS security gate from main",
+      "repository": "dork-labs/dorkos",
+      "repository_id": 1155842647,
+      "path": ".github/workflows/security-gate.yml",
+      "ref": "refs/heads/main",
+      "bypass_actors": []
+    }
   ]
 }

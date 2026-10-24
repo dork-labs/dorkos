@@ -18,6 +18,8 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runCensus, discoverGates } from './census.ts';
+import { createGh } from './gh.ts';
+import { checkLiveWorkflows } from './required-workflows.ts';
 import { checkCoverage, type ChangedFile } from './coverage.ts';
 import { readRootScripts } from './discover.ts';
 import { formatFindings, type Finding } from './finding.ts';
@@ -53,9 +55,10 @@ export interface Io {
 const USAGE = `usage: ci-steward <command> [options]
 
 commands:
-  census [--fix]
+  census [--fix] [--live]
       Check that ci/ matches the workflows, lefthook and Claude hooks that run.
       --fix rewrites the generated required-checks blocks in the docs, nothing else.
+      --live also reads org rulesets and source repository identity; never writes GitHub.
   ledger-check
       Validate every ci/ledger entry.
   ledger-check --coverage --base <sha> [--branch <name>]
@@ -373,6 +376,7 @@ export function main(
       allowPositionals: true,
       options: {
         fix: { type: 'boolean' },
+        live: { type: 'boolean' },
         coverage: { type: 'boolean' },
         base: { type: 'string' },
         branch: { type: 'string' },
@@ -435,6 +439,16 @@ export function main(
     case 'census': {
       const result = runCensus({ root, now, fix: values.fix });
       for (const f of result.fixed) io.out(`rewrote the generated block in ${f}\n`);
+      if (values.live && result.findings.length === 0) {
+        const { files } = loadHandFiles(root);
+        if (files)
+          result.findings.push(
+            ...checkLiveWorkflows(
+              (deps.gh ?? ((budget) => createGh({ budget })))(files.config.collect.api_budget),
+              files
+            )
+          );
+      }
       return report(io, 'census', result.findings);
     }
     case 'ledger-check':
