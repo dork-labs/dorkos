@@ -12,10 +12,17 @@ field-changes: []
 
 Extend the approved trust-path reference to .npmrc, patches/, .pnpmfile.cjs and
 .nvmrc, at the root or inside a workspace. Match both the original path and its
-NFKC-normalized lowercase form, including both sides of a rename. This closes
-case-variant and compatibility-character bypasses across all security paths.
+fully folded and NFKC-then-folded forms, including both sides of a rename.
+Compile every supplied pattern with Unicode case-insensitive matching, including
+repo-configured patterns. This closes case-variant and compatibility-character
+bypasses across all security paths while retaining every original-path match.
 Keep one exact regex shared by JavaScript and the coordinator's grep -E checker;
 fixtures check matches, near-misses, renames and the normalized POSIX ERE input.
+The shared spelling fixture is copied byte-for-byte from marketplace #121, blob
+27c78795f270cb5c4666f1cfe358f88268a568e7. Configured-pattern fixtures also cover
+mixed case, sharp-s expansion, preserved original spellings and regex escapes.
+Nested workspace patches remain sensitive at any depth. A scoped Prettier ignore
+preserves the shared fixture bytes, enforced by its pinned Git-blob test.
 
 The follow-up to #3171 is held as #3191. No parent push, permission, timeout,
 retry or required-context change. The host-only interim checker already folds

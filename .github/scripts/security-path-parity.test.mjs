@@ -1,5 +1,6 @@
 /* global URL */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -30,6 +31,7 @@ test('gate pattern equals Security reference and the installed interim checker',
 });
 
 const additions = [
+  ['packages/a/patches/b.patch', 'packages/a/patches-old/b.patch'],
   ['.NPMRC', '.NPMRC.backup'],
   ['.PNPMFILE.CJS', '.PNPMFILE.CJS.old'],
   ['PATCHES/dependency.patch', 'PATCHES-old/dependency.patch'],
@@ -98,4 +100,51 @@ test('both trusted gate workflows pin all actions to full commit SHAs', () => {
     for (const action of uses)
       assert.match(action, /^actions\/(checkout|setup-node)@[0-9a-f]{40}$/);
   }
+});
+
+// Keep this fixture byte-for-byte aligned with marketplace S3b (PR #121).
+const variantBytes = readFileSync(
+  new URL('../../scripts/fixtures/security-path-variants.json', import.meta.url)
+);
+const variants = JSON.parse(variantBytes.toString('utf8'));
+test('shared spelling fixture retains the pinned marketplace blob', () => {
+  assert.equal(
+    createHash('sha1').update(`blob ${variantBytes.length}\0`).update(variantBytes).digest('hex'),
+    '27c78795f270cb5c4666f1cfe358f88268a568e7'
+  );
+});
+for (const path of variants.match) {
+  test(`shared security spelling and rename: ${path}`, () => {
+    assert.equal(touchesSecurity([{ filename: path }], reference), true);
+    assert.equal(
+      touchesSecurity([{ filename: 'docs/moved.md', previous_filename: path }], reference),
+      true
+    );
+  });
+}
+for (const path of variants.noMatch) {
+  test(`shared nonsecurity spelling: ${path}`, () => {
+    assert.equal(touchesSecurity([{ filename: path }], reference), false);
+  });
+}
+test('configured patterns are Unicode case-insensitive too', () => {
+  const pattern = '^Private/SignIn\\.json$';
+  assert.equal(touchesSecurity([{ filename: 'private/SIGNIN.json' }], pattern), true);
+  assert.equal(
+    touchesSecurity(
+      [{ filename: 'docs/moved.md', previous_filename: 'PRIVATE/signin.json' }],
+      pattern
+    ),
+    true
+  );
+  assert.equal(touchesSecurity([{ filename: 'private/signin.jsonx' }], pattern), false);
+});
+test('full folding adds sharp-s matches for configured patterns', () => {
+  assert.equal(touchesSecurity([{ filename: 'private/Straße' }], '^private/strasse$'), true);
+  assert.equal(touchesSecurity([{ filename: 'private/ẞ' }], '^private/ss$'), true);
+});
+test('normalization only adds matches and preserves regex syntax', () => {
+  assert.equal(touchesSecurity([{ filename: 'name／literal' }], '^name／literal$'), true);
+  assert.equal(touchesSecurity([{ filename: 'Private/File' }], '^Private/\\S+$'), true);
+  assert.equal(touchesSecurity([{ filename: 'Private/ ' }], '^Private/\\S+$'), false);
 });
