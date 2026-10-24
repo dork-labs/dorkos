@@ -11,10 +11,14 @@
  *
  * Three rules close it, and this module is where they are stated:
  *
- * 1. **A `file:` reference names only this adapter's own entries**
- *    (`relay-adapter-<id>-*`, the names {@link materializeAdapterSecrets}
- *    mints). Any other `file:` name is refused for every caller, at save and at
- *    resolve (`adapter-secrets.ts`).
+ * 1. **A `file:` reference is never accepted from a caller, and resolves only
+ *    to the exact entry this adapter minted for that field.** The app only
+ *    ever sends a secret or the mask; every `file:` name is minted by
+ *    `materializeAdapterSecrets` as `relay-adapter-<id>-<field>`. So a `file:`
+ *    value arriving through the API is refused for every caller, and at resolve
+ *    a `file:` reference must equal the name minted for its own field. An exact
+ *    name, not a prefix: ids may hold hyphens, so `relay-adapter-w-` is also the
+ *    start of every entry adapter `w-outbound` owns.
  * 2. **`env:` and `keychain:` are a person's choice.** A power user may type one
  *    into a secret field, so a person may still save one. Anything else that
  *    writes one is refused: the same pairing of "a credential and where it
@@ -23,14 +27,33 @@
  *    changes, a secret field that came back masked or empty is not carried to
  *    the new address. A required one is refused; an optional one is cleared.
  *    This holds for every caller, a person's browser included, because a browser
- *    an agent drives is a person's browser to the server.
+ *    an agent drives is a person's browser to the server. It is coarse on
+ *    purpose: every secret of the adapter, not only the ones that travel to that
+ *    address, because no manifest says which ones do.
+ *
+ * Every check reads the edit as the form shapes resolve it
+ * ({@link normalizeFormConfig}), so headers sent as JSON text are checked as
+ * the map they become, and a blank `url` reads as no address.
+ *
+ * ## What this does not cover
+ *
+ * `adapters.json` itself. The file watcher reloads it, and a stored config
+ * resolves `env:` and `keychain:` as a person's choice, so a program that can
+ * write that file directly is not stopped here (it can also read the store's
+ * key under the same data folder). References saved before DOR-3271 resolve as
+ * they did, except a `file:` name that is not the adapter's own.
  *
  * @module services/relay/adapter-secret-policy
  */
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import { AdapterError } from './adapter-error.js';
-import { getNestedValue, mergeWithPasswordPreservation, SECRET_MASK } from './adapter-config.js';
+import {
+  getNestedValue,
+  mergeWithPasswordPreservation,
+  normalizeFormConfig,
+  SECRET_MASK,
+} from './adapter-config.js';
 
 /**
  * Who wrote a config: `person` only for a caller that cleared the agent bar
@@ -43,23 +66,13 @@ export type SecretWriter = 'person' | 'agent';
 const SECRET_KEY_PREFIX = 'relay-adapter';
 
 /**
- * The credential-store name prefix that belongs to one adapter.
- *
- * @param adapterId - The adapter instance id.
- * @returns `relay-adapter-<id>-`; every secret this adapter stored starts with it.
- */
-export function ownSecretPrefix(adapterId: string): string {
-  return `${SECRET_KEY_PREFIX}-${adapterId}-`;
-}
-
-/**
  * The credential-store name for one adapter field (`relay-adapter-<id>-<field>`).
  *
  * @param adapterId - The adapter instance id.
  * @param fieldKey - The dot-notation field key, plus `.<header>` for a map entry.
  */
 export function secretKeyFor(adapterId: string, fieldKey: string): string {
-  return `${ownSecretPrefix(adapterId)}${fieldKey.replace(/\./g, '-')}`;
+  return `${SECRET_KEY_PREFIX}-${adapterId}-${fieldKey.replace(/\./g, '-')}`;
 }
 
 /**
@@ -128,19 +141,21 @@ export function secretValueSet(
  * when it may. A value that is not a reference (a pasted secret) is fine.
  *
  * @param adapterId - The adapter the reference sits in.
+ * @param label - The field it sits in (`token`, `outbound.headers.X-Key`).
  * @param raw - The stored or incoming value.
  * @param allowPersonReferences - Whether `env:` and `keychain:` are allowed:
  *   true only when a person wrote the config.
  */
 export function referenceRefusal(
   adapterId: string,
+  label: string,
   raw: string,
   allowPersonReferences: boolean
 ): string | undefined {
   const parsed = parseCredentialReference(raw);
   if (!parsed) return undefined;
   if (parsed.scheme === 'file') {
-    return parsed.value.startsWith(ownSecretPrefix(adapterId))
+    return parsed.value === secretKeyFor(adapterId, label)
       ? undefined
       : 'names a stored secret that belongs to something else';
   }
@@ -150,12 +165,16 @@ export function referenceRefusal(
 }
 
 /**
- * Refuse a config whose secret fields reference anything this adapter may not
- * use. Runs on every save, before anything is written.
+ * Refuse incoming secret values a caller may not write. Runs on every save,
+ * before anything is written, on the values the caller sent (so a person's
+ * `env:` reference preserved through the mask stays valid).
+ *
+ * A `file:` value is refused for everyone: only the server mints those, and a
+ * caller sending one back is pointing a field at an entry by name. `env:` and
+ * `keychain:` are refused unless a person is writing.
  *
  * @param adapterId - The adapter instance id.
- * @param config - The values being written (only these are checked, so a
- *   person's `env:` reference preserved through the mask stays valid).
+ * @param config - The incoming values, as the form shapes resolve them.
  * @param manifest - The adapter type's manifest.
  * @param writer - Who is writing.
  * @throws AdapterError `INVALID_CONFIG` naming the first refused field.
@@ -167,11 +186,41 @@ export function assertSecretReferences(
   writer: SecretWriter
 ): void {
   for (const { label, value } of secretValues(config, manifest)) {
-    const refusal = referenceRefusal(adapterId, value, writer === 'person');
+    const refusal =
+      parseCredentialReference(value)?.scheme === 'file'
+        ? 'names a stored secret. Enter the secret itself'
+        : referenceRefusal(adapterId, label, value, writer === 'person');
     if (refusal) {
       throw new AdapterError(`Field '${label}' ${refusal}.`, 'INVALID_CONFIG', adapterId);
     }
   }
+}
+
+/**
+ * The secret fields of an edit as the server will read them: masked and blank
+ * secrets dropped (they ask to keep what is stored), then form shapes resolved,
+ * so JSON text becomes the map it stands for.
+ *
+ * @param incoming - The edit as sent.
+ * @param manifest - The adapter type's manifest.
+ * @throws AdapterError `INVALID_CONFIG` for unparseable JSON text.
+ */
+export function readIncoming(
+  incoming: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): Record<string, unknown> {
+  const view = structuredClone(incoming);
+  for (const key of secretFieldKeys(manifest)) {
+    const value = getNestedValue(view, key.split('.'));
+    if (value === SECRET_MASK || value === '') setNested(view, key.split('.'), undefined);
+  }
+  return normalizeFormConfig(view, manifest) as Record<string, unknown>;
+}
+
+/** A `url` value with blank read as no address. */
+function addressOf(config: Record<string, unknown>, key: string): unknown {
+  const value = getNestedValue(config, key.split('.'));
+  return value === '' ? undefined : value;
 }
 
 /** The `url` fields of an adapter type: where its secrets travel. */
@@ -217,10 +266,11 @@ export function mergeSecretUpdate(
   manifest: AdapterManifest | undefined,
   writer: SecretWriter
 ): Record<string, unknown> {
-  assertSecretReferences(adapterId, incoming, manifest, writer);
+  const read = readIncoming(incoming, manifest);
+  assertSecretReferences(adapterId, read, manifest, writer);
   const moved = urlFieldKeys(manifest).some((key) => {
-    const next = getNestedValue(incoming, key.split('.'));
-    return next !== undefined && next !== getNestedValue(existing, key.split('.'));
+    const next = addressOf(read, key);
+    return next !== undefined && next !== addressOf(existing, key);
   });
   if (!moved) return mergeWithPasswordPreservation(existing, incoming, manifest);
 
@@ -229,7 +279,7 @@ export function mergeSecretUpdate(
   for (const field of manifest?.configFields ?? []) {
     if (field.type !== 'password') continue;
     const parts = field.key.split('.');
-    const fresh = freshSecret(getNestedValue(incoming, parts));
+    const fresh = freshSecret(getNestedValue(read, parts));
     if (fresh !== undefined) {
       setNested(merged, parts, fresh);
       continue;

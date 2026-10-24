@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(relay): a connection's secrets stay with that connection, and a new address needs them again (DOR-3271)"
+  - 'fix(relay): exact secret names, no stored names from callers, and checks on the parsed edit (DOR-3271)'
 ---
 
 ### Security

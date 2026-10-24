@@ -37,7 +37,6 @@ import { logger } from '../../lib/logger.js';
 import { getNestedValue, setNestedValue, saveAdapterConfig } from './adapter-config.js';
 import {
   isSecretMap,
-  ownSecretPrefix,
   referenceRefusal,
   secretFieldKeys,
   secretKeyFor,
@@ -62,8 +61,9 @@ export interface ResolveSecretsContext {
   manifests: Map<string, AdapterManifest>;
   /**
    * Whether `env:` and `keychain:` references may resolve: true for a stored
-   * config (an agent can never save one), false for a config nobody vouched
-   * for, such as a connection test an agent asked for (DOR-3271).
+   * config (only a person can save one through the API, DOR-3271; see that
+   * module's note on `adapters.json` itself), false for a config nobody
+   * vouched for, such as a connection test an agent asked for.
    */
   allowPersonReferences: boolean;
 }
@@ -217,7 +217,7 @@ export async function resolveAdapterSecrets(
  *
  * Best-effort cleanup (defense in depth) so a deleted adapter leaves no orphan
  * secret behind. Never throws — a failed delete is logged and ignored. Only
- * this adapter's own `relay-adapter-<id>-*` entries are deleted: a `file:`
+ * the exact entries this adapter minted are deleted: a `file:`
  * reference naming any other entry (the Anthropic key, a Community token) is
  * left alone, so removing an adapter can never erase somebody else's secret
  * (DOR-3271). `env:` and `keychain:` are user-owned and never touched.
@@ -236,7 +236,7 @@ export async function deleteAdapterSecrets(
   for (const { label, value } of secretValues(cfg, ctx.manifests.get(config.type))) {
     if (keep.has(value)) continue;
     const parsed = parseCredentialReference(value);
-    if (parsed?.scheme !== 'file' || !parsed.value.startsWith(ownSecretPrefix(config.id))) continue;
+    if (parsed?.scheme !== 'file' || parsed.value !== secretKeyFor(config.id, label)) continue;
     try {
       await ctx.store.delete(parsed.value);
     } catch (err) {
@@ -258,7 +258,7 @@ function refuseReference(
   raw: string,
   ctx: ResolveSecretsContext
 ): void {
-  const refusal = referenceRefusal(adapterId, raw, ctx.allowPersonReferences);
+  const refusal = referenceRefusal(adapterId, label, raw, ctx.allowPersonReferences);
   if (refusal) {
     throw new Error(
       `Refused credential for adapter '${adapterId}' field '${label}': it ${refusal}`

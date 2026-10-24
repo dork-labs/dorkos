@@ -96,7 +96,7 @@ function valueShapesOf(manifest?: AdapterManifest): Map<string, 'id-list' | 'jso
  * @returns The same config with form shapes resolved.
  * @throws AdapterError `INVALID_CONFIG` when a `json-object` field holds unparseable text.
  */
-function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unknown {
+export function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unknown {
   if (typeof config !== 'object' || config === null || Array.isArray(config)) return config;
 
   const shapes = valueShapesOf(manifest);

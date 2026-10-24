@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AdapterRegistry, WEBHOOK_MANIFEST, type AdapterConfig } from '@dorkos/relay';
+import {
+  AdapterRegistry,
+  TELEGRAM_MANIFEST,
+  WEBHOOK_MANIFEST,
+  type AdapterConfig,
+} from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import type {
   CredentialProvider,
@@ -96,7 +101,7 @@ describe('1. an adapter naming file:anthropic', () => {
     const config = webhook('wh', { secret: 'file:anthropic' }).config;
     for (const writer of ['person', 'agent'] as const) {
       expect(() => assertSecretReferences('wh', config, WEBHOOK_MANIFEST, writer)).toThrow(
-        /outbound\.secret' names a stored secret that belongs to something else/
+        /outbound\.secret' names a stored secret\. Enter the secret itself/
       );
     }
   });
@@ -121,7 +126,66 @@ describe('1. an adapter naming file:anthropic', () => {
   });
 });
 
+describe('1b. names are exact, not prefixes', () => {
+  it("adapter 'w-outbound' cannot resolve adapter 'w''s header entry", async () => {
+    await store.put('relay-adapter-w-outbound-headers-Authorization', 'w-header');
+    const config = webhook('w-outbound', {
+      secret: 'outbound-secret-16chars',
+      headers: { X: 'file:relay-adapter-w-outbound-headers-Authorization' },
+    });
+    await expect(
+      resolveAdapterSecrets(config, { provider, manifests, allowPersonReferences: true })
+    ).rejects.toThrow(/belongs to something else/);
+    await deleteAdapterSecrets(config, { store, manifests });
+    expect(store.secrets.get('relay-adapter-w-outbound-headers-Authorization')).toBe('w-header');
+  });
+
+  it('a stored name sent back on a new address is refused, not carried', () => {
+    const existing = webhook('w', {
+      secret: 'file:relay-adapter-w-outbound-secret',
+      headers: { Authorization: 'file:relay-adapter-w-outbound-headers-Authorization' },
+    }).config;
+    expect(() =>
+      mergeSecretUpdate(
+        'w',
+        existing,
+        {
+          inbound: { subject: 'relay.webhook.w', secret: 'new-inbound-secret-16' },
+          outbound: {
+            url: URL_B,
+            secret: 'new-outbound-secret-16',
+            headers: { Authorization: 'file:relay-adapter-w-outbound-headers-Authorization' },
+          },
+        },
+        WEBHOOK_MANIFEST,
+        'person'
+      )
+    ).toThrow(/names a stored secret/);
+  });
+});
+
 describe('2. an agent-written env: reference', () => {
+  it('is refused when the headers arrive as JSON text', () => {
+    const existing = webhook('w', { secret: 'file:relay-adapter-w-outbound-secret' }).config;
+    for (const url of [URL_A, URL_B]) {
+      expect(() =>
+        mergeSecretUpdate(
+          'w',
+          existing,
+          {
+            outbound: {
+              url,
+              secret: 'new-outbound-secret-16',
+              headers: '{"Authorization":"env:ANTHROPIC_API_KEY"}',
+            },
+          },
+          WEBHOOK_MANIFEST,
+          'agent'
+        )
+      ).toThrow(/outbound\.headers\.Authorization' uses an env: reference/);
+    }
+  });
+
   it('is refused at save', () => {
     const config = webhook('wh', { secret: 'env:ANTHROPIC_API_KEY' }).config;
     expect(() => assertSecretReferences('wh', config, WEBHOOK_MANIFEST, 'agent')).toThrow(
@@ -212,6 +276,18 @@ describe('4. a masked secret with a new URL', () => {
 });
 
 describe('5 and 6. what still works', () => {
+  it('editing a polling Telegram bot keeps its token (a blank webhook URL is no address)', () => {
+    const existing = { token: 'file:relay-adapter-tg-token', mode: 'polling' };
+    const merged = mergeSecretUpdate(
+      'tg',
+      existing,
+      { token: '***', mode: 'polling', webhookUrl: '', respondMode: 'always' },
+      TELEGRAM_MANIFEST,
+      'person'
+    );
+    expect(merged.token).toBe('file:relay-adapter-tg-token');
+  });
+
   it("resolves an existing adapter's own secrets", async () => {
     await store.put('relay-adapter-wh-outbound-secret', 'own-secret');
     const resolved = await resolveAdapterSecrets(
@@ -281,7 +357,7 @@ describe('through AdapterManager', () => {
     };
     await expect(
       manager.addAdapter('webhook', 'wh', planted, false, undefined, 'person')
-    ).rejects.toThrow(/belongs to something else/);
+    ).rejects.toThrow(/names a stored secret/);
     const fromEnv = { ...fresh(), outbound: { url: URL_B, secret: 'env:ANTHROPIC_API_KEY' } };
     await expect(manager.addAdapter('webhook', 'wh', fromEnv, false)).rejects.toThrow(
       /only a person can set/
