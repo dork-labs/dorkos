@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-10-23T09:53:58.589Z",
+ "updated_at": "2026-10-24T09:23:34.460Z",
  "days": [
+  {
+   "date": "2026-10-23",
+   "light": "red",
+   "headline": "Collector unhealthy 1 of 3 days (2026-10-23): Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI."
+  },
   {
    "date": "2026-10-22",
    "light": "red",
