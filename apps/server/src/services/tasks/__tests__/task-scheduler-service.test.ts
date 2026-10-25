@@ -2313,6 +2313,28 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** The default runtime, declaring three modes, so a level can be compared. */
+    function runtimeWithModes(): SchedulerRuntimes {
+      const base = singleRuntimeSource(mockAgent);
+      const mode = (id: string, asks: string, reach: string) => ({ id, label: id, asks, reach });
+      const permissionModes = {
+        supported: true,
+        default: 'acceptEdits',
+        values: [
+          mode('plan', 'always', 'read'),
+          mode('acceptEdits', 'when-risky', 'edit'),
+          mode('bypassPermissions', 'never', 'everything'),
+        ],
+      };
+      return {
+        ...base,
+        getAllCapabilities: () =>
+          ({ [base.getDefaultType()]: { permissionModes } }) as unknown as ReturnType<
+            SchedulerRuntimes['getAllCapabilities']
+          >,
+      };
+    }
+
     /** Dispatch a task whose first delivery finds nobody, and hand back the run and the wait. */
     async function waitingForRetry(name: string, over: Record<string, unknown> = {}) {
       mockRelay.publish
@@ -2322,7 +2344,7 @@ describe('TaskSchedulerService', () => {
       const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...over }));
       const service = new TaskSchedulerService({
         store,
-        runtimes: singleRuntimeSource(mockAgent),
+        runtimes: runtimeWithModes(),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -2367,6 +2389,20 @@ describe('TaskSchedulerService', () => {
         permissionMode: 'bypassPermissions',
       });
       store.updateTask(task.id, { permissionMode: 'acceptEdits' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    // DOR-3033 review (Security Must): a lower level binds queued work; a
+    // raise never reaches it (DOR-3175).
+    it('raising the level during the wait keeps the retry at the original level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Raised Meanwhile', {
+        permissionMode: 'acceptEdits',
+      });
+      store.updateTask(task.id, { permissionMode: 'bypassPermissions' });
       await finish();
       expect(dispatches()).toHaveLength(2);
       expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(

@@ -22,7 +22,7 @@ import { resolveRunSession } from './session/sticky-session.js';
 import type { RunExecution } from './execution/resolve-run-execution.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
-import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
+import { lowerMode, resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
 
@@ -292,8 +292,10 @@ export async function dispatchRunViaRelay(
         return;
       }
       // The schedule may have moved too: turned off, sent back for approval, or
-      // given a lower level. What it says NOW binds; a lower level always does
-      // (DOR-3175). Nothing has run yet, so the run is skipped, not failed.
+      // given a lower level. A lower level binds; a raise never reaches queued
+      // work (DOR-3175). Nothing has run yet, so the run is skipped, not failed.
+      // Only scheduled runs reach this wait: a person's Run now runs in this
+      // process, never on the relay (`assessRelayDispatch`).
       const fresh = deps.store.getTask(task.id);
       if (!fresh || !fresh.enabled || fresh.status !== 'active') {
         deps.runs.release(run.id);
@@ -305,7 +307,11 @@ export async function dispatchRunViaRelay(
         });
         return;
       }
-      if (fresh.permissionMode) payload.permissionMode = fresh.permissionMode;
+      payload.permissionMode = lowerMode(
+        execution.capabilities?.permissionModes,
+        payload.permissionMode,
+        fresh.permissionMode
+      );
       deps.runs.addRelay(run.id, task.maxRuntime);
       result = await publish();
     }
