@@ -29,12 +29,7 @@ afterEach(async () => {
 
 describe('judgeAllowRule', () => {
   it('keeps a tool, a scoped rule and an argument pattern', () => {
-    for (const rule of [
-      'Read',
-      'Read(./**)',
-      'Bash(scripts/approve:*)',
-      'mcp__github__get_issue',
-    ]) {
+    for (const rule of ['Read(./**)', 'Bash(scripts/approve:*)', 'mcp__github__get_issue']) {
       expect(judgeAllowRule(rule)).toEqual({ ok: true, rule });
     }
   });
@@ -48,6 +43,31 @@ describe('judgeAllowRule', () => {
     for (const rule of ['mcp__*', '*', 'Bash*', 'mcp__dork*__x']) {
       expect(judgeAllowRule(rule)).toEqual({ ok: false, reason: 'wildcard-tool' });
     }
+  });
+
+  it('drops a whole built-in tool, which the card would call one command', () => {
+    for (const rule of ['Bash', 'Edit', 'Read', 'Bash(*)', 'Bash(:*)', 'Edit(**)', 'Write( * )']) {
+      expect(judgeAllowRule(rule)).toEqual({ ok: false, reason: 'whole-tool' });
+    }
+    // An MCP tool name is already exactly one tool.
+    expect(judgeAllowRule('mcp__github')).toEqual({ ok: true, rule: 'mcp__github' });
+  });
+
+  it('drops a rule that would read differently on the card than it applies', () => {
+    for (const rule of [
+      'Bash(git status\u202e:*)',
+      'Bash(git\u200bstatus:*)',
+      'Bash(ls\u2028:*)',
+      `Bash(${'a'.repeat(200)})`,
+    ]) {
+      expect(judgeAllowRule(rule)).toEqual({ ok: false, reason: 'malformed' });
+    }
+  });
+
+  it('reads nothing from a settings path that is not a regular file', async () => {
+    await fs.mkdir(path.join(home, '.claude', 'settings.json'), { recursive: true });
+    await writeSettings('settings.local.json', { permissions: { allow: ['Bash(ls:*)'] } });
+    expect((await readFolderAllowList(home)).rules).toEqual(['Bash(ls:*)']);
   });
 
   it('drops anything malformed', () => {

@@ -21,6 +21,7 @@ import type {
   ApprovalTicket,
 } from '../../../core/approvals/approval-service.js';
 import { hashApprovalInput, quoteSummaryValue } from '../../../core/approvals/index.js';
+import { storableSummary } from '../../../core/approvals/approval-storable.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   folderAllowEntry,
@@ -83,16 +84,25 @@ export function folderAllowApprovalGateway(): FolderAllowApprovalGateway | null 
   return bootGateway;
 }
 
-/** How much of one rule the card shows. A rule is at most 512 characters. */
-const RULE_DISPLAY_MAX_LENGTH = 200;
-
-/** One rule for the card: shortened, then quoted so it cannot fake card text. */
+/**
+ * One rule for the card, whole, quoted so it cannot fake card text. Never
+ * shortened: `judgeAllowRule` keeps only rules short enough to show in full.
+ */
 function renderRuleForCard(rule: string): string {
-  const shortened =
-    rule.length <= RULE_DISPLAY_MAX_LENGTH
-      ? rule
-      : `${rule.slice(0, RULE_DISPLAY_MAX_LENGTH - 1)}…`;
-  return JSON.stringify(shortened);
+  return JSON.stringify(rule);
+}
+
+/**
+ * Whether the card would show this list exactly as written. The approval store
+ * caps a summary's length and hides anything shaped like a secret; a list whose
+ * card lost a word to either would be approved by a person who never saw all
+ * of it, so it is never asked about (DOR-3039 review).
+ *
+ * @param request - The list a card would ask about.
+ */
+export function cardShowsWholeList(request: FolderAllowRequest): boolean {
+  const summary = summariseFolderAllows(request);
+  return storableSummary(summary) === summary;
 }
 
 /** `1 command`, `2 commands`. */

@@ -26,6 +26,7 @@ import {
   recordFolderAllowApproval,
   type FolderAllowRequest,
 } from './folder-allow-consent.js';
+import { cardShowsWholeList } from './folder-allow-approval.js';
 
 /** What a launch does with an agent's folder allow list. */
 export type FolderAllowsDecision =
@@ -36,7 +37,9 @@ export type FolderAllowsDecision =
   /** Not decided yet: nothing applies, and a person should be asked. */
   | { kind: 'waiting'; request: FolderAllowRequest; hash: string }
   /** Turned down: nothing applies, and nobody is asked again until it changes. */
-  | { kind: 'refused'; hash: string };
+  | { kind: 'refused'; hash: string }
+  /** Too long to show whole on a card: nothing applies, and nobody is asked. */
+  | { kind: 'unshowable'; hash: string };
 
 /** What {@link resolveFolderAllows} needs to know about the turn. */
 export interface FolderAllowsTurn {
@@ -82,11 +85,10 @@ export async function resolveFolderAllows(turn: FolderAllowsTurn): Promise<Folde
     recordFolderAllowApproval(request, 'narrowing an approved agent folder allow list');
     return applied;
   }
-  return {
-    kind: 'waiting',
-    request: previous ? { ...request, previousRules: previous } : request,
-    hash: list.hash,
-  };
+  const asking = previous ? { ...request, previousRules: previous } : request;
+  // A person may only approve what they can read in full.
+  if (!cardShowsWholeList(asking)) return { kind: 'unshowable', hash: list.hash };
+  return { kind: 'waiting', request: asking, hash: list.hash };
 }
 
 /** The slice of Claude Code settings this module writes. */

@@ -232,7 +232,6 @@ describe('an agent cannot grant itself its folder allow list', () => {
     ['a trailing space', 'Bash(git status:* )'],
     ['a different case', 'bash(git status:*)'],
     ['a broader pattern', 'Bash(git:*)'],
-    ['the bare tool', 'Bash'],
   ])('treats %s on an approved rule as a widening that asks', async (_label, rule) => {
     await agentWritesAllow(['Bash(git status:*)', 'Bash(ls:*)']);
     const first = await nextLaunch();
@@ -242,5 +241,31 @@ describe('an agent cannot grant itself its folder allow list', () => {
     await agentWritesAllow([rule]);
 
     expect((await nextLaunch()).kind).toBe('waiting');
+  });
+
+  it('never applies a whole tool, not even as a narrowing of an approved list', async () => {
+    await agentWritesAllow(['Bash(git status:*)', 'Bash']);
+    const first = await nextLaunch();
+    if (first.kind !== 'waiting') throw new Error('expected waiting');
+    expect(first.request.rules).toEqual(['Bash(git status:*)']);
+    recordFolderAllowApproval(first.request);
+
+    await agentWritesAllow(['Bash']);
+
+    expect((await nextLaunch()).kind).toBe('none');
+  });
+
+  it('never asks about a list the card cannot show whole', async () => {
+    // Every rule is short, but together the card would be cut off.
+    await agentWritesAllow(
+      Array.from({ length: 20 }, (_, i) => `Bash(scripts/step-${i}.sh --verbose:*)`)
+    );
+    expect((await nextLaunch()).kind).toBe('unshowable');
+    expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('never asks about a list whose card would hide part of a rule as a secret', async () => {
+    await agentWritesAllow([`Bash(scripts/run --key ${'a1'.repeat(20)}:*)`]);
+    expect((await nextLaunch()).kind).toBe('unshowable');
   });
 });
