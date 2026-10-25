@@ -497,28 +497,39 @@ export function createCanUseTool(
         toolName,
         toolUseID: context.toolUseID,
       });
+      // The deny is decided before the record is written, so it never depends
+      // on the record: a push that throws still refuses the call.
+      const denied: PermissionResult = { behavior: 'deny', message: NEVER_ASK_DENIAL };
       // The record, with the CLI's own discriminator for a mode's refusal, so
       // a scheduled run's row can name the tool it lost (DOR-3132). The CLI
       // refuses most such calls itself and writes the same frame; this is the
       // one that reaches DorkOS's gate. A question is the run wanting to talk,
       // not to act, so it is left out of a record that names lost tools.
       if (toolName !== ASK_USER_QUESTION_TOOL) {
-        session.eventQueue.push({
-          type: 'permission_denied',
-          data: {
-            toolCallId: context.toolUseID,
+        try {
+          session.eventQueue.push({
+            type: 'permission_denied',
+            data: {
+              toolCallId: context.toolUseID,
+              toolName,
+              reasonType: NEVER_ASK_REASON_TYPE,
+              // The person's words, which the denial chip shows; `message` is
+              // what the model was told, and is not for a person to read.
+              reason: NEVER_ASK_REASON,
+              message: NEVER_ASK_DENIAL,
+              ...(context.agentID !== undefined ? { agentId: context.agentID } : {}),
+            },
+          });
+          session.eventQueueNotify?.();
+        } catch (err) {
+          log.info('[canUseTool] could not record a never-ask refusal', {
             toolName,
-            reasonType: NEVER_ASK_REASON_TYPE,
-            // The person's words, which the denial chip shows; `message` is
-            // what the model was told, and is not for a person to read.
-            reason: NEVER_ASK_REASON,
-            message: NEVER_ASK_DENIAL,
-            ...(context.agentID !== undefined ? { agentId: context.agentID } : {}),
-          },
-        });
-        session.eventQueueNotify?.();
+            toolUseID: context.toolUseID,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-      return { behavior: 'deny', message: NEVER_ASK_DENIAL };
+      return denied;
     }
     if (toolName === ASK_USER_QUESTION_TOOL) {
       log.debug('[canUseTool] routing to question handler', {

@@ -1017,10 +1017,11 @@ describe('CreateTaskDialog', () => {
       // `unattended-session-permission-prompts`).
       const note = await screen.findByTestId('task-unattended-warning');
       expect(note).toHaveTextContent(/Nobody is there to approve asks on a scheduled run/);
-      expect(note).toHaveTextContent(/Each ask is refused/);
-      // The two ways out: the agent's level, or Never ask with an allow list.
-      expect(note).toHaveTextContent(/your agent’s level/);
-      expect(note).toHaveTextContent(/Never ask with an allow list/);
+      expect(note).toHaveTextContent(/Each ask is refused, so the run will need attention/);
+      // The way out is Never ask with an allow list — never Full autonomy,
+      // which no surface offers as a fix (spec `schedules-failing` SF-18).
+      expect(note).toHaveTextContent(/Use Never ask with an allow list for the commands it needs/);
+      expect(note).not.toHaveTextContent(/Full autonomy/);
       // A "Run now" is answerable, and the note has to say so or the person
       // reads the whole schedule as one that never asks.
       expect(note).toHaveTextContent(/Run now/);

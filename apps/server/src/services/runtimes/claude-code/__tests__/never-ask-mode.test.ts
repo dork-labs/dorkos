@@ -211,6 +211,23 @@ describe('the tool gate under Never ask (resolveModeDecision, createCanUseTool)'
     }
   });
 
+  it('still denies when writing the refusal record throws', async () => {
+    // The deny is decided before the record: a broken queue must never turn a
+    // refusal into anything else (DOR-3132, Security review).
+    const s = session(NEVER_ASK_MODE_ID);
+    s.eventQueue.push = () => {
+      throw new Error('queue closed');
+    };
+    const result = await createCanUseTool(
+      s,
+      log,
+      undefined,
+      identity
+    )('Bash', { command: 'ls' }, context('t'));
+    expect(result).toEqual({ behavior: 'deny', message: NEVER_ASK_DENIAL });
+    expect(s.pendingInteractions.size).toBe(0);
+  });
+
   it('records the refusal as denied in the transcript', () => {
     expect(classifyToolResult(NEVER_ASK_DENIAL, true)).toBe('denied');
   });

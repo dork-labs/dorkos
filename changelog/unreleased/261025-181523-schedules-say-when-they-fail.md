@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): a scheduled run that was refused a tool needs attention, never completed (DOR-3123, DOR-3132)'
+  - "fix(tasks): the schedule form's warning names the fix, and a never-ask deny never waits on its record (DOR-3123, DOR-3132)"
 ---
 
 ### Fixed

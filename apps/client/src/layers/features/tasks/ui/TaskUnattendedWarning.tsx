@@ -7,8 +7,9 @@
  * schedule at Accept edits: the stop a person picks to mean "get on with it",
  * which still asks before it runs a command. On a scheduled run that ask is
  * refused at once, so the form says so before the schedule is saved, and
- * names the two stops that do not ask. Saving with it showing is allowed;
- * it is the person's call.
+ * points at Never ask with an allow list — never at Full autonomy, which no
+ * surface offers as a fix (spec `schedules-failing` SF-18). Saving with it
+ * showing is allowed; it is the person's call.
  *
  * @module features/tasks/ui/TaskUnattendedWarning
  */
@@ -34,10 +35,11 @@ export function TaskUnattendedWarning() {
       data-testid="task-unattended-warning"
       className="bg-status-warning-bg border-status-warning-border text-status-warning-fg flex gap-2 rounded-md border px-2.5 py-2 text-xs leading-relaxed"
     >
-      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <TriangleAlert className="mt-0.5 size-5 shrink-0 sm:size-3.5" aria-hidden />
       <div className="space-y-1">
         <p className="font-medium">Nobody is there to approve asks on a scheduled run.</p>
-        <p>Each ask is refused. Use your agent’s level, or Never ask with an allow list.</p>
+        <p>Each ask is refused, so the run will need attention.</p>
+        <p>Use Never ask with an allow list for the commands it needs.</p>
         <p>“Run now” still asks you.</p>
       </div>
     </div>
