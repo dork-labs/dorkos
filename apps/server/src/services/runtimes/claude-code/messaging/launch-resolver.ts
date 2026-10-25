@@ -97,18 +97,7 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
-import {
-  firstTimeToldAbout,
-  folderAllowsWaitingStatus,
-  mergeFolderAllows,
-  resolveFolderAllows,
-  selfGrantDenyRules,
-} from '../folder-settings/apply-folder-allows.js';
-import {
-  askForFolderAllows,
-  folderAllowApprovalGateway,
-  mayAskAboutFolderAllows,
-} from '../folder-settings/folder-allow-approval.js';
+import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -781,64 +770,21 @@ export async function resolveLaunch(args: {
     sdkOptions.settings = { ...base, env: creditsSettings };
   }
   // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
-  // folder it has not been told to trust. Only an approved list rides, only
-  // into `settings.permissions.allow` (never `allowedTools`, DOR-519), only in
-  // the exact registered home, and never on a teammate's turn.
-  const folderAllows = await resolveFolderAllows({
+  // folder it has not been told to trust.
+  const folderAllowsNotice = await applyFolderAllowsToLaunch({
     teammate,
     agent: meshAgent
       ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
       : undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
+    sdkOptions,
+    dorkHome: resolveDorkHome(),
+    accountRoot,
+    neverAsk: effectivePermissionMode === NEVER_ASK_MODE_ID,
+    chat: session,
   });
-  const selfGrantDeny =
-    folderAllows.kind === 'applied' && turnAgentPath
-      ? selfGrantDenyRules({ home: turnAgentPath, dorkHome: resolveDorkHome(), accountRoot })
-      : undefined;
-  if (folderAllows.kind === 'applied' && !selfGrantDeny) {
-    // A home, data folder or account path no rule can name exactly: the list
-    // could reach the files that grant more, so none of it rides.
-    logger.warn('[FolderAllows] Not applying: a protected path cannot be named in a rule', {
-      agentId: meshAgentId,
-      hash: folderAllows.hash,
-    });
-  } else if (folderAllows.kind === 'applied' && selfGrantDeny) {
-    mergeFolderAllows(sdkOptions, folderAllows.rules, selfGrantDeny);
-    logger.info('[FolderAllows] Applying the agent folder allow list', {
-      agentId: meshAgentId,
-      hash: folderAllows.hash,
-      rules: folderAllows.rules.length,
-      dropped: folderAllows.dropped,
-    });
-  } else if (folderAllows.kind !== 'none') {
-    logger.info('[FolderAllows] Not applying an unapproved agent folder allow list', {
-      agentId: meshAgentId,
-      hash: folderAllows.hash,
-      state: folderAllows.kind,
-    });
-    if (folderAllows.kind === 'waiting') {
-      const gateway = folderAllowApprovalGateway();
-      if (gateway && mayAskAboutFolderAllows(folderAllows.request)) {
-        void askForFolderAllows(gateway, folderAllows.request).catch((err: unknown) => {
-          logger.warn('[FolderAllows] Could not ask about an agent folder allow list', {
-            agentId: meshAgentId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-      }
-      // Never ask refuses what the list would have allowed; say why (DOR-3042).
-      if (
-        effectivePermissionMode === NEVER_ASK_MODE_ID &&
-        firstTimeToldAbout(session, folderAllows.request)
-      ) {
-        statusEvents.push({
-          type: 'system_status',
-          data: { message: folderAllowsWaitingStatus(folderAllows.request.agentName) },
-        });
-      }
-    }
-  }
+  if (folderAllowsNotice) statusEvents.push(folderAllowsNotice);
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
