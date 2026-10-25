@@ -52,9 +52,11 @@ export type CommunityWirePairingScope = z.infer<typeof CommunityWirePairingScope
 /**
  * Human approval acts on a pending request through their authenticated session. `administer` is
  * the owner's or admin's consent to the `administer` scope the request asked for; without it, or
- * from a member, the connection is made without that scope.
+ * from a member, the connection is made without that scope. Consenting takes the person's
+ * current `password`: a click in a signed-in browser is not proof a person made it.
  */
 export const CommunityWirePairingApproveRequestSchema = z.strictObject({
   pairingId: z.string().min(1),
   administer: z.boolean().optional(),
+  password: z.string().min(1).max(128).optional(),
 });

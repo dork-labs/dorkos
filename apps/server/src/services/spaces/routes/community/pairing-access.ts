@@ -59,3 +59,37 @@ export async function requirePairingMember(
   if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
   return null;
 }
+
+/**
+ * What a grant can do right now, from its scopes and the lifecycle an installation is told.
+ *
+ * A held community is reported as `archived`, and read-only either way: a grant kept through a
+ * hold reads, and posts, enrolls agents, and streams again only after release. A history-only
+ * grant never gains write access, whatever the lifecycle.
+ *
+ * @param scopes - The grant's scopes.
+ * @param historyOnly - Whether the grant may only read history.
+ * @param lifecycle - The lifecycle the installation is told.
+ */
+export function grantCapabilities(
+  scopes: readonly string[],
+  historyOnly: boolean,
+  lifecycle: 'active' | 'archived'
+) {
+  const live = lifecycle === 'active' && !historyOnly;
+  return {
+    read: scopes.includes('read'),
+    post: live && scopes.includes('post'),
+    enrollAgent: live && scopes.includes('enroll-agent'),
+    stream: live && scopes.includes('read'),
+  };
+}
+
+/**
+ * Whether a pairing asks for exactly `read`: the one request an archived space still pairs.
+ *
+ * @param scopes - The scopes the pairing asked for.
+ */
+export function exactArchivedRead(scopes: readonly string[]): boolean {
+  return scopes.length === 1 && scopes[0] === 'read';
+}

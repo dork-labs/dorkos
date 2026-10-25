@@ -1,9 +1,10 @@
 ---
 covers:
   - 'feat(spaces): owners and admins can let the app manage a space, with their consent (DOR-3005)'
+  - 'fix(spaces): the app does not ask to manage a space yet, and the hard moves stay in the browser (DOR-3005)'
 ---
 
 ### Added
 
-- Let owners and admins choose whether the DorkOS app may manage a space when they connect it. The option starts off, members never see it, and no app screen uses the access yet (DOR-3005)
-- Keep existing space connections read-only. To manage a space in the app, owners and admins pair again (DOR-3005)
+- Spaces can now let an owner's or admin's own DorkOS app manage them, but only after that person types their password. The DorkOS app doesn't ask for this yet, so nothing changes for anyone today (DOR-3005)
+- Making someone an admin, removing a member, and changing who may join a space always happen in the browser, never through an app (DOR-3005)

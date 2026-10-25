@@ -1,9 +1,10 @@
-import { Button, Input, Label, Notice } from '@dork-labs/ui';
+import { Button, Field, FieldLabel, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
+import { describeReauthenticationError } from '../account-controls.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { HostPolicyLinks } from './HostLinks.js';
 import {
@@ -72,6 +73,8 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const [held, setHeld] = useState(false);
   // An owner's or admin's consent to let the app manage the space. Off until they tick it.
   const [manage, setManage] = useState(false);
+  // Giving the app that power takes the person's password, so a click alone never can.
+  const [consentPassword, setConsentPassword] = useState('');
   const emailInput = useRef<HTMLInputElement>(null);
   const leadButton = useRef<HTMLButtonElement>(null);
   const signInOptions = useSignInOptionsState();
@@ -171,7 +174,9 @@ export function Pairing({ search = location.search }: { search?: string }) {
       await request(
         `/api/v1/pairings/${action}`,
         'POST',
-        action === 'approve' ? { pairingId, administer: manage } : { pairingId }
+        action === 'approve'
+          ? { pairingId, administer: manage, ...(manage ? { password: consentPassword } : {}) }
+          : { pairingId }
       );
       setStatus((previous) =>
         previous
@@ -179,7 +184,12 @@ export function Pairing({ search = location.search }: { search?: string }) {
           : previous
       );
     } catch (cause) {
-      if (cause instanceof RequestError && [401, 403, 409].includes(cause.status)) {
+      if (
+        cause instanceof RequestError &&
+        ['REAUTH_FAILED', 'PASSWORD_REQUIRED', 'RATE_LIMITED'].includes(cause.code)
+      ) {
+        setError(describeReauthenticationError(cause, 'Nothing was approved.'));
+      } else if (cause instanceof RequestError && [401, 403, 409].includes(cause.status)) {
         setStatus(null);
         await loadPairing(() => true, cause.status === 401);
       } else {
@@ -300,10 +310,29 @@ export function Pairing({ search = location.search }: { search?: string }) {
                 <span>
                   Let this app manage this space for you
                   <span className="small muted block">
-                    Settings, roles, rules, invitations and mutes. Your role still applies.
+                    Settings, rules, invitations and mutes. Your role still applies.
+                  </span>
+                  <span className="small muted block">
+                    Only for your own DorkOS. Agents on that computer could use it too.
+                  </span>
+                  <span className="small muted block">
+                    Take it back anytime under your connections.
                   </span>
                 </span>
               </Label>
+            )}
+            {manage && status.status === 'pending' && (
+              <Field className="mb-6 gap-1.5">
+                <FieldLabel htmlFor="pairing-consent-password">Your password</FieldLabel>
+                <Input
+                  id="pairing-consent-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={consentPassword}
+                  onChange={(event) => setConsentPassword(event.target.value)}
+                  required
+                />
+              </Field>
             )}
             {held && status.status === 'pending' && (
               <Notice tone="info" className="mb-5">
@@ -313,7 +342,11 @@ export function Pairing({ search = location.search }: { search?: string }) {
             )}
             {status.status === 'pending' ? (
               <div className="row">
-                <Button variant="default" disabled={busy} onClick={() => void decide('approve')}>
+                <Button
+                  variant="default"
+                  disabled={busy || (manage && !consentPassword)}
+                  onClick={() => void decide('approve')}
+                >
                   {busy ? 'Working…' : 'Approve connection'}
                   <Check size={17} />
                 </Button>

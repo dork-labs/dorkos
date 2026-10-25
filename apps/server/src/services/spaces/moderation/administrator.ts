@@ -75,7 +75,22 @@ export async function requireAdministrator(
   };
 }
 
-/** Recheck, on the route's own transaction, that the credential and its grant are still live. */
+/**
+ * Refuse the app's `administer` credential for a move that hits other people hard: making or
+ * unmaking an admin, removing a member, and changing who may join (#3155 review, M2). A person
+ * makes those in their browser, so an agent holding the app's credential never can.
+ *
+ * @param credential - How the caller reached the space ({@link Administrator.credential}).
+ */
+export function browserOnly(credential: Administrator['credential']): void {
+  if (credential === 'administer') throw new ApiError(403, 'FORBIDDEN', 'Do this in your browser.');
+}
+
+/**
+ * Recheck, on the route's own transaction, that the credential and its grant are still live. It
+ * also marks the transaction, so every audit row the route writes says the app acted
+ * (`audit_events.via`, migration 0047).
+ */
 async function assertAdministerCurrent(
   client: PoolClient,
   administerId: string,
@@ -89,4 +104,5 @@ async function assertAdministerCurrent(
   );
   if (!current.rowCount)
     throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
+  await client.query("SELECT set_config('dorkos.audit_via','administer',true)");
 }

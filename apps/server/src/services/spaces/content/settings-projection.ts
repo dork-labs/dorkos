@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { ApiError } from '../http.js';
 
 /** A space's settings row, as `GET /settings` and every settings change read it. */
@@ -50,4 +51,21 @@ export function assertReadableLifecycle(row: SettingsRow): void {
   if (row.lifecycle === 'pending_owner') {
     throw new ApiError(403, 'FORBIDDEN', 'This space has no owner.');
   }
+}
+
+/**
+ * Lock the Community before its acting member to match lifecycle and pairing transitions.
+ *
+ * @param client - The route's transaction.
+ * @param communityId - The space.
+ */
+export async function lockSettings(client: PoolClient, communityId: string): Promise<SettingsRow> {
+  const result = await client.query<SettingsRow>(
+    `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
+            icon_content_type,lifecycle,lifecycle_version
+     FROM communities WHERE id=$1 FOR UPDATE`,
+    [communityId]
+  );
+  if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
+  return result.rows[0];
 }

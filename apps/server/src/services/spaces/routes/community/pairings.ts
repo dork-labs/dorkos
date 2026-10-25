@@ -26,7 +26,13 @@ import {
 import type { CommunityAuth } from '../../auth.js';
 import type { CommunityConfig } from '../../config.js';
 import { requireConnectionGrant, requireMember, transaction } from '../../data.js';
-import { lockPairingCommunity, pairingScopes, requirePairingMember } from './pairing-access.js';
+import {
+  exactArchivedRead,
+  grantCapabilities,
+  lockPairingCommunity,
+  pairingScopes,
+  requirePairingMember,
+} from './pairing-access.js';
 import {
   assertAdministerScopes,
   issueAdministerCredential,
@@ -50,31 +56,6 @@ function challenge(verifier: string) {
 function privateCaller(origin: string | undefined) {
   if (origin)
     throw new ApiError(403, 'FORBIDDEN', 'A local install must make this request directly.');
-}
-
-/**
- * What a grant can do right now, from its scopes and the lifecycle an installation is told.
- *
- * A held community is reported as `archived`, and read-only either way: a grant kept through a
- * hold reads, and posts, enrolls agents, and streams again only after release. A history-only
- * grant never gains write access, whatever the lifecycle.
- */
-function grantCapabilities(
-  scopes: readonly string[],
-  historyOnly: boolean,
-  lifecycle: 'active' | 'archived'
-) {
-  const live = lifecycle === 'active' && !historyOnly;
-  return {
-    read: scopes.includes('read'),
-    post: live && scopes.includes('post'),
-    enrollAgent: live && scopes.includes('enroll-agent'),
-    stream: live && scopes.includes('read'),
-  };
-}
-
-function exactArchivedRead(scopes: readonly string[]): boolean {
-  return scopes.length === 1 && scopes[0] === 'read';
 }
 
 /**
@@ -251,6 +232,10 @@ export function registerPairingRoutes(
     const actor = await requireMember(c, auth, pool);
     const community = await resolveCommunityContext(c, pool);
     const consent = await readJson(c, CommunityWirePairingApproveRequestSchema);
+    // Giving the app manage power takes the password, so an agent driving a signed-in browser
+    // cannot tick the box for the person (#3155 review, M3).
+    if (consent.administer === true)
+      await confirmPassword(c, actor.user_id, consent.password ?? '');
     const id = uuid.parse(consent.pairingId);
     const scopes = await pairingScopes(pool, id, actor.community_id);
     await transaction(pool, async (client) => {

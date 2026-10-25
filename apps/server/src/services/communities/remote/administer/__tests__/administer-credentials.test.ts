@@ -14,7 +14,7 @@ import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../../conn
 import { RemoteCommunityPairingService } from '../../pairing-service.js';
 import { parseCommunityOrigin } from '../../pinned-origin.js';
 import { RemoteAdministerCredentials } from '../administer-credentials.js';
-import { CONNECTION_SCOPES, pairingScopes } from '../pairing-scopes.js';
+import { ASKS_FOR_ADMINISTER, CONNECTION_SCOPES, pairingScopes } from '../pairing-scopes.js';
 
 const communityId = randomUUID();
 const qualified = `/api/v1/communities/${communityId}`;
@@ -120,7 +120,8 @@ function app() {
     undefined,
     undefined,
     {
-      scopes: (pinned, id) => pairingScopes(pinned, id),
+      // Switched on here: these tests cover the wiring the first real use will turn on.
+      scopes: (pinned, id) => pairingScopes(pinned, id, undefined, true),
       keep: (ref, owner, token) => administer.save(ref, owner, token),
     }
   );
@@ -136,6 +137,28 @@ async function connect(owner = 'owner-a') {
 }
 
 describe('what a pairing asks for', () => {
+  it('never asks for administer until a feature uses it, even from a space that offers it', async () => {
+    // Purpose: fails if production starts asking for the manage credential before anything uses
+    // it (#3155 review, M1): an unused credential in the runtime-credentials store is a target.
+    expect(ASKS_FOR_ADMINISTER).toBe(false);
+    const store = new RemoteConnectionStore(directory);
+    const production = new RemoteCommunityPairingService(
+      store,
+      undefined,
+      undefined,
+      {},
+      undefined,
+      undefined,
+      undefined,
+      {
+        scopes: (pinned, id) => pairingScopes(pinned, id),
+        keep: async () => {},
+      }
+    );
+    await production.start('owner-a', `${origin}/c/${communityId}`, 'Production');
+    expect(asked).toEqual([[...CONNECTION_SCOPES]]);
+  });
+
   it('asks for administer only from a space that offers it', async () => {
     // Purpose: fails if an older space, which refuses an unknown scope, is ever asked for it.
     await app().service.start('owner-a', `${origin}/c/${communityId}`, 'One');
@@ -151,9 +174,9 @@ describe('what a pairing asks for', () => {
   });
 
   it('asks for the connection’s own scopes when the space cannot be reached', async () => {
-    expect(await pairingScopes(parseCommunityOrigin('http://127.0.0.1:9'), communityId)).toEqual([
-      ...CONNECTION_SCOPES,
-    ]);
+    expect(
+      await pairingScopes(parseCommunityOrigin('http://127.0.0.1:9'), communityId, undefined, true)
+    ).toEqual([...CONNECTION_SCOPES]);
   });
 
   it('asks for exactly what it always did without the administer wiring', async () => {

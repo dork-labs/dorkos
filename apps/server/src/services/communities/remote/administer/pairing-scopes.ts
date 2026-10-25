@@ -1,6 +1,6 @@
 /**
  * What a new pairing asks a space for (DOR-3005): the connection's own scopes, and `administer`
- * too when the space says it offers it.
+ * too when the space says it offers it, once something on this side uses it.
  *
  * Asking costs nothing and decides nothing: the space shows the consent line only to an owner or
  * admin, issues the manage credential only when they tick it, and drops the scope for anyone else.
@@ -21,17 +21,28 @@ import { communityApiPath, pinnedJson } from '../pinned-origin.js';
 export const CONNECTION_SCOPES = ['read', 'post', 'enroll-agent'] as const;
 
 /**
+ * Off until the first feature that uses the manage credential ships (#3155 review, M1). Nothing
+ * here uses it yet, and a credential nobody uses is only a target: it would sit in the
+ * runtime-credentials store, which a `file:` reference can name. That feature turns this on with
+ * a store no reference can reach and a fresh step-up before each use.
+ */
+export const ASKS_FOR_ADMINISTER = false;
+
+/**
  * The scopes to ask one space for. Never throws: any failure asks for the connection's own.
  *
  * @param origin - The space's pinned origin.
  * @param communityId - The space's id.
  * @param read - How the space is asked; `pinnedJson` in production.
+ * @param asks - Whether to ask at all; {@link ASKS_FOR_ADMINISTER} in production.
  */
 export async function pairingScopes(
   origin: URL,
   communityId: string,
-  read: typeof pinnedJson = pinnedJson
+  read: typeof pinnedJson = pinnedJson,
+  asks = ASKS_FOR_ADMINISTER
 ): Promise<CommunityWirePairingScope[]> {
+  if (!asks) return [...CONNECTION_SCOPES];
   try {
     const path = communityApiPath(communityId, COMMUNITY_API_V1_ROUTES.features);
     const answer = await read(origin, path, undefined, undefined, { method: 'GET' });

@@ -23,6 +23,7 @@ import {
   expectStatus,
   pairInstall,
   startTenancyHarness,
+  TENANCY_PASSWORD,
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
@@ -74,7 +75,8 @@ async function pair(
   await expectStatus(
     await h.call(`${base}/pairings/approve`, {
       cookie: approverCookie,
-      body: { pairingId, administer: consent },
+      // Consent takes the password (#3155 review, M3).
+      body: consent ? { pairingId, administer: true, password: TENANCY_PASSWORD } : { pairingId },
     }),
     200,
     'pairing approve'
@@ -140,6 +142,8 @@ const OPERATIONS: {
   name: string;
   roles: readonly Role[];
   ok: number;
+  /** A move that hits other people hard: the app's credential is told to use the browser (M2). */
+  browserOnly?: true;
   run: (auth: { cookie?: string; bearer?: string }) => Promise<Response>;
 }[] = [
   {
@@ -211,9 +215,28 @@ const OPERATIONS: {
     },
   },
   {
+    name: 'PATCH /settings admissionPolicy',
+    roles: ['owner'],
+    ok: 200,
+    browserOnly: true,
+    run: async (a) => {
+      const now = await h.pool.query<{ admission_policy: string }>(
+        'SELECT admission_policy FROM communities WHERE id=$1',
+        [communityId]
+      );
+      return h.call(`${tenant()}/settings`, {
+        ...a,
+        method: 'PATCH',
+        headers: { 'if-match': `"${await settingsVersion()}"` },
+        body: { admissionPolicy: now.rows[0]!.admission_policy },
+      });
+    },
+  },
+  {
     name: 'PATCH /members/:id/role',
     roles: ['owner'],
     ok: 200,
+    browserOnly: true,
     run: async (a) =>
       h.call(`${tenant()}/members/${await target()}/role`, {
         ...a,
@@ -225,6 +248,7 @@ const OPERATIONS: {
     name: 'DELETE /members/:id',
     roles: ['owner', 'admin'],
     ok: 204,
+    browserOnly: true,
     run: async (a) => h.call(`${tenant()}/members/${await target()}`, { ...a, method: 'DELETE' }),
   },
 ];
@@ -348,6 +372,38 @@ describe('who can give their app the administer credential', () => {
     expect(response.status).toBe(400);
   });
 
+  it('takes the approver’s password to consent, and issues nothing without it', async () => {
+    // Purpose: fails if a click in a signed-in browser (an agent driving it) can give the app
+    // manage power without the person's password (#3155 review, M3).
+    for (const password of [undefined, 'not-the-password']) {
+      const base = tenant();
+      const started = await expectStatus(
+        await h.call(`${base}/pairings/start`, {
+          headers: { origin: '' },
+          body: {
+            installName: `No password ${++seq}`,
+            challenge: createHash('sha256').update(`v${seq}`).digest('base64url'),
+            scopes: ['read', 'administer'],
+          },
+        }),
+        201,
+        'pairing start'
+      );
+      const { pairingId } = (await started.json()) as { pairingId: string };
+      const approved = await h.call(`${base}/pairings/approve`, {
+        cookie: people.owner.cookie,
+        body: { pairingId, administer: true, ...(password ? { password } : {}) },
+      });
+      expect(approved.status).toBe(403);
+      expect(((await approved.json()) as { code: string }).code).toBe('REAUTH_FAILED');
+      const row = await h.pool.query(
+        'SELECT approved_at FROM connection_pairings WHERE id=$1 AND approved_at IS NOT NULL',
+        [pairingId]
+      );
+      expect(row.rowCount).toBe(0);
+    }
+  });
+
   it('says the space offers it', async () => {
     const response = await expectStatus(await h.call(`${tenant()}/features`), 200, 'features');
     expect(((await response.json()) as { features: object }).features).toMatchObject({
@@ -363,9 +419,11 @@ describe('role × credential', () => {
     for (const role of ROLES) {
       for (const via of ['cookie', 'read grant', 'administer'] as const) {
         if (role === 'member' && via === 'administer') continue; // A member never holds one.
-        // A read grant is no credential here at all (401); a role that may not is refused (403).
-        const expected =
-          via === 'read grant' ? 401 : operation.roles.includes(role) ? operation.ok : 403;
+        // A read grant is no credential here at all (401); a role that may not is refused (403),
+        // and so is the app's credential on a browser-only move.
+        const refused =
+          !operation.roles.includes(role) || (via === 'administer' && operation.browserOnly);
+        const expected = via === 'read grant' ? 401 : refused ? 403 : operation.ok;
         it(`${operation.name}: ${role} by ${via} → ${expected}`, async () => {
           const response = await operation.run(credential(role, via));
           expect(response.status, await response.clone().text()).toBe(expected);
@@ -373,6 +431,49 @@ describe('role × credential', () => {
       }
     }
   }
+});
+
+describe('what the audit trail says', () => {
+  it('tags every row the app’s credential writes, and none the browser writes', async () => {
+    // Purpose: fails if an audit row cannot tell the person's app from their browser (M2).
+    const update = async (auth: { cookie?: string; bearer?: string }) => {
+      await expectStatus(
+        await h.call(`${tenant()}/settings`, {
+          ...auth,
+          method: 'PATCH',
+          headers: { 'if-match': `"${await settingsVersion()}"` },
+          body: { description: `Tagged ${++seq}` },
+        }),
+        200,
+        'settings'
+      );
+      const row = await h.pool.query<{ via: string | null }>(
+        "SELECT via FROM audit_events WHERE community_id=$1 AND action='settings.update' ORDER BY created_at DESC, id DESC LIMIT 1",
+        [communityId]
+      );
+      return row.rows[0]!.via;
+    };
+    expect(await update(credential('owner', 'administer'))).toBe('administer');
+    expect(await update(credential('owner', 'cookie'))).toBeNull();
+  });
+
+  it('records taking the credential back', async () => {
+    // Purpose: fails if a revoke leaves no audit row (M2).
+    const paired = await pair(communityId, people.admin.cookie, ['read', 'administer'], true);
+    await expectStatus(
+      await h.call(`${tenant()}/me/grants/${paired.grant.id}/administer`, {
+        cookie: people.admin.cookie,
+        method: 'DELETE',
+      }),
+      204,
+      'revoke'
+    );
+    const row = await h.pool.query<{ actor_member_id: string }>(
+      "SELECT actor_member_id FROM audit_events WHERE action='administer.revoke' AND subject_id=$1",
+      [paired.grant.id]
+    );
+    expect(row.rows.map((r) => r.actor_member_id)).toEqual([people.admin.memberId]);
+  });
 });
 
 describe('what the administer credential is not', () => {
@@ -492,19 +593,41 @@ describe('credentials the manage routes refuse', () => {
       200,
       'admin'
     );
-    await expectStatus(
-      await h.call(`${tenant()}/members/${admin.memberId}/role`, {
-        method: 'PATCH',
-        cookie: people.owner.cookie,
-        body: { role: 'member' },
-      }),
-      200,
-      'demote'
-    );
+    // Straight in the database: the role route also ends the credential (S1, next test), and
+    // this one proves the role is read live even while the credential stands.
+    await h.pool.query("UPDATE members SET role='member' WHERE id=$1", [admin.memberId]);
     for (const operation of OPERATIONS) {
       const response = await operation.run({ bearer: paired.administerToken });
       expect(response.status, operation.name).toBe(403);
     }
+  });
+
+  it('ends a demoted admin’s credential, so promoting them again does not bring it back', async () => {
+    // Purpose: fails if demotion only refuses the credential, leaving it to work again after a
+    // later promotion the person may not connect with it (#3155 review, S1).
+    const admin = await admit(h, communityId, people.owner.cookie, {
+      name: 'Demoted admin',
+      email: `demoted-${++seq}@administer.test`,
+    });
+    await h.pool.query("UPDATE members SET role='admin' WHERE id=$1", [admin.memberId]);
+    const token = (await pair(communityId, admin.cookie, ['read', 'administer'], true))
+      .administerToken!;
+    for (const role of ['member', 'admin'])
+      await expectStatus(
+        await h.call(`${tenant()}/members/${admin.memberId}/role`, {
+          cookie: people.owner.cookie,
+          method: 'PATCH',
+          body: { role },
+        }),
+        200,
+        `role ${role}`
+      );
+    expect((await h.call(`${tenant()}/invites`, { bearer: token })).status).toBe(401);
+    const row = await h.pool.query(
+      'SELECT 1 FROM connection_administer_grants WHERE token_hash=$1 AND revoked_at IS NOT NULL',
+      [hashSecret(token)]
+    );
+    expect(row.rowCount).toBe(1);
   });
 
   it('refuses one whose member left', async () => {

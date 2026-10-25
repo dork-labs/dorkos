@@ -98,10 +98,14 @@ export function registerAdministerGrantRoutes(
       allowDeletionPending: true,
     });
     const grantId = z.uuid().parse(c.req.param('id'));
-    // Taking access back needs no lifecycle or role: any state of the space allows it.
+    // Taking access back needs no lifecycle or role: any state of the space allows it. The
+    // audit row is written in the same statement, so a revoke is never unrecorded.
     const revoked = await pool.query(
-      `UPDATE connection_administer_grants SET revoked_at=COALESCE(revoked_at,now())
-       WHERE grant_id=$1 AND member_id=$2 AND community_id=$3 RETURNING id`,
+      `WITH r AS (
+         UPDATE connection_administer_grants SET revoked_at=COALESCE(revoked_at,now())
+         WHERE grant_id=$1 AND member_id=$2 AND community_id=$3 RETURNING grant_id)
+       INSERT INTO audit_events(community_id,actor_member_id,action,subject_id)
+       SELECT $3,$2,'administer.revoke',grant_id::text FROM r RETURNING id`,
       [grantId, actor.id, actor.community_id]
     );
     if (!revoked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Grant not found.');

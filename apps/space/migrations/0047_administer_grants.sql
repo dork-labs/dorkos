@@ -28,3 +28,11 @@ CREATE TABLE connection_administer_grants (
 CREATE INDEX connection_administer_grants_community_idx
   ON connection_administer_grants(community_id);
 CREATE INDEX connection_administer_grants_member_idx ON connection_administer_grants(member_id);
+
+-- An audit row written through that token says so (#3155 review, M2). The token's check marks
+-- its transaction (`set_config('dorkos.audit_via','administer',true)`), and this default reads
+-- the mark, so every row a route writes on the app's behalf is tagged without each insert
+-- having to remember. Unmarked transactions read NULL: the person's own browser.
+ALTER TABLE audit_events
+  ADD COLUMN via text DEFAULT nullif(current_setting('dorkos.audit_via', true), ''),
+  ADD CONSTRAINT audit_events_via CHECK (via IS NULL OR via = 'administer');

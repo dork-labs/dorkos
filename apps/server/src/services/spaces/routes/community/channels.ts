@@ -28,7 +28,7 @@ import {
 import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { notifyLive } from '../../live/notices.js';
-import { requireAdministrator } from '../../moderation/administrator.js';
+import { browserOnly, requireAdministrator } from '../../moderation/administrator.js';
 import { refuseDirectMessage, registerDirectMessageRoutes } from './agents/direct-messages.js';
 
 interface ChannelRow {
@@ -321,9 +321,10 @@ export function registerChannelRoutes(
     });
   });
 
-  // Also through the `administer` credential the owner gave their paired app (DOR-3005).
+  // Browser only: the paired app's `administer` credential is told to do this in the browser.
   app.patch('/members/:id/role', async (c) => {
-    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
+    const { member: actor, recheck, credential } = await requireAdministrator(c, auth, pool);
+    browserOnly(credential);
     const body = await readJson(c, CommunityWireMemberRoleUpdateRequestSchema);
     const member = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner']);
@@ -341,6 +342,13 @@ export function registerChannelRoutes(
         [body.role, c.req.param('id'), actor.community_id]
       );
       if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+      // A member never holds the app's manage credential: demoting one ends it, so a later
+      // promotion cannot quietly bring it back (#3155 review, S1).
+      if (body.role === 'member')
+        await client.query(
+          'UPDATE connection_administer_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE member_id=$1 AND community_id=$2',
+          [result.rows[0].id, actor.community_id]
+        );
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [actor.community_id, actor.id, 'member.role', result.rows[0].id]

@@ -43,13 +43,39 @@ describe('the consent to let the app manage the space', () => {
       render(<Pairing search="?pairingId=p_1" />);
       const consent = await screen.findByLabelText(new RegExp(CONSENT, 'u'));
       expect(consent).not.toBeChecked();
-      if (tick) fireEvent.click(consent);
+      if (tick) {
+        fireEvent.click(consent);
+        // Consent takes the password (#3155 review, M3): no approving until it is typed.
+        expect(screen.getByRole('button', { name: /Approve connection/u })).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Your password'), { target: { value: 'secret' } });
+      }
       fireEvent.click(screen.getByRole('button', { name: /Approve connection/u }));
       await screen.findByText(/Approved\./u);
       const approve = calls.find((call) => call.url.endsWith('/pairings/approve'));
-      expect(approve?.body).toEqual({ pairingId: 'p_1', administer: tick });
+      expect(approve?.body).toEqual(
+        tick
+          ? { pairingId: 'p_1', administer: true, password: 'secret' }
+          : { pairingId: 'p_1', administer: false }
+      );
       cleanup();
     }
+  });
+
+  it('says a wrong password changed nothing, and keeps the request open', async () => {
+    // Purpose: fails if a refused password reloads the page as if the request ended.
+    mockFetch({
+      'GET /api/v1/pairings/p_1': pending(['read', 'administer']),
+      'POST /api/v1/pairings/approve': {
+        status: 403,
+        body: { code: 'REAUTH_FAILED', message: 'That password is not right.' },
+      },
+    });
+    render(<Pairing search="?pairingId=p_1" />);
+    fireEvent.click(await screen.findByLabelText(new RegExp(CONSENT, 'u')));
+    fireEvent.change(screen.getByLabelText('Your password'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /Approve connection/u }));
+    await screen.findByText('That password is not right. Nothing was approved.');
+    expect(screen.getByRole('button', { name: /Approve connection/u })).toBeEnabled();
   });
 
   it('is never shown when the request does not offer it, and is not listed as a permission', async () => {

@@ -47,12 +47,13 @@ import {
 } from './deletion-status.js';
 import {
   assertReadableLifecycle,
+  lockSettings,
   parseIfMatch,
   projectSettings,
   settingsEtag,
   type SettingsRow,
 } from '../../content/settings-projection.js';
-import { requireAdministrator } from '../../moderation/administrator.js';
+import { browserOnly, requireAdministrator } from '../../moderation/administrator.js';
 
 /**
  * Lock the acting member and check their role live, then `recheck` the credential they came with:
@@ -75,18 +76,6 @@ async function lockMember(
   }
   await recheck(client);
   return current.rows[0];
-}
-
-/** Lock the Community before its acting member to match lifecycle and pairing transitions. */
-async function lockSettings(client: PoolClient, communityId: string): Promise<SettingsRow> {
-  const result = await client.query<SettingsRow>(
-    `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
-            icon_content_type,lifecycle,lifecycle_version
-     FROM communities WHERE id=$1 FOR UPDATE`,
-    [communityId]
-  );
-  if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
-  return result.rows[0];
 }
 
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
@@ -125,11 +114,13 @@ export function registerAdministrationRoutes(
   });
 
   // The settings and icon are changed in the person's browser, or by the `administer` credential
-  // they gave their paired app (DOR-3005), under the same live role checks.
+  // they gave their paired app (DOR-3005), under the same live role checks. Who may join is
+  // browser only.
   app.patch('/settings', async (c) => {
-    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
+    const { member: actor, recheck, credential } = await requireAdministrator(c, auth, pool);
     const expectedVersion = parseIfMatch(c.req.header('if-match'));
     const body = await readJson(c, CommunityAdminSettingsUpdateRequestSchema);
+    if (body.admissionPolicy !== undefined) browserOnly(credential);
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner', 'admin'], recheck);
