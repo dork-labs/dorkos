@@ -16,7 +16,13 @@
  *   in it has no effect through this path.
  * - **Never DorkOS's own tools, and no wildcards.** `mcp__dorkos__*` stays with
  *   DorkOS's gate (`canUseTool`). A rule whose tool name holds a `*` (such as
- *   `mcp__*`) is dropped, and so is a whole built-in tool (`Bash`, `Edit(*)`). An argument pattern inside the parentheses
+ *   `mcp__*`) is dropped, and so is a whole built-in tool (`Bash`, `Edit(./**)`)
+ *   and a file rule that reaches outside the home (`~`, `//`, `..`).
+ * - **The self-grant files stay out of reach.** Whenever a list applies, the
+ *   launch also denies file writes to the agent's own `.claude/`, `.mcp.json`
+ *   and `.dork/agent.json`, DorkOS's data folder and Claude Code's account
+ *   files (`apply-folder-allows.ts`). Deny beats allow, so no approved rule
+ *   can rewrite the list, a hook or the approval record. An argument pattern inside the parentheses
  *   (`Bash(scripts/approve:*)`) is kept: that is how a rule names a command.
  * - **The registered home, exactly.** Read from the agent's home, and only
  *   when the turn's working folder IS that home by real path.
@@ -49,8 +55,20 @@ const MAX_SETTINGS_FILE_BYTES = 64 * 1024;
  */
 const INVISIBLE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
-/** A pattern that names nothing narrower than the whole tool: `*`, `**`, `:*`. */
-const WHOLE_TOOL_PATTERN = /^[\s*:]*$/;
+/**
+ * A pattern that names nothing narrower than the whole tool: built only of
+ * `*`, `/`, `.`, `:` and spaces, so `*`, `:*`, `./**`, `**\/*` and `//**` all
+ * mean "everything" (Security review of #3072, M1).
+ */
+const WHOLE_TOOL_PATTERN = /^[\s*/.:]*$/;
+
+/**
+ * A pattern that reaches outside the agent's home: from the home folder
+ * (`~`), from the root (`//`), or up a level (a `..` segment). DorkOS's own
+ * config and Claude Code's account files live out there, and a rule that can
+ * write them is a rule that can grant more rules.
+ */
+const REACHES_OUT_PATTERN = /^~|^\/\/|(^|[\\/\s])\.\.([\\/\s]|$)/;
 
 /** A folder's allow list, ready to pass, and the hash an approval pins. */
 export interface FolderAllowList {
@@ -59,7 +77,7 @@ export interface FolderAllowList {
   /** Rules left out, with the reason, for the log and the approval card. */
   dropped: {
     rule: string;
-    reason: 'dorkos-tool' | 'wildcard-tool' | 'whole-tool' | 'malformed';
+    reason: 'dorkos-tool' | 'wildcard-tool' | 'whole-tool' | 'outside-home' | 'malformed';
   }[];
   /** sha256 of the kept rules; what a person's approval names. */
   hash: string;
@@ -91,8 +109,17 @@ export function judgeAllowRule(
   // own config among them. The card would call it "1 command", which it is
   // not, so it is dropped like a wildcard. An MCP tool name is already one tool.
   const pattern = open === -1 ? '' : trimmed.slice(open + 1, -1);
-  if (!tool.startsWith('mcp__') && WHOLE_TOOL_PATTERN.test(pattern)) {
+  if (tool.startsWith('mcp__')) return { ok: true, rule: trimmed };
+  // Claude Code matches `*` anywhere in a command, so a Bash pattern that
+  // starts with one (`*e*`, `*/*`) matches nearly every command.
+  if (
+    WHOLE_TOOL_PATTERN.test(pattern) ||
+    (tool === 'Bash' && pattern.trimStart().startsWith('*'))
+  ) {
     return { ok: false, reason: 'whole-tool' };
+  }
+  if (tool !== 'Bash' && REACHES_OUT_PATTERN.test(pattern.trim())) {
+    return { ok: false, reason: 'outside-home' };
   }
   return { ok: true, rule: trimmed };
 }

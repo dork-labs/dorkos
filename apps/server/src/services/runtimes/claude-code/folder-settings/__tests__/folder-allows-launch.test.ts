@@ -206,8 +206,10 @@ describe('resolveFolderAllows', () => {
     if (decision.kind !== 'applied') throw new Error('expected applied');
 
     const options: Options = {};
-    mergeFolderAllows(options, decision.rules);
-    expect(options.settings).toEqual({ permissions: { allow: ['Bash(scripts/claim-check:*)'] } });
+    mergeFolderAllows(options, decision.rules, []);
+    expect(options.settings).toEqual({
+      permissions: { allow: ['Bash(scripts/claim-check:*)'], deny: [] },
+    });
   });
 
   it('asks about nothing when the list is empty or only holds dropped rules', async () => {
@@ -257,13 +259,13 @@ describe('mergeFolderAllows', () => {
         permissions: { additionalDirectories: ['/rooms/r1'], deny: ['Edit(/rooms/r1/**)'] },
       } as Options['settings'],
     };
-    mergeFolderAllows(options, ['Bash(scripts/claim-check:*)']);
+    mergeFolderAllows(options, ['Bash(scripts/claim-check:*)'], ['Edit(//home/.claude/**)']);
     expect(options.settings).toEqual({
       fastMode: true,
       env: { ANTHROPIC_BASE_URL: 'http://credits' },
       permissions: {
         additionalDirectories: ['/rooms/r1'],
-        deny: ['Edit(/rooms/r1/**)'],
+        deny: ['Edit(/rooms/r1/**)', 'Edit(//home/.claude/**)'],
         allow: ['Bash(scripts/claim-check:*)'],
       },
     });

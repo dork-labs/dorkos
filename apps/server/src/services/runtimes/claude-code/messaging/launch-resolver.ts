@@ -102,6 +102,7 @@ import {
   folderAllowsWaitingStatus,
   mergeFolderAllows,
   resolveFolderAllows,
+  selfGrantDenyRules,
 } from '../folder-settings/apply-folder-allows.js';
 import {
   askForFolderAllows,
@@ -791,8 +792,19 @@ export async function resolveLaunch(args: {
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
   });
-  if (folderAllows.kind === 'applied') {
-    mergeFolderAllows(sdkOptions, folderAllows.rules);
+  const selfGrantDeny =
+    folderAllows.kind === 'applied' && turnAgentPath
+      ? selfGrantDenyRules({ home: turnAgentPath, dorkHome: resolveDorkHome(), accountRoot })
+      : undefined;
+  if (folderAllows.kind === 'applied' && !selfGrantDeny) {
+    // A home, data folder or account path no rule can name exactly: the list
+    // could reach the files that grant more, so none of it rides.
+    logger.warn('[FolderAllows] Not applying: a protected path cannot be named in a rule', {
+      agentId: meshAgentId,
+      hash: folderAllows.hash,
+    });
+  } else if (folderAllows.kind === 'applied' && selfGrantDeny) {
+    mergeFolderAllows(sdkOptions, folderAllows.rules, selfGrantDeny);
     logger.info('[FolderAllows] Applying the agent folder allow list', {
       agentId: meshAgentId,
       hash: folderAllows.hash,

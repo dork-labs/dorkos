@@ -17,6 +17,9 @@
  * @module services/runtimes/claude-code/folder-settings/apply-folder-allows
  */
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+import { rulePath, writeDenyRules } from '../messaging/directory-grants.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
 import {
   folderAllowEntry,
@@ -94,16 +97,134 @@ export async function resolveFolderAllows(turn: FolderAllowsTurn): Promise<Folde
 /** The slice of Claude Code settings this module writes. */
 interface AllowSettings {
   allow?: string[];
+  deny?: string[];
+}
+
+/** Where the files an approved rule must never write live, for one launch. */
+export interface SelfGrantFiles {
+  /** The registered agent home the list was read from. */
+  home: string;
+  /** DorkOS's data folder: its config holds the approval record. */
+  dorkHome: string;
+  /** The launch's Claude Code account folder (`CLAUDE_CONFIG_DIR`). */
+  accountRoot: string;
 }
 
 /**
- * Merge approved rules into the launch's `settings.permissions.allow`, keeping
- * every other setting (fast mode, folder grants, a credits endpoint).
+ * The files that would let an agent grant itself more, if a file tool could
+ * write them: its own `.claude/` (the allow list and its hooks), `.mcp.json`
+ * and `.dork/agent.json`, DorkOS's data folder (the approval record), and
+ * Claude Code's account files (folder trust, user-level rules). Denied to
+ * every file tool whenever a list applies, because deny beats allow: no rule a
+ * person approves can reach them (Security review of #3072, M1).
+ *
+ * `undefined` when one of the paths can't be named exactly in a rule; the
+ * caller then applies nothing rather than a list that might reach them.
+ *
+ * Bash is not covered: a shell rule a person approved writes where it likes,
+ * which is why the card has to say what a shell rule means (DOR-3294).
+ *
+ * @param files - Where this launch's files live.
+ */
+export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined {
+  const home = path.resolve(files.home);
+  const dorkHome = path.resolve(files.dorkHome);
+  const targets: [string, 'folder' | 'file'][] = [
+    [path.join(home, '.claude'), 'folder'],
+    [path.join(home, '.mcp.json'), 'file'],
+    [path.join(home, '.dork', 'agent.json'), 'file'],
+    [path.resolve(files.accountRoot), 'folder'],
+    // DorkOS's data folder: every entry at its top (config.json, host.key, its
+    // own folders) but the two agents work in, each named on its own. Not one
+    // `.dork/*` rule: run on the CLI, `*` there crosses folders, so it denied
+    // every agent home inside the data folder too.
+    ...dataEntriesAgentsNeverWrite(dorkHome).map(({ name, kind }): [string, 'folder' | 'file'] => [
+      path.join(dorkHome, name),
+      kind,
+    ]),
+  ];
+  const rules: string[] = [];
+  for (const [target, kind] of targets) {
+    const named = writeDenyRules(target, kind);
+    if (!named) return undefined;
+    rules.push(...named);
+  }
+  const agentsRoot = rulePath(path.join(dorkHome, 'agents'));
+  if (agentsRoot === undefined) return undefined;
+  for (const tool of WRITE_TOOL_NAMES) {
+    // Every agent home in the data folder keeps its own self-grant files, so
+    // one agent's approved rule can't rewrite another's list either.
+    rules.push(
+      `${tool}(${agentsRoot}/*/.claude/**)`,
+      `${tool}(${agentsRoot}/*/.mcp.json)`,
+      `${tool}(${agentsRoot}/*/.dork/agent.json)`
+    );
+    // The home folder's own spellings, which Claude Code expands itself: the
+    // default account and its `.claude.json`, and the default data folder's
+    // record, whatever this launch's account and data folder are.
+    rules.push(
+      `${tool}(~/.claude/**)`,
+      `${tool}(~/.claude.json)`,
+      ...DATA_FILES_ALWAYS_DENIED.map((name) => `${tool}(~/.dork/${name})`)
+    );
+  }
+  return [...new Set(rules)];
+}
+
+/**
+ * The data folder's files that grant or prove something, denied even before
+ * they exist: the config (the approval record among it), the key the secrets
+ * are encrypted with, and the local tokens.
+ */
+const DATA_FILES_ALWAYS_DENIED = [
+  'config.json',
+  'host.key',
+  'mcp-local-token',
+  'better-auth-secret',
+  'marketplaces.json',
+] as const;
+
+/** The file tools {@link selfGrantDenyRules} names, `MultiEdit` included for older CLIs. */
+const WRITE_TOOL_NAMES = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
+
+/**
+ * The data folder's own entries agents never write with file tools: every
+ * file and folder at its top but `agents/` (where most agent homes live) and
+ * `workspaces/` (the project checkouts agents work in), plus the
+ * {@link DATA_FILES_ALWAYS_DENIED}. Read at launch, so an entry DorkOS added
+ * since is covered; one an agent creates later is one DorkOS never reads.
+ */
+function dataEntriesAgentsNeverWrite(
+  dorkHome: string
+): { name: string; kind: 'folder' | 'file' }[] {
+  const entries = new Map<string, 'folder' | 'file'>(
+    DATA_FILES_ALWAYS_DENIED.map((name) => [name, 'file'])
+  );
+  try {
+    for (const entry of readdirSync(dorkHome, { withFileTypes: true })) {
+      if (entry.name === 'agents' || entry.name === 'workspaces') continue;
+      entries.set(entry.name, entry.isDirectory() || entry.isSymbolicLink() ? 'folder' : 'file');
+    }
+  } catch {
+    // No data folder yet: the always-denied files are still named.
+  }
+  return [...entries].map(([name, kind]) => ({ name, kind }));
+}
+
+/**
+ * Merge approved rules into the launch's `settings.permissions.allow`, and the
+ * {@link selfGrantDenyRules} into its `deny`, keeping every other setting
+ * (fast mode, folder grants, a credits endpoint).
  *
  * @param sdkOptions - The launch options, mutated.
  * @param rules - The approved rules.
+ * @param deny - The self-grant deny rules for this launch.
  */
-export function mergeFolderAllows(sdkOptions: Options, rules: readonly string[]): void {
+export function mergeFolderAllows(
+  sdkOptions: Options,
+  rules: readonly string[],
+  deny: readonly string[]
+): void {
   if (rules.length === 0) return;
   const base =
     typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
@@ -113,9 +234,11 @@ export function mergeFolderAllows(sdkOptions: Options, rules: readonly string[])
     {}) as AllowSettings;
   const allow = [...(permissions.allow ?? [])];
   for (const rule of rules) if (!allow.includes(rule)) allow.push(rule);
+  const denied = [...(permissions.deny ?? [])];
+  for (const rule of deny) if (!denied.includes(rule)) denied.push(rule);
   sdkOptions.settings = {
     ...base,
-    permissions: { ...permissions, allow },
+    permissions: { ...permissions, allow, deny: denied },
   } as Options['settings'];
 }
 

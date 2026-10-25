@@ -99,6 +99,8 @@ const launch = (
 
 const allowOf = (settings: unknown) =>
   (settings as { permissions?: { allow?: string[] } } | undefined)?.permissions?.allow;
+const denyOf = (settings: unknown) =>
+  (settings as { permissions?: { deny?: string[] } } | undefined)?.permissions?.deny ?? [];
 
 beforeEach(() => {
   root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'launch-folder-allows-')));
@@ -181,6 +183,21 @@ describe('an agent folder allow list at launch', () => {
     expect(resolved.sdkOptions.allowedTools).toBeUndefined();
     expect(resolved.sdkOptions.permissionMode).toBe('dontAsk');
     expect(asked).toHaveLength(0);
+  });
+
+  it('denies the self-grant files beside an applied list, and only then (M1)', async () => {
+    const before = denyOf((await launch(home)).sdkOptions.settings);
+    expect(before.some((rule) => rule.includes(`${home}/.claude`))).toBe(false);
+
+    recordFolderAllowApproval({ agentId: AGENT.id, home, rules: [RULE] });
+    const deny = denyOf((await launch(home)).sdkOptions.settings);
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(deny).toContain(`${tool}(/${home}/.claude/**)`);
+      expect(deny).toContain(`${tool}(/${home}/.mcp.json)`);
+      expect(deny).toContain(`${tool}(/${home}/.dork/agent.json)`);
+      expect(deny).toContain(`${tool}(~/.claude.json)`);
+      expect(deny).toContain(`${tool}(~/.dork/config.json)`);
+    }
   });
 
   it('passes nothing on a teammate turn, even when approved', async () => {
