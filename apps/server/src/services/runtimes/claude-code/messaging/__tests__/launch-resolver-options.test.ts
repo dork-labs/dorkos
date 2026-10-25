@@ -638,11 +638,13 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
           'Write(//rooms/r1/repo/**)',
           'NotebookEdit(//rooms/r1/repo/**)',
           // Then the folders only a person may change, on every turn.
-          ...['permissions', 'session-relay'].flatMap((folder) =>
+          ...['permissions', 'session-relay', 'plugins'].flatMap((folder) =>
             ['Edit', 'Write', 'NotebookEdit'].map(
               (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
             )
           ),
+          // And every project's installed plugins (DOR-3068).
+          ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
         ],
       },
     });

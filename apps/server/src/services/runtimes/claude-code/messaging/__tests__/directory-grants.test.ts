@@ -160,6 +160,18 @@ describe('the folders only a person may change', () => {
     }
   });
 
+  it('denies every project’s installed plugins and the shared ones, never its extensions', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//**/.dork/plugins/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/plugins/**)`);
+    }
+    // Agents build mini apps by editing these, so no rule names them.
+    expect(rules.some((rule) => rule.includes('extensions'))).toBe(false);
+  });
+
   it('writes a Windows data folder in the rule form', () => {
     const options: Options = {};
     applyPersonOnlyDataDeny(options, 'C:\\Users\\ana\\.dork');
