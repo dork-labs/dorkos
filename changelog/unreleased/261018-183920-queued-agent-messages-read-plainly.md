@@ -4,6 +4,7 @@ covers:
   - "fix(server): another agent's queued message is never reworded or handed back as your draft (DOR-3060)"
   - "fix(client): Stop and the arrow keys treat another agent's queued message as theirs, not yours (DOR-3060)"
   - 'fix(client): a queued message from another chat names the agent and chat that sent it (DOR-3060)'
+  - "fix(client): a queued message's sender line fits a phone-width row (DOR-3060)"
 ---
 
 ### Fixed

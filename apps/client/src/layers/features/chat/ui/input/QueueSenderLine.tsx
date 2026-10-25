@@ -17,31 +17,39 @@ export function QueueSenderLine({ sender }: { sender: QueueSender | null }) {
     return (
       <span className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
         <MessageSquare className="size-3 shrink-0" aria-hidden="true" />
-        <span className="shrink-0">{UNKNOWN_SENDER}</span>
+        <span className="min-w-0 truncate">{UNKNOWN_SENDER}</span>
       </span>
     );
   }
   const { color, emoji } = resolveAgentVisual({ id: sender.agentId ?? sender.agentName });
+  // "from" and the chat title are one piece: with no room beside the name it
+  // drops to its own line and truncates there, so the name stays whole and
+  // nothing runs under the row's buttons. Only a name wider than the whole
+  // line ends in an ellipsis.
   return (
-    <span className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
-      <AgentAvatar color={color} emoji={emoji} size="xs" className="shrink-0" />
-      <span className="text-foreground shrink-0 font-semibold">{sender.agentName}</span>
-      <span className="shrink-0">from</span>
-      {sender.chatTitle ? (
-        <a
-          href={sessionHref({ session: sender.chatId })}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void navigate(toSession({ session: sender.chatId }));
-          }}
-          className="focus-ring min-w-0 truncate rounded-sm underline-offset-4 hover:underline"
-        >
-          {sender.chatTitle}
-        </a>
-      ) : (
-        <span className="min-w-0 truncate">another chat · can’t open</span>
-      )}
+    <span className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-1 text-xs">
+      <span className="flex max-w-full shrink-0 items-center gap-1">
+        <AgentAvatar color={color} emoji={emoji} size="xs" className="shrink-0" />
+        <span className="text-foreground truncate font-semibold">{sender.agentName}</span>
+      </span>
+      <span className="max-w-full min-w-0 truncate">
+        from{' '}
+        {sender.chatTitle ? (
+          <a
+            href={sessionHref({ session: sender.chatId })}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void navigate(toSession({ session: sender.chatId }));
+            }}
+            className="focus-ring rounded-sm underline-offset-4 hover:underline"
+          >
+            {sender.chatTitle}
+          </a>
+        ) : (
+          'another chat · can’t open'
+        )}
+      </span>
     </span>
   );
 }

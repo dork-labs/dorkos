@@ -87,7 +87,7 @@ describe('QueuePanel: who sent a queued message', () => {
   it("says can't open, with no link, when the chat cannot be read", () => {
     const { chatTitle: _gone, ...noTitle } = SECURITY;
     renderPanel([fromChat('a', 'Hi', noTitle)]);
-    expect(screen.getByText('another chat · can’t open')).toBeInTheDocument();
+    expect(screen.getByText('from another chat · can’t open')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
