@@ -32,7 +32,73 @@ export const MANAGED_CONNECTOR_ERROR_CODES = {
   internalError: 'internal_error',
   notFound: 'not_found',
   conflict: 'conflict',
+  /** Too many actions are already waiting for the owner's approval. */
+  approvalLimitReached: 'approval_limit_reached',
+  /** The action's inputs are too large to show the owner for review. */
+  argumentsTooLargeToReview: 'arguments_too_large_to_review',
 } as const;
+
+/**
+ * The request header a client sends when it understands approval states, on
+ * authority commands and executions (DOR-3265). It is format negotiation only:
+ * it changes the response's shape, never who may do what, and the service's
+ * auth decision is identical with or without it. Without it, a request that
+ * would need the owner's approval gets the refusal an older client already
+ * parses (`rejected` / `permission_upgrade_required` for a command, the
+ * existing 403 family for an execution), so an older client never meets a
+ * state it does not know and never reads one as success.
+ */
+export const MANAGED_APPROVALS_HEADER = 'DorkOS-Managed-Approvals';
+/** The one value {@link MANAGED_APPROVALS_HEADER} takes. */
+export const MANAGED_APPROVALS_HEADER_VALUE = '1';
+
+/**
+ * A reference to a pending owner approval. It is not a capability: holding the
+ * id approves, cancels and reads nothing. Approval happens only on the owner's
+ * own signed-in surface, where the service checks the id against that owner,
+ * so another account replaying it gets 404. Ids are random, never sequential or
+ * derived from each other, and the service enforces `expiresAt` itself: the
+ * client only shows it. A missing or already-past expiry is a parse error, not
+ * a default.
+ *
+ * A client never parses the id or builds a URL from it. It opens `approveUrl`
+ * only when {@link safeApproveUrl} accepts it.
+ */
+export const ManagedConnectorApprovalRefSchema = z
+  .object({
+    approvalId: z.string().uuid(),
+    approveUrl: z.string().url(),
+    expiresAt: z
+      .string()
+      .datetime()
+      .refine((at) => Date.parse(at) > Date.now(), 'The approval has already expired'),
+  })
+  .strict();
+/** A reference to a pending owner approval. */
+export type ManagedConnectorApprovalRef = z.infer<typeof ManagedConnectorApprovalRefSchema>;
+
+/**
+ * The approval link a client may open, or `null` when it must fall back to a
+ * plain "Open your account" link to its own configured origin, with no id in it.
+ * The link is accepted only when it parses, is `https:`, carries no user info,
+ * and its origin is exactly the configured service origin: a lookalike such as
+ * `https://cloud.example.com.evil.com` is refused.
+ *
+ * @param approveUrl - The `approveUrl` the service sent.
+ * @param configuredOrigin - The service origin this client is configured with.
+ */
+export function safeApproveUrl(approveUrl: string, configuredOrigin: string): string | null {
+  let url: URL;
+  let configured: URL;
+  try {
+    url = new URL(approveUrl);
+    configured = new URL(configuredOrigin);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+  return url.origin === configured.origin ? url.toString() : null;
+}
 
 /**
  * The legacy managed-connector error body the control plane sends on any
@@ -172,9 +238,18 @@ export const ManagedConnectorAuthorityCommandStatusSchema = z.discriminatedUnion
       'invalid_event_filter',
       'permission_upgrade_required',
       'scope_conflict',
+      'approval_denied',
+      'approval_expired',
+      'approval_limit_reached',
     ]),
   }).strict(),
   ManagedAuthorityStatusBaseSchema.extend({ state: z.literal('superseded') }).strict(),
+  // Not applied yet: the owner has not approved it. The client keeps honouring
+  // the last `applied` set for that scope; this is not a stall and not a reason
+  // to resend. Sent only to a client that sent MANAGED_APPROVALS_HEADER.
+  ManagedAuthorityStatusBaseSchema.extend({ state: z.literal('awaiting_approval') })
+    .merge(ManagedConnectorApprovalRefSchema)
+    .strict(),
 ]);
 /** Durable hosted status of one idempotent authority command. */
 export type ManagedConnectorAuthorityCommandStatus = z.infer<
@@ -221,7 +296,13 @@ export type ManagedConnectorExecutionRequest = z.infer<
   typeof ManagedConnectorExecutionRequestSchema
 >;
 
-/** Hosted authoritative accounting receipt, with no arguments, result, or provider log id. */
+/**
+ * Hosted authoritative accounting receipt, with no arguments, result, or provider log id.
+ *
+ * An action the owner never approved ends with `outcome: 'cancelled'`, a
+ * `completedAt`, and `errorCode` `APPROVAL_DENIED`, `APPROVAL_EXPIRED` or
+ * `APPROVAL_CANCELLED`.
+ */
 export const ManagedConnectorExecutionReceiptSchema = z
   .object({
     version: z.literal(1),
@@ -248,6 +329,21 @@ export const ManagedConnectorExecutionReceiptSchema = z
 export type ManagedConnectorExecutionReceipt = z.infer<
   typeof ManagedConnectorExecutionReceiptSchema
 >;
+
+/**
+ * An execution held for the owner's approval. When `approval` turns
+ * `approved`, the client resends the identical request, with the same
+ * `attemptId` and arguments; that resend is the one that runs. Sent only to a
+ * client that sent {@link MANAGED_APPROVALS_HEADER}.
+ */
+const ManagedConnectorHeldExecutionSchema = z
+  .object({
+    state: z.literal('held'),
+    attemptId: z.string().min(1).max(200),
+    approval: z.enum(['awaiting', 'approved']),
+  })
+  .merge(ManagedConnectorApprovalRefSchema)
+  .strict();
 
 const ManagedConnectorCompletedExecutionResponseSchema = z
   .object({
@@ -287,6 +383,7 @@ export const ManagedConnectorExecutionResponseSchema = z.union([
       attemptId: z.string().min(1).max(200),
     })
     .strict(),
+  ManagedConnectorHeldExecutionSchema,
 ]);
 /** Hosted execution result with its authoritative accounting receipt. */
 export type ManagedConnectorExecutionResponse = z.infer<
@@ -307,8 +404,36 @@ export const ManagedConnectorExecutionReceiptStatusSchema = z.discriminatedUnion
       receipt: ManagedConnectorExecutionReceiptSchema,
     })
     .strict(),
+  ManagedConnectorHeldExecutionSchema,
 ]);
 /** Receipt-only response for resolving an ambiguous managed execution. */
 export type ManagedConnectorExecutionReceiptStatus = z.infer<
   typeof ManagedConnectorExecutionReceiptStatusSchema
+>;
+
+/** One open owner approval on an instance: a grant, a grant review, or an execution. */
+export const ManagedConnectorInstanceApprovalSchema = z
+  .object({
+    kind: z.enum(['grant', 'grant_review', 'execution']),
+    managedConnectionId: z.string().min(1).max(200),
+    commandId: z.string().min(1).max(200).optional(),
+    attemptId: z.string().min(1).max(200).optional(),
+  })
+  .merge(ManagedConnectorApprovalRefSchema)
+  .strict();
+/** One open owner approval on an instance. */
+export type ManagedConnectorInstanceApproval = z.infer<
+  typeof ManagedConnectorInstanceApprovalSchema
+>;
+
+/** An instance's open owner approvals, read from the instance API. */
+export const ManagedConnectorInstanceApprovalListSchema = z
+  .object({
+    version: z.literal(1),
+    approvals: z.array(ManagedConnectorInstanceApprovalSchema),
+  })
+  .strict();
+/** An instance's open owner approvals. */
+export type ManagedConnectorInstanceApprovalList = z.infer<
+  typeof ManagedConnectorInstanceApprovalListSchema
 >;
