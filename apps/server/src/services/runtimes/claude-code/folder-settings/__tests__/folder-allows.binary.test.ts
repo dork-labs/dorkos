@@ -296,6 +296,27 @@ describe.skipIf(BINARY === null)('the self-grant files under an approved list', 
     120_000
   );
 
+  it('refuses a write through a symlink in the home that points into the data folder', async () => {
+    // QA's gate row: `docs` -> the data folder, with `Edit(docs/**)` approved.
+    // That rule alone the CLI already refuses here (the real path is outside
+    // the folder), so `Write` and `Edit(//**)` ride too: the control proves the
+    // write lands, and the deny then has to match the RESOLVED path to stop it.
+    fs.symlinkSync(dorkHome, path.join(folder, 'docs'));
+    const target = path.join(folder, 'docs', 'config.json');
+    const options: Options = {};
+    const run = async (deny: readonly string[]) => {
+      fs.writeFileSync(path.join(dorkHome, 'config.json'), '{}');
+      await model.close();
+      model = await fakeModel({ name: 'Write', input: { file_path: target, content: MARK } });
+      mergeFolderAllows(options, ['Edit(docs/**)', 'Write', 'Edit(//**)'], deny);
+      await runTurn(options.settings, account);
+      options.settings = undefined;
+      return fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf8') === MARK;
+    };
+    expect(await run([])).toBe(true);
+    expect(await run(launchDeny())).toBe(false);
+  }, 120_000);
+
   it('still writes in its own home, and in a workspace', async () => {
     expect(await wrote(path.join(folder, 'notes.md'), launchDeny())).toBe(true);
     expect(await wrote(path.join(dorkHome, 'workspaces', 'p', 'a.ts'), launchDeny())).toBe(true);
