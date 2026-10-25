@@ -444,10 +444,11 @@ describe('notification registry', () => {
     expect(entry.body?.(payload)).toBe('Wants to run Bash');
   });
 
-  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+  describe('a run that needs attention (DOR-2101, DOR-3123)', () => {
     const blocked: (typeof PAYLOADS)['run.completed'] = {
       ...PAYLOADS['run.completed'],
-      status: 'blocked',
+      status: 'needs_attention',
+      outcome: 'nothing_done',
       taskName: 'Mailroom',
       duration: '4s',
       detail:
@@ -465,7 +466,7 @@ describe('notification registry', () => {
 
     it('says what happened rather than calling it a failure', () => {
       const entry = notificationEntry('run.completed');
-      expect(entry.title(blocked)).toBe('Mailroom could not use its tools');
+      expect(entry.title(blocked)).toBe('Mailroom needs attention');
       expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom failed');
     });
 
@@ -474,13 +475,21 @@ describe('notification registry', () => {
       // the body's own line must not repeat them (DOR-2101 review).
       const body = notificationEntry('run.completed').body?.(blocked) ?? '';
       expect(body).toContain('Ran for 4s and used none of its tools.');
+      expect(
+        notificationEntry('run.completed').body?.({ ...blocked, outcome: 'partial' }) ?? ''
+      ).toContain('Ran for 4s and was refused a tool.');
       expect(body).toContain(blocked.detail);
       expect(body.match(/nobody was there to approve/g)).toHaveLength(1);
     });
 
-    it('reaches out, because it is the outcome nobody notices for themselves', () => {
+    it('reaches out when nothing got done, and stays opt-in when it carried on', () => {
       const entry = notificationEntry('run.completed');
       expect((entry.relay as (p: typeof blocked) => string)(blocked)).toBe('always');
+      // A run that lost a tool and carried on used to be a quiet success; until
+      // one notice covers a whole streak it pings only where asked (DOR-3123).
+      expect(
+        (entry.relay as (p: typeof blocked) => string)({ ...blocked, outcome: 'partial' })
+      ).toBe('opt-in');
       expect((entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'failed' })).toBe(
         'always'
       );

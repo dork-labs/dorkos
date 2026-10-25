@@ -46,7 +46,9 @@ const PUBLISH_TTL_MS = 30_000;
  */
 export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promise<void> {
   // Cancellations are the operator's own action — they already know.
-  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'blocked') return;
+  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'needs_attention') {
+    return;
+  }
 
   const taskName = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : undefined;
@@ -63,6 +65,7 @@ export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promi
       taskName,
       ...(task?.agentId ? { agentId: task.agentId } : {}),
       status: run.status,
+      ...(run.outcome ? { outcome: run.outcome } : {}),
       ...(duration ? { duration } : {}),
       ...(detail ? { detail } : {}),
       channelMessage: formatCompletionMessage(task, run),
@@ -98,7 +101,7 @@ function firstLine(text: string | null | undefined): string | undefined {
  * tone).
  *
  * Shape: one status emoji + task name + duration + the first line of output (on
- * success) or error (on a failed or blocked run), truncated to keep it
+ * success) or error (on a failed or needs-attention run), truncated to keep it
  * glanceable. Kept exactly as DOR-240 shipped it rather than rebuilt from the
  * inbox row's title and body: a phone message and an inbox row are not the same
  * sentence, and this one is already tuned.
@@ -115,17 +118,17 @@ export function formatCompletionMessage(task: Task | null, run: TaskRun): string
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
       `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
-  } else if (run.status === 'blocked') {
+  } else if (run.status === 'needs_attention') {
     // Not the tick and not the warning triangle: the run did not break, and it
-    // did not work either. What it needs is permission, so the sentence says
-    // that and nothing else (DOR-2101).
+    // did not do all of its job either. What it needs is permission, so the
+    // sentence says that and nothing else (DOR-2101, DOR-3123).
     // The detail is the run's own refusal sentence, which already ends "nobody
     // was there to approve them" — so the lead says what happened and lets the
     // detail name the tools, instead of saying the same thing twice
     // (DOR-2101 review).
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
-      `🔒 ${name} — used none of its tools${duration ? ` in ${duration}` : ''}.` +
+      `🔒 ${name} — ${run.outcome === 'nothing_done' ? 'used none of its tools' : 'was refused a tool'}${duration ? ` in ${duration}` : ''}.` +
       (detail ? ` ${detail}` : '');
   } else {
     const detail = firstLine(run.outputSummary);

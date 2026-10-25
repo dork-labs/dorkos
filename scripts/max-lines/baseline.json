@@ -67,7 +67,7 @@
     "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
     "apps/server/src/services/harness/status.ts": 520,
     "apps/server/src/services/marketplace/dev-links/dev-link-service.ts": 768,
-    "apps/server/src/services/notifications/notification-registry.ts": 570,
+    "apps/server/src/services/notifications/notification-registry.ts": 557,
     "apps/server/src/services/notifications/notification-store.ts": 534,
     "apps/server/src/services/relay/adapter-manager.ts": 892,
     "apps/server/src/services/relay/binding-router.ts": 651,
@@ -99,7 +99,7 @@
     "apps/server/src/services/spaces/routes/community/administration.ts": 616,
     "apps/server/src/services/spaces/routes/community/pairings.ts": 564,
     "apps/server/src/services/spaces/schema.ts": 1824,
-    "apps/server/src/services/tasks/task-scheduler-service.ts": 781,
+    "apps/server/src/services/tasks/task-scheduler-service.ts": 774,
     "apps/server/src/services/workbench-serve/devtools-driving.ts": 801,
     "packages/browser/src/engine.ts": 741,
     "packages/browser/src/input/engine-input.ts": 530,
@@ -137,7 +137,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1311,
+    "packages/test-utils/src/mock-factories.ts": 1251,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
     "packages/test-utils/src/runtime-conformance.ts": 2432
   }

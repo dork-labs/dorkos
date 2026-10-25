@@ -107,7 +107,7 @@ function ownRunReader(db: Db) {
       .where(
         and(
           eq(pulseSchedules.agentId, agentId),
-          inArray(pulseRuns.status, ['failed', 'blocked']),
+          inArray(pulseRuns.status, ['failed', 'needs_attention']),
           ...(sinceIso ? [gt(pulseRuns.createdAt, sinceIso)] : [])
         )
       )
@@ -117,7 +117,7 @@ function ownRunReader(db: Db) {
       .map((row) => ({
         id: row.id,
         taskName: row.name,
-        status: row.status as 'failed' | 'blocked',
+        status: row.status as 'failed' | 'needs_attention',
         at: row.finishedAt ?? row.createdAt,
       }));
 }

@@ -38,9 +38,9 @@ function formatDuration(ms: number): string {
  *
  * Derived from the RUN, never from the notification that opened the sheet. The
  * inbox row's own signal is kind-plus-tier, which cannot tell a failure from a
- * run that was blocked (`isFailedRun`, `entities/notifications`) — so the sheet
- * used to print a hardcoded red "Failed" over whatever it was handed, and a
- * blocked run arrived reported as a breakage that never happened (DOR-2101
+ * run that was refused a tool (`isFailedRun`, `entities/notifications`) — so
+ * the sheet used to print a hardcoded red "Failed" over whatever it was handed,
+ * and such a run arrived reported as a breakage that never happened (DOR-2101
  * review). The run row is the ground truth and the sheet already fetches it,
  * which is why no status is denormalized onto the notification to fix this.
  *
@@ -49,8 +49,8 @@ function formatDuration(ms: number): string {
 function runVerdict(status: TaskRun['status']): {
   label: string;
   badge: 'destructive' | 'secondary' | 'outline';
-  /** Whether the explanation reads as a breakage (red) or a limit (amber). */
-  tone: 'error' | 'warning' | 'neutral';
+  /** Whether the explanation reads as the run failing the person (red) or not. */
+  tone: 'error' | 'neutral';
   /** The heading over the explanation box. */
   heading: string;
   /**
@@ -64,13 +64,13 @@ function runVerdict(status: TaskRun['status']): {
   title: string;
 } {
   switch (status) {
-    case 'blocked':
+    case 'needs_attention':
       return {
-        label: 'Blocked',
-        badge: 'outline',
-        tone: 'warning',
+        label: 'Needs attention',
+        badge: 'destructive',
+        tone: 'error',
         heading: 'What it needed',
-        title: 'Run that couldn’t use its tools',
+        title: 'Run that was refused a tool',
       };
     case 'failed':
       return {
@@ -122,21 +122,12 @@ const EXPLANATION_TONE = {
     heading: 'text-destructive',
     body: 'text-destructive',
   },
-  warning: {
-    box: 'bg-status-warning-bg border-status-warning-border',
-    heading: 'text-status-warning-fg',
-    // Full opacity, not `/80`: the 80%-opacity mix measured 3.6:1 on the
-    // warning box, under WCAG AA (DOR-2444) — `-fg` is already tuned to
-    // clear 4.5:1 at full strength, so any opacity below 100% risks pulling
-    // it back under the bar.
-    body: 'text-status-warning-fg',
-  },
   neutral: {
     box: 'bg-muted border-border',
     heading: 'text-foreground',
     body: 'text-foreground/80',
   },
-} as const satisfies Record<'error' | 'warning' | 'neutral', Record<string, string>>;
+} as const satisfies Record<'error' | 'neutral', Record<string, string>>;
 
 /**
  * Detail sheet for a Tasks run that wants a person's attention, showing status,
@@ -168,8 +159,8 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right">
         <SheetHeader>
-          {/* From the run, like the badge and the box below it. A blocked run
-              DID finish — it just was not allowed to do anything — and the old
+          {/* From the run, like the badge and the box below it. A run that
+              needs attention DID finish — it was refused a tool — and the old
               fixed title was the second thing on this sheet that told a person
               something untrue about it. Before the run loads there is nothing
               to be exact about, so neutral wording stands in. */}
@@ -223,8 +214,8 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
                 )}
               </div>
 
-              {/* What went wrong — or, for a blocked run, what it was denied.
-                  Nothing broke there, so it must not draw in the failure red. */}
+              {/* What went wrong — or, for a run that needs attention, what it
+                  was denied. Both draw in the failing tone (DOR-3123). */}
               {run.error && (
                 <div className={cn('rounded-md border p-3', explanation!.box)}>
                   <p className={cn('text-sm font-medium', explanation!.heading)}>

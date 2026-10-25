@@ -998,7 +998,7 @@ describe('CreateTaskDialog', () => {
       expect(screen.queryByLabelText('Allow file edits')).toBeNull();
     });
 
-    it('says what actually happens to an ask nobody answers', async () => {
+    it('warns that Accept edits cannot ask on a scheduled run (DOR-3123 A1)', async () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
 
@@ -1015,16 +1015,44 @@ describe('CreateTaskDialog', () => {
       // not park until the run's time limit (what this note said first), and it
       // no longer waits ten minutes either (spec
       // `unattended-session-permission-prompts`).
-      const note = await screen.findByTestId('task-unattended-note');
-      expect(note).toHaveTextContent(/Nobody watches a scheduled run/);
-      expect(note).toHaveTextContent(/any ask is turned down/);
-      expect(note).toHaveTextContent(/carries on/);
-      expect(note).toHaveTextContent(/without that tool and says so/);
+      const note = await screen.findByTestId('task-unattended-warning');
+      expect(note).toHaveTextContent(/Nobody is there to approve asks on a scheduled run/);
+      expect(note).toHaveTextContent(/Each ask is refused/);
+      // The two ways out: the agent's level, or Never ask with an allow list.
+      expect(note).toHaveTextContent(/your agent’s level/);
+      expect(note).toHaveTextContent(/Never ask with an allow list/);
       // A "Run now" is answerable, and the note has to say so or the person
       // reads the whole schedule as one that never asks.
       expect(note).toHaveTextContent(/Run now/);
       expect(note).not.toHaveTextContent(/time limit/);
       expect(note).not.toHaveTextContent(/10 minutes/);
+    });
+
+    it('warns in the edit form too, and not for a stop that never asks', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const asking = createMockSchedule({ id: 'sched-accept', permissionMode: 'acceptEdits' });
+
+      const { unmount } = render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={asking} />
+        </Wrapper>
+      );
+      await openAdvanced();
+      expect(await screen.findByTestId('task-unattended-warning')).toBeInTheDocument();
+      unmount();
+
+      const quiet = createMockSchedule({ id: 'sched-full', permissionMode: 'bypassPermissions' });
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={quiet} />
+        </Wrapper>
+      );
+      await openAdvanced();
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+      expect(screen.queryByTestId('task-unattended-warning')).toBeNull();
     });
 
     it('speaks the vocabulary of the runtime the task will actually run on', async () => {
@@ -1105,7 +1133,7 @@ describe('CreateTaskDialog', () => {
       );
       // Codex never asks, so the note about an ask nobody answers has nothing to
       // warn about — it is gated on the declared `asks`, not on a mode id.
-      expect(screen.queryByTestId('task-unattended-note')).toBeNull();
+      expect(screen.queryByTestId('task-unattended-warning')).toBeNull();
 
       // Move the task onto Claude Code and the whole vocabulary moves with it.
       const user = userEvent.setup();
@@ -1117,7 +1145,7 @@ describe('CreateTaskDialog', () => {
           'Edits files on its own. Asks before it runs a command.'
         )
       );
-      expect(screen.getByTestId('task-unattended-note')).toBeInTheDocument();
+      expect(screen.getByTestId('task-unattended-warning')).toBeInTheDocument();
     });
 
     it('never offers planning as a level of trust', async () => {

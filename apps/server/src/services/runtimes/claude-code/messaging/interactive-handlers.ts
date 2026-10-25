@@ -14,7 +14,7 @@ import {
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
-import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
+import { NEVER_ASK_REASON_TYPE, NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
 import {
   armInteractionWait,
@@ -58,6 +58,9 @@ import {
   type CeilingedMode,
 } from '../turn-permission.js';
 
+/** Why the Never ask mode refused a call, in a person's words (the denial chip). */
+const NEVER_ASK_REASON = 'Never ask refuses anything not already allowed.';
+
 /** The SDK's own ask-the-person tool, which is routed rather than approved. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
@@ -86,15 +89,15 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * ## The record
  *
  * A `permission_denied` StreamEvent stamped {@link NO_APPROVAL_SURFACE} — the
- * one `reasonType` DorkOS writes itself, and the reason a run summary may say
- * "nobody was there to approve it" without qualifying it. It carries `askKind`
+ * `reasonType` DorkOS writes for an absent person, and the reason a run summary
+ * may say "nobody was there to approve it" without qualifying it. It carries `askKind`
  * beside the reason, because this one function refuses three different asks
  * and only a TOOL is one the run lost the ability to act with (DOR-2101); a
  * run that did its work and closed by asking a question must not be recorded
- * as one that could not use its tools. The SDK's own
- * denials (`classifier`, `rule`, `asyncAgent`) describe decisions that would
- * have gone the same way with a person present, so they carry other
- * discriminators and `@dorkos/shared/run-refusals` ignores them. The event rides
+ * as one that could not use its tools. The SDK's `classifier` and `rule`
+ * denials describe decisions that would have gone the same way with a person
+ * present, so `@dorkos/shared/run-refusals` ignores them; its `asyncAgent` and
+ * `mode` denials are counted there too, each with words of its own. The event rides
  * the session's own queue, so it reaches the live client, the transcript, and
  * the scheduler consuming the run's stream, with no new plumbing.
  *
@@ -494,6 +497,27 @@ export function createCanUseTool(
         toolName,
         toolUseID: context.toolUseID,
       });
+      // The record, with the CLI's own discriminator for a mode's refusal, so
+      // a scheduled run's row can name the tool it lost (DOR-3132). The CLI
+      // refuses most such calls itself and writes the same frame; this is the
+      // one that reaches DorkOS's gate. A question is the run wanting to talk,
+      // not to act, so it is left out of a record that names lost tools.
+      if (toolName !== ASK_USER_QUESTION_TOOL) {
+        session.eventQueue.push({
+          type: 'permission_denied',
+          data: {
+            toolCallId: context.toolUseID,
+            toolName,
+            reasonType: NEVER_ASK_REASON_TYPE,
+            // The person's words, which the denial chip shows; `message` is
+            // what the model was told, and is not for a person to read.
+            reason: NEVER_ASK_REASON,
+            message: NEVER_ASK_DENIAL,
+            ...(context.agentID !== undefined ? { agentId: context.agentID } : {}),
+          },
+        });
+        session.eventQueueNotify?.();
+      }
       return { behavior: 'deny', message: NEVER_ASK_DENIAL };
     }
     if (toolName === ASK_USER_QUESTION_TOOL) {

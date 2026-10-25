@@ -38,7 +38,8 @@ import {
   type SchedulerAgentManager,
   type SchedulerRuntimes,
 } from '../task-scheduler-service.js';
-import { isTerminalRunStatus, TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 
 const SENTENCE =
   "Client Work can't be used in project. It's set to work only in client-app. Pick another account, or change this in Settings → Runtimes.";

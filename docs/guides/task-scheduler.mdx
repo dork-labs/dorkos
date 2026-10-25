@@ -255,11 +255,21 @@ Times that pass while DorkOS itself is not running are not run later either, and
 
 A task on a timer runs while you are somewhere else, so there is nobody to answer if the agent asks for permission to do something. DorkOS does not make it wait. The request is turned down right away, and the agent keeps going without that one tool.
 
-You are told twice over. The run's own line in the run history names the tools it could not use, and each one lands in your activity feed on its own. Nothing pings your phone about it.
+**A run that was turned down at any tool is marked Needs attention, never Completed.** Completed means the run was refused nothing. Its line in the run history says how many tools were refused and names them, for example "Refused: nobody to approve (2). Bash and gmail: search." Each one also lands in your activity feed on its own. Nothing broke, so there is nothing to debug; what it needs is the permission it was denied.
 
-**If every tool was turned down, the run is marked Blocked.** That is its own outcome in the run history, next to Completed, Failed and Cancelled — not a green tick. It means the run happened, took time, and got nowhere: it was never given permission to do anything. Nothing broke, so there is nothing to debug; what it needs is the permission it was denied. A blocked run also reaches your notifications, because a schedule that quietly does nothing every night is the one thing you cannot spot for yourself.
+Needs attention covers two cases. A run that lost a tool and got on with the rest of its work did part of its job. A run that was turned down at every tool got nothing done. Both reach your notifications. A run that got nothing done also messages your phone, because a schedule that quietly does nothing every night is the one thing you cannot spot for yourself.
 
-A run that lost one tool and got on with the rest of its work still counts as Completed. It did what it could, and its summary line says what it skipped. So does a run that finished its work and only then asked you a question — being unable to reach you is not the same as being unable to act.
+A schedule set to **Never ask** runs only what you allowed and turns down the rest without asking. Those refusals count the same way, and the run's summary says the schedule is set to Never ask.
+
+A run that finished its work and only then asked you a question still counts as Completed — being unable to reach you is not the same as being unable to act.
+
+### Failing schedules
+
+A schedule is **failing** when its latest finished run needs attention or did not finish. Skipped and cancelled runs do not count either way. One completed run clears it.
+
+The Schedules list says how many are failing next to its count, and a **Failing** filter shows only those. In the usual order, failing schedules come first. Each one shows a padlock (a tool was refused) or a cross (it did not finish), one line saying why, and how long it has been failing. **Open schedule** takes you to its settings, where you can change what it may do.
+
+When you pick a permission level that asks, such as **Accept edits**, the schedule's form warns you that nobody is there to approve asks on a scheduled run. Use your agent's level, or **Never ask** with an allow list. You can still save it as it is.
 
 The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or open the task and raise its own **Permissions** setting, which is the dial that decides how much its runs may do on their own.
 
@@ -454,12 +464,15 @@ DorkOS uses standard five-field cron expressions:
 <TypeTable
   type={{
     running: { type: 'status', description: 'The agent chat is currently running' },
-    completed: { type: 'status', description: 'The agent finished the run without errors' },
+    completed: {
+      type: 'status',
+      description: 'The agent finished the run without errors, and no tool was refused',
+    },
     failed: { type: 'status', description: 'The agent encountered an error during execution' },
-    blocked: {
+    needs_attention: {
       type: 'status',
       description:
-        'The run went ahead but was turned down at every tool it asked to use, because a task on a timer has nobody to approve one. Nothing broke, so there is nothing to debug: open the task and raise its own Permissions setting, or change the task so it does not need those tools. Clicking Run now shows you the requests it was making, since you are there to answer them',
+        'The run went ahead but was turned down at one or more tools, because a task on a timer has nobody to approve one. Its line names the tools and says whether anything got done. Nothing broke, so there is nothing to debug: open the task and raise its own Permissions setting, or change the task so it does not need those tools. Clicking Run now shows you the requests it was making, since you are there to answer them',
     },
     cancelled: { type: 'status', description: 'The run was manually cancelled' },
     skipped: {

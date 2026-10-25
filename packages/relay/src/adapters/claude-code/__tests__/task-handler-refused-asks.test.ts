@@ -146,10 +146,8 @@ describe('the refused asks a relay-dispatched run reports', () => {
     const written = await runTurn(
       [
         nobodyThere('Bash'),
-        // The successful call is load-bearing since DOR-2101, exactly as in the
-        // direct-dispatch twin's version of this case: it is what makes this
-        // the run that lost ONE tool and carried on rather than the run that
-        // was never allowed to do anything, which is now recorded `blocked`.
+        // The successful call makes this the run that lost ONE tool and
+        // carried on (`partial`), rather than one that got nothing done.
         {
           type: 'tool_result',
           data: { toolCallId: 't9', toolName: 'Read', result: 'ok', status: 'complete' },
@@ -159,7 +157,7 @@ describe('the refused asks a relay-dispatched run reports', () => {
       undefined
     );
 
-    expect(written.status).toBe('completed');
+    expect(written).toMatchObject({ status: 'needs_attention', outcome: 'partial' });
     expect(String(written.outputSummary)).toContain('Bash');
   });
 });

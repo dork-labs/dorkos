@@ -40,6 +40,13 @@ import {
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TaskRunHistoryPanel } from './TaskRunHistoryPanel';
+import {
+  TaskFailingMark,
+  TaskFailingReason,
+  TaskFailingSince,
+  TaskOpenScheduleButton,
+} from './TaskHealthParts';
+import { isFailing } from '../lib/schedule-health';
 
 /**
  * Density steps controlling how much detail a TaskRow displays.
@@ -114,20 +121,33 @@ function TaskOverrideChip({ task }: { task: Task }) {
   );
 }
 
-/** Color-coded dot indicating the task's current status. */
-function StatusDot({ task }: { task: Task }) {
-  // The shared vocabulary, so a waiting task is the same amber a waiting agent
-  // is, and a paused one is neutral rather than a second grey. A schedule a
-  // package shipped switched off is `pending_approval` on the row but is not
-  // asking for anything (DOR-2059), so it reads exactly like any other
-  // switched-off task — neutral, not amber.
-  const tone: StatusTone = isScheduleAwaitingApproval(task)
+/**
+ * What sits in the row's status slot.
+ *
+ * A failing schedule shows its status mark (DOR-3123). A waiting one is the
+ * same amber a waiting agent is, and a paused one is neutral. A schedule a
+ * package shipped switched off is `pending_approval` on the row but is not
+ * asking for anything (DOR-2059), so it reads exactly like any other
+ * switched-off task. A healthy, running schedule shows nothing: healthy is the
+ * quiet default, not a colour, and the slot keeps its width so the column
+ * still aligns.
+ */
+function StatusSlot({ task }: { task: Task }) {
+  const tone: StatusTone | null = isScheduleAwaitingApproval(task)
     ? 'warning'
     : !task.enabled || task.status === 'paused'
       ? 'neutral'
-      : 'success';
+      : null;
 
-  return <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />;
+  return (
+    <span data-slot="task-status-slot" className="flex w-5 shrink-0 justify-center sm:w-4">
+      {isFailing(task) ? (
+        <TaskFailingMark task={task} />
+      ) : tone ? (
+        <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />
+      ) : null}
+    </span>
+  );
 }
 
 interface TaskRowProps {
@@ -255,7 +275,7 @@ export function TaskRow({
           onClick={onToggleExpand}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggleExpand()}
         >
-          <StatusDot task={task} />
+          <StatusSlot task={task} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               {shouldShowAgent && agent ? (
@@ -324,7 +344,22 @@ export function TaskRow({
                     {new Date(task.nextRun).toLocaleString(undefined, { timeZoneName: 'short' })}
                   </>
                 )}
+                <TaskFailingSince task={task} />
               </div>
+            )}
+            {/* Why it is failing, and on a phone the fix under it, full width
+                (DOR-3123, spec `schedules-failing` §2.4). */}
+            {!isMinimal && isFailing(task) && (
+              <>
+                <TaskFailingReason task={task} agent={agent} />
+                {isComfortable && (
+                  <TaskOpenScheduleButton
+                    task={task}
+                    onOpen={onEdit}
+                    className="mt-1.5 h-11 w-full sm:hidden"
+                  />
+                )}
+              </>
             )}
             {/* Why this one is waiting. A schedule DorkOS found in a file says
                 so here — including what is wrong with the file, when something
@@ -395,6 +430,13 @@ export function TaskRow({
             </button>
           ) : isComfortable ? (
             <div className="flex items-center gap-2">
+              {isFailing(task) && (
+                <TaskOpenScheduleButton
+                  task={task}
+                  onOpen={onEdit}
+                  className="hidden sm:inline-flex"
+                />
+              )}
               {task.cron ? (
                 <Switch
                   // A paused row's file is gone, so nothing will run whatever
