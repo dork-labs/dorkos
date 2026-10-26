@@ -13,6 +13,9 @@
  * - **A relayed caller** (the session relay) is never admitted by these gates.
  *   The relay serves its own chat-only requests on its own path (B2).
  * - **On a hub** every request is remote, so every one needs a credential.
+ * - **On an agent computer** no request is a person (DOR-2940). One from this
+ *   machine is `agent`: it passes only with an agent's own credential (see
+ *   `services/core/agent-computer/agent-gate.ts`). Anything else is refused.
  *
  * One exception, for one release only (rule 11): a browser reaching a container
  * through its published port, under `DORKOS_ALLOW_INSECURE_BIND`, while the
@@ -44,9 +47,12 @@ import type { RequestUser } from './session-gate.js';
  * - `open`: nothing. It is a person at this computer, which does not ask.
  * - `credential`: a session cookie or a per-user key (or, at `/mcp`, the
  *   surface's own keys).
+ * - `agent`: on an agent computer, from this machine: only an agent's own
+ *   credential (its identity token, or the instance's local MCP token)
+ *   admits it. Never a person's cookie or key, since none can exist there.
  * - `refused`: nothing this gate accepts admits it.
  */
-export type GateAccess = 'open' | 'credential' | 'refused';
+export type GateAccess = 'open' | 'credential' | 'agent' | 'refused';
 
 /** The settings and facts of this install the decision reads. */
 export interface GatePosture {
@@ -69,6 +75,8 @@ export function decideGateAccess(requestClass: RequestClass, posture: GatePostur
   switch (requestClass.kind) {
     case 'hub':
       return 'credential';
+    case 'agent-computer':
+      return requestClass.route === 'local' ? 'agent' : 'refused';
     case 'relayed':
       return 'refused';
     case 'this-computer':

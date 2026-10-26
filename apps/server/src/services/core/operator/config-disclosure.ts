@@ -382,6 +382,10 @@ export const CONFIG_DISCLOSURE = {
   // person's own decision no agent task reads: a mini app refused a room says
   // so in a sentence, which is all an agent can act on.
   'extensions.roomAccess': 'withhold',
+  // The agent each mini app forwards the person's comments to (DOR-3325). A
+  // person's own decision no agent task reads: a forward refused for want of
+  // one says so in a sentence.
+  'extensions.forwardAgents': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -538,6 +542,13 @@ export const CONFIG_DISCLOSURE = {
   'permissions.sharedAtUpgrade': 'expose',
   // Machine bookkeeping: when that step ran, once per install.
   'permissions.sharedAppsAppliedAt': 'expose',
+  // Which agents' folder allow lists a person let apply, or turned down
+  // (DOR-3039). Agent ids and digests, no secrets; the rules themselves are in
+  // files the agent can already read.
+  'permissions.approvedFolderAllows': 'expose',
+  'permissions.refusedFolderAllows': 'expose',
+  // The rules behind each yes. Not secret, but nothing an agent needs to read.
+  'permissions.approvedFolderAllowRules': 'withhold',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

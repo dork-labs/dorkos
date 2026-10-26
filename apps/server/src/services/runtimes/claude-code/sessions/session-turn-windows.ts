@@ -1,3 +1,4 @@
+import { crashResult } from './diagnostics/session-crash-result.js';
 /**
  * Turn windowing over the pump's single continuous output (spec
  * `persistent-session-runtime` §5, task 3.3).
@@ -839,31 +840,6 @@ function readTurnProvenance(message: SDKMessage): {
 function closesAnAbortedTurn(message: SDKMessage): boolean {
   const reason = (message as { terminal_reason?: unknown }).terminal_reason;
   return typeof reason === 'string' && isInterruptedTerminalReason(reason);
-}
-
-/**
- * The `result` a dead process never got to send.
- *
- * Deliberately carries no `terminal_reason`: the mapper turns a non-success
- * subtype into a typed `error` event, and `feedProjector`'s existing error latch
- * settles the window as `turn_end{terminalReason:'error'}`. Resolving the
- * terminal by the existing rules is the spec's instruction, and it beats
- * inventing an SDK reason string that the SDK itself never emits.
- */
-function crashResult(crash: PumpCrash): SDKMessage {
-  const detail = crash.error instanceof Error ? crash.error.message : undefined;
-  return {
-    type: 'result',
-    subtype: 'error_during_execution',
-    is_error: true,
-    errors: [
-      detail === undefined
-        ? 'The agent stopped before it finished this turn.'
-        : `The agent stopped before it finished this turn: ${detail}`,
-    ],
-    uuid: `crash-${crash.sessionId}`,
-    session_id: crash.sessionId,
-  } as unknown as SDKMessage;
 }
 
 /**

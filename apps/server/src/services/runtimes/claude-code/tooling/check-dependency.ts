@@ -1,3 +1,12 @@
+import {
+  CREDENTIALS_UNREADABLE_CODE,
+  CREDENTIALS_UNREADABLE_MESSAGE,
+} from '@dorkos/shared/runtime-error-classification';
+import {
+  credentialReadCoolingDown,
+  noteCredentialsReadable,
+  noteCredentialsUnreadable,
+} from './credential-read-health.js';
 /**
  * Claude Code dependency checks — verifies the `claude` CLI binary AND that
  * Claude is authenticated, the two external requirements for running Claude
@@ -26,7 +35,7 @@
  *    same question and the two answers must never drift apart.
  *
  * Probes are async and time-bounded (shared `run-probe` helpers): a hung binary
- * or a stalled `PATH` mount degrades to `missing` fast instead of blocking the
+ * or a stalled `PATH` mount is bounded instead of blocking the
  * event loop, matching the Codex and OpenCode adapters.
  *
  * "Signed in" is not the same as "will work". `claude auth status` answers from
@@ -235,6 +244,7 @@ async function describeHostLogin(status: ClaudeAuthStatus, root: string): Promis
   if (!usesStoredSubscription(status)) return signedIn;
 
   const deadlines = await readClaudeSignInDeadlines(root);
+  if (credentialReadCoolingDown(root)) return unreadableSignIn();
   if (!deadlines) return signedIn;
 
   const expiresAt = toIsoDeadline(deadlines.renewableUntil);
@@ -267,10 +277,38 @@ async function describeHostLogin(status: ClaudeAuthStatus, root: string): Promis
  * @param binary - The resolved `claude` binary (or `null`).
  * @param root - The Claude account to report on.
  */
-async function checkHostLogin(binary: string | null, root: string): Promise<DependencyCheck> {
+function unreadableSignIn(): DependencyCheck {
+  return {
+    name: AUTH_CHECK_NAME,
+    description: CREDENTIALS_UNREADABLE_MESSAGE,
+    status: 'unknown',
+    reason: CREDENTIALS_UNREADABLE_CODE,
+  };
+}
+
+const hostLoginReads = new Map<string, Promise<DependencyCheck>>();
+/** Share concurrent readiness polls; a hung read starts at most one process per account. */
+function checkHostLogin(binary: string | null, root: string): Promise<DependencyCheck> {
+  const key = JSON.stringify([binary, root]);
+  const running = hostLoginReads.get(key);
+  if (running) return running;
+  const flight = inspectHostLogin(binary, root).finally(() => hostLoginReads.delete(key));
+  hostLoginReads.set(key, flight);
+  return flight;
+}
+
+async function inspectHostLogin(binary: string | null, root: string): Promise<DependencyCheck> {
+  if (credentialReadCoolingDown(root)) return unreadableSignIn();
   const status = await readClaudeAuthStatus(binary, claudeConfigDirEnv(root));
 
-  if (status?.loggedIn === true) return describeHostLogin(status, root);
+  if (status?.unreadable) {
+    noteCredentialsUnreadable(root);
+    return unreadableSignIn();
+  }
+  if (status?.loggedIn === true) {
+    if (usesStoredSubscription(status)) noteCredentialsReadable(root);
+    return describeHostLogin(status, root);
+  }
 
   return {
     name: AUTH_CHECK_NAME,

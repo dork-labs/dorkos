@@ -69,11 +69,16 @@ export function gateMapper(workflows: readonly WorkflowModel[]): GateMapper {
  */
 export function requiredWorkflowPaths(
   workflows: readonly WorkflowModel[],
-  contexts: readonly string[]
+  contexts: readonly string[],
+  sources: readonly { path: string }[] = []
 ): string[] {
   const want = new Set(contexts);
   return workflows
-    .filter((wf) => wf.jobs.some((j) => j.checkName !== null && want.has(j.checkName)))
+    .filter(
+      (wf) =>
+        sources.some((s) => s.path === wf.path) ||
+        wf.jobs.some((j) => j.checkName !== null && want.has(j.checkName))
+    )
     .map((wf) => wf.path)
     .sort();
 }

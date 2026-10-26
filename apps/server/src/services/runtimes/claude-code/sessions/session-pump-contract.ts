@@ -316,6 +316,8 @@ export interface PumpDispatch {
 /** Everything a pump needs to own one session's process. */
 export interface SessionPumpOptions {
   sessionId: string;
+  /** Account pinned by the launcher; only passive health evidence is consulted. */
+  credentialAccountRoot?: () => string | undefined;
   /** Boots the process. See {@link PumpLauncher}. */
   launch: PumpLauncher;
   /**

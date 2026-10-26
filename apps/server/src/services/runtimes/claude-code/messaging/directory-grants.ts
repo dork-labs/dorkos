@@ -117,6 +117,35 @@ function readOnlyRules(folder: string): string[] {
   return WRITE_TOOLS.map((tool) => `${tool}(${ruleRoot(folder)}/**)`);
 }
 
+/** Every file tool a write-deny rule must name: `MultiEdit` too, for older CLIs. */
+const ALL_WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
+
+/**
+ * Deny rules that stop every file tool writing `target`: the folder and all
+ * under it, or the one file. `undefined` when the path has a character no rule
+ * can match exactly, so a caller can fail closed rather than pass a rule that
+ * might match nothing.
+ *
+ * @param target - An absolute folder or file path.
+ * @param kind - A folder and all under it (`/**` is appended), or the one file.
+ */
+export function writeDenyRules(target: string, kind: 'folder' | 'file'): string[] | undefined {
+  const root = rulePath(target);
+  if (root === undefined) return undefined;
+  return ALL_WRITE_TOOLS.map((tool) => `${tool}(${root}${kind === 'folder' ? '/**' : ''})`);
+}
+
+/**
+ * An absolute path as a rule spells it, escaped, with no trailing slash — or
+ * `undefined` when no rule can name it exactly (see {@link writeDenyRules}).
+ *
+ * @param target - An absolute path.
+ */
+export function rulePath(target: string): string | undefined {
+  if (!ruleCanName(target)) return undefined;
+  return ruleRoot(target.replace(/[\\/]+$/, ''));
+}
+
 /** The slice of Claude Code settings this module writes. */
 interface PermissionSettings {
   additionalDirectories?: string[];

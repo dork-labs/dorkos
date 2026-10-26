@@ -24,6 +24,9 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
+const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' | 'agent-computer' }));
+vi.mock('../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
+
 const lifecycle = vi.hoisted(() => ({
   listeners: [] as Array<(event: { phase: string; sessionId: string; messageId: string }) => void>,
 }));
@@ -53,6 +56,7 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  role.value = 'computer';
   config.enabled = false;
   config.listeners = [];
 });
@@ -101,6 +105,26 @@ describe('startHeartbeats', () => {
     // Turned off, the hub answers no source either.
     wakeAgent('agent-juno', { type: 'room-mention' });
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('arms nothing on an agent computer, even with heartbeats on (DOR-2940)', async () => {
+    role.value = 'agent-computer';
+    config.enabled = true;
+    const handle = startHeartbeats({
+      routes: {},
+      origins: {},
+      db: createTestDb(),
+      meshCore: () => undefined,
+      rooms: { postFromTool: vi.fn() } as never,
+      roomAuthors: { resolveAgent: vi.fn() } as never,
+      notifyDm: undefined,
+      relay: () => undefined,
+      commitments: { observe: () => () => undefined, list: () => [] } as never,
+    });
+    changed();
+    await settle();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(handle.runner.armedTimers).toBe(0);
   });
 
   it("treats a turn started by another message in a beat chat as that message's, not the beat's", () => {

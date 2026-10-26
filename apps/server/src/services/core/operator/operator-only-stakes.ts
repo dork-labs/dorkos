@@ -216,6 +216,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'extensions.roomAccess',
+      'extensions.forwardAgents',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',
@@ -270,6 +271,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.trustedStoresAppliedAt',
       'permissions.sharedAtUpgrade',
       'permissions.sharedAppsAppliedAt',
+      'permissions.approvedFolderAllows',
+      'permissions.refusedFolderAllows',
+      'permissions.approvedFolderAllowRules',
     ],
   },
   {

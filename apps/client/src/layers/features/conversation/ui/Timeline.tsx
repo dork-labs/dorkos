@@ -540,7 +540,16 @@ export function ConversationTimeline({
   );
 
   if (loading != null) return <>{loading}</>;
-  if (empty !== undefined && rows.length === 0 && pendingRows.length === 0) return <>{empty}</>;
+  if (empty !== undefined && rows.length === 0 && pendingRows.length === 0) {
+    return (
+      <div
+        data-slot="conversation-empty"
+        className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto"
+      >
+        {empty}
+      </div>
+    );
+  }
 
   return (
     <div

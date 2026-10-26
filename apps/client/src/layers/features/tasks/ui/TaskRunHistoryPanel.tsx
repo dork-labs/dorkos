@@ -73,8 +73,10 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       );
     case 'completed':
       return (
+        // Healthy is the quiet default, not a colour: failing is the only
+        // coloured state (DOR-3123, spec `schedules-failing` §1.1).
         <span title="Completed" aria-label="Completed">
-          <CheckCircle2 className="text-status-success size-3.5" />
+          <CheckCircle2 className="text-foreground size-3.5" />
         </span>
       );
     case 'failed':
@@ -99,14 +101,15 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
           <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );
-    case 'blocked':
-      // The run happened and got nowhere: every tool it reached for was turned
-      // down because nobody was there to approve it (DOR-2101). Amber, not red
-      // — nothing broke, and the fix is a permission rather than a debugging
-      // session. A padlock rather than a cross for the same reason.
+    case 'needs_attention':
+      // The run happened and lost a tool: it was turned down because nobody was
+      // there to approve it (DOR-3123). The failing tone, because from the
+      // person's side a run that did not do its job has failed them; a padlock
+      // rather than a cross, because the fix is a permission rather than a
+      // debugging session.
       return (
-        <span title="Blocked: nobody was there to approve its tools" aria-label="Blocked">
-          <Lock className="text-status-warning-dot size-3.5" />
+        <span title="Needs attention: a tool was refused" aria-label="Needs attention">
+          <Lock className="text-destructive size-3.5" />
         </span>
       );
     default:
@@ -196,12 +199,14 @@ interface RunRowProps {
 function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
   const isClickable = !!run.sessionId;
   // What the agent itself said, with the refusal sentence taken off the front
-  // for a blocked run. `withRefusedAsks` puts that sentence FIRST in every
-  // summary, and a blocked row already carries it in its own line below — so
-  // rendering both printed the same sentence twice, once grey and once amber
-  // (DOR-2101 review). A blocked run that said nothing else shows nothing here.
+  // for a run that needs attention. `withRefusedAsks` puts that sentence FIRST
+  // in every summary, and such a row already carries it in its own line below —
+  // so rendering both printed the same sentence twice (DOR-2101 review). A run
+  // that said nothing else shows nothing here.
   const summaryLine =
-    run.status === 'blocked' ? agentWordsAfterRefusal(run.outputSummary) : run.outputSummary;
+    run.status === 'needs_attention'
+      ? agentWordsAfterRefusal(run.outputSummary)
+      : run.outputSummary;
 
   function handleRowClick() {
     if (run.sessionId) onNavigate(run.sessionId);
@@ -241,8 +246,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
           'hover:bg-muted/50 hover:border-border cursor-pointer',
           'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
         ],
-        run.status === 'failed' && 'bg-destructive/5',
-        run.status === 'blocked' && 'bg-status-warning/5'
+        (run.status === 'failed' || run.status === 'needs_attention') && 'bg-destructive/5'
       )}
     >
       <StatusIcon status={run.status} />
@@ -292,8 +296,9 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             DorkOS saying why it did not start this one — too busy, or the
             computer was asleep until too late — not the task's fault, so muted,
             and this row is the only place a person ever learns the occurrence
-            was passed over (DOR-1482, DOR-2718). A blocked run
-            names the tools it was denied, in the warning amber (DOR-2101). */}
+            was passed over (DOR-1482, DOR-2718). A run that needs attention
+            counts and names the tools it was denied, in the failure red
+            (DOR-3123). */}
         {(run.status === 'failed' || run.status === 'skipped') && run.error && (
           <span
             className={cn(
@@ -305,7 +310,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             {firstLine(run.error)}
           </span>
         )}
-        {run.status === 'blocked' && <BlockedToolsLine run={run} />}
+        {run.status === 'needs_attention' && <RefusedToolsLine run={run} />}
         {/* Croner fires one late run on wake and none for the occurrences
             before it; this is the only record that they came round (DOR-2718). */}
         {missedLine && (
@@ -496,7 +501,7 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
  * sentence.
  *
  * `withRefusedAsks` (`@dorkos/shared/run-refusals`) leads every refused run's
- * summary with that sentence, and a blocked row renders it separately, so the
+ * summary with that sentence, and a needs-attention row renders it separately, so the
  * row's general-purpose summary line must drop it or say it twice. Returns
  * `null` when the refusal sentence was the whole summary, which is the
  * ordinary case for a run that got nothing done.
@@ -510,28 +515,28 @@ function agentWordsAfterRefusal(summary: string | null): string | null {
 }
 
 /**
- * Why a blocked run got nowhere, on the run's own row.
+ * What a run that needs attention was refused, on the run's own row: how many
+ * tools, and which (DOR-3123, DOR-3132).
  *
  * Reads the tools off the run itself rather than sending the person to the
  * activity feed to piece it together — the row is where they are already
- * looking, and a run that did nothing has nothing else to show them. Falls
- * back to the stored explanation line for a run recorded before the tools were
- * kept (its `refusedTools` is null), and to a plain sentence when neither is
- * there, so the row never explains a blocked run with silence.
+ * looking. Falls back to the stored explanation line for a run recorded before
+ * the tools were kept (its `refusedTools` is null), and to a plain sentence
+ * when neither is there, so the row never explains such a run with silence.
  */
-function BlockedToolsLine({ run }: { run: TaskRun }) {
+function RefusedToolsLine({ run }: { run: TaskRun }) {
   // The SAME list formatter the summary sentence is built from, so the row and
   // the summary above it cannot name different tools: it caps at five and ends
-  // "and N more", where this used to `join(', ')` all thirty into a row that
-  // truncates (DOR-2101 review).
-  const named = listRefusedTools((run.refusedTools ?? []).map(readableToolName));
+  // "and N more" (DOR-2101 review).
+  const tools = [...new Set((run.refusedTools ?? []).map(readableToolName))];
+  const named = listRefusedTools(tools);
   const line =
     named !== null
-      ? `Couldn’t use ${named.list}. Nobody was there to approve ${named.them}.`
-      : (run.error ?? 'Nobody was there to approve the tools this run needed.');
+      ? `Refused: nobody to approve (${tools.length}). ${named.list}.`
+      : (run.error ?? 'Refused: nobody was there to approve a tool this run needed.');
 
   return (
-    <span className="text-status-warning-fg truncate" title={line}>
+    <span data-slot="run-refused-tools" className="text-destructive truncate" title={line}>
       {firstLine(line)}
     </span>
   );
@@ -556,7 +561,7 @@ function StatusFilterSelect({
           <SelectItem value="running">Running</SelectItem>
           <SelectItem value="completed">Completed</SelectItem>
           <SelectItem value="failed">Didn’t finish</SelectItem>
-          <SelectItem value="blocked">Blocked</SelectItem>
+          <SelectItem value="needs_attention">Needs attention</SelectItem>
           <SelectItem value="cancelled">Cancelled</SelectItem>
           <SelectItem value="skipped">Skipped</SelectItem>
         </SelectContent>

@@ -1,4 +1,5 @@
 /** Agent-safe DorkOS capabilities projected onto the authenticated runtime listener. */
+import { MCP_SERVER_OPTIONS } from '../../core/capabilities/mcp-input/limits.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { CapabilityRegistry } from '../../core/capabilities/index.js';
@@ -32,7 +33,7 @@ export function createAgentRuntimeMcpServer(
     throw new Error('Agent runtime tools require a runtime principal.');
   }
 
-  const server = new McpServer({ name: 'dorkos', version: SERVER_VERSION });
+  const server = new McpServer({ name: 'dorkos', version: SERVER_VERSION }, MCP_SERVER_OPTIONS);
   registerCapabilitiesAsMcpTools(
     server,
     registry,

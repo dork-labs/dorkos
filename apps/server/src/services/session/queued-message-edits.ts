@@ -20,6 +20,7 @@
  *
  * @module services/session/queued-message-edits
  */
+import { isChatClientId } from './chat-messages/chat-client-id.js';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { MoveTarget } from './message-queue-store.js';
@@ -67,7 +68,8 @@ export interface QueuedMessageEdit {
  * runs it is keyed by the same id.
  *
  * `undefined` means nothing on this session's queue has that id, or a move named
- * an anchor that is not on it — both are a `404` at the route.
+ * an anchor that is not on it — both are a `404` at the route. `'not-yours'`
+ * means the edit tried to reword a message another chat sent — a `409`.
  *
  * @param sessionId - The session whose queue holds the message
  * @param messageId - The server-minted message id
@@ -77,9 +79,19 @@ export function editQueuedMessage(
   sessionId: string,
   messageId: string,
   edit: QueuedMessageEdit
-): QueuedMessage | undefined {
+): QueuedMessage | 'not-yours' | undefined {
   const store = getMessageQueueStore();
   if (!store || !isQueuedOn(sessionId, messageId)) return undefined;
+  // Another chat's message is not the person's to reword (DOR-3060). Its row
+  // holds the fenced envelope the model gets, and a person only ever sees its
+  // words, so a reword would put another agent's words to the model unfenced,
+  // as if the person wrote them. Refused out loud, never ignored: a reword that
+  // answered "saved" and then vanished is the silent loss DOR-480 forbids. It
+  // may still be moved or removed.
+  const stored = store.get(messageId);
+  if (edit.content !== undefined && stored && isChatClientId(stored.enqueuedBy)) {
+    return 'not-yours';
+  }
   // The move goes FIRST: it is the only half that can be refused (a bogus or
   // cross-session anchor), and the reword cannot fail on a row already
   // confirmed present. Committing the reword before checking the move would
@@ -146,7 +158,7 @@ export function cancelQueuedMessage(
  * release the head of the queue on its way out.
  *
  * @param sessionId - The session whose queue to empty (request uuid or canonical)
- * @returns The removed messages, head first; empty when no store is wired or the
+ * @returns The removed messages the person wrote, head first; empty when no store is wired or the
  *   queue was already empty
  */
 export function clearQueuedMessages(sessionId: string): QueuedMessage[] {
@@ -156,5 +168,8 @@ export function clearQueuedMessages(sessionId: string): QueuedMessage[] {
   for (const row of store.list(queueKey)) cancelPendingDispatch(row.id);
   const removed = store.clear(queueKey);
   if (removed.length > 0) emitQueueUpdate(sessionId);
-  return removed.map(toQueuedMessage);
+  // Only the person's own words go back to their composer. Another chat's
+  // message is cancelled with the rest, but handing it back as a draft would let
+  // a Send put that agent's words to the model as the person's own (DOR-3060).
+  return removed.filter((row) => !isChatClientId(row.enqueuedBy)).map(toQueuedMessage);
 }

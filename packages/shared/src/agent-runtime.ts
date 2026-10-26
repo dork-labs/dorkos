@@ -362,7 +362,9 @@ export interface DependencyCheck {
   /** What this dependency is for. */
   description: string;
   /** Current status. */
-  status: 'satisfied' | 'missing' | 'outdated';
+  status: 'satisfied' | 'missing' | 'outdated' | 'unknown';
+  /** A passive diagnostic classification, distinct from a missing sign-in. */
+  reason?: 'credentials_unreadable';
   /** Installed version, if detected. */
   version?: string;
   /** Minimum required version, if applicable. */
@@ -416,7 +418,7 @@ export interface RuntimeReadiness {
    * e.g. Claude's delegated host login or a detected local model); otherwise
    * `connect`.
    */
-  state: 'ready' | 'connect';
+  state: 'ready' | 'connect' | 'unknown';
   /** The single Connect action to present; absent when `state` is `ready`. */
   connect?: RuntimeConnectAction;
 }
@@ -547,6 +549,7 @@ export function deriveRuntimeReadiness(
   // required), so treat auth as satisfied.
   const authReady = authCheck ? authCheck.status === 'satisfied' : true;
 
+  if (binaryReady && authCheck?.status === 'unknown') return { state: 'unknown' };
   if (binaryReady && authReady) return { state: 'ready' };
 
   const name = runtimeDisplayName(type);

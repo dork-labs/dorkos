@@ -88,9 +88,8 @@
  * one that plainly broke.
  *
  * So a window that latched no failure is asked a second question: was anything
- * refused for want of a person, and did NOTHING the agent actually reached for
- * succeed? Both halves are required, and both are read off the stream rather
- * than guessed:
+ * refused for want of a person — and if so, did ANYTHING the agent actually
+ * reached for succeed? Both are read off the stream rather than guessed:
  *
  * - **Refused** is {@link readRefusedAsk}, the same predicate the refusal log
  *   folds, so "nobody was there" means exactly one thing in both places —
@@ -107,12 +106,20 @@
  *   claude-code's `tool_call_end` says `running` on purpose (DOR-2011), so it
  *   cannot mistake a call that was about to be refused for one that worked.
  *
- * `blocked`, not `failed`, because the two need different things done about
- * them: a failed run wants debugging, and a blocked one wants the power it was
- * denied. Nothing broke — the run was simply never allowed to do its job.
+ * `needs_attention`, not `failed`, because the two need different things done
+ * about them: a failed run wants debugging, and this one wants the power it was
+ * denied. Nothing broke — the run was simply not allowed to do all of its job.
  *
- * A run refused one tool that still got other work done stays `completed`: it
- * did what it could, and the refusal already leads its summary line.
+ * ## Completed means refused nothing (DOR-3123)
+ *
+ * A run refused one tool that still got other work done USED to stay
+ * `completed`, on the grounds that it did what it could and the refusal led
+ * its summary line. That was FB-67: a schedule lost the one tool it needed,
+ * wrote "done", and was recorded with a green tick that told nobody. So the
+ * second question now only decides how much got done, never whether the run
+ * needs a person: any refused tool makes the run `needs_attention`, with
+ * `outcome: 'nothing_done'` when nothing it reached for succeeded and
+ * `'partial'` when something did.
  *
  * ## What this rule cannot see
  *
@@ -351,8 +358,8 @@ const UNNAMED_FAILURE = 'Run stopped with an error';
  * How a run ended, as its row is written from.
  *
  * Three answers rather than the two this module started with, because a run
- * that was never allowed to use a tool is neither a success nor a breakage —
- * see the module doc. `cancelled` is absent on purpose: a stop is decided by
+ * that was refused a tool is neither a success nor a breakage — see the module
+ * doc. `cancelled` is absent on purpose: a stop is decided by
  * the caller, which knows whether DorkOS raised the abort, and never by this
  * fold.
  */
@@ -367,11 +374,56 @@ export type RunSettlement =
    */
   | { outcome: 'failed'; error: string }
   /**
-   * Every tool the run reached for was refused because nobody was there to
-   * approve it, and nothing it reached for succeeded. Nothing broke; the run
-   * was never given the power to do its job.
+   * At least one tool the run reached for was refused because nobody was there
+   * to approve it. Nothing broke; the run was not given the power to do all of
+   * its job.
+   *
+   * @property done - `nothing_done` when nothing the run reached for
+   *   succeeded, `partial` when something did.
    */
-  | { outcome: 'blocked' };
+  | { outcome: 'needs_attention'; done: 'partial' | 'nothing_done' };
+
+/** The fields a run row is written with once its stream ended on its own. */
+export interface SettledRunFields {
+  /** How the run ended. */
+  status: 'completed' | 'failed' | 'needs_attention';
+  /** How much a `needs_attention` run got done; absent on the other two. */
+  outcome?: 'partial' | 'nothing_done';
+  /** The line a person reads on the row; absent on a clean run. */
+  error?: string;
+}
+
+/**
+ * The run row's fields for a settlement — the one mapping both dispatch paths
+ * write from (`task-scheduler-service.ts` and the relay's `task-handler.ts`),
+ * so a run is never recorded differently for having taken the other path.
+ *
+ * A failure names what broke. A run that needs attention names the tools it
+ * was denied: the same sentence that leads its summary, repeated on the row
+ * because the row's explanation line is where the reader's eye goes, and
+ * because such a run's summary may be nothing but that sentence.
+ *
+ * @param settlement - How the run settled ({@link RunOutcomeTracker.settle}).
+ * @param refusalLine - The refusal sentence that leads the run's summary, or
+ *   `null` when nothing was refused.
+ */
+export function settledRunFields(
+  settlement: RunSettlement,
+  refusalLine: string | null
+): SettledRunFields {
+  switch (settlement.outcome) {
+    case 'failed':
+      return { status: 'failed', error: settlement.error };
+    case 'needs_attention':
+      return {
+        status: 'needs_attention',
+        outcome: settlement.done,
+        ...(refusalLine !== null ? { error: refusalLine } : {}),
+      };
+    case 'completed':
+      return { status: 'completed' };
+  }
+}
 
 /**
  * Folds a run's event stream into the one answer a run row needs.
@@ -560,9 +612,12 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
       // A failure outranks everything: a run that broke is a run that broke,
       // whatever it was also refused along the way.
       if (settled !== null) return { outcome: 'failed', error: settled };
-      // Nothing broke, so the second question: was this run ever allowed to do
-      // anything? See the module doc for why both halves are required.
-      if (refusedAToolForWantOfAPerson && !toolSucceeded) return { outcome: 'blocked' };
+      // Nothing broke, so the second question: was this run refused anything?
+      // Any refused tool means it did not do all of its job (DOR-3123); whether
+      // anything else succeeded only decides how much got done.
+      if (refusedAToolForWantOfAPerson) {
+        return { outcome: 'needs_attention', done: toolSucceeded ? 'partial' : 'nothing_done' };
+      }
       return { outcome: 'completed' };
     },
   };

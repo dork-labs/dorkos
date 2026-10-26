@@ -101,6 +101,15 @@
       ]
     },
     {
+      "guide": "design-review.md",
+      "description": "The design review checklist: what passes a review or audit, numbered rules, measured floors (type, icons, targets, contrast, focus), phone tokens, severity mapped to the audit charter",
+      "patterns": [
+        "audits/ui.md",
+        ".agents/skills/auditing-ui/",
+        "packages/ui/src/touch-target.ts"
+      ]
+    },
+    {
       "guide": "shared-ui.md",
       "description": "Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades",
       "patterns": [

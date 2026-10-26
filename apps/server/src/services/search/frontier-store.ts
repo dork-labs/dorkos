@@ -14,6 +14,7 @@
  *
  * @module server/services/search/frontier-store
  */
+import { displayTextOf } from '@dorkos/shared/chat-messages';
 import { setImmediate as yieldToLoop } from 'node:timers/promises';
 import {
   messages,
@@ -265,7 +266,9 @@ export function insertMessages(
       messageId: message.messageId,
       role: message.role,
       createdAt: message.createdAt,
-      body: stripSentinels(message.body),
+      // A message another chat sent is fenced for the model; search shows the
+      // sender's words, never the envelope (DOR-3060).
+      body: stripSentinels(message.role === 'user' ? displayTextOf(message.body) : message.body),
     }));
     writer
       .insert(messages)

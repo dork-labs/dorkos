@@ -49,6 +49,7 @@ function makeRun(createdAt: string): TaskRun {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    outcome: null,
     scheduledFor: null,
     missedTicks: null,
     createdAt,
@@ -125,24 +126,28 @@ describe('useSystemHealth', () => {
     // chip staying green over it is the same silence the run row used to keep.
     // The hook asks for the two statuses separately, so the mock has to answer
     // per query rather than hand the same list to both.
-    const blocked = { ...makeRun(new Date().toISOString()), status: 'blocked' as const };
+    const refused = { ...makeRun(new Date().toISOString()), status: 'needs_attention' as const };
     vi.mocked(useTaskRuns).mockImplementation(
       (query) =>
-        ({ data: query?.status === 'blocked' ? [blocked] : [] }) as ReturnType<typeof useTaskRuns>
+        ({ data: query?.status === 'needs_attention' ? [refused] : [] }) as ReturnType<
+          typeof useTaskRuns
+        >
     );
 
     const { result } = renderHook(() => useSystemHealth());
     expect(result.current).toBe('error');
   });
 
-  it('stays healthy when the only blocked run is older than a day', () => {
+  it('stays healthy when the only needs-attention run is older than a day', () => {
     const old = {
       ...makeRun(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()),
-      status: 'blocked' as const,
+      status: 'needs_attention' as const,
     };
     vi.mocked(useTaskRuns).mockImplementation(
       (query) =>
-        ({ data: query?.status === 'blocked' ? [old] : [] }) as ReturnType<typeof useTaskRuns>
+        ({ data: query?.status === 'needs_attention' ? [old] : [] }) as ReturnType<
+          typeof useTaskRuns
+        >
     );
 
     const { result } = renderHook(() => useSystemHealth());

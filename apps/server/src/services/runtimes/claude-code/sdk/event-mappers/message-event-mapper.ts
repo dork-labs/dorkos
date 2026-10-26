@@ -11,6 +11,7 @@ import {
   buildTaskRemovedEvent,
 } from '../build-task-event.js';
 import { recordToolResultImages } from '../../tool-result-images.js';
+import { rememberToolCommand } from '../turn-work-stop.js';
 import { logger } from '../../../../../lib/logger.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
@@ -184,6 +185,8 @@ export async function* mapMessageEvent(
     const contentBlocks = (content as Record<string, unknown>)?.content;
     if (Array.isArray(contentBlocks)) {
       for (const block of contentBlocks as Array<Record<string, unknown>>) {
+        // A shell's command, for the task it may start (DOR-3285).
+        rememberToolCommand(session, block);
         if (
           block.type === 'tool_use' &&
           typeof block.id === 'string' &&

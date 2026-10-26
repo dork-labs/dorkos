@@ -35,7 +35,7 @@ import { outsideAuditScope } from '../../audit/audit-context.js';
 import { createKeepAwake, type Hold, type KeepAwake } from '@dorkos/keep-awake';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
-import { currentServerRole } from '../../../lib/server-role.js';
+import { isPersonalComputer } from '../server-role/role-checks.js';
 
 /** The hold a turn keeps open while its stream runs. */
 export interface TurnAwakeHold {
@@ -361,8 +361,9 @@ export class KeepAwakeService {
       else chats += 1;
     }
     // A hub never starts this service: it runs in a container with nothing of
-    // its own to keep awake, so Settings must not offer a working switch.
-    const hub = currentServerRole() === 'hub';
+    // its own to keep awake, so Settings must not offer a working switch. An
+    // agent computer is a container too (DOR-2940).
+    const hub = !isPersonalComputer();
     return {
       enabled: this.enabled,
       supported: hub ? false : (packageStatus?.supported ?? true),

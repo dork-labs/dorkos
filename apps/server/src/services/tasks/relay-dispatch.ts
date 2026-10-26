@@ -20,7 +20,8 @@ import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/re
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import type { RunExecution } from './execution/resolve-run-execution.js';
-import { isTerminalRunStatus, type TaskStore } from './task-store.js';
+import type { TaskStore } from './task-store.js';
+import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import type { RunAccounting } from './run-accounting.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { createTaggedLogger } from '../../lib/logger.js';

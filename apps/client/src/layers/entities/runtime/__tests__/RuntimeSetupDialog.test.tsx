@@ -96,6 +96,37 @@ function renderPanel(ui: ReactNode) {
 }
 
 describe('RuntimeSetupPanel — Ready/Connect model', () => {
+  it('names an unreadable sign-in without offering another login or claiming Ready', () => {
+    const message = "Agents can't read their sign-in. Check this Mac for a password prompt.";
+    renderPanel(
+      <RuntimeSetupPanel
+        runtime="claude-code"
+        registeredTypes={REGISTERED}
+        requirements={{
+          runtimes: {
+            'claude-code': {
+              state: 'unknown',
+              dependencies: [
+                {
+                  name: 'Claude Code authentication',
+                  status: 'unknown',
+                  reason: 'credentials_unreadable',
+                  description: message,
+                },
+              ],
+            },
+          },
+        }}
+      />
+    );
+    const section = screen.getByTestId('runtime-section-claude-code');
+    expect(within(section).getByText(message)).toBeInTheDocument();
+    expect(within(section).queryByText('Ready')).not.toBeInTheDocument();
+    expect(
+      within(section).queryByRole('button', { name: /connect|sign in|install/i })
+    ).not.toBeInTheDocument();
+  });
+
   it('shows Ready and NO Connect for a state:ready runtime', () => {
     // Purpose: a ready runtime is a settled identity, not an action. Fails if a
     // Connect CTA leaks onto a runtime that needs nothing.

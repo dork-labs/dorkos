@@ -110,6 +110,7 @@ function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    outcome: null,
     scheduledFor: null,
     missedTicks: null,
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
@@ -219,13 +220,13 @@ describe('FailedRunDetailSheet', () => {
     expect(screen.queryByText('Error')).not.toBeInTheDocument();
   });
 
-  describe('a run that was blocked, not broken (DOR-2101)', () => {
+  describe('a run that was refused a tool, not broken (DOR-2101, DOR-3123)', () => {
     const REFUSAL = 'Skipped Bash — nobody was there to approve it on a scheduled run.';
 
-    /** Show the sheet for a blocked run, as the terminal write persists one. */
+    /** Show the sheet for a refused run, as the terminal write persists one. */
     function renderBlocked() {
       mockUseRun.mockReturnValue({
-        data: makeRun({ status: 'blocked', error: REFUSAL, refusedTools: ['Bash'] }),
+        data: makeRun({ status: 'needs_attention', error: REFUSAL, refusedTools: ['Bash'] }),
         isLoading: false,
         isError: false,
       });
@@ -239,24 +240,24 @@ describe('FailedRunDetailSheet', () => {
       // row can, and the sheet already has it.
       renderBlocked();
 
-      expect(screen.getByText('Blocked')).toBeInTheDocument();
+      expect(screen.getByText('Needs attention')).toBeInTheDocument();
       expect(screen.queryByText('Didn’t finish')).not.toBeInTheDocument();
     });
 
     it('titles it as a run that could not act, not one that did not finish', () => {
       renderBlocked();
 
-      expect(screen.getByText('Run that couldn’t use its tools')).toBeInTheDocument();
+      expect(screen.getByText('Run that was refused a tool')).toBeInTheDocument();
       expect(screen.queryByText('Run that didn’t finish')).not.toBeInTheDocument();
     });
 
-    it('explains what it needed, and not in the failure red', () => {
+    it('explains what it needed, in the failing tone (DOR-3123)', () => {
       renderBlocked();
 
       expect(screen.getByText('What it needed')).toBeInTheDocument();
       expect(screen.queryByText('Error')).not.toBeInTheDocument();
       expect(screen.getByText(REFUSAL)).toBeInTheDocument();
-      expect(screen.getByText(REFUSAL).className).not.toContain('destructive');
+      expect(screen.getByText(REFUSAL).className).toContain('destructive');
     });
 
     it('titles every other outcome honestly too', () => {

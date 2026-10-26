@@ -3,6 +3,7 @@ import type { StreamEvent, MemoryRecallEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
 import { logger } from '../../../../../lib/logger.js';
 import { keySourceBillsPerToken } from '../../messaging/per-token-billing.js';
+import { takeToolCommand } from '../turn-work-stop.js';
 
 /** Hook events that correlate to a specific tool call and render inside ToolCallCard. */
 const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
@@ -69,6 +70,13 @@ export async function* mapSystemEvent(
         msg.is_backgrounded,
         msg.spawn_depth
       );
+      // This turn's work, for a Stop to end (DOR-3285): a background shell was
+      // seen to outlive the CLI's interrupt. Subagents stay the CLI's to stop;
+      // a task with no type is treated as a shell. Its command rides along, for
+      // the line a Stop leaves when the task will not end.
+      if (msg.task_type !== 'local_agent') {
+        session.turnTaskIds?.set(msg.task_id as string, takeToolCommand(session, msg.tool_use_id));
+      }
       yield {
         type: 'background_task_started',
         data: {
@@ -107,17 +115,25 @@ export async function* mapSystemEvent(
       const msg = message as Record<string, unknown>;
       const usage = msg.usage as { tool_uses: number; duration_ms: number } | undefined;
       const ambient = msg.ambient as boolean | undefined;
+      const taskId = msg.task_id as string;
+      const status = msg.status as 'completed' | 'failed' | 'stopped';
+      session.turnTaskIds?.delete(taskId);
       yield {
         type: 'background_task_done',
         data: {
-          taskId: msg.task_id as string,
-          status: msg.status as 'completed' | 'failed' | 'stopped',
+          taskId,
+          status,
           summary: msg.summary as string | undefined,
           toolUses: usage?.tool_uses,
           durationMs: usage?.duration_ms,
           ...(ambient !== undefined ? { ambient } : {}),
         },
       };
+      // A command a Stop could not end has now ended: tell the stopped turn's
+      // line, which is still saying it runs (DOR-3285).
+      if (session.leftRunningTasks?.delete(taskId)) {
+        yield { type: 'work_left_ended', data: { taskId, status } };
+      }
       return;
     }
 

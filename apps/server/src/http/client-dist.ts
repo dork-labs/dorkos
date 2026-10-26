@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from '../env.js';
+import { isAgentComputer } from '../services/core/server-role/role-checks.js';
 
 /** Where the client build is when nothing names it: beside this package, from source or dist. */
 const DEFAULT_CLIENT_DIST = path.join(
@@ -20,8 +21,13 @@ const DEFAULT_CLIENT_DIST = path.join(
   '../../../client/dist'
 );
 
-/** The client build this server serves, or `undefined` when it serves none (development). */
+/**
+ * The client build this server serves, or `undefined` when it serves none:
+ * in development, and always on an agent computer, which no person browses
+ * (DOR-2940), so neither the app page nor its assets are served there.
+ */
 export function clientDistPath(): string | undefined {
+  if (isAgentComputer()) return undefined;
   return env.NODE_ENV === 'production' ? (env.CLIENT_DIST_PATH ?? DEFAULT_CLIENT_DIST) : undefined;
 }
 

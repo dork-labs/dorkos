@@ -363,7 +363,7 @@ describe('createRunOutcomeTracker', () => {
         data: { toolCallId: id, toolName, result: 'ok', status: 'complete' },
       }) as StreamEvent;
 
-    it('blocks a run whose every tool was refused, even though it talked about it', () => {
+    it('gets nothing done when every tool was refused, even though it talked about it', () => {
       // The exact defect: two real fires of one mailbox schedule refused four
       // tools, read no mail, narrated the fact in prose, and left two green
       // rows behind. Text is the agent talking, never evidence it did anything.
@@ -374,25 +374,30 @@ describe('createRunOutcomeTracker', () => {
           text('I could not check the mail.'),
           done(),
         ])
-      ).toEqual({ outcome: 'blocked' });
+      ).toEqual({ outcome: 'needs_attention', done: 'nothing_done' });
     });
 
-    it('blocks a run that was refused and then said nothing at all', () => {
-      expect(settleRun([refused('Bash'), done()])).toEqual({ outcome: 'blocked' });
+    it('gets nothing done when it was refused and then said nothing at all', () => {
+      expect(settleRun([refused('Bash'), done()])).toEqual({
+        outcome: 'needs_attention',
+        done: 'nothing_done',
+      });
     });
 
-    it('completes a run that lost one tool and got other work done', () => {
+    it('never completes a run that lost one tool and got other work done (DOR-3123)', () => {
+      // FB-67: the run lost the one tool it needed, wrote "done", and was
+      // recorded with a green tick that told nobody.
       expect(
         settleRun([refused('Bash'), toolWorked('Read'), text('Checked what I could.'), done()])
-      ).toEqual({ outcome: 'completed' });
+      ).toEqual({ outcome: 'needs_attention', done: 'partial' });
     });
 
-    it('completes a run where the success came in an earlier window', () => {
+    it('reads a success in an earlier window as part of the job done', () => {
       // The latches are run-scoped on purpose: where the runtime split the turn
       // must not decide whether the run did any work.
       expect(
         settleRun([toolWorked('Read'), status('completed'), done(), text('more'), refused('Bash')])
-      ).toEqual({ outcome: 'completed' });
+      ).toEqual({ outcome: 'needs_attention', done: 'partial' });
     });
 
     it('reads a codex/opencode tool_call_end as the work having happened', () => {
@@ -405,7 +410,7 @@ describe('createRunOutcomeTracker', () => {
           } as StreamEvent,
           done(),
         ])
-      ).toEqual({ outcome: 'completed' });
+      ).toEqual({ outcome: 'needs_attention', done: 'partial' });
     });
 
     it('does not count a tool call that ended in an error as work done', () => {
@@ -418,7 +423,7 @@ describe('createRunOutcomeTracker', () => {
           } as StreamEvent,
           done(),
         ])
-      ).toEqual({ outcome: 'blocked' });
+      ).toEqual({ outcome: 'needs_attention', done: 'nothing_done' });
     });
 
     it("does not count claude-code's in-flight tool_call_end as work done", () => {
@@ -434,7 +439,7 @@ describe('createRunOutcomeTracker', () => {
           refused('Bash'),
           done(),
         ])
-      ).toEqual({ outcome: 'blocked' });
+      ).toEqual({ outcome: 'needs_attention', done: 'nothing_done' });
     });
 
     it('leaves a failure a failure, whatever else was refused', () => {
@@ -444,9 +449,8 @@ describe('createRunOutcomeTracker', () => {
     });
 
     it("ignores a denial that was somebody else's decision", () => {
-      // The safety classifier, a deny rule, a backgrounded subagent — all of
-      // those would have been refused with a person sitting right there, so
-      // none of them means the run had nobody to ask.
+      // The safety classifier and a deny rule would have refused with a
+      // person sitting right there, so neither means the run had nobody to ask.
       expect(
         settleRun([
           {
@@ -458,32 +462,54 @@ describe('createRunOutcomeTracker', () => {
       ).toEqual({ outcome: 'completed' });
     });
 
+    it('counts a tool the Never ask mode refused, which nobody was asked about (DOR-3132)', () => {
+      const byMode = (reasonType: string, toolName = 'Bash'): StreamEvent =>
+        ({
+          type: 'permission_denied',
+          data: { toolCallId: 't1', toolName, reasonType, message: 'no' },
+        }) as StreamEvent;
+      expect(settleRun([byMode('mode'), toolWorked('Read'), done()])).toEqual({
+        outcome: 'needs_attention',
+        done: 'partial',
+      });
+      // A backgrounded subagent's call, which the CLI refuses because a
+      // detached child has nobody to ask.
+      expect(settleRun([byMode('asyncAgent'), done()])).toEqual({
+        outcome: 'needs_attention',
+        done: 'nothing_done',
+      });
+      // The mode refusing a QUESTION is the run wanting to talk, not to act.
+      expect(settleRun([byMode('mode', 'AskUserQuestion'), done()])).toEqual({
+        outcome: 'completed',
+      });
+    });
+
     it('completes a run that was refused nothing and used nothing', () => {
       expect(settleRun([text('All good.'), done()])).toEqual({ outcome: 'completed' });
     });
 
-    it('does not block a run that only asked a question nobody could answer', () => {
+    it('completes a run that only asked a question nobody could answer', () => {
       // DorkOS stamps `no_approval_surface` on three different asks. A run that
       // did its work and closed by asking a question has not lost a TOOL, and
-      // recording it blocked would be a lie told in copy that says "tools".
+      // recording it as needing attention would be a lie told in copy that says "tools".
       expect(
         settleRun([text('Wrote the digest.'), refusedAsk('question', 'AskUserQuestion'), done()])
       ).toEqual({ outcome: 'completed' });
     });
 
-    it('does not block a run whose only refusal was an MCP elicitation', () => {
+    it('completes a run whose only refusal was an MCP elicitation', () => {
       expect(settleRun([refusedAsk('elicitation', 'linear'), done()])).toEqual({
         outcome: 'completed',
       });
     });
 
-    it('still blocks when a refused TOOL rides beside a refused question', () => {
+    it('still needs attention when a refused TOOL rides beside a refused question', () => {
       expect(
         settleRun([refusedAsk('question', 'AskUserQuestion'), refused('Bash'), done()])
-      ).toEqual({ outcome: 'blocked' });
+      ).toEqual({ outcome: 'needs_attention', done: 'nothing_done' });
     });
 
-    it('does not block on a refusal whose kind nothing recorded', () => {
+    it('completes a run whose refusal kind nothing recorded', () => {
       // The kind is written in the same statement as the reason, by the one
       // function that writes either, so this frame cannot come from a DorkOS
       // that has the field — and an unclassified ask is not evidence a tool
