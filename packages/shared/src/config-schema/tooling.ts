@@ -251,6 +251,33 @@ export const HarnessConfigSchema = z
      */
     refusedHooks: z.array(z.string()).default(() => []),
     /**
+     * The state of each agent's own folder settings a person let run
+     * (DOR-3068): its hooks and MCP choices in `.claude/settings*.json`, its
+     * `.mcp.json`, and its agent file's MCP servers and account. Each entry is
+     * `<agentId>@folder-config-<digest>`, where the digest covers the agent's
+     * home and those three parts, so a change the agent makes waits for a person
+     * instead of riding an old yes. An agent with no entry is pinned to what its
+     * folder holds the first time it runs. Empty by default.
+     */
+    approvedFolderConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The per-part digests behind each agent's yes in
+     * {@link approvedFolderConfig}, by agent id, so a card can say which part
+     * changed. Read only while a stored yes still digests to them.
+     */
+    approvedFolderConfigParts: z
+      .record(
+        z.string(),
+        z.object({ hooks: z.string(), mcpJson: z.string(), manifest: z.string() })
+      )
+      .default(() => ({})),
+    /**
+     * The states a person turned down, in the same form as
+     * {@link approvedFolderConfig}. Not asked about again until the settings
+     * change again.
+     */
+    refusedFolderConfig: z.array(z.string().min(1)).default(() => []),
+    /**
      * The two decisions global scope records: which agent tools DorkOS shares
      * your globally installed packages with, and when it last asked.
      *
@@ -289,6 +316,9 @@ export const HarnessConfigSchema = z
     autoAdopt: false,
     approvedHooks: [],
     refusedHooks: [],
+    approvedFolderConfig: [],
+    approvedFolderConfigParts: {},
+    refusedFolderConfig: [],
     global: { harnesses: [], askedAt: null },
   }));
 

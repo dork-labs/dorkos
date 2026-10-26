@@ -966,6 +966,24 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
       type: 'string[]',
       default: '[]',
     },
+    'harness.approvedFolderConfig': {
+      description:
+        'The settings of each agent\u2019s own folder that you allowed to run: its hooks, its MCP servers file, and the MCP servers and account in its agent file. DorkOS records the settings an agent already has the first time it runs, and asks you with a card when the agent changes them. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.approvedFolderConfigParts': {
+      description:
+        'A fingerprint of each part of those allowed settings, so a card can say which part changed. Only a person can change this.',
+      type: 'object',
+      default: '{}',
+    },
+    'harness.refusedFolderConfig': {
+      description:
+        'Agent folder settings you turned down. DorkOS doesn\u2019t ask about them again until the agent changes them again. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
     'harness.global.harnesses': {
       description:
         'The agent tools that can see the packages you installed for all your projects. Empty means none of them can. Add one with `dorkos harness global --enable <tool>`, and DorkOS links those packages\u2019 skills into the folder that tool reads. Only a person can change this list.',

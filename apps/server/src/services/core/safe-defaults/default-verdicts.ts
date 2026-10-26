@@ -463,6 +463,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // Wiped, every agent is pinned again on its next turn to what its folder
+  // holds then (DOR-3068). That is the one door a wipe opens, and only to
+  // whatever was already on disk when the person wiped it.
+  'harness.approvedFolderConfig': [],
+  'harness.approvedFolderConfigParts': {},
+  'harness.refusedFolderConfig': [],
   // No agent's own folder allow list applies until a person approves those exact
   // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
   'permissions.approvedFolderAllows': [],

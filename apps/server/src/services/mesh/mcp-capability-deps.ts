@@ -12,7 +12,12 @@ import { z } from 'zod';
 import type { AgentRegistry } from '@dorkos/mesh';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 
-import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
+import {
+  isTrustedCaller,
+  type CapabilityDeps,
+  type CapabilityHandlerContext,
+} from '../core/capabilities/index.js';
+import { withPersonRepin } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { AgentMcpServerError, type AgentMcpServerService } from './agent-mcp-server-service.js';
 import type { AgentMcpOAuthService } from './agent-mcp-oauth-service.js';
@@ -200,3 +205,41 @@ export const serverNameField = z
 
 /** `{ agentId, name }` — the shape the single-server verbs share. */
 export const AgentServerInput = z.object({ agentId: agentIdField, name: serverNameField });
+
+/**
+ * Run one of an agent's MCP server writes, and when a PERSON is behind it (an
+ * approval they granted for this exact call, or a caller proven to be one),
+ * move the agent's folder settings pin to the file it wrote (DOR-3068). A
+ * write with no person behind it leaves the pin alone, so the agent's next
+ * turn runs without its changed servers until a card is answered.
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @param agentId - The agent whose file is written.
+ * @param context - Who is calling, as the gate concluded.
+ * @param write - The service call.
+ */
+export function personRepin<T>(
+  deps: CapabilityDeps,
+  agentId: string,
+  context: CapabilityHandlerContext,
+  write: () => Promise<T>
+): Promise<T> {
+  const person = context.approval !== undefined || isTrustedCaller(context.trusted);
+  if (!person) return write();
+  // The pin is a convenience on top of the write: a registry that can't name
+  // the agent's home leaves the pin alone (the next turn asks) and never
+  // stands in the way of the person's change.
+  let home: string | undefined;
+  try {
+    home = requireMcpDeps(deps).agents.get?.(agentId)?.projectPath;
+  } catch {
+    home = undefined;
+  }
+  if (!home) return write();
+  return withPersonRepin(
+    { agentId, home },
+    'manifest',
+    "a person changed an agent's MCP servers",
+    write
+  );
+}

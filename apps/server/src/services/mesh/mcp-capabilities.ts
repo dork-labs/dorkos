@@ -40,6 +40,7 @@ import {
   AgentServerInput,
   agentIdField,
   requireMcpDeps,
+  personRepin,
   rethrowAsCapabilityError,
   resolveAddedBy,
   serverNameField,
@@ -152,13 +153,15 @@ export const mcpDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         try {
-          return await service.add({
-            agentId: input.agentId,
-            name: input.name,
-            connection: input.connection,
-            addedBy: resolveAddedBy(context),
-            ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-          });
+          return await personRepin(deps, input.agentId, context, () =>
+            service.add({
+              agentId: input.agentId,
+              name: input.name,
+              connection: input.connection,
+              addedBy: resolveAddedBy(context),
+              ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+            })
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
@@ -194,14 +197,16 @@ export const mcpDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const { service, resolveDiscoveredFallback } = requireMcpDeps(deps);
         try {
-          return await service.import({
-            agentId: input.agentId,
-            name: input.name,
-            addedBy: resolveAddedBy(context),
-            ...(resolveDiscoveredFallback
-              ? { resolveFallback: () => resolveDiscoveredFallback(input.agentId, input.name) }
-              : {}),
-          });
+          return await personRepin(deps, input.agentId, context, () =>
+            service.import({
+              agentId: input.agentId,
+              name: input.name,
+              addedBy: resolveAddedBy(context),
+              ...(resolveDiscoveredFallback
+                ? { resolveFallback: () => resolveDiscoveredFallback(input.agentId, input.name) }
+                : {}),
+            })
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
@@ -237,15 +242,17 @@ export const mcpDomain: CapabilityDomain = {
         },
         http: { method: 'patch', path: '/api/agents/{agentId}/mcp-servers/{name}' },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         try {
-          return await service.update({
-            agentId: input.agentId,
-            name: input.name,
-            ...(input.connection ? { connection: input.connection } : {}),
-            ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-          });
+          return await personRepin(deps, input.agentId, context, () =>
+            service.update({
+              agentId: input.agentId,
+              name: input.name,
+              ...(input.connection ? { connection: input.connection } : {}),
+              ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+            })
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
@@ -267,10 +274,12 @@ export const mcpDomain: CapabilityDomain = {
         mcp: { toolName: 'mcp_remove_server', servers: ['in-session', 'external'] },
         http: { method: 'delete', path: '/api/agents/{agentId}/mcp-servers/{name}' },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         try {
-          return await service.remove(input.agentId, input.name);
+          return await personRepin(deps, input.agentId, context, () =>
+            service.remove(input.agentId, input.name)
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
@@ -297,10 +306,12 @@ export const mcpDomain: CapabilityDomain = {
         },
         http: { method: 'post', path: '/api/agents/{agentId}/mcp-servers/{name}/enable' },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         try {
-          return await service.enable(input.agentId, input.name);
+          return await personRepin(deps, input.agentId, context, () =>
+            service.enable(input.agentId, input.name)
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
@@ -326,10 +337,12 @@ export const mcpDomain: CapabilityDomain = {
         },
         http: { method: 'post', path: '/api/agents/{agentId}/mcp-servers/{name}/disable' },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         try {
-          return await service.disable(input.agentId, input.name);
+          return await personRepin(deps, input.agentId, context, () =>
+            service.disable(input.agentId, input.name)
+          );
         } catch (err) {
           rethrowAsCapabilityError(err);
         }

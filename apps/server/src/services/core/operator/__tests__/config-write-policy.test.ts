@@ -106,11 +106,15 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
+      // A person's yes or no to an agent's own folder settings (DOR-3068).
+      'harness.approvedFolderConfig',
+      'harness.approvedFolderConfigParts',
       'harness.approvedHooks',
       'harness.autoAdopt',
       'harness.autoSync',
       'harness.global.askedAt',
       'harness.global.harnesses',
+      'harness.refusedFolderConfig',
       'harness.refusedHooks',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',

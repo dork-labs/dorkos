@@ -417,6 +417,12 @@ export const CONFIG_DISCLOSURE = {
   // The other half of the same record: which packages a person turned down.
   // Same contents, same reasoning — package names and digests, no secrets.
   'harness.refusedHooks': 'expose',
+  // Which state of each agent's own folder settings a person let run or turned
+  // down (DOR-3068): agent ids and digests, no secrets. The part digests behind
+  // each yes are nothing an agent needs.
+  'harness.approvedFolderConfig': 'expose',
+  'harness.refusedFolderConfig': 'expose',
+  'harness.approvedFolderConfigParts': 'withhold',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that
   // can say "your all-projects packages are not shared with Codex" is more

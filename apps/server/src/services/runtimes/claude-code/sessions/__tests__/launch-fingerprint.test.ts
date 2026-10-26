@@ -140,6 +140,7 @@ describe('the pin list', () => {
       settingsEnv: 'relaunch',
       additionalDirectories: 'relaunch',
       folderAllows: 'relaunch',
+      folderConfig: 'relaunch',
       toolSurface: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
@@ -327,6 +328,8 @@ describe('the relaunch pins', () => {
       'folderAllows',
       { options: options({ settings: { permissions: { allow: ['Bash(scripts/x:*)'] } } }) },
     ],
+    // An agent folder's changed hooks held back (DOR-3068).
+    ['folderConfig', { options: options({ settings: { disableAllHooks: true } }) }],
   ];
 
   it.each(cases)('relaunches when %s changes', (pin, overrides) => {

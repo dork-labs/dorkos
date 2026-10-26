@@ -97,6 +97,12 @@ export interface McpServerLaunch {
    * per call to resolve who is calling.
    */
   connectorTools?: boolean;
+  /**
+   * Leave out the MCP servers the agent's own file declares: it changed since
+   * a person last allowed it, and a card is asking (DOR-3068). DorkOS's own
+   * tool server is still passed.
+   */
+  withholdAgentServers?: boolean;
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */

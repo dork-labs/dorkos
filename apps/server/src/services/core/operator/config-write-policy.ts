@@ -699,6 +699,12 @@ export const CONFIG_WRITE_POLICY = {
   // record of somebody turning its package down, and the next sync would ask
   // again instead of obeying the answer already given.
   'harness.refusedHooks': 'operator-only',
+  // Which state of each agent's own hooks, MCP servers file and agent file a
+  // person let run (DOR-3068). An agent that could write the yes would approve
+  // the hooks it just wrote itself; one that could clear a no would be asked again.
+  'harness.approvedFolderConfig': 'operator-only',
+  'harness.approvedFolderConfigParts': 'operator-only',
+  'harness.refusedFolderConfig': 'operator-only',
   // Which agent tools DorkOS shares your globally installed packages with
   // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
   // home directory, which is the "how far DorkOS reaches on disk" line this
