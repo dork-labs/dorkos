@@ -20,6 +20,7 @@ import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
 import { and, eq } from 'drizzle-orm';
 import type { Room, RoomAttachment, RoomEntry, RoomMoment } from '@dorkos/shared/room-schemas';
+import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
@@ -270,6 +271,7 @@ export class RoomEntryWriter {
       moment?: RoomMoment;
       answersEntryId?: string;
       mentions?: readonly string[];
+      via?: ForwardVia;
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -394,6 +396,7 @@ export class RoomEntryWriter {
           text: input.text,
           ...(input.moment && { moment: input.moment }),
           ...(input.answersEntryId !== undefined && { answersEntryId: input.answersEntryId }),
+          ...(input.via && { via: input.via }),
         },
         mentions,
         // The per-occurrence positions of the mentions THE TEXT names, resolved

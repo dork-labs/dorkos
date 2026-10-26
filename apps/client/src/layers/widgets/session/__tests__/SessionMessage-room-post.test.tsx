@@ -122,3 +122,45 @@ describe('a room post in a room-attached chat', () => {
     expect(screen.queryByTestId('room-post-mark')).toBeNull();
   });
 });
+
+describe('a comment the person forwarded from a mini app (DOR-3325)', () => {
+  const FORWARDED: RoomMessageStamp = {
+    roomId: 'room-dm',
+    entryId: 'entry-f',
+    roomLabel: 'PM',
+    author: {
+      id: 'author-you',
+      kind: 'human',
+      displayName: 'Dorian',
+      handle: 'dorian',
+      you: true,
+    },
+    via: {
+      extensionId: 'dorian-desk',
+      appName: 'Dorian Desk',
+      itemId: 'item-7',
+      itemTitle: 'Pay the Fly invoice',
+    },
+  };
+
+  it('reads as the person’s own, with a muted via line above the words', () => {
+    const author = renderRow(userMessage(FORWARDED));
+    expect(author.kind).toBe('human');
+    const line = screen.getByTestId('forward-via-line');
+    expect(line).toHaveTextContent('via Dorian Desk');
+    // The title is the app's label, quoted, never part of the person's words.
+    expect(line.querySelector('q')).toHaveTextContent('Pay the Fly invoice');
+    expect(screen.getByText(POST)).not.toContainElement(line);
+  });
+
+  it('names the item by id when the app sent no title', () => {
+    const { itemTitle: _none, ...via } = FORWARDED.via!;
+    renderRow(userMessage({ ...FORWARDED, via }));
+    expect(screen.getByTestId('forward-via-line')).toHaveTextContent('item item-7');
+  });
+
+  it('draws no via line on a message typed in the chat', () => {
+    renderRow(userMessage());
+    expect(screen.queryByTestId('forward-via-line')).toBeNull();
+  });
+});

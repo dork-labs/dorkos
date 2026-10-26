@@ -281,6 +281,38 @@ const counts = await api.rooms.unreadCounts(
 - **Live replies** arrive through `subscribeThread`, yours included, and replies written while the connection was down arrive once it is back. The stream stops when the person takes the room away. It closes when your mini app deactivates.
 - **A refusal throws `RoomAccessError`** with `code` (`room_not_allowed`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
 
+### Forwarding a comment to an agent as the person
+
+`api.forward` sends what the person typed in your mini app to an agent, **as their own words** (DOR-3325): a comment on an item, a "yes, go ahead". It lands in the person's Direct chat with that agent, and the agent treats it exactly as if they had typed it there. Declare it in the manifest:
+
+```json
+{ "capabilities": { "forward": true } }
+```
+
+```typescript
+const sent = await api.forward.send({
+  text: comment,
+  itemId: item.id,
+  itemTitle: item.title,
+  agentId: ownerAgentId, // optional when the person allowed exactly one
+});
+// later, to show the agent's answer under the comment:
+const replies = await api.forward.replies(sent.id); // [{ agent, markdown, createdAt }]
+const agents = await api.forward.agents(); // [{ id, name }]
+```
+
+- **Not `ctx.agent.send`.** A server half's `ctx.agent.send` is your app talking: the agent reads it as app data, and its turn runs no looser than its default and asks before each step. `api.forward` is the person talking, so use it for words they typed and for nothing else.
+- **DorkOS reads the words itself.** The page POSTs straight to `/api/extensions/:id/forward`; no server half code sits in between. There is deliberately no server-side "send as the person" helper: DorkOS could not tell what the person typed from what code made up.
+- **Only agents the person allowed.** You may name an agent by id, but the forward reaches it only once the person allowed it for your mini app (`extensions.forwardAgents`, operator-only, ids never names). The first time, DorkOS keeps the typed text and shows its own prompt, outside your page: "Send {app} comments to {agent}? Allow", with the agent's name and the handle it was registered under (which an agent cannot change). Allow works only from the window that sent the comment, adds that one id and sends the text DorkOS kept; `send` then resolves. Not now rejects with `no_agent` and sends nothing. Naming no agent works only when exactly one is allowed. The person changes the list later in Settings → Extensions.
+- **Only the typed text is theirs.** Name the item by `itemId` (letters, digits and `. _ : / -`). An `itemTitle` shows above the message in a muted "via {app} · {item}" line, quoted as text from your app; the agent sees your app's name and the item id, never the title.
+- **Text only.** At most 8,000 characters. No attachments, no thread, no delivery mode, no steer or interrupt; any other field is refused.
+- **Only from the person's own window, signed in.** The settings route and the reads too. The room-write bar's rules, plus: DorkOS must have checked a password for this request, and the caller must own this DorkOS. With no password on this computer, every forward is refused, because DorkOS can't tell the person from a program there.
+- **Replies are the agent's.** `replies` returns the agent's own posts that answer the forward, under its name. Every `&` and `<` is escaped, and every link target that is not `http(s)://`, `mailto:`, an anchor or a same-host path becomes `#`. The result is parsed again, and a reply with any link still unsafe loses all its links. Render them as markdown, never as HTML.
+- **"You" comes from DorkOS, not your data.** `api.forward.stamps(ids)` returns DorkOS's own record of each forward's author, read from the message it posted. Draw a comment as the person's own only when it has a stamp. An `author` your mini app saved in its own data can be edited by whoever edits the app, so it never counts.
+- **Audited.** Every forward, and every refused one, is `extension.person_forward` in the audit trail, with your mini app, the agent and the item named.
+- **What it cannot stop, stated.** Your page code runs in the person's window with their access, so it could forward without a click, call the settings route itself, or reach the prompt's button. The person's list bounds a well-behaved mini app; it is not a sandbox (the `api.rooms` residual). Until the client pin (DOR-3068 (b)) lands, the same is true of any same-origin code.
+- **A refusal throws `ForwardError`** with `code` (`no_agent`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -293,7 +325,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`, and forwarding with `api.forward !== undefined`.
 
 ### Events
 

@@ -103,6 +103,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.forwardAgents',
       'extensions.legacyUnsourced',
       'extensions.roomAccess',
       'extensions.trustedSources[].source',

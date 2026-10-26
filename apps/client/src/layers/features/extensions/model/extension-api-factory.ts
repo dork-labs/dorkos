@@ -51,6 +51,7 @@ import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
 import { applyPageBadge } from './page-badge';
 import { createExtensionRoomsApi } from './extension-rooms-api';
+import { createExtensionForwardApi } from './extension-forward-api';
 import { requestError } from './request-error';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
@@ -495,6 +496,7 @@ export function createExtensionAPI(
     },
 
     rooms: createExtensionRoomsApi(extId, cleanups),
+    forward: createExtensionForwardApi(extId),
   };
 
   return { api, cleanups };

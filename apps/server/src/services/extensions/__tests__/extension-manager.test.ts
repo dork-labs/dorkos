@@ -477,6 +477,7 @@ describe('ExtensionManager', () => {
         ...approved(['bar']),
         approvedPermissions: {},
         roomAccess: {},
+        forwardAgents: {},
       });
     });
 
@@ -495,6 +496,7 @@ describe('ExtensionManager', () => {
         ...approved([]),
         approvedPermissions: {},
         roomAccess: {},
+        forwardAgents: {},
       });
     });
 

@@ -217,6 +217,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'extensions.roomAccess',
+      'extensions.forwardAgents',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',
