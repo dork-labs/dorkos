@@ -1,5 +1,6 @@
 ---
 covers:
+  - "feat(extensions): a mini app's first forward asks in a DorkOS prompt, and reaches only agents you allowed (DOR-3325)"
   - 'feat(extensions): a comment you type in a mini app reaches your agent as your own words (DOR-3325)'
 ---
 
