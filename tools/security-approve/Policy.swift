@@ -68,13 +68,14 @@ func touchesGate(_ path: String) -> Bool {
   path.range(of: gatePathPattern, options: .regularExpression) != nil
 }
 
-/// First 8 hex of SHA-256 over the sorted `<pr> <sha>` lines, each ending in a
-/// newline. `enqueue.sh --digest` computes the same value from Security's side;
+/// First 16 hex (64 bits, so it cannot be ground) of SHA-256 over the sorted
+/// `<pr> <sha>` lines, each ending in a newline, shown as four groups of four. `enqueue.sh --digest` computes the same value from Security's side;
 /// Dorian approves only when the two match.
 func listDigest(_ entries: [QueueEntry]) -> String {
   let text = Set(entries.map { "\($0.pr) \($0.sha)" }).sorted().map { $0 + "\n" }.joined()
   let hex = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
-  return String(hex.prefix(8))
+  let short = Array(hex.prefix(16))
+  return stride(from: 0, to: 16, by: 4).map { String(short[$0..<$0 + 4]) }.joined(separator: " ")
 }
 
 /// GitHub text (titles, file names) is still agent-written. Strip anything that

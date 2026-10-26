@@ -26,13 +26,17 @@ let threeEntries = [
     try require(report.approved == [1, 2, 3] && report.dropped.isEmpty, "all three approved")
     try require(f.confirms.count == 1 && f.signs == 1, "one confirm, one signature")
     try require(
-      f.confirms[0] == "Approve 3 dork-labs/dorkos PRs, list \(digest)" && digest.count == 8,
-      "confirm is one short line with the 8-character digest")
+      f.confirms[0] == "Approve 3 dork-labs/dorkos PRs, list \(digest)" && digest.count == 19,
+      "confirm is one short line with the 16-character digest")
     try require(f.posts.count == 3 && f.revokes == 1, "three statuses, then one revoke")
     try require(f.calls.filter { $0.path.hasSuffix("/access_tokens") }.count == 1, "one token")
 
     // M3: every batched PR shows its full SHA and its files; the digest is shown up top.
     try require(f.display.contains("List digest: \(digest)"), "digest shown")
+    let beforePrompt = f.shown.firstIndex { $0.hasPrefix("approved #") }.map { f.shown[$0 - 1] }
+    try require(
+      beforePrompt == "List digest: \(digest)   Confirm only if Security posted exactly this.",
+      "digest repeated as the last line before the prompt")
     for (pr, head) in [(1, sha("a")), (2, sha("b")), (3, sha("c"))] {
       try require(f.display.contains("PR #\(pr) ") && f.display.contains("head \(head)"), "#\(pr) full SHA")
     }

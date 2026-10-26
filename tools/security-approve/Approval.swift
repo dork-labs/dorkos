@@ -285,6 +285,8 @@ func approveBatch(
   for candidate in ready { lines.append(diffSummary(candidate)) }
   show(lines.joined(separator: "\n"))
   guard !ready.isEmpty else { return report }
+  // The file lists can scroll the first digest line away; repeat it right above the prompt.
+  show("List digest: \(digest)   Confirm only if Security posted exactly this.")
   // One short line: the terminal shows the full list; the prompt carries the digest to match.
   try await confirm("Approve \(ready.count) dork-labs/dorkos PRs, list \(digest)")
   let token = try await github.installationToken(appID: appID, now: now, signer: signer)

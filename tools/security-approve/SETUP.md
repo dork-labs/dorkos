@@ -24,7 +24,7 @@ else. Then switch to DorkOS Approver once, skip iCloud and every optional step, 
 lock its home folder:
 
 ```sh
-chmod 700 ~ && ls -ld ~
+/bin/chmod 700 ~ && /bin/ls -ld ~
 ```
 
 The line must start with `drwx------`. Switch back.
@@ -75,25 +75,37 @@ Everything here runs as DorkOS Approver, in its Terminal.
 
 ### 4. Build, sign and install (4 minutes)
 
-Paste the SHA Security named into the second line, then run the block. The `PATH` line makes sure
-only Apple's own tools run.
+First start a clean shell. It ignores every settings file, so nothing left in this user's
+account can change what the commands below run:
 
 ```sh
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+exec /bin/zsh -f
+```
+
+Paste the SHA Security named into the fourth line, then run the block. `set -e` stops at the
+first failed check. If Terminal ever says `[Process completed]`, a check failed: stop and tell
+@dorkos-2.
+
+```sh
+set -e
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin DEVELOPER_DIR=/Library/Developer/CommandLineTools
+test "$(stat -f %Su:%Sg /Library/Developer/CommandLineTools)" = root:wheel
 REVIEWED=paste-the-40-character-sha-here
-B=~/build-$REVIEWED && mkdir -m 700 "$B" && cd "$B" && git init -q && git fetch -q --depth 1 https://github.com/dork-labs/dorkos.git "$REVIEWED" && git checkout -q FETCH_HEAD && test "$(git rev-parse HEAD)" = "$REVIEWED" && echo "source OK"
-tools/security-approve/build.sh "$B/security-approve" && tools/security-approve/build-provisioner.sh "$B/security-approve-provision" && echo "build OK"
+printf %s "$REVIEWED" | grep -Eqx '[0-9a-f]{40}'
+B=~/build-$REVIEWED; mkdir -m 700 "$B"; cd "$B"
+git init -q; git fetch -q --depth 1 https://github.com/dork-labs/dorkos.git "$REVIEWED"; git checkout -q FETCH_HEAD
+test "$(git rev-parse HEAD)" = "$REVIEWED"; echo "source OK"
+tools/security-approve/build.sh "$B/security-approve"; tools/security-approve/build-provisioner.sh "$B/security-approve-provision"; echo "build OK"
 codesign --force -s - --options runtime -i ai.dorkos.security-approve "$B/security-approve"
 codesign --force -s - --options runtime -i ai.dorkos.security-approve-provision "$B/security-approve-provision"
 H=$(codesign -dv --verbose=4 "$B/security-approve" 2>&1 | sed -n 's/^CDHash=//p'); echo "$H"
 ```
 
-If any line prints an error, stop and tell @dorkos-2. Now install. macOS asks for an
-administrator: type your own name and password into that box.
+Now install. macOS asks for an administrator: type your own name and password into that box.
 
 ```sh
 osascript -e "do shell script \"/usr/bin/install -d -o root -g wheel -m 755 /usr/local/libexec/dorkos-approve && /usr/sbin/chown root:wheel /usr/local/libexec && /bin/chmod 755 /usr/local/libexec && /usr/bin/install -o root -g wheel -m 755 $B/security-approve $B/security-approve-provision /usr/local/libexec/dorkos-approve/\" with administrator privileges"
-test "$H" = "$(codesign -dv --verbose=4 /usr/local/libexec/dorkos-approve/security-approve 2>&1 | sed -n 's/^CDHash=//p')" && echo "installed build matches" || echo "STOP: installed build differs"
+test "$H" = "$(codesign -dv --verbose=4 /usr/local/libexec/dorkos-approve/security-approve 2>&1 | sed -n 's/^CDHash=//p')"; echo "installed build matches"
 echo 'export PATH=/usr/local/libexec/dorkos-approve:/usr/bin:/bin:/usr/sbin:/sbin' >> ~/.zshrc
 ```
 
@@ -124,8 +136,9 @@ The last line should say "Nothing to approve." Switch back. Setup is done.
 
 ## Daily use (about 2 minutes, twice a day)
 
-Security queues each reviewed head with `tools/security-approve/enqueue.sh <pr> <sha>` and posts
-the **list digest** (8 letters and numbers) in #dorkos. Queueing approves nothing.
+Security queues each reviewed head with `tools/security-approve/enqueue.sh <pr> <sha>`, then posts
+in #dorkos one `#pr sha` line per PR and the **list digest**: four groups of four letters and
+numbers, like `c0c7 9cf8 1e8d 8eea`. Queueing approves nothing.
 
 Switch to DorkOS Approver, open Terminal, and run:
 
@@ -133,13 +146,14 @@ Switch to DorkOS Approver, open Terminal, and run:
 security-approve --batch
 ```
 
-1. **Check the digest.** The top line shows `List digest: …`. If it is not exactly the digest
-   Security posted, stop: someone else added a line. Press Ctrl-C.
+1. **Check the digest and the PR numbers.** The top line shows `List digest: …`. If any of its 16
+   characters differ from Security's post, or the PRs listed are not the ones Security posted,
+   stop: someone else changed the list. Press Ctrl-C.
 2. **Read every PR.** Each shows its title, full SHA and changed files, all straight from GitHub.
    `*` marks a file the security gate treats as sensitive. Stop if anything looks unlike what
    Security described.
-3. **Confirm once.** The prompt names the digest and every PR. Right before each post the program
-   checks the head again and skips any that moved.
+3. **Confirm once.** The digest is printed again just above the prompt, and the prompt shows it
+   too. Right before each post the program checks the head again and skips any that moved.
 
 It leaves out PRs that are closed, not aimed at `main`, moved since Security queued them, already
 approved, or have no Security review file for that exact head. That last check only catches honest
@@ -158,8 +172,8 @@ Switch back when done. Security then clears the queue.
 
 ## After a rebuild
 
-Every new build has a new fingerprint. As DorkOS Approver, repeat step 4 from the newly reviewed
-SHA, then:
+Every new build has a new fingerprint. As DorkOS Approver, repeat step 4 (clean shell first) from
+the newly reviewed SHA, then, in the same shell:
 
 ```sh
 /usr/local/libexec/dorkos-approve/security-approve-provision --repin ~/Library/Keychains/login.keychain-db "$H"

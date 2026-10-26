@@ -155,15 +155,21 @@ command re-point the item without exporting the key.
 ### Batch approval
 
 Security queues `<pr> <40-hex-sha>` lines with `tools/security-approve/enqueue.sh` (at most 8),
-only when its `reviews/pr-<n>*.md` names that SHA, and posts the **list digest** the script
-prints: the first 8 hex of SHA-256 over the sorted, distinct, well-formed lines. The script
-copies the review into `/Users/Shared/dorkos-approve/reviews/` because the approver cannot read
-Dorian's home. The queue and the copies are agent-written and trusted for nothing. The review
-copy is a **hint** that filters honest mistakes, not a control: any agent can write one.
+only when its `reviews/pr-<n>*.md` names that SHA. The script keeps **Security's own list** in
+Security's folder, appends there, and republishes the shared queue from it in one step (temp
+file, then `mv`). The **list digest** is computed from Security's own list, never from the shared
+file: the first 16 hex (64 bits, too long to grind in the hours before Dorian's run) of SHA-256
+over the sorted, distinct, well-formed lines, shown as four groups of four. `enqueue.sh --digest`
+refuses when the shared queue differs from Security's list, and otherwise prints one `#pr sha12`
+line per PR plus the digest, which Security posts. The script copies each review into
+`/Users/Shared/dorkos-approve/reviews/` because the approver cannot read Dorian's home. The queue
+and the copies are agent-written and trusted for nothing. The review copy is a **hint** that
+filters honest mistakes, not a control: any agent can write one.
 
 `security-approve --batch` accepts only well-formed lines (others are counted, never shown) and
-prints the same digest first; Dorian stops unless it equals Security's post, so a line slipped in
-by anyone else is visible. For every PR it shows title, full head SHA and the changed files,
+prints its digest of the shared queue first and again right above the prompt; Dorian stops
+unless it and the PR numbers equal Security's post, so a line slipped in by anyone else is
+visible. For every PR it shows title, full head SHA and the changed files,
 flagging `!` never-batch paths and `*` paths the gate pattern marks sensitive (the helper carries a
 verbatim copy, pinned to `.github/scripts/fixtures/security-path-pattern.regex` by tests on both
 sides). Everything shown is built from GitHub with terminal control and bidi characters stripped.
