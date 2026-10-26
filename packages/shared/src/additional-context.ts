@@ -25,8 +25,15 @@ import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import type { AuthorOrigin } from './room-schemas.js';
 import { UiStateSchema, type UiState } from './schemas.js';
 import { DirectNotesDataSchema, type DirectNotesData } from './direct-notes-context.js';
+import {
+  ContextWarningDataSchema,
+  TurnCutoffDataSchema,
+  type ContextWarningData,
+  type TurnCutoffData,
+} from './owed-notes-context.js';
 
 export type { DirectNote, DirectNotesData } from './direct-notes-context.js';
+export type { ContextWarningData, TurnCutoffData } from './owed-notes-context.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
 export type ContextKind =
@@ -42,7 +49,8 @@ export type ContextKind =
   | 'direct_notes'
   | 'accounts_access'
   | 'doc_events'
-  | 'context_warning';
+  | 'context_warning'
+  | 'turn_cutoff';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -923,25 +931,6 @@ export interface ApprovalVerdictData {
 }
 
 /**
- * The session's conversation has filled past the early-warning line (DOR-2732):
- * a one-time note on the turn after the crossing, so an agent near its limit
- * can save what matters and ask for a summary before the runtime compacts it on
- * its own terms.
- *
- * SERVER-derived from the session's own context reading — nothing a caller can
- * supply — and rendered by each runtime, so every runtime gets the same note.
- */
-export interface ContextWarningData {
-  /** Share of the context window in use at the crossing, 0–100. */
-  percent: number;
-  /**
-   * Whether this session's runtime can summarize on request, so the note only
-   * points at the summary tool where calling it could work.
-   */
-  canCompact: boolean;
-}
-
-/**
  * Discriminated union of the canonical server-assembled entries. Each member
  * pairs a {@link ContextKind} with its structured `data` payload and a
  * {@link ContextScope}.
@@ -959,7 +948,8 @@ export type AdditionalContextEntry =
   | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData }
   | { kind: 'direct_notes'; scope: 'per-turn'; data: DirectNotesData }
   | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData }
-  | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData };
+  | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData }
+  | { kind: 'turn_cutoff'; scope: 'per-turn'; data: TurnCutoffData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -997,6 +987,7 @@ export const CONTEXT_TAG = {
   accounts_access: 'accounts_access',
   doc_events: 'doc_events',
   context_warning: 'context_warning',
+  turn_cutoff: 'turn_cutoff',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1269,12 +1260,6 @@ export const AccountsAccessDataSchema = z.object({
   serviceCatalog: z.boolean().optional(),
 });
 
-/** Zod schema for {@link ContextWarningData}. */
-export const ContextWarningDataSchema = z.object({
-  percent: z.number().int().min(0).max(100),
-  canCompact: z.boolean(),
-});
-
 /**
  * Zod schema for {@link ApprovalVerdictData}.
  *
@@ -1368,6 +1353,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('context_warning'),
     scope: z.literal('per-turn'),
     data: ContextWarningDataSchema,
+  }),
+  z.object({
+    kind: z.literal('turn_cutoff'),
+    scope: z.literal('per-turn'),
+    data: TurnCutoffDataSchema,
   }),
 ]);
 

@@ -19,6 +19,7 @@ import {
 } from '../resolution/session-key-registry.js';
 import { getStagedContextStore } from '../staged-context-store.js';
 import { forgetContextWarning } from '../agent-compaction/context-warning.js';
+import { forgetTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
 import { logger } from '../../../lib/logger.js';
 import {
   emitLifecycle,
@@ -110,6 +111,7 @@ export function sweepOrphanedMessageQueues(opts?: {
     const compaction = pendingCompactions.get(id);
     if (compaction) dropCompaction(id, compaction, 'its session went away');
     forgetContextWarning(id);
+    forgetTurnCutoff(id);
   }
   // The rename bookkeeping goes with them. Two entries are added per renamed
   // session and nothing has ever removed one, so a long-lived server accumulates

@@ -104,6 +104,8 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   direct_notes: true,
   // A number and a boolean the server derived from its own context reading.
   context_warning: false,
+  // Two server-derived facts about how the stall guard ended the last turn.
+  turn_cutoff: false,
 };
 
 /** One representative entry per ContextKind — keyed so the test is exhaustive. */
@@ -176,6 +178,11 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'context_warning',
     scope: 'per-turn',
     data: { percent: 81, canCompact: true },
+  },
+  turn_cutoff: {
+    kind: 'turn_cutoff',
+    scope: 'per-turn',
+    data: { windowMs: 600_000, neverStarted: false },
   },
   approval_verdict: {
     kind: 'approval_verdict',

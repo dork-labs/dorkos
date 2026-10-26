@@ -52,7 +52,7 @@ const STALL_CLOSE: StreamEvent[] = [
   {
     type: 'error',
     data: {
-      message: 'The agent never started working after 10 minutes, so the turn was ended.',
+      message: "DorkOS ended this turn: the agent didn't start within 10 minutes.",
       code: 'turn_stalled',
       category: 'execution_error',
       details: 'The in-flight turn was aborted.',

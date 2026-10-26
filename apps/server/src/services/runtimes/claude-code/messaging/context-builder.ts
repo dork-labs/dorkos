@@ -515,8 +515,7 @@ function buildRelayConnectionsBlock(
 
   const { agentId, bindingStore, bindingRouter, adapterManager } = relayContext;
 
-  const allBindings = bindingStore.getAll();
-  const myBindings = allBindings.filter((b) => b.agentId === agentId);
+  const myBindings = bindingStore.getAll().filter((b) => b.agentId === agentId);
   if (myBindings.length === 0) return '';
 
   const adapters = adapterManager.listAdapters();
@@ -763,6 +762,7 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
     case 'seed_context':
     case 'approval_verdict':
     case 'direct_notes':
+    case 'turn_cutoff':
       // Prose with a security seam, written once for every runtime.
       return wrapTag(tag, formatProseContext(entry));
     case 'context_warning':
