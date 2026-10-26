@@ -42,8 +42,13 @@ export async function personProofFor(sessionId: string): Promise<string | null> 
     .digest('base64url');
 }
 
+/** The most proofs one header may carry: the app page's own and the desktop shell's. */
+const MAX_PROOFS = 2;
+
 /**
- * Whether a request's proof is the one for its session.
+ * Whether a request's proof is the one for its session. The header may carry
+ * two, comma-separated: the app page's own and, in the desktop app, the one
+ * its window sign-in holds; whichever session the window's cookie is.
  *
  * @param sessionId - The verified session's id.
  * @param presented - The proof header as sent, if any.
@@ -55,7 +60,9 @@ export async function personProofMatches(
   if (typeof presented !== 'string' || presented.length === 0) return false;
   const expected = await personProofFor(sessionId);
   if (!expected) return false;
-  const a = Buffer.from(presented);
   const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return presented
+    .split(',', MAX_PROOFS)
+    .map((proof) => Buffer.from(proof.trim()))
+    .some((a) => a.length === b.length && timingSafeEqual(a, b));
 }

@@ -1102,19 +1102,9 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
     known.token = await revealLocalToken(server);
     known.agent = await systemAgentId(server);
     const origin = { origin: server.baseUrl };
-    const signedUp = await setup(
-      server,
-      'POST',
-      '/api/auth/sign-up/email',
-      { ...OWNER, name: 'Owner' },
-      origin
-    );
-    cookie = {
-      cookie: signedUp.headers
-        .getSetCookie()
-        .map((value) => value.split(';')[0]!)
-        .join('; '),
-    };
+    await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // The owner's step-up at this computer: its cookie and the app's proof (DOR-3330).
+    cookie = await stepUpAt(server.baseUrl, OWNER.password);
     const created = await setup(
       server,
       'POST',

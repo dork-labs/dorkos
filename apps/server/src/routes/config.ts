@@ -493,7 +493,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       }
 
       // ## THE AGENT BAR — anything that names itself an agent is refused, in
-      // every posture, and in the login-off posture it is the ONLY bar left
+      // every posture, and with no owner yet it is the only bar left
       //
       // The cockpit must keep working: its own enable-login and disable-login
       // flows legitimately write `auth.enabled` through here, and under

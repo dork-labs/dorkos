@@ -855,7 +855,7 @@ async function setup(
   return answer;
 }
 
-/** Sign up the owner, sign in, and mint an API key; the cookie and the key. */
+/** Sign up the owner, step up, and mint an API key; the person's headers and the key. */
 async function ownerCredentials(
   server: ComposedServer | undefined
 ): Promise<{ cookie: Record<string, string>; apiKey: Record<string, string> }> {
@@ -865,13 +865,8 @@ async function ownerCredentials(
   };
   const origin = { origin: server!.baseUrl };
   await setup(server, 'POST', '/api/auth/sign-up/email', { ...owner, name: 'Owner' }, origin);
-  const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', owner, origin);
-  const cookie = {
-    cookie: signedIn.headers
-      .getSetCookie()
-      .map((value) => value.split(';')[0]!)
-      .join('; '),
-  };
+  // The owner's step-up at this computer: its cookie and the app's proof (DOR-3330).
+  const cookie = await stepUpAt(server!.baseUrl, owner.password);
   const created = await setup(
     server,
     'POST',
@@ -952,8 +947,7 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     server = await bootComposedServer();
     ({ providerInstanceId, connectionId } = await connectOfflineGmail(server));
     agent = await seedAgent(server);
-    ({ apiKey } = await ownerCredentials(server));
-    personCookie = await stepUpAt(server.baseUrl, 'a-long-password-1');
+    ({ apiKey, cookie: personCookie } = await ownerCredentials(server));
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     personCookie = {};
@@ -1560,8 +1554,7 @@ describe('contract: the connector groups with login on', () => {
     server = await bootComposedServer();
     ({ cookie, apiKey } = await ownerCredentials(server));
     // Asking for a password is the owner's own act, after their step-up (DOR-3330).
-    const person = await stepUpAt(server.baseUrl, 'a-long-password-1');
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, person);
+    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

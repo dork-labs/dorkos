@@ -19,6 +19,9 @@ import {
 import { readPersonProof } from './person-proof-store';
 import { requestPersonStepUp } from './person-step-up-signal';
 
+/** How long the call sent again after the step-up may take. */
+const RETRY_TIMEOUT_MS = 30_000;
+
 /** The URL a call goes to, resolved against this page. */
 function targetOf(input: RequestInfo | URL, origin: string): URL | null {
   try {
@@ -66,7 +69,10 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     if (!replayable || target.pathname === PERSON_SESSION_PATH) return res;
     if (!(await asksForPersonSession(res))) return res;
     if (!(await requestPersonStepUp())) return res;
-    return base(...build());
+    // A fresh clock for the retry: the caller's timeout kept running while the
+    // person typed their password, and may already have fired.
+    const [again, retryInit] = build();
+    return base(again, { ...retryInit, signal: AbortSignal.timeout(RETRY_TIMEOUT_MS) });
   };
 }
 

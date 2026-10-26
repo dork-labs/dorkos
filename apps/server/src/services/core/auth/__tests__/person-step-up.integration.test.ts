@@ -231,6 +231,18 @@ describe('the person bar at this computer, with an owner and no password asked',
         .send({});
       expect(forged.status).not.toBe(200);
 
+      // Nor at sign-in's own endpoints: no key is made for the cookie alone.
+      const keyFromCookie = await request(target.server)
+        .post('/api/auth/api-key/create')
+        .set(appHeaders({ cookie }))
+        .send({ name: 'k' });
+      expect(keyFromCookie.status).not.toBe(200);
+      const keyFromApp = await request(target.server)
+        .post('/api/auth/api-key/create')
+        .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof }))
+        .send({ name: 'k' });
+      expect(keyFromApp.status).toBe(200);
+
       // Bound to this computer, and lasting: a remembered cookie.
       const rows = db.select().from(session).where(eq(session.userId, ownerId)).all();
       expect(rows.some((row) => (row as { route?: string | null }).route === 'local')).toBe(true);

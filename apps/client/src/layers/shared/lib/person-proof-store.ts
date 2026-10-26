@@ -10,13 +10,32 @@
  */
 import { PERSON_PROOF_STORAGE_KEY } from '@dorkos/shared/person-session';
 
-/** The proof this page holds, or `null`. */
-export function readPersonProof(): string | null {
+/** The proof this page keeps from its own step-up, or `null`. */
+function storedProof(): string | null {
   try {
     return globalThis.localStorage?.getItem(PERSON_PROOF_STORAGE_KEY) ?? null;
   } catch {
     return null;
   }
+}
+
+/** The proof the desktop window's own sign-in got, or `null` outside the desktop app. */
+function desktopProof(): string | null {
+  try {
+    return typeof window === 'undefined' ? null : (window.electronAPI?.getPersonProof?.() ?? null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The proofs this page holds, as the header carries them: its own step-up's
+ * and, in the desktop app, the window sign-in's. Whichever session the
+ * window's cookie is, one of them matches it. `null` when there are none.
+ */
+export function readPersonProof(): string | null {
+  const proofs = [...new Set([storedProof(), desktopProof()].filter(Boolean))];
+  return proofs.length > 0 ? proofs.join(',') : null;
 }
 
 /**

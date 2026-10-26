@@ -101,6 +101,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   getServerPort: (): number | null => ipcRenderer.sendSync('get-server-port'),
   /**
+   * The person proof the window's own sign-in got (DOR-3330), or `null`: sent
+   * beside the session cookie, so the person at the desktop app is never asked
+   * for a password. The main process answers only a page of the app itself.
+   */
+  getPersonProof: (): string | null => ipcRenderer.sendSync('get-person-proof'),
+  /**
    * Report that this page really came up — the renderer half of the shell's
    * renderer supervision (`renderer-health/index.ts`).
    *

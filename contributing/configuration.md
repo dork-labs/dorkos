@@ -1746,7 +1746,7 @@ The bars are named for what they check, not for the order they run in, because t
 
 The cookie bar is the one DOR-505 added, and it exists because `trustedCaller` is cleared by omitting two headers, which anything with a shell can do. Under login-on that used to include a program holding one of the person's API keys: `sessionGate` accepts a key as the same identity a browser session proves (DOR-474), so it could write `auth.enabled` here while the capability surface refused it the same write.
 
-**The residual, stated so nobody reads the table as more than it is.** With no owner account yet there is no session for anyone, so the **cookie bar allows and the agent bar is the only one left**. Once an owner exists the cookie bar applies at this computer too — see [The `curl` residual under login-off](#the-curl-residual-under-login-off-closed-once-an-owner-exists-dor-3330) below.
+**The residual, stated so nobody reads the table as more than it is.** With no owner account yet there is no session for anyone, so the **cookie bar allows and the agent bar is the only one left**. Once an owner exists the cookie bar applies at this computer too — see [The `curl` residual under login-off](#the-curl-residual-under-login-off-narrowed-once-an-owner-exists-dor-3330) below.
 
 ### Who writes your config
 
@@ -1795,7 +1795,7 @@ Since DOR-1507 the list above is **pinned by a test**: `configManager.set(` is a
 
 - **A hand edit or a restored backup.** Config content DorkOS did not write. Same class as `config edit`.
 
-#### The `curl` residual under login-off: closed once an owner exists (DOR-3330)
+#### The `curl` residual under login-off: narrowed once an owner exists (DOR-3330)
 
 DOR-1247 accepted this gap because the app at this computer presented nothing a local program could not also present. DOR-3330 gave it something: once an owner account exists, the person proves themselves once with a password step-up (`routes/person-session.ts`), which leaves a long-lived session for this computer plus a person proof the app keeps in its own page. The gate reads both on open requests, and the person bars ask for them on every change (`personSessionRequired` in `services/core/auth/gate-policy.ts`). So the cookie bar now applies at this computer too, and the agent bar is no longer the only one left.
 
@@ -1803,6 +1803,7 @@ What remains:
 
 - **No owner yet.** Nobody can sign in, so the cookie bar allows and the agent bar decides, as before.
 - **The disk.** A program running as the same OS user can read the session secret and database (DOR-505, DOR-3053).
+- **The rest of the person bars** move to the same question in DOR-3330's second stage; until then, routes outside the shared bars keep their own rules.
 
 The enable-login flow signs in and steps up before it writes `auth.enabled`, so the bar does not lock anyone out of turning the password on.
 
