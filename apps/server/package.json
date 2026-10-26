@@ -129,5 +129,9 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "yauzl": "3.4.0"
+  },
+  "optionalDependencies": {
+    "opencode-darwin-arm64": "1.19.3",
+    "opencode-linux-x64": "1.19.3"
   }
 }
