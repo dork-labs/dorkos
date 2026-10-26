@@ -147,6 +147,12 @@ export const NOTIFICATION_KINDS = [
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */
   'web.new_device',
+  /**
+   * An agent's folder holds files whose names say they are secrets, which no
+   * rule keeps that agent from reading (DOR-3292). Names only, never contents;
+   * once per set of files.
+   */
+  'agent.secret_files',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

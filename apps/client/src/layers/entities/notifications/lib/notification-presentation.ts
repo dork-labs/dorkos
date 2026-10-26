@@ -17,6 +17,7 @@ import {
   Clock,
   Download,
   Hourglass,
+  KeyRound,
   LogIn,
   Mail,
   MessageCircleQuestion,
@@ -110,6 +111,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.destructive_executed': CheckCircle2,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
+  // Files in an agent's folder whose names say they are secrets (DOR-3292).
+  'agent.secret_files': KeyRound,
 };
 
 /** How loudly a notification draws. */

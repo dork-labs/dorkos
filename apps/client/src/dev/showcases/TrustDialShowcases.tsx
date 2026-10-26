@@ -43,7 +43,7 @@ const CLAUDE: PermissionModeDescriptor[] = [
     stop: 'ask',
     asks: 'always',
     reach: 'edit',
-    promise: 'Runs only what you allowed. Refuses the rest without asking you.',
+    promise: 'Never asks you. Reads in its own folder still run.',
   },
   {
     id: 'acceptEdits',

@@ -42,8 +42,11 @@ import {
   extensionDecisionHistoryBody,
   subjectIdForCopy,
 } from './extension-decision-copy.js';
-import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
-import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
+import {
+  DECLARED_ENTRIES,
+  DECLARED_WIRED_KINDS,
+  type DeclaredPayloads,
+} from './declared-entries.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -1338,11 +1341,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'credits.refused',
   'extension.approval',
   'extension.decision',
-  ...COMMUNITY_NOTIFICATION_KINDS,
   'heartbeat.credits-offer',
-  'connector.destructive_pending',
-  'connector.destructive_executed',
-  'web.new_device',
+  ...DECLARED_WIRED_KINDS,
 ];
 
 /**

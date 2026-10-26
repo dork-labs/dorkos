@@ -122,11 +122,13 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         // Default, the first declared, and never quietly by this one.
         id: NEVER_ASK_MODE_ID,
         label: 'Never ask',
-        description: 'Never prompt; tools not already allowed are refused.',
+        // Never "everything else is refused": reads inside the agent's own
+        // folder still run, whatever its rules say (DOR-3292).
+        description: 'Never prompts. Refuses tools your settings don’t allow.',
         stop: 'ask',
         asks: 'always',
         reach: 'edit',
-        promise: 'Runs only what you allowed. Refuses the rest without asking you.',
+        promise: 'Never asks you. Reads in its own folder still run.',
       },
       {
         id: 'acceptEdits',
