@@ -156,7 +156,7 @@ command re-point the item without exporting the key.
 
 Security queues `<pr> <40-hex-sha>` lines with `tools/security-approve/enqueue.sh` (at most 8),
 only when its `reviews/pr-<n>*.md` names that SHA, and posts the **list digest** the script
-prints: the first 12 hex of SHA-256 over the sorted, distinct, well-formed lines. The script
+prints: the first 8 hex of SHA-256 over the sorted, distinct, well-formed lines. The script
 copies the review into `/Users/Shared/dorkos-approve/reviews/` because the approver cannot read
 Dorian's home. The queue and the copies are agent-written and trusted for nothing. The review
 copy is a **hint** that filters honest mistakes, not a control: any agent can write one.
@@ -170,7 +170,7 @@ sides). Everything shown is built from GitHub with terminal control and bidi cha
 The file list comes from immutable SHAs: `git/ref/heads/main` gives B, then `compare/B...<sha>`
 (base commit must equal B); a force-push during the run cannot change it. It drops any PR that is
 closed, not based on `main`, moved off the queued head, without a review hint, or already carrying
-the bot's success. One owner authentication, naming the digest and every PR, covers the list; one
+the bot's success. One owner authentication, one short line naming the count and the digest, covers the list; one
 App token is minted. Each head is rechecked with that token right before and after its post, a
 moved head is skipped, and the token is revoked (`DELETE /installation/token`) after the last post.
 

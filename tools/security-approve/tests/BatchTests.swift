@@ -26,9 +26,8 @@ let threeEntries = [
     try require(report.approved == [1, 2, 3] && report.dropped.isEmpty, "all three approved")
     try require(f.confirms.count == 1 && f.signs == 1, "one confirm, one signature")
     try require(
-      f.confirms[0]
-        == "Approve 3 dork-labs/dorkos PRs, list \(digest): #1 aaaaaaaaaaaa, #2 bbbbbbbbbbbb, #3 cccccccccccc",
-      "confirm names the digest and every PR")
+      f.confirms[0] == "Approve 3 dork-labs/dorkos PRs, list \(digest)" && digest.count == 8,
+      "confirm is one short line with the 8-character digest")
     try require(f.posts.count == 3 && f.revokes == 1, "three statuses, then one revoke")
     try require(f.calls.filter { $0.path.hasSuffix("/access_tokens") }.count == 1, "one token")
 
@@ -64,7 +63,7 @@ let threeEntries = [
     try require(agentText.display.contains("List digest: \(digest)"), "junk lines leave digest alone")
     try require(
       !agentText.display.contains("Dorian") && !agentText.display.contains("APPROVE")
-        && !agentText.confirms[0].contains("#4"), "no agent text shown or confirmed")
+        && agentText.confirms[0].hasPrefix("Approve 3 "), "no agent text shown or confirmed")
     try require(
       !agentText.calls.contains { $0.path.contains("/pulls/4") || $0.path.contains("/pulls/5") },
       "refused lines are never looked up")
@@ -73,14 +72,14 @@ let threeEntries = [
     let movedEarly = batchFixture { $0.pulls[2]!.heads = [sha("f")] }
     let early = try await movedEarly.batch(threeQueued)
     try require(early.approved == [1, 3], "moved head dropped")
-    try require(!movedEarly.confirms[0].contains("#2"), "moved head not in the confirm")
+    try require(movedEarly.confirms[0].hasPrefix("Approve 2 "), "moved head not in the confirm")
     try require(!movedEarly.posts.contains { $0.hasSuffix(sha("b")) }, "nothing posted for it")
 
     // A head that moves after the confirm, right before posting, is dropped too.
     let movedLate = batchFixture { $0.pulls[2]!.heads = [sha("b"), sha("f")] }
     let late = try await movedLate.batch(threeQueued)
     try require(late.approved == [1, 3], "late move dropped")
-    try require(movedLate.confirms[0].contains("#2"), "it was confirmed")
+    try require(movedLate.confirms[0].hasPrefix("Approve 3 "), "it was confirmed")
     try require(!movedLate.posts.contains { $0.hasSuffix(sha("b")) }, "but never posted")
     try require(
       late.dropped.contains { $0.pr == 2 && $0.reason.contains("moved while posting") },

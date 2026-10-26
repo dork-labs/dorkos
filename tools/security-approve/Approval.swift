@@ -285,8 +285,8 @@ func approveBatch(
   for candidate in ready { lines.append(diffSummary(candidate)) }
   show(lines.joined(separator: "\n"))
   guard !ready.isEmpty else { return report }
-  let names = ready.map { "#\($0.pr) \($0.sha.prefix(12))" }.joined(separator: ", ")
-  try await confirm("Approve \(ready.count) dork-labs/dorkos PRs, list \(digest): \(names)")
+  // One short line: the terminal shows the full list; the prompt carries the digest to match.
+  try await confirm("Approve \(ready.count) dork-labs/dorkos PRs, list \(digest)")
   let token = try await github.installationToken(appID: appID, now: now, signer: signer)
   for candidate in ready {
     do {

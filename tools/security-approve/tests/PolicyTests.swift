@@ -31,7 +31,7 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
     // Digest: order and duplicates don't matter; any added line changes it. The fixed value
     // is what `printf ... | LC_ALL=C sort -u | shasum -a 256` gives, as enqueue.sh computes it.
     let pair = [QueueEntry(pr: 1, sha: sha("a")), QueueEntry(pr: 2, sha: sha("b"))]
-    try require(listDigest(pair) == "c0c79cf81e8d", "digest matches the shell's")
+    try require(listDigest(pair) == "c0c79cf8", "digest matches the shell's")
     try require(listDigest(pair.reversed() + pair) == listDigest(pair), "order-free")
     try require(listDigest(pair + [QueueEntry(pr: 3, sha: sha("c"))]) != listDigest(pair), "changes")
 

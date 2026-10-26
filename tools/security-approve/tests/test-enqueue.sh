@@ -30,7 +30,7 @@ printf 'Reviewed head %s\n' "$b" >"$tmp/reviews/pr-2.md"
 "$here/enqueue.sh" 1 "$a" >/dev/null 2>&1 || true
 printf '1 %s\n' "$a" >>"$tmp/shared/queue"
 printf 'junk line\n' >>"$tmp/shared/queue"
-"$here/enqueue.sh" --digest | grep -q 'List digest: c0c79cf81e8d (2 queued)' || fail 'digest matches the helper'
+"$here/enqueue.sh" --digest | grep -q 'List digest: c0c79cf8 (2 queued)' || fail 'digest matches the helper'
 # Cap of 8 distinct entries.
 : >"$tmp/shared/queue"
 for n in 1 2 3 4 5 6 7 8; do printf '%s %s\n' "$n" "$a" >>"$tmp/shared/queue"; done

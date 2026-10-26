@@ -7,8 +7,8 @@ user, because agents can change programs in your own account.
 
 It takes two short sittings, about 15 minutes in all:
 
-- **Part A (about 7 minutes):** make the user, check sudo, create the App, send two numbers.
-- **Part B (about 8 minutes):** after Security reviews the PR that pins those numbers, build,
+- **Part A (about 8 minutes):** make the user, check sudo, create the App, send two numbers.
+- **Part B (about 7 minutes):** after Security reviews the PR that pins those numbers, build,
   install and store the key.
 
 "Switch to DorkOS Approver" always means: Apple menu → **Lock Screen**, then pick **DorkOS
@@ -16,7 +16,7 @@ Approver**. "Switch back" is the same, picking yourself. Never paste the key int
 
 ## Part A
 
-### 1. Make the approver user (3 minutes)
+### 1. Make the approver user (4 minutes)
 
 System Settings → **Users & Groups** → **Add User**. Choose **Standard** (not Administrator).
 Full name `DorkOS Approver`, account name `dorkos-approver`, and a strong password you use nowhere
@@ -73,7 +73,7 @@ it merges; you check the merged numbers match your note.
 
 Everything here runs as DorkOS Approver, in its Terminal.
 
-### 4. Build, sign and install (5 minutes)
+### 4. Build, sign and install (4 minutes)
 
 Paste the SHA Security named into the second line, then run the block. The `PATH` line makes sure
 only Apple's own tools run.
@@ -125,7 +125,7 @@ The last line should say "Nothing to approve." Switch back. Setup is done.
 ## Daily use (about 2 minutes, twice a day)
 
 Security queues each reviewed head with `tools/security-approve/enqueue.sh <pr> <sha>` and posts
-the **list digest** (12 letters and numbers) in #dorkos. Queueing approves nothing.
+the **list digest** (8 letters and numbers) in #dorkos. Queueing approves nothing.
 
 Switch to DorkOS Approver, open Terminal, and run:
 

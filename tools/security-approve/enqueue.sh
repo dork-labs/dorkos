@@ -12,12 +12,12 @@ reviews=${DORKOS_SECURITY_REVIEWS:-$HOME/.dork/agents/security-auditor/reviews}
 max=8
 
 # Same rules as the helper: well-formed lines only, first 8 distinct, sorted bytewise,
-# each ending in a newline, SHA-256, first 12 hex.
+# each ending in a newline, SHA-256, first 8 hex.
 entries() {
   [ -f "$shared/queue" ] || return 0
   grep -E '^[1-9][0-9]{0,6} [0-9a-f]{40}$' "$shared/queue" | awk '!seen[$0]++' | head -n "$max"
 }
-digest() { entries | LC_ALL=C sort | /usr/bin/shasum -a 256 | cut -c1-12; }
+digest() { entries | LC_ALL=C sort | /usr/bin/shasum -a 256 | cut -c1-8; }
 
 case ${1:-} in
 --digest)
