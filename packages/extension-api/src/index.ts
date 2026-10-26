@@ -88,6 +88,7 @@ export {
   FORWARD_ITEM_ID_MAX_CHARS,
   FORWARD_ITEM_TITLE_MAX_CHARS,
   FORWARD_TEXT_MAX_CHARS,
+  FORWARD_STAMPS_MAX,
 } from './agent-forward.js';
 export type {
   ExtensionForwardApi,
@@ -96,6 +97,7 @@ export type {
   ForwardInput,
   ForwardReceipt,
   ForwardReply,
+  ForwardStamp,
 } from './agent-forward.js';
 export type {
   ExtensionRoomsApi,

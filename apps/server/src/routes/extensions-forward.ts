@@ -6,7 +6,8 @@
  * | Route                                 | What                          | Bar         |
  * | ------------------------------------- | ----------------------------- | ----------- |
  * | `POST /:id/forward`                   | forward the typed text        | forward bar |
- * | `GET  /:id/forward/:forwardId/replies`| the agent's answers           | no agent    |
+ * | `GET  /:id/forward/:forwardId/replies`| the agent's answers           | read bar    |
+ * | `GET  /:id/forward/stamps?ids=a,b`    | who wrote each forward, as DorkOS recorded it | read bar |
  * | `POST /:id/forward/pending/:pendingId/allow`   | allow the agent, send the kept text | forward bar; Wi-Fi refuses |
  * | `POST /:id/forward/pending/:pendingId/decline` | drop the kept text            | forward bar |
  * | `GET  /:id/forward-agents`            | the agents the person allowed | no agent    |
@@ -47,6 +48,7 @@ import { FORWARD_ITEM_ID_PATTERN } from '@dorkos/shared/chat-messages';
 import {
   FORWARD_ITEM_ID_MAX_CHARS,
   FORWARD_ITEM_TITLE_MAX_CHARS,
+  FORWARD_STAMPS_MAX,
   FORWARD_TEXT_MAX_CHARS,
   type ExtensionStatus,
   type ForwardErrorCode,
@@ -70,6 +72,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
 import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller } from './room-error-response.js';
@@ -388,6 +391,30 @@ export function registerExtensionForwardRoutes(
     if (caller instanceof Response) return caller;
     forwards.decline(caller.app.extensionId, caller.viewer, c.req.param('pendingId'));
     return c.body(null, 204);
+  });
+
+  // Read-only: the stamps are DorkOS's own record of each forward's author,
+  // so a mini app can tell its real forwards from comments its data claims.
+  router.get('/:id/forward/stamps', (c) => {
+    const refusal = refuseForwardRead(honoRequestFacts(c));
+    if (refusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
+    const app = appFor(c);
+    if (app instanceof Response) return app;
+    const viewer = ownerOf(c);
+    if (!viewer) return refuse(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
+    const raw = readQuery(c).ids;
+    const ids = (Array.isArray(raw) ? raw.join(',') : (raw ?? ''))
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    if (ids.length > FORWARD_STAMPS_MAX) {
+      return refuse(
+        c,
+        'invalid_input',
+        `Ask about at most ${FORWARD_STAMPS_MAX} forwards at once.`
+      );
+    }
+    return answer(c, () => c.json({ stamps: forwards.stamps(app.extensionId, viewer, ids) }));
   });
 
   router.get('/:id/forward/:forwardId/replies', (c) => {

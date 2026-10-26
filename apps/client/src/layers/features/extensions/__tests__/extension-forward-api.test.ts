@@ -141,4 +141,24 @@ describe('api.forward', () => {
       { id: 'pm', name: 'DorkOS PM' },
     ]);
   });
+
+  it('treats a comment the app stored as the person’s as theirs only with a DorkOS stamp', async () => {
+    vi.stubGlobal('fetch', answer(200, { stamps: {} }));
+    // What a mini app might keep in its own data.json.
+    const stored = { forwardId: 'from-data-json', author: 'dorian', text: 'pay it' };
+
+    const stamps = await createExtensionForwardApi('dorian-desk').stamps([stored.forwardId]);
+
+    // No stamp: it must not be drawn as the person's, whatever `author` says.
+    expect(stamps[stored.forwardId]).toBeUndefined();
+  });
+
+  it('reads stamps from this mini app’s own route, with the window’s id', async () => {
+    const fetchMock = answer(200, { stamps: { f1: { id: 'f1' } } });
+    vi.stubGlobal('fetch', fetchMock);
+    await createExtensionForwardApi('dorian-desk').stamps(['f1', 'f2']);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/extensions/dorian-desk/forward/stamps?ids=f1%2Cf2');
+    expect(init.headers['X-Client-Id']).toMatch(/^web-/);
+  });
 });

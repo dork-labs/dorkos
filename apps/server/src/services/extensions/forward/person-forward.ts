@@ -42,7 +42,12 @@
 import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import type { ForwardErrorCode, ForwardReceipt, ForwardReply } from '@dorkos/extension-api';
+import type {
+  ForwardErrorCode,
+  ForwardReceipt,
+  ForwardReply,
+  ForwardStamp,
+} from '@dorkos/extension-api';
 import crypto from 'node:crypto';
 import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
@@ -422,6 +427,50 @@ export class PersonForwards {
         }));
     }
     throw new PersonForwardError('not_found', 'This mini app sent no such comment.');
+  }
+
+  /**
+   * DorkOS's own record of who wrote each of this mini app's forwards: the
+   * room entry it posted, read back. Only an entry carrying this mini app's
+   * `via` and authored by the person asking gets a stamp; an id the app made
+   * up, a comment typed by hand in the chat, or another person's post gets
+   * none. No door but the forward route writes `via` (`room-posting.ts`).
+   *
+   * @param extensionId - The mini app.
+   * @param viewer - The person.
+   * @param forwardIds - The ids to look up.
+   */
+  stamps(
+    extensionId: string,
+    viewer: AuthorRecord,
+    forwardIds: readonly string[]
+  ): Record<string, ForwardStamp> {
+    const rooms = this.deps.rooms();
+    if (!rooms) throw new PersonForwardError('unavailable', 'Rooms aren’t running. Try again.');
+    const wanted = new Set(forwardIds);
+    const out: Record<string, ForwardStamp> = {};
+    for (const agentId of forwardAgentsOf(extensionId)) {
+      let agent: ResolvedAgent;
+      try {
+        agent = this.resolve(agentId);
+      } catch {
+        continue;
+      }
+      for (const id of wanted) {
+        const entry = rooms.readEntry(agent.roomId, viewer.id, id);
+        if (!entry || entry.authorId !== viewer.id) continue;
+        if (entry.body.via?.extensionId !== extensionId) continue;
+        out[id] = {
+          id,
+          author: { kind: 'person', name: viewer.displayName || 'You', isYou: true },
+          agent: { id: agent.id, name: agent.name },
+          itemId: entry.body.via.itemId,
+          sentAt: entry.createdAt,
+        };
+        wanted.delete(id);
+      }
+    }
+    return out;
   }
 
   /** The allowed agent a forward goes to, or the refusal. */

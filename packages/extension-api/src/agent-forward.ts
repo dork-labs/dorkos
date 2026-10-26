@@ -67,6 +67,28 @@ export interface ForwardReply {
   readonly createdAt: string;
 }
 
+/**
+ * Who wrote a forwarded comment, as DorkOS recorded it when it posted it.
+ * DorkOS writes this; a mini app cannot. Draw a comment as the person's own
+ * ("You") only when it has a stamp, never because the app's own stored data
+ * says so: anything the app saved can be edited by whoever edits the app.
+ */
+export interface ForwardStamp {
+  /** The forward's id. */
+  readonly id: string;
+  /** The person who typed it, signed in when it was sent. */
+  readonly author: { readonly kind: 'person'; readonly name: string; readonly isYou: true };
+  /** The agent it went to. */
+  readonly agent: ForwardAgent;
+  /** The item it was typed on. */
+  readonly itemId: string;
+  /** ISO-8601 time it was sent. */
+  readonly sentAt: string;
+}
+
+/** Most forward ids {@link ExtensionForwardApi.stamps} takes at once. */
+export const FORWARD_STAMPS_MAX = 50;
+
 /** Why `api.forward` refused a call. See {@link ForwardError}. */
 export type ForwardErrorCode =
   /** The person has not allowed that agent (or any) for this mini app, or said no on the prompt. */
@@ -168,4 +190,13 @@ export interface ExtensionForwardApi {
    * @param forwardId - The receipt's `id`.
    */
   replies(forwardId: string): Promise<ForwardReply[]>;
+  /**
+   * DorkOS's own record of who wrote each forward, by id. An id with no
+   * stamp is not a comment DorkOS forwarded for the person through this mini
+   * app, whatever the app's own data says: draw it as anyone's but theirs.
+   *
+   * @param forwardIds - Receipt ids, at most {@link FORWARD_STAMPS_MAX}.
+   * @returns The stamps, keyed by id. Unknown ids are left out.
+   */
+  stamps(forwardIds: readonly string[]): Promise<Record<string, ForwardStamp>>;
 }

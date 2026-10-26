@@ -18,6 +18,7 @@ import {
   type ForwardErrorCode,
   type ForwardReceipt,
   type ForwardReply,
+  type ForwardStamp,
 } from '@dorkos/extension-api';
 import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from './extension-api-url';
@@ -154,6 +155,15 @@ export function createExtensionForwardApi(extId: string): ExtensionForwardApi {
         headers: { 'X-Client-Id': resolveStableClientId() },
       });
       return ((await res.json()) as { replies: ForwardReply[] }).replies;
+    },
+
+    async stamps(forwardIds: readonly string[]): Promise<Record<string, ForwardStamp>> {
+      if (forwardIds.length === 0) return {};
+      const query = new URLSearchParams({ ids: forwardIds.join(',') });
+      const res = await call(url(`/forward/stamps?${query}`), {
+        headers: { 'X-Client-Id': resolveStableClientId() },
+      });
+      return ((await res.json()) as { stamps: Record<string, ForwardStamp> }).stamps;
     },
   };
 }

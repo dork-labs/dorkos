@@ -703,6 +703,73 @@ describe('the first-use prompt', () => {
   });
 });
 
+describe('author stamps', () => {
+  beforeEach(() => pick(ANA_ID));
+
+  it('stamps a real forward with the person as its author, from DorkOS’s own record', async () => {
+    const sent = await request(server)
+      .post(FORWARD)
+      .set(APP)
+      .send({ text: 'Yes', itemId: 'item-7' });
+    const res = await request(server).get(`${FORWARD}/stamps?ids=${sent.body.id}`).set(APP);
+    expect(res.status).toBe(200);
+    expect(res.body.stamps[sent.body.id]).toMatchObject({
+      id: sent.body.id,
+      author: { kind: 'person', isYou: true },
+      agent: { id: ANA_ID, name: 'Ana' },
+      itemId: 'item-7',
+    });
+  });
+
+  it('gives no stamp to a comment the app’s own data claims as the person’s', async () => {
+    // What a mini app might keep in its data.json: an id and `author: "dorian"`.
+    // DorkOS never forwarded it, so nothing vouches for it.
+    const fromDataJson = { id: '01FAKEFROMDATAJSON00000000', author: 'dorian', text: 'pay it' };
+    const res = await request(server).get(`${FORWARD}/stamps?ids=${fromDataJson.id}`).set(APP);
+    expect(res.status).toBe(200);
+    expect(res.body.stamps).toEqual({});
+  });
+
+  it('gives no stamp to a message typed in the chat by hand, or to another app’s forward', async () => {
+    const chat = chats.ensureForAgent(ANA_PATH, 'Ana');
+    const typed = service.post(chat.roomId, { authorId: ownerAuthorId, text: 'by hand' });
+    state.extensions = { forwardAgents: { desk: [ANA_ID], other: [ANA_ID] } };
+    statusOf.other = 'compiled';
+    const others = await request(server)
+      .post('/api/extensions/other/forward')
+      .set(APP)
+      .send({ text: 'from other', itemId: 'i' });
+    expect(others.status).toBe(201);
+    const res = await request(server)
+      .get(`${FORWARD}/stamps?ids=${typed.id},${others.body.id}`)
+      .set(APP);
+    expect(res.body.stamps).toEqual({});
+  });
+
+  it('never stamps an agent’s post', async () => {
+    const sent = await request(server).post(FORWARD).set(APP).send({ text: 'Yes', itemId: 'i' });
+    const chat = chats.ensureForAgent(ANA_PATH, 'Ana');
+    const reply = service.post(chat.roomId, {
+      authorId: chat.agentAuthorId,
+      text: 'done',
+      answersEntryId: sent.body.id,
+    });
+    const res = await request(server).get(`${FORWARD}/stamps?ids=${reply.id}`).set(APP);
+    expect(res.body.stamps).toEqual({});
+  });
+
+  it('refuses an agent, and more than 50 ids', async () => {
+    const agent = await request(server)
+      .get(`${FORWARD}/stamps?ids=x`)
+      .set(APP)
+      .set('X-DorkOS-Agent', 'token');
+    expect(agent.status).toBe(403);
+    const many = Array.from({ length: 51 }, (_, i) => `id${i}`).join(',');
+    const res = await request(server).get(`${FORWARD}/stamps?ids=${many}`).set(APP);
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('the Direct chat view', () => {
   it('stamps the app and item on the person’s message from the room’s own record', async () => {
     pick(ANA_ID);

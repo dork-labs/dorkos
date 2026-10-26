@@ -182,6 +182,7 @@
     "GET /api/extensions/:id/decisions",
     "GET /api/extensions/:id/forward-agents",
     "GET /api/extensions/:id/forward/:forwardId/replies",
+    "GET /api/extensions/:id/forward/stamps",
     "GET /api/extensions/:id/project-settings",
     "GET /api/extensions/:id/room-access",
     "GET /api/extensions/:id/rooms",
