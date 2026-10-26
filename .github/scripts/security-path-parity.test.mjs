@@ -32,6 +32,11 @@ test('gate pattern equals Security reference and the installed interim checker',
 
 const additions = [
   ['packages/a/patches/b.patch', 'packages/a/patches-old/b.patch'],
+  ['.node-version', '.node-versions'],
+  ['apps/client/.node-version', 'apps/client/node-version'],
+  ['CODEOWNERS', 'CODEOWNERS.md'],
+  ['docs/CODEOWNERS', 'docs/CODEOWNERSx'],
+  ['Codeowners', 'docs/codeowners-guide.md'],
   ['.NPMRC', '.NPMRC.backup'],
   ['.PNPMFILE.CJS', '.PNPMFILE.CJS.old'],
   ['PATCHES/dependency.patch', 'PATCHES-old/dependency.patch'],

@@ -10,8 +10,9 @@ ratchet-release: []
 field-changes: []
 ---
 
-Extend the approved trust-path reference to .npmrc, patches/, .pnpmfile.cjs and
-.nvmrc, at the root or inside a workspace. Match both the original path and its
+Extend the approved trust-path reference to .npmrc, patches/, .pnpmfile.cjs,
+.nvmrc and .node-version, at the root or inside a workspace, and to a CODEOWNERS
+file in any folder (GitHub reads it from the root and docs/ as well as .github/). Match both the original path and its
 fully folded and NFKC-then-folded forms, including both sides of a rename.
 Preserve the original flagless match first, then add Unicode case-insensitive
 matching for every supplied pattern, including repo-configured patterns. This closes case-variant and compatibility-character
