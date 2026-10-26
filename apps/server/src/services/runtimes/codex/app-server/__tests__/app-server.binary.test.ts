@@ -602,7 +602,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
   // (it offers no Never ask), a folder-wide search is a read-only command its
   // sandbox runs without asking, so it prints the secret. Expected, and the
   // point: it documents the limit the warning and the copy describe.
-  it('prints a secret in the folder from a folder-wide search at Ask first (today’s limit)', async () => {
+  it('prints a secret in the folder from a folder-wide search at Ask first (today’s limit)', async (ctx) => {
     const env = path.join(project, ['', 'env'].join('.'));
     const canary = 'CANARY-dor3292-codex';
     fs.writeFileSync(env, `X_API_KEY=${canary}\n`);
@@ -628,6 +628,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         events.some((e) => e.type === 'approval_required'),
         'a read-only search asked nobody'
       ).toBe(false);
+      // A Linux CI runner can't start Codex's sandbox at all (bubblewrap is
+      // refused a network namespace), so no command runs there and this
+      // records nothing either way. Skipped, never passed, in that case.
+      if (/bwrap: /.test(result)) ctx.skip();
       expect(result).toContain(canary);
     } finally {
       fs.rmSync(env, { force: true });
