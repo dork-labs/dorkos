@@ -16,8 +16,8 @@ describe('schedulesBadge', () => {
   it.each([
     [{ waiting: 1 }, { status: 'needs-you', count: 1, sentence: '1 schedule waits for your OK' }],
     [{ waiting: 2 }, { status: 'needs-you', count: 2, sentence: '2 schedules wait for your OK' }],
-    [{ failed: 1 }, { status: 'failed', count: 1, sentence: '1 schedule failed its last run' }],
-    [{ failed: 3 }, { status: 'failed', count: 3, sentence: '3 schedules failed their last run' }],
+    [{ failed: 1 }, { status: 'failed', count: 1, sentence: '1 schedule is failing' }],
+    [{ failed: 3 }, { status: 'failed', count: 3, sentence: '3 schedules are failing' }],
     [{ running: ['Morning digest'] }, { status: 'working', sentence: 'Morning digest is running' }],
     [{ running: ['A', 'B'] }, { status: 'working', sentence: '2 schedules are running' }],
   ])('%o reads %o', (input, badge) => {

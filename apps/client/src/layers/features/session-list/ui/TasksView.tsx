@@ -38,17 +38,17 @@ function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
     case 'running':
       return <Spinner size="xs" className="text-status-info shrink-0" />;
     case 'completed':
-      return <CheckCircle2 className="text-status-success size-3 shrink-0" aria-hidden />;
+      return <CheckCircle2 className="text-foreground size-3 shrink-0" aria-hidden />;
     case 'failed':
       return <XCircle className="text-destructive size-3 shrink-0" aria-hidden />;
     case 'cancelled':
       return <MinusCircle className="text-muted-foreground size-3 shrink-0" aria-hidden />;
     case 'skipped':
       return <SkipForward className="text-muted-foreground size-3 shrink-0" aria-hidden />;
-    case 'blocked':
-      // Ran and got nowhere — every tool it reached for needed an approval
-      // nobody was there to give (DOR-2101). Amber, because nothing broke.
-      return <Lock className="text-status-warning-dot size-3 shrink-0" aria-hidden />;
+    case 'needs_attention':
+      // Ran and lost a tool it needed an approval for, with nobody there to
+      // give it (DOR-3123). The failing tone: it did not do its job.
+      return <Lock className="text-destructive size-3 shrink-0" aria-hidden />;
     default:
       return null;
   }

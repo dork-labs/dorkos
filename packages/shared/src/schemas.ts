@@ -220,6 +220,8 @@ export const StreamEventTypeSchema = z
     'elicitation_complete',
     'permission_denied',
     'model_substituted',
+    'work_left_running',
+    'work_left_ended',
     'interaction_cancelled',
     'capability_approval_required',
     'capability_approval_resolved',
@@ -2823,6 +2825,58 @@ export const ModelSubstitutedEventSchema = z
 /** Inferred type for {@link ModelSubstitutedEventSchema}. */
 export type ModelSubstitutedEvent = z.infer<typeof ModelSubstitutedEventSchema>;
 
+/** How a background command left running by a Stop finally ended (DOR-3285). */
+export const WorkLeftEndStatusSchema = z
+  .enum(['completed', 'failed', 'stopped'])
+  .openapi('WorkLeftEndStatus');
+
+/** Inferred type for {@link WorkLeftEndStatusSchema}. */
+export type WorkLeftEndStatus = z.infer<typeof WorkLeftEndStatusSchema>;
+
+/** One background command a stopped turn could not end, by its task id. */
+export const WorkLeftTaskSchema = z
+  .object({
+    /** The runtime's task id, which the per-task Stop takes. */
+    taskId: z.string(),
+    /** The shell command as the agent wrote it; empty when it is not known. */
+    command: z.string(),
+  })
+  .openapi('WorkLeftTask');
+
+/** Inferred type for {@link WorkLeftTaskSchema}. */
+export type WorkLeftTask = z.infer<typeof WorkLeftTaskSchema>;
+
+/**
+ * Emitted when a Stop ended a turn but could not end every background command
+ * that turn started (DOR-3285). It happens after the turn, so it is recorded
+ * the moment it arrives and drawn as a lasting line under the stopped turn.
+ */
+export const WorkLeftRunningEventSchema = z
+  .object({
+    /** The commands still running, each with its own Stop. */
+    tasks: z.array(WorkLeftTaskSchema),
+  })
+  .openapi('WorkLeftRunningEvent');
+
+/** Inferred type for {@link WorkLeftRunningEventSchema}. */
+export type WorkLeftRunningEvent = z.infer<typeof WorkLeftRunningEventSchema>;
+
+/**
+ * Emitted when a command a Stop left running later ends (DOR-3285), so the
+ * line under the stopped turn can say it is over.
+ */
+export const WorkLeftEndedEventSchema = z
+  .object({
+    /** The task id named in the earlier `work_left_running`. */
+    taskId: z.string(),
+    /** How it ended. */
+    status: WorkLeftEndStatusSchema,
+  })
+  .openapi('WorkLeftEndedEvent');
+
+/** Inferred type for {@link WorkLeftEndedEventSchema}. */
+export type WorkLeftEndedEvent = z.infer<typeof WorkLeftEndedEventSchema>;
+
 export const PromptSuggestionEventSchema = z
   .object({
     suggestions: z.array(z.string()),
@@ -3098,6 +3152,8 @@ export const StreamEventSchema = z
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
       ModelSubstitutedEventSchema,
+      WorkLeftRunningEventSchema,
+      WorkLeftEndedEventSchema,
       InteractionCancelledEventSchema,
       CapabilityApprovalRequiredEventSchema,
       CapabilityApprovalResolvedEventSchema,
@@ -3528,6 +3584,26 @@ export const ModelSubstitutedPartSchema = z
 export type ModelSubstitutedPart = z.infer<typeof ModelSubstitutedPartSchema>;
 
 /**
+ * The lasting line under a stopped turn that names the background commands
+ * the Stop could not end (DOR-3285). Sourced from `work_left_running`, with
+ * each later `work_left_ended` folded in as that task's `ended`.
+ */
+export const WorkLeftRunningPartSchema = z
+  .object({
+    type: z.literal('work_left_running'),
+    tasks: z.array(
+      WorkLeftTaskSchema.extend({
+        /** Set once the command has ended; absent while it still runs. */
+        ended: WorkLeftEndStatusSchema.optional(),
+      })
+    ),
+  })
+  .openapi('WorkLeftRunningPart');
+
+/** Inferred type for {@link WorkLeftRunningPartSchema}. */
+export type WorkLeftRunningPart = z.infer<typeof WorkLeftRunningPartSchema>;
+
+/**
  * An inline row in the message stream marking a context-window compaction.
  * Sourced from the `compact_boundary` session event on success (carrying the
  * SDK `compact_metadata`), or synthesized from an `operation_progress`
@@ -3584,6 +3660,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   ModelSubstitutedPartSchema,
+  WorkLeftRunningPartSchema,
   CompactBoundaryPartSchema,
 ]);
 
@@ -5515,20 +5592,85 @@ export const TaskNameSchema = z
  * (DOR-1482). It is terminal, and it is not a failure — nothing went wrong, the
  * server was simply busy.
  *
- * `blocked` is the run that ran and was never allowed to do anything: every
- * tool it reached for was turned down because nobody was there to approve it,
- * and none of them succeeded (DOR-2101). Not `failed`, because nothing broke
- * and debugging it would find nothing — what it needs is the permission it was
- * denied. Not `completed` either, which is what it used to be recorded as: a
- * green tick on a run that read no mail is the app reporting healthy while
- * observing nothing. The rule is `createRunOutcomeTracker` in
- * `@dorkos/shared/run-outcome`.
+ * `needs_attention` is the run that ran and lost at least one tool it reached
+ * for, because nobody was there to approve it — whether it carried on without
+ * the tool or got nothing done at all (DOR-3123, FB-67). It replaced
+ * `blocked`, which only covered the second case: a run that lost the one tool
+ * it needed and then wrote "done" was recorded `completed` with a green tick.
+ * The rule is now that `completed` means the run was refused NOTHING; anything
+ * less needs a person, and {@link TaskRunOutcomeSchema} says how much got done.
+ * Not `failed`, because nothing broke and debugging it would find nothing —
+ * what it needs is the permission it was denied. The rule is
+ * `createRunOutcomeTracker` in `@dorkos/shared/run-outcome`; a migration
+ * rewrote the stored `blocked` rows, so no reader meets that word any more.
  */
 export const TaskRunStatusSchema = z
-  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped', 'blocked'])
+  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped', 'needs_attention'])
   .openapi('TaskRunStatus');
 
 export type TaskRunStatus = z.infer<typeof TaskRunStatusSchema>;
+
+/**
+ * How much a `needs_attention` run got done (DOR-3123).
+ *
+ * `partial` — it was refused a tool and carried on, and something it reached
+ * for did succeed. `nothing_done` — every tool it reached for was refused and
+ * none succeeded, which is what `blocked` used to mean. The status and its tone
+ * are the same for both; only the words differ.
+ */
+export const TaskRunOutcomeSchema = z.enum(['partial', 'nothing_done']).openapi('TaskRunOutcome');
+
+export type TaskRunOutcome = z.infer<typeof TaskRunOutcomeSchema>;
+
+/**
+ * Why a schedule is failing, chosen on the server from its latest finished run
+ * so every surface says the same thing (DOR-3123, spec `schedules-failing` §3).
+ *
+ * - `tool_refused` / `tools_refused` — the run lost one tool, or several,
+ *   because nobody was there to approve it. `tools` names them as the runtime
+ *   did; a reader turns them into words with `readableToolName`.
+ * - `signin_needed` — the runtime's sign-in had expired.
+ * - `error` — anything else that stopped the run. `message` is the first line
+ *   of the run's error.
+ */
+export const TaskFailureReasonSchema = z
+  .object({
+    kind: z.enum(['tool_refused', 'tools_refused', 'signin_needed', 'error']),
+    /** The refused tools, runtime names, deduplicated; `[]` for other kinds. */
+    tools: z.array(z.string()),
+    /** Whether the run got nothing done, for the refusal kinds. */
+    nothingDone: z.boolean(),
+    /** The first line of the run's error, for `signin_needed` and `error`. */
+    message: z.string().nullable(),
+  })
+  .openapi('TaskFailureReason');
+
+export type TaskFailureReason = z.infer<typeof TaskFailureReasonSchema>;
+
+/**
+ * Whether a schedule's last finished run did its job (DOR-3123, spec
+ * `schedules-failing` §1.2).
+ *
+ * A schedule is `failing` when its most recent finished run — `skipped`,
+ * `cancelled` and `running` runs do not count — is `needs_attention` or
+ * `failed`. One `completed` run clears it. Derived on the server so the list,
+ * its count and its filter all read one answer.
+ */
+export const TaskHealthSchema = z
+  .object({
+    state: z.enum(['ok', 'failing']),
+    /** Why it is failing; `null` when `ok`. */
+    reason: TaskFailureReasonSchema.nullable(),
+    /** When the first run of the current failing streak started; `null` when `ok`. */
+    since: z.string().nullable(),
+    /** How many finished runs in a row have failed; `0` when `ok`. */
+    streak: z.number().int().min(0),
+    /** The run the reason was read from; `null` when `ok`. */
+    lastRunId: z.string().nullable(),
+  })
+  .openapi('TaskHealth');
+
+export type TaskHealth = z.infer<typeof TaskHealthSchema>;
 
 export const TaskRunTriggerSchema = z
   .enum(['scheduled', 'manual', 'agent'])
@@ -5776,6 +5918,12 @@ export const TaskSchema = z
      * repository or the schedule has no agent. ABSENT from an older server.
      */
     project: ProjectRefSchema.nullable().optional(),
+    /**
+     * Whether the schedule's last finished run did its job (DOR-3123).
+     * Response-only, stamped by the server from run history. ABSENT from an
+     * older server, which a reader treats as healthy.
+     */
+    health: TaskHealthSchema.optional(),
   })
   .openapi('Task');
 
@@ -5838,14 +5986,19 @@ export const TaskRunSchema = z
      * still fold all three, because they answer the wider question of what
      * went unanswered.
      *
-     * Persisted so run history can say what a `blocked` run was denied without
-     * a person cross-referencing the activity feed for it, and populated on a
-     * `completed` run too when it lost a tool and carried on.
+     * Persisted so run history can say what a `needs_attention` run was denied
+     * without a person cross-referencing the activity feed for it. A run with
+     * anything in this list is never `completed` (DOR-3123).
      *
      * `null` on a run recorded before this column existed; `[]` on a run that
      * was refused nothing.
      */
     refusedTools: z.array(z.string()).nullable().default(null),
+    /**
+     * How much a `needs_attention` run got done (DOR-3123); `null` on every
+     * other status.
+     */
+    outcome: TaskRunOutcomeSchema.nullable().default(null),
     /**
      * The scheduled occurrence this run stood for, ISO 8601 (DOR-2718).
      *

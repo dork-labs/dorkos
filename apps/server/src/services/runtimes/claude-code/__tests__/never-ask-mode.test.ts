@@ -187,9 +187,44 @@ describe('the tool gate under Never ask (resolveModeDecision, createCanUseTool)'
       const s = session(NEVER_ASK_MODE_ID, extra);
       const result = await createCanUseTool(s, log, undefined, identity)(tool, input, context('t'));
       expect(result).toEqual({ behavior: 'deny', message: NEVER_ASK_DENIAL });
-      expect(s.eventQueue).toEqual([]);
+      // No card and no question: the only thing written is the record of the
+      // refusal, which a scheduled run's row reads to name the tool it lost
+      // (DOR-3132). A question is the run wanting to talk, so it leaves none.
+      expect(s.eventQueue).toEqual(
+        tool === 'AskUserQuestion'
+          ? []
+          : [
+              {
+                type: 'permission_denied',
+                data: {
+                  toolCallId: 't',
+                  toolName: tool,
+                  reasonType: 'mode',
+                  reason: 'Never ask refuses anything not already allowed.',
+                  message: NEVER_ASK_DENIAL,
+                },
+              },
+            ]
+      );
       expect(s.pendingInteractions.size).toBe(0);
     }
+  });
+
+  it('still denies when writing the refusal record throws', async () => {
+    // The deny is decided before the record: a broken queue must never turn a
+    // refusal into anything else (DOR-3132, Security review).
+    const s = session(NEVER_ASK_MODE_ID);
+    s.eventQueue.push = () => {
+      throw new Error('queue closed');
+    };
+    const result = await createCanUseTool(
+      s,
+      log,
+      undefined,
+      identity
+    )('Bash', { command: 'ls' }, context('t'));
+    expect(result).toEqual({ behavior: 'deny', message: NEVER_ASK_DENIAL });
+    expect(s.pendingInteractions.size).toBe(0);
   });
 
   it("still lets DorkOS's own safe-listed tools through, which never ask in any mode (DOR-3042)", async () => {

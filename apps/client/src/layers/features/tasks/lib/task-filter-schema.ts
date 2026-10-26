@@ -8,6 +8,7 @@
  */
 import type { Task } from '@dorkos/shared/types';
 import { isScheduleAwaitingApproval } from '@/layers/entities/tasks';
+import { isFailing } from './schedule-health';
 import { createFilterSchema, textFilter, enumFilter, createSortOptions } from '@/layers/shared/lib';
 
 /**
@@ -55,6 +56,15 @@ export const taskFilterSchema = createFilterSchema<Task>({
       pending_approval: 'text-status-warning-dot',
     },
   }),
+  // Whether the schedule's last finished run did its job (DOR-3123). The list
+  // also draws it as its own Failing chip, and it lives in the URL as
+  // `health=failing` like the others.
+  health: enumFilter({
+    field: (t) => (isFailing(t) ? 'failing' : 'ok'),
+    options: ['failing'],
+    label: 'Health',
+    labels: { failing: 'Failing' },
+  }),
   type: enumFilter({
     field: (t) => (t.cron ? 'scheduled' : 'on-demand'),
     options: ['scheduled', 'on-demand'],
@@ -84,6 +94,8 @@ export const taskSortOptions = createSortOptions<Task>({
  * undefined. Without a named default the list fell back to whatever order the
  * store returned and the sort control rendered "Sort: " with nothing after it.
  * Soonest-first is the useful lead for a page about scheduled work; paused tasks
- * carry no `nextRun` and sort to the end.
+ * carry no `nextRun` and sort to the end. Under this default the list also
+ * puts failing schedules first (`failingFirst`, DOR-3123); a sort the person
+ * picks is left exactly as they picked it.
  */
 export const TASK_DEFAULT_SORT_FIELD = 'nextRun';

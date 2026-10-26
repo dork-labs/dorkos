@@ -17,10 +17,26 @@ export function latestReview(statuses) {
   return statuses.find((status) => status.context === CONTEXT);
 }
 
+// Match marketplace S3b's expansion fold in addition to RegExp's simple Unicode
+// fold (notably sharp-s -> ss). Keep the original path: folding only adds matches.
+function fullFold(path) {
+  return path.normalize('NFC').toLowerCase().toUpperCase().toLowerCase();
+}
+
 export function touchesSecurity(files, pattern) {
-  const matcher = new RegExp(pattern);
+  const exact = new RegExp(pattern);
+  const matcher = new RegExp(pattern, 'iu');
   return files.some((file) =>
-    [file.filename, file.previous_filename].some((path) => path && matcher.test(path))
+    [file.filename, file.previous_filename].some(
+      (path) =>
+        path &&
+        // Flags can remove matches for lookaheads and negated classes. Preserve
+        // the original flagless verdict before adding folded matches.
+        (exact.test(path) ||
+          [path, fullFold(path), fullFold(path.normalize('NFKC'))].some((form) =>
+            matcher.test(form)
+          ))
+    )
   );
 }
 

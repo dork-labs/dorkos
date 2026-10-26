@@ -24,6 +24,7 @@ import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { McpSigninCard } from './McpSigninCard';
 import { CompactBoundaryRow } from './rows/CompactBoundaryRow';
 import { ModelSubstitutedRow } from './rows/ModelSubstitutedRow';
+import { WorkLeftRunningRow } from './rows/WorkLeftRunningRow';
 import { MessageImage } from './MessageImage';
 import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
@@ -284,6 +285,9 @@ export function AssistantMessageContent({
           toName={part.toName}
         />
       );
+    }
+    if (part.type === 'work_left_running') {
+      return <WorkLeftRunningRow key={`work-left-${i}`} sessionId={sessionId} part={part} />;
     }
     if (part.type === 'compact_boundary') {
       return (

@@ -24,8 +24,15 @@ import { TASK_RUNS_KEY } from './use-task-runs';
 export function useTasksSync(): void {
   const queryClient = useQueryClient();
 
-  useEventSubscription('tasks_changed', () => {
+  const refreshTasks = () => {
     void queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
+  };
+  useEventSubscription('tasks_changed', refreshTasks);
+  // A run ended: each schedule's health is read off its latest finished run, so
+  // the list's failing count, chip and order move with it (DOR-3123).
+  useEventSubscription('task_run_finished', () => {
+    refreshTasks();
+    void queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
   });
   // A run recorded failed, or a finished run's report growing late (DOR-2717):
   // the always-mounted Schedules tab reads the newest runs and polls them only

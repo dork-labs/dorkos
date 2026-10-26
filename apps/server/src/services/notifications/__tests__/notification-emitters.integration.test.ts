@@ -140,7 +140,7 @@ describe('a finished run', () => {
     const task = store.createTask(taskInput('mailroom'));
     const run = store.createRun(task.id, 'scheduled');
     store.updateRun(run.id, {
-      status: 'blocked',
+      status: 'needs_attention',
       error: 'Skipped Bash — nobody was there to approve it on a scheduled run.',
       refusedTools: ['Bash'],
       durationMs: 4000,
@@ -150,10 +150,10 @@ describe('a finished run', () => {
     expect(announced()).toHaveLength(1);
     expect(announced()[0]).toMatchObject({
       kind: 'run.completed',
-      title: 'mailroom could not use its tools',
+      title: 'mailroom needs attention',
     });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Ran for 4s and used none of its tools. Skipped Bash — nobody was there to approve it on a scheduled run.'
+      'Ran for 4s and was refused a tool. Skipped Bash — nobody was there to approve it on a scheduled run.'
     );
   });
 
