@@ -914,13 +914,20 @@ describe('contract: the same groups with login on', () => {
     agent = await seedAgent(server);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     const session = signedIn.headers
       .getSetCookie()
       .map((value) => value.split(';')[0]!)
       .join('; ');
     cookie = { cookie: session };
+    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      { ...cookie, ...origin }
+    );
     const created = await setup(
       server,
       'POST',

@@ -1253,9 +1253,16 @@ describe('contract: the extension routes with login on', () => {
     server = await bootComposedServer();
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = { cookie: cookieOf(signedIn.headers) };
+    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      { ...cookie, ...origin }
+    );
     const created = await setup(
       server,
       'POST',

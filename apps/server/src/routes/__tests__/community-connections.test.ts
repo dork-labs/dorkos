@@ -21,6 +21,7 @@ vi.mock('../../services/rooms/index.js', () => ({
 }));
 vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: owner.id }),
+  getAuth: () => undefined,
 }));
 // The `/api` chain these routes run behind reads login and the host allowlist from config.
 vi.mock('../../services/core/config-manager.js', () => ({

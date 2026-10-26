@@ -11900,9 +11900,13 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
     {
       "action": "http.delete",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "remove",
       "outcome": "ok",
@@ -11919,16 +11923,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "DELETE",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12022,16 +12034,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12053,16 +12073,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12084,16 +12112,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12115,16 +12151,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12166,9 +12210,13 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "outcome": "ok",
@@ -12185,18 +12233,26 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": {
       "hello": "world",
     },
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "POST",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12219,9 +12275,13 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
     {
       "action": "probe.recorded",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "source": {
@@ -12232,9 +12292,13 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "outcome": "ok",
@@ -12251,16 +12315,24 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": {},
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "POST",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -12283,9 +12355,13 @@ exports[`the chain matrix > login off, loopback host, loopback origin > good coo
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "error": "HTTP 404",
       "operation": "execute",
@@ -15592,9 +15668,13 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
     {
       "action": "http.delete",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "remove",
       "outcome": "ok",
@@ -15611,16 +15691,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "DELETE",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15714,16 +15802,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15745,16 +15841,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15776,16 +15880,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15807,16 +15919,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   "audit": [],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": null,
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "GET",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15858,9 +15978,13 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "outcome": "ok",
@@ -15877,18 +16001,26 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": {
       "hello": "world",
     },
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "POST",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15911,9 +16043,13 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
     {
       "action": "probe.recorded",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "source": {
@@ -15924,9 +16060,13 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "operation": "execute",
       "outcome": "ok",
@@ -15943,16 +16083,24 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
   ],
   "body": {
     "actor": {
-      "id": "owner",
-      "name": "owner",
+      "id": "<owner>",
+      "name": "<owner>",
       "type": "person",
     },
     "agent": null,
     "body": {},
-    "credential": null,
+    "credential": {
+      "idHash": "<owner-hash>",
+      "kind": "cookie",
+    },
     "method": "POST",
     "surface": "app",
-    "user": null,
+    "user": {
+      "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
+      "userId": "<owner>",
+    },
   },
   "complete": true,
   "headers": {
@@ -15975,9 +16123,13 @@ exports[`the chain matrix > login off, loopback host, none origin > good cookie,
     {
       "action": "http.post",
       "actor": {
-        "id": "owner",
-        "name": "owner",
+        "id": "<owner>",
+        "name": "<owner>",
         "type": "person",
+      },
+      "credential": {
+        "idHash": "<owner-hash>",
+        "kind": "cookie",
       },
       "error": "HTTP 404",
       "operation": "execute",

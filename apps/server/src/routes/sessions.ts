@@ -47,9 +47,8 @@ import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { isPersonTurn, readCallerAuthority } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
@@ -871,9 +870,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // open. Rooms, tasks and bindings never pass through here, and each names
     // itself at its own call (DOR-2105). A caller presenting an agent identity
     // is not that person: its chat is agent work, so it can read what it
-    // started (spec `audit-trail` §3.4), and it seeds no operator stop.
+    // started (spec `audit-trail` §3.4), and it seeds no operator stop. Nor is
+    // a caller with no agent header but no session of the person's, once an
+    // owner exists who could prove themselves (DOR-3330): any program here can
+    // omit the header, so its message runs as agent work, never as the person.
     const result = await dispatchSessionMessage({
-      origin: httpTurnOrigin(presentsAgentIdentity(honoRequestFacts(c))),
+      origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
       sessionId,
       request: parsed.data,
       clientId,

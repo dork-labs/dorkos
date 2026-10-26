@@ -17,6 +17,8 @@ import {
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestFacts } from '../http/request-facts.js';
+import type { CallerAccess } from './caller-access.js';
+import { notePersonSessionMissing } from '../lib/person-without-session.js';
 
 /** What {@link resolveCaller} reads: the raw agent header and what the chain resolved. */
 type CallerFacts = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
@@ -33,12 +35,15 @@ type CallerFacts = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
  *    its `agentPath`. First on purpose: an agent running under the owner's
  *    session still posts as itself, not as the owner.
  * 2. **A signed-in account** acts as the human author bound to it. The caller's
- *    `user` is only ever set by the session gate, which only proves one when
- *    `auth.enabled` is `true`, so this branch is unreachable on a login-off install.
- * 3. **Anything else** is the person at the keyboard. With login off there is
- *    nothing left to tell a local program from them (the documented DOR-505
- *    residual), so they resolve to whoever owns this install — and to the
- *    unbound `'local'` author when nobody does.
+ *    `user` is only ever set by the session gate. A write needs a browser
+ *    session: an API key reads as its account but never writes as it
+ *    (DOR-3330), 401 `PERSON_SESSION_REQUIRED`.
+ * 3. **Anything else** is the person at the keyboard when it only reads, or
+ *    when nobody owns this install yet: whoever owns it, or the unbound
+ *    `'local'` author when nobody does. **A write needs the owner's session
+ *    once an owner exists** (DOR-3330): any program here can omit the agent
+ *    header, so it is refused, 401 `PERSON_SESSION_REQUIRED`, and the person's
+ *    one step-up at this computer is what answers it. Reads stay free.
  *
  * ## Why an unverifiable token is refused rather than ignored (DOR-1361)
  *
@@ -104,12 +109,16 @@ type CallerFacts = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
  * Only the raw `X-DorkOS-Agent` header decides the refusal above, so a surface
  * that somehow skips identity resolution fails closed instead of open.
  *
- * @param facts - The raw headers, the resolved agent identity and, when login is
- *   on, the resolved account.
+ * @param facts - The raw headers, the resolved agent identity and, when the
+ *   gate proved one, the resolved account.
+ * @param access - What the caller is about to do; a write unless said
+ *   otherwise, so a new call site fails closed (`callerAccessOf` in `caller-access.ts`).
  * @throws {RoomError} `AGENT_IDENTITY_UNVERIFIED` when the caller presented an
  *   agent token this machine could not verify.
+ * @throws {RoomError} `PERSON_SESSION_REQUIRED` for a write with no session
+ *   once an owner exists.
  */
-export function resolveCaller(facts: CallerFacts): AuthorRecord {
+export function resolveCaller(facts: CallerFacts, access: CallerAccess = 'write'): AuthorRecord {
   const registry = getRoomService().authorRegistry;
   const identity = facts.agentIdentity;
   // `!identity.inactive` preserves this route's existing answer through a change
@@ -131,11 +140,23 @@ export function resolveCaller(facts: CallerFacts): AuthorRecord {
 
   const owner = readOwnerAccount();
   const session = facts.user;
+  // A key is a program, never the person's voice (DOR-3330): it may read as
+  // the account it belongs to, but only a browser session writes as them.
+  if (session && session.credential !== 'cookie' && access === 'write') {
+    throw new RoomError('PERSON_SESSION_REQUIRED', 'Post as yourself from the DorkOS app.');
+  }
   if (session) {
     return session.userId === owner?.id
       ? registry.bindOwner(owner.id)
       : registry.human(session.userId);
   }
 
+  if (access === 'write' && owner) {
+    notePersonSessionMissing(facts);
+    throw new RoomError(
+      'PERSON_SESSION_REQUIRED',
+      'Confirm it’s you with your password to do this.'
+    );
+  }
   return resolveOperatorAuthor(registry);
 }

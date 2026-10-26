@@ -3,7 +3,9 @@
  *
  * @module shared/lib/transport/http-client
  */
+import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import { setAuthRequired, setSignInWith } from '../auth-signal';
+import { requestPersonStepUp } from '../person-step-up-signal';
 import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
 
 /**
@@ -51,23 +53,32 @@ async function request(
   const communityOwner = getCommunityAuthority().ownerKey;
   if (communityOwner) headers.set('X-DorkOS-Community-Owner', communityOwner);
 
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}${url}`, {
-      ...requestInit,
-      headers,
-      // Ride the Better Auth session cookie on every API call (login enabled).
-      // Harmless when auth is off; HttpTransport needs no constructor change.
-      credentials: 'include',
-      signal,
-    });
-  } catch (err) {
-    if (timeout !== null && err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new Error(`Request timed out after ${timeout / 1000}s. Check your network`, {
-        cause: err,
+  const send = async (): Promise<Response> => {
+    try {
+      return await fetch(`${baseUrl}${url}`, {
+        ...requestInit,
+        headers,
+        // Ride the Better Auth session cookie on every API call (login enabled).
+        // Harmless when auth is off; HttpTransport needs no constructor change.
+        credentials: 'include',
+        signal,
       });
+    } catch (err) {
+      if (timeout !== null && err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new Error(`Request timed out after ${timeout / 1000}s. Check your network`, {
+          cause: err,
+        });
+      }
+      throw err;
     }
-    throw err;
+  };
+
+  let res = await send();
+  // A person-only action at this computer, from a browser holding no session
+  // yet (DOR-3330): ask the owner's password once, then try again. A body
+  // that cannot be sent twice (a stream) is not retried.
+  if (res.status === 401 && replayable(body) && (await asksForPersonSession(res))) {
+    if (await requestPersonStepUp()) res = await send();
   }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
@@ -104,6 +115,20 @@ async function request(
     throw err;
   }
   return res;
+}
+
+/** Whether a request body can be sent a second time as it was. */
+function replayable(body: BodyInit | null | undefined): boolean {
+  return !(typeof ReadableStream !== 'undefined' && body instanceof ReadableStream);
+}
+
+/** Whether a `401` asks for the person's step-up, reading a copy of its body. */
+async function asksForPersonSession(res: Response): Promise<boolean> {
+  const body = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as { code?: unknown } | null;
+  return body?.code === PERSON_SESSION_REQUIRED_CODE;
 }
 
 /**

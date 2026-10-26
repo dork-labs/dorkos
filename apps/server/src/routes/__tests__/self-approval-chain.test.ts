@@ -36,6 +36,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -263,15 +264,26 @@ describe('an agent holding the API key cannot approve its own work', () => {
     });
   });
 
-  describe('with Require login off — the default posture, deliberately unchanged', () => {
-    it('still lets a credential-free caller answer', async () => {
-      // Not an oversight. With login off there is no cookie for ANYONE, so this
-      // bar has nothing to check and does not pretend to; a credential-free caller
-      // with shell access is indistinguishable from the cockpit. Turning on
-      // Require login is what closes it (`decision-authority.ts`).
+  describe('with the password off at this computer, once an owner exists', () => {
+    it('refuses a credential-free caller: no headers is not proof of the person (DOR-3330)', async () => {
+      // Any program on this computer can omit every header, so without the
+      // owner's session the answer is the step-up, and nothing is decided.
       const { approvalId } = await askAsAgent();
 
       const res = await request(fixtureServer).post(`/api/approvals/${approvalId}/grant`).send({});
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+      expect(stillPending(approvalId)).toBe(true);
+    });
+
+    it('lets the owner’s session at this computer answer', async () => {
+      const { approvalId } = await askAsAgent();
+
+      const res = await request(fixtureServer)
+        .post(`/api/approvals/${approvalId}/grant`)
+        .set('Cookie', cookies)
+        .send({});
 
       expect(res.status).toBe(200);
       expect(res.body.outcome).toBe('granted');

@@ -325,6 +325,14 @@ export type RoomErrorCode =
    */
   | 'AGENT_IDENTITY_UNVERIFIED'
   /**
+   * A write with no agent identity and no browser session, on an install whose
+   * owner could prove themselves with one (DOR-3330). Any program on this
+   * computer can omit the agent header, so only the owner's session makes a
+   * post, a membership change or a stop theirs. A 401: the person's step-up
+   * at this computer is exactly what would change the answer.
+   */
+  | 'PERSON_SESSION_REQUIRED'
+  /**
    * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
    * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast
    * channel is not a conversation — there is no room kind for it, and the claim

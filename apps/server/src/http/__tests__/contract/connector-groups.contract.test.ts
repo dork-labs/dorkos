@@ -783,9 +783,29 @@ contractSuite('the connector groups, login off, nothing set up', [
 /** A request against a hand-driven server, with the case fields that vary. */
 type Ask = Omit<ContractCase, 'name'>;
 
+/**
+ * The owner's own browser session, sent with every request that names no
+ * other caller while a suite sets it: once an owner exists, the person at
+ * this computer changes things signed in (DOR-3330).
+ */
+let personCookie: Record<string, string> = {};
+
+/** `headers`, with the owner's session when they name no other caller. */
+function asThePerson(headers: Record<string, string> = {}): Record<string, string> {
+  const names = Object.keys(headers).map((name) => name.toLowerCase());
+  const other = ['cookie', 'authorization', 'x-dorkos-agent', 'x-dorkos-approval'].some((name) =>
+    names.includes(name)
+  );
+  return other ? headers : { ...personCookie, ...headers };
+}
+
 /** Send one case to the server this file booted itself. */
 async function check(server: ComposedServer | undefined, ask: Ask): Promise<void> {
-  await checkContractCase(server!.baseUrl, { name: ask.path, ...ask });
+  await checkContractCase(server!.baseUrl, {
+    name: ask.path,
+    ...ask,
+    headers: asThePerson(ask.headers),
+  });
 }
 
 /** One answer: its status, JSON body (or `{}`) and headers. */
@@ -805,7 +825,10 @@ async function call(
 ): Promise<Answer> {
   const res = await fetch(new URL(url, server!.baseUrl), {
     method,
-    headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...asThePerson(headers),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const text = await res.text();
@@ -928,9 +951,10 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     server = await bootComposedServer();
     ({ providerInstanceId, connectionId } = await connectOfflineGmail(server));
     agent = await seedAgent(server);
-    ({ apiKey } = await ownerCredentials(server));
+    ({ apiKey, cookie: personCookie } = await ownerCredentials(server));
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
+    personCookie = {};
     await server?.close();
     if (agent) rmSync(agent.agentDir, { recursive: true, force: true });
   }, 30_000);

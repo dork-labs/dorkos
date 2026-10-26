@@ -57,6 +57,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { logger } from '../lib/logger.js';
+import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { ROOM_WRITE_REFUSAL_MESSAGE, refuseRoomWrite } from './extensions-rooms-bar.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -151,7 +152,7 @@ export function registerExtensionRoomRoutes(
     if (!asksForRooms(record)) return refuse(c, 'room_not_allowed', NO_ROOMS_DECLARED);
     let viewer: AuthorRecord;
     try {
-      viewer = resolveCaller(facts);
+      viewer = resolveCaller(facts, callerAccessOf(c.req.method));
     } catch {
       return refuse(c, 'person_required', 'Only the person can use a mini app’s rooms.');
     }

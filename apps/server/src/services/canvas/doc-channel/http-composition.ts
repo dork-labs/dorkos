@@ -326,7 +326,7 @@ export function createDocChannelHttpComposition(deps: {
       readChannel: (documentId, actor) => service.readChannel(documentId, actor),
     }),
     actor(caller) {
-      resolveCaller(caller); // Refuse unknown/revoked agent headers before minting a principal.
+      resolveCaller(caller, 'read'); // Refuse unknown/revoked agent headers before minting a principal.
       const identity = caller.agentIdentity;
       const owner = currentOwner();
       if (identity) {

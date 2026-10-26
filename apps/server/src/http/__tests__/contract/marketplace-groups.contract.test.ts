@@ -1071,7 +1071,6 @@ describe('contract: the marketplace groups with login on', () => {
     await keepOnlyLocalSources(server);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = {
       cookie: signedIn.headers
@@ -1079,6 +1078,14 @@ describe('contract: the marketplace groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
+    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      { ...cookie, ...origin }
+    );
     const created = await setup(
       server,
       'POST',

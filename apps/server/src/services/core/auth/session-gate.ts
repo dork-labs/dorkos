@@ -64,6 +64,7 @@ import {
   SESSION_RELAY_PASSKEY_FINISH_PATH,
 } from '@dorkos/shared/session-relay-link';
 import {
+  mayCarrySessionCookie,
   requestSessionRoute,
   sessionWorksOn,
   type SessionRoute,
@@ -307,7 +308,8 @@ export type SessionGateDecision =
  * The chain (`http/api-chain.ts`) asks it for every request, `/mcp` among
  * them. What a request needs comes from where it came from
  * ({@link gateAccessFor}, ADR 261015-125850): a person at this computer passes
- * with nothing unless "Ask for a password on this computer too" is on; another
+ * with nothing unless "Ask for a password on this computer too" is on, though a
+ * session cookie it carries is still read and set as its user; another
  * device always needs a session cookie or a per-user key; a relayed caller is
  * never admitted here. Writes bypass the signed cookie cache and check the
  * current server session without renewing it; GET/HEAD/OPTIONS keep cached
@@ -343,12 +345,26 @@ export async function decideSessionGate(
   // always reachable.
   if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
 
-  if (access === 'open') return { allowed: true };
   if (access === 'refused') return { allowed: false };
 
   // A signed cache may outlive a revoked session. Writes must observe the current
   // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
   const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+
+  if (access === 'open') {
+    // An open request passes with or without a session, but one it carries
+    // is still read: an open gate proves "this computer", never "this
+    // person", and the person-only bars need to know which it is (DOR-3330).
+    // Only a session cookie, never a key: a key is a program, not the app.
+    const auth = getAuth();
+    if (!auth || !mayCarrySessionCookie(request.headers.cookie ?? '')) return { allowed: true };
+    const user = await verifySessionCookie(
+      auth,
+      request,
+      readOnly ? {} : { sessionFreshness: 'server-store' }
+    );
+    return user ? { allowed: true, user } : { allowed: true };
+  }
   const user = await verifyRequestAuth(
     request,
     readOnly ? {} : { sessionFreshness: 'server-store' }

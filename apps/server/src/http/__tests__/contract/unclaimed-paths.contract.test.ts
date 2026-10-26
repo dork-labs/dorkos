@@ -256,23 +256,39 @@ describe('contract: unclaimed paths with login on', () => {
     password: 'a-long-password-1',
   };
 
-  /** Send one setup request, failing loudly if it does not succeed. */
-  async function setup(method: string, url: string, body: unknown, origin: boolean) {
+  /**
+   * Send one setup request, failing loudly if it does not succeed; returns
+   * the session cookie it set, if any.
+   */
+  async function setup(
+    method: string,
+    url: string,
+    body: unknown,
+    origin: boolean,
+    cookie = ''
+  ): Promise<string> {
     const res = await fetch(`${server!.baseUrl}${url}`, {
       method,
       headers: {
         'content-type': 'application/json',
         ...(origin ? { origin: server!.baseUrl } : {}),
+        ...(cookie ? { cookie } : {}),
       },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`${method} ${url} answered ${res.status}: ${await res.text()}`);
+    return res.headers
+      .getSetCookie()
+      .map((value) => value.split(';')[0]!)
+      .join('; ');
   }
 
   beforeAll(async () => {
     server = await bootComposedServer(PRODUCTION);
     await setup('POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, true);
-    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false);
+    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    const cookie = await setup('POST', '/api/auth/sign-in/email', OWNER, true);
+    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false, cookie);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

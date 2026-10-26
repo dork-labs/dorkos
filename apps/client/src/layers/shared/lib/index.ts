@@ -42,6 +42,12 @@ export {
   type OwnerSetupRequest,
 } from './auth-signal';
 export {
+  requestPersonStepUp,
+  finishPersonStepUp,
+  getPersonStepUpOpen,
+  subscribePersonStepUp,
+} from './person-step-up-signal';
+export {
   confirmCommunityAuthority,
   getCommunityAuthority,
   getCommunityConnectionGeneration,

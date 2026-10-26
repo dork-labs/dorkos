@@ -59,6 +59,8 @@ const server = fixture.server;
 let dir: string;
 let db: Db;
 let cookies: string[];
+/** The owner's session, sent for every request that names no caller. */
+let personCookie = '';
 let rooms: RoomSubsystem;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
 let review: DocWorkReview;
@@ -139,6 +141,14 @@ beforeAll(async () => {
   // A test-only header stands in for the Wi-Fi listener's own ingress mark.
   fixture.mount((req, res) => {
     if (req.headers['x-test-ingress'] === 'wifi') markIngress(req, 'wifi');
+    // With no password asked here, a request naming no caller is the owner in
+    // their own browser, which holds their session once an owner exists
+    // (DOR-3330). With the password on, it stays nobody.
+    const named = ['cookie', 'authorization', 'x-dorkos-agent', 'x-dorkos-approval'].some(
+      (name) => req.headers[name] !== undefined
+    );
+    const asks = configManager.get('auth')?.enabled === true;
+    if (!named && !asks && personCookie) req.headers.cookie = personCookie;
     return listener(req, res);
   });
   expect(
@@ -155,6 +165,7 @@ beforeAll(async () => {
     .send(ACCOUNT);
   expect(login.status).toBe(200);
   cookies = login.headers['set-cookie'] as unknown as string[];
+  personCookie = cookies.map((value) => value.split(';')[0]).join('; ');
 });
 beforeEach(() => {
   configManager.set('auth', { enabled: false });

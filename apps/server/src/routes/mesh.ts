@@ -53,7 +53,7 @@ import {
   refuseAgentExecutionWrites,
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
-import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -303,7 +303,19 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // wildcard on one side only. It routes to the same verbs as a namespace pair
   // — Mesh stores it in the same rule store and projects it into Relay as
   // `relay.agent.> -> relay.agent.>`.
+  //
+  // Only the person may flip it: it decides which agents can reach which, so
+  // an agent widening its own reach is the case the bar exists for (DOR-3330).
   router.put('/topology/access', (c) => {
+    if (!clearsTheAgentBar(honoRequestFacts(c))) {
+      return c.json(
+        {
+          error: 'Only you can change which agents may talk to each other.',
+          code: 'person_required',
+        },
+        403
+      );
+    }
     const result = UpdateAccessRuleRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
       return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
