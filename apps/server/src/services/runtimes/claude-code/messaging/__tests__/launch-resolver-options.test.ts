@@ -629,23 +629,31 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       { ...makeSession(), fastMode: true }
     );
 
-    expect(options.settings).toEqual({
-      fastMode: true,
-      permissions: {
-        additionalDirectories: ['/rooms/r1/worktrees/ana', '/rooms/r1/repo'],
-        deny: [
-          'Edit(//rooms/r1/repo/**)',
-          'Write(//rooms/r1/repo/**)',
-          'NotebookEdit(//rooms/r1/repo/**)',
-          // Then the folders only a person may change, on every turn.
-          ...['permissions', 'session-relay'].flatMap((folder) =>
-            ['Edit', 'Write', 'NotebookEdit'].map(
-              (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
-            )
-          ),
-        ],
-      },
-    });
+    const expectedDeny = [
+      'Edit(//rooms/r1/repo/**)',
+      'Write(//rooms/r1/repo/**)',
+      'NotebookEdit(//rooms/r1/repo/**)',
+      // Then the folders only a person may change, on every turn.
+      ...['permissions', 'session-relay'].flatMap((folder) =>
+        ['Edit', 'Write', 'NotebookEdit'].map(
+          (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
+        )
+      ),
+    ];
+    const settings = options.settings as {
+      fastMode: boolean;
+      permissions: { additionalDirectories: string[]; deny: string[] };
+    };
+    expect(settings.fastMode).toBe(true);
+    expect(settings.permissions.additionalDirectories).toEqual([
+      '/rooms/r1/worktrees/ana',
+      '/rooms/r1/repo',
+    ]);
+    expect(settings.permissions.deny.slice(0, expectedDeny.length)).toEqual(expectedDeny);
+    // And last, the secret files the model's read tools never open (DOR-3299).
+    const rest = settings.permissions.deny.slice(expectedDeny.length);
+    expect(rest).toContain(`Read(/${resolveDorkHome()}/host.key)`);
+    expect(rest.every((rule) => /^(Read|Grep|Glob)\(/.test(rule))).toBe(true);
     // The SDK option is `--add-dir`, which loads the folder's skills (I11).
     expect(options.additionalDirectories).toBeUndefined();
   });
