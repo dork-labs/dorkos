@@ -978,13 +978,6 @@ importers:
       yauzl:
         specifier: 3.4.0
         version: 3.4.0
-    optionalDependencies:
-      opencode-darwin-arm64:
-        specifier: 1.19.3
-        version: 1.19.3
-      opencode-linux-x64:
-        specifier: 1.19.3
-        version: 1.19.3
 
   apps/site:
     dependencies:
@@ -2048,6 +2041,13 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+    optionalDependencies:
+      opencode-darwin-arm64:
+        specifier: 1.19.3
+        version: 1.19.3
+      opencode-linux-x64:
+        specifier: 1.19.3
+        version: 1.19.3
 
   packages/typescript-config: {}
 

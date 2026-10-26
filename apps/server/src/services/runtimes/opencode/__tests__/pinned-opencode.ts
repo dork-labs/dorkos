@@ -1,7 +1,7 @@
 /**
  * The OpenCode binary the real-binary tests run: the platform package
- * (`opencode-<platform>-<arch>`) that `apps/server/package.json` pins at an
- * exact version, checked byte for byte against the SHA-256 recorded here
+ * (`opencode-<platform>-<arch>`) that `packages/test-utils/package.json` pins
+ * at an exact version (test-only, so it never ships with the server), checked byte for byte against the SHA-256 recorded here
  * before anything runs it.
  *
  * Before this, those tests looked for an `opencode` on PATH and skipped when
@@ -15,7 +15,7 @@
  * The version is the one DorkOS provisions for people (`OPENCODE_PACKAGE_VERSION`
  * in `providers/provision.ts`), so the tests run what ships. Updating OpenCode:
  * bump that constant, `@opencode-ai/sdk` and both platform packages in
- * `apps/server/package.json` together, then record each `bin/opencode` SHA-256
+ * `packages/test-utils/package.json` together, then record each `bin/opencode` SHA-256
  * below (`shasum -a 256` on the file from `npm pack opencode-<platform>@<version>`).
  *
  * @module services/runtimes/opencode/__tests__/pinned-opencode
@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import { resolveOpenCodePlatformManifest } from '@dorkos/test-utils/opencode-binary';
 import { OPENCODE_PACKAGE_VERSION } from '../providers/provision.js';
 
 /** The pinned version, and the SHA-256 of `bin/opencode` for each platform it runs on. */
@@ -89,7 +89,7 @@ export function pinnedOpenCode(
   if (!expected) return null;
   const cached = verified.get(key);
   if (cached) return cached;
-  const manifestPath = createRequire(import.meta.url).resolve(`opencode-${key}/package.json`);
+  const manifestPath = resolveOpenCodePlatformManifest(key);
   const { version } = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { version: string };
   if (version !== OPENCODE_PIN.version) {
     throw new Error(`opencode-${key} is ${version}, pinned ${OPENCODE_PIN.version}`);
