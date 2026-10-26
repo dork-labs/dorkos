@@ -17,12 +17,13 @@
  * @module services/core/secret-file-scan/secret-file-scan-service
  */
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import {
   scanFolderForSecretNames,
   type SecretFileFinding,
   type SecretFolderScan,
 } from './scan-folder.js';
-import { SECRET_FILES_LISTED } from '../../notifications/secret-file-notifications.js';
+import { SECRET_FILES_LISTED, shownName } from '../../notifications/secret-file-notifications.js';
 
 /** An agent to scan. */
 export interface ScannedAgent {
@@ -88,10 +89,14 @@ export class SecretFileScanService {
     try {
       const scan = this.deps.scan ?? ((folder: string) => scanFolderForSecretNames(folder));
       const findings: SecretFileFinding[] = [];
+      const shown: string[] = [];
       let truncated = false;
       for (const folder of new Set(agent.folders)) {
         const result = await scan(folder);
         findings.push(...result.findings);
+        // Relative to the folder it was found in (spec §8.1): the person knows
+        // which agent; the full path adds nothing but where the home is.
+        for (const f of result.findings) shown.push(shownName(path.relative(folder, f.path)));
         truncated ||= result.truncated;
       }
       if (truncated) {
@@ -103,7 +108,7 @@ export class SecretFileScanService {
       await this.deps.notify({
         agentId: agent.id,
         agentName: agent.name,
-        files: findings.map((f) => f.path).slice(0, SECRET_FILES_LISTED),
+        files: shown.slice(0, SECRET_FILES_LISTED),
         total: findings.length,
         fingerprint: findingsFingerprint(findings),
       });

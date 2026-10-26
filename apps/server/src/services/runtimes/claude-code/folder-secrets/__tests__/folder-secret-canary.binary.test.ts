@@ -178,7 +178,7 @@ describe.skipIf(BINARY === null)('a secret in the agent folder (Claude Code)', (
     });
     await service.scanAgent({ id: 'a', name: 'Scout', folders: [folder] });
     expect(raised).toHaveLength(1);
-    expect(JSON.stringify(raised)).toContain(path.join(folder, ENV));
+    expect(raised).toMatchObject([{ files: [ENV], total: 1 }]);
     expect(JSON.stringify(raised)).not.toContain(CANARY);
   });
 });

@@ -49,6 +49,22 @@ describe('secretNameRule', () => {
     ['credentials.json', 'credentials.json', 'credentials.json'],
     ['my-service-account.json', 'gcp/my-service-account.json', '*service-account*.json'],
     ['config.json', '.docker/config.json', '.docker/config.json'],
+    ['prod.tfvars', 'infra/prod.tfvars', '*.tfvars'],
+    ['terraform.tfstate', 'terraform.tfstate', '*.tfstate'],
+    ['.dev.vars', '.dev.vars', '.dev.vars'],
+    ['.envrc', '.envrc', '.envrc'],
+    ['.git-credentials', '.git-credentials', '.git-credentials'],
+    ['.pgpass', '.pgpass', '.pgpass'],
+    ['id_ecdsa', 'ssh/id_ecdsa', 'id_ecdsa*'],
+    ['id_dsa', 'ssh/id_dsa', 'id_dsa*'],
+    ['config', 'ops/.kube/config', '.kube/config'],
+    [
+      'application_default_credentials.json',
+      'gcloud/application_default_credentials.json',
+      'application_default_credentials.json',
+    ],
+    ['release.jks', 'android/release.jks', '*.jks'],
+    ['app.keystore', 'app.keystore', '*.keystore'],
   ])('flags %s', (name, rel, rule) => {
     expect(secretNameRule(name, rel)).toBe(rule);
   });
@@ -57,6 +73,8 @@ describe('secretNameRule', () => {
     [`${ENV}.example`, `${ENV}.example`],
     [`${ENV}.sample`, `${ENV}.sample`],
     ['id_rsa.pub', 'ssh/id_rsa.pub'],
+    ['id_ecdsa.pub', 'ssh/id_ecdsa.pub'],
+    ['config', 'config'],
     ['config.json', 'config.json'],
     ['notes.md', 'notes.md'],
     ['environment.ts', 'src/environment.ts'],

@@ -12,6 +12,7 @@ import { findingsFingerprint, SecretFileScanService } from '../secret-file-scan-
 import {
   SECRET_FILE_ENTRIES,
   SECRET_FILES_DEDUPE_MS,
+  shownName,
 } from '../../../notifications/secret-file-notifications.js';
 import { NOTIFICATION_RETENTION_DAYS } from '../../../notifications/notification-store.js';
 
@@ -46,7 +47,8 @@ describe('SecretFileScanService', () => {
     await service.scanAgent(agent());
     expect(notify).toHaveBeenCalledTimes(1);
     const payload = notify.mock.calls[0]![0] as { files: string[]; total: number };
-    expect(payload.files).toEqual([path.join(home, ENV)]);
+    // Relative to the folder (spec §8.1).
+    expect(payload.files).toEqual([ENV]);
     expect(payload.total).toBe(1);
     expect(JSON.stringify(payload)).not.toContain('CANARY-value');
   });
@@ -72,6 +74,29 @@ describe('SecretFileScanService', () => {
     expect(SECRET_FILES_DEDUPE_MS).toBe(NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     expect(entry.tier).toBe('notable');
     expect(entry.title({ ...base, fingerprint: one })).toBe(`Scout can read ${ENV} in its folder`);
+  });
+
+  it('says what moving a file does and does not do, for one file and for several', () => {
+    const entry = SECRET_FILE_ENTRIES['agent.secret_files'];
+    const one = { agentId: 'a', agentName: 'Scout', files: [ENV], total: 1, fingerprint: 'f' };
+    const many = { ...one, files: [ENV, 'id_rsa'], total: 2 };
+    expect(entry.body!(one)).toBe(
+      "Scout can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder."
+    );
+    expect(entry.body!(many)).toBe(
+      "Scout can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder."
+    );
+    expect(entry.title(many)).toBe('Scout can read 2 secret files in its folder');
+  });
+
+  it('shows a crafted file name with its control and direction characters replaced', async () => {
+    const crafted = `${ENV}\u202eexe.txt\u200b`;
+    expect(shownName(crafted)).toBe(`${ENV}?exe.txt?`);
+    fs.writeFileSync(path.join(home, `${ENV}.\u202elocal`), 'x');
+    const notify = vi.fn(async (_payload: unknown) => undefined);
+    await new SecretFileScanService({ notify }).scanAgent(agent());
+    const payload = notify.mock.calls[0]![0] as { files: string[] };
+    expect(payload.files).toEqual([`${ENV}.?local`]);
   });
 
   it('walks one folder at a time across agents', async () => {

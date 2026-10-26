@@ -40,6 +40,36 @@ export const SECRET_SCAN_LIMITS = { maxDepth: 6, maxEntries: 20_000 } as const;
 /** Folders never entered: package installs and git internals. */
 const SKIPPED_FOLDERS = new Set(['node_modules', '.git']);
 
+/** Extensions that hold keys, certificates or infrastructure secrets. */
+const SECRET_EXTENSIONS = [
+  '.pem',
+  '.key',
+  '.p12',
+  '.pfx',
+  '.jks',
+  '.keystore',
+  '.tfvars',
+  '.tfstate',
+];
+
+/** Private SSH key names (their `.pub` halves are public). */
+const SSH_KEY_PREFIXES = ['id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa'];
+
+/** Whole names that hold a token or password. */
+const SECRET_FILE_NAMES = new Set([
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  '.envrc',
+  '.dev.vars',
+  '.git-credentials',
+  '.pgpass',
+  'application_default_credentials.json',
+]);
+
+/** Names that are secrets only at a known spot. */
+const SECRET_PATH_TAILS = ['.docker/config.json', '.kube/config'];
+
 /** `.env.*` files that are templates, not secrets. */
 const ENV_TEMPLATES = new Set(['.env.example', '.env.sample']);
 
@@ -54,17 +84,16 @@ export function secretNameRule(name: string, relPath: string): string | undefine
   const lower = name.toLowerCase();
   if (lower === '.env') return '.env';
   if (lower.startsWith('.env.') && !ENV_TEMPLATES.has(lower)) return '.env.*';
-  for (const ext of ['.pem', '.key', '.p12', '.pfx']) if (lower.endsWith(ext)) return `*${ext}`;
+  for (const ext of SECRET_EXTENSIONS) if (lower.endsWith(ext)) return `*${ext}`;
   // A public key is not a secret.
   if (!lower.endsWith('.pub')) {
-    if (lower.startsWith('id_rsa')) return 'id_rsa*';
-    if (lower.startsWith('id_ed25519')) return 'id_ed25519*';
+    for (const key of SSH_KEY_PREFIXES) if (lower.startsWith(key)) return `${key}*`;
   }
-  if (lower === '.netrc' || lower === '.npmrc' || lower === '.pypirc') return lower;
+  if (SECRET_FILE_NAMES.has(lower)) return lower;
   if (lower === 'credentials' || lower === 'credentials.json') return lower;
   if (lower.endsWith('.json') && lower.includes('service-account')) return '*service-account*.json';
-  if (relPath === '.docker/config.json' || relPath.endsWith('/.docker/config.json')) {
-    return '.docker/config.json';
+  for (const tail of SECRET_PATH_TAILS) {
+    if (relPath === tail || relPath.endsWith(`/${tail}`)) return tail;
   }
   return undefined;
 }

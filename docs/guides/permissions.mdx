@@ -186,7 +186,7 @@ For an agent DorkOS already knows, what it does is notice. The next time it chec
 
 If an agent should never be able to do something, don't rely on its settings alone: give it no way to edit files in its own folder, or keep a close eye on the history.
 
-The same goes for reading. Rules limit tools, not what an agent can see in its own folder. An agent can read any file there, a deny rule on that file included: Claude Code runs searches like `rg` inside the folder without asking, and Full autonomy can read anything you can. So keep secrets, like a `.env` file or a key, outside every agent's folder. When DorkOS finds a file like that in an agent's folder, it tells you in your inbox.
+The same goes for reading. Rules limit tools, not what an agent can see in its own folder. An agent can read any file there, a deny rule on that file included: Claude Code runs searches like `rg` inside the folder without asking, and Full autonomy can read anything you can. So keep secrets, like a `.env` file or a key, outside every agent's folder. That keeps them out of searches through the folder, but it isn't a wall: today an agent at Full autonomy, or one running shell commands, can still read files outside its folder. When DorkOS finds a file like that in an agent's folder, it tells you in your inbox.
 
 ## The history
 

@@ -26,13 +26,27 @@ export interface SecretFilePayloads {
     agentId: string;
     /** Its display name. */
     agentName: string;
-    /** Absolute paths, at most {@link SECRET_FILES_LISTED}. Never contents. */
+    /**
+     * Paths relative to the agent's folder, at most {@link SECRET_FILES_LISTED},
+     * with control and direction characters already replaced. Never contents.
+     */
     files: string[];
     /** How many were found, which may be more than are listed. */
     total: number;
     /** A hash of every path found, so the same set is said once. */
     fingerprint: string;
   };
+}
+
+/**
+ * A file name as the person may read it: control, format and line-break
+ * characters (right-to-left overrides, zero-width marks) replaced, so a name
+ * a cloned repo chose cannot fake the rest of the title.
+ *
+ * @param name - A file name or relative path.
+ */
+export function shownName(name: string): string {
+  return name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '?');
 }
 
 /** The most paths one row carries. */
@@ -59,9 +73,16 @@ export const SECRET_FILE_ENTRIES: {
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
     title: (p) =>
       p.total === 1 && p.files[0]
-        ? `${p.agentName} can read ${path.basename(p.files[0])} in its folder`
+        ? `${p.agentName} can read ${shownName(path.basename(p.files[0]))} in its folder`
         : `${p.agentName} can read ${p.total} secret files in its folder`,
-    body: () => "Rules can't stop that. Move them somewhere the agent can't reach.",
+    // The designer's `row.line.unbounded` (spec v0.3.6): no advice the agent
+    // can step around. Today it reads outside its folder too (Full, and the
+    // shell until DOR-3300), so moving a file keeps it out of searches through
+    // the folder and nothing more, and the line says exactly that.
+    body: (p) =>
+      p.total === 1
+        ? `${p.agentName} can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder.`
+        : `${p.agentName} can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder.`,
     dedupeKey: (p) => `secret-files:${p.agentId}:${p.fingerprint}`,
     dedupeWindowMs: SECRET_FILES_DEDUPE_MS,
     relay: 'never',
