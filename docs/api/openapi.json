@@ -4948,6 +4948,9 @@
           },
           "author": {
             "$ref": "#/components/schemas/RoomMessageAuthor"
+          },
+          "via": {
+            "$ref": "#/components/schemas/ForwardVia"
           }
         },
         "required": [
@@ -4997,6 +5000,30 @@
           "displayName",
           "handle",
           "you"
+        ]
+      },
+      "ForwardVia": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "appName": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "itemTitle": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "extensionId",
+          "appName",
+          "itemId"
         ]
       },
       "SessionSnapshot": {
@@ -15472,6 +15499,16 @@
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
+          },
+          "via": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardVia"
+              },
+              {
+                "description": "Set on a person's comment a mini app forwarded into their Direct chat with an agent (DOR-3325): the app and the item it was typed on. The text is only what the person typed; this is shown as a muted line above it."
+              }
+            ]
           }
         },
         "required": [

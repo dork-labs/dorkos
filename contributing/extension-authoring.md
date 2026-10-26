@@ -281,6 +281,32 @@ const counts = await api.rooms.unreadCounts(
 - **Live replies** arrive through `subscribeThread`, yours included, and replies written while the connection was down arrive once it is back. The stream stops when the person takes the room away. It closes when your mini app deactivates.
 - **A refusal throws `RoomAccessError`** with `code` (`room_not_allowed`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
 
+### Forwarding a comment to an agent as the person
+
+`api.forward` sends what the person typed in your mini app to one agent, **as their own words** (DOR-3325): a comment on an item, a "yes, go ahead". It lands in the person's Direct chat with that agent, and the agent treats it exactly as if they had typed it there. Declare it in the manifest, and the person picks the one agent in Settings → Extensions:
+
+```json
+{ "capabilities": { "forward": true } }
+```
+
+```typescript
+const sent = await api.forward.send({ text: comment, itemId: item.id, itemTitle: item.title });
+// later, to show the agent's answer under the comment:
+const replies = await api.forward.replies(sent.id); // [{ agent, markdown, createdAt }]
+const agent = await api.forward.agent(); // { id, name } or null
+```
+
+- **Not `ctx.agent.send`.** A server half's `ctx.agent.send` is your app talking: the agent reads it as app data, and its turn runs no looser than its default and asks before each step. `api.forward` is the person talking, so use it for words they typed and for nothing else.
+- **DorkOS reads the words itself.** The page POSTs straight to `/api/extensions/:id/forward`; no server half code sits in between. There is deliberately no server-side "send as the person" helper: DorkOS could not tell what the person typed from what code made up.
+- **One agent, the person's pick.** Nothing in the call names an agent. With none picked, every call is refused with `no_agent`.
+- **Only the typed text is theirs.** Name the item by `itemId`. An `itemTitle` shows above the message in a muted "via {app} · {item}" line, quoted as text from your app; the agent sees your app's name and the item id, never the title.
+- **Text only.** At most 8,000 characters. No attachments, no thread, no delivery mode, no steer or interrupt; any other field is refused.
+- **Only from the person's own window, signed in.** The room-write bar's rules, plus: DorkOS must have checked a password for this request, and the caller must own this DorkOS. With no password on this computer, every forward is refused, because DorkOS can't tell the person from a program there.
+- **Replies are the agent's.** `replies` returns the agent's own posts that answer the forward, under its name, with every `<` escaped and script links removed. Render them as markdown, never as HTML.
+- **Audited.** Every forward, and every refused one, is `extension.person_forward` in the audit trail, with your mini app, the agent and the item named.
+- **What it cannot stop, stated.** Your page code runs in the person's window with their access, so it could forward without a click. The person's pick of agent bounds a well-behaved mini app; it is not a sandbox (the `api.rooms` residual).
+- **A refusal throws `ForwardError`** with `code` (`no_agent`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -293,7 +319,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`. Room threads probe with `api.rooms !== undefined`, and forwarding with `api.forward !== undefined`.
 
 ### Events
 

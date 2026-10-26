@@ -15,7 +15,7 @@
  *
  * @module services/session/chat-messages/room-message-stamps
  */
-import type { RoomMessageAuthor, RoomMessageStamp } from '@dorkos/shared/chat-messages';
+import type { ForwardVia, RoomMessageAuthor, RoomMessageStamp } from '@dorkos/shared/chat-messages';
 
 /** What the rooms domain knows about one entry: where it was posted, and by whom. */
 export interface RoomMessageFacts {
@@ -25,6 +25,8 @@ export interface RoomMessageFacts {
   author: RoomMessageAuthor;
   /** The entry's words. */
   text: string;
+  /** The mini app and item, when the entry is a forwarded comment (DOR-3325). */
+  via?: ForwardVia;
 }
 
 /** Looks up one room entry, or null when the room no longer has it. */
@@ -65,7 +67,12 @@ export function completeRoomStamp(
   const facts = look?.(stamp.roomId, stamp.entryId);
   if (!facts) return ids;
   if (facts.text.trim() !== content.trim()) return null;
-  return { ...ids, roomLabel: facts.roomLabel, author: facts.author };
+  return {
+    ...ids,
+    roomLabel: facts.roomLabel,
+    author: facts.author,
+    ...(facts.via ? { via: facts.via } : {}),
+  };
 }
 
 /**

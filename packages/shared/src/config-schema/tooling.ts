@@ -137,6 +137,20 @@ export const ExtensionsConfigSchema = z
      * app post in the person's name somewhere they never chose.
      */
     roomAccess: z.record(z.string(), z.array(z.string().min(1)).max(50)).optional(),
+    /**
+     * The one agent each mini app may forward the person's typed comments to,
+     * keyed by extension id, by Mesh agent id (DOR-3325). A forward arrives in
+     * the person's Direct chat with that agent as their own words, so this is
+     * the person's choice alone, made in Settings → Extensions. A missing id
+     * means none: the forward route refuses until a person picks an agent.
+     *
+     * Optional rather than defaulted: absence already means "no agent", so
+     * there is nothing for a migration to seed.
+     *
+     * `operator-only`: a caller that could set this would let a mini app make
+     * the person say something to an agent they never chose.
+     */
+    forwardAgent: z.record(z.string(), z.string().min(1).max(200)).optional(),
   })
   .default(() => ({
     enabled: [],

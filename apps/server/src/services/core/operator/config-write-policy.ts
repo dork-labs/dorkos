@@ -648,6 +648,10 @@ export const CONFIG_WRITE_POLICY = {
   // caller that could add a room here would let a mini app post in the
   // person's name somewhere they never chose.
   'extensions.roomAccess': 'operator-only',
+  // The agent each mini app may forward the person's comments to (DOR-3325). A
+  // caller that could set it would let a mini app make the person say
+  // something to an agent they never chose.
+  'extensions.forwardAgent': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.

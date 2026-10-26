@@ -98,6 +98,7 @@ interface StoredExtensions {
   approvedToRun: string[];
   approvedSources?: Record<string, { path: string; plugin?: string }>;
   roomAccess?: Record<string, string[]>;
+  forwardAgent?: Record<string, string>;
 }
 const stored = vi.hoisted(() => ({
   value: { enabled: [], disabled: [], approvedToRun: [] } as StoredExtensions,
@@ -507,6 +508,7 @@ describe('the dev loop stays free after one approval', () => {
       approvedSources: {},
       approvedPermissions: {},
       roomAccess: {},
+      forwardAgent: {},
       dismissedApprovals: {
         'my-ext': {
           path: '/fake/dork-home/extensions/my-ext',
@@ -628,10 +630,13 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
       approvedToRun: ['flow'],
       approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow' } },
       roomAccess: { flow: ['room-1'], other: ['room-2'] },
+      forwardAgent: { flow: 'agent-1', other: 'agent-2' },
     };
     await manager.forgetRunApproval('flow');
 
     expect(stored.value.roomAccess).toEqual({ other: ['room-2'] });
+    // The agent a person picked for it goes with the approval too (DOR-3325).
+    expect(stored.value.forwardAgent).toEqual({ other: 'agent-2' });
   });
 
   it('keeps the approval when uninstalling a different plugin that carries the same id', async () => {
