@@ -29,8 +29,20 @@ import Foundation
               of: "<dict></dict>", with: "<dict><key>\(name)</key>\(value)</dict>"))
       }
     }
+    // M1: current macOS prints entitlements as text unless asked for XML. Text never passes,
+    // forbidden or not, and the real command always asks for XML.
+    for text in [
+      "[Dict]\n\t[Key] com.apple.security.cs.allow-dyld-environment-variables\n\t[Value]\n\t\t[Bool] true\n",
+      "[Dict]\n\t[Key] com.apple.security.app-sandbox\n\t[Value]\n\t\t[Bool] true\n",
+    ] {
+      refuses(safe + text)
+      refuses(text + safe)
+    }
+    let arguments = helperDisplayArguments("/usr/local/libexec/dorkos-approve/security-approve")
+    guard arguments.contains("--xml"), arguments.last == "/usr/local/libexec/dorkos-approve/security-approve"
+    else { fatalError("codesign display must request XML entitlements") }
     print(
-      "Helper signature policy: canned runtime, cdhash and entitlement cases passed; no binaries inspected"
+      "Helper signature policy: canned runtime, cdhash, XML-only and entitlement cases passed; no binaries inspected"
     )
   }
 }

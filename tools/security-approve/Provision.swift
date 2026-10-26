@@ -6,18 +6,25 @@ import Security
 @main struct Provision {
   static func main() async {
     do {
+      // Only the approver user, at a terminal, from the root-owned path, may provision.
+      try checkThisProgram(expected: provisionerPath)
       var args = CommandLine.arguments
-      let repin = args.count == 5 && args[1] == "--repin"
+      let repin = args.count == 4 && args[1] == "--repin"
       if repin { args.remove(at: 1) }
-      guard args.count == 4, isatty(STDIN_FILENO) == 1 else {
+      guard args.count == 3 else {
         throw ApprovalError(
-          message:
-            "Usage: provision <keychain-path> <signed-helper-path> <cdhash>; PEM input requires a terminal"
-        )
+          message: "Usage: security-approve-provision [--repin] <keychain-path> <helper-cdhash>")
       }
-      try validateHelperSignature(path: args[2], expectedHash: args[3])
+      // The key never lands outside the approver's own home.
+      let keychainPath = resolvedPath(args[1]) ?? ""
+      try checkKeychainPath(resolved: keychainPath)
+      // Only the installed helper can be pinned, and only while its folder is root-owned.
+      try checkInstall(
+        executable: helperPath, resolved: resolvedPath(helperPath) ?? "", expected: helperPath,
+        facts: pathFacts)
+      try validateHelperSignature(path: helperPath, expectedHash: args[2])
       var accessResult: Unmanaged<SecAccess>?
-      guard DorkExactAccess(args[2], args[3], &accessResult) == errSecSuccess,
+      guard DorkExactAccess(helperPath, args[2], &accessResult) == errSecSuccess,
         let access = accessResult?.takeRetainedValue()
       else {
         throw ApprovalError(
@@ -27,13 +34,13 @@ import Security
       guard
         try await owner.evaluatePolicy(
           .deviceOwnerAuthentication,
-          localizedReason: "Authorize Security helper cdhash \(args[3])")
+          localizedReason: "Authorize Security helper cdhash \(args[2])")
       else {
         throw ApprovalError(message: "Owner authentication refused")
       }
       var keychain: SecKeychain?
-      guard FileManager.default.fileExists(atPath: args[1]),
-        SecKeychainOpen(args[1], &keychain) == errSecSuccess, let keychain
+      guard FileManager.default.fileExists(atPath: keychainPath),
+        SecKeychainOpen(keychainPath, &keychain) == errSecSuccess, let keychain
       else {
         throw ApprovalError(message: "Cannot open the specified Keychain")
       }
@@ -57,7 +64,7 @@ import Security
         guard SecKeychainItemSetAccess(item, access) == errSecSuccess else {
           throw ApprovalError(message: "Keychain refused ACL replacement")
         }
-        print("Reapproved exact cdhash \(args[3])")
+        print("Reapproved exact cdhash \(args[2])")
         return
       }
       var terminal = termios()
@@ -105,7 +112,7 @@ import Security
             "Keychain item creation refused (\(status)); existing items are never overwritten")
       }
       print(
-        "Item created with exact cdhash \(args[3]); run the isolated ACL tests before use"
+        "Item created with exact cdhash \(args[2])"
       )
     } catch let error as ApprovalError {
       FileHandle.standardError.write(Data((error.message + "\n").utf8))

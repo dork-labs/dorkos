@@ -14,12 +14,12 @@ cleanup() {
   rm -rf "$tmp"
 }
 trap cleanup EXIT
-xcrun swiftc -parse-as-library "$here/Approval.swift" "$here/Keychain.swift" "$here/tests/ReadProbe.swift" -o "$tmp/allowed" 2>"$tmp/build.log"
+xcrun swiftc -parse-as-library "$here/Policy.swift" "$here/Approval.swift" "$here/Keychain.swift" "$here/tests/ReadProbe.swift" -o "$tmp/allowed" 2>"$tmp/build.log"
 # The second binary has the same test signing identity and identifier,
 # but different code. It must not inherit the exact-hash access grant.
 printf '\n// Different compiled code.\n' > "$tmp/Other.swift"
 sed 's/ACL read allowed/OTHER ACL read allowed/' "$here/tests/ReadProbe.swift" >> "$tmp/Other.swift"
-xcrun swiftc -parse-as-library "$here/Approval.swift" "$here/Keychain.swift" "$tmp/Other.swift" -o "$tmp/other" 2>>"$tmp/build.log"
+xcrun swiftc -parse-as-library "$here/Policy.swift" "$here/Approval.swift" "$here/Keychain.swift" "$tmp/Other.swift" -o "$tmp/other" 2>>"$tmp/build.log"
 if [ "$mode" = certificate ]; then
   # A synthetic one-day test identity, confined to this disposable Keychain.
   # These are throwaway signing-test credentials, never an App private key.
@@ -60,7 +60,7 @@ test -n "$allowed_requirement"
 test "$allowed_requirement" = "$other_requirement"
 # Real display-format proof runs only on the CI macOS user. The production
 # policy refuses the existing non-runtime probe before any ACL provisioning.
-xcrun swiftc -parse-as-library "$here/Approval.swift" "$here/HelperPolicy.swift" "$here/tests/RealPolicyProbe.swift" -o "$tmp/policy-probe"
+xcrun swiftc -parse-as-library "$here/Policy.swift" "$here/Approval.swift" "$here/HelperPolicy.swift" "$here/tests/RealPolicyProbe.swift" -o "$tmp/policy-probe"
 if "$tmp/policy-probe" "$tmp/allowed" "$allowed_hash"; then
   echo 'FAIL: non-runtime helper accepted by provisioning policy' >&2; exit 1
 fi
@@ -68,7 +68,25 @@ cp "$tmp/allowed" "$tmp/runtime"
 /usr/bin/codesign --force --options runtime --sign - "$tmp/runtime"
 runtime_hash=$(/usr/bin/codesign -dv --verbose=4 "$tmp/runtime" 2>&1 | sed -n 's/^CDHash=//p')
 "$tmp/policy-probe" "$tmp/runtime" "$runtime_hash"
-echo 'PASS: provisioning policy refuses non-runtime and accepts runtime display'
+# M1: a runtime helper that carries any injection entitlement must be refused
+# on real codesign output, not only on canned XML.
+for entitlement in com.apple.security.cs.allow-dyld-environment-variables \
+  com.apple.security.cs.disable-library-validation com.apple.security.get-task-allow; do
+  cat >"$tmp/entitlements.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>$entitlement</key><true/></dict></plist>
+PLIST
+  cp "$tmp/allowed" "$tmp/entitled"
+  /usr/bin/codesign --force --options runtime --entitlements "$tmp/entitlements.plist" --sign - "$tmp/entitled"
+  entitled_hash=$(/usr/bin/codesign -dv --verbose=4 "$tmp/entitled" 2>&1 | sed -n 's/^CDHash=//p')
+  /usr/bin/codesign -d --entitlements - --xml "$tmp/entitled" 2>/dev/null | grep -q "$entitlement" \
+    || { echo "FAIL: fixture lacks $entitlement" >&2; exit 1; }
+  if "$tmp/policy-probe" "$tmp/entitled" "$entitled_hash"; then
+    echo "FAIL: runtime helper with $entitlement accepted" >&2; exit 1
+  fi
+done
+echo 'PASS: provisioning policy refuses non-runtime and forbidden entitlements, accepts a clean runtime helper'
 xcrun clang -Wno-deprecated-declarations "$here/ExactAccess.c" "$here/tests/CreateFixture.c" -framework Security -framework CoreFoundation -o "$tmp/create"
 "$tmp/create" "$tmp/disposable.keychain-db" "$tmp/allowed" "$allowed_hash"
 # Permit BOTH hashes through the additional partition gate. Only the explicit

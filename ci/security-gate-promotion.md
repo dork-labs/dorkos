@@ -122,50 +122,45 @@ Keychain ACL: a refused read stays refused without an access prompt.
 
 ### Dorian's signing and exact-hash provisioning
 
-Run these only from reviewed source, after replacing the numeric placeholders.
-Dorian supplies his signing identity; agents must never use that identity. Both
-executables are signed with hardened runtime and no debugging/library-injection
-entitlements. The provisioner is a separate program, not an extra approval mode.
-Choose trusted absolute output paths that agents cannot replace during use:
+The step-by-step setup is [`tools/security-approve/SETUP.md`](../tools/security-approve/SETUP.md).
+Both programs refuse to run unless all of these hold, checked before they read any argument,
+queue or Keychain:
 
-```sh
-tools/security-approve/build.sh /absolute/trusted/security-approve
-tools/security-approve/build-provisioner.sh /absolute/trusted/security-approve-provision
-codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --identifier ai.dorkos.security-approve /absolute/trusted/security-approve
-codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --identifier ai.dorkos.security-approve-provision /absolute/trusted/security-approve-provision
-codesign --verify --strict /absolute/trusted/security-approve
-helper_cdhash=$(codesign -dv --verbose=4 /absolute/trusted/security-approve 2>&1 | sed -n 's/^CDHash=//p')
-printf '%s\n' "$helper_cdhash"
-/absolute/trusted/security-approve-provision "$HOME/Library/Keychains/login.keychain-db" /absolute/trusted/security-approve "$helper_cdhash"
-```
+- The process runs as the Standard user `dorkos-approver` (home `/Users/dorkos-approver`), not
+  root, with real and effective user ids equal, and stdin is a terminal. Agents run as Dorian, so
+  they can neither read that user's Keychain nor raise a prompt in its session.
+- The program runs from exactly `/usr/local/libexec/dorkos-approve/` (no symlink, no copy), and
+  the binary and every folder above it are owned by root and not group- or world-writable.
+- The provisioner pins only the installed helper at that path, and refuses any Keychain outside
+  `/Users/dorkos-approver/Library/Keychains/`. It never touches Dorian's login keychain.
 
-The provisioner validates the helper against `cdhash H"<printed-hash>"`, asks
-for owner authentication naming that hash, then reads the PEM from a terminal
-with echo disabled. Paste it from the App creation flow; finish on an empty line
-with Ctrl-D. Do not download it to a file, put it in an environment variable,
-pass it as an argument, or paste it into chat/logs. Import and conversion happen
-in memory. The new generic-password item is `ai.dorkos.security-review` /
-`github-app-private-key`; existing items are never overwritten. Its trusted
-application requirement is the exact cdhash, not the certificate, team or bundle
-identifier. The separate Keychain partition gate may identify the common signing
-team; it is an additional restriction and never replaces the exact-hash decrypt
-ACL. Signing the provisioner and helper with the same identity lets that
-additional partition gate admit the intended helper. No partition broadening
-command is part of production setup.
+The provisioner validates the helper against `cdhash H"<printed-hash>"`, asks for owner
+authentication naming that hash, then reads the PEM from a terminal with echo disabled. Import
+and conversion happen in memory. The new generic-password item is `ai.dorkos.security-review` /
+`github-app-private-key`; existing items are never overwritten. Its trusted application
+requirement is the exact cdhash, not the certificate, team or bundle identifier. Signing the
+provisioner and helper with the same identity lets the Keychain's additional partition gate admit
+the intended helper. No partition broadening command is part of production setup. Every rebuild
+changes the hash; `--repin` re-points the item without exporting the key.
 
-Every rebuild or re-sign changes the hash. Print it again, review the new binary,
-then explicitly reapprove it without exporting/reentering the key:
+### Batch approval
 
-```sh
-helper_cdhash=$(codesign -dv --verbose=4 /absolute/trusted/security-approve 2>&1 | sed -n 's/^CDHash=//p')
-printf '%s\n' "$helper_cdhash"
-/absolute/trusted/security-approve-provision --repin "$HOME/Library/Keychains/login.keychain-db" /absolute/trusted/security-approve "$helper_cdhash"
-```
+Security queues `<pr> <40-hex-sha>` lines with `tools/security-approve/enqueue.sh`, only when
+its `reviews/pr-<n>*.md` names that SHA; the script copies that review into
+`/Users/Shared/dorkos-approve/reviews/` because the approver cannot read Dorian's home. The queue
+and the copies are agent-written and trusted for nothing: `security-approve --batch` accepts only
+well-formed lines (others are counted, never shown), builds every line it displays from GitHub
+(number, title, head, changed files, with terminal control and bidi characters stripped), and
+drops any PR that is closed, has moved off the queued head, lacks a review copy naming that SHA,
+or already carries the bot's success. One owner authentication, naming every PR and SHA, covers
+the list; one App token is minted. Each head is rechecked right before and after its post, and a
+moved head is skipped.
 
-Repinning requires owner authentication plus whatever Keychain authorization is
-needed to change its ACL. Failure leaves the existing item untouched. This tool
-never reads the existing secret to repin it. Do not click Always Allow for another
-binary. Pin the new hash only after reviewing that build.
+Never batched, each needing `security-approve <pr> <sha>` with its own confirmation and its file
+list shown: any change or rename under `.github/` (workflows, gate scripts, `CODEOWNERS`), any
+`CODEOWNERS` file, `tools/security-approve/**`, `ci/security-*`, `ci/required-checks.json`,
+`packages/ci-steward/src/rulesets.ts`, `scripts/security-paths-check.mjs`, and any PR whose file
+list GitHub could not return in full. Single mode also requires the review copy.
 
 ### Platform dependency and proof
 
@@ -179,7 +174,8 @@ support on every future macOS version. The approval reader itself uses Security
 framework APIs and does not need this SPI. Source:
 [Apple's requirement constructor](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/SecTrustedApplicationPriv.h).
 
-Run `tools/security-approve/tests/test-policy.sh` locally for canned-output unit tests only.
+Run `tools/security-approve/tests/test-policy.sh` locally: canned output, a fake GitHub and
+private temp files only (policy, single and batch flows, enqueue).
 Real helper/ACL tests (`tests/run.sh` and `tests/test-keychain.sh`) are CI macOS
 runner only and refuse other environments. Never run `security`, `codesign`, the
 helper or a Keychain probe from an agent session on the operator Mac—even with
@@ -208,10 +204,14 @@ No real App/key/approval has been exercised. Hosted required-workflow
 `merge_group`, multi-entry queue-chain and signed production provisioning proofs
 remain pending. Keep this PR on hold with auto-merge off.
 
-The provisioner checks displayed signature flags for hardened runtime and refuses
+The provisioner reads `codesign -d --entitlements - --xml --verbose=4`, refuses any
+`[Dict]`/`[Key]` text-format entitlements outright (current macOS prints that without `--xml`),
+checks displayed signature flags for hardened runtime and refuses
 any get-task-allow, allow-dyld-environment-variables, disable-library-validation
 or allow-unsigned-executable-memory entitlement, even with a false value. It
 binds that display to the requested exact cdhash; the existing strict signature
 validation then checks the same hash before ACL creation or repinning. Pure unit
-tests feed canned display output and never inspect/sign a binary or touch a Keychain.
+tests feed canned display output and never inspect/sign a binary or touch a Keychain. The CI
+macOS runner also signs runtime helpers carrying each injection entitlement and proves the real
+display is refused.
 Pin the real App/bot IDs before promotion; zero placeholders intentionally refuse.

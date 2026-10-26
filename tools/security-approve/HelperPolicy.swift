@@ -2,6 +2,12 @@ import Foundation
 
 /// Pure policy: tests supply canned codesign display output, never a real binary.
 func validateHelperDisplay(_ output: String, expectedHash: String) throws {
+  // Without --xml, current macOS prints entitlements as [Dict]/[Key] text that
+  // the XML check below would never see. Refuse that format outright.
+  for marker in ["[Dict]", "[Key]", "[Value]", "[Bool]", "[Array]", "[String]"]
+  where output.contains(marker) {
+    throw ApprovalError(message: "Helper entitlements must be shown as XML")
+  }
   var header = output
   if let start = output.range(of: "<?xml"),
     let end = output.range(of: "</plist>", range: start.lowerBound..<output.endIndex)
@@ -36,11 +42,16 @@ func validateHelperDisplay(_ output: String, expectedHash: String) throws {
   else { throw ApprovalError(message: "Helper must have hardened runtime and the exact cdhash") }
 }
 
-/// Called only by Dorian's attended provisioner, before any Keychain operation.
+/// The exact display command. `--xml` is what makes the entitlement check real.
+func helperDisplayArguments(_ path: String) -> [String] {
+  ["-d", "--entitlements", "-", "--xml", "--verbose=4", path]
+}
+
+/// Called only by the attended provisioner, before any Keychain operation.
 func validateHelperSignature(path: String, expectedHash: String) throws {
   let command = Process()
   command.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-  command.arguments = ["-d", "--entitlements", "-", "--verbose=4", path]
+  command.arguments = helperDisplayArguments(path)
   let pipe = Pipe()
   command.standardOutput = pipe
   command.standardError = pipe
