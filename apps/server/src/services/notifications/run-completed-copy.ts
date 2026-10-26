@@ -82,6 +82,16 @@ function shortError(message: string): string {
 }
 
 /**
+ * End a sentence with a full stop, unless it already ends in one, an ellipsis,
+ * "!" or "?" — so a cut error never reads "…." (DOR-3123).
+ *
+ * @param text - The sentence.
+ */
+function asSentence(text: string): string {
+  return /[.…!?]$/.test(text) ? text : `${text}.`;
+}
+
+/**
  * The same reason line the Schedules row shows for this run, in its wording
  * for a schedule whose level is not named (`describeFailure` in the client's
  * `features/tasks/lib/schedule-health.ts`; keep the two in step).
@@ -101,7 +111,7 @@ export function runFailureReason(p: RunCompletedPayload): string {
   const message = p.detail?.trim();
   if (message?.startsWith(SIGN_IN_PREFIX))
     return 'Its sign-in expired. Sign in again, then run it.';
-  return message ? `Didn’t finish: ${shortError(message)}.` : 'Didn’t finish.';
+  return message ? asSentence(`Didn’t finish: ${shortError(message)}`) : 'Didn’t finish.';
 }
 
 /**

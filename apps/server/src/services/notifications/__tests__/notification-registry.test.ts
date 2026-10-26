@@ -494,6 +494,18 @@ describe('notification registry', () => {
       expect(body?.({ ...blocked, status: 'failed', detail: 'API Error: 500' })).toBe(
         'Didn’t finish: API Error: 500. Open the schedule to fix it.'
       );
+      // A cut error ends in "…", and an error that ends its own sentence keeps
+      // its mark: never a full stop after either.
+      const cut = body?.({
+        ...blocked,
+        status: 'failed',
+        detail: `which is not ${'x '.repeat(200)}`,
+      });
+      expect(cut).toMatch(/… Open the schedule to fix it\.$/);
+      expect(cut).not.toContain('….');
+      expect(body?.({ ...blocked, status: 'failed', detail: 'Is the server up?' })).toBe(
+        'Didn’t finish: Is the server up? Open the schedule to fix it.'
+      );
       // Never a raise of the schedule's level (spec `schedules-failing` SF-18).
       expect(body?.({ ...blocked, refusedTools: ['Bash'] })).not.toMatch(/permission level|Full/);
     });

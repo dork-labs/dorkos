@@ -3,6 +3,7 @@ covers:
   - 'fix(tasks): a failing schedule sends one notice, not one per run (DOR-3123)'
   - "fix(tasks): a failing schedule's notice says why and points at the schedule, never a raise (DOR-3123)"
   - "fix(tasks): a failing schedule's notice reads like its row: two lines and the action below on a phone, the row's mark, the same phone text (DOR-3123)"
+  - 'fix(tasks): a cut error never gets a full stop after its ellipsis (DOR-3123)'
 ---
 
 ### Fixed

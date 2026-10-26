@@ -69,6 +69,16 @@ function shortError(message: string): string {
 }
 
 /**
+ * End a sentence with a full stop, unless it already ends in one, an ellipsis,
+ * "!" or "?" — so a cut error never reads "…." (DOR-3123).
+ *
+ * @param text - The sentence.
+ */
+function asSentence(text: string): string {
+  return /[.…!?]$/.test(text) ? text : `${text}.`;
+}
+
+/**
  * The one line a failing row shows: what happened, and why (spec §3).
  *
  * The fix is the row's action, **Open schedule**, so the line names the cause
@@ -97,7 +107,7 @@ export function describeFailure(reason: TaskFailureReason, stop: string | null):
       return 'Its sign-in expired. Sign in again, then run it.';
     case 'error': {
       const message = reason.message?.startsWith(SIGN_IN_PREFIX) ? null : reason.message;
-      return message ? `Didn’t finish: ${shortError(message)}.` : 'Didn’t finish.';
+      return message ? asSentence(`Didn’t finish: ${shortError(message)}`) : 'Didn’t finish.';
     }
   }
 }

@@ -251,6 +251,16 @@ describe('describeFailure (SF-8)', () => {
       'Didn’t finish: API Error: 500.'
     );
     expect(describeFailure({ ...base, kind: 'error' }, null)).toBe('Didn’t finish.');
+    // A cut error ends in "…", and never gets a full stop after it.
+    const cut = describeFailure(
+      { ...base, kind: 'error', message: `which is not ${'x '.repeat(200)}` },
+      null
+    );
+    expect(cut).toMatch(/…$/);
+    expect(cut).not.toContain('….');
+    expect(describeFailure({ ...base, kind: 'error', message: 'Is the server up?' }, null)).toBe(
+      'Didn’t finish: Is the server up?'
+    );
   });
 });
 
