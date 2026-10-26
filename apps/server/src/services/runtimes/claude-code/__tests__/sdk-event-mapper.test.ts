@@ -1458,3 +1458,38 @@ describe('sdk-event-mapper permission_denied messages', () => {
     expect(data.reasonType).toBe('classifier');
   });
 });
+
+// DOR-3285: a background shell outlives the CLI's interrupt, so the mapper
+// records each one the turn starts for a Stop to end by its task id.
+describe('sdk-event-mapper records the turn’s background shells for Stop', () => {
+  const started = (taskId: string, taskType?: string) =>
+    sdkTaskStarted(taskId, 'Run a command', `toolu-${taskId}`, {
+      is_backgrounded: true,
+      ...(taskType ? { task_type: taskType } : {}),
+    } as Parameters<typeof sdkTaskStarted>[3]);
+
+  it('records a shell, and an untyped task, but not a subagent', async () => {
+    const session = { ...makeSession(), turnTaskIds: new Set<string>() } as AgentSession;
+    for (const msg of [
+      started('shell', 'local_bash'),
+      started('untyped'),
+      started('helper', 'local_agent'),
+    ])
+      await collectEvents(msg, session, 'test-session', makeToolState());
+    expect([...session.turnTaskIds!]).toEqual(['shell', 'untyped']);
+  });
+
+  it('drops a task once it has settled, whatever the ending', async () => {
+    const session = {
+      ...makeSession(),
+      turnTaskIds: new Set(['done', 'still-going']),
+    } as AgentSession;
+    await collectEvents(
+      sdkTaskNotification('done', 'completed', 'ok'),
+      session,
+      'test-session',
+      makeToolState()
+    );
+    expect([...session.turnTaskIds!]).toEqual(['still-going']);
+  });
+});

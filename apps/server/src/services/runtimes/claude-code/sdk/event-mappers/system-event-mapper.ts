@@ -69,6 +69,10 @@ export async function* mapSystemEvent(
         msg.is_backgrounded,
         msg.spawn_depth
       );
+      // This turn's work, for a Stop to end (DOR-3285): a background shell was
+      // seen to outlive the CLI's interrupt. Subagents stay the CLI's to stop;
+      // a task with no type is treated as a shell.
+      if (msg.task_type !== 'local_agent') session.turnTaskIds?.add(msg.task_id as string);
       yield {
         type: 'background_task_started',
         data: {
@@ -107,6 +111,7 @@ export async function* mapSystemEvent(
       const msg = message as Record<string, unknown>;
       const usage = msg.usage as { tool_uses: number; duration_ms: number } | undefined;
       const ambient = msg.ambient as boolean | undefined;
+      session.turnTaskIds?.delete(msg.task_id as string);
       yield {
         type: 'background_task_done',
         data: {

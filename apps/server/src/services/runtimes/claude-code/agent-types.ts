@@ -249,6 +249,13 @@ export interface AgentSession {
    * finished as `interrupted` instead of idle (DOR-1244).
    */
   stoppedQueries?: WeakSet<Query>;
+  /**
+   * Background tasks this turn's own tool calls started and that have not
+   * settled: a `run_in_background` shell, or a foreground one the CLI moved to
+   * the background past its timeout. A CLI interrupt does not end them, so a
+   * Stop ends each by its task id (DOR-3285). Reset when a turn starts.
+   */
+  turnTaskIds?: Set<string>;
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
