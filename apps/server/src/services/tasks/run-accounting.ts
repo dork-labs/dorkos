@@ -42,7 +42,8 @@
  *
  * @module services/tasks/run-accounting
  */
-import { isTerminalRunStatus, type TaskStore } from './task-store.js';
+import type { TaskStore } from './task-store.js';
+import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import type { CancelRunOutcome } from './run-cancel.js';
 

@@ -304,7 +304,8 @@ function resetPerTurnState(session: AgentSession): void {
   // data, and a stop stamped in a PREVIOUS turn must not blind this turn's
   // phantom detector (DOR-1087).
   session.contextBreakdown = undefined;
-  session.interruptRequestedAt = undefined;
+  // The turn's own background work starts empty too, for a Stop to end (DOR-3285).
+  Object.assign(session, { interruptRequestedAt: undefined, turnTaskIds: new Map() });
   // A usage limit is reported once per turn (spec claude-account-fleet D4).
   session.limitReportedThisTurn = false;
   session.rejectedLimitThisTurn = undefined;

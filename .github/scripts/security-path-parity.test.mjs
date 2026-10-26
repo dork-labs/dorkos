@@ -1,6 +1,7 @@
 /* global URL */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +30,38 @@ test('gate pattern equals Security reference and the installed interim checker',
   }
 });
 
+test('the approval helper shows Dorian the same gate pattern', () => {
+  const swift = readFileSync(resolve(root, 'tools/security-approve/Policy.swift'), 'utf8');
+  const copy = /^let gatePathPattern = #"(.+)"#$/m.exec(swift)?.[1];
+  assert.equal(copy, reference, 'tools/security-approve/Policy.swift gatePathPattern differs');
+});
+
 const additions = [
+  ['packages/a/patches/b.patch', 'packages/a/patches-old/b.patch'],
+  ['.node-version', '.node-versions'],
+  ['apps/client/.node-version', 'apps/client/node-version'],
+  ['CODEOWNERS', 'CODEOWNERS.md'],
+  ['docs/CODEOWNERS', 'docs/CODEOWNERSx'],
+  ['Codeowners', 'docs/codeowners-guide.md'],
+  ['.NPMRC', '.NPMRC.backup'],
+  ['.PNPMFILE.CJS', '.PNPMFILE.CJS.old'],
+  ['PATCHES/dependency.patch', 'PATCHES-old/dependency.patch'],
+  ['PNPM-LOCK.YAML', 'PNPM-LOCK.YAML.old'],
+  ['Pnpm-Workspace.yaml', 'Pnpm-Workspaces.yaml'],
+  ['.NVMRC', '.NVMRCx'],
+  ['pacKage.json', 'pacKage.jsonx'],
+  ['patcheſ/dependency.patch', 'patcheſ-old/dependency.patch'],
+  ['.npmrc', '.npmrc.backup'],
+  ['apps/client/.npmrc', 'apps/client/npmrc'],
+  ['patches/dependency.patch', 'patches-old/dependency.patch'],
+  ['packages/shared/patches/dependency.patch', 'packages/shared/patches-old/dependency.patch'],
+  ['.pnpmfile.cjs', '.pnpmfile.cjs.old'],
+  ['packages/shared/.pnpmfile.cjs', 'packages/shared/pnpmfile.cjs'],
+  ['.nvmrc', '.nvmrcx'],
+  ['apps/client/.nvmrc', 'apps/client/nvmrc'],
+  ['PACKAGE.JSON', 'PACKAGE.JSONX'],
+  ['apps/client/Package.Json', 'apps/client/Package.Jsonx'],
+  ['packages/shared/pAcKaGe.JsOn', 'packages/shared/pAcKaGe.JsOnx'],
   ['package.json', 'package.jsonx'],
   ['apps/client/package.json', 'apps/client/package.jsonx'],
   ['packages/shared/package.json', 'packages/shared/packages.json'],
@@ -61,6 +93,13 @@ for (const [match, miss] of additions) {
       touchesSecurity([{ filename: 'docs/moved.md', previous_filename: match }], reference)
     );
     assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
+    // The coordinator uses POSIX ERE; keep its engine aligned with JavaScript.
+    const shell = spawnSync('grep', ['-E', reference], {
+      input: `${match.normalize('NFKC').toLowerCase()}\n${miss.normalize('NFKC').toLowerCase()}\n`,
+      encoding: 'utf8',
+    });
+    assert.equal(shell.status, 0, shell.stderr);
+    assert.equal(shell.stdout, `${match.normalize('NFKC').toLowerCase()}\n`);
   });
 }
 
@@ -73,3 +112,64 @@ test('both trusted gate workflows pin all actions to full commit SHAs', () => {
       assert.match(action, /^actions\/(checkout|setup-node)@[0-9a-f]{40}$/);
   }
 });
+
+// Keep this fixture byte-for-byte aligned with marketplace S3b (PR #121).
+const variantBytes = readFileSync(
+  new URL('../../scripts/fixtures/security-path-variants.json', import.meta.url)
+);
+const variants = JSON.parse(variantBytes.toString('utf8'));
+test('shared spelling fixture retains the pinned marketplace blob', () => {
+  assert.equal(
+    createHash('sha1').update(`blob ${variantBytes.length}\0`).update(variantBytes).digest('hex'),
+    '32a042ddddc493f52f51883832b031c05f92a430'
+  );
+});
+for (const path of variants.match) {
+  test(`shared security spelling and rename: ${path}`, () => {
+    assert.equal(touchesSecurity([{ filename: path }], reference), true);
+    assert.equal(
+      touchesSecurity([{ filename: 'docs/moved.md', previous_filename: path }], reference),
+      true
+    );
+  });
+}
+for (const path of variants.noMatch) {
+  test(`shared nonsecurity spelling: ${path}`, () => {
+    assert.equal(touchesSecurity([{ filename: path }], reference), false);
+  });
+}
+test('configured patterns are Unicode case-insensitive too', () => {
+  const pattern = '^Private/SignIn\\.json$';
+  assert.equal(touchesSecurity([{ filename: 'private/SIGNIN.json' }], pattern), true);
+  assert.equal(
+    touchesSecurity(
+      [{ filename: 'docs/moved.md', previous_filename: 'PRIVATE/signin.json' }],
+      pattern
+    ),
+    true
+  );
+  assert.equal(touchesSecurity([{ filename: 'private/signin.jsonx' }], pattern), false);
+});
+test('full folding adds sharp-s matches for configured patterns', () => {
+  assert.equal(touchesSecurity([{ filename: 'private/Straße' }], '^private/strasse$'), true);
+  assert.equal(touchesSecurity([{ filename: 'private/ẞ' }], '^private/ss$'), true);
+});
+test('normalization only adds matches and preserves regex syntax', () => {
+  assert.equal(touchesSecurity([{ filename: 'name／literal' }], '^name／literal$'), true);
+  assert.equal(touchesSecurity([{ filename: 'Private/File' }], '^Private/\\S+$'), true);
+  assert.equal(touchesSecurity([{ filename: 'Private/ ' }], '^Private/\\S+$'), false);
+});
+
+for (const [pattern, path, miss] of [
+  ['^(?!docs/)', 'DOCS/run.sh', 'docs/run.sh'],
+  ['^[^a-z]', 'Secrets/a', 'secrets/a'],
+  ['^(?!.*\\.md$)', 'README.MD', 'README.md'],
+]) {
+  test(`flagless match survives added folding: ${pattern}`, () => {
+    assert.equal(new RegExp(pattern).test(path), true);
+    assert.equal(new RegExp(pattern, 'iu').test(path), false);
+    assert.equal(touchesSecurity([{ filename: path }], pattern), true);
+    assert.equal(touchesSecurity([{ filename: miss, previous_filename: path }], pattern), true);
+    assert.equal(touchesSecurity([{ filename: miss }], pattern), false);
+  });
+}

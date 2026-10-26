@@ -13,6 +13,7 @@ import {
   describeRefusedAsks,
   NO_APPROVAL_SURFACE,
   readableToolName,
+  refusedToolNames,
   withRefusedAsks,
 } from '../run-refusals.js';
 
@@ -82,10 +83,10 @@ describe('describeRefusedAsks', () => {
 });
 
 describe('createRefusedAskLog', () => {
-  it("records only DorkOS's own nobody-was-there refusals", () => {
+  it('records only the refusals nobody was asked about', () => {
     // A safety-classifier or deny-rule denial would have gone the same way with
     // a person sitting right there, so describing one as "nobody was there to
-    // approve it" would be false. The stamp is what keeps the sentence true.
+    // approve it" would be false. The discriminator keeps the sentence true.
     const log = createRefusedAskLog();
     log.observe(runtimeDenial('Bash', 'classifier'));
     log.observe(runtimeDenial('WebFetch', 'rule'));
@@ -99,6 +100,30 @@ describe('createRefusedAskLog', () => {
     ]);
     expect(log.summaryLine()).toBe(
       'Skipped control_ui — nobody was there to approve it on a scheduled run.'
+    );
+  });
+
+  it('records a refusal nobody was asked about: the Never ask mode and a background helper (DOR-3132)', () => {
+    // A Never ask schedule's refusals carry the mode's own discriminator, and
+    // were never written down: `refusedTools: []` on every tick of a schedule
+    // that lost Bash each time.
+    const log = createRefusedAskLog();
+    log.observe(runtimeDenial('Bash', 'mode'));
+    log.observe(runtimeDenial('Write', 'asyncAgent'));
+
+    expect(refusedToolNames(log.all())).toEqual(['Bash', 'Write']);
+  });
+
+  it('says a Never ask refusal was the schedule’s own setting, not an absent person', () => {
+    // Under Never ask nobody was asked by choice; "nobody was there to approve
+    // it" would send the reader looking for a person who was never needed.
+    const log = createRefusedAskLog();
+    log.observe(nobodyThere('mcp__gmail__search'));
+    log.observe(runtimeDenial('Bash', 'mode'));
+
+    expect(log.summaryLine()).toBe(
+      'Skipped gmail: search — nobody was there to approve it on a scheduled run. ' +
+        'Skipped Bash — this schedule is set to Never ask.'
     );
   });
 

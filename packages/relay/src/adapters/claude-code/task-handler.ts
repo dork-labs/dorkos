@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import { createRunOutcomeTracker, settledRunFields } from '@dorkos/shared/run-outcome';
 import {
   createRefusedAskLog,
   refusedToolNames,
@@ -500,8 +500,8 @@ export async function handleTasksMessage(
       } else {
         // The stream ending is not the work having succeeded: a turn that
         // streamed a typed `error` and then ended used to be filed as a success
-        // here too (DOR-1658), and so did one that was refused every tool it
-        // reached for and got none of them (DOR-2101, `blocked`). The
+        // here too (DOR-1658), and so did one that was refused a tool it
+        // reached for (DOR-3123, `needs_attention`). The
         // direct-dispatch twin in `task-scheduler-service.ts` maps the same
         // three answers the same way, because a run must not be recorded
         // differently for having taken the other path.
@@ -509,21 +509,13 @@ export async function handleTasksMessage(
         // envelope was carried and acted on — so only the run row changes; the
         // trace span below and this handler's return value are untouched, or a
         // run that genuinely ran would be dead-lettered and redelivered.
-        const settlement = outcome.settle();
-        // A failure names what broke; a blocked run names the tools it was
-        // denied. The direct twin composes this line the same way.
-        const rowError =
-          settlement.outcome === 'failed'
-            ? settlement.error
-            : settlement.outcome === 'blocked'
-              ? refusalLine
-              : null;
+        // The status, how much got done and the line a person reads, mapped by
+        // the one function the direct twin writes its row from too.
         deps.taskStore.updateRun(runId, {
-          status: settlement.outcome,
+          ...settledRunFields(outcome.settle(), refusalLine),
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          ...(rowError !== null ? { error: rowError } : {}),
           refusedTools,
           sessionId: persistedSessionId(),
         });

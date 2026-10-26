@@ -10,14 +10,26 @@
  *
  * ## What counts, and why the sentence can name the missing person
  *
- * Exactly one thing: a `permission_denied` StreamEvent stamped
- * {@link NO_APPROVAL_SURFACE}, which only DorkOS's own unattended refusal writes
- * (`runtimes/claude-code/messaging/interactive-handlers.ts`). Every other
- * `permission_denied` — auto mode's safety classifier, a deny rule the operator
- * wrote, a backgrounded subagent's call the CLI refuses — would have been
- * refused with somebody sitting right there, so calling one of those "nobody was
- * there to approve it" would be false. Filtering on the stamp rather than
- * folding every frame in is what makes the sentence true by construction.
+ * A `permission_denied` StreamEvent whose `reasonType` says nobody was asked
+ * ({@link NOBODY_ASKED_REASON_TYPES}):
+ *
+ * - {@link NO_APPROVAL_SURFACE}, which only DorkOS's own unattended refusal
+ *   writes (`runtimes/claude-code/messaging/interactive-handlers.ts`);
+ * - `mode`, a call the session's "Never ask" mode refused without asking —
+ *   written by the CLI itself, and by DorkOS's gate when one reaches it
+ *   (DOR-3132: these were never recorded, so a Never-ask schedule that lost
+ *   Bash on every tick showed `refusedTools: []`);
+ * - `asyncAgent`, a backgrounded subagent's call the CLI refused because a
+ *   detached child has nobody to ask (DOR-795).
+ *
+ * The other `permission_denied` frames — auto mode's safety classifier, a deny
+ * rule the operator wrote — would have been refused with somebody sitting
+ * right there, so calling one of those "nobody was there to approve it" would
+ * be false, and a deny rule is the operator's own deliberate choice rather
+ * than something to fix. Filtering on the discriminator rather than folding
+ * every frame in is what makes the sentence true by construction — and a
+ * Never ask refusal gets a sentence of its own ({@link describeNeverAskRefusals}),
+ * because there the schedule chose not to ask rather than nobody being there.
  *
  * Pure and environment-agnostic, and it lives here for the same reason
  * `run-outcome` does: both dispatch paths need it and they share no other code —
@@ -37,6 +49,29 @@ import type { StreamEvent } from './schemas.js';
  * have happened anyway, and this one names the absence of a person.
  */
 export const NO_APPROVAL_SURFACE = 'no_approval_surface';
+
+/**
+ * The `reasonType` a refusal by the session's own "Never ask" mode carries —
+ * the SDK's discriminator for it, which DorkOS's gate stamps too so the two
+ * refusers of one mode leave one record (DOR-3132).
+ */
+export const NEVER_ASK_REASON_TYPE = 'mode';
+
+/** The SDK's ask-the-person tool: refusing it loses a question, not a tool. */
+const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
+
+/**
+ * The refusals that happened because nobody was asked. See the module doc for
+ * why these three and not the classifier or a deny rule.
+ *
+ * Only {@link NO_APPROVAL_SURFACE} carries an `askKind`; the other two are the
+ * CLI refusing a TOOL call by definition, so they read as `tool`.
+ */
+const NOBODY_ASKED_REASON_TYPES: ReadonlySet<string> = new Set([
+  NO_APPROVAL_SURFACE,
+  NEVER_ASK_REASON_TYPE,
+  'asyncAgent',
+]);
 
 /**
  * How many tools a run's summary line names before it starts counting.
@@ -74,7 +109,7 @@ export function readableToolName(toolName: string): string {
  *
  * Only `tool` is a run losing the ability to ACT. A `question` or an
  * `elicitation` is the run trying to talk to somebody, which a run that did
- * all its work can still end up doing — see `run-outcome`'s `blocked` rule,
+ * all its work can still end up doing — see `run-outcome`'s `needs_attention` rule,
  * the one reader that cares about the difference (DOR-2101).
  */
 export type RefusedAskKind = 'tool' | 'question' | 'elicitation';
@@ -93,6 +128,13 @@ export interface RefusedAsk {
    * — see {@link isRefusedTool}.
    */
   askKind?: RefusedAskKind;
+  /**
+   * Whether the session's own "Never ask" mode refused it, rather than a
+   * prompt nobody was there to answer. The words differ: nobody was asked
+   * because the schedule is set not to ask, which a person reading "nobody was
+   * there to approve it" would take for an absence (DOR-3132 review).
+   */
+  neverAsk?: true;
 }
 
 /**
@@ -170,6 +212,18 @@ export function describeRefusedAsks(toolNames: readonly string[]): string | null
 }
 
 /**
+ * The sentence for the tools a schedule's "Never ask" mode refused (DOR-3132).
+ *
+ * @param toolNames - The tools that were refused, already readable, in order.
+ * @returns The sentence, or `null` for an empty list.
+ */
+export function describeNeverAskRefusals(toolNames: readonly string[]): string | null {
+  const named = listRefusedTools(toolNames);
+  if (named === null) return null;
+  return `Skipped ${named.list} — this schedule is set to Never ask.`;
+}
+
+/**
  * The tools, as a phrase a sentence can be built around, plus the pronoun that
  * agrees with it.
  *
@@ -237,12 +291,27 @@ export function readRefusedAsk(event: StreamEvent): RefusedAsk | undefined {
     reason?: unknown;
     askKind?: unknown;
   };
-  if (data.reasonType !== NO_APPROVAL_SURFACE) return undefined;
+  if (typeof data.reasonType !== 'string' || !NOBODY_ASKED_REASON_TYPES.has(data.reasonType)) {
+    return undefined;
+  }
   if (typeof data.toolName !== 'string' || data.toolName.length === 0) return undefined;
+  // DorkOS's own stamp says which of three asks it refused. The CLI's `mode`
+  // and `asyncAgent` frames say nothing, and are a tool call — unless the
+  // call was the SDK's own ask-the-person tool, which is the run wanting to
+  // talk to somebody rather than act.
+  const askKind =
+    data.reasonType === NO_APPROVAL_SURFACE
+      ? isRefusedAskKind(data.askKind)
+        ? data.askKind
+        : undefined
+      : data.toolName === ASK_USER_QUESTION_TOOL
+        ? 'question'
+        : 'tool';
   return {
     toolName: data.toolName,
     ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
-    ...(isRefusedAskKind(data.askKind) ? { askKind: data.askKind } : {}),
+    ...(askKind !== undefined ? { askKind } : {}),
+    ...(data.reasonType === NEVER_ASK_REASON_TYPE ? { neverAsk: true as const } : {}),
   };
 }
 
@@ -280,9 +349,15 @@ export function createRefusedAskLog(): RefusedAskLog {
       return [...refused.values()];
     },
     summaryLine(): string | null {
-      return describeRefusedAsks(
-        [...refused.values()].map((ask) => readableToolName(ask.toolName))
-      );
+      // One line, because every reader quotes only the first: the asks nobody
+      // was there to answer, then the ones the Never ask mode refused.
+      const names = (neverAsk: boolean) =>
+        [...refused.values()]
+          .filter((ask) => (ask.neverAsk === true) === neverAsk)
+          .map((ask) => readableToolName(ask.toolName));
+      const parts = [describeRefusedAsks(names(false)), describeNeverAskRefusals(names(true))];
+      const line = parts.filter((part): part is string => part !== null).join(' ');
+      return line.length > 0 ? line : null;
     },
   };
 }

@@ -12,7 +12,8 @@ import type { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
 import { TaskSchedulerService, singleRuntimeSource } from '../task-scheduler-service.js';
-import { isTerminalRunStatus, TaskStore } from '../task-store.js';
+import { TaskStore } from '../task-store.js';
+import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { holdAwakeDuringTurns, KeepAwakeService } from '../../core/keep-awake/index.js';
 
 vi.mock('../../relay/relay-state.js', () => ({

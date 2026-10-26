@@ -166,7 +166,7 @@ describe('a relay-dispatched run that hit an error (DOR-1658)', () => {
         },
       }) as StreamEvent;
 
-    it('writes a blocked row, not a completed one, when every tool was refused', async () => {
+    it('writes a needs-attention row with nothing done, not a completed one, when every tool was refused', async () => {
       // This is the path the ordinary install takes — with the relay adapter
       // connected, a scheduled run is dispatched through here — so the green
       // row the defect left behind was written by THIS terminal write.
@@ -178,14 +178,15 @@ describe('a relay-dispatched run that hit an error (DOR-1658)', () => {
       ]);
 
       expect(written).toMatchObject({
-        status: 'blocked',
+        status: 'needs_attention',
+        outcome: 'nothing_done',
         error:
           'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.',
         refusedTools: ['Bash', 'mcp__gmail__search'],
       });
     });
 
-    it('completes a run that lost one tool and got other work done', async () => {
+    it('never completes a run that lost one tool and got other work done (DOR-3123)', async () => {
       const written = await runTurn([
         refused('Bash', 't1'),
         {
@@ -196,8 +197,12 @@ describe('a relay-dispatched run that hit an error (DOR-1658)', () => {
         { type: 'done', data: { sessionId: 's' } },
       ]);
 
-      expect(written).toMatchObject({ status: 'completed', refusedTools: ['Bash'] });
-      expect(written.error).toBeUndefined();
+      expect(written).toMatchObject({
+        status: 'needs_attention',
+        outcome: 'partial',
+        refusedTools: ['Bash'],
+        error: 'Skipped Bash — nobody was there to approve it on a scheduled run.',
+      });
     });
 
     it('still fails a run that was refused a tool AND then broke', async () => {

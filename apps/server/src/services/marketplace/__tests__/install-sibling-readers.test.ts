@@ -43,6 +43,11 @@ const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src
 
 /** Files the heuristic flags that do not read installs, and why. */
 const NOT_READING_INSTALLS: Record<string, string> = {
+  // One file, one reader: `dataEntriesAgentsNeverWrite` lists the TOP of the
+  // data folder (never an install or skills root) to name a write-deny rule per
+  // entry, and names `agents` only to leave agent homes out (DOR-3039, M1).
+  'apps/server/src/services/runtimes/claude-code/folder-settings/apply-folder-allows.ts':
+    'dataEntriesAgentsNeverWrite lists the data folder top for deny rules, and skips `agents`',
   'apps/server/src/services/marketplace/lib/schedules/validate-package-schedules.ts':
     'reads the contents of the package being installed, not an install root',
   'apps/server/src/services/marketplace/flows/install-skill-pack.ts':

@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
-  checkPullRequest,
-  checkMergeGroup,
+  checkPullRequest as runPullRequest,
+  checkMergeGroup as runMergeGroup,
   groupMembers,
   touchesSecurity,
   latestReview,
@@ -22,10 +22,15 @@ const initializerWorkflow = readFileSync(
   'utf8'
 );
 const pattern = /^ {2}SECURITY_PATH_PATTERN: '(.*)'$/m.exec(workflow)[1];
+const appSlug = 'dorkos-security-review';
+const botUserId = 424242;
+const checkPullRequest = (api, event, pattern, options = {}) =>
+  runPullRequest(api, event, pattern, { botUserId, ...options });
+const checkMergeGroup = (api, event, pattern) => runMergeGroup(api, event, pattern, botUserId);
 const approved = {
   context: 'security-review',
   state: 'success',
-  creator: { login: 'security' },
+  creator: { login: `${appSlug}[bot]`, id: botUserId },
   id: 123,
 };
 const prEvent = { pull_request: { number: 1, head: { sha: 'head1' } } };
@@ -193,6 +198,8 @@ test('workflow path list covers Security’s complete list and both sides of ren
     '.github/scripts/security-gate.mjs',
     'scripts/release-test.sh',
     'scripts/publish-test.sh',
+    'tools/security-approve/Main.swift',
+    'scripts/security-paths-check.mjs',
     'any/turn-ceiling.ts',
     'any/continuation-hold.ts',
     'any/agent-level.ts',
@@ -348,7 +355,7 @@ test('initializer audits only observed state changes, without rendering target_u
   await initialize();
   await initialize();
   assert.equal(f.comments.length, 2);
-  assert.match(f.comments[1].body, /head1.*@security/);
+  assert.match(f.comments[1].body, /head1.*@dorkos-security-review/);
   assert.doesNotMatch(f.comments[1].body, /untrusted|FAKE_APPROVAL/);
 });
 
@@ -453,6 +460,7 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
         GH_TOKEN: 'fixture-read-only',
         GITHUB_API_URL: `http://127.0.0.1:${server.address().port}`,
         GITHUB_EVENT_NAME: 'merge_group',
+        SECURITY_APPROVAL_BOT_USER_ID: String(botUserId),
         GITHUB_EVENT_PATH: eventPath,
         SECURITY_PATH_PATTERN: pattern,
       },
@@ -653,4 +661,24 @@ test('queued comparison rejects a divergent or absent merge base', async () => {
       /Incomplete queued-head comparison/
     );
   }
+});
+
+test('only the newest exact-head App success authorizes a sensitive diff', async () => {
+  for (const statuses of [
+    { head1: [{ ...approved, creator: { login: 'person' } }] },
+    { other: [approved] },
+    { head1: [{ ...approved, creator: { login: 'person' } }, approved] },
+    {
+      head1: [{ ...approved, creator: { login: 'dorkos-security-review-similar[bot]', id: 999 } }],
+    },
+  ]) {
+    const { api } = fixture({ statuses });
+    await assert.rejects(checkPullRequest(api, prEvent, pattern));
+    const queued = fixture({ statuses: { head2: [approved], ...statuses } });
+    await assert.rejects(checkMergeGroup(queued.api, groupEvent, pattern));
+  }
+  const { api } = fixture({ statuses: { head1: [approved], head2: [approved] } });
+  await checkPullRequest(api, prEvent, pattern);
+  await assert.rejects(runPullRequest(api, prEvent, pattern, { botUserId: 0 }));
+  await assert.rejects(runPullRequest(api, prEvent, pattern));
 });

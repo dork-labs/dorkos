@@ -283,15 +283,21 @@ export async function wireTeamRoomAndRelayAdapters(
   //   3. The activity-feed event (DOR-1573) — a completed or failed run now
   //      broadcasts to the feed live on BOTH paths, where before the relay path
   //      reached the feed only on the next poll.
-  if (refs.taskStore) {
+  const taskStore = refs.taskStore;
+  if (taskStore) {
     // The fourth consumer (DOR-2717): a run whose agent finishes the work in a
     // turn it starts after the run's own turn ended has that turn's words added
     // to the run, rather than left only in its session.
-    refs.taskStore.setOnRunTerminal(
-      createRunTerminalListener(activityService, {
-        store: refs.taskStore,
-        runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
-      })
+    taskStore.setOnRunTerminal(
+      createRunTerminalListener(
+        activityService,
+        {
+          store: taskStore,
+          runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
+        },
+        // One notice per failing streak (DOR-3123).
+        (scheduleId) => taskStore.runHistory()(scheduleId).health.streak
+      )
     );
   }
 

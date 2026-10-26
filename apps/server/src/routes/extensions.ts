@@ -44,6 +44,8 @@ import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
+import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
+import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
@@ -137,6 +139,8 @@ export interface ExtensionsRouterDeps {
   getCwd: () => string | null;
   /** The Activity feed changes are recorded in, when the server has one. */
   activity?: Pick<ActivityService, 'emit'>;
+  /** Mesh, when it is running: the agent a mini app forwards to (DOR-3325). */
+  mesh?: PersonForwardDeps['mesh'];
 }
 
 /** The answer for an id outside {@link SAFE_EXT_ID}. */
@@ -619,6 +623,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
   registerExtensionRoomRoutes(router, extensionManager, SAFE_EXT_ID);
+  registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
 
   return router;
 }

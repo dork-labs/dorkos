@@ -49,6 +49,7 @@ export function createRoomMessageLookup(
           : {}),
         you: isOwnerVoiceRecord(author, ownerUserId()),
       },
+      ...(entry.body.via ? { via: entry.body.via } : {}),
     };
   };
 }

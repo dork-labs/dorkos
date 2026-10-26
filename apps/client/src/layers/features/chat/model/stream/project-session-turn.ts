@@ -35,6 +35,7 @@ import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
 import { isPromptResolution, settledInteractionIds } from './turn-resolutions';
+import { applyWorkLeftEnded, noticePart } from './notice-folds';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
@@ -886,8 +887,10 @@ function markParked(parts: MessagePart[], dto: PendingInteractionDTO): void {
  * collapsible part at index 0; `image_attachment` appends a picture where it
  * was produced; a typed `error` folds an inline error part (the
  * live `ErrorMessageBlock`, for every runtime); a `permission_denied` folds a
- * read-only denial chip. `turn_start`, `turn_end`,
- * `status_change`, and `todo_update` carry no renderable part and are skipped
+ * read-only denial chip; a `work_left_running` folds the line a Stop leaves
+ * (its `work_left_ended`s fold over the whole list, {@link applyWorkLeftEnded}).
+ * `turn_start`, `turn_end`, `status_change`, and `todo_update` carry no
+ * renderable part and are skipped
  * (they drive the status/task projections, not the bubble).
  *
  * @param events - The store's `inProgressTurn` events, in seq order.
@@ -958,14 +961,8 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         foldPermissionDenied(parts, event);
         break;
       case 'model_substituted':
-        parts.push({
-          type: 'model_substituted',
-          from: event.from,
-          fromName: event.fromName,
-          to: event.to,
-          toName: event.toName,
-          reason: event.reason,
-        });
+      case 'work_left_running':
+        parts.push(noticePart(event));
         break;
       case 'operation_progress':
         foldOperationProgress(parts, event);
@@ -1238,5 +1235,6 @@ export function projectSessionMessages(
     messages.push(buildOptimisticUserMessage(optimisticUserMessage.content));
   }
   messages.push(...segments);
-  return messages;
+  // A Stop's line updates in place as each command it left running ends (DOR-3285).
+  return applyWorkLeftEnded(messages, inProgressTurn);
 }

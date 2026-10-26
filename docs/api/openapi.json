@@ -2598,6 +2598,12 @@
           },
           "waitingOn": {
             "$ref": "#/components/schemas/QueuedWaitingOn"
+          },
+          "fromChats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueuedChatEntry"
+            }
           }
         },
         "required": [
@@ -2664,6 +2670,68 @@
           "pins",
           "since",
           "releaseAt"
+        ]
+      },
+      "QueuedChatEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "legacy": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "from",
+          "text"
+        ]
+      },
+      "ChatMessageKind": {
+        "type": "string",
+        "enum": [
+          "message",
+          "report",
+          "start",
+          "stop"
+        ]
+      },
+      "ChatMessageSender": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatTitle": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chatId",
+          "agentName"
         ]
       },
       "DirectChat": {
@@ -3647,6 +3715,9 @@
                   "$ref": "#/components/schemas/ModelSubstitutedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/WorkLeftRunningPart"
+                },
+                {
                   "$ref": "#/components/schemas/CompactBoundaryPart"
                 }
               ],
@@ -3665,6 +3736,7 @@
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "model_substituted": "#/components/schemas/ModelSubstitutedPart",
+                  "work_left_running": "#/components/schemas/WorkLeftRunningPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
@@ -4716,6 +4788,62 @@
           "reason"
         ]
       },
+      "WorkLeftRunningPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "work_left_running"
+            ]
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/WorkLeftTask"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "ended": {
+                      "$ref": "#/components/schemas/WorkLeftEndStatus"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "type",
+          "tasks"
+        ]
+      },
+      "WorkLeftEndStatus": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "stopped"
+        ]
+      },
+      "WorkLeftTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "command"
+        ]
+      },
       "CompactBoundaryPart": {
         "type": "object",
         "properties": {
@@ -4847,36 +4975,6 @@
           "sentAt"
         ]
       },
-      "ChatMessageKind": {
-        "type": "string",
-        "enum": [
-          "message",
-          "report",
-          "start",
-          "stop"
-        ]
-      },
-      "ChatMessageSender": {
-        "type": "object",
-        "properties": {
-          "chatId": {
-            "type": "string"
-          },
-          "chatTitle": {
-            "type": "string"
-          },
-          "agentId": {
-            "type": "string"
-          },
-          "agentName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "chatId",
-          "agentName"
-        ]
-      },
       "ChatDelivery": {
         "type": "string",
         "enum": [
@@ -4910,6 +5008,9 @@
           },
           "author": {
             "$ref": "#/components/schemas/RoomMessageAuthor"
+          },
+          "via": {
+            "$ref": "#/components/schemas/ForwardVia"
           }
         },
         "required": [
@@ -4959,6 +5060,31 @@
           "displayName",
           "handle",
           "you"
+        ]
+      },
+      "ForwardVia": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "appName": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:/-]+$"
+          },
+          "itemTitle": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "extensionId",
+          "appName",
+          "itemId"
         ]
       },
       "SessionSnapshot": {
@@ -5808,6 +5934,59 @@
               "to",
               "toName",
               "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "work_left_running"
+                ]
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkLeftTask"
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "tasks"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "work_left_ended"
+                ]
+              },
+              "taskId": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/WorkLeftEndStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "taskId",
+              "status"
             ]
           },
           {
@@ -9944,6 +10123,9 @@
                 ]
               }
             ]
+          },
+          "health": {
+            "$ref": "#/components/schemas/TaskHealth"
           }
         },
         "required": [
@@ -10025,6 +10207,82 @@
             }
           }
         }
+      },
+      "TaskHealth": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failing"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/TaskFailureReason"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streak": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "reason",
+          "since",
+          "streak",
+          "lastRunId"
+        ]
+      },
+      "TaskFailureReason": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool_refused",
+              "tools_refused",
+              "signin_needed",
+              "error"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nothingDone": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "tools",
+          "nothingDone",
+          "message"
+        ]
       },
       "CreateTaskRequest": {
         "type": "object",
@@ -10312,6 +10570,9 @@
             },
             "default": null
           },
+          "outcome": {
+            "$ref": "#/components/schemas/TaskRunOutcome"
+          },
           "scheduledFor": {
             "type": [
               "string",
@@ -10352,7 +10613,7 @@
           "failed",
           "cancelled",
           "skipped",
-          "blocked"
+          "needs_attention"
         ]
       },
       "TaskRunTrigger": {
@@ -10362,6 +10623,18 @@
           "manual",
           "agent"
         ]
+      },
+      "TaskRunOutcome": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "partial",
+          "nothing_done",
+          null
+        ],
+        "default": null
       },
       "CancelTaskRunResponse": {
         "type": "object",
@@ -15434,6 +15707,16 @@
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
+          },
+          "via": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardVia"
+              },
+              {
+                "description": "Set on a person's comment a mini app forwarded into their Direct chat with an agent (DOR-3325): the app and the item it was typed on. The text is only what the person typed; this is shown as a muted line above it."
+              }
+            ]
           }
         },
         "required": [
@@ -17885,6 +18168,13 @@
           },
           "decision": {
             "$ref": "#/components/schemas/NotificationDecision"
+          },
+          "mark": {
+            "type": "string",
+            "enum": [
+              "refused",
+              "failed"
+            ]
           }
         },
         "required": [
@@ -36015,6 +36305,59 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "work_left_running"
+                          ]
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WorkLeftTask"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "tasks"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "work_left_ended"
+                          ]
+                        },
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "$ref": "#/components/schemas/WorkLeftEndStatus"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "taskId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "system_status"
                           ]
                         },
@@ -37426,7 +37769,7 @@
           "Sessions"
         ],
         "summary": "Edit or move a waiting message",
-        "description": "Changes a waiting message's words, its place in the queue, or both. A move names another message to land before or after rather than an index, because an index means something different to every window the moment anybody else edits the queue. The queue belongs to the SESSION: any client may edit any message on it, whichever client enqueued it.",
+        "description": "Changes a waiting message's words, its place in the queue, or both. A move names another message to land before or after rather than an index, because an index means something different to every window the moment anybody else edits the queue. The queue belongs to the SESSION: any client may edit any message on it, whichever client enqueued it — except that a message another chat sent may be moved but never reworded (409).",
         "parameters": [
           {
             "schema": {
@@ -37478,6 +37821,16 @@
           },
           "404": {
             "description": "No such message on this queue (dispatched, removed, or never here)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The edit tried to reword a message another chat sent",
             "content": {
               "application/json": {
                 "schema": {

@@ -72,7 +72,7 @@ describe('broadcastRunTerminal via the TaskStore run-terminal hook (DOR-403)', (
     expect(failCalls()[0][1]).toMatchObject({ runId: created.id, scheduleId: task.id });
   });
 
-  it('does NOT broadcast on a successful terminal run', async () => {
+  it('does NOT broadcast task_run_failed on a successful terminal run', async () => {
     const task = store.createTask(taskInput('success'));
     const created = store.createRun(task.id, 'scheduled');
 
@@ -80,6 +80,31 @@ describe('broadcastRunTerminal via the TaskStore run-terminal hook (DOR-403)', (
     await flush();
 
     expect(failCalls()).toHaveLength(0);
+  });
+
+  it('broadcasts task_run_failed for a run that needs attention, which makes a schedule failing (DOR-3123)', async () => {
+    const task = store.createTask(taskInput('refused'));
+    const created = store.createRun(task.id, 'scheduled');
+
+    store.updateRun(created.id, { status: 'needs_attention', refusedTools: ['Bash'] });
+    await flush();
+
+    expect(failCalls()).toHaveLength(1);
+  });
+
+  it('broadcasts task_run_finished for every way a run ends, so the list re-reads health', async () => {
+    const task = store.createTask(taskInput('finished'));
+    for (const status of ['completed', 'needs_attention', 'cancelled'] as const) {
+      const created = store.createRun(task.id, 'scheduled');
+      store.updateRun(created.id, { status });
+    }
+    await flush();
+
+    const finished = vi
+      .mocked(eventFanOut.broadcast)
+      .mock.calls.filter(([name]) => name === 'task_run_finished')
+      .map(([, data]) => (data as { status: string }).status);
+    expect(finished).toEqual(['completed', 'needs_attention', 'cancelled']);
   });
 
   it('does NOT broadcast on a cancelled terminal run', async () => {

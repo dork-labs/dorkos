@@ -97,6 +97,7 @@ export function createQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
     id: nextId('q'),
     content: 'Follow-up message',
     mine: true,
+    fromChat: false,
     notice: null,
     ...overrides,
   };

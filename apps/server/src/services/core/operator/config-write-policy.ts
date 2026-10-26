@@ -648,6 +648,10 @@ export const CONFIG_WRITE_POLICY = {
   // caller that could add a room here would let a mini app post in the
   // person's name somewhere they never chose.
   'extensions.roomAccess': 'operator-only',
+  // The agent each mini app may forward the person's comments to (DOR-3325). A
+  // caller that could set it would let a mini app make the person say
+  // something to an agent they never chose.
+  'extensions.forwardAgents': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -869,6 +873,11 @@ export const CONFIG_WRITE_POLICY = {
   // Machine-managed like the stamp above: an agent that cleared it would share
   // every app nobody holds on the next boot.
   'permissions.sharedAppsAppliedAt': 'operator-only',
+  // A person's yes or no to an agent's folder allow list (DOR-3039). An agent
+  // that could write the yes would approve its own permissions.
+  'permissions.approvedFolderAllows': 'operator-only',
+  'permissions.refusedFolderAllows': 'operator-only',
+  'permissions.approvedFolderAllowRules': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',

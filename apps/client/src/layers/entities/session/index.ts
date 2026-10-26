@@ -99,6 +99,8 @@ export {
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/stream/session-stream-store';
 export type { SessionStreamState } from './model/stream/session-stream-store';
+export { useSessionWorkLeft, workLeftLineId } from './model/stream/use-session-work-left';
+export type { SessionWorkLeft } from './model/stream/use-session-work-left';
 export {
   useHistoryWindowStore,
   useHistoryWindow,
