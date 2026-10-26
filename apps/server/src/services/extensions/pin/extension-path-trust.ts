@@ -55,8 +55,10 @@ export type PathTrustCopy = Pick<ExtensionRecord, 'manifest' | 'sourcePlugin'> &
 
 /**
  * A digest of what a manifest declares it may reach: where its server half
- * runs, its `allow` lists, its secrets, its data proxy and its server entry.
- * Tools, skills and display fields are left out, so editing them never asks.
+ * runs, its `allow` lists, its secrets, its data proxy, its server entry, and
+ * the tier of each tool it gives agents (a tool moved to a lower tier would run
+ * without the card its old tier asked for). Tool descriptions, skills and
+ * display fields are left out, so editing them never asks.
  *
  * @param manifest - The parsed `extension.json`.
  * @returns `sha256:<hex>`.
@@ -71,6 +73,9 @@ export function grantsDigestOf(manifest: ExtensionManifest): string {
     secrets: caps?.secrets ?? [],
     serverEntry: caps ? caps.serverEntry : null,
     dataProxy: manifest.dataProxy ?? null,
+    tools: (manifest.tools ?? [])
+      .map((tool) => [tool.name, tool.tier])
+      .sort(([a], [b]) => String(a).localeCompare(String(b))),
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(grants)).digest('hex')}`;
 }
@@ -147,19 +152,6 @@ export function clientPinHolds(
 ): boolean {
   if (!source || !isPathTrustApproval(source) || bundleDigest === undefined) return true;
   return source.clientDigest === bundleDigest;
-}
-
-/**
- * An approval that names no content, marked as one written before approvals
- * did (`legacyPathOnly`), so the next scan pins it once to the files it finds
- * (DOR-3068). For an approval brought back from a record made before then (a
- * dev link's parked approval); any other approval is returned unchanged.
- *
- * @param source - An approval about to be stored again.
- */
-export function markIfLegacy(source: ExtensionApprovedSource): ExtensionApprovedSource {
-  if (source.digest || source.authorHome || source.grants || source.devLink) return source;
-  return source.legacyPathOnly === true ? source : { ...source, legacyPathOnly: true };
 }
 
 /**

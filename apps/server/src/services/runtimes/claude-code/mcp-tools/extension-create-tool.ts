@@ -79,7 +79,9 @@ export function createCreateExtensionHandler(
         description: args.description,
         template,
         scope,
-        approveIfTrusted: resolveCreator !== undefined,
+        // A turn that read a stranger's words, or runs under a ceiling, never
+        // approves its own new code: it waits for a person (DOR-3068).
+        approveIfTrusted: resolveCreator !== undefined && !marked,
         ...(agentPath ? { agentHome: agentPath, recordAuthor: !marked } : {}),
       });
       if (result.autoApproved) {

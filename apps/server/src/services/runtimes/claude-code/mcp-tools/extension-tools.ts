@@ -538,7 +538,7 @@ export function extensionToolDefinitions(
         'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs. ' +
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
-        'Edits to its screen code (what the app shows) always wait for the person to approve them.',
+        'Edits to its screen code (what the app shows) still wait for the person to approve them.',
       {
         name: z
           .string()

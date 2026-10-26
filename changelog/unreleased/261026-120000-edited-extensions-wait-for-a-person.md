@@ -5,6 +5,7 @@ covers:
   - "fix(server): close the second review's gaps in the extension pin (DOR-3068)"
   - 'fix(server): resolve extension links by real path, and bind only pre-existing approvals (DOR-3068)'
   - 'fix(server): mark only approved dev-link sources as pre-existing (DOR-3068)'
+  - "fix(server): approve only what an agent's new mini app scaffolded, and show a changed app waiting (DOR-3068)"
 ---
 
 ### Fixed

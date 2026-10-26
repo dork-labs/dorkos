@@ -10,6 +10,8 @@
  *   is narrowed to the set a copy that now runs separately declares.
  * - {@link pinPathOnlyApprovals} (DOR-3068): an approval that named a folder
  *   but not its files is pinned, once, to the files it finds.
+ * - {@link settleLegacyApprovals} (DOR-3068): after the first scan, whatever
+ *   those two left unbound or unpinned is never pinned later.
  *
  * @module services/extensions/pin/extension-approval-upkeep
  */
@@ -170,6 +172,60 @@ export function pinPathOnlyApprovals(records: readonly ExtensionRecord[]): strin
       `${ids.join(', ')}. An edit to them now waits for a person.`
   );
   return ids;
+}
+
+/**
+ * Every scan's bookkeeping on older approvals, in order: bind the unsourced
+ * ones, ratchet full-access ones down, and pin path-only ones to their files.
+ *
+ * @param records - The records this scan produced.
+ * @param shadowed - The copies newer ones shadow, which a pin may also name.
+ * @param dorkHome - DorkOS's data directory.
+ */
+export function upkeepApprovals(
+  records: readonly ExtensionRecord[],
+  shadowed: readonly ExtensionRecord[],
+  dorkHome: string
+): void {
+  bindUnsourcedApprovals(records, dorkHome);
+  ratchetFullAccessApprovals(records);
+  pinPathOnlyApprovals([...records, ...shadowed]);
+}
+
+/**
+ * End the one chance older approvals get (DOR-3068). The '0.126.0' config
+ * migration marks approvals written before approvals named content
+ * (`legacyUnsourced`, `legacyPathOnly`); the first scan after start binds and
+ * pins the ones whose copy it finds. Anything still marked afterwards had no
+ * copy then, so a folder that appears later at that name never inherits the
+ * old yes: the marks are cleared and such an approval waits for a person.
+ *
+ * Called once per start, after the first scan. Writes only when a mark is left.
+ *
+ * @returns The ids whose marks were cleared.
+ */
+export function settleLegacyApprovals(): string[] {
+  const before = configManager.get('extensions');
+  const sources = before.approvedSources ?? {};
+  const cleared = new Set(before.legacyUnsourced ?? []);
+  const settled: Record<string, ExtensionApprovedSource> = {};
+  for (const [id, source] of Object.entries(sources)) {
+    if (source.legacyPathOnly !== true) continue;
+    const { legacyPathOnly: _legacy, ...rest } = source;
+    settled[id] = rest;
+    cleared.add(id);
+  }
+  if (cleared.size === 0 && before.legacyUnsourced === undefined) return [];
+  const next = { ...before, approvedSources: { ...sources, ...settled } };
+  delete next.legacyUnsourced;
+  configManager.set('extensions', next);
+  logConfigWrite(
+    'ending the first-scan pin for earlier extension approvals',
+    'extensions',
+    before,
+    configManager.get('extensions')
+  );
+  return [...cleared];
 }
 
 /**

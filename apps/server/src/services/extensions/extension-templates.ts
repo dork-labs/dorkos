@@ -14,6 +14,23 @@ function toTitleCase(str: string): string {
     .join(' ');
 }
 
+/**
+ * A description as text for a one-line `//` comment. A description is the
+ * caller's words, so a line break must never end the comment and leave the
+ * rest as code (DOR-3068).
+ */
+function asCommentText(text: string): string {
+  return text.replace(/[\r\n\u2028\u2029]+/g, ' ');
+}
+
+/**
+ * A description as a JSX expression holding one string literal, so the
+ * caller's words are always text on the page and never markup or code (DOR-3068).
+ */
+function asJsxText(text: string): string {
+  return `{${JSON.stringify(text)}}`;
+}
+
 /** Template type union for extension scaffolding. */
 export type ExtensionTemplate =
   'dashboard-card' | 'right-panel-tab' | 'command' | 'settings-panel' | 'data-provider';
@@ -118,7 +135,9 @@ export function generateTemplate(
  */
 export function generateServerTemplate(name: string, description: string): string {
   const titleName = toTitleCase(name);
-  const desc = description || 'A data provider extension with server-side capabilities.';
+  const desc = asCommentText(
+    description || 'A data provider extension with server-side capabilities.'
+  );
 
   return `// ${name}/server.ts — DorkOS Server Extension
 // ${desc}
@@ -214,9 +233,10 @@ export default function register(router: Router, ctx: DataProviderContext): Serv
 function generateDashboardCardTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
   const titleName = toTitleCase(name);
-  const desc = description || 'A dashboard section extension.';
-  const contentDesc =
-    description || 'Extension content goes here. Edit this file and call reload_extensions.';
+  const desc = asCommentText(description || 'A dashboard section extension.');
+  const contentDesc = asJsxText(
+    description || 'Extension content goes here. Edit this file and call reload_extensions.'
+  );
 
   return `// ${name} — DorkOS Extension
 // ${desc}
@@ -270,9 +290,10 @@ export function activate(api: ExtensionAPI): void {
 function generateRightPanelTabTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
   const titleName = toTitleCase(name);
-  const desc = description || 'A right-panel tab extension.';
-  const contentDesc =
-    description || 'Extension content goes here. Edit this file and call reload_extensions.';
+  const desc = asCommentText(description || 'A right-panel tab extension.');
+  const contentDesc = asJsxText(
+    description || 'Extension content goes here. Edit this file and call reload_extensions.'
+  );
 
   return `// ${name} — DorkOS Extension
 // ${desc}
@@ -352,7 +373,7 @@ export function activate(api: ExtensionAPI): void {
  */
 function generateCommandTemplate(name: string, description: string): string {
   const titleName = toTitleCase(name);
-  const desc = description || 'A command palette extension.';
+  const desc = asCommentText(description || 'A command palette extension.');
 
   return `// ${name} — DorkOS Extension
 // ${desc}
@@ -390,7 +411,7 @@ export function activate(api: ExtensionAPI): void {
 function generateSettingsPanelTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
   const titleName = toTitleCase(name);
-  const desc = description || 'A settings panel extension.';
+  const desc = asCommentText(description || 'A settings panel extension.');
 
   return `// ${name} — DorkOS Extension
 // ${desc}
@@ -440,8 +461,12 @@ export function activate(api: ExtensionAPI): void {
 function generateDataProviderTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
   const titleName = toTitleCase(name);
-  const desc = description || 'A data provider extension with server-side capabilities.';
-  const contentDesc = description || 'Data from your server-side provider will appear here.';
+  const desc = asCommentText(
+    description || 'A data provider extension with server-side capabilities.'
+  );
+  const contentDesc = asJsxText(
+    description || 'Data from your server-side provider will appear here.'
+  );
 
   return `// ${name} — DorkOS Data Provider Extension
 // ${desc}

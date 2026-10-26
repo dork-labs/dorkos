@@ -128,6 +128,20 @@ describe('ExtensionManager', () => {
 
   // === 1. Initialize ===
 
+  it('ends the first-scan pin for older approvals once the first scan is done (DOR-3068)', async () => {
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      legacyUnsourced: ['gone'],
+    });
+
+    await manager.initialize(null);
+
+    const writes = mockConfigSet.mock.calls.filter(([key]) => key === 'extensions');
+    expect(writes.at(-1)?.[1]).not.toHaveProperty('legacyUnsourced');
+  });
+
   it('initializes by cleaning cache, discovering, and compiling enabled extensions', async () => {
     const enabledRecord = makeRecord('ext-a', { status: 'enabled' });
     mockConfigGet.mockReturnValue({ enabled: ['ext-a'], disabled: [], ...approved(['ext-a']) });

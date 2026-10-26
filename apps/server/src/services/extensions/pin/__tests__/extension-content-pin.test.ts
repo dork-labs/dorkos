@@ -38,8 +38,13 @@ import {
   UNREADABLE_SENTENCE,
   whyUnpinnable,
 } from '../extension-content-pin.js';
-import { pinPathOnlyApprovals } from '../extension-approval-upkeep.js';
+import {
+  bindUnsourcedApprovals,
+  pinPathOnlyApprovals,
+  settleLegacyApprovals,
+} from '../extension-approval-upkeep.js';
 import { approveNewScaffold } from '../extension-scaffold-approval.js';
+import { installFolderDigest } from '../../../marketplace/lib/install-digest.js';
 import { ExtensionDiscovery } from '../../extension-discovery.js';
 import { ensureSnapshot } from '../extension-snapshots.js';
 
@@ -94,10 +99,28 @@ function agentApproval(manifest: ExtensionManifest = ISOLATED): ExtensionApprova
   };
 }
 
+/** What the scaffolder would report as the digest of a folder it just wrote. */
+async function digestNow(dir: string): Promise<string | null> {
+  const found = await installFolderDigest(dir);
+  return found.kind === 'digest' ? found.digest : null;
+}
+
 describe('path trust for an agent’s own isolated extension (conditions 1 to 3)', () => {
   it('lets an isolated extension inside its author’s folder run after an edit', () => {
     const edited = copy({ currentDigest: `sha256:${'9'.repeat(64)}` });
     expect(mayRunExtensionCode(edited, agentApproval())).toBe(true);
+  });
+
+  it('refuses it once a tool it gives agents moves to a lower tier', () => {
+    const tool = { name: 'wipe', description: 'Delete the notes', tier: 'destructive' as const };
+    const approvedWith = { ...ISOLATED, tools: [tool] } as ExtensionManifest;
+    const lowered = copy({
+      manifest: { ...approvedWith, tools: [{ ...tool, tier: 'observe' }] } as ExtensionManifest,
+    });
+    expect(mayRunExtensionCode(copy({ manifest: approvedWith }), agentApproval(approvedWith))).toBe(
+      true
+    );
+    expect(mayRunExtensionCode(lowered, agentApproval(approvedWith))).toBe(false);
   });
 
   it('refuses it once a declared grant changes, until a person approves again', () => {
@@ -314,7 +337,12 @@ describe('on disk', () => {
     await writeExtension(isolatedDir, ISOLATED);
     await approveNewScaffold(
       'notes',
-      { targetDir: isolatedDir, manifest: ISOLATED, scope: 'local' },
+      {
+        targetDir: isolatedDir,
+        manifest: ISOLATED,
+        scope: 'local',
+        digest: await digestNow(isolatedDir),
+      },
       home
     );
     const isolatedSource = (stored.extensions.approvedSources as Record<string, unknown>).notes;
@@ -325,7 +353,11 @@ describe('on disk', () => {
     await writeExtension(globalDir, { ...IN_PROCESS, id: 'card' });
     await approveNewScaffold(
       'card',
-      { targetDir: globalDir, manifest: { ...IN_PROCESS, id: 'card' } },
+      {
+        targetDir: globalDir,
+        manifest: { ...IN_PROCESS, id: 'card' },
+        digest: await digestNow(globalDir),
+      },
       home
     );
     expect((stored.extensions.approvedSources as Record<string, unknown>).card).toMatchObject({
@@ -367,6 +399,43 @@ describe('pinning older path-only approvals, once (migration)', () => {
     const once = JSON.stringify(stored.extensions);
     expect(pinPathOnlyApprovals([copy({ currentDigest: `sha256:${'2'.repeat(64)}` })])).toEqual([]);
     expect(JSON.stringify(stored.extensions)).toBe(once);
+  });
+
+  it('gives an older approval only the first scan: a copy that appears later waits', () => {
+    // First scan after start: no copy at that name, so nothing is pinned.
+    expect(pinPathOnlyApprovals([])).toEqual([]);
+    expect(settleLegacyApprovals()).toEqual(['notes']);
+    // A later scan finds a folder at the old name: it is not adopted.
+    expect(pinPathOnlyApprovals([copy({ manifest: IN_PROCESS })])).toEqual([]);
+    expect((stored.extensions.approvedSources as Record<string, unknown>).notes).toEqual({
+      path: COPY_PATH,
+    });
+    expect(mayRunExtensionCode(copy({ manifest: IN_PROCESS }), stored.extensions as never)).toBe(
+      false
+    );
+  });
+
+  it('keeps what the first scan pinned when it settles', () => {
+    pinPathOnlyApprovals([copy({ manifest: IN_PROCESS })]);
+    const pinned = JSON.stringify(stored.extensions.approvedSources);
+    settleLegacyApprovals();
+    expect(JSON.stringify(stored.extensions.approvedSources)).toBe(pinned);
+  });
+
+  it('never binds an unsourced older approval to a folder that appears after the first scan', () => {
+    const dorkHome = '/dork-home';
+    const direct = copy({
+      manifest: IN_PROCESS,
+      path: '/dork-home/extensions/notes',
+      scope: 'global',
+    });
+    stored.extensions = { ...stored.extensions, approvedSources: {}, legacyUnsourced: ['notes'] };
+    bindUnsourcedApprovals([], dorkHome);
+    settleLegacyApprovals();
+    expect(stored.extensions).not.toHaveProperty('legacyUnsourced');
+    bindUnsourcedApprovals([direct], dorkHome);
+    expect(stored.extensions.approvedSources).toEqual({});
+    expect(mayRunExtensionCode(direct, stored.extensions as never)).toBe(false);
   });
 
   it('pins an isolated one too: no older approval recorded its author', () => {

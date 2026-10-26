@@ -594,6 +594,6 @@ export function describeExtensionLoadRefusal(id: string): string {
     `files, and compiling it reports real errors. An extension you create runs from ` +
     `your own folder (.dork/extensions/<id>); if it runs separately ("runtime": ` +
     `"subprocess"), edits to its server code keep running until its declared ` +
-    `permissions change. Edits to its screen code always wait for the person.`
+    `permissions change, but edits to its screen code still wait for the person.`
   );
 }

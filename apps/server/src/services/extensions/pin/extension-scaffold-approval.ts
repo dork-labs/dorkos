@@ -41,7 +41,9 @@ import path from 'path';
  * just scaffolded, so the agent's first edit waits for a person.
  *
  * @param id - The new extension's id.
- * @param scaffold - The folder and manifest the scaffolder just wrote.
+ * @param scaffold - The folder and manifest the scaffolder just wrote, and
+ *   the digest of the files it wrote. Only those exact files are approved: a
+ *   folder that changed since, or one DorkOS could not digest, waits.
  * @param authorHome - The creating agent's folder, recorded as the author
  *   only when the create came from that agent's own unmarked, unceilinged
  *   turn and was scaffolded inside it (`ExtensionManager.createExtension`).
@@ -49,10 +51,16 @@ import path from 'path';
  */
 export async function approveNewScaffold(
   id: string,
-  scaffold: { targetDir: string; manifest: object; scope?: 'global' | 'local' },
+  scaffold: {
+    targetDir: string;
+    manifest: object;
+    scope?: 'global' | 'local';
+    digest: string | null;
+  },
   authorHome?: string
 ): Promise<ApprovedPermissionSet | null> {
   if (trustPosture(configManager.get('permissions')?.preset) !== 'trusted') return null;
+  if (!scaffold.digest) return null;
   if (configManager.get('extensions').dismissedApprovals?.[id]) return null;
   const manifest = ExtensionManifestSchema.safeParse(scaffold.manifest);
   // A manifest the host cannot read would not run anyway; it waits like any other.
@@ -74,8 +82,11 @@ export async function approveNewScaffold(
     realAuthorHome && rulePath(path.join(realAuthorHome, '.dork', 'extensions'))
       ? realAuthorHome
       : null;
+  // Approve only what the scaffolder wrote: a write since then waits.
+  const live = await liveDigestOf(copy);
+  if (live !== scaffold.digest) return null;
   const source = approvalFor(copy, {
-    digest: await liveDigestOf(copy),
+    digest: live,
     ...(author ? { authorHome: author } : {}),
   });
   // A folder DorkOS cannot digest waits for a person like any other.

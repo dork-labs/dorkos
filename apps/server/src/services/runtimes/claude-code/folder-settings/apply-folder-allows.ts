@@ -254,6 +254,20 @@ export function folderAllowsFromSettings(settings: Options['settings']): string[
 }
 
 /**
+ * The deny rules a launch's settings carry, sorted, for the launch
+ * fingerprint (DOR-3068). The CLI reads them only at launch, so a warm process
+ * must relaunch when they change: a turn that became marked, or an agent
+ * registered since, would otherwise keep the rules it started with.
+ *
+ * @param settings - A launch's `Options.settings`.
+ */
+export function denyRulesFromSettings(settings: Options['settings']): string[] {
+  if (typeof settings !== 'object' || settings === null) return [];
+  const deny = (settings as { permissions?: { deny?: unknown } }).permissions?.deny;
+  return Array.isArray(deny) ? deny.filter((r): r is string => typeof r === 'string').sort() : [];
+}
+
+/**
  * The status line a Never ask chat shows while its agent's list waits for a
  * person (DOR-3042), so the refusals that follow have a reason on screen.
  * Copy signed off by designer. It never says "Never ask": it only shows there.

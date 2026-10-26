@@ -49,6 +49,7 @@ import {
 import { approveNewScaffold, pinScaffoldClient } from '../extension-scaffold-approval.js';
 import { refreshPathTrustRun, runFromSnapshot } from '../extension-snapshot-placement.js';
 import { scaffoldExtension } from '../../extension-scaffolder.js';
+import { installFolderDigest } from '../../../marketplace/lib/install-digest.js';
 import { ExtensionDiscovery } from '../../extension-discovery.js';
 import {
   isPendingApproval,
@@ -108,6 +109,12 @@ function agentApproval(): ExtensionApprovals {
     },
     approvedPermissions: { notes: { runtime: 'subprocess', net: [], run: [], agents: false } },
   };
+}
+
+/** The digest the scaffolder reports for a folder, as it is now. */
+async function scaffoldDigest(dir: string): Promise<string | null> {
+  const found = await installFolderDigest(dir);
+  return found.kind === 'digest' ? found.digest : null;
 }
 
 describe('the screen half is always pinned (client digest)', () => {
@@ -248,14 +255,16 @@ describe('create_extension from an agent', () => {
     const { createExtension, handler } = handlerFor({ agentPath: HOME, sessionId: 's1' });
     await handler({ name: 'notes' });
     expect(createExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ agentHome: HOME, recordAuthor: false })
+      expect.objectContaining({ agentHome: HOME, recordAuthor: false, approveIfTrusted: false })
     );
   });
 
   it('records no author for a turn under a ceiling', async () => {
     const { createExtension, handler } = handlerFor({ agentPath: HOME, ceilinged: true });
     await handler({ name: 'notes' });
-    expect(createExtension).toHaveBeenCalledWith(expect.objectContaining({ recordAuthor: false }));
+    expect(createExtension).toHaveBeenCalledWith(
+      expect.objectContaining({ recordAuthor: false, approveIfTrusted: false })
+    );
   });
 });
 
@@ -334,7 +343,11 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
     await fs.writeFile(path.join(dir, 'server.ts'), 'export default () => {};');
-    await approveNewScaffold('notes', { targetDir: dir, manifest: ISOLATED, scope: 'local' }, link);
+    await approveNewScaffold(
+      'notes',
+      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: await scaffoldDigest(dir) },
+      link
+    );
     const source = (stored.extensions.approvedSources as Record<string, Record<string, unknown>>)
       .notes!;
     expect(source.authorHome).toBe(agentHome);
@@ -462,7 +475,11 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     const dir = path.join(odd, '.dork', 'extensions', 'notes');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
-    await approveNewScaffold('notes', { targetDir: dir, manifest: ISOLATED, scope: 'local' }, odd);
+    await approveNewScaffold(
+      'notes',
+      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: await scaffoldDigest(dir) },
+      odd
+    );
     const source = (stored.extensions.approvedSources as Record<string, Record<string, unknown>>)
       .notes!;
     expect(source).not.toHaveProperty('authorHome');
@@ -473,10 +490,43 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
-    await approveNewScaffold('notes', { targetDir: dir, manifest: ISOLATED });
+    await approveNewScaffold('notes', {
+      targetDir: dir,
+      manifest: ISOLATED,
+      digest: await scaffoldDigest(dir),
+    });
     const source = (stored.extensions.approvedSources as Record<string, Record<string, unknown>>)
       .notes!;
     expect(source).not.toHaveProperty('authorHome');
     expect(source.digest).toMatch(/^sha256:/);
+  });
+
+  it('approves nothing when the folder changed after the scaffold wrote it', async () => {
+    const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
+    const scaffolded = await scaffoldDigest(dir);
+    await fs.writeFile(path.join(dir, 'index.ts'), 'export const added = 1;');
+    const approved = await approveNewScaffold(
+      'notes',
+      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: scaffolded },
+      agentHome
+    );
+    expect(approved).toBeNull();
+    expect(stored.extensions.approvedSources ?? {}).not.toHaveProperty('notes');
+    expect(stored.extensions.approvedToRun).not.toContain('notes');
+  });
+
+  it('approves nothing when the scaffolder could not digest what it wrote', async () => {
+    const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
+    const approved = await approveNewScaffold(
+      'notes',
+      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: null },
+      agentHome
+    );
+    expect(approved).toBeNull();
+    expect(stored.extensions.approvedToRun).not.toContain('notes');
   });
 });

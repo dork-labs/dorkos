@@ -523,9 +523,10 @@ describe('DevLinkService.unlink', () => {
     ).toBe('0.9.2');
     expect(approvals).toEqual({
       approvedToRun: ['flow-dash'],
-      // Parked before approvals named content, it comes back marked so, and the
-      // next scan pins it once to the files it finds (DOR-3068).
-      approvedSources: { 'flow-dash': { ...installedApproval, legacyPathOnly: true } },
+      // Brought back as it was, never marked as older than the content pin: it
+      // names no files, so it waits for a person rather than adopting what a
+      // later scan finds (DOR-3068).
+      approvedSources: { 'flow-dash': installedApproval },
       approvedPermissions: {},
     });
   });
@@ -1021,12 +1022,10 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
     expect(approvals.approvedPermissions?.['flow-dash']).toMatchObject({ net: ['b.example.com'] });
 
-    // A run approval that names no files comes back marked as older than the
-    // content pin (DOR-3068), so the next scan pins it to the files it finds.
     await service().unlink({ name: 'flow', scope: 'global' });
     expect(approvals).toEqual({
       approvedToRun: ['flow-dash'],
-      approvedSources: { 'flow-dash': { ...installedApproval, legacyPathOnly: true } },
+      approvedSources: { 'flow-dash': installedApproval },
       approvedPermissions: { 'flow-dash': installedSet },
     });
   });

@@ -65,9 +65,8 @@ import {
 } from './pin/extension-content-pin.js';
 import {
   untrustSourceApprovals,
-  bindUnsourcedApprovals,
-  pinPathOnlyApprovals,
-  ratchetFullAccessApprovals,
+  settleLegacyApprovals,
+  upkeepApprovals,
 } from './pin/extension-approval-upkeep.js';
 import {
   reconcileRunningSkills,
@@ -362,6 +361,8 @@ export class ExtensionManager {
     await this.compiler.cleanStaleCache();
     // Nothing runs yet, so there is nothing to switch: scan, then start below.
     await this.enqueue(() => this.rescan());
+    // Older approvals had this first scan to find their copy, and only it.
+    settleLegacyApprovals();
 
     for (const record of this.extensions.values()) {
       if (this.needsServer(record)) {
@@ -441,9 +442,7 @@ export class ExtensionManager {
     for (const rec of records) {
       this.extensions.set(rec.id, rec);
     }
-    bindUnsourcedApprovals(records, this.dorkHome);
-    ratchetFullAccessApprovals(records);
-    pinPathOnlyApprovals([...records, ...this.shadowed]);
+    upkeepApprovals(records, this.shadowed, this.dorkHome);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
     await this.compileEnabled();

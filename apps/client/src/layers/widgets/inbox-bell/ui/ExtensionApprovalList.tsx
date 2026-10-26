@@ -91,7 +91,9 @@ function titleOf(approval: PendingExtensionApproval): string {
   if (approval.updatedFrom) {
     return `Update ${approval.name} from ${approval.updatedFrom} to ${approval.version}?`;
   }
-  return approval.changedFiles ? `Run the changed ${approval.name}?` : `Turn on ${approval.name}?`;
+  return approval.changedFiles
+    ? `${approval.name} has changed. Run the new code?`
+    : `Turn on ${approval.name}?`;
 }
 
 /**

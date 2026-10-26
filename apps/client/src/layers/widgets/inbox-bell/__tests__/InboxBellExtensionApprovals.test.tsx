@@ -207,7 +207,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
     expect(await screen.findByText('Update Flow from 1.2.0 to 1.3.0?')).toBeInTheDocument();
     expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument();
-    expect(screen.queryByText('Run the changed Flow?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Flow has changed. Run the new code?')).not.toBeInTheDocument();
   });
 
   it('asks to run a changed copy that was not updated', async () => {
@@ -216,7 +216,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    expect(await screen.findByText('Run the changed Flow?')).toBeInTheDocument();
+    expect(await screen.findByText('Flow has changed. Run the new code?')).toBeInTheDocument();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {

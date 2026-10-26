@@ -233,15 +233,18 @@ export async function approvedVersionOf(
 }
 
 /**
- * Why a copy whose folder links outside itself can't be approved, in plain
- * words (DOR-3068). One block of its own, under 15 words.
+ * Why a copy whose folder links outside itself can't be approved, and what to
+ * do about it, in plain words (DOR-3068). One block, 15 words at most.
  */
 export const UNPINNABLE_SENTENCE =
-  "Its folder links to files outside it, so DorkOS can't check what would run.";
+  'Its folder links to files outside it. Copy those files in, then try again.';
 
-/** Why a copy whose folder DorkOS cannot read whole can't be approved (DOR-3068). */
+/**
+ * Why a copy whose folder DorkOS cannot read whole can't be approved, and what
+ * to do about it (DOR-3068). One block, 15 words at most.
+ */
 export const UNREADABLE_SENTENCE =
-  "DorkOS couldn't read all of its files, so it can't check what would run.";
+  "DorkOS couldn't read all of its files. Check they can be read, then try again.";
 
 /**
  * The plain reason a copy has no files a yes could name: its folder links
