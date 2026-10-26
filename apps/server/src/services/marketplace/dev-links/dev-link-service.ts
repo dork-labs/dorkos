@@ -64,6 +64,7 @@ import {
 } from './consent.js';
 import { DevLinkError } from './errors.js';
 import { canonicalSlotPath, devLinkStateOf, readDevLinks, updateDevLinks } from './registry.js';
+import { markIfLegacy } from '../../extensions/pin/extension-path-trust.js';
 
 /** The approval fields of `config.extensions` a dev link reads and writes. */
 export interface DevLinkApprovals {
@@ -801,7 +802,6 @@ export class DevLinkService {
       roots.get(source.path) ?? path.resolve(source.path);
     const restore = record.restoreApprovals?.extensions ?? {};
     const runIds = new Set(record.restoreApprovals?.runIds ?? []);
-    const restorePermissions = record.restoreApprovals?.permissions ?? {};
     let approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
     const approvedPermissions = { ...(current.approvedPermissions ?? {}) };
@@ -816,10 +816,12 @@ export class DevLinkService {
       delete approvedPermissions[id];
       approvedToRun = approvedToRun.filter((approved) => approved !== id);
       if (!previous || !stillMeaningful(previous, record, installedBack, others, rootOf)) continue;
-      approvedSources[id] = previous;
+      // Parked before approvals named content, it is pinned once on the next
+      // scan, like every other approval from before then (DOR-3068).
+      approvedSources[id] = markIfLegacy(previous);
       // The set the replaced approval had, or none (the full in-process set)
       // when it had none.
-      const previousSet = restorePermissions[id];
+      const previousSet = record.restoreApprovals?.permissions?.[id];
       if (previousSet) approvedPermissions[id] = previousSet;
       if (runIds.has(id)) approvedToRun.push(id);
     }

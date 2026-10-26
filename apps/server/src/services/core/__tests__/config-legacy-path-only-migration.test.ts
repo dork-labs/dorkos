@@ -51,6 +51,23 @@ describe("the '0.126.0' migration (DOR-3068)", () => {
     expect((store.data.extensions as { enabled: unknown }).enabled).toEqual([]);
   });
 
+  it('lists every approved id that names no copy at all, once', () => {
+    const store = memoryStore({
+      extensions: {
+        approvedToRun: ['old', 'sourced'],
+        approvedSources: { sourced: { path: '/x/s', digest: 'sha256:1' } },
+      },
+    });
+    markLegacyPathOnlyApprovals(store);
+    expect((store.data.extensions as { legacyUnsourced?: string[] }).legacyUnsourced).toEqual([
+      'old',
+    ]);
+    // A second run never re-lists an id bound and dropped from the list since.
+    (store.data.extensions as { legacyUnsourced?: string[] }).legacyUnsourced = [];
+    markLegacyPathOnlyApprovals(store);
+    expect((store.data.extensions as { legacyUnsourced?: string[] }).legacyUnsourced).toEqual([]);
+  });
+
   it('changes nothing on a second run, or with no approvals at all', () => {
     const store = memoryStore({ extensions: { approvedSources: { a: { path: '/x/a' } } } });
     markLegacyPathOnlyApprovals(store);

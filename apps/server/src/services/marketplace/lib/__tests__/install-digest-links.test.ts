@@ -61,6 +61,38 @@ describe('links in a digested folder', () => {
     expect((await installFolderDigest(root)).kind).toBe('linked');
   });
 
+  it('refuses a chain whose text stays inside but which the OS resolves outside', async () => {
+    await fs.writeFile(path.join(tmp, 'evil.ts'), 'steal()');
+    const sub = path.join(root, 'sub');
+    await fs.mkdir(sub);
+    // `d` is the folder itself, so `d/d/d/…` stays at `sub` while the text
+    // counts it as six folders deeper. Seven `..` then land at `ext` by the
+    // text, but seven folders above `sub` on disk, and the rest walks back
+    // down to `evil.ts` outside `ext`.
+    await fs.symlink('.', path.join(sub, 'd'));
+    let above = sub;
+    for (let i = 0; i < 7; i++) above = path.dirname(above);
+    const down = path.relative(above, path.join(tmp, 'evil.ts'));
+    const text = `${'d/'.repeat(6)}${'../'.repeat(7)}${down}`;
+    expect(isLinkInside(root, sub, text)).toBe(true); // what the text alone says
+    await fs.symlink(text, path.join(sub, 'x.ts'));
+    forgetFolderDigest(root);
+    expect((await installFolderDigest(root)).kind).toBe('linked');
+  });
+
+  it('refuses a link into a part the digest leaves out (.git), or to nothing', async () => {
+    await fs.mkdir(path.join(root, '.git'), { recursive: true });
+    await fs.writeFile(path.join(root, '.git', 'hook.js'), 'steal()');
+    await fs.symlink('../../.git/hook.js', path.join(root, 'node_modules', '.bin', 'hook'));
+    forgetFolderDigest(root);
+    expect((await installFolderDigest(root)).kind).toBe('linked');
+
+    await fs.rm(path.join(root, 'node_modules', '.bin', 'hook'));
+    await fs.symlink('../tool/missing.js', path.join(root, 'node_modules', '.bin', 'gone'));
+    forgetFolderDigest(root);
+    expect((await installFolderDigest(root)).kind).toBe('linked');
+  });
+
   it('judges a link’s text against the folder that holds it', () => {
     expect(isLinkInside('/r', '/r/node_modules/.bin', '../tool/bin/x.js')).toBe(true);
     expect(isLinkInside('/r', '/r/a', '../../outside')).toBe(false);

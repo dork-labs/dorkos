@@ -46,7 +46,11 @@ export function bindUnsourcedApprovals(
   const before = configManager.get('extensions');
   const sources = before.approvedSources ?? {};
   const additions: Record<string, ExtensionApprovedSource> = {};
+  // Only the ids the '0.126.0' migration listed as unsourced (DOR-3068): a
+  // folder created later at an old approved name never inherits the approval.
+  const legacy = new Set(before.legacyUnsourced ?? []);
   for (const record of records) {
+    if (!legacy.has(record.id)) continue;
     if (!before.approvedToRun.includes(record.id) || sources[record.id]) continue;
     if (record.origin === 'core' || record.sourcePlugin) continue;
     const directInstall = path.join(path.resolve(dorkHome), 'extensions', record.id);
@@ -61,10 +65,12 @@ export function bindUnsourcedApprovals(
     };
   }
   if (Object.keys(additions).length === 0) return;
-  configManager.set('extensions', {
-    ...before,
-    approvedSources: { ...sources, ...additions },
-  });
+  const remaining = [...legacy].filter((id) => !(id in additions));
+  const next = { ...before, approvedSources: { ...sources, ...additions } };
+  // Bound ids leave the list; the key itself goes once nothing waits.
+  if (remaining.length > 0) next.legacyUnsourced = remaining;
+  else delete next.legacyUnsourced;
+  configManager.set('extensions', next);
   logConfigWrite(
     'recording which copy an earlier extension approval was for',
     'extensions',
@@ -164,4 +170,56 @@ export function pinPathOnlyApprovals(records: readonly ExtensionRecord[]): strin
       `${ids.join(', ')}. An edit to them now waits for a person.`
   );
   return ids;
+}
+
+/**
+ * Stop trusting `source` (spec `flow-multiproject` §9.3), keeping what is on
+ * running. Each turned-on copy that runs today only because of this source is
+ * given its own approval, pinned to that copy (its folder and plugin, never
+ * the origin) and its files' digest (DOR-3068), so it keeps running from its
+ * verified snapshot and any change asks again. One whose files DorkOS cannot
+ * read has nothing to name, so it stops. Everything else from the source asks
+ * again. Split from `extension-manager.ts`, whose person-bar route calls it.
+ *
+ * @param source - A normalized `owner/repo`.
+ * @param records - Every copy the manager holds.
+ * @param isOn - Whether an id is turned on.
+ * @returns Whether the source was trusted.
+ */
+export function untrustSourceApprovals(
+  source: string,
+  records: Iterable<ExtensionRecord>,
+  isOn: (id: string) => boolean
+): boolean {
+  const before = configManager.get('extensions');
+  const trusted = before.trustedSources ?? [];
+  if (!trusted.some((entry) => entry.source === source)) return false;
+  const approvedToRun = [...before.approvedToRun];
+  const approvedSources = { ...(before.approvedSources ?? {}) };
+  const approvedPermissions = { ...(before.approvedPermissions ?? {}) };
+  for (const rec of records) {
+    if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
+    if (isApprovedCopy(rec, before) || !isOn(rec.id) || !rec.currentDigest) continue;
+    if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
+    // What it declares now, so it keeps running exactly as it is and a later
+    // widening asks (DOR-2686).
+    approvedPermissions[rec.id] = declaredSet(rec.manifest);
+    // No origin, so a newer copy from the source does not ride on it.
+    const { origin: _origin, ...pinned } = approvedSourceOf(rec);
+    approvedSources[rec.id] = { ...pinned, digest: rec.currentDigest };
+  }
+  configManager.set('extensions', {
+    ...before,
+    approvedToRun,
+    approvedSources,
+    approvedPermissions,
+    trustedSources: trusted.filter((entry) => entry.source !== source),
+  });
+  logConfigWrite(
+    'no longer trusting a code source',
+    'extensions',
+    before,
+    configManager.get('extensions')
+  );
+  return true;
 }

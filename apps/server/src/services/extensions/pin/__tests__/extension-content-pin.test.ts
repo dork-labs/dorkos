@@ -34,6 +34,9 @@ import {
   changedFilesSince,
   liveDigestOf,
   pinStillHolds,
+  UNPINNABLE_SENTENCE,
+  UNREADABLE_SENTENCE,
+  whyUnpinnable,
 } from '../extension-content-pin.js';
 import { pinPathOnlyApprovals } from '../extension-approval-upkeep.js';
 import { approveNewScaffold } from '../extension-scaffold-approval.js';
@@ -276,6 +279,15 @@ describe('on disk', () => {
     expect(await pinStillHolds(record, approvals)).toBe(false);
     expect(mayRunExtensionCode(record, approvals)).toBe(false);
     expect(record.runPath).toBeUndefined();
+  });
+
+  it('says in plain words why a copy cannot be approved: a link out, or files it cannot read', async () => {
+    const dir = path.join(tmp, 'linked-out');
+    await writeExtension(dir, IN_PROCESS);
+    await fs.writeFile(path.join(tmp, 'evil.js'), 'steal()');
+    await fs.symlink(path.join(tmp, 'evil.js'), path.join(dir, 'evil.js'));
+    expect(await whyUnpinnable({ path: dir })).toBe(UNPINNABLE_SENTENCE);
+    expect(await whyUnpinnable({ path: path.join(tmp, 'gone') })).toBe(UNREADABLE_SENTENCE);
   });
 
   it('names the files that changed since the approved snapshot, never their contents', async () => {

@@ -150,6 +150,19 @@ export function clientPinHolds(
 }
 
 /**
+ * An approval that names no content, marked as one written before approvals
+ * did (`legacyPathOnly`), so the next scan pins it once to the files it finds
+ * (DOR-3068). For an approval brought back from a record made before then (a
+ * dev link's parked approval); any other approval is returned unchanged.
+ *
+ * @param source - An approval about to be stored again.
+ */
+export function markIfLegacy(source: ExtensionApprovedSource): ExtensionApprovedSource {
+  if (source.digest || source.authorHome || source.grants || source.devLink) return source;
+  return source.legacyPathOnly === true ? source : { ...source, legacyPathOnly: true };
+}
+
+/**
  * Whether a stored approval was written before approvals named content: no
  * digest, no author, no grants and no dev link, and marked so by the
  * `'0.126.0'` config migration (`legacyPathOnly`). Those are pinned once, to

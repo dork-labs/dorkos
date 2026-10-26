@@ -523,9 +523,27 @@ describe('DevLinkService.unlink', () => {
     ).toBe('0.9.2');
     expect(approvals).toEqual({
       approvedToRun: ['flow-dash'],
-      approvedSources: { 'flow-dash': installedApproval },
+      // Parked before approvals named content, it comes back marked so, and the
+      // next scan pins it once to the files it finds (DOR-3068).
+      approvedSources: { 'flow-dash': { ...installedApproval, legacyPathOnly: true } },
       approvedPermissions: {},
     });
+  });
+
+  it('brings back an approval that names its files exactly as it was parked (DOR-3068)', async () => {
+    await writePackage(globalSlot(), { version: '0.9.2', extensions: ['flow-dash'] });
+    const installedApproval = {
+      path: path.join(globalSlot(), '.dork', 'extensions', 'flow-dash'),
+      plugin: 'flow',
+      digest: `sha256:${'d'.repeat(64)}`,
+    };
+    approvals = {
+      approvedToRun: ['flow-dash'],
+      approvedSources: { 'flow-dash': installedApproval },
+    };
+    await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
+    await service().unlink({ name: 'flow', scope: 'global' });
+    expect(approvals.approvedSources['flow-dash']).toEqual(installedApproval);
   });
 
   it('leaves an approval that has since moved to another copy alone', async () => {

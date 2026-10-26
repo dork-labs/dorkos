@@ -39,7 +39,7 @@ import type { ExtensionManager } from '../services/extensions/extension-manager.
 import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
 import {
   ApprovalRefusedError,
-  UNPINNABLE_SENTENCE,
+  whyUnpinnable,
 } from '../services/extensions/pin/extension-content-pin.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -180,10 +180,7 @@ export function registerExtensionApprovalRoutes(
                 error: 'This extension changed since you saw it. Nothing was turned on.',
                 code: STALE_APPROVAL_CODE,
               }
-            : {
-                error: `${UNPINNABLE_SENTENCE} Nothing was turned on.`,
-                code: UNPINNABLE_APPROVAL_CODE,
-              },
+            : { error: await whyUnpinnable(record), code: UNPINNABLE_APPROVAL_CODE },
           409
         );
       }
@@ -194,10 +191,11 @@ export function registerExtensionApprovalRoutes(
       } catch (err) {
         if (!(err instanceof ApprovalRefusedError)) throw err;
         return c.json(
-          {
-            error: `${err.message} Nothing was turned on.`,
-            code: err.reason === 'stale' ? STALE_APPROVAL_CODE : UNPINNABLE_APPROVAL_CODE,
-          },
+          // The reason alone for one that cannot be checked: its own short
+          // block, which the app shows under a title that says nothing ran.
+          err.reason === 'stale'
+            ? { error: `${err.message} Nothing was turned on.`, code: STALE_APPROVAL_CODE }
+            : { error: err.message, code: UNPINNABLE_APPROVAL_CODE },
           409
         );
       }

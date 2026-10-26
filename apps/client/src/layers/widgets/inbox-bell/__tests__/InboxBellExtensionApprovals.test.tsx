@@ -89,7 +89,7 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         return json(
           {
             error:
-              "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on.",
+              "Its folder links to files outside it, so DorkOS can't check what would run.",
             code: 'extension_unpinnable',
           },
           409
@@ -353,7 +353,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('Flow can’t be turned on yet.', {
         description:
-          "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on.",
+          "Its folder links to files outside it, so DorkOS can't check what would run.",
       })
     );
     expect(toast.error).not.toHaveBeenCalledWith(

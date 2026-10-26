@@ -419,6 +419,25 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     expect(record.runPath).toBeUndefined();
   });
 
+  it('leaves the live record as it was when a refused yes could not snapshot it', async () => {
+    const { targetDir, digest } = await scaffoldExtension({
+      name: 'notes',
+      template: 'dashboard-card',
+      scope: 'global',
+      dorkHome,
+      currentCwd: null,
+      agentHome,
+    });
+    await fs.writeFile(path.join(targetDir, 'index.ts'), 'export function activate() { x(); }');
+    const origin = { plugin: 'p', source: 'acme/p' } as never;
+    const record = copy({ path: targetDir, realPath: targetDir, trustedOrigin: origin });
+    const before = record.currentDigest;
+    expect(await runFromSnapshot(dorkHome, record, digest!, false)).toBe(false);
+    expect(record.trustedOrigin).toBe(origin);
+    expect(record.currentDigest).toBe(before);
+    expect(record.originProblem).toBeUndefined();
+  });
+
   it('creates in the global folder, and says so, for an agent whose folder holds the DorkOS home', async () => {
     const home = path.join(tmp, 'home');
     const result = await scaffoldExtension({

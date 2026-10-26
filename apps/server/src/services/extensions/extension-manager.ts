@@ -58,12 +58,13 @@ import {
 } from './pin/extension-snapshot-placement.js';
 import {
   ApprovalRefusedError,
-  UNPINNABLE_SENTENCE,
   approvalFor,
   liveDigestOf,
   pinStillHolds,
+  whyUnpinnable,
 } from './pin/extension-content-pin.js';
 import {
+  untrustSourceApprovals,
   bindUnsourcedApprovals,
   pinPathOnlyApprovals,
   ratchetFullAccessApprovals,
@@ -806,42 +807,8 @@ export class ExtensionManager {
    * @returns Whether the source was trusted.
    */
   async untrustSource(source: string): Promise<boolean> {
-    const before = configManager.get('extensions');
-    const trusted = before.trustedSources ?? [];
-    if (!trusted.some((entry) => entry.source === source)) return false;
-    const approvedToRun = [...before.approvedToRun];
-    const approvedSources = { ...(before.approvedSources ?? {}) };
-    const approvedPermissions = { ...(before.approvedPermissions ?? {}) };
-    for (const rec of this.extensions.values()) {
-      if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
-      if (isApprovedCopy(rec, before)) continue;
-      if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
-      // One with no readable digest has no files to name, so it stops (DOR-3068).
-      if (!rec.currentDigest) continue;
-      if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
-      // What it declares now, so it keeps running exactly as it is and a
-      // later widening asks (DOR-2686). An entry left from another copy could
-      // be narrower and stop it, which "nothing stops" rules out.
-      approvedPermissions[rec.id] = declaredSet(rec.manifest);
-      // Pinned to this copy's files alone: no origin, so a newer copy from the
-      // source does not ride on it, and its digest, so it keeps running from
-      // the verified snapshot of exactly those files and any change asks again.
-      const { origin: _origin, ...pinned } = approvedSourceOf(rec);
-      approvedSources[rec.id] = { ...pinned, digest: rec.currentDigest };
-    }
-    configManager.set('extensions', {
-      ...before,
-      approvedToRun,
-      approvedSources,
-      approvedPermissions,
-      trustedSources: trusted.filter((entry) => entry.source !== source),
-    });
-    logConfigWrite(
-      'no longer trusting a code source',
-      'extensions',
-      before,
-      configManager.get('extensions')
-    );
+    const on = (id: string) => isEnabled(id, configManager.get('extensions'), this.coreExtensions);
+    if (!untrustSourceApprovals(source, this.extensions.values(), on)) return false;
     this.emitChanged();
     this.requestRefresh();
     return true;
@@ -991,7 +958,7 @@ export class ExtensionManager {
       previous && isSameStoredCopy(record, previous) ? previous.authorHome : undefined;
     const source = approvalFor(record, { digest: live, authorHome });
     if (!source) {
-      throw new ApprovalRefusedError('unpinnable', UNPINNABLE_SENTENCE);
+      throw new ApprovalRefusedError('unpinnable', await whyUnpinnable(record));
     }
     record.pinnedDigest = source.digest;
     record.runPath = undefined;
@@ -999,7 +966,8 @@ export class ExtensionManager {
     // the exact bundle built from the files now.
     if (isPathTrustApproval(source) && record.bundleReady) {
       // Built from a verified copy of exactly the files checked above.
-      if (!live || !(await runFromSnapshot(this.dorkHome, record, live))) {
+      // A refused yes leaves the record as it was (no `changed` mark).
+      if (!live || !(await runFromSnapshot(this.dorkHome, record, live, false))) {
         throw new ApprovalRefusedError('stale', 'Its files changed while DorkOS checked them.');
       }
       applyCompileResult(record, await this.compiler.compile(record));

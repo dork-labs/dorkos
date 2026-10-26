@@ -761,7 +761,8 @@ export function seedUiDmViewLeaves(store: {
 
 /**
  * Mark every extension approval written before approvals named content
- * (DOR-3068): one with no digest, no author, no grants and no dev link. Only
+ * (DOR-3068): one with no digest, no author, no grants and no dev link, and
+ * list every approved id that names no copy at all (`legacyUnsourced`). Only
  * a marked approval is pinned, once, to the files the next scan finds
  * (`pinPathOnlyApprovals`); an unmarked digest-less approval written later is
  * never pinned to whatever is on disk, so it simply does not run.
@@ -779,6 +780,16 @@ export function markLegacyPathOnlyApprovals(store: {
   if (extensions === null || typeof extensions !== 'object' || Array.isArray(extensions)) return;
   const sources = (extensions as { approvedSources?: unknown }).approvedSources;
   if (sources === null || typeof sources !== 'object' || Array.isArray(sources)) return;
+  const approvedToRun = (extensions as { approvedToRun?: unknown }).approvedToRun;
+  // Approved ids that name no copy at all (pre-DOR-2383): listed, so only they
+  // are ever bound to the folder at their name, once.
+  const unsourced = Array.isArray(approvedToRun)
+    ? approvedToRun.filter(
+        (id): id is string => typeof id === 'string' && !(id in (sources as object))
+      )
+    : [];
+  const listed = (extensions as { legacyUnsourced?: unknown }).legacyUnsourced;
+  const needsList = unsourced.length > 0 && !Array.isArray(listed);
   let changed = false;
   const next: Record<string, unknown> = {};
   for (const [id, source] of Object.entries(sources as Record<string, unknown>)) {
@@ -794,5 +805,11 @@ export function markLegacyPathOnlyApprovals(store: {
     next[id] = pathOnly ? { ...entry, legacyPathOnly: true } : source;
     changed ||= pathOnly;
   }
-  if (changed) store.set('extensions', { ...extensions, approvedSources: next });
+  if (changed || needsList) {
+    store.set('extensions', {
+      ...extensions,
+      approvedSources: next,
+      ...(needsList ? { legacyUnsourced: unsourced } : {}),
+    });
+  }
 }

@@ -38,7 +38,7 @@
  * @module services/marketplace/lib/install-digest
  */
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readlink } from 'node:fs/promises';
+import { lstat, readdir, readlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { isRuntimeStatePath } from './content-hash.js';
 import { fileSha256Hex } from './records/tree-scan.js';
@@ -62,6 +62,26 @@ interface WalkedFile {
   abs: string;
   executable: boolean;
   stamp: string;
+}
+
+/**
+ * Whether a link really resolves inside the folder: its target exists, its
+ * real path is inside `realRoot`, and it does not land in a part the digest
+ * leaves out (`.git`, DorkOS's runtime state), whose bytes no digest covers.
+ *
+ * @param link - The link's absolute path.
+ * @param realRoot - The folder's real path.
+ */
+async function landsInside(link: string, realRoot: string): Promise<boolean> {
+  let real: string;
+  try {
+    real = await realpath(link);
+  } catch {
+    return false;
+  }
+  const rel = path.relative(realRoot, real);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return rel === '';
+  return !isSkipped(rel.split(path.sep).join('/'));
 }
 
 /** One symbolic link the walk found, inside the folder, by its text. */
@@ -93,6 +113,7 @@ export function isLinkInside(root: string, linkDir: string, target: string): boo
  * @param root - The folder.
  */
 async function walk(root: string): Promise<Walk> {
+  let realRoot = '';
   const files: WalkedFile[] = [];
   const links: WalkedLink[] = [];
   const listings: string[] = [];
@@ -107,6 +128,9 @@ async function walk(root: string): Promise<Walk> {
       if (stats.isSymbolicLink()) {
         const target = await readlink(abs);
         if (!isLinkInside(root, dir, target)) return 'linked';
+        // The text can look inside while the OS resolves it outside (a link to
+        // `.` repeated, then `..` past it): judge where it really lands.
+        if (!(await landsInside(abs, realRoot))) return 'linked';
         links.push({ rel: childRel, target });
         continue;
       }
@@ -129,6 +153,7 @@ async function walk(root: string): Promise<Walk> {
     const rootStats = await lstat(root);
     if (rootStats.isSymbolicLink()) return 'linked';
     if (!rootStats.isDirectory()) return 'unreadable';
+    realRoot = await realpath(root);
     const found = await visit('', root);
     if (found) return found;
   } catch {

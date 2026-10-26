@@ -41,12 +41,15 @@ import { isPathTrustApproval } from './extension-path-trust.js';
  * @param dorkHome - DorkOS's data directory.
  * @param record - The extension record; updated in place.
  * @param digest - The files it must run.
+ * @param markOnFailure - Whether a failure marks the record changed. A yes
+ *   that is refused leaves the live record exactly as it was (`false`).
  * @returns Whether it now runs from that snapshot.
  */
 export async function runFromSnapshot(
   dorkHome: string,
   record: ExtensionRecord,
-  digest: string
+  digest: string,
+  markOnFailure = true
 ): Promise<boolean> {
   const installRoot = digestRootOf(record);
   const root = await ensureSnapshot(dorkHome, installRoot, digest);
@@ -55,6 +58,7 @@ export async function runFromSnapshot(
     record.runPath = path.join(root, path.relative(installRoot, record.path));
     return true;
   }
+  if (!markOnFailure) return false;
   // Its files changed since they were read: nothing here may run.
   record.trustedOrigin = undefined;
   record.pinnedDigest = undefined;

@@ -16,6 +16,7 @@ import os from 'os';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { containmentRootOf } from '../extension-plugin-guard.js';
 
 let tmp: string;
 let project: string;
@@ -134,6 +135,14 @@ describe('containment (N1)', () => {
       serverEntryPath: path.join(own, 'server.ts'),
     });
     expect('error' in server).toBe(true);
+  });
+
+  it('leaves a dev link’s containment as it was, and contains any other copy to its folder', () => {
+    const own = '/work/agent/.dork/extensions/notes';
+    expect(containmentRootOf({ path: own, realPath: own })).toBe(own);
+    expect(containmentRootOf({ path: own, devLink: { path: '/work/notes' } })).toBeNull();
+    // A copy's own node_modules sits inside its folder, so it still builds.
+    expect(containmentRootOf({ path: own, runPath: '/snap/abc/notes' })).toBe('/snap/abc/notes');
   });
 
   it('refuses the same escape in a server bundle', async () => {

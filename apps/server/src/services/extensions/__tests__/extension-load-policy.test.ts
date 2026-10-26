@@ -114,6 +114,7 @@ interface StoredExtensions {
   enabled: string[];
   disabled: string[];
   approvedToRun: string[];
+  legacyUnsourced?: string[];
   approvedSources?: Record<
     string,
     { path: string; plugin?: string; digest?: string; grants?: string; pinnedOnFirstUse?: string }
@@ -555,7 +556,13 @@ describe('the dev loop stays free after one approval, for the approved files', (
   });
 
   it('survives the user turning the extension off and on again', async () => {
-    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.0' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
     await manager.initialize(null);
 
     await manager.disable('my-ext');
@@ -582,7 +589,13 @@ describe('the dev loop stays free after one approval, for the approved files', (
   });
 
   it('stops the extension again when a person withdraws the approval', async () => {
-    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.0' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
     await manager.initialize(null);
     expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
@@ -681,7 +694,13 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
   });
 
   it('keeps an approval given before copies were recorded working for the direct install', async () => {
-    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.0' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
     mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);
 
     await manager.initialize(null);
@@ -695,6 +714,17 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
       },
     });
     expect(manager.getServerHandler('my-ext')).not.toBeNull();
+  });
+
+  it('never binds an id-only approval the migration did not list (DOR-3068)', async () => {
+    // A folder created later at an old approved name must not inherit it.
+    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);
+
+    await manager.initialize(null);
+
+    expect(stored.value.approvedSources).toBeUndefined();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 
   it('leaves an earlier id-only approval unbound, and so unapproved, when only a plugin carries it', async () => {

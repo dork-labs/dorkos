@@ -38,12 +38,18 @@ export const PLUGIN_CHANGED_CODE = 'plugin_changed_since_check';
  * folder, and every other copy's own folder (DOR-3068): the snapshot it runs
  * from, or else its real path. No bundle inlines a file from outside it, so
  * a copy approved by its folder, or one that keeps path trust, can never pull
- * in a file nobody approved (`../../.ssh/id_rsa`, another agent's code).
+ * in a file nobody approved (`../../.ssh/id_rsa`, another agent's code). A
+ * copy's own `node_modules` sits inside its folder and resolves as before.
+ *
+ * A dev link (DOR-2696) keeps what it had before: a person linked a working
+ * folder on purpose and approved it by path, and its build may reach the
+ * workspace around it. One carried in a plugin slot is still contained to it.
  */
 export function containmentRootOf(
-  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath' | 'realPath'>
-): string {
+  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath' | 'realPath' | 'devLink'>
+): string | null {
   if (record.sourcePlugin) return installRootOf(record.runPath ?? record.path);
+  if (record.devLink) return null;
   return path.resolve(record.runPath ?? record.realPath ?? record.path);
 }
 
@@ -127,6 +133,8 @@ export async function stillPinned(
   // A snapshot is re-hashed too (DOR-3068): its folder name says what it
   // should hold, not what it does, and its files could be edited after it
   // was written. The digest's stamp cache keeps an unchanged one cheap.
-  const now = await installFolderDigest(containmentRootOf(record));
+  const root = containmentRootOf(record);
+  if (!root) return false;
+  const now = await installFolderDigest(root);
   return now.kind === 'digest' && now.digest === record.pinnedDigest;
 }

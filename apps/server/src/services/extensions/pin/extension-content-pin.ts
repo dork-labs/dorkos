@@ -233,11 +233,25 @@ export async function approvedVersionOf(
 }
 
 /**
- * Why a copy whose folder DorkOS cannot check can't be approved, in plain
- * words (DOR-3068): it links to files outside itself, or cannot be read whole.
+ * Why a copy whose folder links outside itself can't be approved, in plain
+ * words (DOR-3068). One block of its own, under 15 words.
  */
 export const UNPINNABLE_SENTENCE =
   "Its folder links to files outside it, so DorkOS can't check what would run.";
+
+/** Why a copy whose folder DorkOS cannot read whole can't be approved (DOR-3068). */
+export const UNREADABLE_SENTENCE = "DorkOS couldn't read all of its files, so it can't check what would run.";
+
+/**
+ * The plain reason a copy has no files a yes could name: its folder links
+ * outside itself, or DorkOS cannot read all of it.
+ *
+ * @param copy - The extension record.
+ */
+export async function whyUnpinnable(copy: DigestedCopy): Promise<string> {
+  const found = await installFolderDigest(digestRootOf(copy));
+  return found.kind === 'linked' ? UNPINNABLE_SENTENCE : UNREADABLE_SENTENCE;
+}
 
 /**
  * Why a person's yes was not recorded (DOR-3068):

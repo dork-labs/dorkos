@@ -121,6 +121,7 @@ import { createExtensionsRoutes } from '../extensions.js';
 import {
   ApprovalRefusedError,
   UNPINNABLE_SENTENCE,
+  UNREADABLE_SENTENCE,
 } from '../../services/extensions/pin/extension-content-pin.js';
 import {
   findOperatorOnlyPaths,
@@ -310,7 +311,9 @@ describe('POST /api/extensions/:id/approve', () => {
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('extension_unpinnable');
-      expect(res.body.error).toContain('Nothing was turned on');
+      // The reason alone, one short block (app copy: at most 15 words).
+      expect(res.body.error).toBe(UNPINNABLE_SENTENCE);
+      expect(UNPINNABLE_SENTENCE.split(/\s+/).length).toBeLessThanOrEqual(15);
     });
   });
 
@@ -678,9 +681,10 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('extension_unpinnable');
-      expect(res.body.error).toBe(
-        "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on."
-      );
+      // The stub's folder is not on disk: DorkOS could not read it, which is
+      // its own plain sentence, not the one about links.
+      expect(res.body.error).toBe(UNREADABLE_SENTENCE);
+      expect(UNREADABLE_SENTENCE.split(/\s+/).length).toBeLessThanOrEqual(15);
       expect(res.body.error).not.toMatch(/digest/i);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
