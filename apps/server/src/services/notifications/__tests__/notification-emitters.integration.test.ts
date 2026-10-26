@@ -115,7 +115,7 @@ describe('a finished run', () => {
     expect(listed.notifications[0].body).toBe('Done in 2m 14s.');
   });
 
-  it('says a failed run failed, and files it against the same run', async () => {
+  it('says a failed run needs attention, and files it against the same run', async () => {
     const store = new TaskStore(db);
     store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
 
@@ -124,9 +124,12 @@ describe('a finished run', () => {
     store.updateRun(run.id, { status: 'failed', error: 'exit 1\nstack…', durationMs: 2000 });
     await flush();
 
-    expect(announced()[0]).toMatchObject({ kind: 'run.completed', title: 'deploy failed' });
+    expect(announced()[0]).toMatchObject({
+      kind: 'run.completed',
+      title: 'deploy needs attention',
+    });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Failed after 2s. exit 1'
+      'Didn’t finish: exit 1. Open the schedule to fix it.'
     );
   });
 
@@ -153,7 +156,7 @@ describe('a finished run', () => {
       title: 'mailroom needs attention',
     });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Bash was refused. Change this schedule’s permission level to fix it.'
+      'Bash was refused, with nobody there to approve it. Open the schedule to fix it.'
     );
   });
 
@@ -208,8 +211,8 @@ describe('a finished run', () => {
       await finish(store, task.id, 'needs_attention');
 
       expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-        'Bash was refused. Change this schedule’s permission level to fix it. ' +
-          'No more notices until it works, then breaks again.'
+        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
+          'You won’t get another notice about it until it runs cleanly and fails again.'
       );
     });
 

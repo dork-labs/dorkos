@@ -74,6 +74,19 @@ describe('formatCompletionMessage', () => {
     expect(body).not.toContain('used none');
   });
 
+  it('ends the one notice of a failing streak with the no-repeat line, never cut off (DOR-3123)', () => {
+    const body = formatCompletionMessage(
+      task,
+      run({ status: 'needs_attention', outcome: 'partial', error: 'x'.repeat(400) }),
+      true
+    );
+
+    expect(
+      body.endsWith(' You won’t get another notice about it until it runs cleanly and fails again.')
+    ).toBe(true);
+    expect(body.length).toBeLessThanOrEqual(200);
+  });
+
   it('still says done for a success and failed for a failure', () => {
     expect(formatCompletionMessage(task, run({ outputSummary: 'All clear' }))).toBe(
       '✅ Mailroom — done in 4s. All clear'

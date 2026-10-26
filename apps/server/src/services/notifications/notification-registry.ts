@@ -44,12 +44,7 @@ import {
 } from './extension-decision-copy.js';
 import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
 import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
-import {
-  runCompletedBody,
-  runCompletedRelay,
-  runCompletedTitle,
-  type RunCompletedPayload,
-} from './run-completed-copy.js';
+import { RUN_COMPLETED_COPY, type RunCompletedPayload } from './run-completed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -808,11 +803,9 @@ const ENTRIES: NotificationRegistryMap = {
     storage: 'event',
     subjectType: 'run',
     locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
-    title: runCompletedTitle,
-    body: runCompletedBody,
+    // Its title, body, action and reach: see `run-completed-copy.ts`.
+    ...RUN_COMPLETED_COPY,
     dedupeKey: (p) => `run:${p.runId}`,
-    // Who it reaches out to: see `runCompletedRelay` (DOR-240, DOR-2101, DOR-3123).
-    relay: runCompletedRelay,
     // The chat message keeps the wording DOR-240 shipped rather than being
     // rebuilt from title and body: a phone message and an inbox row are not the
     // same sentence, and this one is already tuned.

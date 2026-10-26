@@ -5,7 +5,9 @@
  */
 import { motion } from 'motion/react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { cn, formatCompactAge } from '@/layers/shared/lib';
+import { appRoutes, cn, formatCompactAge } from '@/layers/shared/lib';
+import { useSafeNavigate } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 
@@ -81,6 +83,28 @@ export interface InboxRowProps {
    * {@link staggerVariantsFor}.
    */
   index?: number;
+}
+
+/** The action a failing run's notice declares (`run.completed`, DOR-3123). */
+const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
+
+/** "Open schedule": takes the person to the Schedules page, where the fix lives. */
+function OpenScheduleAction() {
+  const navigate = useSafeNavigate();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      data-slot="inbox-row-open-schedule"
+      className="shrink-0"
+      onClick={() => {
+        if (navigate !== null) void navigate({ ...appRoutes.tasks(), search: {} });
+      }}
+    >
+      Open schedule
+    </Button>
+  );
 }
 
 /**
@@ -186,7 +210,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   );
 
   return (
-    <motion.div variants={staggerVariantsFor(index)} className="min-w-0">
+    <motion.div variants={staggerVariantsFor(index)} className="flex min-w-0 items-center gap-1">
       {onOpen ? (
         <button
           type="button"
@@ -205,6 +229,11 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         >
           {body}
         </div>
+      )}
+      {/* A failing schedule's one fix, beside the row rather than inside it (a
+          button cannot hold a button). Only on a row a person can act on. */}
+      {onOpen && notification.actions?.some((a) => a.id === OPEN_SCHEDULE_ACTION_ID) && (
+        <OpenScheduleAction />
       )}
     </motion.div>
   );

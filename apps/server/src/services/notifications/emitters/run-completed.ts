@@ -139,7 +139,6 @@ export function formatCompletionMessage(
   run: TaskRun,
   oncePerStreak = false
 ): string {
-  const once = oncePerStreak ? ` ${ONCE_PER_STREAK_LINE}` : '';
   const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : null;
 
@@ -147,8 +146,7 @@ export function formatCompletionMessage(
   if (run.status === 'failed') {
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
-      `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.${once}` +
-      (detail ? ` ${detail}` : '');
+      `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
   } else if (run.status === 'needs_attention') {
     // Not the tick and not the warning triangle: the run did not break, and it
     // did not do all of its job either. What it needs is permission, so the
@@ -159,14 +157,18 @@ export function formatCompletionMessage(
     // (DOR-2101 review).
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
-      `🔒 ${name} — ${run.outcome === 'nothing_done' ? 'used none of its tools' : 'was refused a tool'}${duration ? ` in ${duration}` : ''}.${once}` +
+      `🔒 ${name} — ${run.outcome === 'nothing_done' ? 'used none of its tools' : 'was refused a tool'}${duration ? ` in ${duration}` : ''}.` +
       (detail ? ` ${detail}` : '');
   } else {
     const detail = firstLine(run.outputSummary);
     body = `✅ ${name} — done${duration ? ` in ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
   }
 
-  return truncate(body, MESSAGE_MAX_CHARS);
+  // The no-repeat line ENDS the message, and the cut is made before it, so a
+  // long detail can never push the promise off the end (DOR-3123).
+  if (!oncePerStreak || run.status === 'completed') return truncate(body, MESSAGE_MAX_CHARS);
+  const once = ` ${ONCE_PER_STREAK_LINE}`;
+  return `${truncate(body, MESSAGE_MAX_CHARS - once.length)}${once}`;
 }
 
 /** Truncate to `max` characters, appending an ellipsis when it had to cut. */

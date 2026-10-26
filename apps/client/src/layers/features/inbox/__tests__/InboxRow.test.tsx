@@ -147,3 +147,29 @@ describe('staggerVariantsFor', () => {
     expect(staggerVariantsFor(undefined)).toBe(staggerItem);
   });
 });
+
+describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
+  const failing = build({
+    kind: 'run.completed',
+    tier: 'notable',
+    subject: { type: 'run', id: 'run-1' },
+    title: 'Nightly backup needs attention',
+    actions: [{ id: 'open-schedule', label: 'Open schedule', style: 'primary' }],
+  });
+
+  it('draws Open schedule beside a row that offers it, and never a raise', () => {
+    render(<InboxRow notification={failing} onOpen={() => {}} />);
+
+    expect(screen.getByRole('button', { name: 'Open schedule' })).toBeInTheDocument();
+    expect(screen.queryByText(/Full autonomy|Allow|Raise/)).toBeNull();
+  });
+
+  it('draws nothing extra on a row that only pictures the notice, or offers no action', () => {
+    render(<InboxRow notification={failing} />);
+    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
+    cleanup();
+
+    render(<InboxRow notification={build({ kind: 'run.completed' })} onOpen={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
+  });
+});

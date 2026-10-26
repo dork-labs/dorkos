@@ -464,23 +464,38 @@ describe('notification registry', () => {
       ).toBe('quiet');
     });
 
-    it('says what happened rather than calling it a failure', () => {
+    it('titles every failing run "needs attention", and a success "finished"', () => {
       const entry = notificationEntry('run.completed');
       expect(entry.title(blocked)).toBe('Mailroom needs attention');
-      expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom failed');
+      expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom needs attention');
+      expect(entry.title({ ...blocked, status: 'completed' })).toBe('Mailroom finished');
     });
 
-    it('names the refused tools and the one fix, and says it will not repeat', () => {
+    it('offers Open schedule on a failing run, and never a raise (SF-18)', () => {
+      const actions = notificationEntry('run.completed').actions;
+      expect(actions?.(blocked)).toEqual([
+        { id: 'open-schedule', label: 'Open schedule', style: 'primary' },
+      ]);
+      expect(actions?.({ ...blocked, status: 'completed' })).toEqual([]);
+    });
+
+    it('says the row’s reason, points at the schedule, and says it will not repeat', () => {
       const body = notificationEntry('run.completed').body;
       expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
-        'Bash and gmail: search were refused. Change this schedule’s permission level to fix it.'
+        'Nothing got done: Bash and gmail: search were refused. Open the schedule to fix it.'
       );
-      expect(body?.({ ...blocked, refusedTools: ['Bash'], oncePerStreak: true })).toBe(
-        'Bash was refused. Change this schedule’s permission level to fix it. ' +
-          'No more notices until it works, then breaks again.'
+      expect(
+        body?.({ ...blocked, outcome: 'partial', refusedTools: ['Bash'], oncePerStreak: true })
+      ).toBe(
+        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
+          'You won’t get another notice about it until it runs cleanly and fails again.'
       );
-      // Never the run's own refusal sentence: the tools are named once.
-      expect(body?.({ ...blocked, refusedTools: ['Bash'] })).not.toMatch(/nobody was there/);
+      // "Didn't finish": only the reason line changes.
+      expect(body?.({ ...blocked, status: 'failed', detail: 'API Error: 500' })).toBe(
+        'Didn’t finish: API Error: 500. Open the schedule to fix it.'
+      );
+      // Never a raise of the schedule's level (spec `schedules-failing` SF-18).
+      expect(body?.({ ...blocked, refusedTools: ['Bash'] })).not.toMatch(/permission level|Full/);
     });
 
     it('reaches out for every failing notice, since a streak raises only one', () => {
