@@ -1,0 +1,130 @@
+/**
+ * Keep the model's own file-reading tools off the files that hold secrets
+ * (DOR-3299, part 1).
+ *
+ * DorkOS auto-allows Claude Code's read-only tools with no path check
+ * (`tool-gate/auto-allow.ts`), which overrides the CLI's own "ask before
+ * reading outside the working folder". So at Ask first and Act, the model's
+ * `Read` could open DorkOS's master key, the encrypted store, a Claude
+ * sign-in, or the person's SSH keys and tokens, with no card. Deny rules are
+ * checked before any allow and before `canUseTool`, at every permission level
+ * Bypass included, so these hold everywhere a launch goes.
+ *
+ * Only the model's tools are stopped: `gh`, `git` and Claude Code itself still
+ * read their own files. A read-only SHELL command (`grep -r`, `head`, `sed -n`)
+ * is not a `Read` and is not covered here; that is part 2 (DOR-3300).
+ *
+ * The rules also name `Grep` and `Glob`, for a Claude Code that has those tools;
+ * the bundled CLI has neither, and searches through the shell instead (part 2).
+ * `*` in a rule crosses folders, so a file is named exactly and a folder ends
+ * in `/**`.
+ *
+ * @module services/runtimes/claude-code/secret-files/secret-read-deny
+ */
+import path from 'node:path';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import { rulePath } from '../messaging/directory-grants.js';
+
+/** The file-reading tools a secret-read rule names. */
+const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;
+
+/** DorkOS's own secrets, relative to its data folder. A trailing `/**` is a folder. */
+export const DATA_FOLDER_SECRETS = [
+  'host.key',
+  'config.json',
+  'mcp-local-token',
+  'better-auth-secret',
+  'extension-secrets/**',
+  // Secrets moved out of agent folders (DOR-3292).
+  'secrets/**',
+  // The agent browser's signed-in state, and its profiles' cookies.
+  'browser/storage-state.json',
+  'browser-profiles/**',
+] as const;
+
+/** The sign-in files inside every Claude Code account folder. */
+export const ACCOUNT_FOLDER_SECRETS = ['.credentials*', '.claude.json'] as const;
+
+/**
+ * The person's own keys and tokens, in the home-folder spelling Claude Code
+ * expands itself. Only well-known spots that hold a credential.
+ */
+export const HOME_SECRETS = [
+  '.ssh/**',
+  '.aws/**',
+  '.config/gh/hosts.yml',
+  '.netrc',
+  '.npmrc',
+  '.docker/config.json',
+  '.config/gcloud/**',
+  // The default account's sign-in, whatever account this launch uses.
+  '.claude.json',
+  '.claude/.credentials*',
+  // The default data folder's secrets, whatever data folder this launch uses.
+  ...DATA_FOLDER_SECRETS.map((entry) => `.dork/${entry}`),
+] as const;
+
+/** Where this launch's secrets live. */
+export interface SecretFolders {
+  /** DorkOS's data folder. */
+  dorkHome: string;
+  /** Every Claude Code account folder DorkOS knows of, the launch's own included. */
+  accountRoots: readonly string[];
+}
+
+/**
+ * The deny rules that keep `Read`, `Grep` and `Glob` off every secret file.
+ *
+ * @param folders - Where this launch's secrets live.
+ * @throws DirectoryGrantError when a folder's path can't be named exactly in a
+ *   rule — failing closed, as the person-only data deny does.
+ */
+export function secretReadDenyRules(folders: SecretFolders): string[] {
+  const targets: string[] = [];
+  const named = (folder: string, entries: readonly string[]): void => {
+    const root = rulePath(path.resolve(folder));
+    if (root === undefined) {
+      throw new DirectoryGrantError(
+        `Claude Code can't keep the secrets in "${folder}" away from agents, because its ` +
+          `name has a character its safety rules can't match: a question mark, a backslash, a ` +
+          `hidden control character, or a space at the very end. So this turn was not started. ` +
+          `Move that folder to a path without those characters, then try again.`
+      );
+    }
+    for (const entry of entries) targets.push(`${root}/${entry}`);
+  };
+  named(folders.dorkHome, DATA_FOLDER_SECRETS);
+  for (const account of folders.accountRoots) named(account, ACCOUNT_FOLDER_SECRETS);
+  for (const entry of HOME_SECRETS) targets.push(`~/${entry}`);
+  const rules = targets.flatMap((target) => READ_TOOLS.map((tool) => `${tool}(${target})`));
+  return [...new Set(rules)];
+}
+
+/** The slice of Claude Code settings this module writes. */
+interface DenySettings {
+  deny?: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * Merge {@link secretReadDenyRules} into the launch's `settings.permissions.deny`,
+ * keeping everything else the launch carries.
+ *
+ * @param sdkOptions - The launch options, mutated in place.
+ * @param folders - Where this launch's secrets live.
+ */
+export function applySecretReadDeny(sdkOptions: Options, folders: SecretFolders): void {
+  const rules = secretReadDenyRules(folders);
+  const base =
+    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
+      ? sdkOptions.settings
+      : {};
+  const permissions = ((base as { permissions?: DenySettings }).permissions ?? {}) as DenySettings;
+  const deny = [...(permissions.deny ?? [])];
+  for (const rule of rules) if (!deny.includes(rule)) deny.push(rule);
+  sdkOptions.settings = {
+    ...base,
+    permissions: { ...permissions, deny },
+  } as Options['settings'];
+}
