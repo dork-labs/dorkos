@@ -2,8 +2,11 @@
 covers:
   - "feat(extensions): a mini app's first forward asks in a DorkOS prompt, and reaches only agents you allowed (DOR-3325)"
   - 'feat(extensions): a comment you type in a mini app reaches your agent as your own words (DOR-3325)'
+  - "feat(extensions): a mini app reads who wrote each forward from DorkOS's own record (DOR-3325)"
+  - 'fix(extensions): the forward settings need a signed-in session, and Allow needs the window that sent it (DOR-3325)'
+  - 'fix(client): the forward prompt says what Allow means, with the handle on its own line (DOR-3325)'
 ---
 
 ### Added
 
-- Answer an agent from inside a mini app. The first time a mini app sends your comment to an agent, DorkOS asks you once, and the comment lands in your Direct chat with that agent as your own message. The agent treats it as if you had typed it there, so it no longer asks you to approve each step. You can change which agents it reaches in Settings → Extensions. A muted line above the message says which mini app and item it came from, and the agent's answer can show up back in the mini app under the agent's name. It only works when DorkOS asks you for a password, and each one is in the audit trail. (DOR-3325)
+- Answer an agent from inside a mini app. The first time a mini app sends your comment to an agent, DorkOS asks you once, and the comment lands in your Direct chat with that agent as your own message. The agent treats it as if you had typed it there, so it no longer asks you to approve each step. You can change which agents it reaches in Settings → Extensions. A muted line above the message says which mini app and item it came from, and the agent's answer can show up back in the mini app under the agent's name. A mini app shows a comment as yours only when DorkOS says you wrote it. It only works when DorkOS asks you for a password, and each one is in the audit trail. (DOR-3325)
