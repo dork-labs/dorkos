@@ -44,7 +44,12 @@ import {
 } from './extension-decision-copy.js';
 import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
 import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
-import { runCompletedBody, runCompletedRelay, runCompletedTitle } from './run-completed-copy.js';
+import {
+  runCompletedBody,
+  runCompletedRelay,
+  runCompletedTitle,
+  type RunCompletedPayload,
+} from './run-completed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -176,21 +181,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
     completedAt: string;
   };
   /** A scheduled task run reached a terminal status. */
-  'run.completed': {
-    runId: string;
-    taskId: string;
-    taskName: string;
-    agentId?: string;
-    status: RunCompletionStatus;
-    /** How much a `needs_attention` run got done (DOR-3123); absent otherwise. */
-    outcome?: 'partial' | 'nothing_done';
-    /** How long it took, already written, e.g. `2m 14s`. */
-    duration?: string;
-    /** The first line of output or error. */
-    detail?: string;
-    /** The sentence an out-of-app channel says. Preserves the wording DOR-240 shipped. */
-    channelMessage: string;
-  };
+  'run.completed': RunCompletedPayload;
   /** A direct message arrived. */
   'dm.received': {
     roomId: string;

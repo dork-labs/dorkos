@@ -15,7 +15,9 @@
  */
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import { formatDuration } from '../../../lib/format-duration.js';
+import { readableToolName } from '@dorkos/shared/run-refusals';
 import { notify } from '../notification-service.js';
+import { ONCE_PER_STREAK_LINE } from '../run-completed-copy.js';
 
 /** Relay `from` principal for automatic task-completion notifications. */
 const TASK_NOTIFIER_PRINCIPAL = 'relay.system.tasks.notifier';
@@ -41,14 +43,31 @@ const PUBLISH_TTL_MS = 30_000;
  * Never throws: the run-terminal hook is on the write path for run persistence,
  * and a notification problem must never be able to corrupt it.
  *
+ * **One notice per failing streak** (DOR-3123, PM's call on FB-67): when the
+ * caller says how long the schedule has been failing, only the run that STARTS
+ * the streak raises a notice, and that notice says it will not repeat. Every
+ * run still records its true status in run history; only the notice is spared.
+ * A completed run ends the streak, so the next failure raises a notice again.
+ * Without `streak` every failing run raises one, as before.
+ *
  * @param run - The run that finished.
  * @param task - Its task, when the hook knew it.
+ * @param streak - How many finished runs in a row have now failed, this one
+ *   included (`Task.health.streak`), when the caller can read it.
  */
-export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promise<void> {
+export async function notifyRunCompleted(
+  run: TaskRun,
+  task: Task | null,
+  streak?: number
+): Promise<void> {
   // Cancellations are the operator's own action — they already know.
   if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'needs_attention') {
     return;
   }
+  const failing = run.status !== 'completed';
+  // Later runs of a streak the person was already told about stay quiet.
+  if (failing && streak !== undefined && streak > 1) return;
+  const oncePerStreak = failing && streak !== undefined;
 
   const taskName = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : undefined;
@@ -66,9 +85,13 @@ export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promi
       ...(task?.agentId ? { agentId: task.agentId } : {}),
       status: run.status,
       ...(run.outcome ? { outcome: run.outcome } : {}),
+      ...(run.status === 'needs_attention' && run.refusedTools?.length
+        ? { refusedTools: [...new Set(run.refusedTools.map(readableToolName))] }
+        : {}),
+      ...(oncePerStreak ? { oncePerStreak: true as const } : {}),
       ...(duration ? { duration } : {}),
       ...(detail ? { detail } : {}),
-      channelMessage: formatCompletionMessage(task, run),
+      channelMessage: formatCompletionMessage(task, run, oncePerStreak),
     },
     {
       relay: {
@@ -108,8 +131,15 @@ function firstLine(text: string | null | undefined): string | undefined {
  *
  * @param task - The run's task, for its display name (may be null).
  * @param run - The finished run, for status, duration, and output/error.
+ * @param oncePerStreak - Whether this is the one notice of a failing streak,
+ *   which says it will not repeat (DOR-3123).
  */
-export function formatCompletionMessage(task: Task | null, run: TaskRun): string {
+export function formatCompletionMessage(
+  task: Task | null,
+  run: TaskRun,
+  oncePerStreak = false
+): string {
+  const once = oncePerStreak ? ` ${ONCE_PER_STREAK_LINE}` : '';
   const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : null;
 
@@ -117,7 +147,8 @@ export function formatCompletionMessage(task: Task | null, run: TaskRun): string
   if (run.status === 'failed') {
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
-      `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
+      `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.${once}` +
+      (detail ? ` ${detail}` : '');
   } else if (run.status === 'needs_attention') {
     // Not the tick and not the warning triangle: the run did not break, and it
     // did not do all of its job either. What it needs is permission, so the
@@ -128,7 +159,7 @@ export function formatCompletionMessage(task: Task | null, run: TaskRun): string
     // (DOR-2101 review).
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
-      `🔒 ${name} — ${run.outcome === 'nothing_done' ? 'used none of its tools' : 'was refused a tool'}${duration ? ` in ${duration}` : ''}.` +
+      `🔒 ${name} — ${run.outcome === 'nothing_done' ? 'used none of its tools' : 'was refused a tool'}${duration ? ` in ${duration}` : ''}.${once}` +
       (detail ? ` ${detail}` : '');
   } else {
     const detail = firstLine(run.outputSummary);

@@ -112,3 +112,25 @@ describe('run-terminal listener → activity feed (DOR-1573)', () => {
     );
   });
 });
+
+describe('run-terminal listener → one notice per failing streak (DOR-3123)', () => {
+  it('hands the notifier how long the schedule has been failing', async () => {
+    const { notifyRunCompleted } = await import('../../notifications/emitters/run-completed.js');
+    vi.mocked(notifyRunCompleted).mockClear();
+    const store = new TaskStore(createTestDb());
+    const streakOf = vi.fn(() => 2);
+    store.setOnRunTerminal(createRunTerminalListener(null, undefined, streakOf));
+    const task = store.createTask(taskInput('health'));
+    const run = store.createRun(task.id, 'scheduled');
+
+    store.updateRun(run.id, { status: 'needs_attention', refusedTools: ['Bash'] });
+    await flush();
+
+    expect(streakOf).toHaveBeenCalledWith(task.id);
+    expect(notifyRunCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: run.id }),
+      expect.anything(),
+      2
+    );
+  });
+});

@@ -470,32 +470,26 @@ describe('notification registry', () => {
       expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom failed');
     });
 
-    it('does not say "nobody was there to approve" twice in one row', () => {
-      // The detail IS the refusal sentence and already ends in those words, so
-      // the body's own line must not repeat them (DOR-2101 review).
-      const body = notificationEntry('run.completed').body?.(blocked) ?? '';
-      expect(body).toContain('Ran for 4s and used none of its tools.');
-      expect(
-        notificationEntry('run.completed').body?.({ ...blocked, outcome: 'partial' }) ?? ''
-      ).toContain('Ran for 4s and was refused a tool.');
-      expect(body).toContain(blocked.detail);
-      expect(body.match(/nobody was there to approve/g)).toHaveLength(1);
+    it('names the refused tools and the one fix, and says it will not repeat', () => {
+      const body = notificationEntry('run.completed').body;
+      expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
+        'Bash and gmail: search were refused. Change this schedule’s permission level to fix it.'
+      );
+      expect(body?.({ ...blocked, refusedTools: ['Bash'], oncePerStreak: true })).toBe(
+        'Bash was refused. Change this schedule’s permission level to fix it. ' +
+          'No more notices until it works, then breaks again.'
+      );
+      // Never the run's own refusal sentence: the tools are named once.
+      expect(body?.({ ...blocked, refusedTools: ['Bash'] })).not.toMatch(/nobody was there/);
     });
 
-    it('reaches out when nothing got done, and stays opt-in when it carried on', () => {
+    it('reaches out for every failing notice, since a streak raises only one', () => {
       const entry = notificationEntry('run.completed');
-      expect((entry.relay as (p: typeof blocked) => string)(blocked)).toBe('always');
-      // A run that lost a tool and carried on used to be a quiet success; until
-      // one notice covers a whole streak it pings only where asked (DOR-3123).
-      expect(
-        (entry.relay as (p: typeof blocked) => string)({ ...blocked, outcome: 'partial' })
-      ).toBe('opt-in');
-      expect((entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'failed' })).toBe(
-        'always'
-      );
-      expect(
-        (entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'completed' })
-      ).toBe('opt-in');
+      const relay = entry.relay as (p: typeof blocked) => string;
+      expect(relay(blocked)).toBe('always');
+      expect(relay({ ...blocked, outcome: 'partial' })).toBe('always');
+      expect(relay({ ...blocked, status: 'failed' })).toBe('always');
+      expect(relay({ ...blocked, status: 'completed' })).toBe('opt-in');
     });
   });
 

@@ -70,15 +70,20 @@ export function broadcastRunTerminal(run: TaskRun): void {
  *   null when the feed is unavailable (the emit is then a no-op).
  * @param lateOutput - The store and runtime lookup the fourth consumer needs;
  *   omitted, a run's later turns reach its session but not its record.
+ * @param streakOf - How many finished runs of a schedule have failed in a row
+ *   (`Task.health.streak`); omitted, every failing run raises a notice.
  * @returns A listener that runs every terminal consumer for one run.
  */
 export function createRunTerminalListener(
   activityService: ActivityService | null,
-  lateOutput?: LateRunOutputDeps
+  lateOutput?: LateRunOutputDeps,
+  streakOf?: (scheduleId: string) => number
 ): RunTerminalListener {
   return (run, task) => {
     broadcastRunTerminal(run);
-    void notifyRunCompleted(run, task);
+    // How long the schedule has been failing, this run included, so a failing
+    // streak raises one notice rather than one per run (DOR-3123).
+    void notifyRunCompleted(run, task, streakOf?.(run.scheduleId));
     emitTerminalRunActivity(activityService, task, run);
     if (lateOutput) followLateRunOutput(lateOutput, run);
     // A run of a schedule the agent owns that failed or stopped for a person
