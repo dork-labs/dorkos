@@ -19,21 +19,6 @@ export type WaitingQueueCounts = Pick<
 >;
 
 /**
- * Say what is waiting, one kind in its own words or every kind present by name.
- *
- * **It does not call everything by the same noun.** A capability approval, a
- * parked schedule, a prompt an agent is parked on, an extension waiting to be
- * turned on and a decision an extension asked about are five different objects,
- * and none stands in for another. When the queue is only one kind the sentence
- * says so in that kind's own words; when it is mixed it names every kind that is
- * actually present.
- *
- * Answers `''` for an empty queue — a caller that has nothing waiting should be
- * saying something else (an all-clear, or "Answered."), not counting nothing.
- *
- * @param queue - The waiting queues, at full per-item granularity.
- */
-/**
  * The mini apps waiting on a person, by what they wait for: a new one to be
  * turned on, a changed one (an edit or an update) for an OK. One app is named.
  *
@@ -59,6 +44,21 @@ function describeWaitingMiniApps(waiting: WaitingQueueCounts['extensionApprovals
   return `${first} They won't run until you decide.`;
 }
 
+/**
+ * Say what is waiting, one kind in its own words or every kind present by name.
+ *
+ * **It does not call everything by the same noun.** A capability approval, a
+ * parked schedule, a prompt an agent is parked on, an extension waiting to be
+ * turned on and a decision an extension asked about are five different objects,
+ * and none stands in for another. When the queue is only one kind the sentence
+ * says so in that kind's own words; when it is mixed it names every kind that is
+ * actually present.
+ *
+ * Answers `''` for an empty queue — a caller that has nothing waiting should be
+ * saying something else (an all-clear, or "Answered."), not counting nothing.
+ *
+ * @param queue - The waiting queues, at full per-item granularity.
+ */
 export function describeWaitingQueue(queue: WaitingQueueCounts): string {
   const approvals = queue.approvals.length;
   const schedules = queue.schedules.length;
