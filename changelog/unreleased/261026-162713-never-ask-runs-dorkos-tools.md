@@ -2,6 +2,7 @@
 covers:
   - "fix(server): a Never ask chat runs DorkOS's own safe tools again (DOR-3042, DOR-3289)"
   - "test(server): prove the Never ask hook against an impostor dorkos server; never on a teammate's turn (DOR-3042)"
+  - "fix(server): a teammate's turn never runs the account tools (DOR-3289)"
 ---
 
 ### Fixed
