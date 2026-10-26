@@ -11,5 +11,6 @@ xcrun swiftc -parse-as-library "$here/Policy.swift" "$here/Approval.swift" "$her
 xcrun swiftc -parse-as-library "$here/Policy.swift" "$here/Approval.swift" "$here/tests/TestSupport.swift" "$here/tests/BatchTests.swift" -o "$tmp/batch-tests"
 # The helper's copy of the gate pattern must equal the gate's reviewed fixture.
 export DORKOS_GATE_FIXTURE="$here/../../.github/scripts/fixtures/security-path-pattern.regex"
+export DORKOS_GATE_VARIANTS="$here/../../scripts/fixtures/security-path-variants.json"
 for suite in helper-policy-tests policy-tests core-tests batch-tests; do "$tmp/$suite"; done
 "$here/tests/test-enqueue.sh"

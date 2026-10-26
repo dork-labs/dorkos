@@ -19,7 +19,7 @@ let maxBatch = 8
 /// The gate's sensitive-path pattern, copied verbatim so Dorian sees which files
 /// the gate itself treats as sensitive. Parity tests pin it to
 /// `.github/scripts/fixtures/security-path-pattern.regex`.
-let gatePathPattern = #"^(apps/server/src/services/core/(auth|turn-power|capabilities|session-relay|approvals)/|apps/server/src/services/core/mcp-tool-gate\.ts$|apps/server/src/lib/trusted-origins\.ts$|apps/server/src/services/communities/remote/|apps/server/src/env\.ts$|apps/server/src/index\.ts$|apps/server/src/lib/process/|apps/server/src/(http|routes)/|apps/server/src/services/(connectors|relay|extensions|mesh|browser|session/local-browser)/|apps/server/src/db/migrations/|drizzle/|packages/shared/src/schemas\.ts$|packages/cli/src/lib/agent-browser/|packages/(relay|mesh|a2a-gateway|extension-api|connector-providers|cloud-api)/|\.github/|scripts/(release|publish)|scripts/security-paths-check|tools/security-approve/|apps/desktop/src/preload/|apps/server/src/services/core/event-fan-out|apps/server/src/services/rooms/manage/room-membership\.ts$|apps/server/src/services/rooms/(service|awaiting)/room-awaiting\.ts$|apps/server/src/services/runtimes/(claude-code/(tool-gate/|turn-permission\.ts$|messaging/(interactive-handlers|launch-resolver|permission-mode-guard)\.ts$|mcp-tools/session-start-permission\.ts$)|shared/(permission-tool-filter|approval-verdict-block)\.ts$|opencode/messaging/approvals\.ts$|doe/approvals\.ts$)|apps/server/src/services/(spaces|identity|computers)/|apps/server/src/services/rooms/(limits|repo|turn-guards|session-bindings)/|apps/server/src/services/session/(origin|chat-messages|turn-identity)/|packages/shared/src/permissions/|packages/shared/src/(permission-semantics|config-permissions|agent-browser|agent-runtime|untrusted-text|approval-schemas|extension-approval-schemas|cloud-origin)\.ts$)|^\.agents/flow/|^\.dork/plugins/flow/config/|(^|/)package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|turn-ceiling|continuation-hold|agent-level"#
+let gatePathPattern = #"^(apps/server/src/services/core/(auth|turn-power|capabilities|session-relay|approvals)/|apps/server/src/services/core/mcp-tool-gate\.ts$|apps/server/src/lib/trusted-origins\.ts$|apps/server/src/services/communities/remote/|apps/server/src/env\.ts$|apps/server/src/index\.ts$|apps/server/src/lib/process/|apps/server/src/(http|routes)/|apps/server/src/services/(connectors|relay|extensions|mesh|browser|session/local-browser)/|apps/server/src/db/migrations/|drizzle/|packages/shared/src/schemas\.ts$|packages/cli/src/lib/agent-browser/|packages/(relay|mesh|a2a-gateway|extension-api|connector-providers|cloud-api)/|\.github/|scripts/(release|publish)|scripts/security-paths-check|tools/security-approve/|apps/desktop/src/preload/|apps/server/src/services/core/event-fan-out|apps/server/src/services/rooms/manage/room-membership\.ts$|apps/server/src/services/rooms/(service|awaiting)/room-awaiting\.ts$|apps/server/src/services/runtimes/(claude-code/(tool-gate/|turn-permission\.ts$|messaging/(interactive-handlers|launch-resolver|permission-mode-guard)\.ts$|mcp-tools/session-start-permission\.ts$)|shared/(permission-tool-filter|approval-verdict-block)\.ts$|opencode/messaging/approvals\.ts$|doe/approvals\.ts$)|apps/server/src/services/(spaces|identity|computers)/|apps/server/src/services/rooms/(limits|repo|turn-guards|session-bindings)/|apps/server/src/services/session/(origin|chat-messages|turn-identity)/|packages/shared/src/permissions/|packages/shared/src/(permission-semantics|config-permissions|agent-browser|agent-runtime|untrusted-text|approval-schemas|extension-approval-schemas|cloud-origin)\.ts$)|^\.agents/flow/|^\.dork/plugins/flow/config/|(^|/)[pP][aA][cC][kK][aA][gG][eE]\.[jJ][sS][oO][nN]$|(^|/)\.npmrc$|(^|/)patches/|(^|/)\.pnpmfile\.cjs$|(^|/)\.nvmrc$|(^|/)\.node-version$|(^|/)codeowners$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|turn-ceiling|continuation-hold|agent-level"#
 
 struct QueueEntry: Equatable, Hashable {
   let pr: Int
@@ -63,9 +63,17 @@ func needsOwnConfirmation(_ path: String) -> Bool {
     || lower == "scripts/security-paths-check.mjs"
 }
 
-/// True when the gate itself would treat this path as security-sensitive.
+/// True when the gate itself would treat this path as security-sensitive. Mirrors
+/// `touchesSecurity` in `.github/scripts/security-gate.mjs`: the exact match first, then
+/// a case-insensitive match on the path and its full-fold and NFKC-then-full-fold forms.
 func touchesGate(_ path: String) -> Bool {
-  path.range(of: gatePathPattern, options: .regularExpression) != nil
+  func fullFold(_ text: String) -> String {
+    text.precomposedStringWithCanonicalMapping.lowercased().uppercased().lowercased()
+  }
+  if path.range(of: gatePathPattern, options: .regularExpression) != nil { return true }
+  return [path, fullFold(path), fullFold(path.precomposedStringWithCompatibilityMapping)].contains {
+    $0.range(of: gatePathPattern, options: [.regularExpression, .caseInsensitive]) != nil
+  }
 }
 
 /// First 16 hex (64 bits, so it cannot be ground) of SHA-256 over the sorted

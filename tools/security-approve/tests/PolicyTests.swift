@@ -46,6 +46,20 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
     try require(touchesGate("apps/server/src/services/core/auth/x.ts"), "gate path")
     try require(touchesGate("package.json") && touchesGate("apps/x/package.json"), "package.json")
     try require(!touchesGate("apps/client/src/app.ts") && !touchesGate("docs/guide.mdx"), "not gate")
+    // The same case and Unicode spellings the gate's own tests use, from the shared fixture.
+    if let variants = ProcessInfo.processInfo.environment["DORKOS_GATE_VARIANTS"] {
+      let data = try Data(contentsOf: URL(fileURLWithPath: variants))
+      let fixture = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+      for path in fixture["match"] as! [String] {
+        try require(touchesGate(path), "gate spelling flagged: \(path)")
+      }
+      for path in fixture["noMatch"] as! [String] {
+        try require(!touchesGate(path), "nonsecurity spelling not flagged: \(path)")
+      }
+    } else {
+      throw ApprovalError(message: "TEST FAILED: DORKOS_GATE_VARIANTS not set")
+    }
+    try require(touchesGate("CODEOWNERS") && touchesGate(".node-version"), "#3191 paths")
 
     // Never-batch paths.
     for path in [
