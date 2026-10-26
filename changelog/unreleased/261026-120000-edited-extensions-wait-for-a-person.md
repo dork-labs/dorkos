@@ -7,6 +7,7 @@ covers:
   - 'fix(server): mark only approved dev-link sources as pre-existing (DOR-3068)'
   - "fix(server): approve only what an agent's new mini app scaffolded, and show a changed app waiting (DOR-3068)"
   - 'fix(client): the changed-mini-app line uses the warning tokens and a 44px Review on touch (DOR-3068)'
+  - 'fix(client): the Inbox says what each waiting mini app is waiting for (DOR-3068)'
 ---
 
 ### Fixed

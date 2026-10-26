@@ -171,7 +171,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
 
     const bell = await screen.findByTestId('inbox-bell');
-    expect(bell).toHaveAccessibleName('1 extension is waiting to be turned on. Open to answer it.');
+    expect(bell).toHaveAccessibleName('1 mini app is waiting to be turned on. Open to answer it.');
     expect(bell).toHaveTextContent('1');
   });
 
@@ -187,7 +187,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
         .map((button) => button.getAttribute('aria-label'))
     ).toEqual(['More about this', 'Not now', 'Turn it on']);
     expect(
-      screen.getByText('1 extension is waiting to be turned on. None of it runs until you decide.')
+      screen.getByText("Flow is waiting to be turned on. It won't run until you decide.")
     ).toBeInTheDocument();
   });
 
