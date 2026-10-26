@@ -4,8 +4,11 @@
  * @module features/inbox/ui/InboxRow
  */
 import { motion } from 'motion/react';
+import { Lock, XCircle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { cn, formatCompactAge } from '@/layers/shared/lib';
+import { appRoutes, cn, formatCompactAge } from '@/layers/shared/lib';
+import { useSafeNavigate } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 
@@ -83,6 +86,33 @@ export interface InboxRowProps {
   index?: number;
 }
 
+/** The action a failing run's notice declares (`run.completed`, DOR-3123). */
+const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
+
+/**
+ * "Open schedule": takes the person to the Schedules page, filtered to the
+ * failing schedules, where the fix lives.
+ */
+function OpenScheduleAction() {
+  const navigate = useSafeNavigate();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      data-slot="inbox-row-open-schedule"
+      // Full width and 44px tall on a phone, under the text; beside it from `sm`.
+      className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
+      onClick={() => {
+        if (navigate !== null)
+          void navigate({ ...appRoutes.tasks(), search: { health: 'failing' } });
+      }}
+    >
+      Open schedule
+    </Button>
+  );
+}
+
 /**
  * One notification, drawn.
  *
@@ -113,7 +143,19 @@ export interface InboxRowProps {
  *   {@link InboxRowProps.agent}, and what opening it does.
  */
 export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) {
-  const Icon = NOTIFICATION_ICONS[notification.kind];
+  // A failing scheduled run draws the Schedules row's own marks (DOR-3123): a
+  // padlock for a refusal, a cross for a run that did not finish.
+  const Icon =
+    notification.mark === 'refused'
+      ? Lock
+      : notification.mark === 'failed'
+        ? XCircle
+        : NOTIFICATION_ICONS[notification.kind];
+  // A failing schedule's notice offers Open schedule (DOR-3123). Below `sm` its
+  // reason gets two lines and the action its own line, as the Schedules row has.
+  const opensSchedule =
+    onOpen !== undefined &&
+    notification.actions?.some((a) => a.id === OPEN_SCHEDULE_ACTION_ID) === true;
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -169,7 +211,14 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           {notification.title}
         </span>
         {notification.body !== undefined && (
-          <span className="text-muted-foreground block truncate text-xs">{notification.body}</span>
+          <span
+            className={cn(
+              'text-muted-foreground block text-xs',
+              opensSchedule ? 'line-clamp-2 sm:line-clamp-none sm:truncate' : 'truncate'
+            )}
+          >
+            {notification.body}
+          </span>
         )}
       </span>
       {/* The compact form ("5m", "2h", "3d"), not the sentence form ("45m ago").
@@ -186,7 +235,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   );
 
   return (
-    <motion.div variants={staggerVariantsFor(index)} className="min-w-0">
+    <motion.div
+      variants={staggerVariantsFor(index)}
+      className={cn(
+        'flex min-w-0 gap-1',
+        opensSchedule ? 'flex-col sm:flex-row sm:items-center' : 'items-center'
+      )}
+    >
       {onOpen ? (
         <button
           type="button"
@@ -206,6 +261,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           {body}
         </div>
       )}
+      {/* A failing schedule's one fix, beside the row rather than inside it (a
+          button cannot hold a button). Only on a row a person can act on. */}
+      {opensSchedule && <OpenScheduleAction />}
     </motion.div>
   );
 }
