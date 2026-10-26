@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // Pure policy: no file, network or Keychain access. Tests feed it plain values.
@@ -13,7 +14,12 @@ let provisionerPath = installDirectory + "/security-approve-provision"
 let sharedDirectory = "/Users/Shared/dorkos-approve"
 let maxQueueBytes = 65_536
 let maxReviewBytes = 1_048_576
-let maxBatch = 25
+/// Small enough that the whole list fits in the system confirm dialog.
+let maxBatch = 8
+/// The gate's sensitive-path pattern, copied verbatim so Dorian sees which files
+/// the gate itself treats as sensitive. Parity tests pin it to
+/// `.github/scripts/fixtures/security-path-pattern.regex`.
+let gatePathPattern = #"^(apps/server/src/services/core/(auth|turn-power|capabilities|session-relay|approvals)/|apps/server/src/services/core/mcp-tool-gate\.ts$|apps/server/src/lib/trusted-origins\.ts$|apps/server/src/services/communities/remote/|apps/server/src/env\.ts$|apps/server/src/index\.ts$|apps/server/src/lib/process/|apps/server/src/(http|routes)/|apps/server/src/services/(connectors|relay|extensions|mesh|browser|session/local-browser)/|apps/server/src/db/migrations/|drizzle/|packages/shared/src/schemas\.ts$|packages/cli/src/lib/agent-browser/|packages/(relay|mesh|a2a-gateway|extension-api|connector-providers|cloud-api)/|\.github/|scripts/(release|publish)|scripts/security-paths-check|tools/security-approve/|apps/desktop/src/preload/|apps/server/src/services/core/event-fan-out|apps/server/src/services/rooms/manage/room-membership\.ts$|apps/server/src/services/rooms/(service|awaiting)/room-awaiting\.ts$|apps/server/src/services/runtimes/(claude-code/(tool-gate/|turn-permission\.ts$|messaging/(interactive-handlers|launch-resolver|permission-mode-guard)\.ts$|mcp-tools/session-start-permission\.ts$)|shared/(permission-tool-filter|approval-verdict-block)\.ts$|opencode/messaging/approvals\.ts$|doe/approvals\.ts$)|apps/server/src/services/(spaces|identity|computers)/|apps/server/src/services/rooms/(limits|repo|turn-guards|session-bindings)/|apps/server/src/services/session/(origin|chat-messages|turn-identity)/|packages/shared/src/permissions/|packages/shared/src/(permission-semantics|config-permissions|agent-browser|agent-runtime|untrusted-text|approval-schemas|extension-approval-schemas|cloud-origin)\.ts$)|^\.agents/flow/|^\.dork/plugins/flow/config/|(^|/)package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|turn-ceiling|continuation-hold|agent-level"#
 
 struct QueueEntry: Equatable, Hashable {
   let pr: Int
@@ -57,6 +63,20 @@ func needsOwnConfirmation(_ path: String) -> Bool {
     || lower == "scripts/security-paths-check.mjs"
 }
 
+/// True when the gate itself would treat this path as security-sensitive.
+func touchesGate(_ path: String) -> Bool {
+  path.range(of: gatePathPattern, options: .regularExpression) != nil
+}
+
+/// First 12 hex of SHA-256 over the sorted `<pr> <sha>` lines, each ending in a
+/// newline. `enqueue.sh --digest` computes the same value from Security's side;
+/// Dorian approves only when the two match.
+func listDigest(_ entries: [QueueEntry]) -> String {
+  let text = Set(entries.map { "\($0.pr) \($0.sha)" }).sorted().map { $0 + "\n" }.joined()
+  let hex = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+  return String(hex.prefix(12))
+}
+
 /// GitHub text (titles, file names) is still agent-written. Strip anything that
 /// could move the cursor, recolor or reorder the terminal, then cap the length.
 func terminalSafe(_ text: String, limit: Int = 72) -> String {
@@ -69,7 +89,9 @@ func terminalSafe(_ text: String, limit: Int = 72) -> String {
   return clean.count <= limit ? clean : String(clean.prefix(limit - 1)) + "…"
 }
 
-/// A review counts only if its file is `pr-<n>.md` or `pr-<n>-….md` and names the exact SHA.
+/// A HINT, not proof: any agent can write the review folder. It filters honest
+/// mistakes; the file list Dorian reads and the list digest are the real checks.
+/// Matches only `pr-<n>.md` or `pr-<n>-….md` that names the exact SHA.
 func reviewNamesSHA(fileName: String, contents: Data, pr: Int, sha: String) -> Bool {
   guard fileName.range(of: "^pr-\(pr)([^0-9][^/]*)?\\.md$", options: .regularExpression) != nil
   else { return false }

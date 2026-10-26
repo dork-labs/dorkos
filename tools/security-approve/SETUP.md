@@ -2,63 +2,46 @@
 
 This sets up the one program that can mark a PR "Security approved". Its key lives in a separate
 Mac user, `dorkos-approver`. No agent runs as that user, so no agent can read the key, use it, or
-pop up a prompt for it.
+pop up a prompt for it. Everything that builds, signs or stores the key also happens in that
+user, because agents can change programs in your own account.
 
 It takes two short sittings, about 15 minutes in all:
 
-- **Part A (about 8 minutes):** make the user, check sudo, create the App, send two numbers.
-- **Part B (about 7 minutes):** after the PR that pins those numbers is reviewed, build, install
-  and store the key.
+- **Part A (about 7 minutes):** make the user, check sudo, create the App, send two numbers.
+- **Part B (about 8 minutes):** after Security reviews the PR that pins those numbers, build,
+  install and store the key.
 
-Type every command yourself, in Terminal. Never paste the key into a chat or a file.
+"Switch to DorkOS Approver" always means: Apple menu → **Lock Screen**, then pick **DorkOS
+Approver**. "Switch back" is the same, picking yourself. Never paste the key into a chat or a file.
 
 ## Part A
 
-### 0. Take org-owner power away from agents (1 minute, do this today)
+### 1. Make the approver user (3 minutes)
+
+System Settings → **Users & Groups** → **Add User**. Choose **Standard** (not Administrator).
+Full name `DorkOS Approver`, account name `dorkos-approver`, and a strong password you use nowhere
+else. Then switch to DorkOS Approver once, skip iCloud and every optional step, open Terminal and
+lock its home folder:
+
+```sh
+chmod 700 ~ && ls -ld ~
+```
+
+The line must start with `drwx------`. Switch back.
+
+### 2. Make sure agents cannot use sudo (30 seconds)
 
 In your own Terminal:
 
 ```sh
-gh auth refresh --remove-scopes admin:org,gist
-```
-
-### 1. Make the approver user (3 minutes)
-
-In your own Terminal. It asks for your password, then for a new password for the new user. Pick a
-strong one you use nowhere else.
-
-```sh
-sudo sysadminctl -addUser dorkos-approver -fullName "DorkOS Approver" -password -
-```
-
-Check it is **not** an admin. This must print `no`:
-
-```sh
-dseditgroup -o checkmember -m dorkos-approver admin | cut -d' ' -f1
-```
-
-Now switch to it once so macOS finishes making it: Apple menu → **Lock Screen**, then pick
-**DorkOS Approver**. Skip iCloud and every optional step. (Every "switch" below works the same way.) Then switch back to yourself and lock
-its home folder:
-
-```sh
-sudo chmod 700 /Users/dorkos-approver
-ls -ld /Users/dorkos-approver
-```
-
-The second line must start with `drwx------`.
-
-### 2. Make sure agents cannot use sudo (30 seconds)
-
-```sh
-sudo -k; sudo -n true 2>/dev/null && echo "STOP: sudo works without a password" || echo "OK"
+/usr/bin/sudo -k; /usr/bin/sudo -n /usr/bin/true 2>/dev/null && echo "STOP: sudo works without a password" || echo "OK"
 ```
 
 It must print `OK`. If it prints `STOP`, tell @dorkos-2 and stop here.
 
 ### 3. Create the App (3 minutes)
 
-Switch to **DorkOS Approver**. Open Safari there, sign in to GitHub as yourself, and go to
+Switch to DorkOS Approver. Open Safari there, sign in to GitHub as yourself, and go to
 <https://github.com/organizations/dork-labs/settings/apps/new>. Fill in only these values (they
 are the ones in `ci/security-review-app.manifest.json`):
 
@@ -79,109 +62,114 @@ Click **Create GitHub App**. Do **not** make a private key yet. Then:
 3. Get the bot's user number. In the approver's Terminal:
 
    ```sh
-   curl -s 'https://api.github.com/users/dorkos-security-review%5Bbot%5D' | grep '"id"'
+   /usr/bin/curl -s 'https://api.github.com/users/dorkos-security-review%5Bbot%5D' | /usr/bin/grep '"id"'
    ```
 
-Sign out of GitHub in that Safari, then switch back to yourself. Send @dorkos-2 the **App ID** and
-the **bot id**. Those two numbers are not secret. A small PR pins them; Security reviews it and
-names the reviewed SHA.
+Sign out of GitHub in that Safari, then switch back. Send @dorkos-2 the **App ID** and the **bot
+id**, and keep your note. A small PR pins them. Security checks both numbers against GitHub before
+it merges; you check the merged numbers match your note.
 
 ## Part B (after Security names the reviewed SHA)
 
-### 4. Build, sign and install (4 minutes)
+Everything here runs as DorkOS Approver, in its Terminal.
 
-In your own Terminal. Put the SHA Security named in the first line. Run the block in one go. Your
-Developer ID key may ask once to let `codesign` use it: click **Allow**, never **Always Allow**.
-If any line prints an error, stop and tell @dorkos-2.
+### 4. Build, sign and install (5 minutes)
+
+Paste the SHA Security named into the second line, then run the block. The `PATH` line makes sure
+only Apple's own tools run.
 
 ```sh
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 REVIEWED=paste-the-40-character-sha-here
-B=$(mktemp -d) && cd "$B" && git init -q && git fetch -q --depth 1 https://github.com/dork-labs/dorkos.git "$REVIEWED" && git checkout -q FETCH_HEAD && test "$(git rev-parse HEAD)" = "$REVIEWED" && echo "source OK"
-tools/security-approve/build.sh "$B/security-approve"
-tools/security-approve/build-provisioner.sh "$B/security-approve-provision"
-ID=$(security find-identity -v -p codesigning | grep -m1 'Developer ID Application' | sed 's/.*"\(.*\)"/\1/'); echo "$ID"
-codesign --force --options runtime --timestamp --sign "$ID" --identifier ai.dorkos.security-approve "$B/security-approve"
-codesign --force --options runtime --timestamp --sign "$ID" --identifier ai.dorkos.security-approve-provision "$B/security-approve-provision"
-sudo mkdir -p /usr/local/libexec/dorkos-approve
-sudo install -o root -g wheel -m 755 "$B/security-approve" "$B/security-approve-provision" /usr/local/libexec/dorkos-approve/
-sudo chown root:wheel /usr/local/libexec /usr/local/libexec/dorkos-approve && sudo chmod 755 /usr/local/libexec /usr/local/libexec/dorkos-approve
-sudo -k; rm -rf "$B"; cd
-codesign -dv --verbose=4 /usr/local/libexec/dorkos-approve/security-approve 2>&1 | sed -n 's/^CDHash=//p'
+B=~/build-$REVIEWED && mkdir -m 700 "$B" && cd "$B" && git init -q && git fetch -q --depth 1 https://github.com/dork-labs/dorkos.git "$REVIEWED" && git checkout -q FETCH_HEAD && test "$(git rev-parse HEAD)" = "$REVIEWED" && echo "source OK"
+tools/security-approve/build.sh "$B/security-approve" && tools/security-approve/build-provisioner.sh "$B/security-approve-provision" && echo "build OK"
+codesign --force -s - --options runtime -i ai.dorkos.security-approve "$B/security-approve"
+codesign --force -s - --options runtime -i ai.dorkos.security-approve-provision "$B/security-approve-provision"
+H=$(codesign -dv --verbose=4 "$B/security-approve" 2>&1 | sed -n 's/^CDHash=//p'); echo "$H"
 ```
 
-The last line prints the helper's fingerprint (40 letters and numbers). Copy it for step 5.
-
-Then make the shared inbox Security drops approvals into:
+If any line prints an error, stop and tell @dorkos-2. Now install. macOS asks for an
+administrator: type your own name and password into that box.
 
 ```sh
-mkdir -p /Users/Shared/dorkos-approve/reviews && chmod 755 /Users/Shared/dorkos-approve /Users/Shared/dorkos-approve/reviews
+osascript -e "do shell script \"/usr/bin/install -d -o root -g wheel -m 755 /usr/local/libexec/dorkos-approve && /usr/sbin/chown root:wheel /usr/local/libexec && /bin/chmod 755 /usr/local/libexec && /usr/bin/install -o root -g wheel -m 755 $B/security-approve $B/security-approve-provision /usr/local/libexec/dorkos-approve/\" with administrator privileges"
+test "$H" = "$(codesign -dv --verbose=4 /usr/local/libexec/dorkos-approve/security-approve 2>&1 | sed -n 's/^CDHash=//p')" && echo "installed build matches" || echo "STOP: installed build differs"
+echo 'export PATH=/usr/local/libexec/dorkos-approve:/usr/bin:/bin:/usr/sbin:/sbin' >> ~/.zshrc
 ```
+
+It must print `installed build matches`.
 
 ### 5. Store the key (3 minutes)
 
-Switch to **DorkOS Approver**. In Safari, sign in to GitHub, open the App's settings page, and
-click **Generate a private key**. It downloads to that user's Downloads folder. Sign out of
-GitHub. Then, in the approver's Terminal (put the fingerprint from step 4 in the second line):
+In Safari (still DorkOS Approver), sign in to GitHub, open the App's settings page and click
+**Generate a private key**. It downloads to this user's Downloads folder. Sign out of GitHub. Then,
+in the same Terminal:
 
 ```sh
-echo 'export PATH="/usr/local/libexec/dorkos-approve:$PATH"' >> ~/.zshrc && export PATH="/usr/local/libexec/dorkos-approve:$PATH"
-security-approve-provision ~/Library/Keychains/login.keychain-db paste-the-fingerprint-here
+/usr/local/libexec/dorkos-approve/security-approve-provision ~/Library/Keychains/login.keychain-db "$H"
 ```
 
-Confirm the password or Touch ID prompt. When it says "Paste App private PEM", run nothing else:
-open the downloaded `.pem` file in TextEdit, copy all of it, paste it into Terminal, press
-Return, then Ctrl-D. Then delete the file and clear the clipboard:
+Confirm the password or Touch ID prompt. When it says "Paste App private PEM": open the downloaded
+`.pem` file in TextEdit, copy all of it, paste it into Terminal, press Return, then Ctrl-D. Then
+let only this exact build read the key (it asks for this user's password), delete the file and
+clear the clipboard:
 
 ```sh
-rm ~/Downloads/dorkos-security-review.*.private-key.pem; pbcopy </dev/null
+security set-generic-password-partition-list -s ai.dorkos.security-review -a github-app-private-key -S "cdhash:$H" ~/Library/Keychains/login.keychain-db
+rm ~/Downloads/dorkos-security-review.*.private-key.pem; pbcopy </dev/null; cd; rm -rf "$B"
+/usr/local/libexec/dorkos-approve/security-approve --batch
 ```
 
-Check it works (it should say "Nothing to approve." or list PRs):
+The last line should say "Nothing to approve." Switch back. Setup is done.
 
-```sh
-security-approve --batch
-```
+## Daily use (about 2 minutes, twice a day)
 
-Switch back to yourself. Setup is done.
+Security queues each reviewed head with `tools/security-approve/enqueue.sh <pr> <sha>` and posts
+the **list digest** (12 letters and numbers) in #dorkos. Queueing approves nothing.
 
-## Daily use (about 1 minute, twice a day)
-
-Security queues each reviewed PR head with `tools/security-approve/enqueue.sh <pr> <sha>`. That
-only adds a line to a list. It approves nothing.
-
-To approve the list: switch to **DorkOS Approver**, open Terminal, and run:
+Switch to DorkOS Approver, open Terminal, and run:
 
 ```sh
 security-approve --batch
 ```
 
-It reads the list, then asks GitHub for each PR's title, current head and changed files. It shows
-you only what GitHub says. It leaves out any PR whose head moved, that has no Security review for
-that exact head, or that is already approved. Read the list, then confirm **one** password or
-Touch ID prompt. Right before each post it checks the head again and skips any that moved.
+1. **Check the digest.** The top line shows `List digest: …`. If it is not exactly the digest
+   Security posted, stop: someone else added a line. Press Ctrl-C.
+2. **Read every PR.** Each shows its title, full SHA and changed files, all straight from GitHub.
+   `*` marks a file the security gate treats as sensitive. Stop if anything looks unlike what
+   Security described.
+3. **Confirm once.** The prompt names the digest and every PR. Right before each post the program
+   checks the head again and skips any that moved.
+
+It leaves out PRs that are closed, not aimed at `main`, moved since Security queued them, already
+approved, or have no Security review file for that exact head. That last check only catches honest
+mistakes: agents can write that file, so your reading in step 2 is the real check.
 
 Some PRs are never in the batch: anything touching `.github/`, `CODEOWNERS`, rulesets or required
-checks, or this approver. The batch prints the command for each one. Run it, read the file list
-it shows (lines starting with `!` are the sensitive files), and confirm that PR on its own:
+checks, or this approver, and any PR with 300 or more files. The batch prints the command for each
+one. Run it, read the files it shows (`!` marks the ones that kept it out of the batch), and
+confirm that PR on its own:
 
 ```sh
 security-approve 1234 0123456789abcdef0123456789abcdef01234567
 ```
 
-Switch back to yourself when done.
+Switch back when done. Security then clears the queue.
 
 ## After a rebuild
 
-Every new build has a new fingerprint. Repeat step 4 from the newly reviewed SHA, then, as
-**DorkOS Approver**:
+Every new build has a new fingerprint. As DorkOS Approver, repeat step 4 from the newly reviewed
+SHA, then:
 
 ```sh
-security-approve-provision --repin ~/Library/Keychains/login.keychain-db paste-the-new-fingerprint-here
+/usr/local/libexec/dorkos-approve/security-approve-provision --repin ~/Library/Keychains/login.keychain-db "$H"
+security set-generic-password-partition-list -s ai.dorkos.security-review -a github-app-private-key -S "cdhash:$H" ~/Library/Keychains/login.keychain-db
+cd; rm -rf "$B"
 ```
 
-This re-points the key at the new build without exporting it.
+This points the key at the new build without exporting it.
 
 ## What this does not fix
 
-Agents still act on GitHub as you. Step 0 removes org-owner power from their token, but your
-signed-in browser can still do anything you can.
+Agents still act on GitHub as you, and your signed-in browser can do anything you can. This page
+protects the approval key only.

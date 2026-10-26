@@ -1,6 +1,6 @@
 import Foundation
 
-// Fake GitHub routed by path. No network, no Keychain, no signing key.
+// Fake GitHub routed by method and path. No network, no Keychain, no signing key.
 
 func sha(_ character: Character) -> String { String(repeating: character, count: 40) }
 
@@ -25,50 +25,63 @@ final class FakeGitHub {
     var title = "A safe change"
     var state = "open"
     var repo = "dork-labs/dorkos"
-    var files: [[String: Any]] = [["filename": "apps/client/src/app.ts", "additions": 3, "deletions": 1]]
-    var changedFiles: Int? = nil
+    var baseRef = "main"
   }
+  let mainSHA = sha("9")
   var pulls: [Int: Pull] = [:]
+  /// The immutable diff main...<sha>. Keyed by SHA, so a moved head cannot change it.
+  var compareFiles: [String: [[String: Any]]] = [:]
+  var compareBase: String? = nil
   var statuses: [String: [[String: Any]]] = [:]
   var appID = 123
   var installationAppID = 123
   var token: String? = "mock-installation-token"
   var creatorID = 789
-  var calls: [(path: String, token: String?, body: [String: Any]?)] = []
+  var calls: [(method: String, path: String, token: String?, body: [String: Any]?)] = []
   var signs = 0
   var signedPayload = Data()
   var confirms: [String] = []
   var shown: [String] = []
   var refuseConfirm = false
-  var reviewedPRs: Set<Int> = []
+  var hinted: Set<Int> = []
 
-  var posts: [String] { calls.filter { $0.body != nil && $0.path.contains("/statuses/") }.map(\.path) }
+  var posts: [String] { calls.filter { $0.method == "POST" && $0.path.contains("/statuses/") }.map(\.path) }
+  var revokes: Int { calls.filter { $0.method == "DELETE" && $0.path == "/installation/token" }.count }
+  var display: String { shown.joined(separator: "\n") }
 
-  func transport(_ path: String, _ token: String?, _ body: [String: Any]?) async throws
-    -> WireResponse
+  func defaultFiles() -> [[String: Any]] {
+    [["filename": "apps/client/src/app.ts", "additions": 3, "deletions": 1]]
+  }
+
+  func transport(_ method: String, _ path: String, _ token: String?, _ body: [String: Any]?)
+    async throws -> WireResponse
   {
-    calls.append((path, token, body))
+    calls.append((method, path, token, body))
     let pullPrefix = "/repos/dork-labs/dorkos/pulls/"
+    let comparePrefix = "/repos/dork-labs/dorkos/compare/"
     var value: Any = [:]
-    if path.hasPrefix(pullPrefix) {
-      let rest = path.dropFirst(pullPrefix.count)
-      let number = Int(rest.prefix { $0.isNumber })!
+    if method == "DELETE", path == "/installation/token" {
+      return WireResponse(status: 204, data: Data())
+    } else if path.hasPrefix(pullPrefix) {
+      let number = Int(path.dropFirst(pullPrefix.count))!
       guard var pull = pulls[number] else { return WireResponse(status: 404, data: Data("{}".utf8)) }
-      if rest.contains("/files") {
-        let page = Int(path.components(separatedBy: "page=").last!)!
-        value = Array(pull.files.dropFirst((page - 1) * 100).prefix(100))
-      } else {
-        let head = pull.heads.count > 1 ? pull.heads.removeFirst() : pull.heads[0]
-        pulls[number] = pull
-        value = [
-          "state": pull.state, "title": pull.title, "head": ["sha": head],
-          "base": ["repo": ["full_name": pull.repo]],
-          "changed_files": pull.changedFiles ?? pull.files.count,
-        ]
-      }
+      let head = pull.heads.count > 1 ? pull.heads.removeFirst() : pull.heads[0]
+      pulls[number] = pull
+      value = [
+        "state": pull.state, "title": pull.title, "head": ["sha": head],
+        "base": ["ref": pull.baseRef, "repo": ["full_name": pull.repo]],
+      ]
+    } else if path == "/repos/dork-labs/dorkos/git/ref/heads/main" {
+      value = ["object": ["sha": mainSHA]]
+    } else if path.hasPrefix(comparePrefix) {
+      let range = path.dropFirst(comparePrefix.count).components(separatedBy: "...")
+      try require(range[0] == mainSHA, "compare starts at main's head")
+      value = [
+        "base_commit": ["sha": compareBase ?? range[0]], "merge_base_commit": ["sha": sha("8")],
+        "files": compareFiles[range[1]] ?? defaultFiles(),
+      ]
     } else if path.hasPrefix("/repos/dork-labs/dorkos/commits/") {
-      let commit = path.components(separatedBy: "/")[5]
-      value = statuses[commit] ?? []
+      value = statuses[path.components(separatedBy: "/")[5]] ?? []
     } else if path == "/app" {
       value = ["id": appID]
     } else if path == "/repos/dork-labs/dorkos/installation" {
@@ -87,7 +100,7 @@ final class FakeGitHub {
     try await approve(
       pr: String(pr), sha: head, appID: appID, botID: botID,
       now: Date(timeIntervalSince1970: 1_700_000_000), transport: transport,
-      reviewed: { pr, _ in self.reviewedPRs.contains(pr) }, show: { self.shown.append($0) },
+      reviewHint: { pr, _ in self.hinted.contains(pr) }, show: { self.shown.append($0) },
       confirm: confirm, signer: signer)
   }
 
@@ -95,7 +108,7 @@ final class FakeGitHub {
     try await approveBatch(
       queue: parseQueue(Data(queue.utf8)), appID: 123, botID: 789,
       now: Date(timeIntervalSince1970: 1_700_000_000), transport: transport,
-      reviewed: { pr, _ in self.reviewedPRs.contains(pr) }, show: { self.shown.append($0) },
+      reviewHint: { pr, _ in self.hinted.contains(pr) }, show: { self.shown.append($0) },
       confirm: confirm, signer: signer)
   }
 

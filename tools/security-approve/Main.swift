@@ -28,14 +28,14 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
       let session = URLSession(
         configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
       defer { session.invalidateAndCancel() }
-      let transport: Transport = { path, token, body in
+      let transport: Transport = { method, path, token, body in
         var request = URLRequest(url: URL(string: "https://api.github.com" + path)!)
+        request.httpMethod = method
         request.timeoutInterval = 30
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
         if let body {
-          request.httpMethod = "POST"
           request.httpBody = try json(body)
           request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
@@ -49,17 +49,17 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         guard allowed else { throw ApprovalError(message: "Owner authentication refused") }
       }
       let show: Show = { print($0) }
-      let isReviewed: Reviewed = { reviewed(pr: $0, sha: $1) }
+      let hint: ReviewHint = { reviewHint(pr: $0, sha: $1) }
       let signer: Signer = { try signJWT($0) }
       if batch {
         _ = try await approveBatch(
           queue: try readQueue(), appID: securityAppID, botID: securityBotUserID,
-          transport: transport, reviewed: isReviewed, show: show, confirm: confirm, signer: signer)
+          transport: transport, reviewHint: hint, show: show, confirm: confirm, signer: signer)
       } else {
         print(
           try await approve(
             pr: args[1], sha: args[2], appID: securityAppID, botID: securityBotUserID,
-            transport: transport, reviewed: isReviewed, show: show, confirm: confirm,
+            transport: transport, reviewHint: hint, show: show, confirm: confirm,
             signer: signer))
       }
     } catch let error as ApprovalError {

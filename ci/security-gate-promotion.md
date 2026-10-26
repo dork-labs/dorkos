@@ -120,7 +120,7 @@ external signer, arbitrary repository or API URL is accepted. Redirects refuse.
 The key is never printed or written as plaintext. The helper cannot broaden a
 Keychain ACL: a refused read stays refused without an access prompt.
 
-### Dorian's signing and exact-hash provisioning
+### Building, signing and provisioning (all as dorkos-approver)
 
 The step-by-step setup is [`tools/security-approve/SETUP.md`](../tools/security-approve/SETUP.md).
 Both programs refuse to run unless all of these hold, checked before they read any argument,
@@ -138,29 +138,48 @@ The provisioner validates the helper against `cdhash H"<printed-hash>"`, asks fo
 authentication naming that hash, then reads the PEM from a terminal with echo disabled. Import
 and conversion happen in memory. The new generic-password item is `ai.dorkos.security-review` /
 `github-app-private-key`; existing items are never overwritten. Its trusted application
-requirement is the exact cdhash, not the certificate, team or bundle identifier. Signing the
-provisioner and helper with the same identity lets the Keychain's additional partition gate admit
-the intended helper. No partition broadening command is part of production setup. Every rebuild
-changes the hash; `--repin` re-points the item without exporting the key.
+requirement is the exact cdhash, not the certificate, team or bundle identifier.
+
+Nothing is built, signed or installed in Dorian's session, where agents control `PATH`, the
+toolchain shims and `$TMPDIR`. As `dorkos-approver`, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`
+set outright, Dorian fetches the reviewed SHA into a 0700 folder, builds, signs ad-hoc with
+hardened runtime (`codesign --force -s - --options runtime`), records the helper's CDHash,
+installs through an `osascript … with administrator privileges` prompt in that session, and
+checks the installed binary prints the same CDHash. There is no Developer ID, timestamp or
+`security find-identity` step, and no Keychain prompt in Dorian's session. With no signing team,
+the Keychain's partition gate is pinned to `cdhash:<helper>` alone with
+`security set-generic-password-partition-list`, run by Dorian as the approver; this narrows the
+item, it never broadens it. Every rebuild changes the hash; `--repin` plus the same partition
+command re-point the item without exporting the key.
 
 ### Batch approval
 
-Security queues `<pr> <40-hex-sha>` lines with `tools/security-approve/enqueue.sh`, only when
-its `reviews/pr-<n>*.md` names that SHA; the script copies that review into
-`/Users/Shared/dorkos-approve/reviews/` because the approver cannot read Dorian's home. The queue
-and the copies are agent-written and trusted for nothing: `security-approve --batch` accepts only
-well-formed lines (others are counted, never shown), builds every line it displays from GitHub
-(number, title, head, changed files, with terminal control and bidi characters stripped), and
-drops any PR that is closed, has moved off the queued head, lacks a review copy naming that SHA,
-or already carries the bot's success. One owner authentication, naming every PR and SHA, covers
-the list; one App token is minted. Each head is rechecked right before and after its post, and a
-moved head is skipped.
+Security queues `<pr> <40-hex-sha>` lines with `tools/security-approve/enqueue.sh` (at most 8),
+only when its `reviews/pr-<n>*.md` names that SHA, and posts the **list digest** the script
+prints: the first 12 hex of SHA-256 over the sorted, distinct, well-formed lines. The script
+copies the review into `/Users/Shared/dorkos-approve/reviews/` because the approver cannot read
+Dorian's home. The queue and the copies are agent-written and trusted for nothing. The review
+copy is a **hint** that filters honest mistakes, not a control: any agent can write one.
+
+`security-approve --batch` accepts only well-formed lines (others are counted, never shown) and
+prints the same digest first; Dorian stops unless it equals Security's post, so a line slipped in
+by anyone else is visible. For every PR it shows title, full head SHA and the changed files,
+flagging `!` never-batch paths and `*` paths the gate pattern marks sensitive (the helper carries a
+verbatim copy, pinned to `.github/scripts/fixtures/security-path-pattern.regex` by tests on both
+sides). Everything shown is built from GitHub with terminal control and bidi characters stripped.
+The file list comes from immutable SHAs: `git/ref/heads/main` gives B, then `compare/B...<sha>`
+(base commit must equal B); a force-push during the run cannot change it. It drops any PR that is
+closed, not based on `main`, moved off the queued head, without a review hint, or already carrying
+the bot's success. One owner authentication, naming the digest and every PR, covers the list; one
+App token is minted. Each head is rechecked with that token right before and after its post, a
+moved head is skipped, and the token is revoked (`DELETE /installation/token`) after the last post.
 
 Never batched, each needing `security-approve <pr> <sha>` with its own confirmation and its file
 list shown: any change or rename under `.github/` (workflows, gate scripts, `CODEOWNERS`), any
 `CODEOWNERS` file, `tools/security-approve/**`, `ci/security-*`, `ci/required-checks.json`,
-`packages/ci-steward/src/rulesets.ts`, `scripts/security-paths-check.mjs`, and any PR whose file
-list GitHub could not return in full. Single mode also requires the review copy.
+`packages/ci-steward/src/rulesets.ts`, `scripts/security-paths-check.mjs`, and any comparison at
+GitHub's 300-file cap or with duplicate names. Single mode uses the same base, diff, hint, head
+checks and revoke.
 
 ### Platform dependency and proof
 
@@ -197,8 +216,9 @@ so the exact-hash decrypt ACL is the deciding restriction. The approved binary
 reads, the different binary is refused, the stripped copy cannot read (macOS
 kills it before the read on arm64), and a final positive control reads. The test
 removes its Keychain and files. It never reads login items. The certificate case
-proves that a shared signing certificate does not confer the read grant. Real
-Developer ID provisioning remains Dorian's attended proof.
+proves that a shared signing certificate does not confer the read grant. The ad-hoc case then
+runs the production partition step (pinned to the helper's cdhash alone): the helper reads and
+the other binary is refused. Real provisioning remains Dorian's attended proof.
 
 No real App/key/approval has been exercised. Hosted required-workflow
 `merge_group`, multi-entry queue-chain and signed production provisioning proofs

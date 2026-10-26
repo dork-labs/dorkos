@@ -36,8 +36,8 @@ func readQueue(directory: String = sharedDirectory) throws -> (entries: [QueueEn
   return parseQueue(try readUntrusted(root + "/queue", limit: maxQueueBytes))
 }
 
-/// True only if a copied Security review in the shared inbox names this exact SHA.
-func reviewed(pr: Int, sha: String, directory: String = sharedDirectory) -> Bool {
+/// A hint, not proof: true if an agent-writable review copy names this exact SHA.
+func reviewHint(pr: Int, sha: String, directory: String = sharedDirectory) -> Bool {
   guard let root = try? checkedDirectory(directory + "/reviews"),
     let names = try? FileManager.default.contentsOfDirectory(atPath: root)
   else { return false }

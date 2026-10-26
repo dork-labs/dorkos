@@ -89,6 +89,13 @@ done
 echo 'PASS: provisioning policy refuses non-runtime and forbidden entitlements, accepts a clean runtime helper'
 xcrun clang -Wno-deprecated-declarations "$here/ExactAccess.c" "$here/tests/CreateFixture.c" -framework Security -framework CoreFoundation -o "$tmp/create"
 "$tmp/create" "$tmp/disposable.keychain-db" "$tmp/allowed" "$allowed_hash"
+# Production is ad-hoc signed (no team), so the partition list may not admit the helper
+# by default. Record which way it goes; SETUP pins the partition either way.
+if "$tmp/allowed" "$tmp/disposable.keychain-db" >/dev/null 2>&1; then
+  echo "INFO ($mode): pinned helper reads before any partition change"
+else
+  echo "INFO ($mode): pinned helper needs the partition pinned to its cdhash"
+fi
 # Permit BOTH hashes through the additional partition gate. Only the explicit
 # decrypt ACL's cdhash requirement can distinguish them in the test below.
 /usr/bin/security set-generic-password-partition-list -a disposable -s ai.dorkos.security-review-test -S "cdhash:$allowed_hash,cdhash:$other_hash" -k disposable-keychain-password "$tmp/disposable.keychain-db" >"$tmp/partition.log" 2>&1 || { cat "$tmp/partition.log"; exit 1; }
@@ -100,3 +107,8 @@ if "$tmp/stripped" "$tmp/disposable.keychain-db"; then echo 'FAIL: stripped bina
 # Positive control after both denials: a locked/missing item is not a passing test.
 "$tmp/allowed" "$tmp/disposable.keychain-db"
 echo "PASS ($mode): exact cdhash allowed; same-identity different binary and stripped copy refused"
+# The production step from SETUP.md: pin the partition to the helper's cdhash alone.
+/usr/bin/security set-generic-password-partition-list -a disposable -s ai.dorkos.security-review-test -S "cdhash:$allowed_hash" -k disposable-keychain-password "$tmp/disposable.keychain-db" >"$tmp/partition.log" 2>&1 || { cat "$tmp/partition.log"; exit 1; }
+"$tmp/allowed" "$tmp/disposable.keychain-db"
+if "$tmp/other" "$tmp/disposable.keychain-db"; then echo 'FAIL: different binary read after pinning' >&2; exit 1; fi
+echo "PASS ($mode): partition pinned to the helper cdhash alone; helper reads, other refused"

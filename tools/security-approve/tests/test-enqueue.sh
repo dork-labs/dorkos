@@ -23,4 +23,18 @@ if "$here/enqueue.sh" "12 $a
 [ "$(wc -l <"$tmp/shared/queue" | tr -d ' ')" = 1 ] || fail 'refusals left the queue untouched'
 ln -s "$tmp/reviews/pr-12-batch.md" "$tmp/reviews/pr-13.md"
 if "$here/enqueue.sh" 13 "$a" >/dev/null 2>&1; then fail 'accepted a symlinked review'; fi
-echo 'Enqueue tests passed: format, review-names-SHA, dedupe, copy, refusals'
+# The digest must equal the helper's (PolicyTests pins the same value for these two lines).
+printf 'Reviewed head %s\n' "$b" >"$tmp/reviews/pr-2.md"
+: >"$tmp/shared/queue"
+"$here/enqueue.sh" 2 "$b" >/dev/null
+"$here/enqueue.sh" 1 "$a" >/dev/null 2>&1 || true
+printf '1 %s\n' "$a" >>"$tmp/shared/queue"
+printf 'junk line\n' >>"$tmp/shared/queue"
+"$here/enqueue.sh" --digest | grep -q 'List digest: c0c79cf81e8d (2 queued)' || fail 'digest matches the helper'
+# Cap of 8 distinct entries.
+: >"$tmp/shared/queue"
+for n in 1 2 3 4 5 6 7 8; do printf '%s %s\n' "$n" "$a" >>"$tmp/shared/queue"; done
+if "$here/enqueue.sh" 12 "$a" >/dev/null 2>&1; then fail 'queued past the cap'; fi
+"$here/enqueue.sh" --clear >/dev/null
+[ ! -s "$tmp/shared/queue" ] || fail 'clear empties the queue'
+echo 'Enqueue tests passed: format, review-names-SHA, dedupe, copy, refusals, digest, cap, clear'

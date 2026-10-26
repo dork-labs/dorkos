@@ -5,12 +5,14 @@ struct WireResponse {
   let status: Int
   let data: Data
 }
-typealias Transport = (String, String?, [String: Any]?) async throws -> WireResponse
+/// (method, path, token, JSON body). Only the reviewed binary picks the host.
+typealias Transport = (String, String, String?, [String: Any]?) async throws -> WireResponse
 typealias Signer = (Data) async throws -> Data
 /// Asks the person to confirm; throws if they refuse. Shown reason names every PR and SHA.
 typealias Confirm = (String) async throws -> Void
 typealias Show = (String) -> Void
-typealias Reviewed = (Int, String) -> Bool
+/// A hint, not proof: whether an agent-writable review copy names this exact SHA.
+typealias ReviewHint = (Int, String) -> Bool
 
 func base64url(_ data: Data) -> String {
   data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
@@ -22,91 +24,104 @@ func json(_ object: [String: Any]) throws -> Data {
 
 let repoName = "dork-labs/dorkos"
 let repoPath = "/repos/dork-labs/dorkos"
-/// GitHub's files list stops at 3,000; past that, completeness is unknown.
-let maxListedFiles = 3000
+/// The compare endpoint returns at most 300 files; at the cap, completeness is unknown.
+let maxComparedFiles = 300
 
 struct HeadMoved: Error {}
+
+func isFullSHA(_ value: Any?) -> Bool {
+  (value as? String)?.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil
+}
 
 struct ChangedFile {
   let path: String
   let previous: String?
   let additions: Int
   let deletions: Int
+  var paths: [String] { [path] + (previous.map { [$0] } ?? []) }
 }
 
 /// Everything the person sees is built here, from GitHub, never from queue text.
+/// The file list is the immutable diff from main's head to this exact SHA.
 struct Candidate {
   let pr: Int
   let sha: String
   let title: String
   let files: [ChangedFile]
   let complete: Bool
-  var needsOwn: Bool {
-    !complete || files.contains { needsOwnConfirmation($0.path) || $0.previous.map(needsOwnConfirmation) == true }
-  }
+  var needsOwn: Bool { !complete || files.contains { $0.paths.contains(where: needsOwnConfirmation) } }
 }
 
 /// Only the reviewed binary config selects an App, repository or endpoint.
 struct GitHub {
   let transport: Transport
 
-  func value(_ path: String, _ token: String? = nil, _ body: [String: Any]? = nil) async throws
-    -> Any
+  func send(_ method: String, _ path: String, _ token: String? = nil, _ body: [String: Any]? = nil)
+    async throws -> Data
   {
-    let response = try await transport(path, token, body)
+    let response = try await transport(method, path, token, body)
     guard (200..<300).contains(response.status) else {
       throw ApprovalError(message: "GitHub request failed; no response body is logged")
     }
-    return try JSONSerialization.jsonObject(with: response.data)
+    return response.data
   }
   func object(_ path: String, _ token: String? = nil, _ body: [String: Any]? = nil) async throws
     -> [String: Any]
   {
-    guard let value = try await value(path, token, body) as? [String: Any] else {
+    let data = try await send(body == nil ? "GET" : "POST", path, token, body)
+    guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw ApprovalError(message: "GitHub returned an unexpected shape")
     }
     return value
   }
   func list(_ path: String) async throws -> [[String: Any]] {
-    guard let value = try await value(path) as? [[String: Any]] else {
-      throw ApprovalError(message: "GitHub returned an unexpected shape")
-    }
+    guard let value = try JSONSerialization.jsonObject(with: try await send("GET", path))
+      as? [[String: Any]]
+    else { throw ApprovalError(message: "GitHub returned an unexpected shape") }
     return value
   }
 
-  /// Open, still at this exact head, and based in this repository; else `HeadMoved`.
-  func head(_ pr: Int, _ sha: String) async throws -> [String: Any] {
-    let value = try await object("\(repoPath)/pulls/\(pr)")
+  /// Open, based on this repository's `main`, and still at this exact head; else `HeadMoved`.
+  /// A status belongs to a commit, so approving a head shown against another base would
+  /// approve it for a PR into main too.
+  func head(_ pr: Int, _ sha: String, token: String? = nil) async throws -> [String: Any] {
+    let value = try await object("\(repoPath)/pulls/\(pr)", token)
     let base = value["base"] as? [String: Any]
     guard value["state"] as? String == "open",
       (value["head"] as? [String: Any])?["sha"] as? String == sha,
+      base?["ref"] as? String == "main",
       (base?["repo"] as? [String: Any])?["full_name"] as? String == repoName
     else { throw HeadMoved() }
     return value
   }
 
+  /// The diff Dorian reads comes from immutable SHAs (main's head ... this head), never
+  /// from the PR's live files list, so a force-push mid-run cannot change what is shown.
   func candidate(_ pr: Int, _ sha: String) async throws -> Candidate {
     let pull = try await head(pr, sha)
-    let expected = pull["changed_files"] as? Int ?? -1
-    var files: [ChangedFile] = []
-    var page = 1
-    while files.count < expected, files.count < maxListedFiles, page <= 30 {
-      let batch = try await list("\(repoPath)/pulls/\(pr)/files?per_page=100&page=\(page)")
-      if batch.isEmpty { break }
-      for file in batch {
-        guard let path = file["filename"] as? String else {
-          throw ApprovalError(message: "GitHub returned a file without a name")
-        }
-        files.append(
-          ChangedFile(
-            path: path, previous: file["previous_filename"] as? String,
-            additions: file["additions"] as? Int ?? 0, deletions: file["deletions"] as? Int ?? 0))
-      }
-      page += 1
+    let ref = try await object("\(repoPath)/git/ref/heads/main")
+    guard let main = (ref["object"] as? [String: Any])?["sha"] as? String, isFullSHA(main) else {
+      throw ApprovalError(message: "Cannot read main's head")
     }
+    let comparison = try await object("\(repoPath)/compare/\(main)...\(sha)")
+    guard (comparison["base_commit"] as? [String: Any])?["sha"] as? String == main,
+      isFullSHA((comparison["merge_base_commit"] as? [String: Any])?["sha"]),
+      let raw = comparison["files"] as? [[String: Any]]
+    else { throw ApprovalError(message: "GitHub returned an unusable comparison") }
+    var files: [ChangedFile] = []
+    for file in raw {
+      guard let path = file["filename"] as? String, !path.isEmpty,
+        file["previous_filename"] == nil || file["previous_filename"] is String
+      else { throw ApprovalError(message: "GitHub returned a file without a name") }
+      files.append(
+        ChangedFile(
+          path: path, previous: file["previous_filename"] as? String,
+          additions: file["additions"] as? Int ?? 0, deletions: file["deletions"] as? Int ?? 0))
+    }
+    let unique = Set(files.map(\.path)).count == files.count
     return Candidate(
       pr: pr, sha: sha, title: terminalSafe(pull["title"] as? String ?? ""), files: files,
-      complete: expected >= 0 && expected < maxListedFiles && files.count == expected)
+      complete: unique && files.count < maxComparedFiles)
   }
 
   /// True when the newest `security-review` status on this SHA is the bot's success.
@@ -141,9 +156,10 @@ struct GitHub {
     return token
   }
 
-  /// Rechecks the head right before and after posting. A moved head throws `HeadMoved`.
+  /// Rechecks the head (with the token, off the shared rate limit) right before and
+  /// after posting. A moved head throws `HeadMoved`.
   func post(_ pr: Int, _ sha: String, token: String, botID: Int) async throws {
-    _ = try await head(pr, sha)
+    _ = try await head(pr, sha, token: token)
     let status = try await object(
       "\(repoPath)/statuses/\(sha)", token,
       [
@@ -154,7 +170,14 @@ struct GitHub {
       status["state"] as? String == "success",
       (status["creator"] as? [String: Any])?["id"] as? Int == botID
     else { throw ApprovalError(message: "Posted status did not confirm pinned bot identity") }
-    _ = try await head(pr, sha)
+    _ = try await head(pr, sha, token: token)
+  }
+
+  /// Ends the token now instead of letting it live out its hour. Never fails the run.
+  func revoke(_ token: String, show: Show) async {
+    do { _ = try await send("DELETE", "/installation/token", token) } catch {
+      show("Could not revoke the App token; it expires within an hour.")
+    }
   }
 }
 
@@ -164,25 +187,30 @@ func checkPins(appID: Int, botID: Int) throws {
   }
 }
 
+/// `!` never batched (gate, owners or approver files); `*` the gate treats it as sensitive.
 func diffSummary(_ candidate: Candidate) -> String {
-  var lines = ["PR #\(candidate.pr) \(candidate.title)", "Head \(candidate.sha)"]
+  var lines = ["PR #\(candidate.pr) \(candidate.title)", "  head \(candidate.sha)"]
   lines.append(
     candidate.complete
-      ? "\(candidate.files.count) files changed:" : "File list incomplete; shown files:")
+      ? "  \(candidate.files.count) files changed against main:"
+      : "  File list incomplete (300+ files or duplicates); shown files:")
   for file in candidate.files.prefix(60) {
-    let flag = needsOwnConfirmation(file.path) ? "!" : " "
+    let flag =
+      file.paths.contains(where: needsOwnConfirmation)
+      ? "!" : file.paths.contains(where: touchesGate) ? "*" : " "
     let renamed = file.previous.map { " (was \(terminalSafe($0, limit: 60)))" } ?? ""
     lines.append(
-      "\(flag) +\(file.additions) -\(file.deletions) \(terminalSafe(file.path, limit: 100))\(renamed)")
+      "  \(flag) +\(file.additions) -\(file.deletions) \(terminalSafe(file.path, limit: 100))\(renamed)"
+    )
   }
-  if candidate.files.count > 60 { lines.append("  … \(candidate.files.count - 60) more") }
+  if candidate.files.count > 60 { lines.append("    … \(candidate.files.count - 60) more") }
   return lines.joined(separator: "\n")
 }
 
 /// One PR, any paths, with its diff summary shown and its own confirmation.
 func approve(
   pr: String, sha: String, appID: Int, botID: Int, now: Date = Date(),
-  transport: @escaping Transport, reviewed: Reviewed, show: Show, confirm: Confirm,
+  transport: @escaping Transport, reviewHint: ReviewHint, show: Show, confirm: Confirm,
   signer: Signer
 ) async throws -> String {
   guard pr.range(of: "^[1-9][0-9]{0,6}$", options: .regularExpression) != nil, let number = Int(pr),
@@ -192,15 +220,21 @@ func approve(
   let github = GitHub(transport: transport)
   do {
     let candidate = try await github.candidate(number, sha)
-    guard reviewed(number, sha) else {
-      throw ApprovalError(message: "No Security review names this exact SHA")
+    guard reviewHint(number, sha) else {
+      throw ApprovalError(message: "No Security review copy names this exact SHA")
     }
     show(diffSummary(candidate))
     try await confirm("Approve dork-labs/dorkos PR #\(number) at \(sha)")
     let token = try await github.installationToken(appID: appID, now: now, signer: signer)
-    try await github.post(number, sha, token: token, botID: botID)
+    do {
+      try await github.post(number, sha, token: token, botID: botID)
+    } catch {
+      await github.revoke(token, show: show)
+      throw error
+    }
+    await github.revoke(token, show: show)
   } catch is HeadMoved {
-    throw ApprovalError(message: "PR head moved, is closed, or belongs elsewhere")
+    throw ApprovalError(message: "PR head moved, is closed, or is not based on main")
   }
   return sha
 }
@@ -211,13 +245,16 @@ struct BatchReport {
 }
 
 /// Many PRs, one confirmation. Never includes a PR that needs its own confirmation.
+/// The digest covers every well-formed queue line, so a line an agent slipped in
+/// changes it, and Dorian stops when it differs from the one Security posted.
 func approveBatch(
   queue: (entries: [QueueEntry], refused: Int), appID: Int, botID: Int, now: Date = Date(),
-  transport: @escaping Transport, reviewed: Reviewed, show: Show, confirm: Confirm,
+  transport: @escaping Transport, reviewHint: ReviewHint, show: Show, confirm: Confirm,
   signer: Signer
 ) async throws -> BatchReport {
   try checkPins(appID: appID, botID: botID)
   let github = GitHub(transport: transport)
+  let digest = listDigest(queue.entries)
   var report = BatchReport()
   var ready: [Candidate] = []
   for entry in queue.entries {
@@ -227,8 +264,8 @@ func approveBatch(
         continue
       }
       let candidate = try await github.candidate(entry.pr, entry.sha)
-      if !reviewed(entry.pr, entry.sha) {
-        report.dropped.append((entry.pr, "no Security review names this SHA"))
+      if !reviewHint(entry.pr, entry.sha) {
+        report.dropped.append((entry.pr, "no Security review copy names this SHA"))
       } else if candidate.needsOwn {
         report.dropped.append(
           (entry.pr, "needs its own confirm: security-approve \(entry.pr) \(entry.sha)"))
@@ -236,20 +273,20 @@ func approveBatch(
         ready.append(candidate)
       }
     } catch is HeadMoved {
-      report.dropped.append((entry.pr, "head moved or PR closed"))
+      report.dropped.append((entry.pr, "head moved, PR closed, or not based on main"))
     }
   }
-  var lines: [String] = []
-  if queue.refused > 0 { lines.append("Ignored \(queue.refused) malformed queue lines.") }
-  for (pr, reason) in report.dropped { lines.append("  skip #\(pr): \(reason)") }
+  var lines = [
+    "List digest: \(digest)   (\(queue.entries.count) queued; stop unless Security posted this same digest)"
+  ]
+  if queue.refused > 0 { lines.append("Ignored \(queue.refused) malformed or extra queue lines.") }
+  for (pr, reason) in report.dropped { lines.append("skip #\(pr): \(reason)") }
   lines.append(ready.isEmpty ? "Nothing to approve." : "Approve these \(ready.count) PRs:")
-  for candidate in ready {
-    lines.append("  #\(candidate.pr) \(candidate.sha.prefix(12)) \(candidate.title)")
-  }
+  for candidate in ready { lines.append(diffSummary(candidate)) }
   show(lines.joined(separator: "\n"))
   guard !ready.isEmpty else { return report }
   let names = ready.map { "#\($0.pr) \($0.sha.prefix(12))" }.joined(separator: ", ")
-  try await confirm("Approve \(ready.count) dork-labs/dorkos PRs: \(names)")
+  try await confirm("Approve \(ready.count) dork-labs/dorkos PRs, list \(digest): \(names)")
   let token = try await github.installationToken(appID: appID, now: now, signer: signer)
   for candidate in ready {
     do {
@@ -259,7 +296,11 @@ func approveBatch(
     } catch is HeadMoved {
       report.dropped.append((candidate.pr, "head moved while posting; the new head is not approved"))
       show("skip #\(candidate.pr): head moved while posting; the new head is not approved")
+    } catch {
+      await github.revoke(token, show: show)
+      throw error
     }
   }
+  await github.revoke(token, show: show)
   return report
 }

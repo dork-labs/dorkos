@@ -26,7 +26,26 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
     try require(parseQueue(Data([0xff, 0xfe])).entries.isEmpty, "non-UTF-8 refused")
     let many = (1...30).map { "\($0) \(sha("a"))" }.joined(separator: "\n")
     let capped = parseQueue(Data(many.utf8))
-    try require(capped.entries.count == maxBatch && capped.refused == 5, "batch capped")
+    try require(maxBatch == 8 && capped.entries.count == 8 && capped.refused == 22, "batch capped")
+
+    // Digest: order and duplicates don't matter; any added line changes it. The fixed value
+    // is what `printf ... | LC_ALL=C sort -u | shasum -a 256` gives, as enqueue.sh computes it.
+    let pair = [QueueEntry(pr: 1, sha: sha("a")), QueueEntry(pr: 2, sha: sha("b"))]
+    try require(listDigest(pair) == "c0c79cf81e8d", "digest matches the shell's")
+    try require(listDigest(pair.reversed() + pair) == listDigest(pair), "order-free")
+    try require(listDigest(pair + [QueueEntry(pr: 3, sha: sha("c"))]) != listDigest(pair), "changes")
+
+    // The helper's copy of the gate pattern equals the gate's reviewed fixture.
+    if let fixture = ProcessInfo.processInfo.environment["DORKOS_GATE_FIXTURE"] {
+      let reference = try String(contentsOfFile: fixture, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      try require(gatePathPattern == reference, "helper gate pattern differs from the fixture")
+    } else {
+      throw ApprovalError(message: "TEST FAILED: DORKOS_GATE_FIXTURE not set")
+    }
+    try require(touchesGate("apps/server/src/services/core/auth/x.ts"), "gate path")
+    try require(touchesGate("package.json") && touchesGate("apps/x/package.json"), "package.json")
+    try require(!touchesGate("apps/client/src/app.ts") && !touchesGate("docs/guide.mdx"), "not gate")
 
     // Never-batch paths.
     for path in [
@@ -111,11 +130,11 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
     let queue = try readQueue(directory: base)
     try require(queue.entries == [QueueEntry(pr: 12, sha: sha("a"))] && queue.refused == 1, "queue read")
     try body.write(to: URL(fileURLWithPath: base + "/reviews/pr-12-x.md"))
-    try require(reviewed(pr: 12, sha: sha("a"), directory: base), "copied review found")
-    try require(!reviewed(pr: 12, sha: sha("b"), directory: base), "review for another SHA")
-    try require(!reviewed(pr: 1, sha: sha("a"), directory: base), "pr-1 does not match pr-12")
+    try require(reviewHint(pr: 12, sha: sha("a"), directory: base), "copied review found")
+    try require(!reviewHint(pr: 12, sha: sha("b"), directory: base), "review for another SHA")
+    try require(!reviewHint(pr: 1, sha: sha("a"), directory: base), "pr-1 does not match pr-12")
     try fm.createSymbolicLink(atPath: base + "/reviews/pr-13.md", withDestinationPath: base + "/reviews/pr-12-x.md")
-    try require(!reviewed(pr: 13, sha: sha("a"), directory: base), "symlinked review ignored")
+    try require(!reviewHint(pr: 13, sha: sha("a"), directory: base), "symlinked review ignored")
     try fm.removeItem(atPath: base + "/queue")
     try fm.createSymbolicLink(atPath: base + "/queue", withDestinationPath: base + "/reviews/pr-12-x.md")
     try refuses("symlinked queue") { _ = try readQueue(directory: base) }
@@ -124,7 +143,7 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
     try refuses("oversized queue") { _ = try readQueue(directory: base) }
     try fm.createSymbolicLink(atPath: base + "/linked", withDestinationPath: base)
     try refuses("linked inbox") { _ = try readQueue(directory: base + "/linked") }
-    try require(!reviewed(pr: 12, sha: sha("a"), directory: base + "/linked"), "linked reviews ignored")
+    try require(!reviewHint(pr: 12, sha: sha("a"), directory: base + "/linked"), "linked reviews ignored")
 
     print("Policy tests passed: queue, never-batch paths, terminal text, reviews, runner, install, keychain path, files")
   }
