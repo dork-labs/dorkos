@@ -33,11 +33,7 @@ export function startSecretFileScanOnBoot(refs: ServerRefs): void {
     ({ id: a.id, name: a.displayName ?? a.name, folders: [a.projectPath] }) satisfies ScannedAgent;
 
   mesh.onAgentsChanged((change) => {
-    if (change.kind === 'removed') {
-      service.forget(change.agentId);
-      return;
-    }
-    if (!change.projectPath) return;
+    if (change.kind === 'removed' || !change.projectPath) return;
     void service.scanAgent({
       id: change.agentId,
       name: change.displayName ?? change.name ?? change.agentId,

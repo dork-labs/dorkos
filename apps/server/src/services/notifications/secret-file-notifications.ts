@@ -8,9 +8,10 @@
  * No rule keeps an agent from reading a file inside its own folder, so the
  * only honest thing is to say so. The row names files by path, never by
  * contents, and only the person reads notifications. It never reaches a phone
- * or a room. Once per set of files: the dedupe key is the agent and a hash of
- * the paths, so the same files stay quiet across restarts and a new one asks
- * again.
+ * or a room. Once per set of files for as long as the inbox keeps a row (its
+ * retention): the dedupe key is the agent and a hash of the paths, so the same
+ * files stay quiet across restarts, a new one is said at once, and files still
+ * there after that are said again as a reminder.
  *
  * @module services/notifications/secret-file-notifications
  */
@@ -37,8 +38,13 @@ export interface SecretFilePayloads {
 /** The most paths one row carries. */
 export const SECRET_FILES_LISTED = 20;
 
-/** About a year: in effect, once per set of files. */
-const ONCE_PER_SET_MS = 365 * 24 * 60 * 60 * 1000;
+/**
+ * As long as the inbox keeps a row (`NOTIFICATION_RETENTION_DAYS`, 30): a
+ * longer window would claim a silence the store cannot keep, since dedupe
+ * reads the stored rows. Written out, not imported, because the store imports
+ * the registry; a test pins the two together.
+ */
+export const SECRET_FILES_DEDUPE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** The one entry, spread into the registry's `ENTRIES`. */
 export const SECRET_FILE_ENTRIES: {
@@ -46,7 +52,7 @@ export const SECRET_FILE_ENTRIES: {
 } = {
   'agent.secret_files': {
     kind: 'agent.secret_files',
-    // Notable: it counts in Needs you and never reaches a phone.
+    // Notable: it lands in the inbox and never reaches a phone.
     tier: 'notable',
     storage: 'event',
     subjectType: 'agent',
@@ -57,7 +63,7 @@ export const SECRET_FILE_ENTRIES: {
         : `${p.agentName} can read ${p.total} secret files in its folder`,
     body: () => "Rules can't stop that. Move them somewhere the agent can't reach.",
     dedupeKey: (p) => `secret-files:${p.agentId}:${p.fingerprint}`,
-    dedupeWindowMs: ONCE_PER_SET_MS,
+    dedupeWindowMs: SECRET_FILES_DEDUPE_MS,
     relay: 'never',
   },
 };

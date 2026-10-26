@@ -7,9 +7,12 @@
  * room repo granted per turn is a follow-up.
  *
  * Where it says it: one `agent.secret_files` notification (person-only, never
- * a phone or a room), and {@link SecretFileScanService.findingsFor} for a
- * person-gated route. Never Activity: agents can read Activity, and a list of
- * where the secrets are is itself worth keeping from them.
+ * a phone or a room). Never Activity: agents can read Activity, and a list of
+ * where the secrets are is itself worth keeping from them. The agent page's
+ * warning and "Move it out" follow with the designer's mocks.
+ *
+ * Scans run one at a time across all agents, so a discovery that adopts many
+ * agents at once queues their walks instead of starting them all together.
  *
  * @module services/core/secret-file-scan/secret-file-scan-service
  */
@@ -44,23 +47,17 @@ export interface SecretFileScanDeps {
   logger?: { warn: (msg: string, meta?: Record<string, unknown>) => void };
 }
 
-/** One agent's latest result. */
-export interface AgentSecretFindings {
-  findings: SecretFileFinding[];
-  truncated: boolean;
-  scannedAt: string;
-}
-
 /** The hash the notification dedupes on: every path found, sorted. */
 export function findingsFingerprint(findings: readonly SecretFileFinding[]): string {
   const paths = findings.map((f) => f.path).sort();
   return createHash('sha256').update(JSON.stringify(paths)).digest('hex').slice(0, 32);
 }
 
-/** Scans agents' folders and remembers the latest result per agent. */
+/** Scans agents' folders, one walk at a time, and tells the person. */
 export class SecretFileScanService {
-  private readonly latest = new Map<string, AgentSecretFindings>();
   private readonly running = new Map<string, Promise<void>>();
+  /** Every scan waits for the one before it: at most one walk at a time. */
+  private queue: Promise<void> = Promise.resolve();
   private readonly again = new Set<string>();
 
   constructor(private readonly deps: SecretFileScanDeps) {}
@@ -77,22 +74,14 @@ export class SecretFileScanService {
       this.again.add(agent.id);
       return inFlight;
     }
-    const run = this.runScan(agent).finally(() => {
+    const run = this.queue.then(() => this.runScan(agent));
+    this.queue = run;
+    const settled = run.finally(() => {
       this.running.delete(agent.id);
       if (this.again.delete(agent.id)) void this.scanAgent(agent);
     });
-    this.running.set(agent.id, run);
-    return run;
-  }
-
-  /** The latest result for an agent, for a person-gated route only. */
-  findingsFor(agentId: string): AgentSecretFindings | undefined {
-    return this.latest.get(agentId);
-  }
-
-  /** Forget an agent that left. */
-  forget(agentId: string): void {
-    this.latest.delete(agentId);
+    this.running.set(agent.id, settled);
+    return settled;
   }
 
   private async runScan(agent: ScannedAgent): Promise<void> {
@@ -105,7 +94,11 @@ export class SecretFileScanService {
         findings.push(...result.findings);
         truncated ||= result.truncated;
       }
-      this.latest.set(agent.id, { findings, truncated, scannedAt: new Date().toISOString() });
+      if (truncated) {
+        this.deps.logger?.warn('[SecretFiles] Stopped early in a large agent folder', {
+          agentId: agent.id,
+        });
+      }
       if (findings.length === 0) return;
       await this.deps.notify({
         agentId: agent.id,

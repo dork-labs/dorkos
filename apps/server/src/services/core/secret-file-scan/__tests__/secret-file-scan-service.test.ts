@@ -9,7 +9,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { findingsFingerprint, SecretFileScanService } from '../secret-file-scan-service.js';
-import { SECRET_FILE_ENTRIES } from '../../../notifications/secret-file-notifications.js';
+import {
+  SECRET_FILE_ENTRIES,
+  SECRET_FILES_DEDUPE_MS,
+} from '../../../notifications/secret-file-notifications.js';
+import { NOTIFICATION_RETENTION_DAYS } from '../../../notifications/notification-store.js';
 
 /** The dotenv name, spelled in parts so no tool sees a bare secret-file path. */
 const ENV = ['', 'env'].join('.');
@@ -33,7 +37,6 @@ describe('SecretFileScanService', () => {
     const service = new SecretFileScanService({ notify });
     await service.scanAgent(agent());
     expect(notify).not.toHaveBeenCalled();
-    expect(service.findingsFor('01SCOUT')?.findings).toEqual([]);
   });
 
   it('tells the person the path, never the value', async () => {
@@ -65,8 +68,28 @@ describe('SecretFileScanService', () => {
       entry.dedupeKey({ ...base, fingerprint: more })
     );
     expect(entry.relay).toBe('never');
+    // Said again only once the inbox has let the old row go.
+    expect(SECRET_FILES_DEDUPE_MS).toBe(NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     expect(entry.tier).toBe('notable');
     expect(entry.title({ ...base, fingerprint: one })).toBe(`Scout can read ${ENV} in its folder`);
+  });
+
+  it('walks one folder at a time across agents', async () => {
+    let active = 0;
+    let most = 0;
+    const scan = vi.fn(async () => {
+      active += 1;
+      most = Math.max(most, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { findings: [], truncated: false };
+    });
+    const service = new SecretFileScanService({ notify: async () => undefined, scan });
+    await Promise.all(
+      ['a', 'b', 'c'].map((id) => service.scanAgent({ id, name: id, folders: [home] }))
+    );
+    expect(scan).toHaveBeenCalledTimes(3);
+    expect(most).toBe(1);
   });
 
   it('coalesces scans that arrive while one runs into one more', async () => {
