@@ -229,9 +229,14 @@ describe('resending a held request', () => {
     agentId: 'agent-a',
     grantScopeVersion: 4,
     attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
-    revision: { hostedRevisionId: '10000000-0000-4000-8000-000000000001' },
+    revision: {
+      hostedRevisionId: '10000000-0000-4000-8000-000000000001',
+      operationSlug: 'GMAIL_SEND_EMAIL',
+      toolkitVersion: '1',
+      schemaHash: 'schema-1',
+    },
     arguments: { to: 'owner@example.com', body: 'hello' },
-  } as ManagedConnectorExecutionRequest;
+  };
   const approved = (requestHash: string, attemptId = 'attempt-1') =>
     ({ attemptId, approval: 'approved', requestHash }) as const;
 
