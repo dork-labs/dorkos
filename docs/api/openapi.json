@@ -17963,7 +17963,8 @@
           "heartbeat.credits-offer",
           "connector.destructive_pending",
           "connector.destructive_executed",
-          "web.new_device"
+          "web.new_device",
+          "agent.secret_files"
         ]
       },
       "NotificationTier": {
