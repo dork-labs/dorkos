@@ -280,9 +280,11 @@ function whyLine(
   const Subject = `${subject.charAt(0).toUpperCase()}${subject.slice(1)}`;
   // The screen-only row is one short block of its own (app copy: at most 15 words).
   if (change?.screenOnly) return SCREEN_CHANGED;
-  const opening = change
-    ? changeOpening(Subject, record, change)
-    : provenance.kind === 'installer'
+  // A changed copy says what changed and nothing else: the person already
+  // knows what it adds (DOR-3068).
+  if (change) return `${changeOpening(name, record, change)} ${RUNS_AS_YOU}`;
+  const opening =
+    provenance.kind === 'installer'
       ? `You installed ${subject} from ${provenance.from}.`
       : `${Subject} was added to ${provenance.place}.`;
 
@@ -305,13 +307,18 @@ function whyLine(
 
 /**
  * The changed files as the why line names them: the first three, then how
- * many more. Names only, each capped, never contents.
+ * many more. Names only, each capped, never contents; a file inside the
+ * extension's own folder is named from there (`index.ts`, not the plugin path).
  *
  * @param files - The changed paths, sorted.
+ * @param id - The extension id, whose folder prefix is dropped.
  */
-function changedList(files: readonly string[]): string {
+function changedList(files: readonly string[], id: string): string {
   if (files.length === 0) return '';
-  const shown = files.slice(0, 3).map((file) => capped(file, 40));
+  const own = `.dork/extensions/${id}/`;
+  const shown = files
+    .slice(0, 3)
+    .map((file) => capped(file.startsWith(own) ? file.slice(own.length) : file, 40));
   const more = files.length - shown.length;
   return `: ${shown.join(', ')}${more > 0 ? `, and ${more} more` : ''}`;
 }
@@ -338,16 +345,16 @@ interface ApprovalChange {
  * versions, any other change names the files. (A screen-code change has a
  * line of its own, {@link SCREEN_CHANGED}.)
  *
- * @param Subject - The capitalised subject.
+ * @param name - The extension's (capped) name.
  * @param record - The extension record.
  * @param change - What changed.
  */
-function changeOpening(Subject: string, record: ExtensionRecord, change: ApprovalChange): string {
+function changeOpening(name: string, record: ExtensionRecord, change: ApprovalChange): string {
+  // The row's title already names both versions.
   if (change.updatedFrom) {
-    const to = capped(record.manifest.version, 20);
-    return `${Subject} was updated from ${change.updatedFrom} to ${to}${changedList(change.files)}.`;
+    return `Changed in ${capped(record.manifest.version, 20)}${changedList(change.files, record.id)}.`;
   }
-  return `${Subject} changed since you approved it${changedList(change.files)}.`;
+  return `${name} changed since you approved it${changedList(change.files, record.id)}.`;
 }
 
 /**

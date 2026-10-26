@@ -274,6 +274,20 @@ describe('an extension waiting to run asks in the inbox', () => {
     ]);
   });
 
+  it('names an edited app and its files, and nothing about what it adds (DOR-3068)', async () => {
+    await installPlugin();
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+    await queue.sync();
+
+    fs.writeFileSync(path.join(extensionDir('flow'), 'index.ts'), 'export const edited = 1;\n');
+    await manager.reload();
+    await queue.sync();
+
+    const approvals = await pending();
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.why).toBe('Flow changed since you approved it: index.ts. It runs as you.');
+  });
+
   it('3. an update from the same approved source asks again, once, naming what changed (DOR-3068)', async () => {
     await installPlugin();
     await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
@@ -298,7 +312,8 @@ describe('an extension waiting to run asks in the inbox', () => {
       // 1.0.0 to 1.1.0?").
       updatedFrom: '1.0.0',
     });
-    expect(approvals[0].why).toMatch(/^The flow plugin was updated from 1\.0\.0 to 1\.1\.0: /);
+    // The title names both versions, so the line says only what changed in the new one.
+    expect(approvals[0].why).toBe('Changed in 1.1.0: extension.json. It runs as you.');
     expect(approvalArrivals()).toHaveLength(arrivalsBefore + 1);
 
     // A yes to a card that showed other files is refused, and changes nothing.
