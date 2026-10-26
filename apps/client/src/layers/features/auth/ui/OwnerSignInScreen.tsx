@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
 import { describeAuthError, type AuthErrorCopy } from '../lib/auth-error-copy';
 import { useSignIn } from '../model/use-auth-session';
+import { confirmItsYou } from '../model/confirm-its-you';
 import type { AuthError } from '../model/auth-client';
 
 /** The command that resets the owner's password, run on the computer DorkOS runs on. */
@@ -52,7 +53,11 @@ export function OwnerSignInScreen({
     e.preventDefault();
     if (isPending) return;
     const result = await run(ownerEmail, password);
-    if (result.ok) await onVerified();
+    if (!result.ok) return;
+    // The same password proves it is them at this computer, so the change that
+    // follows asks nothing more (DOR-3330). Best effort: a miss asks once later.
+    await confirmItsYou(password);
+    await onVerified();
   }
 
   const errorCopy: AuthErrorCopy | null =

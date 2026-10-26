@@ -16,6 +16,7 @@ import {
   reportClientError,
   installClientErrorHandlers,
   installBreadcrumbHandlers,
+  installPersonAwareFetch,
   isDesktopShell,
   registerCommunityAuthorityCleanup,
   registerLinkNavigator,
@@ -57,6 +58,9 @@ import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
 import './index.css';
 
 registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
+// Before any call goes out: this window's own API calls carry the owner's
+// person proof, and ask for the password once when a change needs it (DOR-3330).
+installPersonAwareFetch();
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;

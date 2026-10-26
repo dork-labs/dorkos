@@ -326,7 +326,10 @@ export function createDocChannelHttpComposition(deps: {
       readChannel: (documentId, actor) => service.readChannel(documentId, actor),
     }),
     actor(caller) {
-      resolveCaller(caller, 'read'); // Refuse unknown/revoked agent headers before minting a principal.
+      // Only to refuse unknown/revoked agent headers before minting a principal;
+      // its author is discarded. Which callers may write here as the owner is
+      // the doc channel's own question, answered below.
+      resolveCaller(caller, 'read');
       const identity = caller.agentIdentity;
       const owner = currentOwner();
       if (identity) {

@@ -4,10 +4,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PERSON_PROOF_STORAGE_KEY } from '@dorkos/shared/person-session';
 import { finishPersonStepUp, requestPersonStepUp } from '@/layers/shared/lib';
 import { PersonStepUpHost } from '../ui/PersonStepUpHost';
 
 afterEach(() => {
+  localStorage.clear();
   act(() => finishPersonStepUp(false));
   cleanup();
   vi.restoreAllMocks();
@@ -31,7 +33,9 @@ describe('PersonStepUpHost', () => {
   it('confirms with the owner’s password, then lets the action run', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ok: true, proof: 'proof-1' }), { status: 200 })
+      );
     render(<PersonStepUpHost />);
     const answer = ask();
 
@@ -45,6 +49,8 @@ describe('PersonStepUpHost', () => {
     expect(init?.credentials).toBe('include');
     expect(JSON.parse(String(init?.body))).toEqual({ password: 'the-password' });
     expect(screen.queryByRole('dialog')).toBeNull();
+    // Kept in this page only, beside the cookie.
+    expect(localStorage.getItem(PERSON_PROOF_STORAGE_KEY)).toBe('proof-1');
   });
 
   it('says what went wrong and stays open on a wrong password', async () => {

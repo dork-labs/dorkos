@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import { PERSON_PROOF_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import { createDb, runMigrations, session, type Db } from '@dorkos/db';
 
 import { getAuth, initAuth } from '../index.js';
@@ -213,6 +213,23 @@ describe('the person bar at this computer, with an owner and no password asked',
       expect(stepUp.status).toBe(200);
       const cookie = cookiesOf(stepUp);
       expect(cookie).toMatch(/session_token=/);
+      const proof = stepUp.body.proof as string;
+      expect(proof).toMatch(/^[\w-]{20,}$/);
+
+      // The cookie alone is nobody's: it reaches every port on this computer.
+      for (const index of Object.keys(BARS).keys()) {
+        const res = await request(target.server)
+          .post(`/api/test/bar/${index}`)
+          .set(appHeaders({ cookie }))
+          .send({});
+        expect(res.status).not.toBe(200);
+      }
+      // Nor beside a proof made up.
+      const forged = await request(target.server)
+        .post('/api/test/bar/0')
+        .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof.slice(1) + 'A' }))
+        .send({});
+      expect(forged.status).not.toBe(200);
 
       // Bound to this computer, and lasting: a remembered cookie.
       const rows = db.select().from(session).where(eq(session.userId, ownerId)).all();
@@ -226,21 +243,21 @@ describe('the person bar at this computer, with an owner and no password asked',
         for (const index of Object.keys(BARS).keys()) {
           const res = await request(target.server)
             .post(`/api/test/bar/${index}`)
-            .set(appHeaders({ cookie }))
+            .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof }))
             .send({});
           expect(res.status).toBe(200);
         }
       }
       const turn = await request(target.server)
         .post('/api/test/turn')
-        .set(appHeaders({ cookie }))
+        .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof }))
         .send({});
       expect(turn.body.person).toBe(true);
 
       // The same cookie from another device is nobody's.
       const wifi = await request(target.server)
         .post('/api/test/bar/0')
-        .set(appHeaders({ cookie, [INGRESS_HEADER]: 'wifi' }))
+        .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof, [INGRESS_HEADER]: 'wifi' }))
         .send({});
       expect(wifi.status).toBe(401);
       expect(wifi.body.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);

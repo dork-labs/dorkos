@@ -264,6 +264,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PATCH /api/session-relay/level',
       'POST /api/desktop/sign-in',
       'POST /api/lan-access',
+      'ALL /api/person-session/*',
+      'POST /api/person-session',
       'POST /api/remote-access/close',
       'POST /api/remote-access/enrolment',
       'POST /api/remote-access/mode',

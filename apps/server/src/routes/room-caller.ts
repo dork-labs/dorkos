@@ -41,9 +41,9 @@ type CallerFacts = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
  * 3. **Anything else** is the person at the keyboard when it only reads, or
  *    when nobody owns this install yet: whoever owns it, or the unbound
  *    `'local'` author when nobody does. **A write needs the owner's session
- *    once an owner exists** (DOR-3330): any program here can omit the agent
- *    header, so it is refused, 401 `PERSON_SESSION_REQUIRED`, and the person's
- *    one step-up at this computer is what answers it. Reads stay free.
+ *    once an owner exists** (DOR-3330): without it a write is refused, 401
+ *    `PERSON_SESSION_REQUIRED`, and the person's one step-up at this computer
+ *    is what answers it. Reads stay free.
  *
  * ## Why an unverifiable token is refused rather than ignored (DOR-1361)
  *

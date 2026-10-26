@@ -43,6 +43,7 @@ import {
   contractSuite,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** The offline service's project key and signing secret (`test-composio/data.ts`). */
@@ -784,9 +785,9 @@ contractSuite('the connector groups, login off, nothing set up', [
 type Ask = Omit<ContractCase, 'name'>;
 
 /**
- * The owner's own browser session, sent with every request that names no
- * other caller while a suite sets it: once an owner exists, the person at
- * this computer changes things signed in (DOR-3330).
+ * The owner's own browser session and person proof, sent with every request
+ * that names no other caller while a suite sets it: once an owner exists, the
+ * person at this computer changes things after their step-up (DOR-3330).
  */
 let personCookie: Record<string, string> = {};
 
@@ -951,7 +952,8 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     server = await bootComposedServer();
     ({ providerInstanceId, connectionId } = await connectOfflineGmail(server));
     agent = await seedAgent(server);
-    ({ apiKey, cookie: personCookie } = await ownerCredentials(server));
+    ({ apiKey } = await ownerCredentials(server));
+    personCookie = await stepUpAt(server.baseUrl, 'a-long-password-1');
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     personCookie = {};
@@ -1557,7 +1559,9 @@ describe('contract: the connector groups with login on', () => {
   beforeAll(async () => {
     server = await bootComposedServer();
     ({ cookie, apiKey } = await ownerCredentials(server));
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, 'a-long-password-1');
+    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, person);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

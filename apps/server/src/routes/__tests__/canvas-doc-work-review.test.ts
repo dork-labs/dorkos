@@ -61,6 +61,8 @@ let db: Db;
 let cookies: string[];
 /** The owner's session, sent for every request that names no caller. */
 let personCookie = '';
+/** The person proof the owner's app keeps beside it. */
+let personProof = '';
 let rooms: RoomSubsystem;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
 let review: DocWorkReview;
@@ -148,7 +150,10 @@ beforeAll(async () => {
       (name) => req.headers[name] !== undefined
     );
     const asks = configManager.get('auth')?.enabled === true;
-    if (!named && !asks && personCookie) req.headers.cookie = personCookie;
+    if (!named && !asks && personCookie) {
+      req.headers.cookie = personCookie;
+      req.headers['x-dorkos-person'] = personProof;
+    }
     return listener(req, res);
   });
   expect(
@@ -165,7 +170,16 @@ beforeAll(async () => {
     .send(ACCOUNT);
   expect(login.status).toBe(200);
   cookies = login.headers['set-cookie'] as unknown as string[];
-  personCookie = cookies.map((value) => value.split(';')[0]).join('; ');
+  // The owner's one step-up at this computer: its cookie and the app's proof.
+  const stepUp = await request(server)
+    .post('/api/person-session')
+    .set('Origin', origin)
+    .send({ password: ACCOUNT.password });
+  expect(stepUp.status).toBe(200);
+  personCookie = (stepUp.headers['set-cookie'] as unknown as string[])
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  personProof = stepUp.body.proof as string;
 });
 beforeEach(() => {
   configManager.set('auth', { enabled: false });

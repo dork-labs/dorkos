@@ -36,6 +36,7 @@ import {
   type ComposedServer,
   type ContractCase,
   signInAt,
+  stepUpAt,
 } from './harness.js';
 
 /** No ngrok token reaches any server here, whatever this shell exports. */
@@ -1006,13 +1007,14 @@ describe('contract: the same groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
-    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
     await setup(
       server,
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...cookie, ...origin }
+      { ...person, ...origin }
     );
     const created = await setup(
       server,

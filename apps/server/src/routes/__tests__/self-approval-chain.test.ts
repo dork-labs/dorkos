@@ -36,7 +36,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import { PERSON_PROOF_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -93,6 +93,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
   let approvals: ApprovalService;
   let registry: CapabilityRegistry;
   let cookies: string[];
+  let person: Record<string, string>;
   let apiKey: string;
 
   /** Flip the runtime login flag the gate and the guards read per request. */
@@ -162,6 +163,18 @@ describe('an agent holding the API key cannot approve its own work', () => {
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
     expect(signIn.status).toBe(200);
     cookies = signIn.headers['set-cookie'] as unknown as string[];
+    // The owner's one step-up at this computer: its cookie and the app's proof.
+    const stepUp = await request(fixtureServer)
+      .post('/api/person-session')
+      .set('Origin', ORIGIN)
+      .send({ password: OWNER_PASSWORD });
+    expect(stepUp.status).toBe(200);
+    person = {
+      cookie: (stepUp.headers['set-cookie'] as unknown as string[])
+        .map((value) => value.split(';')[0])
+        .join('; '),
+      [PERSON_PROOF_HEADER]: stepUp.body.proof as string,
+    };
 
     const ownerId = db.select().from(user).get()!.id;
     // The very key the person is told to leave in `~/.dork/api-key` so their
@@ -277,12 +290,24 @@ describe('an agent holding the API key cannot approve its own work', () => {
       expect(stillPending(approvalId)).toBe(true);
     });
 
-    it('lets the owner’s session at this computer answer', async () => {
+    it('refuses the owner’s cookie alone: it reaches every port on this computer', async () => {
       const { approvalId } = await askAsAgent();
 
       const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
-        .set('Cookie', cookies)
+        .set('Cookie', person.cookie!)
+        .send({});
+
+      expect(res.status).toBe(401);
+      expect(stillPending(approvalId)).toBe(true);
+    });
+
+    it('lets the owner’s app at this computer answer, after its step-up', async () => {
+      const { approvalId } = await askAsAgent();
+
+      const res = await request(fixtureServer)
+        .post(`/api/approvals/${approvalId}/grant`)
+        .set(person)
         .send({});
 
       expect(res.status).toBe(200);

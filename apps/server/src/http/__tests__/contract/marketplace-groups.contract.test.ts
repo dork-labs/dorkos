@@ -45,6 +45,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -1078,13 +1079,14 @@ describe('contract: the marketplace groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
-    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
     await setup(
       server,
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...cookie, ...origin }
+      { ...person, ...origin }
     );
     const created = await setup(
       server,

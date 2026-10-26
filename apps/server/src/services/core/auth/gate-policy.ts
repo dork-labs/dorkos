@@ -165,14 +165,23 @@ export function credentialGated(facts: ClassifierFacts): boolean {
 /** The methods that only read. */
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/** Whether an owner account exists; a lookup that fails reads as yes, so a bar fails closed. */
+function ownerAccountExists(): boolean {
+  try {
+    return readOwnerAccount() !== null;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Whether a bar reserved for a person must see that person's browser session
  * (DOR-3330). True wherever the gate asked for a credential, and also for a
  * change at this computer once an owner exists, even while it asks for no
  * password.
  *
- * An open request proves "this computer", never "this person": any program
- * here can send one with no headers at all. Once an owner exists they can
+ * An open request proves "this computer", never "this person". Once an
+ * owner exists they can
  * prove themselves, with one password step-up that leaves a session for this
  * computer, so the person-only bars ask for it before anything changes. Reads
  * keep their old answer, so looking never asks for a password, and so does an
@@ -186,7 +195,7 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function personSessionRequired(
   facts: ClassifierFacts & { readonly method?: string },
   posture: GatePosture = readGatePosture(),
-  ownerExists: () => boolean = () => readOwnerAccount() !== null
+  ownerExists: () => boolean = ownerAccountExists
 ): boolean {
   if (gateAccessFor(facts, posture) !== 'open') return true;
   if (facts.method !== undefined && READ_METHODS.has(facts.method.toUpperCase())) return false;

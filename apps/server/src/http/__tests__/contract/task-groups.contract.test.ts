@@ -44,6 +44,7 @@ import {
   type ComposedServer,
   type ContractCase,
   signInAt,
+  stepUpAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -1107,21 +1108,22 @@ describe('contract: the same groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
     // No stop of its own, for the test-mode reason the login-off block gives.
     await setup(
       server,
       'PATCH',
       '/api/config',
       { runtimes: { defaultTrustStop: null } },
-      { ...cookie, ...origin }
+      { ...person, ...origin }
     );
-    // Asking for a password is the owner's own act, made signed in (DOR-3330).
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
     await setup(
       server,
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...cookie, ...origin }
+      { ...person, ...origin }
     );
     const created = await setup(
       server,

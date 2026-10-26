@@ -8,7 +8,8 @@
  * needs one. The server answers such an action `401` with
  * {@link PERSON_SESSION_REQUIRED_CODE}; the app asks the owner's password
  * once, posts it to {@link PERSON_SESSION_PATH}, and retries. The session
- * that leaves works only at this computer and lasts, so it asks once.
+ * that leaves works only at this computer, beside the proof the app keeps
+ * ({@link PERSON_PROOF_HEADER}), and lasts, so it asks once.
  *
  * @module shared/person-session
  */
@@ -19,6 +20,28 @@ export const PERSON_SESSION_REQUIRED_CODE = 'person_session_required';
 
 /** The route that takes the owner's password and leaves a session for this computer. */
 export const PERSON_SESSION_PATH = '/api/person-session';
+
+/**
+ * The header the app sends its person proof in: the code the step-up answered
+ * with, kept in the app page's own storage. A browser sends the session
+ * cookie to every port on this computer, so a page on any other port could
+ * carry it; only the app's own page can read the proof, so at this computer
+ * the session stands for the person only beside it.
+ */
+export const PERSON_PROOF_HEADER = 'x-dorkos-person';
+
+/** Where the app page keeps its person proof (its own origin's storage). */
+export const PERSON_PROOF_STORAGE_KEY = 'dorkos.person-proof';
+
+/** What a step-up answers once the password matched. */
+export const PersonSessionResponseSchema = z.object({
+  ok: z.literal(true),
+  /** The person proof to send in {@link PERSON_PROOF_HEADER}. */
+  proof: z.string().min(1),
+});
+
+/** What a step-up answers once the password matched. */
+export type PersonSessionResponse = z.infer<typeof PersonSessionResponseSchema>;
 
 /** The body {@link PERSON_SESSION_PATH} takes. */
 export const PersonSessionRequestSchema = z.object({

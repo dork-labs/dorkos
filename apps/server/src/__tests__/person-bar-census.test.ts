@@ -64,7 +64,7 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/connector-resources.ts': ['resolveConnectorOperator'],
   'routes/extensions-rooms-bar.ts': ['personSessionRequired'],
   'routes/room-caller.ts': ['PERSON_SESSION_REQUIRED'],
-  'routes/sessions.ts': ['isPersonTurn'],
+  'routes/sessions.ts': ['isPersonTurn', 'askForPersonBeforeChat'],
   'routes/mesh.ts': ['clearsTheAgentBar'],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
 };

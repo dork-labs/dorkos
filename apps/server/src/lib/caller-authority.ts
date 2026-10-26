@@ -33,7 +33,7 @@
  *
  * {@link requireOperatorCookieUnderLogin} is the second bar: is this a person
  * in the app, proved by their browser session, rather than something holding a
- * per-user API key or omitting two headers? It asks wherever
+ * per-user API key or another program? It asks wherever
  * `personSessionRequired` says so: every request the gate asked for a
  * credential, and every request at this computer once an owner exists
  * (DOR-3330). **With no owner it allows, because there is nobody to sign in as.**
@@ -164,8 +164,7 @@ export interface OperatorCookieRefusal {
  * (`routes/person-session.ts`), and the gate reads it on every request.
  *
  * The limit (DOR-505, DOR-3053): a program running as the same OS user can read
- * the auth secret and database on disk, so this raises the bar from "omit two
- * headers" to "forge a signed cookie or edit files"; it does not close it.
+ * the auth secret and database on disk; this does not close that.
  *
  * This is a SERVER-side guarantee. The cockpit also hides and disables the
  * controls this refuses, but that is a courtesy; this is the guarantee.

@@ -704,7 +704,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/workspaces.ts':
         'a person making a workspace over HTTP (DOR-2335). It does not skip a gate: a person is SHOWN what a new workspace brings (409 `workspace_needs_review`) and makes it with the review hash they saw; everyone else gets an approval card',
-      'routes/sessions.ts':
+      'routes/session-workspace-caller.ts':
         'a turn that names a workspaceKey (DOR-2335): a person is shown a new workspace, never let through unseen (one that needs review is skipped and the turn runs where it would have); everyone else gets a remembered card',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':

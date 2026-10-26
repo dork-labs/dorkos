@@ -12,7 +12,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 
-import { BOOT_HOOK_TIMEOUT_MS, bootComposedServer, type ComposedServer } from './harness.js';
+import {
+  BOOT_HOOK_TIMEOUT_MS,
+  bootComposedServer,
+  stepUpAt,
+  type ComposedServer,
+} from './harness.js';
 
 /** One person-only write, with a body its route accepts the shape of. */
 interface PersonWrite {
@@ -63,7 +68,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     email: `owner-${randomUUID().slice(0, 8)}@dork.test`,
     password: 'a-long-password-1',
   };
-  let cookie = '';
+  let person: Record<string, string> = {};
 
   /** Send one request; its status and JSON body. */
   async function send(
@@ -95,16 +100,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     });
     expect(signUp.status).toBe(200);
     // The owner's one step-up at this computer.
-    const stepUp = await fetch(new URL('/api/person-session', server.baseUrl), {
-      method: 'POST',
-      headers: origin,
-      body: JSON.stringify({ password: OWNER.password }),
-    });
-    expect(stepUp.status).toBe(200);
-    cookie = stepUp.headers
-      .getSetCookie()
-      .map((value) => value.split(';')[0]!)
-      .join('; ');
+    person = await stepUpAt(server.baseUrl, OWNER.password);
   }, BOOT_HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -134,12 +130,38 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       const res = await send(write, {
         origin: server!.baseUrl,
         'x-client-id': 'window-1',
-        cookie,
+        ...person,
       });
       expect(res.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
       expect(res.status).not.toBe(401);
     }
   );
+
+  it.each(PERSON_WRITES.map((write) => [`${write.method} ${write.path}`, write] as const))(
+    'refuses the owner’s cookie without the app’s proof on %s',
+    async (_name, write) => {
+      // A cookie reaches every port on this computer; the proof stays in the app.
+      const res = await send(write, { origin: server!.baseUrl, cookie: person.cookie! });
+      expect([401, 403]).toContain(res.status);
+    }
+  );
+
+  it('asks the app for the step-up before its first chat message, so it is never agent work', async () => {
+    const write: PersonWrite = {
+      method: 'POST',
+      path: `/api/sessions/${randomUUID()}/messages`,
+      body: { content: 'hi' },
+    };
+    const asked = await send(write, { origin: server!.baseUrl, 'x-client-id': 'window-1' });
+    expect(asked.status).toBe(401);
+    expect(asked.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+    const proved = await send(write, {
+      origin: server!.baseUrl,
+      'x-client-id': 'window-1',
+      ...person,
+    });
+    expect(proved.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
+  });
 
   it('parks a task a header-less caller schedules, rather than arming it', async () => {
     const res = await send({

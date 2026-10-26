@@ -53,7 +53,8 @@ import {
   frontDoorPathsOf,
   frontDoorSubjectOf,
 } from '../services/core/operator/front-door-settings.js';
-import { trustedCaller } from '../services/core/capabilities/index.js';
+import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import {
   readCallerAuthority,
   refuseFrontDoorChange,
@@ -467,29 +468,20 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       // server, not reasoned. A session cookie is the one signal a header-stripping
       // caller cannot fake, and under login-on a real operator has one.
       //
-      // The enable-login flow is unaffected, and that is load-bearing rather than
-      // lucky: `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is
-      // still OFF, so this bar does not apply to it. A guard that read the
-      // POST-patch state instead of the current state would make login impossible
-      // to turn on.
+      // At this computer it asks too once an owner exists (DOR-3330): the
+      // person proves themselves once, with the password step-up, and the app
+      // carries that session after. The app's own enable-login flow signs in
+      // first for the same reason. With no owner yet, nobody can sign in, so
+      // this bar allows and the agent bar below is the one left.
       //
-      // ### What stays open, said plainly
-      //
-      // With login OFF there is no cookie for ANYONE, so THIS bar allows and the
-      // agent bar is the only one left. So the hole the agent bar leaves is
-      // NOT closed: a program on this machine that omits its agent header can
-      // still write every operator-only setting through here. That is the residual
-      // DOR-505 could not close, because the cockpit in the default posture
-      // presents nothing such a program cannot also present, and refusing it would
-      // lock a person out of their own settings. Pinned by a test that says so,
-      // and documented for users under "Settings your agents cannot change" in
-      // `docs/guides/action-approvals.mdx`. Turning on Require login closes it. Do
-      // not describe this route as "operator-only enforced" without that
-      // qualifier.
-      const cookieRefusal = requireOperatorCookieUnderLogin(
-        caller,
-        'the settings that protect this instance'
-      );
+      // A caller that names itself an agent, with nothing proved, hears the
+      // agent bar's answer instead: it is the truer one for it.
+      const namesAMachine =
+        presentsAgentIdentity(caller) || caller.headers[APPROVAL_TOKEN_HEADER] !== undefined;
+      const cookieRefusal =
+        namesAMachine && !caller.user
+          ? undefined
+          : requireOperatorCookieUnderLogin(caller, 'the settings that protect this instance');
       if (cookieRefusal) {
         return {
           status: cookieRefusal.status,

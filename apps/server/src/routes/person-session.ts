@@ -6,8 +6,9 @@
  * session, and the app at this computer may carry none while it asks for no
  * password. A person-only action then answers `401 person_session_required`;
  * the app asks the owner's password once and posts it here. A match leaves a
- * long-lived session that works only at this computer, so it never asks again
- * there until that session ends.
+ * long-lived session that works only at this computer, and answers with the
+ * person proof the app keeps beside it (`person-proof.ts`), so it never asks
+ * again there until that session ends.
  *
  * Only a request from this computer, from no other site's page, naming no
  * agent and carrying no key, may ask. The password is the proof: an agent at
@@ -21,6 +22,7 @@ import { Hono, type Context } from 'hono';
 import {
   PersonSessionRequestSchema,
   type PersonSessionRefusalCode,
+  type PersonSessionResponse,
 } from '@dorkos/shared/person-session';
 
 import type { ApiEnv } from '../http/api-chain.js';
@@ -38,6 +40,7 @@ import {
   checkOwnerPassword,
   type OwnerPasswordCheck,
 } from '../services/core/auth/owner-password.js';
+import { personProofFor } from '../services/core/auth/person-proof.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 
 /** What `Sec-Fetch-Site` may say: the app's own page, or no page at all. */
@@ -144,12 +147,18 @@ export function createPersonSessionRoutes(deps: PersonSessionDeps = liveDeps): H
     }
     // Inside the request's class, so the session is stamped `local` and
     // works only at this computer (`session-route.ts`).
-    const { headers } = await withRegistrationCaller(caller.requestClass, () =>
+    const { headers, response } = await withRegistrationCaller(caller.requestClass, () =>
       auth.api.signInOwnerAfterStepUp({ body: { userId: ownerId }, returnHeaders: true })
     );
+    const proof = await personProofFor(response.sessionId);
+    if (!proof) {
+      const { status, code, error } = PASSWORD_REFUSALS['no-owner'];
+      return c.json(errorBody(error, code), status);
+    }
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
     logger.info('[Auth] The owner confirmed it was them at this computer');
-    return c.json({ ok: true });
+    const answer: PersonSessionResponse = { ok: true, proof };
+    return c.json(answer);
   });
 
   return router;

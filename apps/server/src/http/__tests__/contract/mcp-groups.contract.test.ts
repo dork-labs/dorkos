@@ -39,6 +39,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
@@ -551,7 +552,14 @@ describe('contract: the /mcp endpoint with a person’s credentials, login off t
   });
 
   it('answers at the session gate once login is on, where the local token no longer counts', async () => {
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+    );
     for (const [headers, body] of [
       [MCP_CLIENT, MUTATING_CALL],
       // The tokenless carve-out ends with login on.

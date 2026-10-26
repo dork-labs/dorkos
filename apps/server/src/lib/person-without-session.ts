@@ -22,6 +22,9 @@ import type { RequestFacts } from '../http/request-facts.js';
  */
 const refusedForSession = new WeakSet<object>();
 
+/** What the person reads before the password step-up. */
+export const PERSON_SESSION_REQUIRED_MESSAGE = 'Enter your password to confirm it’s you.';
+
 /**
  * Record that a person bar refused this request because no session proved
  * the person. The chain turns the route's refusal into the step-up only for
@@ -51,8 +54,8 @@ export function personSessionWasMissing(facts: Pick<RequestFacts, 'headers'>): b
  * A person-only bar refuses exactly this caller, and the app answers it with
  * the owner's one password step-up, so the chain turns such a refusal into
  * `401 person_session_required` (`http/person-session-refusal.ts`). It grants
- * nothing: an agent omitting its headers matches too, and is asked for a
- * password it does not have.
+ * nothing: any caller that matches is asked for a password, and only the
+ * owner has it.
  *
  * @param facts - The request's facts.
  */

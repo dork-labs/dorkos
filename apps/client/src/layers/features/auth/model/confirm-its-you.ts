@@ -6,8 +6,8 @@
  *
  * @module features/auth/model/confirm-its-you
  */
-import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
-import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { PERSON_SESSION_PATH, PersonSessionResponseSchema } from '@dorkos/shared/person-session';
+import { resolveApiBaseUrl, writePersonProof } from '@/layers/shared/lib';
 
 /** How the step-up ended: confirmed, or what to tell the person. */
 export type ConfirmItsYouResult = { ok: true } | { ok: false; message: string };
@@ -16,8 +16,8 @@ export type ConfirmItsYouResult = { ok: true } | { ok: false; message: string };
 const STEP_UP_PATH = PERSON_SESSION_PATH.replace(/^\/api/, '');
 
 /**
- * Send the password. On success the browser now holds a session for this
- * computer, set by the server's answer.
+ * Send the password. On success the browser holds a session for this
+ * computer, set by the server's answer, and this page keeps its person proof.
  *
  * @param password - What the person typed.
  * @param baseUrl - The `/api` base URL; the app's own by default.
@@ -37,7 +37,13 @@ export async function confirmItsYou(
   } catch {
     return { ok: false, message: 'Couldn’t reach DorkOS. Check that it’s running.' };
   }
-  if (res.ok) return { ok: true };
+  if (res.ok) {
+    const answer = PersonSessionResponseSchema.safeParse(await res.json().catch(() => null));
+    if (!answer.success) return { ok: false, message: 'That didn’t work. Try again.' };
+    // Kept in this page only: the cookie alone stands for nobody here.
+    writePersonProof(answer.data.proof);
+    return { ok: true };
+  }
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
   const message = typeof body?.error === 'string' ? body.error : 'That didn’t work. Try again.';
   return { ok: false, message };

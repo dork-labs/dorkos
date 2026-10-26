@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
 import { describeAuthError, type AuthErrorCopy } from '../lib/auth-error-copy';
 import { useSignUp } from '../model/use-auth-session';
+import { confirmItsYou } from '../model/confirm-its-you';
 
 /** Better Auth's default minimum password length (scrypt, no verification). */
 const MIN_PASSWORD_LENGTH = 8;
@@ -103,6 +104,9 @@ export function OwnerSetupScreen({
     const result = await run(email, password, '', needsSetupCode ? setupCode : undefined);
     if (!result.ok && SETUP_CODE_CODES.has(result.error.code ?? '')) setNeedsSetupCode(true);
     if (result.ok) {
+      // The new owner proves it is them at this computer with the password they
+      // just chose, so the change that follows asks nothing more (DOR-3330).
+      await confirmItsYou(password);
       await onCreated();
       return;
     }

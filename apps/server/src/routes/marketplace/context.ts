@@ -276,8 +276,10 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     if (resolveDecisionAuthority(readCallerAuthority(facts)).allowed) {
       // A person; package sources are a front-door setting, so they change only
       // at this computer (DOR-2969). Locality alone, not the full front-door
-      // bar: `dorkos marketplace add` presents an API key from this computer,
-      // and that verb stays the operator's (pinned in `marketplace.test.ts`).
+      // bar: with the password asked here, `dorkos marketplace add` presents an
+      // API key from this computer, and that verb stays the operator's (pinned
+      // in `marketplace.test.ts`). With it off, the open gate reads no key, so
+      // once an owner exists the person adds sources in the app (DOR-3330).
       if (isAtThisComputer(facts)) return undefined;
       return c.json(
         {

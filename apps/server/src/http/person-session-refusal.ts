@@ -17,13 +17,15 @@ import type { MiddlewareHandler } from 'hono';
 
 import { PERSON_SESSION_PATH, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 
-import { isPersonWithoutSession, personSessionWasMissing } from '../lib/person-without-session.js';
+import {
+  isPersonWithoutSession,
+  notePersonSessionMissing,
+  PERSON_SESSION_REQUIRED_MESSAGE,
+  personSessionWasMissing,
+} from '../lib/person-without-session.js';
 import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
-
-/** What the person reads before the password step-up. */
-export const PERSON_SESSION_REQUIRED_MESSAGE = 'Enter your password to confirm it’s you.';
 
 /** Whether a method only reads. */
 function readsOnly(method: string): boolean {
@@ -46,5 +48,25 @@ export function personSessionRefusal(): MiddlewareHandler<ApiEnv> {
     const facts = honoRequestFacts(c);
     if (!personSessionWasMissing(facts) || !isPersonWithoutSession(facts)) return;
     c.res = c.json(errorBody(PERSON_SESSION_REQUIRED_MESSAGE, PERSON_SESSION_REQUIRED_CODE), 401);
+  };
+}
+
+/**
+ * Before a chat message from the app at this computer, ask for the owner's
+ * step-up when no session proves the person yet (DOR-3330).
+ *
+ * Without the person's session a message runs as agent work, and agent work
+ * is readable by every agent, which the owner's own chat must never be. So
+ * the app window (its `X-Client-Id`) is asked once, and its message goes
+ * after. A program with no window marker still runs, as agent work.
+ */
+export function askForPersonBeforeChat(): MiddlewareHandler<ApiEnv> {
+  return async (c, next) => {
+    const facts = honoRequestFacts(c);
+    if (facts.headers['x-client-id'] && isPersonWithoutSession(facts)) {
+      notePersonSessionMissing(facts);
+      return c.json(errorBody(PERSON_SESSION_REQUIRED_MESSAGE, PERSON_SESSION_REQUIRED_CODE), 401);
+    }
+    await next();
   };
 }

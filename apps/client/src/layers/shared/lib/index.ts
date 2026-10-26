@@ -47,6 +47,8 @@ export {
   getPersonStepUpOpen,
   subscribePersonStepUp,
 } from './person-step-up-signal';
+export { readPersonProof, writePersonProof } from './person-proof-store';
+export { installPersonAwareFetch, personAwareFetch } from './person-aware-fetch';
 export {
   confirmCommunityAuthority,
   getCommunityAuthority,

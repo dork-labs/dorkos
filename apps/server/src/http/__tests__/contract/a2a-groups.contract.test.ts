@@ -35,6 +35,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
@@ -1160,7 +1161,14 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
   });
 
   it('closes the cards too once login is on, and the local token no longer counts or is named', async () => {
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+    );
     // The refusal names the personal key, not the token file: the local token
     // works only where this computer asks for no password (DOR-2967).
     // The fleet card counts the caller before the credential check.

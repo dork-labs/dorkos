@@ -1022,48 +1022,50 @@ describe('PATCH /api/config', () => {
       expect(refused.body.code).toBe('operator_only_config');
     });
 
-    it('lets a person turn login ON without a cookie, because there cannot be one yet', async () => {
-      // The lockout this must never cause. `OwnerSetupHost.tsx` writes
-      // `auth.enabled: true` while login is still OFF, so the caller has no
-      // cookie and cannot get one until the write lands. A bar that read the
-      // patched state instead of the current state would make login impossible
-      // to turn on, and a reviewer locked themselves out of an instance this way.
+    it('asks for the owner’s session before login turns on, once an owner exists (DOR-3330)', async () => {
+      // `OwnerSetupHost.tsx` signs in and steps up before it writes
+      // `auth.enabled: true`, so this asks nothing of the person there. A
+      // caller with no session is not proof of anyone.
       signedInUser = undefined;
       agentHeader = undefined;
 
-      const ok = await request(server)
+      await request(server)
         .patch('/api/config')
         .send({ auth: { enabled: true } })
-        .expect(200);
-      expect(ok.body.config.auth.enabled).toBe(true);
+        .expect(401);
     });
   });
 
-  it('DOES let a header-stripping caller write these while login is OFF (the open residual)', async () => {
-    // Not an oversight, and pinned so nobody has to take the docs' word for it.
-    // With login off there is no cookie for ANYONE, so the DOR-505 bar cannot
-    // apply without locking a person out of their own settings: the cockpit in
-    // the default posture presents nothing this caller does not also present.
-    //
-    // If this test ever goes red, that is good news, but it means the residual
-    // closed and three places now say something false about DorkOS. Update them
-    // in the same change: the bar-2 comment in `routes/config.ts`, the
-    // "Who may write which setting" section of `contributing/configuration.md`,
-    // and "Settings your agents cannot change" in `docs/guides/action-approvals.mdx`.
+  it('refuses a caller with no session these writes once an owner exists (DOR-3330)', async () => {
+    // This used to pass, as the accepted residual of DOR-505. Once an owner
+    // exists the person proves themselves with their session at this computer
+    // too, so a caller without one is refused, and nothing is written.
     signedInUser = undefined;
     agentHeader = undefined;
 
-    const ok = await request(server)
+    await request(server)
       .patch('/api/config')
       .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
-      .expect(200);
-    expect(ok.body.success).toBe(true);
+      .expect(401);
 
-    // Both writes landed. Measured at the store, not in the answer — the answer
-    // is the curated snapshot and carries neither value (DOR-1740).
     const { configManager } = await import('../../services/core/config-manager.js');
-    expect(configManager.getDot('tunnel.authtoken')).toBe('planted');
-    expect(configManager.getDot('mcp.apiKey')).toBe('planted');
+    expect(configManager.getDot('tunnel.authtoken')).not.toBe('planted');
+    expect(configManager.getDot('mcp.apiKey')).not.toBe('planted');
+  });
+
+  it('still lets the person write them before anyone owns this install', async () => {
+    owner.account = null;
+    signedInUser = undefined;
+    agentHeader = undefined;
+    try {
+      const ok = await request(server)
+        .patch('/api/config')
+        .send({ tunnel: { authtoken: 'planted' } })
+        .expect(200);
+      expect(ok.body.success).toBe(true);
+    } finally {
+      owner.account = { id: 'user_cockpit', name: 'Owner' };
+    }
   });
 
   it('still lets an agent change ordinary settings', async () => {

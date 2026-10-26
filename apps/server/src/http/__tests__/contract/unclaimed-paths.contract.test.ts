@@ -27,6 +27,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 const SHELL = '<!doctype html><html><body><div id="root"></div></body></html>';
@@ -256,39 +257,32 @@ describe('contract: unclaimed paths with login on', () => {
     password: 'a-long-password-1',
   };
 
-  /**
-   * Send one setup request, failing loudly if it does not succeed; returns
-   * the session cookie it set, if any.
-   */
+  /** Send one setup request, failing loudly if it does not succeed. */
   async function setup(
     method: string,
     url: string,
     body: unknown,
     origin: boolean,
-    cookie = ''
-  ): Promise<string> {
+    person: Record<string, string> = {}
+  ): Promise<void> {
     const res = await fetch(`${server!.baseUrl}${url}`, {
       method,
       headers: {
         'content-type': 'application/json',
         ...(origin ? { origin: server!.baseUrl } : {}),
-        ...(cookie ? { cookie } : {}),
+        ...person,
       },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`${method} ${url} answered ${res.status}: ${await res.text()}`);
-    return res.headers
-      .getSetCookie()
-      .map((value) => value.split(';')[0]!)
-      .join('; ');
   }
 
   beforeAll(async () => {
     server = await bootComposedServer(PRODUCTION);
     await setup('POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, true);
-    // Asking for a password is the owner's own act, made signed in (DOR-3330).
-    const cookie = await setup('POST', '/api/auth/sign-in/email', OWNER, true);
-    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
+    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false, person);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();
