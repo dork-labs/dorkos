@@ -200,6 +200,8 @@ describe.skipIf(BINARY === null)('the model’s read tools and secret files (DOR
     ['host.key', () => path.join(dorkHome, 'host.key')],
     ['an extension secret', () => path.join(dorkHome, 'extension-secrets', 'x.json')],
     ['the CLI api key', () => path.join(dorkHome, 'api-key')],
+    ['the bot tokens', () => path.join(dorkHome, 'relay', 'adapters.json')],
+    ['a config backup', () => path.join(dorkHome, 'config-2026-10-26.json.bak')],
     // The write-ahead log beside the database: the CLI already refuses to Read
     // a `.db` file as binary, so the rule is proven on the file it would read.
     ['the database log', () => path.join(dorkHome, 'dork.db-wal')],

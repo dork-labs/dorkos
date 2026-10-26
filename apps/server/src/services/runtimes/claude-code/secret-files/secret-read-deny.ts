@@ -33,13 +33,21 @@ const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 /** DorkOS's own secrets, relative to its data folder. A trailing `/**` is a folder. */
 export const DATA_FOLDER_SECRETS = [
   'host.key',
-  'config.json',
+  // The config (cloud and tunnel tokens among it), its backups beside it
+  // (`config.json.bak`, `config-<time>.json.bak`), and full database and
+  // settings snapshots.
+  'config.json*',
+  'config-*.json.bak',
+  'backups/**',
   'mcp-local-token',
   'better-auth-secret',
   // The key the CLI calls this server with.
   'api-key',
-  // The database: sign-in sessions and connected-app tokens, with its -wal/-shm.
-  'dork.db*',
+  // The database: sign-in sessions and connected-app tokens, with its -wal/-shm,
+  // under its current and its old name (`dorkos.db`).
+  'dork*.db*',
+  // Chat bot tokens, stored as written (`relay/adapter-config.ts`).
+  'relay/adapters.json',
   // The web-push private key.
   'push/**',
   'extension-secrets/**',
@@ -47,7 +55,9 @@ export const DATA_FOLDER_SECRETS = [
   'secrets/**',
   // The agent browser's signed-in state, and its profiles' cookies.
   'browser/storage-state.json',
+  'browser/profile/**',
   'browser-profiles/**',
+  'local-browser/saved-logins/**',
 ] as const;
 
 /** The sign-in files inside every Claude Code account folder, backups included. */

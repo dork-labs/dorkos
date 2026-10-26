@@ -25,12 +25,12 @@ describe('secretReadDenyRules', () => {
     for (const tool of ['Read', 'Grep', 'Glob']) {
       for (const target of [
         '//Users/ana/.dork/host.key',
-        '//Users/ana/.dork/config.json',
+        '//Users/ana/.dork/config.json*',
         '//Users/ana/.dork/extension-secrets/**',
         '//Users/ana/.dork/secrets/**',
         '//Users/ana/.dork/browser/storage-state.json',
         '//Users/ana/.dork/api-key',
-        '//Users/ana/.dork/dork.db*',
+        '//Users/ana/.dork/dork*.db*',
         '//Users/ana/.dork/push/**',
         '//Users/ana/.claude4/.credentials*',
         '//Users/ana/.claude4/.claude.json*',
@@ -91,6 +91,39 @@ describe('secretReadDenyRules', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('every store that holds a live secret', () => {
+  // Each one, where it is written, so a store added later has a list to join:
+  // config and its backups (core/config-manager, backups.ts), bot tokens
+  // (relay/adapter-config.ts), the agent browser's profile and the local
+  // browser's saved logins (session/local-browser/service.ts), database copies.
+  it.each([
+    'config.json',
+    'config.json.bak',
+    'config-2026-10-26T12-00-00.json.bak',
+    'backups/dork-2026-10-26.db',
+    'dork.db',
+    'dork.db-wal',
+    'dorkos.db',
+    'relay/adapters.json',
+    'browser/profile/Default/Cookies',
+    'local-browser/saved-logins/state.json',
+    'host.key',
+    'api-key',
+  ])('denies Read on %s', (entry) => {
+    const rules = secretReadDenyRules(FOLDERS);
+    const covered = rules.some((rule) => {
+      const m = /^Read\(\/\/Users\/ana\/\.dork\/(.+)\)$/.exec(rule);
+      if (!m) return false;
+      // Claude Code's glob: `*` and `**` both cross folders here.
+      const pattern = new RegExp(
+        '^' + m[1]!.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*') + '$'
+      );
+      return pattern.test(entry);
+    });
+    expect(covered).toBe(true);
   });
 });
 
