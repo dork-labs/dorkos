@@ -1,0 +1,131 @@
+/**
+ * At Never ask, DorkOS's own safe tools run again (DOR-3042, after #3072).
+ *
+ * Under `dontAsk` Claude Code never calls `canUseTool`: anything its allow
+ * rules don't name is refused before DorkOS is asked (QA, 0 calls in 27
+ * cases). So a Never ask chat couldn't read or post to its own room, though
+ * those calls run unasked in every other mode. A static allow rule was
+ * rejected: it would skip every per-call check DorkOS makes and match any
+ * server that calls itself `dorkos`. This hook makes the same per-call
+ * decision the gate makes, and only says `allow` when it is certain.
+ *
+ * **What it allows.** A call to one of {@link DORKOS_AGENT_TOOLS}, by its exact
+ * in-session name, served by the server DorkOS registered (`source: 'sdk'`,
+ * which only the host can set; a missing or other source gets nothing), that
+ * {@link dorkosAutoAllows} lets run for this session RIGHT NOW: the running
+ * turn's ceilings, `control_ui` per effect, and the identity the room verbs
+ * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
+ * stay refused.
+ *
+ * **Stricter than the gate in one place.** A turn held to a ceiling (a
+ * stranger's, a teammate's, another agent's) gets no `chat_send` at all, not
+ * even a queued one, so an unattended run can't pass a stranger's words on to
+ * another chat (Security's one-hop laundering point).
+ *
+ * **It only ever allows, and only at Never ask.** In every other mode, and on
+ * any doubt (a throw, a slow lookup, an unknown name), it answers nothing, so
+ * `dontAsk` refuses as before and every other mode reaches `canUseTool` as
+ * before. A deny rule still beats its allow (QA, proven on the CLI).
+ *
+ * Read at CALL time from the session, never captured at launch: a warm process
+ * serves many turns, and the ceiling is assigned per send.
+ *
+ * @module services/runtimes/claude-code/tool-gate/never-ask-hook
+ */
+import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionModeId } from '@dorkos/shared/schemas';
+import { CHAT_SEND_TOOL } from '@dorkos/shared/chat-messages';
+import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
+import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { ceilingOn, gatePermissionMode, type CeilingedMode } from '../turn-permission.js';
+import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
+import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
+
+/** How long the decision may take before it counts as doubt. */
+export const NEVER_ASK_HOOK_TIMEOUT_MS = 5_000;
+
+/** The qualified `chat_send`, refused outright in a held turn. */
+const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
+
+/** What the hook answers when it lets a call run. */
+const ALLOW = {
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse' as const,
+    permissionDecision: 'allow' as const,
+    permissionDecisionReason: 'DorkOS runs its own safe tools without asking.',
+  },
+};
+
+/**
+ * Whether DorkOS lets this call run unasked at Never ask. Never throws.
+ *
+ * @param session - The session's chosen mode and both ceilings.
+ * @param toolName - The tool the model called.
+ * @param input - Its arguments.
+ * @param mcpServer - The serving server's provenance, from the hook input.
+ * @param resolveIdentity - The memoized session-identity resolver.
+ * @param log - Where a failed lookup is reported.
+ */
+export async function neverAskAllows(
+  session: CeilingedMode<PermissionModeId>,
+  toolName: string,
+  input: Record<string, unknown>,
+  mcpServer: ToolApprovalContext['mcpServer'],
+  resolveIdentity: () => Promise<unknown>,
+  log: ToolGateLogger
+): Promise<boolean> {
+  if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
+  if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
+  // Proven, not assumed: an absent source is NOT the host here.
+  if (mcpServer?.source !== 'sdk') return false;
+  if (toolName === CHAT_SEND_QUALIFIED && ceilingOn(session) !== 'none') return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timedOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), NEVER_ASK_HOOK_TIMEOUT_MS);
+    });
+    return await Promise.race([
+      dorkosAutoAllows(session, toolName, input, mcpServer, resolveIdentity, log),
+      timedOut,
+    ]);
+  } catch (err) {
+    log.info('[NeverAsk] could not decide; leaving the call refused', {
+      toolName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The hook. Answers `allow` only when {@link neverAskAllows} says so, and
+ * nothing otherwise.
+ *
+ * @param session - The session's chosen mode and both ceilings.
+ * @param resolveIdentity - The memoized session-identity resolver `canUseTool` uses.
+ * @param log - Where a failed lookup is reported.
+ */
+export function createNeverAskHook(
+  session: CeilingedMode<PermissionModeId>,
+  resolveIdentity: () => Promise<unknown>,
+  log: ToolGateLogger
+): HookCallback {
+  return async (hookInput) => {
+    if (hookInput.hook_event_name !== 'PreToolUse') return {};
+    const input =
+      hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
+        ? (hookInput.tool_input as Record<string, unknown>)
+        : {};
+    const allowed = await neverAskAllows(
+      session,
+      hookInput.tool_name,
+      input,
+      hookInput.mcp_server,
+      resolveIdentity,
+      log
+    );
+    return allowed ? ALLOW : {};
+  };
+}
