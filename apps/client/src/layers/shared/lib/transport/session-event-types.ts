@@ -55,6 +55,10 @@ export const SESSION_EVENT_TYPES = [
   // A turn that ran on another model than its session names (DOR-2636). Never
   // a silent switch, so a frame dropped here would be exactly one.
   'model_substituted',
+  // Background commands a Stop could not end, and each one's later end
+  // (DOR-3285). A dropped frame would hide work still running on the computer.
+  'work_left_running',
+  'work_left_ended',
   'system_status',
   'operation_progress',
   'error',

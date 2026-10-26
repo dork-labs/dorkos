@@ -142,30 +142,27 @@ export function notificationTone(notification: NotificationDTO): NotificationTon
  * exactly how the registry spells "this one did not work" (a success is
  * `quiet`). See the registry entry.
  *
- * Two outcomes answer yes, not one. A run that FAILED, and — since DOR-2101 —
- * a run that was BLOCKED, refused every tool it reached for because nobody was
- * there to approve them. A blocked run earning attention is the point: a
- * schedule that quietly does nothing every night is the one thing a person
- * cannot notice for themselves.
+ * Two outcomes answer yes, not one. A run that FAILED, and — since DOR-2101,
+ * widened by DOR-3123 — a run that NEEDS ATTENTION, refused a tool it reached
+ * for because nobody was there to approve it. Such a run earning attention is
+ * the point: a schedule that quietly does not do its job every night is the
+ * one thing a person cannot notice for themselves.
  *
  * **What this function must NOT be used for is saying which of the two it
  * was.** The DTO carries kind and tier and no status, so this cannot tell
  * them apart.
  *
- * So the two surfaces deliberately do not match, and this is the note saying
- * so out loud rather than leaving somebody to find it: **the inbox ROW draws a
- * blocked run in the error tone (red), while the detail sheet it opens draws
- * the same run in amber.** The row only has kind and tier, and it uses them
- * for one thing — "this one wants a look" — which is true of both outcomes.
- * The sheet has the RUN, so it reads `run.status` and can afford to be exact
- * (`runVerdict` in `features/dashboard-attention`). The row's own title
- * already says which outcome it was, so the red is loudness, not a claim.
+ * Both draw in the error tone, on the row and in the detail sheet it opens:
+ * from the person's side a run that did not do its job has failed them
+ * (DOR-3123). The row only has kind and tier, and it uses them for one thing —
+ * "this one wants a look". The sheet has the RUN, so it reads `run.status` and
+ * says which outcome it was (`runVerdict` in `features/dashboard-attention`),
+ * as the row's own title already does.
  *
  * No status was denormalized onto the notification to close the gap, and that
  * is the choice rather than an omission: the run row is the ground truth, the
  * sheet already reads it, and a copy on the notification would be a second
- * home for the same fact and a second thing to go stale. If the row ever has
- * to be exact too, give the DTO a status and delete this paragraph.
+ * home for the same fact and a second thing to go stale.
  *
  * @param notification - The row.
  */

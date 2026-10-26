@@ -5,9 +5,10 @@ export interface RecentRunsSummary {
   /** Schedules with a run going, in the order their runs started (newest first). */
   running: string[];
   /**
-   * Schedules whose latest run failed or was blocked. A blocked run did
-   * nothing, every tool it reached for refused (DOR-2101), so it counts as a
-   * failure here exactly as it does on the health chip.
+   * Schedules whose latest finished run failed or needs attention — the same
+   * rule the Schedules list's Failing count reads off the server (DOR-3123): a
+   * skipped or cancelled run says nothing about whether the schedule works, so
+   * it is passed over for the run before it.
    */
   failed: string[];
 }
@@ -34,8 +35,9 @@ export function summarizeRecentRuns(runs: readonly TaskRun[]): RecentRunsSummary
       continue;
     }
     if (seen.has(run.scheduleId)) continue;
+    if (run.status === 'skipped' || run.status === 'cancelled') continue;
     seen.add(run.scheduleId);
-    if (run.status === 'failed' || run.status === 'blocked') failed.push(run.scheduleId);
+    if (run.status === 'failed' || run.status === 'needs_attention') failed.push(run.scheduleId);
   }
   return { running, failed };
 }

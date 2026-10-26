@@ -50,22 +50,22 @@ describe('emitTerminalRunActivity (DOR-1573)', () => {
     );
   });
 
-  it('emits run_blocked, in words that say what to do about it', () => {
+  it('emits run_needs_attention, in words that say what to do about it', () => {
     // The defect (DOR-2101): this exact run used to emit `tasks.run_success`,
     // so the feed reported a schedule that read nothing as healthy.
     emitTerminalRunActivity(
       activityService,
       task,
-      terminalRun('blocked', {
+      terminalRun('needs_attention', {
         error: 'Skipped Bash — nobody was there to approve it on a scheduled run.',
       })
     );
     expect(emit).toHaveBeenCalledTimes(1);
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'tasks.run_blocked',
+        eventType: 'tasks.run_needs_attention',
         summary:
-          'digest ran, but could not use any of its tools — nobody was there to approve them (1s)',
+          'digest needs attention: a tool was refused because nobody was there to approve it (1s)',
       })
     );
   });
@@ -129,6 +129,17 @@ describe('createRelayRefusedAskEmitter (DOR-1580)', () => {
         summary: 'digest could not use Bash — nobody was there to approve it',
         metadata: { runId: run.id, toolName: 'Bash', reason: 'no surface' },
       })
+    );
+  });
+
+  it('says a Never ask refusal was the schedule’s setting (DOR-3132)', () => {
+    const run = store.createRun(task.id, 'scheduled');
+    const report = createRelayRefusedAskEmitter({ taskStore: store, activityService });
+
+    report({ taskId: task.id, runId: run.id, refused: { toolName: 'Bash', neverAsk: true } });
+
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'digest could not use Bash — it is set to Never ask' })
     );
   });
 

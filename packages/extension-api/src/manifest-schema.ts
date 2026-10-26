@@ -28,6 +28,12 @@ const ExtensionCapabilitiesSchema = z.object({
    * until they pick one.
    */
   rooms: z.boolean().optional(),
+  /**
+   * Asks to forward what the person types to an agent, as their words
+   * (`api.forward`, DOR-3325). Settings → Extensions then offers the person a
+   * choice of one agent; it reaches none until they pick one.
+   */
+  forward: z.boolean().optional(),
 });
 
 /** Declares a secret an extension needs (e.g., an API key). */

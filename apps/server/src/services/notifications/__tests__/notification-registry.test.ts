@@ -453,10 +453,11 @@ describe('notification registry', () => {
     expect(entry.body?.(payload)).toBe('Wants to run Bash');
   });
 
-  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+  describe('a run that needs attention (DOR-2101, DOR-3123)', () => {
     const blocked: (typeof PAYLOADS)['run.completed'] = {
       ...PAYLOADS['run.completed'],
-      status: 'blocked',
+      status: 'needs_attention',
+      outcome: 'nothing_done',
       taskName: 'Mailroom',
       duration: '4s',
       detail:
@@ -472,30 +473,59 @@ describe('notification registry', () => {
       ).toBe('quiet');
     });
 
-    it('says what happened rather than calling it a failure', () => {
+    it('titles every failing run "needs attention", and a success "finished"', () => {
       const entry = notificationEntry('run.completed');
-      expect(entry.title(blocked)).toBe('Mailroom could not use its tools');
-      expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom failed');
+      expect(entry.title(blocked)).toBe('Mailroom needs attention');
+      expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom needs attention');
+      expect(entry.title({ ...blocked, status: 'completed' })).toBe('Mailroom finished');
     });
 
-    it('does not say "nobody was there to approve" twice in one row', () => {
-      // The detail IS the refusal sentence and already ends in those words, so
-      // the body's own line must not repeat them (DOR-2101 review).
-      const body = notificationEntry('run.completed').body?.(blocked) ?? '';
-      expect(body).toContain('Ran for 4s and used none of its tools.');
-      expect(body).toContain(blocked.detail);
-      expect(body.match(/nobody was there to approve/g)).toHaveLength(1);
+    it('offers Open schedule on a failing run, and never a raise (SF-18)', () => {
+      const actions = notificationEntry('run.completed').actions;
+      expect(actions?.(blocked)).toEqual([
+        { id: 'open-schedule', label: 'Open schedule', style: 'primary' },
+      ]);
+      expect(actions?.({ ...blocked, status: 'completed' })).toEqual([]);
     });
 
-    it('reaches out, because it is the outcome nobody notices for themselves', () => {
-      const entry = notificationEntry('run.completed');
-      expect((entry.relay as (p: typeof blocked) => string)(blocked)).toBe('always');
-      expect((entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'failed' })).toBe(
-        'always'
+    it('says the row’s reason, points at the schedule, and says it will not repeat', () => {
+      const body = notificationEntry('run.completed').body;
+      expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
+        'Nothing got done: Bash and gmail: search were refused. Open the schedule to fix it.'
       );
       expect(
-        (entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'completed' })
-      ).toBe('opt-in');
+        body?.({ ...blocked, outcome: 'partial', refusedTools: ['Bash'], oncePerStreak: true })
+      ).toBe(
+        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
+          'You won’t get another notice about it until it runs cleanly and fails again.'
+      );
+      // "Didn't finish": only the reason line changes.
+      expect(body?.({ ...blocked, status: 'failed', detail: 'API Error: 500' })).toBe(
+        'Didn’t finish: API Error: 500. Open the schedule to fix it.'
+      );
+      // A cut error ends in "…", and an error that ends its own sentence keeps
+      // its mark: never a full stop after either.
+      const cut = body?.({
+        ...blocked,
+        status: 'failed',
+        detail: `which is not ${'x '.repeat(200)}`,
+      });
+      expect(cut).toMatch(/… Open the schedule to fix it\.$/);
+      expect(cut).not.toContain('….');
+      expect(body?.({ ...blocked, status: 'failed', detail: 'Is the server up?' })).toBe(
+        'Didn’t finish: Is the server up? Open the schedule to fix it.'
+      );
+      // Never a raise of the schedule's level (spec `schedules-failing` SF-18).
+      expect(body?.({ ...blocked, refusedTools: ['Bash'] })).not.toMatch(/permission level|Full/);
+    });
+
+    it('reaches out for every failing notice, since a streak raises only one', () => {
+      const entry = notificationEntry('run.completed');
+      const relay = entry.relay as (p: typeof blocked) => string;
+      expect(relay(blocked)).toBe('always');
+      expect(relay({ ...blocked, outcome: 'partial' })).toBe('always');
+      expect(relay({ ...blocked, status: 'failed' })).toBe('always');
+      expect(relay({ ...blocked, status: 'completed' })).toBe('opt-in');
     });
   });
 

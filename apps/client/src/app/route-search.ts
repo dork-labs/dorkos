@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
+import { taskFilterSchema } from '@/layers/features/tasks';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 
@@ -159,3 +160,15 @@ export const activitySearchSchema = mergeDialogSearch(
 
 /** Search params available on the `/activity` route. */
 export type ActivitySearch = z.infer<typeof activitySearchSchema>;
+
+/**
+ * Search params for `/tasks`: the Schedules list's filters and its sort, as
+ * `useFilterState` writes them, so a link can land on a filtered list
+ * (`?health=failing`, the failing-schedule notice's Open schedule, DOR-3123).
+ */
+export const tasksSearchSchema = mergeDialogSearch(
+  z.object({ sort: z.string().optional() }).merge(taskFilterSchema.searchValidator)
+);
+
+/** Search params available on the `/tasks` route. */
+export type TasksSearch = z.infer<typeof tasksSearchSchema>;

@@ -44,11 +44,11 @@ describe('TaskStore#lastRunStarts', () => {
     runAt(a.id, '2026-10-02T08:00:00.000Z');
     runAt(b.id, '2026-09-30T08:00:00.000Z');
 
-    const starts = store.lastRunStarts();
+    const history = store.runHistory();
 
-    expect(starts.get(a.id)).toBe('2026-10-03T08:00:00.000Z');
-    expect(starts.get(b.id)).toBe('2026-09-30T08:00:00.000Z');
-    expect(starts.has(never.id)).toBe(false);
+    expect(history(a.id).lastRunAt).toBe('2026-10-03T08:00:00.000Z');
+    expect(history(b.id).lastRunAt).toBe('2026-09-30T08:00:00.000Z');
+    expect(history(never.id).lastRunAt).toBeNull();
   });
 
   it('does not count a skipped tick, since the agent never started', () => {
@@ -56,6 +56,6 @@ describe('TaskStore#lastRunStarts', () => {
     runAt(a.id, '2026-10-01T08:00:00.000Z');
     runAt(a.id, '2026-10-05T08:00:00.000Z', 'skipped');
 
-    expect(store.lastRunStarts().get(a.id)).toBe('2026-10-01T08:00:00.000Z');
+    expect(store.runHistory()(a.id).lastRunAt).toBe('2026-10-01T08:00:00.000Z');
   });
 });

@@ -25,13 +25,23 @@ describe('summarizeRecentRuns', () => {
     ).toEqual([]);
   });
 
-  it('counts a blocked run as a failure', () => {
-    expect(summarizeRecentRuns([run('inbox', 'blocked')]).failed).toEqual(['inbox']);
+  it('counts a run that needs attention as a failure', () => {
+    expect(summarizeRecentRuns([run('inbox', 'needs_attention')]).failed).toEqual(['inbox']);
   });
 
   it('does not count a cancelled or skipped latest run as a failure', () => {
     const summary = summarizeRecentRuns([run('a', 'cancelled'), run('b', 'skipped')]);
     expect(summary.failed).toEqual([]);
+  });
+
+  it('looks past a skipped or cancelled run to the one before, as the list does', () => {
+    const summary = summarizeRecentRuns([
+      run('a', 'skipped'),
+      run('a', 'failed'),
+      run('b', 'cancelled'),
+      run('b', 'completed'),
+    ]);
+    expect(summary.failed).toEqual(['a']);
   });
 
   it('names a running schedule once, however many runs it has going', () => {

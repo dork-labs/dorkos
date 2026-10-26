@@ -20,6 +20,7 @@ import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
 import { TaskExecutionFields } from './TaskExecutionFields';
+import { asksWhileUnattended, TaskUnattendedWarning } from './TaskUnattendedWarning';
 import { useAgentRuntime, useTaskExecution } from './use-task-execution';
 import {
   DEFAULT_MAX_RUNTIME,
@@ -466,28 +467,12 @@ export function ScheduleForm({
                         }
                       />
                       {/* The fact that is true here and on no attended surface:
-                          a stop that asks has nobody to ask. Read from what the
-                          runtime declared, never from a mode id.
-
-                          What happens next is NOT a stall until `maxRuntime`,
-                          and since spec `unattended-session-permission-prompts`
-                          it is not a ten-minute wait either:
-                          `interactive-handlers.ts` refuses the ask the moment it
-                          is raised and the turn carries straight on, recording
-                          each one so the run's result can name it. The note says
-                          "Run now" too, because that trigger does NOT carry the
-                          flag and its cards stay answerable. */}
-                      {current !== undefined && current.asks !== 'never' && (
-                        <div
-                          data-testid="task-unattended-note"
-                          className="text-muted-foreground space-y-1 px-1 text-xs leading-relaxed"
-                        >
-                          <p>Nobody watches a scheduled run, so any ask is turned down.</p>
-                          <p>
-                            The run carries on without that tool and says so. “Run now” still asks
-                            you.
-                          </p>
-                        </div>
+                          a stop that asks has nobody to ask, so the ask is
+                          refused the moment it is raised and the run needs
+                          attention (DOR-3123 A1). Read from what the runtime
+                          declared, never from a guess about the prompt. */}
+                      {current !== undefined && asksWhileUnattended(current) && (
+                        <TaskUnattendedWarning />
                       )}
                       <PermissionModeScopeNote
                         mode={field.state.value}

@@ -8,7 +8,13 @@
  * @module services/tasks/task-row-mappers
  */
 import type { pulseSchedules, pulseRuns } from '@dorkos/db';
-import type { Task, TaskRun, TaskRunStatus, TaskRunTrigger } from '@dorkos/shared/types';
+import type {
+  Task,
+  TaskRun,
+  TaskRunOutcome,
+  TaskRunStatus,
+  TaskRunTrigger,
+} from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import { effectiveTiming, effectiveWork } from './timing/effective-timing.js';
 import {
@@ -156,6 +162,7 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     resolvedRuntime: row.resolvedRuntime ?? null,
     resolvedModel: row.resolvedModel ?? null,
     refusedTools: readRefusedTools(row.refusedTools),
+    outcome: (row.outcome as TaskRunOutcome | null) ?? null,
     scheduledFor: row.scheduledFor ?? null,
     missedTicks: row.missedTicks ?? null,
     createdAt: row.createdAt,

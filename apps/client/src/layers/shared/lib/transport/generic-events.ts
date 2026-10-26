@@ -33,6 +33,9 @@ export const GENERIC_EVENTS = [
   // happened," not silently dropped once past the cap. No UI subscribes yet.
   'relay_chat_unclaimed_burst',
   'task_run_failed',
+  // A run ended, however it ended (DOR-3123). The Schedules list re-reads on
+  // it, because whether a schedule is failing is decided by its latest run.
+  'task_run_finished',
   // A finished run's output grew: its agent reported back after the run's own
   // turn ended (DOR-2717). The run list re-reads on it.
   'task_run_updated',
