@@ -51,6 +51,7 @@ async function decide(
     permissionMode: PermissionModeId;
     turnPermissionCeiling?: TurnPermissionCeiling;
     backgroundPermissionCeiling?: TurnPermissionCeiling;
+    teammateTier?: { roomId: string | null };
   },
   input: HookInput,
   resolveIdentity: () => Promise<unknown> = async () => IDENTITY
@@ -71,7 +72,7 @@ describe('the Never ask hook', () => {
   });
 
   it('says nothing in every other mode, so the gate decides as before', async () => {
-    for (const permissionMode of ['default', 'acceptEdits', 'plan', 'bypassPermissions']) {
+    for (const permissionMode of ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto']) {
       const session = { permissionMode: permissionMode as PermissionModeId };
       expect(await decide(session, call('mcp__dorkos__post_to_room'))).toEqual({});
     }
@@ -127,6 +128,26 @@ describe('the Never ask hook', () => {
     // Background work an earlier such turn left running carries the same mark.
     const background = { ...NEVER_ASK, backgroundPermissionCeiling: 'runtime-default' as const };
     expect(await decide(background, call('mcp__dorkos__chat_send', { to: 'c' }))).toEqual({});
+  });
+
+  it('sends no chat_send from a turn held to any ceiling, not only a stranger’s', async () => {
+    const session = { ...NEVER_ASK, turnPermissionCeiling: 'default' as TurnPermissionCeiling };
+    expect(
+      await decide(session, call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }))
+    ).toEqual({});
+  });
+
+  it('says nothing on a teammate’s turn, whatever the tool', async () => {
+    const session = { ...NEVER_ASK, teammateTier: { roomId: 'r1' } };
+    expect(await decide(session, call('mcp__dorkos__read_room_history', { roomId: 'r1' }))).toEqual(
+      {}
+    );
+  });
+
+  it('says nothing when a ceiling holds a Never ask chat to a mode that asks', async () => {
+    // The CLI then runs in that mode and calls canUseTool, which decides.
+    const session = { ...NEVER_ASK, turnPermissionCeiling: 'plan' as TurnPermissionCeiling };
+    expect(await decide(session, call('mcp__dorkos__read_room_history'))).toEqual({});
   });
 
   it('needs the identity the room verbs need, and fails closed when the lookup throws', async () => {

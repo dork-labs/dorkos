@@ -22,6 +22,10 @@
  * even a queued one, so an unattended run can't pass a stranger's words on to
  * another chat (Security's one-hop laundering point).
  *
+ * **Never on a teammate's turn.** A teammate's fence is its own hook's deny,
+ * and Claude Code ranks a deny above an allow; this hook does not lean on that
+ * ranking and says nothing at all while a teammate tier is set.
+ *
  * **It only ever allows, and only at Never ask.** In every other mode, and on
  * any doubt (a throw, a slow lookup, an unknown name), it answers nothing, so
  * `dontAsk` refuses as before and every other mode reaches `canUseTool` as
@@ -40,6 +44,10 @@ import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import { ceilingOn, gatePermissionMode, type CeilingedMode } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
+import type { AgentSession } from '../agent-types.js';
+
+/** What the hook reads from the session, at call time. */
+export type NeverAskSession = CeilingedMode<PermissionModeId> & Pick<AgentSession, 'teammateTier'>;
 
 /** How long the decision may take before it counts as doubt. */
 export const NEVER_ASK_HOOK_TIMEOUT_MS = 5_000;
@@ -67,7 +75,7 @@ const ALLOW = {
  * @param log - Where a failed lookup is reported.
  */
 export async function neverAskAllows(
-  session: CeilingedMode<PermissionModeId>,
+  session: NeverAskSession,
   toolName: string,
   input: Record<string, unknown>,
   mcpServer: ToolApprovalContext['mcpServer'],
@@ -75,6 +83,7 @@ export async function neverAskAllows(
   log: ToolGateLogger
 ): Promise<boolean> {
   if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
+  if (session.teammateTier) return false;
   if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
@@ -108,7 +117,7 @@ export async function neverAskAllows(
  * @param log - Where a failed lookup is reported.
  */
 export function createNeverAskHook(
-  session: CeilingedMode<PermissionModeId>,
+  session: NeverAskSession,
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger
 ): HookCallback {
