@@ -221,6 +221,13 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     reason: `Install and remove packages ${ON_THE_COMPUTER}`,
   },
   {
+    // A server for every agent runs in every agent's session (DOR-3213).
+    surface: 'host',
+    methods: 'writes',
+    pattern: /^\/api\/mcp-servers(?:\/|$)/,
+    reason: `Add and change MCP servers for every agent ${ON_THE_COMPUTER}`,
+  },
+  {
     surface: 'host',
     methods: 'writes',
     pattern: /^\/api\/shapes\/[^/]+\/apply$/,
