@@ -51,6 +51,7 @@ import type {
 import crypto from 'node:crypto';
 import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
+import { defuseReplyMarkdown } from './reply-markdown.js';
 import type { AuthorRecord } from '../../rooms/index.js';
 import type { PersonPostBound } from '../../rooms/messages/room-entry-writer.js';
 
@@ -123,39 +124,6 @@ export function setForwardAgents(extensionId: string, agentIds: readonly string[
   return unique;
 }
 
-/** A link target a reply may keep: web, mail, an in-page anchor, or a path. */
-const SAFE_TARGET = /^(?:https?:\/\/|mailto:|#|\/(?!\/))/iu;
-
-/**
- * Agent markdown with no way to become HTML or a script link. Allow-listed,
- * not deny-listed, because markdown has more ways to spell a link than a
- * deny-list can name:
- *
- * - every `&` and `<` is escaped, so no tag, autolink or character reference
- *   (`java&#115;cript:`) survives to be decoded;
- * - every inline link or image target, and every reference definition
- *   (`[1]: …`), keeps its target only when it is `http(s)://`, `mailto:`, an
- *   anchor or a path, and becomes `#` otherwise.
- *
- * The mini app renders the result as markdown, never as HTML.
- *
- * @param text - The agent's post.
- */
-export function defuseReplyMarkdown(text: string): string {
-  const safe = (target: string) => (SAFE_TARGET.test(target.trim()) ? target : '#');
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(
-      /\]\(\s*((?:[^()\s]|\([^()]*\))*)([^)]*)\)/gu,
-      (_m, target: string, rest: string) => `](${safe(target)}${rest})`
-    )
-    .replace(
-      /^( {0,3}\[[^\]]+\]:\s*)(\S+)/gmu,
-      (_m, head: string, target: string) => `${head}${safe(target)}`
-    );
-}
-
 /** What the forward service needs. Read at call time, so a late start is seen. */
 export interface PersonForwardDeps {
   /** The rooms service, or undefined while rooms are not running. */
@@ -212,14 +180,20 @@ export interface ForwardRequest {
   agentId?: string;
   /** The Wi-Fi hold, as a person's own post from Wi-Fi gets (DOR-3037). */
   bound?: PersonPostBound;
+  /** The app window that sent it (`X-Client-Id`); a held comment is allowed only from it. */
+  clientId?: string;
 }
 
 /** A comment waiting for the person's Allow, as the core prompt reads it. */
 export interface PendingForward {
   /** Its id, for the Allow. Single use. */
   id: string;
-  /** The agent the prompt asks about, with its registered name. */
-  agent: { id: string; name: string };
+  /**
+   * The agent the prompt asks about: its display name, and the handle it was
+   * registered under, which an agent cannot change about itself. The prompt
+   * shows both, so a renamed agent cannot pass for another.
+   */
+  agent: { id: string; name: string; handle: string };
   /** The mini app's name. */
   appName: string;
 }
@@ -228,6 +202,8 @@ export interface PendingForward {
 interface NamedAgent {
   id: string;
   name: string;
+  /** The registered name, which the agent cannot change about itself. */
+  handle: string;
 }
 
 /** The agent a mini app forwards to, resolved to its Direct chat. */
@@ -262,7 +238,9 @@ export class PersonForwards {
     const mesh = this.deps.mesh();
     if (!mesh) throw new PersonForwardError('unavailable', 'Agents aren’t loaded yet. Try again.');
     const manifest = mesh.get(agentId);
-    return manifest ? { id: agentId, name: manifest.displayName ?? manifest.name } : undefined;
+    return manifest
+      ? { id: agentId, name: manifest.displayName ?? manifest.name, handle: manifest.name }
+      : undefined;
   }
 
   /**
@@ -353,14 +331,21 @@ export class PersonForwards {
    * @param extensionId - The mini app the Allow came through.
    * @param viewer - The person, resolved by a route that ran the forward bar.
    * @param pendingId - The held comment.
-   * @returns The receipt.
+   * @param clientId - The app window asking (`X-Client-Id`). Only the window
+   *   that sent the comment may allow it.
+   * @returns The receipt, and the item the comment was on, for the audit row.
    * @throws {PersonForwardError} `not_found` when nothing is held under that
-   *   id for this mini app and person, it lapsed, or the agent is gone.
+   *   id for this mini app, person and window, it lapsed, or the agent is gone.
    */
-  allow(extensionId: string, viewer: AuthorRecord, pendingId: string): ForwardReceipt {
+  allow(
+    extensionId: string,
+    viewer: AuthorRecord,
+    pendingId: string,
+    clientId: string
+  ): ForwardReceipt & { itemId: string } {
     this.prune();
     const held = this.held.get(pendingId);
-    if (!held || held.request.extensionId !== extensionId || held.request.viewer.id !== viewer.id) {
+    if (!this.isHeldFor(held, extensionId, viewer, clientId)) {
       throw new PersonForwardError(
         'not_found',
         'That comment is no longer waiting. Send it again.'
@@ -372,7 +357,22 @@ export class PersonForwards {
       throw new PersonForwardError('not_found', 'That agent is gone. Nothing was sent.');
     }
     setForwardAgents(extensionId, [...forwardAgentsOf(extensionId), agentId]);
-    return this.forward(held.request);
+    return { ...this.forward(held.request), itemId: held.request.itemId };
+  }
+
+  /** Whether a held comment is this mini app's, this person's, from this window. */
+  private isHeldFor(
+    held: HeldForward | undefined,
+    extensionId: string,
+    viewer: AuthorRecord,
+    clientId: string
+  ): held is HeldForward {
+    return (
+      held !== undefined &&
+      held.request.extensionId === extensionId &&
+      held.request.viewer.id === viewer.id &&
+      held.request.clientId === clientId
+    );
   }
 
   /**
@@ -381,10 +381,10 @@ export class PersonForwards {
    * @param extensionId - The mini app.
    * @param viewer - The person.
    * @param pendingId - The held comment.
+   * @param clientId - The app window asking.
    */
-  decline(extensionId: string, viewer: AuthorRecord, pendingId: string): void {
-    const held = this.held.get(pendingId);
-    if (held && held.request.extensionId === extensionId && held.request.viewer.id === viewer.id) {
+  decline(extensionId: string, viewer: AuthorRecord, pendingId: string, clientId: string): void {
+    if (this.isHeldFor(this.held.get(pendingId), extensionId, viewer, clientId)) {
       this.held.delete(pendingId);
     }
   }

@@ -38,8 +38,8 @@ const FORWARD_CODES: ReadonlySet<string> = new Set<ForwardErrorCode>([
 interface PendingConsent {
   /** The kept comment's id. */
   id: string;
-  /** The agent, with its registered name. */
-  agent: ForwardAgent;
+  /** The agent: its display name and the handle it was registered under. */
+  agent: ForwardAgent & { handle: string };
   /** The mini app's name. */
   appName: string;
 }
@@ -97,6 +97,7 @@ export function createExtensionForwardApi(extId: string): ExtensionForwardApi {
     const allowed = await requestForwardConsent({
       appName: consent.appName,
       agentName: consent.agent.name,
+      agentHandle: consent.agent.handle,
     });
     const pending = url(`/forward/pending/${encodeURIComponent(consent.id)}`);
     if (!allowed) {

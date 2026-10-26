@@ -5,6 +5,7 @@
  * @module features/extensions/api/forward-agents
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { extensionKeys } from './queries';
 
@@ -28,7 +29,10 @@ export function useForwardAgents(extensionId: string) {
   return useQuery({
     queryKey: forwardAgentsKey(extensionId),
     queryFn: async (): Promise<ForwardAgentsChoice> => {
-      const res = await fetch(extensionApiUrl(`/extensions/${extensionId}/forward-agents`));
+      // The window's id: the server reads this list only for the app's own window.
+      const res = await fetch(extensionApiUrl(`/extensions/${extensionId}/forward-agents`), {
+        headers: { 'X-Client-Id': resolveStableClientId() },
+      });
       if (!res.ok) throw new Error(`Couldn’t load the agents. The server answered ${res.status}.`);
       return (await res.json()) as ForwardAgentsChoice;
     },
@@ -46,7 +50,7 @@ export function useSetForwardAgents(extensionId: string) {
     mutationFn: async (agentIds) => {
       const res = await fetch(extensionApiUrl(`/extensions/${extensionId}/forward-agents`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Client-Id': resolveStableClientId() },
         body: JSON.stringify({ agentIds }),
       });
       if (!res.ok) {

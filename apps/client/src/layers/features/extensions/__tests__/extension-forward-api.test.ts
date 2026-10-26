@@ -43,7 +43,11 @@ function answers(...replies: Array<[number, unknown]>) {
 const CONSENT = {
   code: 'no_agent',
   error: 'Not allowed yet.',
-  consent: { id: 'p1', agent: { id: 'pm', name: 'DorkOS PM' }, appName: 'Dorian Desk' },
+  consent: {
+    id: 'p1',
+    agent: { id: 'pm', name: 'DorkOS PM', handle: 'dorkos-pm' },
+    appName: 'Dorian Desk',
+  },
 };
 
 /** A fetch that answers once with this status and body. */

@@ -23,9 +23,15 @@ describe('ForwardConsentHost', () => {
     render(<ForwardConsentHost />);
     let answer: Promise<boolean> | undefined;
     act(() => {
-      answer = requestForwardConsent({ appName: 'Dorian Desk', agentName: 'DorkOS PM' });
+      answer = requestForwardConsent({
+        appName: 'Dorian Desk',
+        agentName: 'DorkOS PM',
+        agentHandle: 'dorkos-pm',
+      });
     });
     expect(screen.getByText('Send Dorian Desk comments to DorkOS PM?')).toBeInTheDocument();
+    // The registered handle, which an agent cannot change, sits beside the name.
+    expect(screen.getByText(/Registered as @dorkos-pm\./)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
     await expect(answer).resolves.toBe(true);
   });
@@ -35,8 +41,8 @@ describe('ForwardConsentHost', () => {
     let first: Promise<boolean> | undefined;
     let second: Promise<boolean> | undefined;
     act(() => {
-      first = requestForwardConsent({ appName: 'A', agentName: 'One' });
-      second = requestForwardConsent({ appName: 'A', agentName: 'Two' });
+      first = requestForwardConsent({ appName: 'A', agentName: 'One', agentHandle: 'one' });
+      second = requestForwardConsent({ appName: 'A', agentName: 'Two', agentHandle: 'two' });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
     await expect(first).resolves.toBe(false);

@@ -477,6 +477,36 @@ describe('replies', () => {
     );
   });
 
+  it('carries no links when one hides where the patterns cannot see', async () => {
+    const sent = await request(server).post(FORWARD).set(APP).send({ text: 'ok', itemId: 'i' });
+    const chat = chats.ensureForAgent(ANA_PATH, 'Ana');
+    const cases = [
+      '[q][x]\n\n> [x]: javascript:alert(1)',
+      '[l][x]\n\n- [x]: javascript:alert(1)',
+      '[e][a\\]b]\n\n[a\\]b]: javascript:alert(1)',
+      '[p](/\\evil.example)',
+    ];
+    for (const text of cases) {
+      service.post(chat.roomId, {
+        authorId: chat.agentAuthorId,
+        text,
+        answersEntryId: sent.body.id,
+      });
+    }
+    const res = await request(server).get(`${FORWARD}/${sent.body.id}/replies`).set(APP);
+    const { fromMarkdown } = await import('mdast-util-from-markdown');
+    for (const reply of res.body.replies as Array<{ markdown: string }>) {
+      const urls: string[] = [];
+      const walk = (node: { url?: string; children?: unknown[] }) => {
+        if (typeof node.url === 'string') urls.push(node.url);
+        for (const child of node.children ?? []) walk(child as typeof node);
+      };
+      walk(fromMarkdown(reply.markdown) as never);
+      expect(urls.filter((u) => /javascript:|^\/\\/i.test(u))).toEqual([]);
+    }
+    expect(res.body.replies).toHaveLength(cases.length);
+  });
+
   it('refuses replies to another site, or a request with no app window', async () => {
     const sent = await request(server).post(FORWARD).set(APP).send({ text: 'ok', itemId: 'i' });
     const other = await request(server)
@@ -528,12 +558,12 @@ describe('the forward agents setting', () => {
       .send({ agentIds: [BO_ID, ANA_ID, BO_ID] });
     expect(put.status).toBe(200);
     expect(put.body.agents).toEqual([
-      { id: BO_ID, name: 'Bo' },
-      { id: ANA_ID, name: 'Ana' },
+      { id: BO_ID, name: 'Bo', handle: 'bo' },
+      { id: ANA_ID, name: 'Ana', handle: 'ana' },
     ]);
     expect(state.extensions.forwardAgents).toEqual({ desk: [BO_ID, ANA_ID] });
 
-    const read = await request(server).get('/api/extensions/desk/forward-agents');
+    const read = await request(server).get('/api/extensions/desk/forward-agents').set(APP);
     expect(read.body.agents.map((a: { id: string }) => a.id)).toEqual([BO_ID, ANA_ID]);
 
     const cleared = await request(server)
@@ -553,6 +583,29 @@ describe('the forward agents setting', () => {
     expect(state.extensions.forwardAgents).toBeUndefined();
   });
 
+  it('refuses a headerless local caller with no session, on both the PUT and the GET (M1)', async () => {
+    // Login on, "ask on this computer" off: the gate is open, so no session,
+    // and the person bar alone would let this through.
+    state.authEnabled = false;
+    signedInUser = undefined;
+    const put = await request(server)
+      .put('/api/extensions/desk/forward-agents')
+      .send({ agentIds: [ANA_ID] });
+    expect(put.status).toBe(403);
+    expect(state.extensions.forwardAgents).toBeUndefined();
+    const get = await request(server).get('/api/extensions/desk/forward-agents');
+    expect(get.status).toBe(403);
+  });
+
+  it('refuses the PUT without the app window, even with a session', async () => {
+    const res = await request(server)
+      .put('/api/extensions/desk/forward-agents')
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ agentIds: [ANA_ID] });
+    expect(res.status).toBe(403);
+    expect(state.extensions.forwardAgents).toBeUndefined();
+  });
+
   it('refuses an id Mesh does not know, or a name in place of an id', async () => {
     for (const agentIds of [['nobody'], ['Ana']]) {
       const res = await request(server)
@@ -566,8 +619,11 @@ describe('the forward agents setting', () => {
 
   it('reads back an allowed id that is gone, so it can be removed', async () => {
     pick(ANA_ID, 'GONE');
-    const read = await request(server).get('/api/extensions/desk/forward-agents');
-    expect(read.body).toEqual({ agents: [{ id: ANA_ID, name: 'Ana' }], missing: ['GONE'] });
+    const read = await request(server).get('/api/extensions/desk/forward-agents').set(APP);
+    expect(read.body).toEqual({
+      agents: [{ id: ANA_ID, name: 'Ana', handle: 'ana' }],
+      missing: ['GONE'],
+    });
   });
 
   it('is refused from Wi-Fi, and so is the first-use Allow', () => {
@@ -597,7 +653,7 @@ describe('the first-use prompt', () => {
   it('refuses an agent not on the list, keeps the text, and names the agent as Mesh does', async () => {
     pick(BO_ID);
     const body = await firstForward();
-    expect(body.consent.agent).toEqual({ id: ANA_ID, name: 'Ana' });
+    expect(body.consent.agent).toEqual({ id: ANA_ID, name: 'Ana', handle: 'ana' });
     expect(dmPosts()).toHaveLength(0);
     expect(state.extensions.forwardAgents).toEqual({ desk: [BO_ID] });
   });
@@ -623,6 +679,24 @@ describe('the first-use prompt', () => {
       .send({});
     expect(again.status).toBe(404);
     expect(dmPosts()).toHaveLength(1);
+  });
+
+  it('can be allowed only from the window that sent it', async () => {
+    const { consent } = await firstForward();
+    const other = await request(server)
+      .post(`${FORWARD}/pending/${consent.id}/allow`)
+      .set({ Origin: TRUSTED_ORIGIN, 'X-Client-Id': 'web-other-window' })
+      .send({});
+    expect(other.status).toBe(404);
+    expect(dmPosts()).toHaveLength(0);
+  });
+
+  it('records the item on the Allow’s audit row', async () => {
+    const { consent } = await firstForward();
+    await request(server).post(`${FORWARD}/pending/${consent.id}/allow`).set(APP).send({});
+    const ok = forwardAudits().filter((row) => row.outcome === 'ok');
+    expect(ok).toHaveLength(1);
+    expect(ok[0]!.change).toContain('item-7');
   });
 
   it('takes no new words on Allow', async () => {

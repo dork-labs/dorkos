@@ -10,8 +10,8 @@
  * | `GET  /:id/forward/stamps?ids=a,b`    | who wrote each forward, as DorkOS recorded it | read bar |
  * | `POST /:id/forward/pending/:pendingId/allow`   | allow the agent, send the kept text | forward bar; Wi-Fi refuses |
  * | `POST /:id/forward/pending/:pendingId/decline` | drop the kept text            | forward bar |
- * | `GET  /:id/forward-agents`            | the agents the person allowed | no agent    |
- * | `PUT  /:id/forward-agents`            | change them                   | person bar; Wi-Fi refuses (`wifi-level.ts`) |
+ * | `GET  /:id/forward-agents`            | the agents the person allowed | read bar    |
+ * | `PUT  /:id/forward-agents`            | change them                   | person bar + forward bar; Wi-Fi refuses (`wifi-level.ts`) |
  *
  * **DorkOS reads the forward's body itself.** The page POSTs here directly;
  * no extension server code runs between the person's request and the post in
@@ -312,7 +312,7 @@ export function registerExtensionForwardRoutes(
   const send = (
     c: Context<ApiEnv>,
     app: { extensionId: string; extensionName: string },
-    itemId: string,
+    itemId: string | (() => string),
     run: () => ForwardReceipt,
     onNoAgent?: (err: PersonForwardError) => Response | undefined
   ): Response => {
@@ -321,7 +321,7 @@ export function registerExtensionForwardRoutes(
       auditForward(app, 'ok', undefined, {
         forwardId: receipt.id,
         agentId: receipt.agent.id,
-        itemId,
+        itemId: typeof itemId === 'string' ? itemId : itemId(),
       });
       return c.json(receipt, 201);
     } catch (err) {
@@ -358,6 +358,7 @@ export function registerExtensionForwardRoutes(
       ...(body.data.itemTitle !== undefined ? { itemTitle: body.data.itemTitle } : {}),
       ...(body.data.agentId !== undefined ? { agentId: body.data.agentId } : {}),
       ...(bound !== undefined ? { bound } : {}),
+      clientId: c.req.header('x-client-id') ?? '',
     };
     return send(
       c,
@@ -381,15 +382,34 @@ export function registerExtensionForwardRoutes(
       return refuse(c, 'invalid_input', 'Allow takes no body. DorkOS sends the comment it kept.');
     }
     const { app, viewer } = caller;
-    return send(c, app, '', () =>
-      forwards.allow(app.extensionId, viewer, c.req.param('pendingId'))
+    let itemId = '';
+    return send(
+      c,
+      app,
+      () => itemId,
+      () => {
+        const sent = forwards.allow(
+          app.extensionId,
+          viewer,
+          c.req.param('pendingId'),
+          c.req.header('x-client-id') ?? ''
+        );
+        itemId = sent.itemId;
+        const { itemId: _item, ...receipt } = sent;
+        return receipt;
+      }
     );
   });
 
   router.post('/:id/forward/pending/:pendingId/decline', (c) => {
     const caller = gate(c);
     if (caller instanceof Response) return caller;
-    forwards.decline(caller.app.extensionId, caller.viewer, c.req.param('pendingId'));
+    forwards.decline(
+      caller.app.extensionId,
+      caller.viewer,
+      c.req.param('pendingId'),
+      c.req.header('x-client-id') ?? ''
+    );
     return c.body(null, 204);
   });
 
@@ -434,10 +454,10 @@ export function registerExtensionForwardRoutes(
   router.get('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
     if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
-    // Withheld from agents, as the leaf is in `config_get`.
-    if (presentsAgentIdentity(honoRequestFacts(c))) {
-      return refuse(c, 'person_required', 'Only the person can see who a mini app forwards to.');
-    }
+    // Withheld from agents, as the leaf is in `config_get`, and held to the
+    // same signed-in session as a forward: no headerless local caller.
+    const readRefusal = refuseForwardRead(honoRequestFacts(c));
+    if (readRefusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[readRefusal]);
     if (!extensionManager.get(id)) return c.json({ error: `No mini app named ${id}.` }, 404);
     // A listed agent that is gone still reads back, so the person can remove it.
     return answer(c, () => c.json(forwards.agents(id)));
@@ -448,6 +468,11 @@ export function registerExtensionForwardRoutes(
     if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
     const refused = refusedNotAPerson(c, FORWARD_AGENTS_BAR);
     if (refused) return refused;
+    // The forward bar too (Security M1 on #3207): with the password off at this
+    // computer, the person bar lets a headerless local caller through, and this
+    // list decides who receives the person's words.
+    const why = refuseForward(honoRequestFacts(c), c.req.header('content-type'));
+    if (why) return refuse(c, 'person_required', REFUSAL_MESSAGE[why]);
     const record = extensionManager.get(id);
     if (!record) return c.json({ error: `No mini app named ${id}.` }, 404);
     if (!asksToForward(record)) return refuse(c, 'invalid_input', NO_FORWARD_DECLARED);

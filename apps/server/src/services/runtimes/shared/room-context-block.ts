@@ -935,7 +935,7 @@ function entryLine(
   // outside the fence, through `label()` like every other one. The app name
   // is its author's choice, so brackets and colons go too: it must not close
   // this label and open words that read as the person's. The item id is held
-  // to a charset with neither at the route.
+  // to a charset with no brackets at the route, so it cannot close it either.
   const via = entry.via
     ? ` [via the ${label(entry.via.appName.replace(/[[\]:]/g, ' '), VIA_LABEL_MAX_LENGTH)} app, item ${label(entry.via.itemId, VIA_LABEL_MAX_LENGTH)}]`
     : '';

@@ -15,8 +15,13 @@
 export interface ForwardConsentAsk {
   /** The mini app's name. */
   appName: string;
-  /** The agent's registered name, from the server. */
+  /** The agent's display name, from the server's registry. */
   agentName: string;
+  /**
+   * The handle it was registered under, from the server. An agent can rename
+   * itself but not this, so the prompt shows it beside the name.
+   */
+  agentHandle: string;
 }
 
 interface Waiting extends ForwardConsentAsk {

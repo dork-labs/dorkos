@@ -40,7 +40,7 @@ export function ForwardConsentHost() {
               Send {ask.appName} comments to {ask.agentName}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              They reach {ask.agentName} as your own words. Change it in Settings → Extensions.
+              Registered as @{ask.agentHandle}. Your comments reach this agent as your own words.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
