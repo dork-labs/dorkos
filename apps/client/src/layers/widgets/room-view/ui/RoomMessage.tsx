@@ -56,6 +56,7 @@ import {
   attachmentsSummary,
   formatTime,
 } from '@/layers/features/conversation';
+import { ForwardViaLine } from '@/layers/features/chat';
 import {
   useEntryActions,
   type EntryActionBarHandle,
@@ -418,6 +419,8 @@ export function RoomMessage({
             {`Answering \u201C${answers.excerpt}\u201D`}
           </p>
         )}
+        {/* A comment the person forwarded from a mini app (DOR-3325). */}
+        {entry.body.via && <ForwardViaLine via={entry.body.via} />}
         <Message.Content
           id={contentId}
           // A long unbroken token — a URL, file path or hash, whether or not the

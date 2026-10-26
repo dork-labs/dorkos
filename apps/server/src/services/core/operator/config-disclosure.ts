@@ -382,6 +382,10 @@ export const CONFIG_DISCLOSURE = {
   // person's own decision no agent task reads: a mini app refused a room says
   // so in a sentence, which is all an agent can act on.
   'extensions.roomAccess': 'withhold',
+  // The agent each mini app forwards the person's comments to (DOR-3325). A
+  // person's own decision no agent task reads: a forward refused for want of
+  // one says so in a sentence.
+  'extensions.forwardAgents': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

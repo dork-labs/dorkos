@@ -359,6 +359,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      // The agent a mini app forwards the person's comments to (DOR-3325).
+      'extensions.forwardAgents',
       // Which rooms a mini app may reply in as the person (DOR-3017).
       'extensions.roomAccess',
       'extensions.trustedSources[].source',

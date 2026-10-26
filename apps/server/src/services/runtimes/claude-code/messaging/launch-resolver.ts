@@ -60,7 +60,11 @@ import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.j
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
 import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
-import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import {
+  claudeConfigDirEnv,
+  resolveClaudeRootSet,
+  resolveLaunchAccountRoot,
+} from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
 import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
@@ -71,6 +75,7 @@ import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerpr
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
+import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -781,6 +786,13 @@ export async function resolveLaunch(args: {
   applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome());
   // And the agent home's self-grant files, plus the switches for held-back parts.
   applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
+  // Every turn, at every level: the model's own Read, Grep and Glob never open
+  // a secret (DOR-3299).
+  applySecretReadDeny(sdkOptions, {
+    dorkHome: resolveDorkHome(),
+    accountRoot,
+    otherAccountRoots: resolveClaudeRootSet(),
+  });
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};

@@ -173,10 +173,10 @@ function emptyCounts(): ShiftReportCounts {
  * the registry declares.
  *
  * Since DOR-2101 the notable side holds two outcomes, not one: a run that
- * failed, and a run that was BLOCKED because nobody was there to approve a
- * single tool it reached for. `runsFailed` therefore counts both, and its name
- * is a shade broader than it reads. That is the right side of the line to be
- * imprecise on — a blocked run used to be counted as a SUCCESS here, which is
+ * failed, and a run that NEEDS ATTENTION because it was refused a tool nobody
+ * was there to approve (DOR-3123). `runsFailed` therefore counts both, and its
+ * name is a shade broader than it reads. That is the right side of the line to
+ * be imprecise on — such a run used to be counted as a SUCCESS here, which is
  * the same lie the run row told. `report.daily` rows themselves never count toward
  * anything — they fall through the `default` case below — so a still-in-window
  * report from a previous day cannot inflate today's.

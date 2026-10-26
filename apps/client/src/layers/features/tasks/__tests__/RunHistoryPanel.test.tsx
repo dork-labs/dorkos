@@ -479,8 +479,8 @@ describe('TaskRunHistoryPanel', () => {
       const transport = createMockTransport({
         listTaskRuns: vi.fn().mockResolvedValue([
           createMockRun({
-            id: 'run-blocked',
-            status: 'blocked',
+            id: 'run-refused',
+            status: 'needs_attention',
             trigger: 'scheduled',
             durationMs: 4000,
             error: REFUSAL,
@@ -496,23 +496,23 @@ describe('TaskRunHistoryPanel', () => {
           <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
         </Wrapper>
       );
-      await waitFor(() => expect(screen.getByTitle(/Blocked/)).toBeTruthy());
+      await waitFor(() => expect(screen.getByTitle(/Needs attention/)).toBeTruthy());
     }
 
-    it('shows a blocked marker instead of a green tick', async () => {
+    it('shows a needs-attention marker instead of a tick', async () => {
       // The defect: this run was rendered with the completed tick, so a
       // schedule that read nothing looked healthy in its own history.
       await renderBlocked();
 
       expect(screen.queryByTitle('Completed')).toBeNull();
-      expect(screen.getByTitle('Blocked: nobody was there to approve its tools')).toBeTruthy();
+      expect(screen.getByTitle('Needs attention: a tool was refused')).toBeTruthy();
     });
 
-    it('names the tools it could not use, on the row', async () => {
+    it('counts and names the tools it was refused, on the row (DOR-3132)', async () => {
       await renderBlocked();
 
       expect(
-        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
+        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
       ).toBeTruthy();
     });
 
@@ -533,7 +533,7 @@ describe('TaskRunHistoryPanel', () => {
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(screen.getByText('I could not read the mail.')).toBeTruthy();
       expect(
-        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
+        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
       ).toBeTruthy();
     });
 
@@ -542,7 +542,7 @@ describe('TaskRunHistoryPanel', () => {
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(
-        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
+        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
       ).toBeTruthy();
     });
 
@@ -561,11 +561,11 @@ describe('TaskRunHistoryPanel', () => {
 
       await user.click(screen.getByRole('combobox'));
       const listbox = await screen.findByRole('listbox');
-      await user.click(within(listbox).getByRole('option', { name: 'Blocked' }));
+      await user.click(within(listbox).getByRole('option', { name: 'Needs attention' }));
 
       await waitFor(() => {
         expect(listTaskRuns).toHaveBeenCalledWith(
-          expect.objectContaining({ status: 'blocked' } as Partial<ListTaskRunsQuery>)
+          expect.objectContaining({ status: 'needs_attention' } as Partial<ListTaskRunsQuery>)
         );
       });
     });
