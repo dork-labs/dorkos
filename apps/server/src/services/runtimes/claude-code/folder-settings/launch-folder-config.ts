@@ -10,7 +10,8 @@
  *   and `<home>/.dork/agent.json`. Run on the real CLI, Claude Code does not
  *   protect these under Bypass. Bash still can, which is why the pin exists.
  * - **A changed part is held back** (`folder-config-pin.ts`). Hooks or the MCP
- *   servers file: when the turn stands exactly in the home, the launch turns
+ *   servers file: when the turn stands in the home or a folder inside it (by
+ *   real path: Claude Code collects settings and `.mcp.json` up the tree), the launch turns
  *   the folder's hooks off (`settings.disableAllHooks`) and starts only the MCP
  *   servers DorkOS passes itself (`strictMcpConfig`). The agent file: its
  *   `account` is ignored and its own MCP servers are not passed. DorkOS's own
@@ -21,15 +22,15 @@
  * @module services/runtimes/claude-code/folder-settings/launch-folder-config
  */
 import { realpathSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import { logger } from '../../../../lib/logger.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
-import { isExactlyAgentHome } from './agent-folder-allows.js';
 import { folderAllowApprovalGateway } from './folder-allow-approval.js';
 import { askForFolderConfig, mayAskAboutFolderConfig } from './folder-config-approval.js';
 import {
+  approvedPartsAtHome,
   hasFolderConfigRecord,
   isFolderConfigApproved,
   lastApprovedParts,
@@ -56,7 +57,7 @@ export interface FolderConfigTurn {
 export interface FolderConfigLaunch {
   /** The parts that do not run on this launch, in card order. Empty when all may. */
   held: FolderConfigPart[];
-  /** Whether the turn stands exactly in the home, where the folder's own files load. */
+  /** Whether the switches apply: a held hooks or MCP part, and a turn in or under the home. */
   inHome: boolean;
 }
 
@@ -76,23 +77,31 @@ export async function resolveFolderConfigForLaunch(
   if (!agent || !home) return NOTHING_HELD;
   const now = readFolderConfigParts(home);
   const state = { agentId: agent.id, home, digests: now.digests };
-  // Pinned once, on first use: what the person was already running.
-  const firstUse = !hasFolderConfigRecord(agent.id);
+  // Pinned once, on first use: what the person was already running. Never
+  // for a home that already holds a yes for any agent id (an agent that
+  // renamed its own id is not new).
+  const firstUse = !hasFolderConfigRecord(agent.id, home);
   if (firstUse) {
     try {
       recordFolderConfigApproval(state, 'pinned on first use');
     } catch (err) {
-      logger.warn('[FolderConfig] Could not pin an agent on first use', {
+      // No record means nothing vouches for what is there: hold all of it, and
+      // ask nobody, since a yes could not be recorded either.
+      logger.warn('[FolderConfig] Could not pin an agent on first use; holding its settings', {
         agentId: agent.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      return { held: [...FOLDER_CONFIG_PARTS], inHome: await isInsideHome(turn.cwd, home) };
     }
   }
   let changed: FolderConfigPart[] = [];
   if (!firstUse && !isFolderConfigApproved(state)) {
-    const previous = lastApprovedParts(agent.id, home);
-    // No yes that still vouches for its parts (the home moved): all of it is new.
+    // The agent's own yes, else the one its home holds under another id.
+    const previous = lastApprovedParts(agent.id, home) ?? approvedPartsAtHome(home);
     changed = previous ? changedParts(now.digests, previous) : [...FOLDER_CONFIG_PARTS];
+    // Approved, by digest, under another id, yet nothing differs: the id
+    // itself is pinned, so this can only be the home moving. Still new to a person.
+    if (changed.length === 0) changed = [...FOLDER_CONFIG_PARTS];
   }
   const held = FOLDER_CONFIG_PARTS.filter(
     (part) => changed.includes(part) || now.unverifiable.includes(part)
@@ -116,7 +125,30 @@ export async function resolveFolderConfigForLaunch(
     });
   }
   const loadsHome = held.includes('hooks') || held.includes('mcpJson');
-  return { held, inHome: loadsHome && (await isExactlyAgentHome(turn.cwd, home)) };
+  return { held, inHome: loadsHome && (await isInsideHome(turn.cwd, home)) };
+}
+
+/**
+ * Whether the turn's folder is the home or inside it, by real path. Claude
+ * Code reads `.claude/settings*.json` and `.mcp.json` up the tree from where
+ * it stands, so a subfolder loads the home's files too.
+ *
+ * @param cwd - The turn's working folder.
+ * @param home - The registered agent home.
+ */
+export async function isInsideHome(cwd: string, home: string): Promise<boolean> {
+  try {
+    const [real, realHome] = await Promise.all([
+      realpath(path.resolve(cwd)),
+      realpath(path.resolve(home)),
+    ]);
+    return real === realHome || real.startsWith(`${realHome}${path.sep}`);
+  } catch {
+    // A folder that isn't there yet: decide on the path as given.
+    const resolved = path.resolve(cwd);
+    const resolvedHome = path.resolve(home);
+    return resolved === resolvedHome || resolved.startsWith(`${resolvedHome}${path.sep}`);
+  }
 }
 
 /**
@@ -159,8 +191,10 @@ export function homeWriteDenyRules(home: string): string[] | undefined {
  * @param sdkOptions - The launch options, mutated.
  * @param home - The registered agent home, if any.
  * @param decision - What {@link resolveFolderConfigForLaunch} held back.
- * @throws DirectoryGrantError when the home can't be named in a rule, before
- *   anything launches — failing closed, as the person-only data folders do.
+ *
+ * A home no rule can name exactly (a `?`, a backslash, a control character, a
+ * trailing space) gets no deny rules and a warning, rather than a refused
+ * turn: the pin is the backstop, and it still holds a changed part back.
  */
 export function applyFolderConfigToLaunch(
   sdkOptions: Options,
@@ -168,14 +202,11 @@ export function applyFolderConfigToLaunch(
   decision: FolderConfigLaunch
 ): void {
   if (!home) return;
-  const deny = homeWriteDenyRules(home);
-  if (!deny) {
-    throw new DirectoryGrantError(
-      `Claude Code can't keep this agent's own settings in "${home}" safe from its file tools, ` +
-        `because the folder's name has a character its safety rules can't match: a question mark, ` +
-        `a backslash, a hidden control character, or a space at the very end. So this turn was ` +
-        `not started. Move the agent to a folder without those characters, then try again.`
-    );
+  const deny = homeWriteDenyRules(home) ?? [];
+  if (deny.length === 0) {
+    logger.warn("[FolderConfig] Can't name the agent home in a deny rule; its pin still holds", {
+      home,
+    });
   }
   const base =
     typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null

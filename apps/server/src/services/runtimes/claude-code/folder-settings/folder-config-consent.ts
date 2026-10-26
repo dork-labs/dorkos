@@ -18,6 +18,12 @@
  * running. After that, a change never approves itself. A no keeps the agent's
  * earlier yes, so the agent stays pinned and is never pinned on first use again.
  *
+ * The home counts too, by its real path: an agent that rewrites the `id` in
+ * its own agent file is registered again under the new id, and a home that
+ * already holds a yes for ANY agent id is never pinned on first use. Its old
+ * yes is what the new id is compared against, and `id` is one of the pinned
+ * fields, so the change raises a card.
+ *
  * ## Where the record lives
  *
  * `harness.approvedFolderConfig`, `harness.approvedFolderConfigParts` and
@@ -30,6 +36,7 @@
  * @module services/runtimes/claude-code/folder-settings/folder-config-consent
  */
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { configManager } from '../../../core/config-manager.js';
@@ -69,9 +76,19 @@ export const FOLDER_CONFIG_ENTRY_MARKER = '@folder-config-';
 export function folderConfigEntry(state: FolderConfigState): string {
   const parts = Object.fromEntries(FOLDER_CONFIG_PARTS.map((p) => [p, state.digests[p]]));
   const digest = createHash('sha256')
-    .update(JSON.stringify({ home: path.resolve(state.home), parts }))
+    .update(JSON.stringify({ home: canonicalHome(state.home), parts }))
     .digest('hex');
   return `${state.agentId}${FOLDER_CONFIG_ENTRY_MARKER}${digest}`;
+}
+
+/** A home by its real path, or as resolved when it is not there. */
+function canonicalHome(home: string): string {
+  const resolved = path.resolve(home);
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
 }
 
 /** Whether a stored entry is about this agent. */
@@ -115,14 +132,34 @@ function writeDecisions(reason: string, next: Decisions): void {
 }
 
 /**
- * Whether DorkOS holds any record for this agent. An agent with none is pinned
- * on first use; one with any never is.
+ * Whether DorkOS holds any record for this agent, or a yes for any agent at
+ * its home. Only an agent with neither is pinned on first use.
  *
  * @param agentId - The registered agent's id.
+ * @param home - The agent's home.
  */
-export function hasFolderConfigRecord(agentId: string): boolean {
+export function hasFolderConfigRecord(agentId: string, home: string): boolean {
   const { approved, parts } = storedDecisions();
-  return parts[agentId] !== undefined || approved.some(isAgentEntry(agentId));
+  return (
+    parts[agentId] !== undefined ||
+    approved.some(isAgentEntry(agentId)) ||
+    approvedPartsAtHome(home) !== undefined
+  );
+}
+
+/**
+ * The part digests behind a yes held for ANY agent id at this home (by real
+ * path), so an agent that changed its own id is compared against what its home
+ * last ran rather than treated as new.
+ *
+ * @param home - The agent's home.
+ */
+export function approvedPartsAtHome(home: string): FolderConfigDigests | undefined {
+  const { approved, parts } = storedDecisions();
+  for (const [agentId, digests] of Object.entries(parts)) {
+    if (approved.includes(folderConfigEntry({ agentId, home, digests }))) return { ...digests };
+  }
+  return undefined;
 }
 
 /**
@@ -309,6 +346,33 @@ function safeRead(home: string, part: FolderConfigPart): string | undefined {
   try {
     const read = readFolderConfigParts(home);
     return read.unverifiable.includes(part) ? undefined : read.digests[part];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The account an agent file names, unless its agent-file part is held back
+ * (changed since a person's yes, or unreadable): then none, exactly as the
+ * launch decides (DOR-3068). For the places that predict a launch's account
+ * before it runs. An agent with no record yet keeps its account: its first
+ * launch pins it.
+ *
+ * @param manifest - The agent file as read, or `null`.
+ * @param home - The agent's home, if any.
+ */
+export function accountUnlessHeld(
+  manifest: { id?: string; account?: string } | null,
+  home: string | null | undefined
+): string | undefined {
+  const account = manifest?.account;
+  if (!account || !home || !manifest?.id) return account;
+  try {
+    if (!hasFolderConfigRecord(manifest.id, home)) return account;
+    const now = readFolderConfigParts(home);
+    const approved = lastApprovedParts(manifest.id, home) ?? approvedPartsAtHome(home);
+    if (!approved || now.unverifiable.includes('manifest')) return undefined;
+    return approved.manifest === now.digests.manifest ? account : undefined;
   } catch {
     return undefined;
   }

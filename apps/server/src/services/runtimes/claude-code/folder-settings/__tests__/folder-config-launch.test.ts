@@ -16,11 +16,12 @@ vi.mock('../../../../../lib/logger.js', () => ({
 }));
 
 /** A config store holding just the `harness` section. */
-const store = vi.hoisted(() => ({ harness: {} as Record<string, unknown> }));
+const store = vi.hoisted(() => ({ harness: {} as Record<string, unknown>, failWrites: false }));
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'harness' ? store.harness : undefined),
     set: (key: string, value: Record<string, unknown>) => {
+      if (store.failWrites) throw new Error('disk full');
       if (key === 'harness') store.harness = value;
     },
   },
@@ -71,6 +72,8 @@ beforeEach(() => {
   write('.claude/settings.json', { hooks: {} });
   write('.dork/agent.json', { id: AGENT.id, mcpServers: [], account: 'work' });
   store.harness = { autoSync: true, approvedHooks: [], refusedHooks: [] };
+  store.failWrites = false;
+  vi.mocked(logger.warn).mockClear();
   requests = [];
   const current: typeof answer = { outcome: 'pending' };
   answer = current;
@@ -132,10 +135,28 @@ describe('a change since the yes', () => {
     expect(await ownTurn()).toEqual({ held: ['mcpJson'], inHome: true });
   });
 
+  it('turns them off in a folder inside the home too, where Claude Code still reads them', async () => {
+    write('.claude/settings.json', { hooks: HOOK });
+    fs.mkdirSync(path.join(home, 'sub', 'deeper'), { recursive: true });
+    expect(await ownTurn(path.join(home, 'sub', 'deeper'))).toEqual({
+      held: ['hooks'],
+      inHome: true,
+    });
+  });
+
   it('needs no switches outside the home, where the folder files do not load', async () => {
     write('.claude/settings.json', { hooks: HOOK });
-    fs.mkdirSync(path.join(home, 'sub'));
-    expect(await ownTurn(path.join(home, 'sub'))).toEqual({ held: ['hooks'], inHome: false });
+    fs.mkdirSync(path.join(root, 'agent-sibling'));
+    expect(await ownTurn(path.join(root, 'agent-sibling'))).toEqual({
+      held: ['hooks'],
+      inHome: false,
+    });
+  });
+
+  it('holds and asks when the agent switches its own runtime', async () => {
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [], account: 'work', runtime: 'codex' });
+    expect((await ownTurn()).held).toEqual(['manifest']);
+    expect(requests).toHaveLength(1);
   });
 
   it('holds the agent file back without the switches', async () => {
@@ -290,9 +311,16 @@ describe('applyFolderConfigToLaunch', () => {
     );
   });
 
-  it('refuses to launch for a home no rule can name', () => {
-    expect(() => applyFolderConfigToLaunch({}, '/tmp/what?', { held: [], inHome: false })).toThrow(
-      /can't keep this agent's own settings/
+  it('launches without home deny rules, and still applies the switches, for a home no rule can name', () => {
+    const options: Options = {};
+    expect(() =>
+      applyFolderConfigToLaunch(options, '/tmp/what?', { held: ['hooks'], inHome: true })
+    ).not.toThrow();
+    expect(settingsOf(options).permissions.deny).toEqual([]);
+    expect(settingsOf(options).disableAllHooks).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Can't name the agent home"),
+      expect.anything()
     );
   });
 
@@ -300,5 +328,32 @@ describe('applyFolderConfigToLaunch', () => {
     const options: Options = {};
     applyFolderConfigToLaunch(options, undefined, { held: [], inHome: false });
     expect(options.settings).toBeUndefined();
+  });
+});
+
+describe('an agent that renames itself', () => {
+  it('is not new: its home already holds a yes, so the change asks', async () => {
+    await ownTurn();
+    write('.dork/agent.json', { id: '01RENAMED', mcpServers: [], account: 'personal' });
+    const renamed = await resolveFolderConfigForLaunch({
+      agent: { id: '01RENAMED', name: AGENT.name },
+      home,
+      cwd: home,
+    });
+    expect(renamed.held).toEqual(['manifest']);
+    expect(lastApprovedParts('01RENAMED', home)).toBeUndefined();
+    expect(requests).toHaveLength(1);
+  });
+});
+
+describe('a first-use pin that cannot be written', () => {
+  it('holds everything back and asks nobody', async () => {
+    store.failWrites = true;
+    expect(await ownTurn()).toEqual({ held: ['hooks', 'mcpJson', 'manifest'], inHome: true });
+    expect(requests).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Could not pin'),
+      expect.objectContaining({ agentId: AGENT.id })
+    );
   });
 });

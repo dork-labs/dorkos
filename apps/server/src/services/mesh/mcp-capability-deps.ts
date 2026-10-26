@@ -207,8 +207,8 @@ export const serverNameField = z
 export const AgentServerInput = z.object({ agentId: agentIdField, name: serverNameField });
 
 /**
- * Run one of an agent's MCP server writes, and when a PERSON is behind it (an
- * approval they granted for this exact call, or a caller proven to be one),
+ * Run one of an agent's MCP server writes, and when a PERSON is behind it (a
+ * card they answered for this exact call, or a caller proven to be one),
  * move the agent's folder settings pin to the file it wrote (DOR-3068). A
  * write with no person behind it leaves the pin alone, so the agent's next
  * turn runs without its changed servers until a card is answered.
@@ -224,7 +224,9 @@ export function personRepin<T>(
   context: CapabilityHandlerContext,
   write: () => Promise<T>
 ): Promise<T> {
-  const person = context.approval !== undefined || isTrustedCaller(context.trusted);
+  // Only a card a person answered for THIS call (`via: 'approval'`). A standing
+  // Allowed permission (`via: 'permission'`) or a waited-out hold is no person.
+  const person = context.approval?.via === 'approval' || isTrustedCaller(context.trusted);
   if (!person) return write();
   // The pin is a convenience on top of the write: a registry that can't name
   // the agent's home leaves the pin alone (the next turn asks) and never

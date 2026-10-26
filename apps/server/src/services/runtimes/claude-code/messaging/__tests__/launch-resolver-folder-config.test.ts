@@ -194,6 +194,22 @@ describe('an agent home at launch', () => {
     expect(settingsOf(resolved)?.disableAllHooks).toBeUndefined();
   });
 
+  it('never runs on the account the agent wrote into its own file while that waits', async () => {
+    await launch();
+    // The launch reads the manifest through the mesh mirror (mocked: `work`)
+    // and the pin reads the file on disk; both now say the agent's choice.
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [], account: 'agent-picked' });
+    const { readManifest } = await import('@dorkos/shared/manifest');
+    vi.mocked(readManifest).mockResolvedValueOnce({
+      id: AGENT.id,
+      account: 'agent-picked',
+    } as never);
+    await launch();
+    const asked = vi.mocked(resolveLaunchAccountRoot).mock.calls.map(([o]) => o.agentAccountId);
+    expect(asked.at(-1)).toBeUndefined();
+    expect(asked).not.toContain('agent-picked');
+  });
+
   it('asks once for one changed state', async () => {
     await launch();
     write('.mcp.json', { mcpServers: { x: { command: 'evil' } } });

@@ -5,16 +5,20 @@
  * say which one changed.
  *
  * - **`hooks`**: from `<home>/.claude/settings.json` and `settings.local.json`,
- *   only the keys that make code run or pick which MCP servers start
- *   ({@link CODE_SETTINGS_KEYS}), plus the CONTENTS of the scripts those hooks
- *   run: every file under `<home>/.claude/hooks/`, and every file inside the
- *   home a hook or status line `command` names by a relative or
- *   `$CLAUDE_PROJECT_DIR` path ({@link hookScriptFiles}). A script a command
- *   names outside the home (an absolute path elsewhere, `~`, a program on
- *   `PATH`) is NOT covered: that is the residual, and the agent's shell can
- *   still edit such a file.
+ *   only the keys that run code, sign in, or pick which MCP servers start
+ *   ({@link CODE_SETTINGS_KEYS}); the CONTENTS of the scripts those commands
+ *   run; and the `hooks` and `mcpServers` frontmatter of the home's subagents
+ *   and skills (`folder-config-scripts.ts` says exactly which files).
  * - **`mcpJson`**: `<home>/.mcp.json`, whole.
- * - **`manifest`**: `<home>/.dork/agent.json`, only `mcpServers` and `account`.
+ * - **`manifest`**: `<home>/.dork/agent.json`, only `id`, `runtime`,
+ *   `mcpServers` and `account`. `id` so an agent can't look new by renaming
+ *   itself, `runtime` so it can't move to a runtime this pin does not hold.
+ *
+ * **Not covered (the residual):** a file a hook script imports or sources; a
+ * script a command names outside the home and the plugin folders (`~`, a
+ * program on `PATH`, a variable); and Codex and OpenCode, which still pass an
+ * agent's own MCP servers whatever this pin says. The agent's shell can still
+ * edit any of those.
  *
  * Every file is read the way Claude Code would read it, so the digest covers
  * what actually runs: a symlinked file is followed, and its target's text is
@@ -30,8 +34,10 @@
  * @module services/runtimes/claude-code/folder-settings/folder-config-pin
  */
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { agentFileHooks, hookScriptFiles } from './folder-config-scripts.js';
 
 /** The three parts a pin is made of, in the order a card names them. */
 export const FOLDER_CONFIG_PARTS = ['hooks', 'mcpJson', 'manifest'] as const;
@@ -63,6 +69,11 @@ export const CODE_SETTINGS_KEYS = [
   'enableAllProjectMcpServers',
   'enabledMcpjsonServers',
   'disabledMcpjsonServers',
+  'apiKeyHelper',
+  'awsAuthRefresh',
+  'awsCredentialExport',
+  'otelHeadersHelper',
+  'env',
 ] as const;
 
 /** The settings files read for {@link CODE_SETTINGS_KEYS}, in Claude Code's order. */
@@ -175,8 +186,8 @@ interface PartValue {
   verifiable: boolean;
 }
 
-/** The `hooks` part: the code-running keys of both settings files, and the scripts they run. */
-function hooksPart(home: string): PartValue {
+/** The `hooks` part: the code-running keys of both settings files, the scripts they run, and agent-file hooks. */
+function hooksPart(home: string, dorkHome: string): PartValue {
   const value: Record<string, unknown> = {};
   let verifiable = true;
   const commands: string[] = [];
@@ -194,13 +205,18 @@ function hooksPart(home: string): PartValue {
             ? null
             : { unverifiable: true };
   }
-  const files = hookScriptFiles(home, commands);
-  if (files === undefined)
+  const files = hookScriptFiles(home, commands, dorkHome);
+  const agentFiles = agentFileHooks(home);
+  if (files === undefined || agentFiles === undefined) {
     return { value: { ...value, files: { unverifiable: true } }, verifiable: false };
-  return { value: { ...value, files }, verifiable };
+  }
+  return { value: { ...value, files, agentFiles }, verifiable };
 }
 
-/** Every string `command` anywhere under a parsed settings slice. */
+/** Settings keys whose string value is itself a command DorkOS runs. */
+const HELPER_KEYS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper'];
+
+/** Every string `command` anywhere under a parsed settings slice, and each helper command. */
 function collectCommands(value: unknown, out: string[]): void {
   if (Array.isArray(value)) {
     for (const item of value) collectCommands(item, out);
@@ -208,146 +224,12 @@ function collectCommands(value: unknown, out: string[]): void {
   }
   if (value === null || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'command' && typeof child === 'string') out.push(child);
-    else collectCommands(child, out);
-  }
-}
-
-/** The most script files hashed for one home, and how deep `.claude/hooks/` is walked. */
-const MAX_SCRIPT_FILES = 200;
-const MAX_HOOKS_DEPTH = 4;
-
-/** Stands in for the home while a command is split, so a space in the home's path survives. */
-const HOME_MARK = '\u0000home\u0000';
-
-/** `$CLAUDE_PROJECT_DIR` and `${CLAUDE_PROJECT_DIR}`. */
-const PROJECT_DIR_VAR = /\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b/g;
-
-/** An output redirect and its target (`> log.txt`, `2>> err.log`); `<` input is kept. */
-const OUTPUT_REDIRECT = /\d*>>?\s*\S+/g;
-
-/** What separates words in a shell command, for finding the paths in it. */
-const WORD_BREAK = /[\s;&|<>()`=]+/;
-
-/** A word that looks like a file: it has a slash, or ends in an extension. */
-const PATH_LIKE = /\/|\.[A-Za-z0-9]+$/;
-
-/**
- * The paths inside `home` that `commands` name: relative words that look like
- * files, and anything under `$CLAUDE_PROJECT_DIR`. Absolute paths elsewhere,
- * `~`, other variables and `..` that leaves the home are left out (residual).
- */
-function namedPaths(home: string, commands: readonly string[]): string[] {
-  const root = path.resolve(home);
-  const found = new Set<string>();
-  for (const command of commands) {
-    const words = command
-      .replace(/["']/g, '')
-      // A file a command writes its output to is not code it runs, and a log
-      // that changed on every run would ask a person again after each one.
-      .replace(OUTPUT_REDIRECT, ' ')
-      .replace(PROJECT_DIR_VAR, HOME_MARK)
-      .split(WORD_BREAK);
-    for (const word of words) {
-      let target: string | undefined;
-      if (word.startsWith(HOME_MARK)) {
-        target = path.join(root, word.slice(HOME_MARK.length).split(HOME_MARK).join(root));
-      } else if (
-        word &&
-        !word.startsWith('/') &&
-        !word.startsWith('~') &&
-        !word.startsWith('$') &&
-        !word.startsWith('-') &&
-        PATH_LIKE.test(word)
-      ) {
-        target = path.resolve(root, word);
-      }
-      if (target === undefined) continue;
-      const rel = path.relative(root, target);
-      if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) found.add(rel);
+    if ((key === 'command' || HELPER_KEYS.includes(key)) && typeof child === 'string') {
+      out.push(child);
+    } else {
+      collectCommands(child, out);
     }
   }
-  return [...found];
-}
-
-/**
- * The scripts the hooks run, by relative path, each with its content hash:
- * every file under `.claude/hooks/` and every file a command names inside the
- * home. `absent` for a named file that is not there (so creating it is a
- * change), `dir` for a named folder. `undefined` when one can't be vouched
- * for: a symlink, something that is not a regular file or folder, a file over
- * 64 KB, an unreadable one, a tree deeper than {@link MAX_HOOKS_DEPTH} or more
- * than {@link MAX_SCRIPT_FILES} files.
- *
- * @param home - The registered agent home.
- * @param commands - Every hook and status line command in its settings.
- */
-export function hookScriptFiles(
-  home: string,
-  commands: readonly string[]
-): [string, string][] | undefined {
-  const root = path.resolve(home);
-  const entries = new Map<string, string>();
-  const hash = (rel: string): boolean => {
-    if (entries.has(rel)) return true;
-    let stat;
-    try {
-      stat = lstatSync(path.join(root, rel));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return false;
-      entries.set(rel, 'absent');
-      return true;
-    }
-    if (stat.isDirectory()) {
-      entries.set(rel, 'dir');
-      return true;
-    }
-    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return false;
-    if (entries.size >= MAX_SCRIPT_FILES) return false;
-    try {
-      const content = readFileSync(path.join(root, rel));
-      if (content.byteLength > MAX_FILE_BYTES) return false;
-      entries.set(rel, createHash('sha256').update(content).digest('hex'));
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  const walk = (rel: string, depth: number): boolean => {
-    let stat;
-    try {
-      stat = lstatSync(path.join(root, rel));
-    } catch (err) {
-      return (err as NodeJS.ErrnoException).code === 'ENOENT';
-    }
-    if (!stat.isDirectory()) return false;
-    if (depth > MAX_HOOKS_DEPTH) return false;
-    let names: string[];
-    try {
-      names = readdirSync(path.join(root, rel));
-    } catch {
-      return false;
-    }
-    for (const name of names) {
-      const child = path.join(rel, name);
-      let childStat;
-      try {
-        childStat = lstatSync(path.join(root, child));
-      } catch {
-        return false;
-      }
-      const ok = childStat.isDirectory() ? walk(child, depth + 1) : hash(child);
-      if (!ok) return false;
-    }
-    return true;
-  };
-  if (!walk(path.join('.claude', 'hooks'), 1)) return undefined;
-  for (const rel of namedPaths(root, commands)) {
-    if (!hash(rel)) return undefined;
-  }
-  return [...entries]
-    .map(([rel, digest]): [string, string] => [rel.split(path.sep).join('/'), digest])
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /** The `mcpJson` part: the whole `.mcp.json`. */
@@ -358,7 +240,7 @@ function mcpJsonPart(home: string): PartValue {
   return { value: read.kind === 'parsed' ? read.value : null, verifiable: true };
 }
 
-/** The `manifest` part: the agent file's `mcpServers` and `account`. */
+/** The `manifest` part: the agent file's `id`, `runtime`, `mcpServers` and `account`. */
 function manifestPart(home: string): PartValue {
   const read = readJsonFile(path.join(home, '.dork', 'agent.json'));
   if (read.kind === 'unverifiable') return { value: { unverifiable: true }, verifiable: false };
@@ -371,6 +253,8 @@ function manifestPart(home: string): PartValue {
   const fields = manifest as Record<string, unknown>;
   return {
     value: {
+      id: Object.hasOwn(fields, 'id') ? fields.id : null,
+      runtime: Object.hasOwn(fields, 'runtime') ? fields.runtime : null,
       mcpServers: Object.hasOwn(fields, 'mcpServers') ? servers(fields.mcpServers) : null,
       account: Object.hasOwn(fields, 'account') ? fields.account : null,
     },
@@ -382,10 +266,14 @@ function manifestPart(home: string): PartValue {
  * Read an agent home's folder settings and digest each part.
  *
  * @param home - The registered agent home.
+ * @param dorkHome - DorkOS's data folder, whose `plugins/` installed hooks run from.
  */
-export function readFolderConfigParts(home: string): FolderConfigParts {
+export function readFolderConfigParts(
+  home: string,
+  dorkHome: string = resolveDorkHome()
+): FolderConfigParts {
   const values: Record<FolderConfigPart, PartValue> = {
-    hooks: hooksPart(home),
+    hooks: hooksPart(home, dorkHome),
     mcpJson: mcpJsonPart(home),
     manifest: manifestPart(home),
   };

@@ -71,8 +71,8 @@ function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-/** A streamed reply: one Bash call running `command` when `toolUse`, plain text otherwise. */
-function reply(toolUse: boolean, command: string): string {
+/** A streamed reply: one Bash call (`id`) running `command` when `toolUse`, plain text otherwise. */
+function reply(toolUse: boolean, command: string, id = 'toolu_probe'): string {
   const message = {
     id: `msg_${toolUse ? 1 : 2}`,
     type: 'message',
@@ -84,7 +84,7 @@ function reply(toolUse: boolean, command: string): string {
     usage: { input_tokens: 1, output_tokens: 1 },
   };
   const block = toolUse
-    ? { type: 'tool_use', id: 'toolu_probe', name: 'Bash', input: {} }
+    ? { type: 'tool_use', id, name: 'Bash', input: {} }
     : { type: 'text', text: '' };
   const delta = toolUse
     ? { type: 'input_json_delta', partial_json: JSON.stringify({ command }) }
@@ -106,8 +106,14 @@ function reply(toolUse: boolean, command: string): string {
 let root: string;
 let home: string;
 
-/** The fake model: its first reply runs `command`, its second ends the turn. */
-function fakeModel(command: string): Promise<{ url: string; close: () => Promise<void> }> {
+/**
+ * The fake model: one reply per command, each a Bash call, then one that ends
+ * the turn. Which step it is on is read off the tool results already sent.
+ */
+function fakeModel(
+  command: string | string[]
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const steps = Array.isArray(command) ? command : [command];
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       let body = '';
@@ -121,7 +127,8 @@ function fakeModel(command: string): Promise<{ url: string; close: () => Promise
           return;
         }
         res.writeHead(200, { 'content-type': 'text/event-stream' });
-        res.end(reply(!body.includes('toolu_probe'), command));
+        const step = steps.findIndex((_, i) => !body.includes(`toolu_step${i}`));
+        res.end(step === -1 ? reply(false, '') : reply(true, steps[step]!, `toolu_step${step}`));
       });
     });
     server.listen(0, '127.0.0.1', () => {
@@ -135,7 +142,7 @@ function fakeModel(command: string): Promise<{ url: string; close: () => Promise
 }
 
 /** Run one Bypass turn in the home whose model runs `command`, with `extra` launch options. */
-async function runTurn(command: string, extra: Partial<Options> = {}): Promise<void> {
+async function runTurn(command: string | string[], extra: Partial<Options> = {}): Promise<void> {
   const model = await fakeModel(command);
   const abort = new AbortController();
   let childClosed: Promise<void> | undefined;
@@ -228,6 +235,29 @@ describe.skipIf(BINARY === null)('an agent rewriting its own hooks, on the real 
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
     await runTurn(REDIRECT_HOOK, await pinnedLaunchOptions());
     expect(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8')).toBe('{}');
+  }, 60_000);
+
+  /**
+   * Does Claude Code hot-reload hooks within a running process? One turn: the
+   * agent's shell writes a hook into its own settings, then makes a second
+   * Bash call the hook matches. This asserts what the CLI does TODAY. If it
+   * starts failing, the CLI changed: a hook an agent writes mid-session would
+   * then run before any launch re-reads the pin, and the pin alone no longer
+   * covers a warm process (a running session must also be relaunched, or its
+   * hooks turned off, the moment the folder changes).
+   */
+  it('HOT-RELOAD CHECK: a hook written mid-turn does not fire later in the same turn (hooks are snapshotted at launch)', async () => {
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
+    fs.rmSync(path.join(home, 'hook-ran'), { force: true });
+    // The pin matches again, so nothing is held: only the snapshot can stop it.
+    const options = await pinnedLaunchOptions();
+    expect((options.settings as { disableAllHooks?: boolean }).disableAllHooks).toBeUndefined();
+    await runTurn([WRITE_HOOK, PROBE], options);
+    expect(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8')).toBe(
+      SELF_WRITTEN_SETTINGS
+    );
+    expect(probeRan()).toBe(true);
+    expect(hookRan()).toBe(false);
   }, 60_000);
 
   it('does not run the hook on its next turn while nobody has allowed it', async () => {

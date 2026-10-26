@@ -2,6 +2,7 @@
 covers:
   - "fix(server): an agent can't change its own hooks, MCP servers or account without a person (DOR-3068)"
   - "fix(server): an agent's file tools can't rewrite an installed plugin (DOR-3068)"
+  - "fix(server): close the pin's gaps: a renamed agent, plugin scripts, more settings that run code (DOR-3068)"
 ---
 
 ### Fixed
