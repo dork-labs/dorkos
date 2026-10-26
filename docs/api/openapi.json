@@ -3715,6 +3715,9 @@
                   "$ref": "#/components/schemas/ModelSubstitutedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/WorkLeftRunningPart"
+                },
+                {
                   "$ref": "#/components/schemas/CompactBoundaryPart"
                 }
               ],
@@ -3733,6 +3736,7 @@
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "model_substituted": "#/components/schemas/ModelSubstitutedPart",
+                  "work_left_running": "#/components/schemas/WorkLeftRunningPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
@@ -4782,6 +4786,62 @@
           "to",
           "toName",
           "reason"
+        ]
+      },
+      "WorkLeftRunningPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "work_left_running"
+            ]
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/WorkLeftTask"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "ended": {
+                      "$ref": "#/components/schemas/WorkLeftEndStatus"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "type",
+          "tasks"
+        ]
+      },
+      "WorkLeftEndStatus": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "stopped"
+        ]
+      },
+      "WorkLeftTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "command"
         ]
       },
       "CompactBoundaryPart": {
@@ -5846,6 +5906,59 @@
               "to",
               "toName",
               "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "work_left_running"
+                ]
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkLeftTask"
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "tasks"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "work_left_ended"
+                ]
+              },
+              "taskId": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/WorkLeftEndStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "taskId",
+              "status"
             ]
           },
           {
@@ -36135,6 +36248,59 @@
                         "to",
                         "toName",
                         "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "work_left_running"
+                          ]
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WorkLeftTask"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "tasks"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "work_left_ended"
+                          ]
+                        },
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "$ref": "#/components/schemas/WorkLeftEndStatus"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "taskId",
+                        "status"
                       ]
                     },
                     {

@@ -9,7 +9,6 @@
 import {
   forkSession as sdkForkSession,
   type PermissionUpdate,
-  type PermissionUpdateDestination,
   type Query,
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -35,7 +34,12 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import { gatePermissionMode, isPersonOnlyMode, setChosenMode } from '../turn-permission.js';
+import {
+  gatePermissionMode,
+  isPersonOnlyMode,
+  sessionScopedMode,
+  setChosenMode,
+} from '../turn-permission.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -45,6 +49,7 @@ import {
   STOP_ACK_TIMEOUT_MS,
   type ControlAck,
 } from './bounded-control.js';
+import { endTurnTasks } from '../sdk/turn-work-stop.js';
 
 /**
  * Build one of this store's stop receipts.
@@ -98,33 +103,6 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
 
 /** This runtime's own mode descriptors — the only meaning any mode id has. */
 const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
-
-/**
- * The one permission-update scope DorkOS mirrors into its own session state.
- *
- * The SDK's other destinations name settings FILES — the operator's, the
- * project's, the machine-local override — and a mode written there outlives the
- * conversation the card was answered in. `'session'` is the only one whose
- * lifetime matches the row DorkOS keeps per session.
- */
-const SESSION_SCOPED: PermissionUpdateDestination = 'session';
-
-/**
- * The mode a batch of accepted permission suggestions leaves the session in, or
- * `undefined` when none of them touches the mode.
- *
- * Last one wins, for the same reason the SDK applies them in order: a batch that
- * names the mode twice ends at the second value, not the first.
- *
- * @param suggestions - The SDK permission updates being forwarded verbatim.
- */
-function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
-  let mode: PermissionMode | undefined;
-  for (const update of suggestions) {
-    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
-  }
-  return mode;
-}
 
 /**
  * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
@@ -998,7 +976,9 @@ export class SessionStore {
     } else {
       logger.debug('[interruptQuery] stop acked', { sessionId, ack, ackMs });
     }
-    if (ack === 'acked') return receipt('acked');
+    // The interrupt leaves a background shell running; end the turn's own (DOR-3285).
+    if (ack === 'acked')
+      return endTurnTasks(sessionId, session, query).then(() => receipt('acked'));
     logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
       sessionId,
       ack,

@@ -220,6 +220,8 @@ export const StreamEventTypeSchema = z
     'elicitation_complete',
     'permission_denied',
     'model_substituted',
+    'work_left_running',
+    'work_left_ended',
     'interaction_cancelled',
     'capability_approval_required',
     'capability_approval_resolved',
@@ -2823,6 +2825,58 @@ export const ModelSubstitutedEventSchema = z
 /** Inferred type for {@link ModelSubstitutedEventSchema}. */
 export type ModelSubstitutedEvent = z.infer<typeof ModelSubstitutedEventSchema>;
 
+/** How a background command left running by a Stop finally ended (DOR-3285). */
+export const WorkLeftEndStatusSchema = z
+  .enum(['completed', 'failed', 'stopped'])
+  .openapi('WorkLeftEndStatus');
+
+/** Inferred type for {@link WorkLeftEndStatusSchema}. */
+export type WorkLeftEndStatus = z.infer<typeof WorkLeftEndStatusSchema>;
+
+/** One background command a stopped turn could not end, by its task id. */
+export const WorkLeftTaskSchema = z
+  .object({
+    /** The runtime's task id, which the per-task Stop takes. */
+    taskId: z.string(),
+    /** The shell command as the agent wrote it; empty when it is not known. */
+    command: z.string(),
+  })
+  .openapi('WorkLeftTask');
+
+/** Inferred type for {@link WorkLeftTaskSchema}. */
+export type WorkLeftTask = z.infer<typeof WorkLeftTaskSchema>;
+
+/**
+ * Emitted when a Stop ended a turn but could not end every background command
+ * that turn started (DOR-3285). It happens after the turn, so it is recorded
+ * the moment it arrives and drawn as a lasting line under the stopped turn.
+ */
+export const WorkLeftRunningEventSchema = z
+  .object({
+    /** The commands still running, each with its own Stop. */
+    tasks: z.array(WorkLeftTaskSchema),
+  })
+  .openapi('WorkLeftRunningEvent');
+
+/** Inferred type for {@link WorkLeftRunningEventSchema}. */
+export type WorkLeftRunningEvent = z.infer<typeof WorkLeftRunningEventSchema>;
+
+/**
+ * Emitted when a command a Stop left running later ends (DOR-3285), so the
+ * line under the stopped turn can say it is over.
+ */
+export const WorkLeftEndedEventSchema = z
+  .object({
+    /** The task id named in the earlier `work_left_running`. */
+    taskId: z.string(),
+    /** How it ended. */
+    status: WorkLeftEndStatusSchema,
+  })
+  .openapi('WorkLeftEndedEvent');
+
+/** Inferred type for {@link WorkLeftEndedEventSchema}. */
+export type WorkLeftEndedEvent = z.infer<typeof WorkLeftEndedEventSchema>;
+
 export const PromptSuggestionEventSchema = z
   .object({
     suggestions: z.array(z.string()),
@@ -3098,6 +3152,8 @@ export const StreamEventSchema = z
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
       ModelSubstitutedEventSchema,
+      WorkLeftRunningEventSchema,
+      WorkLeftEndedEventSchema,
       InteractionCancelledEventSchema,
       CapabilityApprovalRequiredEventSchema,
       CapabilityApprovalResolvedEventSchema,
@@ -3528,6 +3584,26 @@ export const ModelSubstitutedPartSchema = z
 export type ModelSubstitutedPart = z.infer<typeof ModelSubstitutedPartSchema>;
 
 /**
+ * The lasting line under a stopped turn that names the background commands
+ * the Stop could not end (DOR-3285). Sourced from `work_left_running`, with
+ * each later `work_left_ended` folded in as that task's `ended`.
+ */
+export const WorkLeftRunningPartSchema = z
+  .object({
+    type: z.literal('work_left_running'),
+    tasks: z.array(
+      WorkLeftTaskSchema.extend({
+        /** Set once the command has ended; absent while it still runs. */
+        ended: WorkLeftEndStatusSchema.optional(),
+      })
+    ),
+  })
+  .openapi('WorkLeftRunningPart');
+
+/** Inferred type for {@link WorkLeftRunningPartSchema}. */
+export type WorkLeftRunningPart = z.infer<typeof WorkLeftRunningPartSchema>;
+
+/**
  * An inline row in the message stream marking a context-window compaction.
  * Sourced from the `compact_boundary` session event on success (carrying the
  * SDK `compact_metadata`), or synthesized from an `operation_progress`
@@ -3584,6 +3660,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   ModelSubstitutedPartSchema,
+  WorkLeftRunningPartSchema,
   CompactBoundaryPartSchema,
 ]);
 
