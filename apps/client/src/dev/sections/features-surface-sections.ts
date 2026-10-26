@@ -218,6 +218,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Spaces',
     keywords: ['community', 'hosted', 'hold', 'keep', 'restore', 'deletion', 'notice'],
   },
+  // WorkLeftShowcases (DOR-3285)
+  {
+    id: 'work-left-running',
+    title: 'Work left running',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['stop', 'still running', 'background', 'command', 'pill'],
+  },
   // ConnectionsShowcases
   {
     id: 'approw',

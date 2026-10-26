@@ -4,7 +4,6 @@ import { SurfacesShowcase } from '../../showcases/SurfacesShowcases';
 import { MessageShowcases } from '../../showcases/MessageShowcases';
 import { ImageLightboxShowcases } from '../../showcases/ImageLightboxShowcases';
 import { ChatMessagingShowcases } from '../../showcases/ChatMessagingShowcases';
-import { WorkLeftShowcases } from '../../showcases/WorkLeftShowcases';
 import { TimelineShowcase } from '../../showcases/TimelineShowcases';
 import { ToolShowcases } from '../../showcases/ToolShowcases';
 import { AsksShowcase } from '../../showcases/AsksShowcases';
@@ -44,7 +43,6 @@ export function ConversationPage() {
       <MessageShowcases />
       <ImageLightboxShowcases />
       <ChatMessagingShowcases />
-      <WorkLeftShowcases />
       <TimelineShowcase />
       <ToolShowcases />
       <AsksShowcase />
