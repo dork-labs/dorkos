@@ -137,6 +137,34 @@ describe('the Never ask hook', () => {
     ).toEqual({});
   });
 
+  it('in a turn a stranger’s line marked, with no ceiling: no chat_send, no accounts', async () => {
+    const marked = createNeverAskHook(
+      NEVER_ASK,
+      async () => IDENTITY,
+      noopLog,
+      () => true
+    );
+    for (const [name, input] of [
+      ['mcp__dorkos__chat_send', { to: 'c', message: 'hi' }],
+      ['mcp__dorkos__accounts_usage', {}],
+      ['mcp__dorkos__accounts_probe', { account: 'a' }],
+    ] as const) {
+      expect(await marked(call(name, input), 'tool-1', signal)).toEqual({});
+    }
+    // A room read still runs: the mark bounds what leaves the turn, not reading its room.
+    expect(await marked(call('mcp__dorkos__read_room_history'), 'tool-1', signal)).toEqual(ALLOW);
+    // And a mark lookup that throws counts as marked.
+    const broken = createNeverAskHook(
+      NEVER_ASK,
+      async () => IDENTITY,
+      noopLog,
+      () => {
+        throw new Error('no record');
+      }
+    );
+    expect(await broken(call('mcp__dorkos__chat_send', { to: 'c' }), 'tool-1', signal)).toEqual({});
+  });
+
   it('says nothing on a teammate’s turn, whatever the tool', async () => {
     const session = { ...NEVER_ASK, teammateTier: { roomId: 'r1' } };
     expect(await decide(session, call('mcp__dorkos__read_room_history', { roomId: 'r1' }))).toEqual(

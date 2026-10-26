@@ -97,6 +97,8 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
@@ -852,7 +854,11 @@ export async function resolveLaunch(args: {
       // per-call decision. Answers nothing in any other mode.
       {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
-        hooks: [createNeverAskHook(session, resolveIdentity, logger)],
+        hooks: [
+          createNeverAskHook(session, resolveIdentity, logger, () =>
+            hasMarks(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+          ),
+        ],
       },
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',

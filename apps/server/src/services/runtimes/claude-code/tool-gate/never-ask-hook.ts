@@ -18,9 +18,10 @@
  * stay refused.
  *
  * **Stricter than the gate in one place.** A turn held to a ceiling (a
- * stranger's, a teammate's, another agent's) gets no `chat_send` at all, not
- * even a queued one, so an unattended run can't pass a stranger's words on to
- * another chat (Security's one-hop laundering point).
+ * stranger's, a teammate's, another agent's), or MARKED without one (a room
+ * turn with a stranger's line in view), gets no `chat_send` at all, not even a
+ * queued one, so an unattended run can't pass a stranger's words on to another
+ * chat (Security's one-hop laundering point), and no account tools.
  *
  * **Never on a teammate's turn.** A teammate's fence is its own hook's deny,
  * and Claude Code ranks a deny above an allow; this hook does not lean on that
@@ -52,8 +53,10 @@ export type NeverAskSession = CeilingedMode<PermissionModeId> & Pick<AgentSessio
 /** How long the decision may take before it counts as doubt. */
 export const NEVER_ASK_HOOK_TIMEOUT_MS = 5_000;
 
-/** The qualified `chat_send`, refused outright in a held turn. */
-const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
+/** Tools refused outright in a held or marked turn: passing words on, and the accounts. */
+const NEVER_IN_A_HELD_OR_MARKED_TURN: ReadonlySet<string> = new Set(
+  [CHAT_SEND_TOOL, 'accounts_usage', 'accounts_probe'].map(inSessionToolName)
+);
 
 /** What the hook answers when it lets a call run. */
 const ALLOW = {
@@ -73,6 +76,8 @@ const ALLOW = {
  * @param mcpServer - The serving server's provenance, from the hook input.
  * @param resolveIdentity - The memoized session-identity resolver.
  * @param log - Where a failed lookup is reported.
+ * @param isMarked - Whether the running turn read words DorkOS can't vouch for
+ *   (its marks, `marksOf`), which a room turn can be without any ceiling.
  */
 export async function neverAskAllows(
   session: NeverAskSession,
@@ -80,14 +85,22 @@ export async function neverAskAllows(
   input: Record<string, unknown>,
   mcpServer: ToolApprovalContext['mcpServer'],
   resolveIdentity: () => Promise<unknown>,
-  log: ToolGateLogger
+  log: ToolGateLogger,
+  isMarked: () => boolean = () => false
 ): Promise<boolean> {
   if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
   if (session.teammateTier) return false;
   if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
-  if (toolName === CHAT_SEND_QUALIFIED && ceilingOn(session) !== 'none') return false;
+  if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
+    if (ceilingOn(session) !== 'none') return false;
+    try {
+      if (isMarked()) return false;
+    } catch {
+      return false;
+    }
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timedOut = new Promise<false>((resolve) => {
@@ -115,11 +128,13 @@ export async function neverAskAllows(
  * @param session - The session's chosen mode and both ceilings.
  * @param resolveIdentity - The memoized session-identity resolver `canUseTool` uses.
  * @param log - Where a failed lookup is reported.
+ * @param isMarked - Whether the running turn is marked, read at call time.
  */
 export function createNeverAskHook(
   session: NeverAskSession,
   resolveIdentity: () => Promise<unknown>,
-  log: ToolGateLogger
+  log: ToolGateLogger,
+  isMarked: () => boolean = () => false
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
@@ -133,7 +148,8 @@ export function createNeverAskHook(
       input,
       hookInput.mcp_server,
       resolveIdentity,
-      log
+      log,
+      isMarked
     );
     return allowed ? ALLOW : {};
   };
