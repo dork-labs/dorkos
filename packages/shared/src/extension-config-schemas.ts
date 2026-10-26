@@ -45,8 +45,11 @@ export type ExtensionTrustedSource = z.infer<typeof ExtensionTrustedSourceSchema
  * An approval is about code, and an id is only a name: two copies of an
  * extension can carry the same id, and the marketplace tools an agent may call
  * can install a second one. So an approval also records WHICH copy it was
- * given to, by where that copy lives. It is identity, not content: editing or
- * updating the approved copy keeps loading with nothing to click (DOR-504/506).
+ * given to, by where that copy lives. Since DOR-3068 it is content too: an
+ * approval carries the folder `digest` it was given to, and an edit waits for
+ * a person. The one exception is an extension one of our agents created that
+ * runs separately inside that agent's own folder (`authorHome` and `grants`
+ * below), whose edits keep loading with nothing to click (DOR-504/506).
  * See `apps/server/src/services/extensions/extension-load-policy.ts`.
  */
 export const ExtensionApprovedSourceSchema = z.object({
@@ -68,11 +71,40 @@ export const ExtensionApprovedSourceSchema = z.object({
    */
   origin: ExtensionOriginSchema.optional(),
   /**
-   * For a copy whose plugin files changed after DorkOS installed it: the
-   * whole plugin folder's digest the person said yes to. Any further change
-   * asks again, because a path alone no longer says what is there.
+   * The folder digest the yes was given to (DOR-3068): the whole plugin
+   * folder for a plugin-carried copy, the extension's own folder otherwise.
+   * Any change to those files waits for a person, because a path alone no
+   * longer says what is there. Absent only for a dev link, or for a copy
+   * that keeps its path trust (`authorHome`).
    */
   digest: z.string().min(1).optional(),
+  /**
+   * The real path of the folder of the agent that created this extension
+   * with `create_extension` (DOR-3068). Its edits keep loading without a
+   * digest only while the copy runs separately, declares exactly `grants`,
+   * and its real path stays inside this folder. Absent for a copy a person
+   * approved by hand, which is always pinned by `digest`.
+   */
+  authorHome: z.string().min(1).optional(),
+  /**
+   * A digest of what the copy declared it may reach when the yes was given
+   * (DOR-3068): where it runs, its `allow` lists, its secrets, its data
+   * proxy and its server entry. Any change waits for a person.
+   */
+  grants: z.string().min(1).optional(),
+  /**
+   * When DorkOS pinned an approval given before approvals named content to
+   * the files it found then (DOR-3068), once, on the first scan after the
+   * upgrade. ISO 8601. Absent for every approval given since.
+   */
+  pinnedOnFirstUse: z.string().optional(),
+  /**
+   * The digest of the exact screen code (the client bundle the app loads) the
+   * yes was given to, for a copy that keeps path trust (DOR-3068). Path trust
+   * covers the server half only: when the bundle the app would load differs,
+   * the screen half stays off until a person approves again.
+   */
+  clientDigest: z.string().min(1).optional(),
   /**
    * The real path of the dev link this approval was given to (DOR-2696);
    * absent for an installed copy. A dev link sits at its package's normal

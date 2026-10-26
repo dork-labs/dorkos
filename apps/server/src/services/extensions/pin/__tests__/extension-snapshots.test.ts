@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { collectSnapshots, ensureSnapshot, snapshotRootOf } from '../extension-snapshots.js';
-import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { installFolderDigest } from '../../../marketplace/lib/install-digest.js';
 
 let tmp: string;
 let dorkHome: string;

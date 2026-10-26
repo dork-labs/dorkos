@@ -160,6 +160,39 @@ describe('the folders only a person may change', () => {
     }
   });
 
+  it('denies the approved extension snapshots and the bundle cache (DOR-3068)', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-snapshots/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/extensions/**)`);
+    }
+  });
+
+  it('denies every write tool the config and its backups, by every spelling (DOR-3068)', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/config.json*)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/config-*.json.bak)`);
+    }
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'person-only-config-')));
+    try {
+      const real = path.join(root, 'real-dork');
+      mkdirSync(real);
+      const link = path.join(root, 'link-dork');
+      symlinkSync(real, link);
+      const linked: Options = {};
+      applyPersonOnlyDataDeny(linked, link);
+      expect(deny(linked)).toContain(`Write(/${link}/config.json*)`);
+      expect(deny(linked)).toContain(`Write(/${real}/config.json*)`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('writes a Windows data folder in the rule form', () => {
     const options: Options = {};
     applyPersonOnlyDataDeny(options, 'C:\\Users\\ana\\.dork');

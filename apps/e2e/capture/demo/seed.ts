@@ -183,7 +183,16 @@ export async function prepareFakeHome(): Promise<void> {
 
 /** Turn the social-queue extension on, the two answers a person gives in Settings. */
 async function turnOnSocialQueue(): Promise<void> {
-  await postJson(`/api/extensions/${SOCIAL_QUEUE_ID}/approve`, {});
+  // A yes names the files the card showed (DOR-3068): its version and digest.
+  const listed =
+    await getJson<Array<{ id: string; manifest: { version: string }; digest?: string }>>(
+      '/api/extensions'
+    );
+  const shown = listed.find((ext) => ext.id === SOCIAL_QUEUE_ID);
+  await postJson(`/api/extensions/${SOCIAL_QUEUE_ID}/approve`, {
+    version: shown?.manifest.version,
+    expectedDigest: shown?.digest,
+  });
   await postJson(`/api/extensions/${SOCIAL_QUEUE_ID}/enable`, {});
 }
 

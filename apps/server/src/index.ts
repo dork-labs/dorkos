@@ -243,6 +243,9 @@ async function start() {
   }
   const upToRooms = { ...upToRuntimes, ...(await wireRooms(refs, upToRuntimes)) };
   const upToMesh = { ...upToRooms, ...(await startSearchRelayAndMesh(refs, upToRooms)) };
+  // The first extension scan ran before the agent registry existed, so the
+  // mini apps agents keep in their own folders are found now (DOR-3068).
+  refs.extensionManager?.requestRefresh();
   const upToRelayAdapters = {
     ...upToMesh,
     ...(await wireTeamRoomAndRelayAdapters(refs, upToMesh)),

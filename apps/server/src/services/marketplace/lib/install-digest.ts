@@ -29,8 +29,8 @@
  * scan only walks and `lstat`s. A write that keeps all four stamps identical
  * would need to reset `ctime`, which only the kernel sets.
  *
- * Global plugins under `{dorkHome}` are never digested: only
- * {@link installFolderLinks} walks them, for links.
+ * Discovery also digests global plugins and extensions installed directly
+ * (DOR-3068), because a person's yes to one is pinned to its files.
  *
  * @module services/marketplace/lib/install-digest
  */
@@ -155,17 +155,6 @@ export async function installFolderDigest(root: string): Promise<InstallDigest> 
     if (abs.startsWith(prefix) && !present.has(abs)) fileHashes.delete(abs);
   }
   return { kind: 'digest', digest };
-}
-
-/**
- * Whether a folder holds a symbolic link anywhere (or is one), without
- * reading any file: the only check a global plugin under `{dorkHome}` needs.
- *
- * @param root - The install folder.
- */
-export async function installFolderLinks(root: string): Promise<'clean' | 'linked' | 'unreadable'> {
-  const walked = await walk(root);
-  return typeof walked === 'string' ? walked : 'clean';
 }
 
 /**

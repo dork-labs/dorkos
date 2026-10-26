@@ -57,6 +57,9 @@ const FLOW: PendingExtensionApproval = {
   added: null,
   agentTools: [],
   agentSkills: [],
+  digest: null,
+  changedFiles: null,
+  updatedFrom: null,
 };
 
 /** What the fake server holds and what it was asked. */
@@ -176,6 +179,34 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(
       screen.getByText('1 extension is waiting to be turned on. None of it runs until you decide.')
     ).toBeInTheDocument();
+  });
+
+  it('names a marketplace update by both versions (DOR-3068)', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        version: '1.3.0',
+        updatedFrom: '1.2.0',
+        changedFiles: ['index.ts'],
+        why: 'The flow plugin was updated from 1.2.0 to 1.3.0: index.ts. It runs as you.',
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('Update Flow from 1.2.0 to 1.3.0?')).toBeInTheDocument();
+    expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Run the changed Flow?')).not.toBeInTheDocument();
+  });
+
+  it('asks to run a changed copy that was not updated', async () => {
+    waiting = [{ ...FLOW, changedFiles: ['index.ts'] }];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('Run the changed Flow?')).toBeInTheDocument();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {

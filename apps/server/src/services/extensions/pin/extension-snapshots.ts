@@ -29,22 +29,28 @@
  *   an extension must not (its data, settings and secrets live elsewhere under
  *   `{dorkHome}`, keyed by its id).
  * - **Collected when unused.** After every scan, snapshots no discovered copy
- *   runs from are removed, and so are half-written copies left by a crash.
+ *   runs from, and no stored approval names, are removed, and so are
+ *   half-written copies left by a crash. An approval's snapshot is kept so a
+ *   changed copy's row can name the files that changed (DOR-3068).
  * - **What is copied** is exactly what the digest covers: every file, with
  *   `.git` and DorkOS's runtime state (install records, saved data, secrets)
  *   left out.
  *
- * A copy the person approved by its own path, and every global plugin under
- * `{dorkHome}`, keeps running where it is.
+ * Since DOR-3068 the same holds for a copy a person approved by its digest,
+ * at any scope, plugin-carried or installed directly (its own folder is then
+ * the root that is copied): it runs from the snapshot of exactly the files
+ * the person approved, so an edit cannot land between the check and the run.
+ * A copy that keeps path trust (`extension-path-trust.ts`), a dev link, and a
+ * global plugin running by its origin keep running where they are.
  *
- * @module services/extensions/extension-snapshots
+ * @module services/extensions/pin/extension-snapshots
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { isRuntimeStatePath } from '../marketplace/lib/content-hash.js';
-import { forgetFolderDigest, installFolderDigest } from '../marketplace/lib/install-digest.js';
-import { logger } from '../../lib/logger.js';
+import { isRuntimeStatePath } from '../../marketplace/lib/content-hash.js';
+import { forgetFolderDigest, installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { logger } from '../../../lib/logger.js';
 
 /** Where snapshots live under `{dorkHome}`. */
 export const SNAPSHOTS_DIR = 'extension-snapshots';
@@ -92,8 +98,9 @@ async function copyTree(from: string, to: string, rel = ''): Promise<void> {
  * there is none yet.
  *
  * @param dorkHome - DorkOS's data directory.
- * @param installRoot - The plugin folder in the project.
- * @param digest - The digest the copy's origin was proved against.
+ * @param installRoot - The folder the digest covers: a plugin's install
+ *   folder, or a directly installed extension's own folder (DOR-3068).
+ * @param digest - The digest the copy was approved, or its origin proved, against.
  * @returns The snapshot's root, or null when the live folder no longer holds
  *   those files (it changed since the scan) or could not be copied.
  */
@@ -106,7 +113,19 @@ export async function ensureSnapshot(
   if (!root) return null;
   try {
     const stats = await fs.lstat(root);
-    if (stats.isDirectory()) return root;
+    // A folder name is only a name: a snapshot is reused only while its files
+    // still hash to the digest it is named by (DOR-3068), which catches one
+    // edited after it was made and one planted before it ever was. The
+    // digest's stamp cache keeps an unchanged one cheap.
+    if (stats.isDirectory()) {
+      const found = await installFolderDigest(root);
+      if (found.kind === 'digest' && found.digest === digest) return root;
+      logger.warn(
+        `[Extensions] Snapshot ${root} does not hold the files it is named by; rebuilding it`
+      );
+    }
+    await fs.rm(root, { recursive: true, force: true });
+    forgetFolderDigest(root);
   } catch {
     // Not made yet.
   }
@@ -123,8 +142,9 @@ export async function ensureSnapshot(
     try {
       await fs.rename(temp, root);
     } catch (err) {
-      // Another scan made the same snapshot first: the same files, by name.
-      if ((await fs.lstat(root).catch(() => null))?.isDirectory()) return root;
+      // Another scan made the same snapshot first; used only if it holds them.
+      const now = await installFolderDigest(root);
+      if (now.kind === 'digest' && now.digest === digest) return root;
       throw err;
     }
     return root;

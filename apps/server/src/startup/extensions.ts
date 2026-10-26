@@ -21,12 +21,16 @@ import { projectRegistry } from '../services/projects/project-registry.js';
  * @param dorkHome - The DorkOS data directory.
  * @param coreExtensions - The core extensions staged for this boot.
  * @param initialCwd - The folder whose extensions run first, or `null`.
+ * @param agentHomes - Every registered agent's folder, read at each scan, so
+ *   an agent's mini apps (`<agentHome>/.dork/extensions`) show whatever
+ *   folder is active (DOR-3068).
  * @returns The running manager, or `undefined` when it could not start.
  */
 export async function startExtensions(
   dorkHome: string,
   coreExtensions: CoreExtensionInfo[],
-  initialCwd: string | null
+  initialCwd: string | null,
+  agentHomes: () => readonly string[] = () => []
 ): Promise<ExtensionManager | undefined> {
   try {
     const manager = new ExtensionManager(dorkHome, coreExtensions);
@@ -36,7 +40,7 @@ export async function startExtensions(
     // saw itself: never one only an extension reported (§6.1).
     manager.followProjects(
       {
-        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd),
+        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd, agentHomes),
         onChange: (listener) => projectRegistry.onChange(listener),
       },
       { announce: (ids) => broadcastExtensionReloaded(ids) }

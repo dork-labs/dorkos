@@ -33,11 +33,16 @@ import { installRootOf } from './extension-trusted-origin.js';
 /** The code a pinned-digest refusal carries. */
 export const PLUGIN_CHANGED_CODE = 'plugin_changed_since_check';
 
-/** The install folder a plugin-carried copy is contained to, or null. */
+/**
+ * The folder a copy's bundle is contained to, or null: a plugin-carried
+ * copy's install folder, or, for a copy held to a pinned digest (DOR-3068),
+ * its own folder, which is exactly what that digest covers.
+ */
 export function containmentRootOf(
-  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath'>
+  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath' | 'pinnedDigest'>
 ): string | null {
-  return record.sourcePlugin ? installRootOf(record.runPath ?? record.path) : null;
+  if (record.sourcePlugin) return installRootOf(record.runPath ?? record.path);
+  return record.pinnedDigest ? path.resolve(record.runPath ?? record.path) : null;
 }
 
 /**
@@ -107,8 +112,9 @@ export function containmentPlugin(root: string, externals: readonly string[]): P
 }
 
 /**
- * Whether a copy's plugin folder still has the digest it was judged against.
- * A copy with no pinned digest has nothing to hold to and always passes.
+ * Whether a copy's digested folder (its plugin's, or its own) still has the
+ * digest it was judged against. A copy with no pinned digest has nothing to
+ * hold to and always passes.
  *
  * @param record - The copy being compiled.
  */
@@ -116,9 +122,9 @@ export async function stillPinned(
   record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'pinnedDigest' | 'runPath'>
 ): Promise<boolean> {
   if (!record.pinnedDigest) return true;
-  // A snapshot is named by its digest and verified when it was written: it is
-  // the pinned files, by construction, and nothing else writes to it.
-  if (record.runPath) return true;
+  // A snapshot is re-hashed too (DOR-3068): its folder name says what it
+  // should hold, not what it does, and its files could be edited after it
+  // was written. The digest's stamp cache keeps an unchanged one cheap.
   const root = containmentRootOf(record);
   if (!root) return false;
   const now = await installFolderDigest(root);

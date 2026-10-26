@@ -32,9 +32,12 @@ import type { Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
+  EXPECTED_DIGEST_REQUIRED_CODE,
   STALE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
-import { isExpectedCopy, type ExtensionManager } from '../services/extensions/extension-manager.js';
+import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
+import { ApprovalRefusedError } from '../services/extensions/pin/extension-content-pin.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -140,6 +143,7 @@ export function registerExtensionApprovalRoutes(
       // not approve the newcomer on the strength of a decision about the old.
       const body = readJsonBody(c);
       const hasBody = body !== undefined && Object.keys(body as object).length > 0;
+      let expectedDigest: string | undefined;
       if (hasBody) {
         const expected = ApproveExtensionRequestSchema.safeParse(body);
         if (!expected.success) {
@@ -157,9 +161,36 @@ export function registerExtensionApprovalRoutes(
             409
           );
         }
+        // The files the card showed (DOR-3068): the manager refuses the yes
+        // when they changed since, with the live digest read at the click.
+        expectedDigest = expected.data.expectedDigest;
       }
 
-      const extension = await extensionManager.approveToRun(id);
+      // A yes names the files the person was shown (DOR-3068), so every copy
+      // but a dev link (approved by path, DOR-2696) must say which they were.
+      if (!record.devLink && expectedDigest === undefined) {
+        return c.json(
+          {
+            error: 'Send the digest of the files you were shown. Nothing was turned on.',
+            code: EXPECTED_DIGEST_REQUIRED_CODE,
+          },
+          400
+        );
+      }
+
+      let extension;
+      try {
+        extension = await extensionManager.approveToRun(id, { expectedDigest });
+      } catch (err) {
+        if (!(err instanceof ApprovalRefusedError)) throw err;
+        return c.json(
+          {
+            error: `${err.message} Nothing was turned on.`,
+            ...(err.reason === 'stale' ? { code: STALE_APPROVAL_CODE } : {}),
+          },
+          409
+        );
+      }
       if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       await activity?.emit({

@@ -45,6 +45,8 @@ export interface ExtensionAnswerInput {
 export interface ApproveExtensionInput extends ExtensionAnswerInput {
   /** The set the card showed. */
   permissions?: ApproveExtensionRequest['permissions'];
+  /** The digest of the files the card showed; files changed since are refused as stale. */
+  expectedDigest?: string;
 }
 
 /** Which copy to put off ("Not now"). */
@@ -124,11 +126,17 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
   const queryClient = useQueryClient();
 
   const approve = useMutation<void, Error, ApproveExtensionInput, () => void>({
-    mutationFn: async ({ id, path, version, plugin, permissions }) => {
+    mutationFn: async ({ id, path, version, plugin, permissions, expectedDigest }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, version, plugin, ...(permissions ? { permissions } : {}) }),
+        body: JSON.stringify({
+          path,
+          version,
+          plugin,
+          ...(permissions ? { permissions } : {}),
+          ...(expectedDigest ? { expectedDigest } : {}),
+        }),
       });
       if (!res.ok) throw await failureOf(res);
       useSeenBeforeStaleStore.getState().forget(id);

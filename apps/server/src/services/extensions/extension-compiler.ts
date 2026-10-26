@@ -11,6 +11,7 @@ import path from 'path';
 import { HOST_HONO_NAMESPACE, hostHono, hostHonoPlugin } from './server-bundle/host-hono.js';
 
 import { logger } from '../../lib/logger.js';
+import { BundleVouchers } from './pin/extension-bundle-vouchers.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
   buildStartTime,
@@ -356,6 +357,8 @@ interface BuildRun {
  */
 export class ExtensionCompiler {
   private cacheDir: string;
+  /** The bundles this process wrote, by their bytes' SHA-256 (DOR-3068). */
+  private readonly vouched = new BundleVouchers();
 
   constructor(dorkHome: string) {
     this.cacheDir = path.join(dorkHome, 'cache', 'extensions');
@@ -489,11 +492,8 @@ export class ExtensionCompiler {
     if (!cachedPath.startsWith(this.cacheDir + path.sep)) {
       throw new Error('Attempted path escape in cache lookup');
     }
-    try {
-      return await fs.readFile(cachedPath, 'utf-8');
-    } catch {
-      return null;
-    }
+    // Only bytes this process wrote there are served (DOR-3068).
+    return this.vouched.read(cachedPath);
   }
 
   /**
@@ -610,16 +610,11 @@ export class ExtensionCompiler {
     await this.ensureCacheDir();
     const cachedPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
 
-    try {
-      await fs.access(cachedPath);
-      const cached = await fs.readFile(cachedPath, 'utf-8');
-      return { code: cached, sourceHash };
-    } catch {
-      // Cache miss — persist it. This IS the delivery mechanism.
-    }
-
+    // Written every time from the source just read, never reused from disk,
+    // so a file swapped into the cache is never served (DOR-3068).
     try {
       await fs.writeFile(cachedPath, source, 'utf-8');
+      this.vouched.vouch(cachedPath, source);
       return { code: source, sourceHash };
     } catch (err) {
       return {
@@ -673,12 +668,12 @@ export class ExtensionCompiler {
         logger.debug(`[Extensions] ${target.prefix}Cached error for ${extId} (${key})`);
         return { error: outcome.error, sourceHash: key };
       }
-      try {
-        const code = await fs.readFile(this.bundlePath(cacheDir, extId, key), 'utf-8');
+      // A bundle this process did not write, or whose bytes changed, or one
+      // the stale-cache cleanup removed, is built again (DOR-3068).
+      const code = await this.vouched.read(this.bundlePath(cacheDir, extId, key));
+      if (code !== null) {
         logger.debug(`[Extensions] ${target.prefix}Cache hit for ${extId} (${key})`);
         return { code, sourceHash: key };
-      } catch {
-        // The manifest outlived its bundle (stale-cache cleanup): rebuild.
       }
     } else {
       logger.debug(`[Extensions] ${target.prefix}Rebuilding ${extId}: ${check.stale}`);
@@ -749,6 +744,7 @@ export class ExtensionCompiler {
     const key = shortHash(code);
     try {
       await writeFileAtomic(this.bundlePath(ctx.cacheDir, extId, key), code);
+      this.vouched.vouch(this.bundlePath(ctx.cacheDir, extId, key), code);
     } catch (err) {
       return {
         error: buildIoFailureError(extId, err, 'cache the compiled bundle', target.prefix),

@@ -87,6 +87,8 @@ export function ExtensionApprovalHistoryRow({
               ...subject,
               name: record.manifest.name,
               ...(permissions ? { permissions } : {}),
+              // The files this row was drawn for (DOR-3068).
+              ...(record.digest ? { expectedDigest: record.digest } : {}),
             });
           } else {
             onOpen();

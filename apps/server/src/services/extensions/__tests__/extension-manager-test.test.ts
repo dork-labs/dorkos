@@ -48,16 +48,36 @@ vi.mock('../../core/config-manager.js', () => ({
 // --- Helpers ---
 
 /**
+ * The digest every fixture copy holds and every fixture approval names: since
+ * DOR-3068 an approval names a copy's files, not only its folder. These tests
+ * are about what happens after a yes, so the files on disk never change here;
+ * the pin itself is covered in `extension-content-pin.test.ts`.
+ */
+const FIXTURE_DIGEST = vi.hoisted(() => `sha256:${'f'.repeat(64)}`);
+vi.mock('../pin/extension-content-pin.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../pin/extension-content-pin.js')>()),
+  liveDigestOf: vi.fn(async () => FIXTURE_DIGEST),
+  pinStillHolds: vi.fn(async () => true),
+}));
+vi.mock('../pin/extension-snapshots.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../pin/extension-snapshots.js')>()),
+  ensureSnapshot: vi.fn(async (_dorkHome: string, root: string) => root),
+  collectSnapshots: vi.fn(async () => 0),
+}));
+
+/**
  * Approvals of the given ids, each bound to the copy `makeRecord` builds for it
  * (DOR-2383: an approval names the copy it was given to, not just the id).
  */
 function approved(ids: string[]): {
   approvedToRun: string[];
-  approvedSources: Record<string, { path: string }>;
+  approvedSources: Record<string, { path: string; digest: string }>;
 } {
   return {
     approvedToRun: ids,
-    approvedSources: Object.fromEntries(ids.map((id) => [id, { path: `/fake/extensions/${id}` }])),
+    approvedSources: Object.fromEntries(
+      ids.map((id) => [id, { path: `/fake/extensions/${id}`, digest: FIXTURE_DIGEST }])
+    ),
   };
 }
 
@@ -71,6 +91,7 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
     bundleReady: false,
     hasServerEntry: false,
     hasDataProxy: false,
+    currentDigest: FIXTURE_DIGEST,
     ...overrides,
   };
 }

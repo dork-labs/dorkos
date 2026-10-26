@@ -218,11 +218,29 @@ export function applyDirectoryGrants(
  *   rewrite it could raise its own level.
  * - `session-relay/` holds the pins that say which hub and which keys this
  *   computer trusts (and, with B4, `approval-keys.json`).
+ * - `extension-snapshots/` holds the approved files an extension runs from,
+ *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
+ *   that could rewrite either could run code nobody approved. Both are also
+ *   checked by content before use; this keeps the file tools out entirely.
  *
  * Bash is not covered, as the module note says: a turn with a shell it was not
  * asked about is outside what file rules can hold.
  */
-export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay'] as const;
+export const PERSON_ONLY_DATA_FOLDERS = [
+  'permissions',
+  'session-relay',
+  'extension-snapshots',
+  'cache/extensions',
+] as const;
+
+/**
+ * The files directly in the data directory only a person may change: the
+ * config (`config.json`, its backups and conf's temp files beside it, so
+ * `config.json*`) and the timestamped backups. The config holds every
+ * extension approval and every other `operator-only` setting (DOR-3068); an
+ * agent that could write it with a file tool could approve its own code.
+ */
+export const PERSON_ONLY_DATA_FILES = ['config.json*', 'config-*.json.bak'] as const;
 
 /**
  * A Windows drive path seen on a POSIX host (tests, mostly), which
@@ -291,9 +309,35 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
     ...base,
     permissions: {
       ...permissions,
-      deny: [...(permissions.deny ?? []), ...folders.flatMap(readOnlyRules)],
+      deny: [
+        ...(permissions.deny ?? []),
+        ...folders.flatMap(readOnlyRules),
+        ...personOnlyFileRules(dorkHome),
+      ],
     },
   } as Options['settings'];
+}
+
+/**
+ * Write-deny rules for {@link PERSON_ONLY_DATA_FILES}, through every spelling
+ * of the data directory (as given, and its real path). The file name keeps
+ * its `*` as a glob; only the folder part is escaped.
+ *
+ * @param dorkHome - The data directory.
+ */
+export function personOnlyFileRules(dorkHome: string): string[] {
+  const foreign = isForeignWindowsPath(dorkHome);
+  const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
+  const real = foreign ? undefined : realpathOrUndefined(home);
+  const rules = new Set<string>();
+  for (const spelling of new Set([home, ...(real ? [real] : [])])) {
+    const root = rulePath(spelling);
+    if (root === undefined) continue;
+    for (const file of PERSON_ONLY_DATA_FILES) {
+      for (const tool of ALL_WRITE_TOOLS) rules.add(`${tool}(${root}/${file})`);
+    }
+  }
+  return [...rules];
 }
 
 /**

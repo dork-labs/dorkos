@@ -76,6 +76,11 @@ import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
+import {
+  applyOtherAgentsExtensionsDeny,
+  otherAgentHomesOf,
+  ownExtensionsWritable,
+} from '../folder-settings/agent-extensions-deny.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -776,6 +781,14 @@ export async function resolveLaunch(args: {
     accountRoot,
     otherAccountRoots: resolveClaudeRootSet(),
   });
+  // And every other agent's mini apps, whose server edits run on their author's
+  // trust (DOR-3068); a marked or ceilinged turn is kept out of its own too.
+  applyOtherAgentsExtensionsDeny(
+    sdkOptions,
+    ownExtensionsWritable(session, sessionId, turnAgentPath ?? undefined),
+    otherAgentHomesOf(opts.meshCore),
+    resolveDorkHome()
+  );
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};

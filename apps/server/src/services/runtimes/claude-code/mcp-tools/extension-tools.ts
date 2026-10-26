@@ -5,6 +5,7 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
+import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 
 /**
  * Which session is creating an extension, read at CALL time (the SDK rekeys a
@@ -15,8 +16,12 @@ import { resolveProposerName } from '../../../tasks/task-provenance.js';
  * from an outsider, so nothing it creates is approved without a person.
  */
 export type ExtensionCreatorResolver = () => {
-  /** The calling session's working directory, the key its agent's name resolves from. */
+  /** The calling agent's own folder, the key its agent's name resolves from. */
   agentPath?: string;
+  /** The calling session, read for the turn's marks (DOR-3036). */
+  sessionId?: string;
+  /** Whether the calling turn, or background work it carries, runs under a ceiling. */
+  ceilinged?: boolean;
 };
 
 /**
@@ -474,6 +479,13 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
  * approval is recorded in Activity as `extension.auto_approved`, naming the
  * agent, the copy and the permissions it covers.
  *
+ * An agent's extension is created in its own folder, at
+ * `.dork/extensions/<name>` (DOR-3068), and the approval records that folder
+ * as its author, so edits to its server half keep running without a click.
+ * Not for a turn that read a stranger's words or runs under a ceiling: that
+ * create keeps today's approval rules and records no author, so every edit
+ * waits for a person.
+ *
  * @param deps - Shared MCP tool dependencies
  * @param resolveCreator - Who is creating it; absent on the external `/mcp` server.
  */
@@ -497,15 +509,22 @@ export function createCreateExtensionHandler(
     const scope = (args.scope ?? 'global') as 'global' | 'local';
 
     try {
+      // The creating agent's folder: its extension is created there, and keeps
+      // path trust only while it runs separately inside it (DOR-3068).
+      const creator = resolveCreator?.();
+      const agentPath = creator?.agentPath;
+      // `markedBoundOf` also counts a chat a stranger reached earlier.
+      const marked =
+        creator?.ceilinged === true || markedBoundOf(creator?.sessionId, agentPath) !== undefined;
       const result = await manager.createExtension({
         name: args.name,
         description: args.description,
         template,
         scope,
         approveIfTrusted: resolveCreator !== undefined,
+        ...(agentPath ? { agentHome: agentPath, recordAuthor: !marked } : {}),
       });
       if (result.autoApproved) {
-        const agentPath = resolveCreator?.().agentPath;
         const name = (await resolveProposerName(agentPath)) ?? 'An agent';
         await deps.activityService?.emit({
           actorType: 'agent',
@@ -591,7 +610,7 @@ export function extensionToolDefinitions(
     ),
     tool(
       'list_extensions',
-      'List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local (.dork/extensions/ in active CWD) extensions. Includes hasServerEntry, hasDataProxy, and serverStatus fields.',
+      "List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local extensions (.dork/extensions/ in the active CWD, in known projects, and in every agent's own folder). Includes hasServerEntry, hasDataProxy, and serverStatus fields.",
       {},
       createListExtensionsHandler(deps)
     ),
@@ -604,7 +623,10 @@ export function extensionToolDefinitions(
     tool(
       'create_extension',
       'Scaffold a new DorkOS extension with manifest and starter code. Creates the directory, writes extension.json and index.ts, compiles, and enables the extension in one step. ' +
-        'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs.',
+        'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs. ' +
+        'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
+        'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
+        'Edits to its screen code (what the app shows) always wait for the person to approve them.',
       {
         name: z
           .string()
@@ -621,7 +643,8 @@ export function extensionToolDefinitions(
           .enum(['global', 'local'])
           .optional()
           .describe(
-            'Install scope: global (~/.dork/extensions/) or local (.dork/extensions/ in CWD). Default: global'
+            'Install scope: global (~/.dork/extensions/) or local (.dork/extensions/ in CWD). Default: global. ' +
+              "Ignored in an agent's own chat, which always creates it in that agent's folder."
           ),
       },
       createCreateExtensionHandler(deps, resolveCreator)

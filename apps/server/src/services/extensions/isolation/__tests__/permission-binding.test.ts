@@ -119,6 +119,24 @@ vi.mock('fs/promises', () => ({
 
 import { ExtensionManager } from '../../extension-manager.js';
 
+/**
+ * The digest every fixture copy holds: since DOR-3068 an approval names a
+ * copy's files, not only its folder. These tests are about what happens after
+ * a yes, so the files never change on disk here; the pin itself is covered in
+ * `extension-content-pin.test.ts`.
+ */
+const FIXTURE_DIGEST = vi.hoisted(() => `sha256:${'f'.repeat(64)}`);
+vi.mock('../../pin/extension-content-pin.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../pin/extension-content-pin.js')>()),
+  liveDigestOf: vi.fn(async () => FIXTURE_DIGEST),
+  pinStillHolds: vi.fn(async () => true),
+}));
+vi.mock('../../pin/extension-snapshots.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../pin/extension-snapshots.js')>()),
+  ensureSnapshot: vi.fn(async (_dorkHome: string, root: string) => root),
+  collectSnapshots: vi.fn(async () => 0),
+}));
+
 const PATH = '/fake/dork-home/extensions/mail-app';
 
 /** A record for `mail-app` with these server capabilities. */
@@ -138,6 +156,7 @@ function makeRecord(serverCapabilities: Record<string, unknown>): ExtensionRecor
     bundleReady: false,
     hasServerEntry: true,
     hasDataProxy: false,
+    currentDigest: FIXTURE_DIGEST,
   };
 }
 

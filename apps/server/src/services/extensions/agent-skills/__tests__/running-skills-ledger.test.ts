@@ -49,6 +49,9 @@ async function writeSkill(dir: string, name: string): Promise<void> {
   );
 }
 
+/** The files every fixture copy holds and every approval names (DOR-3068). */
+const DIGEST = `sha256:${'d'.repeat(64)}`;
+
 /** A record for a copy at `dir` declaring `skills`, running unless overridden. */
 function record(dir: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
   return {
@@ -61,6 +64,7 @@ function record(dir: string, overrides: Partial<ExtensionRecord> = {}): Extensio
     bundleReady: true,
     hasServerEntry: false,
     hasDataProxy: false,
+    currentDigest: DIGEST,
     ...overrides,
   } as ExtensionRecord;
 }
@@ -71,7 +75,7 @@ function approving(id: string, dir: string): ExtensionsConfig {
     enabled: [id],
     disabled: [],
     approvedToRun: [id],
-    approvedSources: { [id]: { path: dir } },
+    approvedSources: { [id]: { path: dir, digest: DIGEST } },
   } as ExtensionsConfig;
 }
 
