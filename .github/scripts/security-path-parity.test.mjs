@@ -30,6 +30,12 @@ test('gate pattern equals Security reference and the installed interim checker',
   }
 });
 
+test('the approval helper shows Dorian the same gate pattern', () => {
+  const swift = readFileSync(resolve(root, 'tools/security-approve/Policy.swift'), 'utf8');
+  const copy = /^let gatePathPattern = #"(.+)"#$/m.exec(swift)?.[1];
+  assert.equal(copy, reference, 'tools/security-approve/Policy.swift gatePathPattern differs');
+});
+
 const additions = [
   ['packages/a/patches/b.patch', 'packages/a/patches-old/b.patch'],
   ['.node-version', '.node-versions'],
