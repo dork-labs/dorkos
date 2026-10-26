@@ -116,7 +116,30 @@ export interface QueuedMessageRecord extends QueuedMessage {
 export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
   const { id, content, disposition, enqueuedAt, enqueuedBy } = record;
   const waitingOn = heldFor.get(id);
-  return { id, content, disposition, enqueuedAt, enqueuedBy, ...(waitingOn ? { waitingOn } : {}) };
+  const base = { id, content, disposition, enqueuedAt, enqueuedBy };
+  return { ...base, ...(waitingOn ? { waitingOn } : {}), ...queuedChatView?.(base) };
+}
+
+/** What a row another chat sent shows a person instead of its stored text. */
+export type QueuedChatView = Pick<QueuedMessage, 'content' | 'fromChats'>;
+
+/**
+ * Turns a row another chat sent into what a person reads: the senders and
+ * their words, never the fenced envelope the row holds for the model
+ * (DOR-3060). Registered by the chat-message wiring; unset, rows show as they
+ * are stored.
+ */
+let queuedChatView: ((row: QueuedMessage) => QueuedChatView | undefined) | undefined;
+
+/**
+ * Register (or clear) the view a row another chat sent is shown through.
+ *
+ * @param view - Maps a stored row to what a person reads, or `undefined` to clear
+ */
+export function setQueuedChatView(
+  view: ((row: QueuedMessage) => QueuedChatView | undefined) | undefined
+): void {
+  queuedChatView = view;
 }
 
 /**

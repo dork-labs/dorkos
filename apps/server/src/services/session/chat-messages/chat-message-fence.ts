@@ -17,7 +17,11 @@
  *
  * @module services/session/chat-messages/chat-message-fence
  */
-import { CHAT_MESSAGE_FENCE_LABEL, type ChatMessageKind } from '@dorkos/shared/chat-messages';
+import {
+  CHAT_MESSAGE_FENCE_LABEL,
+  CHAT_MESSAGE_LEAD,
+  type ChatMessageKind,
+} from '@dorkos/shared/chat-messages';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
 
@@ -35,9 +39,8 @@ export interface ChatMessageFenceSender {
   messageId?: string;
 }
 
-/** The line before the fence, the same for every chat message. */
-export const CHAT_MESSAGE_LEAD =
-  'This message is from another chat, not from the person you are talking with.';
+// The line before the fence lives in shared, so a reader can strip it too.
+export { CHAT_MESSAGE_LEAD };
 
 /** What the fence says about itself. */
 const PREAMBLE =
