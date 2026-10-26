@@ -37,7 +37,7 @@ export function WithheldExtensionsNotice({
             variant="ghost"
             size="xs"
             // 44px to hit on a touch screen, same size to look at.
-            className="text-status-warning-fg pointer-coarse:min-h-11 shrink-0"
+            className="text-status-warning-fg shrink-0 pointer-coarse:min-h-11"
             onClick={onReview}
           >
             Review
