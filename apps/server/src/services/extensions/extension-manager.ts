@@ -41,11 +41,7 @@ import {
 import {
   approvedSourceOf,
   isSameStoredCopy,
-  isApprovedByDigest,
-  isApprovedByOrigin,
-  isApprovedByPath,
   isApprovedCopy,
-  isFromTrustedSource,
   isScreenHalfWithheld,
   mayLoadClientHalf,
   mayRunExtensionCode,
@@ -54,12 +50,16 @@ import {
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 
 import { logger } from '../../lib/logger.js';
-import { collectSnapshots, ensureSnapshot, snapshotRootOf } from './pin/extension-snapshots.js';
+import {
+  collectUnusedSnapshots,
+  placeSnapshots,
+  refreshPathTrustRun,
+  runFromSnapshot,
+} from './pin/extension-snapshot-placement.js';
 import {
   ApprovalRefusedError,
+  UNPINNABLE_SENTENCE,
   approvalFor,
-  assertUnchangedSince,
-  digestRootOf,
   liveDigestOf,
   pinStillHolds,
 } from './pin/extension-content-pin.js';
@@ -377,7 +377,7 @@ export class ExtensionManager {
         }
       }
     }
-    await this.collectUnusedSnapshots();
+    await this.tidySnapshots();
   }
 
   /**
@@ -443,71 +443,10 @@ export class ExtensionManager {
     bindUnsourcedApprovals(records, this.dorkHome);
     ratchetFullAccessApprovals(records);
     pinPathOnlyApprovals([...records, ...this.shadowed]);
-    await this.placeSnapshots(records);
+    await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
     await this.compileEnabled();
     this.emitChanged();
-  }
-
-  /**
-   * Point every project copy that runs by its trusted origin — not by the
-   * person's approval of that folder — or by a yes pinned to its exact files,
-   * at a verified snapshot of its plugin
-   * (`extension-snapshots.ts`), so what it runs, at load and at runtime, can
-   * no longer be changed from inside the project. A copy whose snapshot cannot
-   * be made (its files changed since the scan) loses its origin instead of
-   * running from the project.
-   *
-   * @param records - The copies this scan chose.
-   */
-  private async placeSnapshots(records: readonly ExtensionRecord[]): Promise<void> {
-    const approvals = configManager.get('extensions');
-    for (const record of records) {
-      if (record.origin !== 'user' || record.devLink) continue;
-      // A yes pinned to these exact files runs them from the snapshot, at any
-      // scope, plugin-carried or installed directly (DOR-3068).
-      const pinned = isApprovedByDigest(record, approvals);
-      if (pinned) record.pinnedDigest = record.currentDigest;
-      const byOrigin =
-        record.scope === 'local' &&
-        !!record.sourcePlugin &&
-        !!record.trustedOrigin &&
-        !isApprovedByPath(record, approvals) &&
-        (isApprovedByOrigin(record, approvals) || isFromTrustedSource(record, approvals));
-      if ((!pinned && !byOrigin) || !record.pinnedDigest) continue;
-      const installRoot = digestRootOf(record);
-      const root = await ensureSnapshot(this.dorkHome, installRoot, record.pinnedDigest);
-      if (root) {
-        record.runPath = path.join(root, path.relative(installRoot, record.path));
-      } else {
-        // Its files changed since the scan: nothing here may run, by origin or
-        // by a yes pinned to the files it had.
-        record.trustedOrigin = undefined;
-        record.pinnedDigest = undefined;
-        record.currentDigest = undefined;
-        record.originProblem = 'changed';
-      }
-    }
-  }
-
-  /**
-   * Remove every snapshot no current copy runs from and no approval names (a
-   * changed copy's row compares against it, DOR-3068). Best-effort.
-   */
-  private async collectUnusedSnapshots(): Promise<void> {
-    const inUse = new Set<string>();
-    for (const record of this.extensions.values()) {
-      if (record.runPath) inUse.add(digestRootOf({ ...record, path: record.runPath }));
-    }
-    for (const source of Object.values(configManager.get('extensions').approvedSources ?? {})) {
-      const root = source.digest ? snapshotRootOf(this.dorkHome, source.digest) : null;
-      if (root) inUse.add(path.resolve(root));
-    }
-    try {
-      await collectSnapshots(this.dorkHome, inUse);
-    } catch (err) {
-      logger.warn('[Extensions] Could not clear unused extension snapshots', err);
-    }
   }
 
   /**
@@ -624,7 +563,7 @@ export class ExtensionManager {
     }
     // Only now, with every server half on its current copy, can a snapshot the
     // old copies ran from go.
-    await this.collectUnusedSnapshots();
+    await this.tidySnapshots();
     if (changed.length > 0) this.announceReloaded?.(changed);
     return changed;
   }
@@ -800,7 +739,7 @@ export class ExtensionManager {
     const record = this.extensions.get(rest.name);
     // Path trust is for its server half; its screen half is pinned to the
     // bundle just built from the scaffold (DOR-3068).
-    if (autoApproved && record) await pinScaffoldClient(record, scaffoldResult.digest);
+    if (autoApproved && record) pinScaffoldClient(record, scaffoldResult.digest);
     return {
       // The scope it was really created in (an agent's own folder is local).
       ...buildCreateResult(scaffoldResult, rest, record),
@@ -877,6 +816,8 @@ export class ExtensionManager {
       if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
       if (isApprovedCopy(rec, before)) continue;
       if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
+      // One with no readable digest has no files to name, so it stops (DOR-3068).
+      if (!rec.currentDigest) continue;
       if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
       // What it declares now, so it keeps running exactly as it is and a
       // later widening asks (DOR-2686). An entry left from another copy could
@@ -886,9 +827,7 @@ export class ExtensionManager {
       // source does not ride on it, and its digest, so it keeps running from
       // the verified snapshot of exactly those files and any change asks again.
       const { origin: _origin, ...pinned } = approvedSourceOf(rec);
-      approvedSources[rec.id] = rec.currentDigest
-        ? { ...pinned, digest: rec.currentDigest }
-        : pinned;
+      approvedSources[rec.id] = { ...pinned, digest: rec.currentDigest };
     }
     configManager.set('extensions', {
       ...before,
@@ -1052,15 +991,18 @@ export class ExtensionManager {
       previous && isSameStoredCopy(record, previous) ? previous.authorHome : undefined;
     const source = approvalFor(record, { digest: live, authorHome });
     if (!source) {
-      throw new ApprovalRefusedError('unpinnable', 'Its folder holds a link DorkOS cannot check.');
+      throw new ApprovalRefusedError('unpinnable', UNPINNABLE_SENTENCE);
     }
     record.pinnedDigest = source.digest;
     record.runPath = undefined;
     // Path trust covers the server half only: the yes pins the screen half to
     // the exact bundle built from the files now.
     if (isPathTrustApproval(source) && record.bundleReady) {
+      // Built from a verified copy of exactly the files checked above.
+      if (!live || !(await runFromSnapshot(this.dorkHome, record, live))) {
+        throw new ApprovalRefusedError('stale', 'Its files changed while DorkOS checked them.');
+      }
       applyCompileResult(record, await this.compiler.compile(record));
-      await assertUnchangedSince(record, live); // built from exactly the checked files
       if (record.clientDigest) source.clientDigest = record.clientDigest;
     }
     const dismissed = extensions.dismissedApprovals ?? {};
@@ -1104,7 +1046,7 @@ export class ExtensionManager {
 
     // A yes to these exact files runs them from their verified snapshot,
     // from the first start on, and the browser half is built from it again.
-    await this.placeSnapshots([record]);
+    await placeSnapshots(this.dorkHome, [record], configManager.get('extensions'));
     if (record.bundleReady) applyCompileResult(record, await this.compiler.compile(record));
 
     if (this.needsServer(record)) {
@@ -1252,6 +1194,7 @@ export class ExtensionManager {
         ? [...this.extensions.values(), ...this.shadowed].find(
             (rec) =>
               rec.id === id &&
+              !!rec.currentDigest &&
               !isPathWithin(rec.path, installRoot) &&
               rec.trustedOrigin?.plugin === recorded.origin?.plugin &&
               rec.trustedOrigin?.source === recorded.origin?.source
@@ -1260,7 +1203,11 @@ export class ExtensionManager {
     if (heir) {
       configManager.set('extensions', {
         ...extensions,
-        approvedSources: { ...sources, [id]: approvedSourceOf(heir) },
+        // Named by its files (DOR-3068): a digest-less approval runs nothing.
+        approvedSources: {
+          ...sources,
+          [id]: { ...approvedSourceOf(heir), digest: heir.currentDigest },
+        },
       });
       logConfigWrite(
         'moving an extension approval to another copy from the same source',
@@ -1427,13 +1374,26 @@ export class ExtensionManager {
     };
   }
 
+  /** Remove the snapshots nothing runs from or names (`extension-snapshot-placement.ts`). */
+  private tidySnapshots(): Promise<void> {
+    return collectUnusedSnapshots(
+      this.dorkHome,
+      this.extensions.values(),
+      configManager.get('extensions')
+    );
+  }
+
   /**
    * Re-read a digest-pinned copy's live files before a load (DOR-3068). On a
    * change, its server half stops and it waits for a person, so an edit made
    * after the last scan never runs.
    */
   private async recheckPin(record: ExtensionRecord): Promise<void> {
-    if (await pinStillHolds(record, configManager.get('extensions'))) return;
+    const approvals = configManager.get('extensions');
+    // A path-trust copy is rebuilt from a verified copy of its files as they are now.
+    if (await refreshPathTrustRun(this.dorkHome, record, approvals)) {
+      if (record.originProblem !== 'changed') return;
+    } else if (await pinStillHolds(record, approvals)) return;
     logger.warn(`[Extensions] ${record.id} changed since a person approved it; it waits for them`);
     await this.serverLifecycle.shutdown(record.id);
     this.emitChanged();

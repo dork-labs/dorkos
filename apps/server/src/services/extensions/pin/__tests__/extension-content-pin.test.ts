@@ -328,8 +328,17 @@ describe('pinning older path-only approvals, once (migration)', () => {
       enabled: ['notes'],
       disabled: [],
       approvedToRun: ['notes'],
-      approvedSources: { notes: { path: COPY_PATH } },
+      // As the '0.126.0' config migration marks an approval that predates content pins.
+      approvedSources: { notes: { path: COPY_PATH, legacyPathOnly: true } },
     };
+  });
+
+  it('never pins a digest-less approval the migration did not mark (written since)', () => {
+    stored.extensions = { ...stored.extensions, approvedSources: { notes: { path: COPY_PATH } } };
+    expect(pinPathOnlyApprovals([copy({ manifest: IN_PROCESS })])).toEqual([]);
+    expect(mayRunExtensionCode(copy({ manifest: IN_PROCESS }), stored.extensions as never)).toBe(
+      false
+    );
   });
 
   it('pins a path-only approval to the files found, and records that it did', () => {

@@ -109,20 +109,23 @@ export async function approveNewScaffold(
  * it. Writes only when the stored approval keeps path trust; an approval
  * pinned by folder digest already holds the screen code to those files.
  *
- * Pinned only when the folder still holds exactly the files DorkOS
- * scaffolded, so the bundle was built from them and not from an edit that
- * landed meanwhile. Otherwise nothing is pinned and the screen half waits
+ * Pinned only when the bundle was built from a verified snapshot of exactly
+ * the files DorkOS scaffolded (`record.pinnedDigest`, the snapshot it ran
+ * from), so an edit that landed mid-build, even one reverted since, is never
+ * what gets pinned. Otherwise nothing is pinned and the screen half waits
  * for a person.
  *
  * @param record - The new extension, just compiled.
  * @param scaffolded - The digest of its folder right after it was scaffolded.
  */
-export async function pinScaffoldClient(
-  record: Pick<ExtensionRecord, 'id' | 'path' | 'sourcePlugin' | 'clientDigest'>,
+export function pinScaffoldClient(
+  record: Pick<ExtensionRecord, 'id' | 'clientDigest' | 'pinnedDigest' | 'runPath'>,
   scaffolded: string | null
-): Promise<void> {
+): void {
   const { id, clientDigest } = record;
-  if (!clientDigest || !scaffolded || (await liveDigestOf(record)) !== scaffolded) return;
+  if (!clientDigest || !scaffolded || !record.runPath || record.pinnedDigest !== scaffolded) {
+    return;
+  }
   const before = configManager.get('extensions');
   const source = before.approvedSources?.[id];
   if (!source || !isPathTrustApproval(source) || source.clientDigest) return;

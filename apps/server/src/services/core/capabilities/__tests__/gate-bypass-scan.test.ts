@@ -337,8 +337,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'scaffolds an extension and turns it on in one step, which is the one path to `extensions.enabled` an agent can reach unaided',
     call: 'createExtension(',
     allowed: {
-      'services/runtimes/claude-code/mcp-tools/extension-tools.ts':
-        'the `create_extension` MCP tool, tier `act`. Ungated, and safe ONLY because `scaffoldExtension` refuses an id taken in either scope (DOR-1507) — so the id it enables is genuinely new, therefore never in `extensions.approvedToRun`, therefore unable to run. Read the invalidation conditions above this entry before adding a second caller or a third scope',
+      'services/runtimes/claude-code/mcp-tools/extension-create-tool.ts':
+        'the `create_extension` MCP tool, tier `act` (its handler, split from `extension-tools.ts`). Ungated, and safe ONLY because `scaffoldExtension` refuses an id taken in any root it writes to, and for an agent any id DorkOS knows (DOR-1507, DOR-3068) — so the id it enables is genuinely new, therefore never in `extensions.approvedToRun` unless the Trusted scaffold approval just wrote it for exactly that new folder and its files. Read the invalidation conditions above this entry before adding a second caller or a third scope',
       'services/extensions/extension-manager.ts': 'the definition itself',
     },
   },

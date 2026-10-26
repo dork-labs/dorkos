@@ -51,7 +51,14 @@ export function bindUnsourcedApprovals(
     if (record.origin === 'core' || record.sourcePlugin) continue;
     const directInstall = path.join(path.resolve(dorkHome), 'extensions', record.id);
     if (path.resolve(record.path) !== directInstall) continue;
-    additions[record.id] = approvedSourceOf(record);
+    // Named by its files from the start (DOR-3068): such an approval predates
+    // content pins, so it is pinned, once, to what this scan finds.
+    if (!record.currentDigest) continue;
+    additions[record.id] = {
+      ...approvedSourceOf(record),
+      digest: record.currentDigest,
+      pinnedOnFirstUse: new Date().toISOString(),
+    };
   }
   if (Object.keys(additions).length === 0) return;
   configManager.set('extensions', {
@@ -137,7 +144,8 @@ export function pinPathOnlyApprovals(records: readonly ExtensionRecord[]): strin
     const source = sources[record.id];
     if (record.origin !== 'user' || !source || !record.currentDigest) continue;
     if (!isPathOnlyApproval(source) || !namesThisCopy(record, before)) continue;
-    additions[record.id] = { ...source, digest: record.currentDigest, pinnedOnFirstUse: pinnedAt };
+    const { legacyPathOnly: _legacy, ...named } = source;
+    additions[record.id] = { ...named, digest: record.currentDigest, pinnedOnFirstUse: pinnedAt };
   }
   const ids = Object.keys(additions);
   if (ids.length === 0) return ids;

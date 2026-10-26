@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   STALE_APPROVAL_CODE,
+  UNPINNABLE_APPROVAL_CODE,
   type ApproveExtensionRequest,
   type ExtensionTrustOffer,
   type PendingExtensionApproval,
@@ -157,6 +158,11 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       if (isStale(err)) {
         if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
         toast.error(`${name} changed since you saw it. Check it again.`);
+        return;
+      }
+      // Trying again cannot help a copy DorkOS cannot check (DOR-3068).
+      if (err instanceof AnswerRefused && err.code === UNPINNABLE_APPROVAL_CODE) {
+        toast.error(`${name} can’t be turned on yet.`, { description: err.message });
         return;
       }
       toast.error(`Couldn’t turn on ${name}. Try again.`, { description: err.message });

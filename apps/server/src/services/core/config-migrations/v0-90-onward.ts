@@ -758,3 +758,41 @@ export function seedUiDmViewLeaves(store: {
     ...(!('showSessions' in ui) && { showSessions: false }),
   });
 }
+
+/**
+ * Mark every extension approval written before approvals named content
+ * (DOR-3068): one with no digest, no author, no grants and no dev link. Only
+ * a marked approval is pinned, once, to the files the next scan finds
+ * (`pinPathOnlyApprovals`); an unmarked digest-less approval written later is
+ * never pinned to whatever is on disk, so it simply does not run.
+ *
+ * Runs once, on the upgrade, so the set it marks is exactly the approvals that
+ * predate this release. Running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function markLegacyPathOnlyApprovals(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const extensions = store.get('extensions');
+  if (extensions === null || typeof extensions !== 'object' || Array.isArray(extensions)) return;
+  const sources = (extensions as { approvedSources?: unknown }).approvedSources;
+  if (sources === null || typeof sources !== 'object' || Array.isArray(sources)) return;
+  let changed = false;
+  const next: Record<string, unknown> = {};
+  for (const [id, source] of Object.entries(sources as Record<string, unknown>)) {
+    const entry = source as Record<string, unknown> | null;
+    const pathOnly =
+      entry !== null &&
+      typeof entry === 'object' &&
+      !entry.digest &&
+      !entry.authorHome &&
+      !entry.grants &&
+      !entry.devLink &&
+      entry.legacyPathOnly !== true;
+    next[id] = pathOnly ? { ...entry, legacyPathOnly: true } : source;
+    changed ||= pathOnly;
+  }
+  if (changed) store.set('extensions', { ...extensions, approvedSources: next });
+}

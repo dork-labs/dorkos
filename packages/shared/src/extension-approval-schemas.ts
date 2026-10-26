@@ -221,10 +221,11 @@ export type DismissExtensionApprovalRequest = z.infer<typeof DismissExtensionApp
 export const STALE_APPROVAL_CODE = 'stale_approval';
 
 /**
- * The code an approval that names no files is refused with (DOR-3068): every
- * copy but a dev link must send `expectedDigest`.
+ * The code a yes to a copy DorkOS cannot check is refused with (DOR-3068): its
+ * folder links to files outside itself, or cannot be read whole, so there are
+ * no files a yes could name. Asking again cannot help until the folder changes.
  */
-export const EXPECTED_DIGEST_REQUIRED_CODE = 'expected_digest_required';
+export const UNPINNABLE_APPROVAL_CODE = 'extension_unpinnable';
 
 /**
  * Which copy of an extension a person was asked about: its id, the resolved

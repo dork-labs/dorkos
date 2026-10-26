@@ -82,7 +82,7 @@ interface StoredExtensions {
   enabled: string[];
   disabled: string[];
   approvedToRun: string[];
-  approvedSources?: Record<string, { path: string; plugin?: string }>;
+  approvedSources?: Record<string, { path: string; plugin?: string; legacyPathOnly?: boolean }>;
   approvedPermissions?: Record<string, ApprovedPermissionSet>;
 }
 const stored = vi.hoisted(() => ({
@@ -244,7 +244,7 @@ describe('an approval covers the permission set it was given for', () => {
       enabled: ['mail-app'],
       disabled: [],
       approvedToRun: ['mail-app'],
-      approvedSources: { 'mail-app': { path: PATH } },
+      approvedSources: { 'mail-app': { path: PATH, legacyPathOnly: true } },
     };
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.initialize(null);
@@ -262,7 +262,7 @@ describe('an approval covers the permission set it was given for', () => {
       enabled: ['mail-app'],
       disabled: [],
       approvedToRun: ['mail-app'],
-      approvedSources: { 'mail-app': { path: PATH } },
+      approvedSources: { 'mail-app': { path: PATH, legacyPathOnly: true } },
     };
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.initialize(null);
@@ -302,7 +302,7 @@ describe('an approval covers the permission set it was given for', () => {
       enabled: ['mail-app'],
       disabled: [],
       approvedToRun: ['mail-app'],
-      approvedSources: { 'mail-app': { path: PATH } },
+      approvedSources: { 'mail-app': { path: PATH, legacyPathOnly: true } },
     };
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.reload();
@@ -330,7 +330,7 @@ describe('an extension that asks to run separately never runs inside DorkOS', ()
       enabled: ['mail-app'],
       disabled: [],
       approvedToRun: ['mail-app'],
-      approvedSources: { 'mail-app': { path: PATH } },
+      approvedSources: { 'mail-app': { path: PATH, legacyPathOnly: true } },
     };
     mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'h1' });
     mockCompileServer.mockResolvedValue({

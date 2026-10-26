@@ -84,6 +84,17 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
           409
         );
       }
+      if (approveStatus === 419) {
+        // A copy DorkOS cannot check (DOR-3068): plain words, its own code.
+        return json(
+          {
+            error:
+              "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on.",
+            code: 'extension_unpinnable',
+          },
+          409
+        );
+      }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
       waiting = [];
       return json({ extension: { id: 'flow' } });
@@ -331,6 +342,26 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     );
     expect(await screen.findByText('Turn on Flow?')).toBeInTheDocument();
   });
+
+  it('says plainly, without “try again”, when DorkOS cannot check the copy (DOR-3068)', async () => {
+    approveStatus = 419; // the fake's stand-in for an unpinnable refusal
+    renderBell();
+    const { user, row } = await openRow();
+
+    await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Flow can’t be turned on yet.', {
+        description:
+          "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on.",
+      })
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('Try again'),
+      expect.anything()
+    );
+  });
+
   describe('what it can reach (DOR-2686)', () => {
     const MAIL: PendingExtensionApproval = {
       ...FLOW,

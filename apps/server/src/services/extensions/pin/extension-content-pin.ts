@@ -120,24 +120,6 @@ export function approvalFor(
 }
 
 /**
- * Refuse a yes when the copy's files changed after they were checked: the
- * code built for it must come from exactly the files the person was shown
- * (DOR-3068).
- *
- * @param copy - The extension record.
- * @param checked - The digest read before the build, or null.
- * @throws {ApprovalRefusedError} `stale` when the files differ now.
- */
-export async function assertUnchangedSince(
-  copy: DigestedCopy,
-  checked: string | null
-): Promise<void> {
-  if ((await liveDigestOf(copy)) !== checked) {
-    throw new ApprovalRefusedError('stale', 'Its files changed while DorkOS checked them.');
-  }
-}
-
-/**
  * The real path of a folder, or null when it does not exist.
  *
  * @param target - A path.
@@ -155,9 +137,16 @@ function isSkipped(rel: string): boolean {
   return rel.toLowerCase().split('/').includes('.git') || isRuntimeStatePath(rel);
 }
 
-/** Every regular file under `root` the digest covers, by relative path, with its size. */
-async function filesOf(root: string): Promise<Map<string, { abs: string; size: number }>> {
-  const files = new Map<string, { abs: string; size: number }>();
+/** One entry the digest covers: a file by its size, or a link by its text. */
+interface CoveredEntry {
+  abs: string;
+  size: number;
+  link?: string;
+}
+
+/** Every file and link under `root` the digest covers, by relative path. */
+async function filesOf(root: string): Promise<Map<string, CoveredEntry>> {
+  const files = new Map<string, CoveredEntry>();
   const visit = async (rel: string, dir: string): Promise<void> => {
     for (const name of await fs.readdir(dir)) {
       const childRel = rel === '' ? name : `${rel}/${name}`;
@@ -165,7 +154,9 @@ async function filesOf(root: string): Promise<Map<string, { abs: string; size: n
       const abs = path.join(dir, name);
       const stats = await fs.lstat(abs);
       if (stats.isDirectory()) await visit(childRel, abs);
-      // A link is listed as a file so a new one shows up as a change.
+      // A link is compared by where it points, like the digest covers it.
+      else if (stats.isSymbolicLink())
+        files.set(childRel, { abs, size: -1, link: await fs.readlink(abs) });
       else files.set(childRel, { abs, size: stats.isFile() ? stats.size : -1 });
     }
   };
@@ -198,8 +189,11 @@ export async function changedFilesSince(
     for (const rel of new Set([...before.keys(), ...now.keys()])) {
       const a = before.get(rel);
       const b = now.get(rel);
-      if (!a || !b || a.size !== b.size || a.size < 0) {
+      const odd = a?.link === undefined && (a?.size ?? 0) < 0;
+      if (!a || !b || a.size !== b.size || (a.link ?? null) !== (b.link ?? null) || odd) {
         changed.push(rel);
+      } else if (a.link !== undefined) {
+        continue;
       } else if ((await fileSha256Hex(a.abs)) !== (await fileSha256Hex(b.abs))) {
         changed.push(rel);
       }
@@ -237,6 +231,13 @@ export async function approvedVersionOf(
     return null;
   }
 }
+
+/**
+ * Why a copy whose folder DorkOS cannot check can't be approved, in plain
+ * words (DOR-3068): it links to files outside itself, or cannot be read whole.
+ */
+export const UNPINNABLE_SENTENCE =
+  "Its folder links to files outside it, so DorkOS can't check what would run.";
 
 /**
  * Why a person's yes was not recorded (DOR-3068):

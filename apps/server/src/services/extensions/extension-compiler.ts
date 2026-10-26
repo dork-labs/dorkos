@@ -661,7 +661,12 @@ export class ExtensionCompiler {
       containRoot,
     };
 
-    const check = await readCurrentManifest(ctx.manifestPath, ctx.buildKey, entryPath);
+    // Only a record this process wrote is trusted: a cached error or bundle key
+    // read from a file swapped into the cache is ignored and built again.
+    const vouchedRecord = (await this.vouched.read(ctx.manifestPath)) !== null;
+    const check = vouchedRecord
+      ? await readCurrentManifest(ctx.manifestPath, ctx.buildKey, entryPath)
+      : { stale: 'no build this process recorded' };
     if ('current' in check) {
       const { key, outcome } = check.current;
       if (outcome.kind === 'error') {
@@ -810,7 +815,9 @@ export class ExtensionCompiler {
     // (plugin-level code, the plugin's node_modules), which the failure cache
     // does not watch. Such a failure is never cached: the next load builds
     // again and sees the fix.
-    if (ctx.containRoot) {
+    // Every build is contained since DOR-3068; only one contained to MORE than
+    // its own folder (a plugin's) can fail on a file the cache does not watch.
+    if (ctx.containRoot && path.resolve(ctx.containRoot) !== path.resolve(ctx.extRoot)) {
       logger.warn(
         `[Extensions] ${prefix}Compilation failed for ${extId} (plugin build, not cached): ` +
           `${compilationError.errors[0]?.text}`
@@ -864,9 +871,8 @@ export class ExtensionCompiler {
         absent: digest.absent,
         outcome,
       });
-      if (!written) {
-        logger.debug(`[Extensions] Kept the record of a newer build of ${ctx.extId}`);
-      }
+      if (written) this.vouched.vouch(ctx.manifestPath, written);
+      else logger.debug(`[Extensions] Kept the record of a newer build of ${ctx.extId}`);
     } catch (err) {
       logger.warn(
         `[Extensions] Could not record the build of ${ctx.extId}; it will be rebuilt on the ` +

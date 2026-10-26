@@ -167,6 +167,9 @@ describe('the folders only a person may change', () => {
     for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
       expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-snapshots/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/extensions/**)`);
+      // The installer's records and the trusted package sources (DOR-3068).
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplace/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplaces.json*)`);
     }
   });
 

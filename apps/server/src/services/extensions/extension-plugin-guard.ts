@@ -34,15 +34,17 @@ import { installRootOf } from './extension-trusted-origin.js';
 export const PLUGIN_CHANGED_CODE = 'plugin_changed_since_check';
 
 /**
- * The folder a copy's bundle is contained to, or null: a plugin-carried
- * copy's install folder, or, for a copy held to a pinned digest (DOR-3068),
- * its own folder, which is exactly what that digest covers.
+ * The folder a copy's bundle is contained to: a plugin-carried copy's install
+ * folder, and every other copy's own folder (DOR-3068): the snapshot it runs
+ * from, or else its real path. No bundle inlines a file from outside it, so
+ * a copy approved by its folder, or one that keeps path trust, can never pull
+ * in a file nobody approved (`../../.ssh/id_rsa`, another agent's code).
  */
 export function containmentRootOf(
-  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath' | 'pinnedDigest'>
-): string | null {
+  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath' | 'realPath'>
+): string {
   if (record.sourcePlugin) return installRootOf(record.runPath ?? record.path);
-  return record.pinnedDigest ? path.resolve(record.runPath ?? record.path) : null;
+  return path.resolve(record.runPath ?? record.realPath ?? record.path);
 }
 
 /**
@@ -125,8 +127,6 @@ export async function stillPinned(
   // A snapshot is re-hashed too (DOR-3068): its folder name says what it
   // should hold, not what it does, and its files could be edited after it
   // was written. The digest's stamp cache keeps an unchanged one cheap.
-  const root = containmentRootOf(record);
-  if (!root) return false;
-  const now = await installFolderDigest(root);
+  const now = await installFolderDigest(containmentRootOf(record));
   return now.kind === 'digest' && now.digest === record.pinnedDigest;
 }

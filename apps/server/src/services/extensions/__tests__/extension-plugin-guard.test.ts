@@ -103,6 +103,39 @@ describe('containment (N1)', () => {
     expect('code' in own).toBe(true);
   });
 
+  it('contains a directly installed copy to its own folder too, path trust included (DOR-3068)', async () => {
+    const home = path.join(tmp, 'agents', 'a');
+    const own = path.join(home, '.dork', 'extensions', 'notes');
+    await write(path.join(tmp, 'secret.ts'), 'export const secret = "id_rsa";\n');
+    await write(path.join(own, 'helper.ts'), 'export const helper = 1;\n');
+    const direct = record({ id: 'notes', path: own, realPath: own, sourcePlugin: undefined });
+
+    await write(
+      path.join(own, 'index.ts'),
+      "import { helper } from './helper';\nexport const x = helper;\n"
+    );
+    expect('code' in (await compiler.compile(direct))).toBe(true);
+
+    await write(
+      path.join(own, 'index.ts'),
+      "import { secret } from '../../../../../secret';\nexport const x = secret;\n"
+    );
+    const escaped = await compiler.compile(direct);
+    expect('error' in escaped && JSON.stringify(escaped.error)).toContain(
+      "outside this plugin's folder"
+    );
+
+    await write(
+      path.join(own, 'server.ts'),
+      "import { secret } from '../../../../../secret';\nexport default () => secret;\n"
+    );
+    const server = await compiler.compileServer({
+      ...direct,
+      serverEntryPath: path.join(own, 'server.ts'),
+    });
+    expect('error' in server).toBe(true);
+  });
+
   it('refuses the same escape in a server bundle', async () => {
     await write(path.join(project, 'evil.ts'), 'export const evil = 1;\n');
     await write(

@@ -272,7 +272,9 @@ beforeEach(async () => {
     enabled: [ID],
     disabled: [],
     approvedToRun: [ID],
-    approvedSources: { [ID]: { path: extDir } },
+    // Written before approvals named content, so the first scan pins it to the
+    // files it finds (the '0.126.0' migration's mark, DOR-3068).
+    approvedSources: { [ID]: { path: extDir, legacyPathOnly: true } },
     approvedPermissions: { [ID]: { runtime: 'subprocess', net: [], run: [], agents: false } },
   };
   preset = 'balanced';

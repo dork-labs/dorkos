@@ -222,6 +222,9 @@ export function applyDirectoryGrants(
  *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
  *   that could rewrite either could run code nobody approved. Both are also
  *   checked by content before use; this keeps the file tools out entirely.
+ * - `marketplace/` holds what DorkOS's installer recorded, `project-installs.json`
+ *   among it: which plugin came from where, which is what gives a copy its
+ *   trusted origin (DOR-3068).
  *
  * Bash is not covered, as the module note says: a turn with a shell it was not
  * asked about is outside what file rules can hold.
@@ -231,6 +234,7 @@ export const PERSON_ONLY_DATA_FOLDERS = [
   'session-relay',
   'extension-snapshots',
   'cache/extensions',
+  'marketplace',
 ] as const;
 
 /**
@@ -238,9 +242,14 @@ export const PERSON_ONLY_DATA_FOLDERS = [
  * config (`config.json`, its backups and conf's temp files beside it, so
  * `config.json*`) and the timestamped backups. The config holds every
  * extension approval and every other `operator-only` setting (DOR-3068); an
- * agent that could write it with a file tool could approve its own code.
+ * agent that could write it with a file tool could approve its own code. And
+ * `marketplaces.json`, the package sources the person trusts.
  */
-export const PERSON_ONLY_DATA_FILES = ['config.json*', 'config-*.json.bak'] as const;
+export const PERSON_ONLY_DATA_FILES = [
+  'config.json*',
+  'config-*.json.bak',
+  'marketplaces.json*',
+] as const;
 
 /**
  * A Windows drive path seen on a POSIX host (tests, mostly), which

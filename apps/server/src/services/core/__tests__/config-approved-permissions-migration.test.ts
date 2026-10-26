@@ -111,7 +111,8 @@ describe('a real pre-0.98.0 config file through a real ConfigManager', () => {
           enabled: ['flow'],
           disabled: [],
           approvedToRun: ['flow'],
-          approvedSources: { flow: { path: flowPath, plugin: 'flow' } },
+          // As the '0.126.0' migration marks an approval that predates content pins.
+          approvedSources: { flow: { path: flowPath, plugin: 'flow', legacyPathOnly: true } },
           dismissedApprovals: {},
           trustedSources: [],
         },

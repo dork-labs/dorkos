@@ -75,6 +75,7 @@ import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerpr
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
+import { configManager } from '../../../core/config-manager.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import {
   applyOtherAgentsExtensionsDeny,
@@ -786,7 +787,8 @@ export async function resolveLaunch(args: {
   applyOtherAgentsExtensionsDeny(
     sdkOptions,
     ownExtensionsWritable(session, sessionId, turnAgentPath ?? undefined),
-    otherAgentHomesOf(opts.meshCore),
+    // Author folders an approval records count even when no longer registered.
+    otherAgentHomesOf(opts.meshCore, configManager.get('extensions')),
     resolveDorkHome()
   );
   // A credits turn's endpoint, in the launch's own settings (see above).

@@ -118,7 +118,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
-import { ApprovalRefusedError } from '../../services/extensions/pin/extension-content-pin.js';
+import {
+  ApprovalRefusedError,
+  UNPINNABLE_SENTENCE,
+} from '../../services/extensions/pin/extension-content-pin.js';
 import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
@@ -298,7 +301,7 @@ describe('POST /api/extensions/:id/approve', () => {
 
     it('answers 409 without the stale code when the folder cannot be pinned', async () => {
       manager.approveToRun.mockRejectedValueOnce(
-        new ApprovalRefusedError('unpinnable', 'Its folder holds a link DorkOS cannot check.')
+        new ApprovalRefusedError('unpinnable', UNPINNABLE_SENTENCE)
       );
 
       const res = await request(fixtureServer)
@@ -306,7 +309,7 @@ describe('POST /api/extensions/:id/approve', () => {
         .send(SHOWN_FILES);
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBeUndefined();
+      expect(res.body.code).toBe('extension_unpinnable');
       expect(res.body.error).toContain('Nothing was turned on');
     });
   });
@@ -655,15 +658,31 @@ describe('POST /api/extensions/:id/approve', () => {
   });
 
   describe('the files the person was shown (DOR-3068)', () => {
-    it('refuses a yes that names no files, and turns nothing on', async () => {
+    it('refuses a yes that names no files as out of date, and turns nothing on', async () => {
+      manager.get.mockReturnValue(stubRecord({ currentDigest: `sha256:${'b'.repeat(64)}` }));
       const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ version: '1.0.0' });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe('expected_digest_required');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('stale_approval');
+      expect(res.body.error).toBe(
+        'This extension changed since you saw it. Nothing was turned on.'
+      );
       expect(manager.approveToRun).not.toHaveBeenCalled();
       const empty = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
-      expect(empty.status).toBe(400);
+      expect(empty.status).toBe(409);
+    });
+
+    it('says in plain words why a copy DorkOS cannot check cannot be turned on', async () => {
+      // No digest: its folder links outside itself (or cannot be read whole).
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('extension_unpinnable');
+      expect(res.body.error).toBe(
+        "Its folder links to files outside it, so DorkOS can't check what would run. Nothing was turned on."
+      );
+      expect(res.body.error).not.toMatch(/digest/i);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
     it('approves a dev link by path alone, with no digest', async () => {

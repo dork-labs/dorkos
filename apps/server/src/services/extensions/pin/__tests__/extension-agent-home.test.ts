@@ -47,7 +47,7 @@ import {
   type ExtensionApprovals,
 } from '../../extension-load-policy.js';
 import { approveNewScaffold, pinScaffoldClient } from '../extension-scaffold-approval.js';
-import { ApprovalRefusedError, assertUnchangedSince } from '../extension-content-pin.js';
+import { refreshPathTrustRun, runFromSnapshot } from '../extension-snapshot-placement.js';
 import { scaffoldExtension } from '../../extension-scaffolder.js';
 import { ExtensionDiscovery } from '../../extension-discovery.js';
 import {
@@ -341,63 +341,69 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     expect(source).not.toHaveProperty('digest');
   });
 
-  it('pins the scaffold’s first bundle, once, only under path trust, and only from the scaffolded files', async () => {
-    const { targetDir, digest } = await scaffoldExtension({
-      name: 'notes',
-      template: 'dashboard-card',
-      scope: 'global',
-      dorkHome,
-      currentCwd: null,
-      agentHome,
-    });
-    expect(digest).toMatch(/^sha256:/);
+  it('pins the scaffold’s first bundle only when it was built from a verified snapshot of the scaffold', () => {
+    const scaffolded = `sha256:${'5'.repeat(64)}`;
     stored.extensions = {
       approvedToRun: ['notes', 'card'],
       approvedSources: {
-        notes: { path: targetDir, authorHome: agentHome, grants: grantsDigestOf(ISOLATED) },
+        notes: { path: COPY_PATH, authorHome: HOME, grants: grantsDigestOf(ISOLATED) },
         card: { path: '/x/card', digest: `sha256:${'2'.repeat(64)}` },
       },
     };
     const sources = () =>
       stored.extensions.approvedSources as Record<string, Record<string, unknown>>;
-    const notes = { id: 'notes', path: targetDir, clientDigest: bundleDigestOf(APPROVED_BUNDLE) };
+    const built = {
+      id: 'notes',
+      clientDigest: bundleDigestOf(APPROVED_BUNDLE),
+      pinnedDigest: scaffolded,
+      runPath: '/snapshots/5555/notes',
+    };
 
-    // An edit that landed after the scaffold: the bundle may be built from it.
-    await fs.writeFile(path.join(targetDir, 'index.ts'), 'export function activate() { x(); }');
-    await pinScaffoldClient(notes, digest);
+    // Built from other files (an edit that landed, even one reverted since),
+    // or not from a snapshot at all: nothing is pinned.
+    pinScaffoldClient({ ...built, pinnedDigest: `sha256:${'6'.repeat(64)}` }, scaffolded);
+    pinScaffoldClient({ ...built, runPath: undefined }, scaffolded);
     expect(sources().notes).not.toHaveProperty('clientDigest');
 
-    const fresh = await scaffoldExtension({
-      name: 'other',
+    pinScaffoldClient(built, scaffolded);
+    pinScaffoldClient({ ...built, clientDigest: bundleDigestOf(EDITED_BUNDLE) }, scaffolded);
+    expect(sources().notes!.clientDigest).toBe(bundleDigestOf(APPROVED_BUNDLE));
+    pinScaffoldClient({ ...built, id: 'card' }, scaffolded);
+    expect(sources().card).not.toHaveProperty('clientDigest');
+  });
+
+  it('builds a path-trust copy from a verified snapshot of its files as they are now', async () => {
+    const { targetDir } = await scaffoldExtension({
+      name: 'notes',
       template: 'dashboard-card',
       scope: 'global',
       dorkHome,
       currentCwd: null,
       agentHome,
     });
-    stored.extensions = {
-      ...stored.extensions,
+    const approvals = {
+      approvedToRun: ['notes'],
       approvedSources: {
-        ...sources(),
-        other: { path: fresh.targetDir, authorHome: agentHome, grants: grantsDigestOf(ISOLATED) },
+        notes: { path: targetDir, authorHome: agentHome, grants: grantsDigestOf(ISOLATED) },
       },
     };
-    const other = {
-      id: 'other',
-      path: fresh.targetDir,
-      clientDigest: bundleDigestOf(APPROVED_BUNDLE),
-    };
-    await pinScaffoldClient(other, fresh.digest);
-    await pinScaffoldClient(
-      { ...other, clientDigest: bundleDigestOf(EDITED_BUNDLE) },
-      fresh.digest
+    const record = copy({ path: targetDir, realPath: targetDir, runPath: undefined });
+    expect(await refreshPathTrustRun(dorkHome, record, approvals)).toBe(true);
+    const first = record.runPath!;
+    expect(first.startsWith(path.join(dorkHome, 'extension-snapshots'))).toBe(true);
+    expect(await fs.readFile(path.join(first, 'index.ts'), 'utf8')).toBe(
+      await fs.readFile(path.join(targetDir, 'index.ts'), 'utf8')
     );
-    expect(sources().other!.clientDigest).toBe(bundleDigestOf(APPROVED_BUNDLE));
-    await pinScaffoldClient({ id: 'card', path: '/x/card', clientDigest: 'sha256:x' }, digest);
-    expect(sources().card).not.toHaveProperty('clientDigest');
+
+    // An edit is copied and verified before the next build reads it.
+    await fs.writeFile(path.join(targetDir, 'index.ts'), 'export function activate() { x(); }');
+    await refreshPathTrustRun(dorkHome, record, approvals);
+    expect(record.runPath).not.toBe(first);
+    expect(await fs.readFile(path.join(record.runPath!, 'index.ts'), 'utf8')).toContain('x();');
+    expect(record.pinnedDigest).toBe(record.currentDigest);
   });
 
-  it('refuses a yes when the files change between the check and the build', async () => {
+  it('refuses to run a copy when its folder no longer holds the files it was checked at', async () => {
     const { targetDir, digest } = await scaffoldExtension({
       name: 'notes',
       template: 'dashboard-card',
@@ -406,11 +412,11 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
       currentCwd: null,
       agentHome,
     });
-    await expect(assertUnchangedSince({ path: targetDir }, digest)).resolves.toBeUndefined();
     await fs.writeFile(path.join(targetDir, 'index.ts'), 'export function activate() { x(); }');
-    await expect(assertUnchangedSince({ path: targetDir }, digest)).rejects.toBeInstanceOf(
-      ApprovalRefusedError
-    );
+    const record = copy({ path: targetDir, realPath: targetDir });
+    expect(await runFromSnapshot(dorkHome, record, digest!)).toBe(false);
+    expect(record.originProblem).toBe('changed');
+    expect(record.runPath).toBeUndefined();
   });
 
   it('creates in the global folder, and says so, for an agent whose folder holds the DorkOS home', async () => {

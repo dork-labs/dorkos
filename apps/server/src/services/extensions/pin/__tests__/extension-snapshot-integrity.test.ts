@@ -69,6 +69,23 @@ describe('ensureSnapshot', () => {
   });
 });
 
+describe('a folder with npm links (DOR-3068)', () => {
+  it('snapshots an in-folder link as the same link, so the copy matches its digest', async () => {
+    await fs.mkdir(path.join(live, 'node_modules', '.bin'), { recursive: true });
+    await fs.mkdir(path.join(live, 'node_modules', 'tool'), { recursive: true });
+    await fs.writeFile(path.join(live, 'node_modules', 'tool', 'cli.js'), 'run()');
+    await fs.symlink('../tool/cli.js', path.join(live, 'node_modules', '.bin', 'tool'));
+    const found = await installFolderDigest(live);
+    if (found.kind !== 'digest') throw new Error(found.kind);
+
+    const root = (await ensureSnapshot(dorkHome, live, found.digest))!;
+    expect(root).not.toBeNull();
+    expect(await fs.readlink(path.join(root, 'node_modules', '.bin', 'tool'))).toBe(
+      '../tool/cli.js'
+    );
+  });
+});
+
 describe('stillPinned', () => {
   it('re-hashes the snapshot a copy runs from, and refuses one edited since', async () => {
     const root = (await ensureSnapshot(dorkHome, live, digest))!;

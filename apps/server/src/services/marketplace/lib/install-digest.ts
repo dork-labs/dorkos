@@ -15,10 +15,13 @@
  * Covered: every regular file's path, executable bit and bytes, sorted by
  * path. Left out: every `.git`, and DorkOS's own runtime state
  * ({@link isRuntimeStatePath}: the install records, saved data and secrets
- * DorkOS writes after the plugin lands). **Any symbolic link anywhere in the
- * folder means no digest**: the installer strips links while staging, and a
- * loader follows a link (`index.js → evil.js`) that a hash of files would skip,
- * so a link is never something DorkOS put there.
+ * DorkOS writes after the plugin lands). A symbolic link is covered by the
+ * text it points to (DOR-3068), so npm's `node_modules/.bin` links digest like
+ * any file and an extension with dependencies can be approved. **A link that
+ * points outside the folder, or by an absolute path, means no digest**: a
+ * loader follows it (`index.js → /elsewhere/evil.js`) to files the digest
+ * never saw. The installer strips links while staging, so an installed
+ * plugin's digest never covers one.
  *
  * ## Cost
  *
@@ -35,7 +38,7 @@
  * @module services/marketplace/lib/install-digest
  */
 import { createHash } from 'node:crypto';
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { isRuntimeStatePath } from './content-hash.js';
 import { fileSha256Hex } from './records/tree-scan.js';
@@ -61,8 +64,28 @@ interface WalkedFile {
   stamp: string;
 }
 
-/** What one walk found: the files, or why there is no digest. */
-type Walk = { files: WalkedFile[]; listing: string } | 'linked' | 'unreadable';
+/** One symbolic link the walk found, inside the folder, by its text. */
+interface WalkedLink {
+  rel: string;
+  target: string;
+}
+
+/** What one walk found: the files and links, or why there is no digest. */
+type Walk = { files: WalkedFile[]; links: WalkedLink[]; listing: string } | 'linked' | 'unreadable';
+
+/**
+ * Whether a link's text keeps it inside `root`: relative, and resolving to
+ * `root` or below it from the folder that holds it.
+ *
+ * @param root - The folder being digested.
+ * @param linkDir - The folder holding the link.
+ * @param target - The link's text.
+ */
+export function isLinkInside(root: string, linkDir: string, target: string): boolean {
+  if (path.isAbsolute(target) || /^[A-Za-z]:/.test(target)) return false;
+  const rel = path.relative(path.resolve(root), path.resolve(linkDir, target));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
 
 /**
  * Walk a folder, `lstat`ing every entry and reading no file's bytes.
@@ -71,6 +94,7 @@ type Walk = { files: WalkedFile[]; listing: string } | 'linked' | 'unreadable';
  */
 async function walk(root: string): Promise<Walk> {
   const files: WalkedFile[] = [];
+  const links: WalkedLink[] = [];
   const listings: string[] = [];
   const visit = async (rel: string, dir: string): Promise<'linked' | 'unreadable' | null> => {
     const names = (await readdir(dir)).sort();
@@ -80,7 +104,12 @@ async function walk(root: string): Promise<Walk> {
       if (isSkipped(childRel)) continue;
       const abs = path.join(dir, name);
       const stats = await lstat(abs, { bigint: true });
-      if (stats.isSymbolicLink()) return 'linked';
+      if (stats.isSymbolicLink()) {
+        const target = await readlink(abs);
+        if (!isLinkInside(root, dir, target)) return 'linked';
+        links.push({ rel: childRel, target });
+        continue;
+      }
       if (stats.isDirectory()) {
         const found = await visit(childRel, abs);
         if (found) return found;
@@ -106,7 +135,8 @@ async function walk(root: string): Promise<Walk> {
     return 'unreadable';
   }
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-  return { files, listing: listings.join('\n') };
+  links.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  return { files, links, listing: listings.join('\n') };
 }
 
 /** Each file's content hash, by absolute path, with the stamp it was taken at. */
@@ -128,6 +158,7 @@ export async function installFolderDigest(root: string): Promise<InstallDigest> 
   const folderStamp = createHash('sha256')
     .update(walked.listing)
     .update(walked.files.map((f) => `${f.rel}\0${f.stamp}`).join('\n'))
+    .update(walked.links.map((l) => `${l.rel}\0L\0${l.target}`).join('\n'))
     .digest('hex');
   const cached = folderDigests.get(key);
   if (cached?.stamp === folderStamp) return { kind: 'digest', digest: cached.digest };
@@ -143,6 +174,8 @@ export async function installFolderDigest(root: string): Promise<InstallDigest> 
       }
       outer.update(`F\0${file.rel}\0${file.executable ? 'x' : '-'}\0${hex}\n`, 'utf8');
     }
+    // After every file, so a folder with no links digests exactly as before.
+    for (const link of walked.links) outer.update(`L\0${link.rel}\0${link.target}\n`, 'utf8');
   } catch {
     return { kind: 'unreadable' };
   }

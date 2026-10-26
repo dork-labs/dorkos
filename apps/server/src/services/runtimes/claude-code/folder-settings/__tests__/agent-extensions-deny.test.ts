@@ -119,6 +119,19 @@ describe('otherAgentHomesOf', () => {
     expect(otherAgentHomesOf(registry)).toEqual(['/x/a', '/x/b']);
   });
 
+  it('adds every author folder an approval records, registered or not (DOR-3068)', () => {
+    const registry = { listWithPaths: () => [{ id: 'a', name: 'a', projectPath: '/x/a' }] };
+    const approvals = {
+      approvedSources: {
+        notes: { path: '/x/gone/.dork/extensions/notes', authorHome: '/x/gone' },
+        flow: { path: '/x/flow', digest: 'sha256:1' },
+        mine: { path: '/x/a/.dork/extensions/mine', authorHome: '/x/a' },
+      },
+    };
+    expect(otherAgentHomesOf(registry, approvals)).toEqual(['/x/a', '/x/gone']);
+    expect(otherAgentHomesOf(undefined, approvals)).toEqual(['/x/gone', '/x/a']);
+  });
+
   it('names none for a missing registry or one that cannot list', () => {
     expect(otherAgentHomesOf(undefined)).toEqual([]);
     expect(otherAgentHomesOf(null)).toEqual([]);

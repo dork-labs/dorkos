@@ -31,6 +31,7 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
+import type { ExtensionsConfig } from '../../../extensions/extension-enable-resolution.js';
 import { logger } from '../../../../lib/logger.js';
 import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { heldToACeiling } from '../turn-permission.js';
@@ -125,17 +126,29 @@ export function ownExtensionsWritable(
 }
 
 /**
- * Every registered agent's home, from the agent registry. A registry that
- * cannot list (absent, or a narrow stand-in without `listWithPaths`) names
- * none, so the launch carries no rules for other homes rather than failing.
+ * Every agent home whose mini apps a launch must keep out of: each registered
+ * agent's, and each folder a stored approval names as an extension's author
+ * (`authorHome`, DOR-3068), which path trust is keyed to even when that agent
+ * is no longer registered. A registry that cannot list (absent, or a narrow
+ * stand-in without `listWithPaths`) adds none rather than failing the launch.
  *
  * @param registry - The agent registry the launch was given, if any.
+ * @param approvals - `config.extensions`, for the author folders it records.
  */
 export function otherAgentHomesOf(
-  registry: Partial<Pick<AgentRegistryPort, 'listWithPaths'>> | null | undefined
+  registry: Partial<Pick<AgentRegistryPort, 'listWithPaths'>> | null | undefined,
+  approvals: Partial<Pick<ExtensionsConfig, 'approvedSources'>> = {}
 ): string[] {
-  if (typeof registry?.listWithPaths !== 'function') return [];
-  return registry.listWithPaths().map((agent) => agent.projectPath);
+  const registered =
+    typeof registry?.listWithPaths === 'function'
+      ? registry.listWithPaths().map((agent) => agent.projectPath)
+      : [];
+  // Every folder an approval names as an author too, registered or not: path
+  // trust is keyed to that folder, so it is denied whatever the registry says.
+  const authors = Object.values(approvals.approvedSources ?? {}).flatMap((source) =>
+    source.authorHome ? [source.authorHome] : []
+  );
+  return [...new Set([...registered, ...authors])];
 }
 
 /**

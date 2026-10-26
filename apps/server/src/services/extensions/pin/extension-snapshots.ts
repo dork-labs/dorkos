@@ -49,7 +49,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { isRuntimeStatePath } from '../../marketplace/lib/content-hash.js';
-import { forgetFolderDigest, installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import {
+  forgetFolderDigest,
+  installFolderDigest,
+  isLinkInside,
+} from '../../marketplace/lib/install-digest.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Where snapshots live under `{dorkHome}`. */
@@ -75,8 +79,12 @@ export function snapshotRootOf(dorkHome: string, digest: string): string | null 
   return name ? path.join(dorkHome, SNAPSHOTS_DIR, name) : null;
 }
 
-/** Copy a tree, leaving out what the digest leaves out. Refuses links. */
-async function copyTree(from: string, to: string, rel = ''): Promise<void> {
+/**
+ * Copy a tree, leaving out what the digest leaves out. A link that stays
+ * inside the tree (npm's `.bin`) is copied as the same link, so it points
+ * inside the copy; any other link is refused, as the digest refuses it.
+ */
+async function copyTree(from: string, to: string, rel = '', root = from): Promise<void> {
   await fs.mkdir(to, { recursive: true });
   for (const name of await fs.readdir(from)) {
     const childRel = rel === '' ? name : `${rel}/${name}`;
@@ -86,8 +94,15 @@ async function copyTree(from: string, to: string, rel = ''): Promise<void> {
     const source = path.join(from, name);
     const target = path.join(to, name);
     const stats = await fs.lstat(source);
-    if (stats.isSymbolicLink()) throw new Error(`${childRel} is a symbolic link`);
-    if (stats.isDirectory()) await copyTree(source, target, childRel);
+    if (stats.isSymbolicLink()) {
+      const linkText = await fs.readlink(source);
+      if (!isLinkInside(root, from, linkText)) {
+        throw new Error(`${childRel} is a symbolic link to outside the folder`);
+      }
+      await fs.symlink(linkText, target);
+      continue;
+    }
+    if (stats.isDirectory()) await copyTree(source, target, childRel, root);
     else if (stats.isFile()) await fs.copyFile(source, target);
     else throw new Error(`${childRel} is not a file or folder`);
   }

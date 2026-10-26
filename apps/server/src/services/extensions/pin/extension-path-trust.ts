@@ -151,11 +151,19 @@ export function clientPinHolds(
 
 /**
  * Whether a stored approval was written before approvals named content: no
- * digest, no author, no grants and no dev link. Those are pinned once, to
- * the files found on the first scan after the upgrade.
+ * digest, no author, no grants and no dev link, and marked so by the
+ * `'0.126.0'` config migration (`legacyPathOnly`). Those are pinned once, to
+ * the files found on the first scan after the upgrade; a digest-less approval
+ * written since is not, and does not run.
  *
  * @param source - The approval stored for an id.
  */
 export function isPathOnlyApproval(source: ExtensionApprovedSource): boolean {
-  return !source.digest && !source.authorHome && !source.grants && !source.devLink;
+  return (
+    source.legacyPathOnly === true &&
+    !source.digest &&
+    !source.authorHome &&
+    !source.grants &&
+    !source.devLink
+  );
 }

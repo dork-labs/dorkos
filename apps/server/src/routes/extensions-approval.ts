@@ -32,12 +32,15 @@ import type { Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
-  EXPECTED_DIGEST_REQUIRED_CODE,
   STALE_APPROVAL_CODE,
+  UNPINNABLE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
-import { ApprovalRefusedError } from '../services/extensions/pin/extension-content-pin.js';
+import {
+  ApprovalRefusedError,
+  UNPINNABLE_SENTENCE,
+} from '../services/extensions/pin/extension-content-pin.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -168,13 +171,20 @@ export function registerExtensionApprovalRoutes(
 
       // A yes names the files the person was shown (DOR-3068), so every copy
       // but a dev link (approved by path, DOR-2696) must say which they were.
+      // A card that named none was drawn for a copy DorkOS could not check, or
+      // is out of date; either way the person reads why in plain words.
       if (!record.devLink && expectedDigest === undefined) {
         return c.json(
-          {
-            error: 'Send the digest of the files you were shown. Nothing was turned on.',
-            code: EXPECTED_DIGEST_REQUIRED_CODE,
-          },
-          400
+          record.currentDigest
+            ? {
+                error: 'This extension changed since you saw it. Nothing was turned on.',
+                code: STALE_APPROVAL_CODE,
+              }
+            : {
+                error: `${UNPINNABLE_SENTENCE} Nothing was turned on.`,
+                code: UNPINNABLE_APPROVAL_CODE,
+              },
+          409
         );
       }
 
@@ -186,7 +196,7 @@ export function registerExtensionApprovalRoutes(
         return c.json(
           {
             error: `${err.message} Nothing was turned on.`,
-            ...(err.reason === 'stale' ? { code: STALE_APPROVAL_CODE } : {}),
+            code: err.reason === 'stale' ? STALE_APPROVAL_CODE : UNPINNABLE_APPROVAL_CODE,
           },
           409
         );
