@@ -131,6 +131,8 @@ describe('a finished run', () => {
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
       'Didn’t finish: exit 1. Open the schedule to fix it.'
     );
+    // The Schedules row's cross, not the run kind's tick.
+    expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('failed');
   });
 
   it('tells the operator about a run that could not use any of its tools', async () => {
@@ -214,6 +216,7 @@ describe('a finished run', () => {
         'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
           'You won’t get another notice about it until it runs cleanly and fails again.'
       );
+      expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('refused');
     });
 
     it('notifies again after a run that completed and a failure after it', async () => {

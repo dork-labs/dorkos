@@ -49,50 +49,67 @@ describe('formatCompletionMessage', () => {
     expect(body).toContain('🔒');
     expect(body).not.toContain('✅');
     expect(body).not.toContain('⚠️');
-    expect(body).not.toContain('failed');
+    expect(body).not.toContain('✕');
   });
 
-  it('says "nobody was there to approve" once, not twice', () => {
-    // The detail IS the refusal sentence, so the lead must not repeat its words.
+  it('says what the inbox notice says, in its four parts, with no log wording (DOR-3123)', () => {
     const body = formatCompletionMessage(
       task,
-      run({ status: 'needs_attention', outcome: 'nothing_done', error: REFUSAL })
+      run({
+        status: 'needs_attention',
+        outcome: 'partial',
+        error: REFUSAL,
+        refusedTools: ['Bash', 'mcp__gmail__search'],
+      }),
+      true
     );
 
-    expect(body).toContain('Mailroom — used none of its tools in 4s.');
-    expect(body).toContain(REFUSAL);
-    expect(body.match(/nobody was there to approve/g)).toHaveLength(1);
+    expect(body).toBe(
+      '🔒 Mailroom needs attention. Bash and gmail: search were refused, with nobody there to ' +
+        'approve them. Open the schedule to fix it. ' +
+        'You won’t get another notice about it until it runs cleanly and fails again.'
+    );
+    // Neither the run's own log sentence nor how long it ran.
+    expect(body).not.toContain('Skipped');
+    expect(body).not.toContain('4s');
   });
 
-  it('says a run that carried on was refused a tool, not that it used none (DOR-3123)', () => {
-    const body = formatCompletionMessage(
-      task,
-      run({ status: 'needs_attention', outcome: 'partial', error: REFUSAL })
+  it('says when nothing got done', () => {
+    expect(
+      formatCompletionMessage(
+        task,
+        run({ status: 'needs_attention', outcome: 'nothing_done', refusedTools: ['Bash'] })
+      )
+    ).toBe(
+      '🔒 Mailroom needs attention. Nothing got done: Bash was refused. Open the schedule to fix it.'
     );
-
-    expect(body).toContain('🔒 Mailroom — was refused a tool in 4s.');
-    expect(body).not.toContain('used none');
   });
 
   it('ends the one notice of a failing streak with the no-repeat line, never cut off (DOR-3123)', () => {
     const body = formatCompletionMessage(
       task,
-      run({ status: 'needs_attention', outcome: 'partial', error: 'x'.repeat(400) }),
+      run({
+        status: 'needs_attention',
+        outcome: 'partial',
+        refusedTools: [`mcp__${'a'.repeat(300)}__search`],
+      }),
       true
     );
 
     expect(
       body.endsWith(' You won’t get another notice about it until it runs cleanly and fails again.')
     ).toBe(true);
-    expect(body.length).toBeLessThanOrEqual(200);
+    expect(body.length).toBeLessThanOrEqual(280);
+    // The reason is what got cut, and the fix survived it.
+    expect(body).toContain('… Open the schedule to fix it.');
   });
 
-  it('still says done for a success and failed for a failure', () => {
+  it('still says done for a success, and a run that did not finish gets the cross', () => {
     expect(formatCompletionMessage(task, run({ outputSummary: 'All clear' }))).toBe(
       '✅ Mailroom — done in 4s. All clear'
     );
     expect(formatCompletionMessage(task, run({ status: 'failed', error: 'API Error: 500' }))).toBe(
-      '⚠️ Mailroom — failed after 4s. API Error: 500'
+      '✕ Mailroom needs attention. Didn’t finish: API Error: 500. Open the schedule to fix it.'
     );
   });
 });

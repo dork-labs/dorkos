@@ -158,6 +158,17 @@ export function runCompletedActions(p: RunCompletedPayload): NotificationActionD
   return p.status === 'completed' ? [] : OPEN_SCHEDULE_ACTION;
 }
 
+/**
+ * Which of the Schedules row's marks the notice draws: a padlock for a refusal,
+ * a cross for a run that did not finish, none for a success (DOR-3123).
+ *
+ * @param p - The run's payload.
+ */
+export function runCompletedMark(p: RunCompletedPayload): 'refused' | 'failed' | undefined {
+  if (p.status === 'needs_attention') return 'refused';
+  return p.status === 'failed' ? 'failed' : undefined;
+}
+
 /** The `run.completed` registry entry's wording, action and reach, in one piece. */
 export const RUN_COMPLETED_COPY = {
   title: runCompletedTitle,

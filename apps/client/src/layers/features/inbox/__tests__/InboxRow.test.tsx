@@ -164,6 +164,44 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
     expect(screen.queryByText(/Full autonomy|Allow|Raise/)).toBeNull();
   });
 
+  it('gives the reason two lines and the action its own full-width line on a phone', () => {
+    render(<InboxRow notification={{ ...failing, body: 'Bash was refused.' }} onOpen={() => {}} />);
+
+    expect(screen.getByText('Bash was refused.')).toHaveClass('line-clamp-2', 'sm:truncate');
+    expect(screen.getByRole('button', { name: 'Open schedule' })).toHaveClass(
+      'h-11',
+      'w-full',
+      'sm:w-auto'
+    );
+  });
+
+  it('draws the Schedules row’s marks, never a red tick', () => {
+    const { container } = render(
+      <InboxRow notification={{ ...failing, mark: 'refused' }} onOpen={() => {}} />
+    );
+    expect(container.querySelector('[data-slot="inbox-row-glyph"] .lucide-lock')).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="inbox-row-glyph"] .lucide-circle-check')
+    ).toBeNull();
+    cleanup();
+
+    const crossed = render(
+      <InboxRow notification={{ ...failing, mark: 'failed' }} onOpen={() => {}} />
+    );
+    expect(
+      crossed.container.querySelector(
+        '[data-slot="inbox-row-glyph"] [class*="lucide-circle-x"], [data-slot="inbox-row-glyph"] .lucide-x-circle'
+      )
+    ).not.toBeNull();
+  });
+
+  it('leaves every other row on one line', () => {
+    render(<InboxRow notification={build({ body: 'alpha said hi' })} onOpen={() => {}} />);
+
+    expect(screen.getByText('alpha said hi')).toHaveClass('truncate');
+    expect(screen.getByText('alpha said hi')).not.toHaveClass('line-clamp-2');
+  });
+
   it('draws nothing extra on a row that only pictures the notice, or offers no action', () => {
     render(<InboxRow notification={failing} />);
     expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();

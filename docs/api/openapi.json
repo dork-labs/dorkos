@@ -17979,6 +17979,13 @@
           },
           "decision": {
             "$ref": "#/components/schemas/NotificationDecision"
+          },
+          "mark": {
+            "type": "string",
+            "enum": [
+              "refused",
+              "failed"
+            ]
           }
         },
         "required": [
