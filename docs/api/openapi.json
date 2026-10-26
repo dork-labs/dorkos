@@ -12931,6 +12931,30 @@
               "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
             },
             "default": []
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "changedFiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "updatedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "required": [
@@ -13142,6 +13166,10 @@
               "run",
               "agents"
             ]
+          },
+          "expectedDigest": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
