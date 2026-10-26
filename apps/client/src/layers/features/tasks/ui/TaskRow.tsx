@@ -286,9 +286,12 @@ export function TaskRow({
                     size="xs"
                     className="shrink-0"
                   />
+                  {/* Never shrinks below its own cap: a long schedule name
+                      once crushed it to one letter at 390px. It keeps up to
+                      40% of the line and ends in "…". */}
                   <span
                     data-slot="task-agent-name"
-                    className="max-w-[40%] min-w-0 shrink truncate text-sm font-medium"
+                    className="max-w-[40%] shrink-0 truncate text-sm font-medium"
                     title={getAgentDisplayName(agent)}
                   >
                     {getAgentDisplayName(agent)}
@@ -308,14 +311,17 @@ export function TaskRow({
                   <span className="text-muted-foreground text-xs">&middot;</span>
                 </>
               ) : null}
+              {/* Its own block, so a long name wraps to two lines rather than
+                  squeezing the agent name or cutting to one line. */}
               <span
                 data-slot="task-name"
                 title={task.displayName ?? task.name}
-                className={
+                className={cn(
+                  'line-clamp-2 min-w-0 flex-1 break-words',
                   shouldShowAgent && (agent || task.agentId)
-                    ? 'text-muted-foreground min-w-0 truncate text-xs'
-                    : 'min-w-0 truncate text-sm font-medium'
-                }
+                    ? 'text-muted-foreground text-xs'
+                    : 'text-sm font-medium'
+                )}
               >
                 {task.displayName ?? task.name}
               </span>
