@@ -115,7 +115,7 @@ describe('a finished run', () => {
     expect(listed.notifications[0].body).toBe('Done in 2m 14s.');
   });
 
-  it('says a failed run failed, and files it against the same run', async () => {
+  it('says a failed run needs attention, and files it against the same run', async () => {
     const store = new TaskStore(db);
     store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
 
@@ -124,10 +124,15 @@ describe('a finished run', () => {
     store.updateRun(run.id, { status: 'failed', error: 'exit 1\nstack…', durationMs: 2000 });
     await flush();
 
-    expect(announced()[0]).toMatchObject({ kind: 'run.completed', title: 'deploy failed' });
+    expect(announced()[0]).toMatchObject({
+      kind: 'run.completed',
+      title: 'deploy needs attention',
+    });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Failed after 2s. exit 1'
+      'Didn’t finish: exit 1. Open the schedule to fix it.'
     );
+    // The Schedules row's cross, not the run kind's tick.
+    expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('failed');
   });
 
   it('tells the operator about a run that could not use any of its tools', async () => {
@@ -153,8 +158,80 @@ describe('a finished run', () => {
       title: 'mailroom needs attention',
     });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Ran for 4s and was refused a tool. Skipped Bash — nobody was there to approve it on a scheduled run.'
+      'Bash was refused, with nobody there to approve it. Open the schedule to fix it.'
     );
+  });
+
+  describe('one notice per failing streak (DOR-3123)', () => {
+    /** The store, with the hook wired as the server wires it: streak included. */
+    function wiredStore(): TaskStore {
+      const store = new TaskStore(db);
+      store.setOnRunTerminal(
+        (r, t) => void notifyRunCompleted(r, t, store.runHistory()(r.scheduleId).health.streak)
+      );
+      return store;
+    }
+
+    /** Finish one run of a schedule with a status. */
+    async function finish(
+      store: TaskStore,
+      taskId: string,
+      status: 'completed' | 'needs_attention'
+    ) {
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, {
+        status,
+        ...(status === 'needs_attention'
+          ? { outcome: 'partial' as const, refusedTools: ['Bash'] }
+          : { refusedTools: [] }),
+        durationMs: 4000,
+      });
+      await flush();
+      return run.id;
+    }
+
+    it('raises one notice for three failing runs, and history shows all three', async () => {
+      const store = wiredStore();
+      const task = store.createTask(taskInput('health-check'));
+      const ids = [];
+      for (let i = 0; i < 3; i++) ids.push(await finish(store, task.id, 'needs_attention'));
+
+      const notices = announced().filter((n) => n.kind === 'run.completed');
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ title: 'health-check needs attention' });
+      // Only the notice is spared: every run still says what happened.
+      expect(ids.map((id) => store.getRun(id)!.status)).toEqual([
+        'needs_attention',
+        'needs_attention',
+        'needs_attention',
+      ]);
+    });
+
+    it('names the tool, the fix, and that it will not repeat', async () => {
+      const store = wiredStore();
+      const task = store.createTask(taskInput('health-check'));
+      await finish(store, task.id, 'needs_attention');
+
+      expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
+        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
+          'You won’t get another notice about it until it runs cleanly and fails again.'
+      );
+      expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('refused');
+    });
+
+    it('notifies again after a run that completed and a failure after it', async () => {
+      const store = wiredStore();
+      const task = store.createTask(taskInput('health-check'));
+      await finish(store, task.id, 'needs_attention');
+      await finish(store, task.id, 'needs_attention');
+      await finish(store, task.id, 'completed');
+      await finish(store, task.id, 'needs_attention');
+
+      const failing = announced().filter(
+        (n) => n.kind === 'run.completed' && n.title.endsWith('needs attention')
+      );
+      expect(failing).toHaveLength(2);
+    });
   });
 
   it('stays quiet about a run the operator cancelled — they already know', async () => {

@@ -73,6 +73,13 @@ describe('file route behavior', () => {
     expect(router.state.location.search).toMatchObject({ session: 'legacy-session' });
   });
 
+  it('keeps the Schedules list filters and sort in its address (DOR-3123)', async () => {
+    const router = await loadRoute('/tasks?health=failing&sort=name:asc');
+    await router.load();
+    expect(router.state.location.pathname).toBe('/tasks');
+    expect(router.state.location.search).toMatchObject({ health: 'failing', sort: 'name:asc' });
+  });
+
   it('retains app-wide legacy relay redirects', async () => {
     const router = await loadRoute('/tasks?relay=open');
     await router.load();
