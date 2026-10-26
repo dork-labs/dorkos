@@ -270,6 +270,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.trustedStoresAppliedAt',
       'permissions.sharedAtUpgrade',
       'permissions.sharedAppsAppliedAt',
+      'permissions.approvedFolderAllows',
+      'permissions.refusedFolderAllows',
+      'permissions.approvedFolderAllowRules',
     ],
   },
   {

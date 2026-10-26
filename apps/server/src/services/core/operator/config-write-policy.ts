@@ -869,6 +869,11 @@ export const CONFIG_WRITE_POLICY = {
   // Machine-managed like the stamp above: an agent that cleared it would share
   // every app nobody holds on the next boot.
   'permissions.sharedAppsAppliedAt': 'operator-only',
+  // A person's yes or no to an agent's folder allow list (DOR-3039). An agent
+  // that could write the yes would approve its own permissions.
+  'permissions.approvedFolderAllows': 'operator-only',
+  'permissions.refusedFolderAllows': 'operator-only',
+  'permissions.approvedFolderAllowRules': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',

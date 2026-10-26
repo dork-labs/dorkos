@@ -152,9 +152,13 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'onboarding.welcomeEntryId',
       // What agents may do. The generic writers refuse these outright; this is
       // the second line (spec `agent-permissions` D10).
+      // A person's yes or no to an agent's own folder allow list (DOR-3039).
+      'permissions.approvedFolderAllowRules',
+      'permissions.approvedFolderAllows',
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.refusedFolderAllows',
       'permissions.sharedAppsAppliedAt',
       'permissions.sharedAtUpgrade',
       'permissions.trustedStoresAppliedAt',
