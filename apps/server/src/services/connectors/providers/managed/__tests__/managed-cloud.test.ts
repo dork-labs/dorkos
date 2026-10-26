@@ -344,6 +344,7 @@ describe('ManagedCloudConnectorProvider', () => {
       state: 'held',
       attemptId: 'attempt-1',
       approval: 'awaiting',
+      requestHash: 'a'.repeat(64),
       approvalId: '4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
       approveUrl: 'https://cloud.example.com/approvals/4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),

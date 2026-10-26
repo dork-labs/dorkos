@@ -9,8 +9,12 @@ import {
   ManagedConnectorExecutionReceiptSchema,
   ManagedConnectorExecutionReceiptStatusSchema,
   ManagedConnectorExecutionResponseSchema,
+  ManagedConnectorExecutionAttributionSchema,
   ManagedConnectorInstanceApprovalListSchema,
+  managedRequestHash,
+  mayResendHeld,
   safeApproveUrl,
+  type ManagedConnectorExecutionRequest,
 } from '../connector-managed-schemas.js';
 
 // The awaiting-owner-approval contract (DOR-3265), contract-first for CLD-403.
@@ -116,6 +120,7 @@ describe('an execution held for approval', () => {
     state: 'held',
     attemptId: 'attempt-1',
     approval,
+    requestHash: 'a'.repeat(64),
     ...ref(),
   });
 
@@ -210,5 +215,79 @@ describe('which approval link a client may open', () => {
 
   it('falls back when the configured origin itself cannot be read', () => {
     expect(safeApproveUrl(`${ORIGIN}/approvals/x`, 'nonsense')).toBeNull();
+  });
+});
+
+// #3196 review, S1: the resend is bound to the exact request the owner approved.
+describe('resending a held request', () => {
+  const request: ManagedConnectorExecutionRequest = {
+    version: 1,
+    logicalOperationId: 'op-1',
+    attemptId: 'attempt-1',
+    attemptIndex: 1,
+    managedConnectionId: 'mc-1',
+    agentId: 'agent-a',
+    grantScopeVersion: 4,
+    attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
+    revision: { hostedRevisionId: '10000000-0000-4000-8000-000000000001' },
+    arguments: { to: 'owner@example.com', body: 'hello' },
+  } as ManagedConnectorExecutionRequest;
+  const approved = (requestHash: string, attemptId = 'attempt-1') =>
+    ({ attemptId, approval: 'approved', requestHash }) as const;
+
+  it('hashes the same request the same way whatever its key order', () => {
+    const reordered = Object.fromEntries(Object.entries(request).reverse());
+    expect(managedRequestHash(reordered as ManagedConnectorExecutionRequest)).toBe(
+      managedRequestHash(request)
+    );
+    expect(managedRequestHash(request)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('resends only the approved request, by attempt and hash', () => {
+    expect(mayResendHeld(approved(managedRequestHash(request)), request)).toBe(true);
+  });
+
+  it('never resends when the hash differs: other arguments, or a forged hash', () => {
+    // Purpose: fails if a resend could carry arguments the owner never approved.
+    const changed = { ...request, arguments: { to: 'attacker@example.com', body: 'hello' } };
+    expect(mayResendHeld(approved(managedRequestHash(request)), changed)).toBe(false);
+    expect(mayResendHeld(approved('b'.repeat(64)), request)).toBe(false);
+  });
+
+  it('never resends for another attempt, or before the owner approved', () => {
+    expect(mayResendHeld(approved(managedRequestHash(request), 'attempt-2'), request)).toBe(false);
+    expect(
+      mayResendHeld({ ...approved(managedRequestHash(request)), approval: 'awaiting' }, request)
+    ).toBe(false);
+  });
+
+  it('refuses a held response with no hash, or one that is not a sha-256', () => {
+    const base = { state: 'held', attemptId: 'attempt-1', approval: 'approved', ...ref() };
+    expect(ManagedConnectorExecutionResponseSchema.safeParse(base).success).toBe(false);
+    expect(
+      ManagedConnectorExecutionResponseSchema.safeParse({ ...base, requestHash: 'nope' }).success
+    ).toBe(false);
+  });
+});
+
+// #3196 review, S2: the owner's approval card can say what the calling turn carried.
+describe('the calling turn’s marks', () => {
+  const attribution = { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' } as const;
+
+  it('carries the known marks, and still parses without any', () => {
+    expect(
+      ManagedConnectorExecutionAttributionSchema.parse({
+        ...attribution,
+        marks: ['outsider', 'tool_read', 'teammate'],
+      }).marks
+    ).toEqual(['outsider', 'tool_read', 'teammate']);
+    expect(ManagedConnectorExecutionAttributionSchema.parse(attribution).marks).toBeUndefined();
+  });
+
+  it('refuses an unknown mark', () => {
+    expect(
+      ManagedConnectorExecutionAttributionSchema.safeParse({ ...attribution, marks: ['trusted'] })
+        .success
+    ).toBe(false);
   });
 });

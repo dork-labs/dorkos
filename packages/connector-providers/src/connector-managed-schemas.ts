@@ -7,8 +7,10 @@
  *
  * @module connector-providers/connector-managed-schemas
  */
+import { createHash } from 'node:crypto';
 import { ConnectionGrantSubjectSchema } from '@dork-labs/cloud-api';
 import { z } from 'zod';
+import { stableStringify } from './stable-stringify.js';
 import { ConnectorEventDestinationSchema } from './connector-event-schemas.js';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
@@ -256,6 +258,11 @@ export type ManagedConnectorAuthorityCommandStatus = z.infer<
   typeof ManagedConnectorAuthorityCommandStatusSchema
 >;
 
+/** One mark a calling turn carries, for the owner's approval card. */
+export const ManagedConnectorTurnMarkSchema = z.enum(['outsider', 'tool_read', 'teammate']);
+/** One mark a calling turn carries. */
+export type ManagedConnectorTurnMark = z.infer<typeof ManagedConnectorTurnMarkSchema>;
+
 /** Trusted execution provenance derived by the linked instance broker. */
 export const ManagedConnectorExecutionAttributionSchema = z
   .object({
@@ -263,6 +270,14 @@ export const ManagedConnectorExecutionAttributionSchema = z
     actorKind: z.enum(['operator', 'agent', 'program', 'event', 'runtime']),
     actorId: z.string().min(1).max(200),
     sessionId: z.string().min(1).max(200).optional(),
+    /**
+     * What the calling turn carries, derived by the broker, never the agent, so
+     * the owner's approval card can say it: `outsider` (the turn read words
+     * from outside the owner's circle, or a stranger started it), `tool_read`
+     * (it read outside text through a tool) and `teammate` (a teammate in a
+     * shared space started the chain). Absent means none is known.
+     */
+    marks: z.array(ManagedConnectorTurnMarkSchema).max(3).optional(),
   })
   .strict();
 /** Trusted execution provenance derived by the linked instance broker. */
@@ -333,7 +348,10 @@ export type ManagedConnectorExecutionReceipt = z.infer<
 /**
  * An execution held for the owner's approval. When `approval` turns
  * `approved`, the client resends the identical request, with the same
- * `attemptId` and arguments; that resend is the one that runs. Sent only to a
+ * `attemptId` and arguments; that resend is the one that runs. `requestHash`
+ * is {@link managedRequestHash} of the held request: the client resends only
+ * when its stored request hashes the same ({@link mayResendHeld}), and the
+ * service refuses a resend whose hash differs with `conflict`. Sent only to a
  * client that sent {@link MANAGED_APPROVALS_HEADER}.
  */
 const ManagedConnectorHeldExecutionSchema = z
@@ -341,6 +359,7 @@ const ManagedConnectorHeldExecutionSchema = z
     state: z.literal('held'),
     attemptId: z.string().min(1).max(200),
     approval: z.enum(['awaiting', 'approved']),
+    requestHash: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .merge(ManagedConnectorApprovalRefSchema)
   .strict();
@@ -437,3 +456,33 @@ export const ManagedConnectorInstanceApprovalListSchema = z
 export type ManagedConnectorInstanceApprovalList = z.infer<
   typeof ManagedConnectorInstanceApprovalListSchema
 >;
+
+/**
+ * The hash that binds an approval to one exact request: SHA-256, hex, of the
+ * request serialised with sorted keys. The service stores it with the
+ * approval and returns it on the held response; both sides compute it here.
+ *
+ * @param request - The execution request as sent.
+ */
+export function managedRequestHash(request: ManagedConnectorExecutionRequest): string {
+  return createHash('sha256').update(stableStringify(request)).digest('hex');
+}
+
+/**
+ * Whether the client may resend a held request: only the request the owner
+ * approved, with the same attempt and the same hash. Anything else is refused
+ * locally and never resent.
+ *
+ * @param held - The held response.
+ * @param request - The request the client stored and would resend.
+ */
+export function mayResendHeld(
+  held: { attemptId: string; approval: 'awaiting' | 'approved'; requestHash: string },
+  request: ManagedConnectorExecutionRequest
+): boolean {
+  return (
+    held.approval === 'approved' &&
+    held.attemptId === request.attemptId &&
+    held.requestHash === managedRequestHash(request)
+  );
+}

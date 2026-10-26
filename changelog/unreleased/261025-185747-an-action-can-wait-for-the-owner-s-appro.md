@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(connectors): an action can wait for the owner's approval (DOR-3265)"
+  - "feat(connectors): a held request resends only by its approved hash, and carries the turn's marks (DOR-3265)"
 ---
 
 ### Added
