@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an edited extension waits for a person before its new code runs (DOR-3068)'
+  - 'refactor(server): move the create_extension handler into its own module (DOR-3068)'
 ---
 
 ### Fixed
