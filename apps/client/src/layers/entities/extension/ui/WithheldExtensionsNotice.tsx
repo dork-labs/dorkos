@@ -30,13 +30,14 @@ export function WithheldExtensionsNotice({
         <li
           key={ext.id}
           data-testid={`withheld-extension-${ext.id}`}
-          className="flex items-center justify-between gap-2 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300"
+          className="bg-status-warning-bg text-status-warning-fg flex items-center justify-between gap-2 rounded-md px-3 py-1.5 text-xs"
         >
           <span className="min-w-0 truncate">{ext.name} changed and is waiting for your OK</span>
           <Button
             variant="ghost"
             size="xs"
-            className="shrink-0 text-amber-700 dark:text-amber-300"
+            // 44px to hit on a touch screen, same size to look at.
+            className="text-status-warning-fg pointer-coarse:min-h-11 shrink-0"
             onClick={onReview}
           >
             Review
