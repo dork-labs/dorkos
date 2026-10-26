@@ -283,28 +283,33 @@ const counts = await api.rooms.unreadCounts(
 
 ### Forwarding a comment to an agent as the person
 
-`api.forward` sends what the person typed in your mini app to one agent, **as their own words** (DOR-3325): a comment on an item, a "yes, go ahead". It lands in the person's Direct chat with that agent, and the agent treats it exactly as if they had typed it there. Declare it in the manifest, and the person picks the one agent in Settings → Extensions:
+`api.forward` sends what the person typed in your mini app to an agent, **as their own words** (DOR-3325): a comment on an item, a "yes, go ahead". It lands in the person's Direct chat with that agent, and the agent treats it exactly as if they had typed it there. Declare it in the manifest:
 
 ```json
 { "capabilities": { "forward": true } }
 ```
 
 ```typescript
-const sent = await api.forward.send({ text: comment, itemId: item.id, itemTitle: item.title });
+const sent = await api.forward.send({
+  text: comment,
+  itemId: item.id,
+  itemTitle: item.title,
+  agentId: ownerAgentId, // optional when the person allowed exactly one
+});
 // later, to show the agent's answer under the comment:
 const replies = await api.forward.replies(sent.id); // [{ agent, markdown, createdAt }]
-const agent = await api.forward.agent(); // { id, name } or null
+const agents = await api.forward.agents(); // [{ id, name }]
 ```
 
 - **Not `ctx.agent.send`.** A server half's `ctx.agent.send` is your app talking: the agent reads it as app data, and its turn runs no looser than its default and asks before each step. `api.forward` is the person talking, so use it for words they typed and for nothing else.
 - **DorkOS reads the words itself.** The page POSTs straight to `/api/extensions/:id/forward`; no server half code sits in between. There is deliberately no server-side "send as the person" helper: DorkOS could not tell what the person typed from what code made up.
-- **One agent, the person's pick.** Nothing in the call names an agent. With none picked, every call is refused with `no_agent`.
-- **Only the typed text is theirs.** Name the item by `itemId`. An `itemTitle` shows above the message in a muted "via {app} · {item}" line, quoted as text from your app; the agent sees your app's name and the item id, never the title.
+- **Only agents the person allowed.** You may name an agent by id, but the forward reaches it only once the person allowed it for your mini app (`extensions.forwardAgents`, operator-only, ids never names). The first time, DorkOS keeps the typed text and shows its own prompt, outside your page: "Send {app} comments to {agent}? Allow", with the agent's registered name. Allow adds that one id and sends the text DorkOS kept; `send` then resolves. Not now rejects with `no_agent` and sends nothing. Naming no agent works only when exactly one is allowed. The person changes the list later in Settings → Extensions.
+- **Only the typed text is theirs.** Name the item by `itemId` (letters, digits and `. _ : / -`). An `itemTitle` shows above the message in a muted "via {app} · {item}" line, quoted as text from your app; the agent sees your app's name and the item id, never the title.
 - **Text only.** At most 8,000 characters. No attachments, no thread, no delivery mode, no steer or interrupt; any other field is refused.
 - **Only from the person's own window, signed in.** The room-write bar's rules, plus: DorkOS must have checked a password for this request, and the caller must own this DorkOS. With no password on this computer, every forward is refused, because DorkOS can't tell the person from a program there.
-- **Replies are the agent's.** `replies` returns the agent's own posts that answer the forward, under its name, with every `<` escaped and script links removed. Render them as markdown, never as HTML.
+- **Replies are the agent's.** `replies` returns the agent's own posts that answer the forward, under its name. Every `&` and `<` is escaped, and every link target that is not `http(s)://`, `mailto:`, an anchor or a path becomes `#`. Render them as markdown, never as HTML.
 - **Audited.** Every forward, and every refused one, is `extension.person_forward` in the audit trail, with your mini app, the agent and the item named.
-- **What it cannot stop, stated.** Your page code runs in the person's window with their access, so it could forward without a click. The person's pick of agent bounds a well-behaved mini app; it is not a sandbox (the `api.rooms` residual).
+- **What it cannot stop, stated.** Your page code runs in the person's window with their access, so it could forward without a click, call the settings route itself, or reach the prompt's button. The person's list bounds a well-behaved mini app; it is not a sandbox (the `api.rooms` residual). Until the client pin (DOR-3068 (b)) lands, the same is true of any same-origin code.
 - **A refusal throws `ForwardError`** with `code` (`no_agent`, `not_found`, `person_required`, `extension_off`, `invalid_input`, `unavailable`) and a plain `message`. Match on `err.code`, not `instanceof`.
 
 ### Feature detection

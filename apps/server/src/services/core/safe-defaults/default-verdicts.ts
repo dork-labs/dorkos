@@ -306,7 +306,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // The agent each mini app may forward the person's comments to (DOR-3325).
   // Ships ABSENT, which means none: no mini app forwards anything until a
   // person picks an agent. A wipe empties it, which is stricter, never looser.
-  'extensions.forwardAgent',
+  'extensions.forwardAgents',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

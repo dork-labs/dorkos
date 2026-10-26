@@ -73,7 +73,7 @@ Authors: see `api.rooms` in `contributing/extension-authoring.md`.
 
 A mini app can send a comment you type there to one of your agents, as your own words. It needs `"capabilities": { "forward": true }` in its manifest.
 
-- **You choose the agent.** In Settings → Extensions, the mini app's card has **Forwards your comments to**. It reaches that one agent and no other. With none picked, it sends nothing.
+- **You choose the agents.** The first time a mini app sends a comment to an agent, DorkOS asks you: "Send Dorian Desk comments to DorkOS PM?" Allow sends the comment you typed. Not now sends nothing. Change the list later on the mini app's card in Settings → Extensions, under **Sends your comments to**.
 - **It's your message.** Your comment appears in your Direct chat with the agent, and the agent treats it as if you typed it there. A muted line above it says which mini app and item it came from.
 - **Only your words count as yours.** The item's title shows in that muted line as text from the mini app, never as part of what you said.
 - **Answers come back.** The mini app can show the agent's reply under your comment, under the agent's name.

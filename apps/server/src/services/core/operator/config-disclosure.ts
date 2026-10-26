@@ -385,7 +385,7 @@ export const CONFIG_DISCLOSURE = {
   // The agent each mini app forwards the person's comments to (DOR-3325). A
   // person's own decision no agent task reads: a forward refused for want of
   // one says so in a sentence.
-  'extensions.forwardAgent': 'withhold',
+  'extensions.forwardAgents': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

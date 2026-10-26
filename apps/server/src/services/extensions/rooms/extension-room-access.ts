@@ -86,7 +86,7 @@ export function withoutExtension<T>(
 
 /**
  * The person's own picks for one mini app, removed: its rooms (DOR-3017) and
- * the agent it forwards to (DOR-3325). Spread into the `extensions` section
+ * the agents it forwards to (DOR-3325). Spread into the `extensions` section
  * when its run approval is withdrawn, so another copy under the same id starts
  * with neither.
  *
@@ -96,12 +96,12 @@ export function withoutExtension<T>(
 export function withoutPersonChoices(
   extensions: {
     roomAccess?: Readonly<Record<string, string[]>>;
-    forwardAgent?: Readonly<Record<string, string>>;
+    forwardAgents?: Readonly<Record<string, string[]>>;
   },
   extensionId: string
-): { roomAccess: Record<string, string[]>; forwardAgent: Record<string, string> } {
+): { roomAccess: Record<string, string[]>; forwardAgents: Record<string, string[]> } {
   return {
     roomAccess: withoutExtension(extensions.roomAccess, extensionId),
-    forwardAgent: withoutExtension(extensions.forwardAgent, extensionId),
+    forwardAgents: withoutExtension(extensions.forwardAgents, extensionId),
   };
 }

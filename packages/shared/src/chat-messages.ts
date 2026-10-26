@@ -202,6 +202,13 @@ export type RoomMessageAuthor = z.infer<typeof RoomMessageAuthorSchema>;
 /** The longest item id a forward may name. */
 export const FORWARD_ITEM_ID_MAX = 200;
 
+/**
+ * What an item id may be made of: letters, digits and `. _ : / -`. An id is
+ * printed beside the person's words for the agent, so it may carry no
+ * brackets, spaces or punctuation that could read as more of their message.
+ */
+export const FORWARD_ITEM_ID_PATTERN = /^[A-Za-z0-9._:/-]+$/;
+
 /** The longest item title a forward may show. */
 export const FORWARD_ITEM_TITLE_MAX = 200;
 
@@ -223,7 +230,7 @@ export const ForwardViaSchema = z
     /** The mini app's name, as the person saw it. */
     appName: z.string(),
     /** The item the comment was typed on, by the app's own id. */
-    itemId: z.string().max(FORWARD_ITEM_ID_MAX),
+    itemId: z.string().max(FORWARD_ITEM_ID_MAX).regex(FORWARD_ITEM_ID_PATTERN),
     /** The app's label for that item, when it sent one. Data from the app. */
     itemTitle: z.string().max(FORWARD_ITEM_TITLE_MAX).optional(),
   })

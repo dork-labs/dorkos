@@ -5013,7 +5013,8 @@
           },
           "itemId": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:/-]+$"
           },
           "itemTitle": {
             "type": "string",

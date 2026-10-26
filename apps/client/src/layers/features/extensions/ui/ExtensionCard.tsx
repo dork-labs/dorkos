@@ -20,7 +20,7 @@ import {
 } from '@/layers/entities/extension';
 import { PanelTabPlacementSection } from './PanelTabPlacementEditor';
 import { RoomAccessEditor } from './RoomAccessEditor';
-import { ForwardAgentEditor } from './ForwardAgentEditor';
+import { ForwardAgentsEditor } from './ForwardAgentsEditor';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -164,10 +164,10 @@ export function ExtensionCard({
             <RoomAccessEditor extensionId={extension.id} name={manifest.name} />
           )}
 
-          {/* The agent it forwards your comments to (DOR-3325). Only for a
+          {/* The agents it forwards your comments to (DOR-3325). Only for a
               mini app that asks to forward. */}
           {manifest.capabilities?.forward === true && (
-            <ForwardAgentEditor extensionId={extension.id} name={manifest.name} />
+            <ForwardAgentsEditor extensionId={extension.id} name={manifest.name} />
           )}
 
           {/* Incompatible message */}

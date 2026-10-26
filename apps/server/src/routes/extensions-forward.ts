@@ -7,13 +7,24 @@
  * | ------------------------------------- | ----------------------------- | ----------- |
  * | `POST /:id/forward`                   | forward the typed text        | forward bar |
  * | `GET  /:id/forward/:forwardId/replies`| the agent's answers           | no agent    |
- * | `GET  /:id/forward-agent`             | the agent the person picked   | no agent    |
- * | `PUT  /:id/forward-agent`             | pick it                       | person bar; Wi-Fi refuses (`wifi-level.ts`) |
+ * | `POST /:id/forward/pending/:pendingId/allow`   | allow the agent, send the kept text | forward bar; Wi-Fi refuses |
+ * | `POST /:id/forward/pending/:pendingId/decline` | drop the kept text            | forward bar |
+ * | `GET  /:id/forward-agents`            | the agents the person allowed | no agent    |
+ * | `PUT  /:id/forward-agents`            | change them                   | person bar; Wi-Fi refuses (`wifi-level.ts`) |
  *
  * **DorkOS reads the forward's body itself.** The page POSTs here directly;
  * no extension server code runs between the person's request and the post in
  * their Direct chat, so DorkOS can tell what they typed from what code made
- * up. The agent comes from the person's pick, never from the body.
+ * up. The body may name an agent, but it reaches only one on the person's
+ * list (`extensions.forwardAgents`).
+ *
+ * **The first time,** a forward naming a registered agent that is not on the
+ * list answers 409 `no_agent` with a `consent` block: DorkOS kept the typed
+ * text, and the app's host (core client code, never the extension) draws
+ * "Send {app} comments to {agent}?" with the agent's REGISTERED name. Allow
+ * POSTs the `allow` route with an empty body: DorkOS adds that one id and
+ * sends the text it kept. Nothing the extension sends after the first POST
+ * reaches the message.
  *
  * **The forward bar** is the room-write bar (`extensions-rooms-bar.ts`: no
  * relay, no agent, a trusted `Origin` required, the app window's
@@ -32,23 +43,27 @@
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
+import { FORWARD_ITEM_ID_PATTERN } from '@dorkos/shared/chat-messages';
 import {
   FORWARD_ITEM_ID_MAX_CHARS,
   FORWARD_ITEM_TITLE_MAX_CHARS,
   FORWARD_TEXT_MAX_CHARS,
   type ExtensionStatus,
   type ForwardErrorCode,
+  type ForwardReceipt,
 } from '@dorkos/extension-api';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import {
   PersonForwardError,
   PersonForwards,
-  forwardAgentOf,
-  setForwardAgent,
+  FORWARD_AGENTS_MAX,
+  setForwardAgents,
+  type ForwardRequest,
   type PersonForwardDeps,
 } from '../services/extensions/forward/person-forward.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -87,7 +102,7 @@ const REFUSAL_MESSAGE: Record<ForwardRefusal, string> = {
   'not-a-browser-session':
     'Nothing was sent. Sign in to DorkOS in your browser to forward from a mini app.',
   'login-off':
-    'Nothing was sent. Turn on “Ask for a password on this computer too” so DorkOS can tell your words are yours.',
+    'Nothing was sent. DorkOS must ask for your password here, so it can tell your words are yours.',
   'not-the-owner': 'Nothing was sent. Only the person who owns DorkOS can forward to their agents.',
   'not-json': 'Nothing was sent. Send the comment as JSON.',
 };
@@ -102,24 +117,28 @@ const ForwardBodySchema = z
       .string()
       .max(FORWARD_TEXT_MAX_CHARS)
       .refine((t) => t.trim().length > 0),
-    itemId: z.string().trim().min(1).max(FORWARD_ITEM_ID_MAX_CHARS),
+    itemId: z.string().min(1).max(FORWARD_ITEM_ID_MAX_CHARS).regex(FORWARD_ITEM_ID_PATTERN),
     itemTitle: z.string().max(FORWARD_ITEM_TITLE_MAX_CHARS).optional(),
+    agentId: z.string().trim().min(1).max(200).optional(),
   })
   .strict();
 
-const ForwardAgentBodySchema = z
-  .object({ agentId: z.string().min(1).max(200).nullable() })
+const ForwardAgentsBodySchema = z
+  .object({ agentIds: z.array(z.string().min(1).max(200)).max(FORWARD_AGENTS_MAX) })
   .strict();
 
+/** The Allow and decline take no body: everything comes from what DorkOS kept. */
+const EmptyBodySchema = z.object({}).strict();
+
 /** What the person bar says when it refuses a change of agent. */
-const FORWARD_AGENT_BAR: PersonBarCopy = {
-  error: 'Only a person can choose the agent a mini app forwards to.',
-  code: 'forward_agent_person_required',
-  subject: 'which agent a mini app forwards to',
+const FORWARD_AGENTS_BAR: PersonBarCopy = {
+  error: 'Only a person can choose the agents a mini app forwards to.',
+  code: 'forward_agents_person_required',
+  subject: 'which agents a mini app forwards to',
   crossSite: (origin) =>
     `Nothing changed. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can choose the agent a mini app forwards to.`,
-  agent: 'Nothing changed. Only a person can choose the agent a mini app forwards to.',
+    `Only a person using DorkOS can choose the agents a mini app forwards to.`,
+  agent: 'Nothing changed. Only a person can choose the agents a mini app forwards to.',
 };
 
 /** Whether a mini app's manifest asks to forward (`capabilities.forward`). */
@@ -146,6 +165,27 @@ export function refuseForward(
   // an open request proves "this computer", never "this person".
   if (facts.user?.credential !== 'cookie') return 'login-off';
   if (!/^application\/json\s*(?:;|$)/iu.test(contentType ?? '')) return 'not-json';
+  return undefined;
+}
+
+/**
+ * The bar for reading a forward's replies: the agent's answers to the person
+ * are theirs, so nothing relayed, no agent, no other site, the app window's
+ * `X-Client-Id`, and a gate-verified browser session. A browser sends no
+ * `Origin` on a same-origin GET, so `Sec-Fetch-Site` stands in for it.
+ *
+ * @param facts - The request's facts.
+ * @returns `undefined` when the signed-in owner is reading from their own window.
+ */
+export function refuseForwardRead(facts: RequestFacts): ForwardRefusal | undefined {
+  if (facts.ingress === 'relay') return 'relayed';
+  if (presentsAgentIdentity(facts)) return 'agent';
+  if (facts.headers[APPROVAL_TOKEN_HEADER] !== undefined) return 'agent';
+  const site = facts.headers['sec-fetch-site'];
+  if (site !== undefined && site !== 'same-origin') return 'other-site';
+  const clientId = facts.headers['x-client-id'];
+  if (typeof clientId !== 'string' || clientId.length === 0) return 'no-app-window';
+  if (facts.user?.credential !== 'cookie') return 'login-off';
   return undefined;
 }
 
@@ -177,7 +217,7 @@ function refuse(c: Context<ApiEnv>, code: ForwardErrorCode, message: string): Re
 }
 
 /**
- * Mount the `api.forward` routes and the forward-agent setting on the
+ * Mount the `api.forward` routes and the forward-agents setting on the
  * extensions router.
  *
  * @param router - The extensions router.
@@ -233,16 +273,21 @@ export function registerExtensionForwardRoutes(
     }
   };
 
-  router.post('/:id/forward', (c) => {
+  /**
+   * The forward bar, the mini app and the owner, in that order, each refusal
+   * audited; or what the call may act for.
+   */
+  const gate = (
+    c: Context<ApiEnv>
+  ): { app: { extensionId: string; extensionName: string }; viewer: AuthorRecord } | Response => {
     // The bar runs first, so a refused attempt is recorded whoever made it.
     const auditRefused = (why: string) => {
-      const extensionId = c.req.param('id');
+      const extensionId = c.req.param('id') ?? '';
       const record = safeExtId.test(extensionId) ? extensionManager.get(extensionId) : undefined;
       if (record)
         auditForward({ extensionId, extensionName: record.manifest.name }, 'refused', why);
     };
-    const facts = honoRequestFacts(c);
-    const refusal = refuseForward(facts, c.req.header('content-type'));
+    const refusal = refuseForward(honoRequestFacts(c), c.req.header('content-type'));
     if (refusal) {
       auditRefused(refusal);
       return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
@@ -257,47 +302,99 @@ export function registerExtensionForwardRoutes(
       auditRefused('not-the-owner');
       return refuse(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
     }
-    const body = ForwardBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) {
-      auditRefused('invalid_input');
-      return refuse(
-        c,
-        'invalid_input',
-        `Send { text, itemId } and an optional itemTitle. Text is 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
-      );
-    }
+    return { app, viewer };
+  };
+
+  /** Send, audit and answer; a refusal is audited and answered too. */
+  const send = (
+    c: Context<ApiEnv>,
+    app: { extensionId: string; extensionName: string },
+    itemId: string,
+    run: () => ForwardReceipt,
+    onNoAgent?: (err: PersonForwardError) => Response | undefined
+  ): Response => {
     try {
-      const bound = wifiTurnBound(facts);
-      const receipt = forwards.forward({
-        extensionId: app.extensionId,
-        appName: app.extensionName,
-        viewer,
-        text: body.data.text,
-        itemId: body.data.itemId,
-        ...(body.data.itemTitle !== undefined ? { itemTitle: body.data.itemTitle } : {}),
-        ...(bound !== undefined ? { bound } : {}),
-      });
+      const receipt = run();
       auditForward(app, 'ok', undefined, {
         forwardId: receipt.id,
         agentId: receipt.agent.id,
-        itemId: body.data.itemId,
+        itemId,
       });
       return c.json(receipt, 201);
     } catch (err) {
       if (err instanceof PersonForwardError) {
         auditForward(app, 'refused', err.code);
-        return refuse(c, err.code, err.message);
+        return onNoAgent?.(err) ?? refuse(c, err.code, err.message);
       }
       logger.error('[Extensions] A mini app forward failed', err);
       auditForward(app, 'failed');
       return refuse(c, 'unavailable', 'The comment was not sent. Try again.');
     }
+  };
+
+  router.post('/:id/forward', (c) => {
+    const caller = gate(c);
+    if (caller instanceof Response) return caller;
+    const { app, viewer } = caller;
+    const body = ForwardBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) {
+      auditForward(app, 'refused', 'invalid_input');
+      return refuse(
+        c,
+        'invalid_input',
+        `Send { text, itemId } and an optional itemTitle and agentId. Text is 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
+      );
+    }
+    const bound = wifiTurnBound(honoRequestFacts(c));
+    const request: ForwardRequest = {
+      extensionId: app.extensionId,
+      appName: app.extensionName,
+      viewer,
+      text: body.data.text,
+      itemId: body.data.itemId,
+      ...(body.data.itemTitle !== undefined ? { itemTitle: body.data.itemTitle } : {}),
+      ...(body.data.agentId !== undefined ? { agentId: body.data.agentId } : {}),
+      ...(bound !== undefined ? { bound } : {}),
+    };
+    return send(
+      c,
+      app,
+      body.data.itemId,
+      () => forwards.forward(request),
+      (err) => {
+        if (err.code !== 'no_agent' || err.suggestedAgentId === undefined) return undefined;
+        // Kept here, so the Allow sends exactly these words and nothing the
+        // extension says afterwards.
+        const consent = forwards.hold(request, err.suggestedAgentId);
+        return c.json({ error: err.message, code: err.code, consent }, STATUS_FOR.no_agent);
+      }
+    );
+  });
+
+  router.post('/:id/forward/pending/:pendingId/allow', (c) => {
+    const caller = gate(c);
+    if (caller instanceof Response) return caller;
+    if (!EmptyBodySchema.safeParse(readJsonBody(c, { emptyAs: {} })).success) {
+      return refuse(c, 'invalid_input', 'Allow takes no body. DorkOS sends the comment it kept.');
+    }
+    const { app, viewer } = caller;
+    return send(c, app, '', () =>
+      forwards.allow(app.extensionId, viewer, c.req.param('pendingId'))
+    );
+  });
+
+  router.post('/:id/forward/pending/:pendingId/decline', (c) => {
+    const caller = gate(c);
+    if (caller instanceof Response) return caller;
+    forwards.decline(caller.app.extensionId, caller.viewer, c.req.param('pendingId'));
+    return c.body(null, 204);
   });
 
   router.get('/:id/forward/:forwardId/replies', (c) => {
-    if (presentsAgentIdentity(honoRequestFacts(c))) {
-      return refuse(c, 'person_required', 'Only the person can read a mini app’s forwards.');
-    }
+    // The same bar as sending, less the body: an agent's answers to the
+    // person are theirs to read, not a relayed caller's or a local program's.
+    const refusal = refuseForwardRead(honoRequestFacts(c));
+    if (refusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
     const app = appFor(c);
     if (app instanceof Response) return app;
     const viewer = ownerOf(c);
@@ -307,7 +404,7 @@ export function registerExtensionForwardRoutes(
     );
   });
 
-  router.get('/:id/forward-agent', (c) => {
+  router.get('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
     if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
     // Withheld from agents, as the leaf is in `config_get`.
@@ -315,38 +412,35 @@ export function registerExtensionForwardRoutes(
       return refuse(c, 'person_required', 'Only the person can see who a mini app forwards to.');
     }
     if (!extensionManager.get(id)) return c.json({ error: `No mini app named ${id}.` }, 404);
-    return answer(c, () => {
-      try {
-        return c.json({ agent: forwards.agent(id) });
-      } catch (err) {
-        // A picked agent that is gone still reads back, so the person can change it.
-        if (err instanceof PersonForwardError && err.code === 'not_found') {
-          return c.json({ agent: null, missingAgentId: forwardAgentOf(id) ?? null });
-        }
-        throw err;
-      }
-    });
+    // A listed agent that is gone still reads back, so the person can remove it.
+    return answer(c, () => c.json(forwards.agents(id)));
   });
 
-  router.put('/:id/forward-agent', (c) => {
+  router.put('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
     if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
-    const refused = refusedNotAPerson(c, FORWARD_AGENT_BAR);
+    const refused = refusedNotAPerson(c, FORWARD_AGENTS_BAR);
     if (refused) return refused;
     const record = extensionManager.get(id);
     if (!record) return c.json({ error: `No mini app named ${id}.` }, 404);
     if (!asksToForward(record)) return refuse(c, 'invalid_input', NO_FORWARD_DECLARED);
-    const body = ForwardAgentBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    const body = ForwardAgentsBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {
-      return refuse(c, 'invalid_input', 'Send { agentId }, or { agentId: null } for none.');
+      return refuse(
+        c,
+        'invalid_input',
+        `Send { agentIds }, at most ${FORWARD_AGENTS_MAX}, or [] for none.`
+      );
     }
-    const agentId = body.data.agentId;
-    if (agentId !== null && !deps.mesh()?.get(agentId)) {
-      return refuse(c, 'not_found', 'There is no agent with that id here.');
-    }
-    // Recorded in the audit trail as a settings change by `setForwardAgent`.
-    setForwardAgent(id, agentId);
-    return answer(c, () => c.json({ agent: forwards.agent(id) }));
+    return answer(c, () => {
+      // By id only, and only agents Mesh knows: a name or a stale id adds nothing.
+      if (body.data.agentIds.some((agentId) => !forwards.registered(agentId))) {
+        return refuse(c, 'not_found', 'There is no agent with that id here.');
+      }
+      // Recorded in the audit trail as a settings change by `setForwardAgents`.
+      setForwardAgents(id, body.data.agentIds);
+      return c.json(forwards.agents(id));
+    });
   });
 }
 

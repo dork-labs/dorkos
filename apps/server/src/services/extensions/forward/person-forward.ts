@@ -15,9 +15,15 @@
  *
  * ## The four things that keep it honest
  *
- * 1. **The agent is the person's pick, never the request's.** One agent per
- *    mini app, chosen in Settings → Extensions (`extensions.forwardAgent`,
- *    `operator-only`). A forward with none picked is refused.
+ * 1. **The agent is the person's pick, never the request's.** Each mini app
+ *    has a list of agent ids the person allowed (`extensions.forwardAgents`,
+ *    `operator-only`). A forward may NAME one, but reaches it only when it is
+ *    on the list; with none named, the list's only agent. Anything else is
+ *    refused. The first time, the refusal holds the typed text here
+ *    ({@link PersonForwards.hold}) and the app draws a core prompt, "Send
+ *    {app} comments to {agent}?", with the agent's registered name; Allow
+ *    adds that one id and sends the text DorkOS kept, never anything the app
+ *    sends again ({@link PersonForwards.allow}).
  * 2. **Only the typed text is the person's.** The item is named by id. Its
  *    title rides beside the post in `body.via`, which the app shows as quoted
  *    text from the mini app; an agent sees the app's name and the item's id,
@@ -37,6 +43,7 @@ import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { ForwardErrorCode, ForwardReceipt, ForwardReply } from '@dorkos/extension-api';
+import crypto from 'node:crypto';
 import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
 import type { AuthorRecord } from '../../rooms/index.js';
@@ -45,6 +52,15 @@ import type { PersonPostBound } from '../../rooms/messages/room-entry-writer.js'
 /** Most answers {@link PersonForwards.replies} returns for one forward. */
 export const FORWARD_REPLIES_MAX = 20;
 
+/** Most agents one mini app may forward to. Mirrors the config schema. */
+export const FORWARD_AGENTS_MAX = 20;
+
+/** How long a comment waits for the person's Allow before it is dropped. */
+export const PENDING_FORWARD_TTL_MS = 10 * 60_000;
+
+/** Most comments waiting for an Allow at once, across every mini app. */
+export const PENDING_FORWARDS_MAX = 50;
+
 /** A forward refused, with nothing posted. */
 export class PersonForwardError extends Error {
   /**
@@ -52,10 +68,13 @@ export class PersonForwardError extends Error {
    *
    * @param code - Which rule refused it.
    * @param message - What went wrong, in plain words.
+   * @param suggestedAgentId - For `no_agent`: the registered agent the
+   *   request named, which the person may be asked to allow.
    */
   constructor(
     readonly code: ForwardErrorCode,
-    message: string
+    message: string,
+    readonly suggestedAgentId?: string
   ) {
     super(message);
     this.name = 'PersonForwardError';
@@ -63,50 +82,73 @@ export class PersonForwardError extends Error {
 }
 
 /**
- * The agent a person picked for one mini app, by Mesh id, or undefined.
- * Read per call, so a change takes effect on the next forward.
+ * The agents a person allowed one mini app to forward to, by Mesh id. Empty
+ * when none. Read per call, so a change takes effect on the next forward.
  *
  * @param extensionId - The mini app.
  */
-export function forwardAgentOf(extensionId: string): string | undefined {
-  return configManager.get('extensions')?.forwardAgent?.[extensionId];
+export function forwardAgentsOf(extensionId: string): readonly string[] {
+  return configManager.get('extensions')?.forwardAgents?.[extensionId] ?? [];
 }
 
 /**
- * Set or clear the agent one mini app forwards to. Only
- * `PUT /api/extensions/:id/forward-agent` calls this, behind the person bar.
- * Spreads the whole `extensions` section, because the store write replaces the
- * subtree and naming only this key would erase every approval beside it.
+ * Replace the agents one mini app may forward to. An empty list removes its
+ * entry. Only `PUT /api/extensions/:id/forward-agents` and the first-use
+ * Allow call this, each behind its person bar. Spreads the whole `extensions`
+ * section, because the store write replaces the subtree and naming only this
+ * key would erase every approval beside it.
  *
  * @param extensionId - The mini app.
- * @param agentId - The agent, or null for none.
+ * @param agentIds - The agents, deduplicated here.
+ * @returns The agents now allowed.
  */
-export function setForwardAgent(extensionId: string, agentId: string | null): void {
+export function setForwardAgents(extensionId: string, agentIds: readonly string[]): string[] {
   const before = configManager.get('extensions');
-  const next = { ...(before?.forwardAgent ?? {}) };
-  if (agentId === null) delete next[extensionId];
-  else next[extensionId] = agentId;
-  configManager.set('extensions', { ...before, forwardAgent: next });
+  const next = { ...(before?.forwardAgents ?? {}) };
+  const unique = [...new Set(agentIds)].slice(0, FORWARD_AGENTS_MAX);
+  if (unique.length === 0) delete next[extensionId];
+  else next[extensionId] = unique;
+  configManager.set('extensions', { ...before, forwardAgents: next });
   logConfigWrite(
-    'choosing the agent a mini app forwards to',
+    'choosing the agents a mini app forwards to',
     'extensions',
     before,
     configManager.get('extensions')
   );
+  return unique;
 }
 
+/** A link target a reply may keep: web, mail, an in-page anchor, or a path. */
+const SAFE_TARGET = /^(?:https?:\/\/|mailto:|#|\/(?!\/))/iu;
+
 /**
- * Agent markdown with no way to become HTML: every `<` escaped, and a link
- * or image whose target is a script or data URL left as plain text. The
- * mini app renders it as markdown; this keeps an agent's answer from being
- * markup in a page that runs as the person.
+ * Agent markdown with no way to become HTML or a script link. Allow-listed,
+ * not deny-listed, because markdown has more ways to spell a link than a
+ * deny-list can name:
+ *
+ * - every `&` and `<` is escaped, so no tag, autolink or character reference
+ *   (`java&#115;cript:`) survives to be decoded;
+ * - every inline link or image target, and every reference definition
+ *   (`[1]: …`), keeps its target only when it is `http(s)://`, `mailto:`, an
+ *   anchor or a path, and becomes `#` otherwise.
+ *
+ * The mini app renders the result as markdown, never as HTML.
  *
  * @param text - The agent's post.
  */
 export function defuseReplyMarkdown(text: string): string {
+  const safe = (target: string) => (SAFE_TARGET.test(target.trim()) ? target : '#');
   return text
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/\]\(\s*(?:javascript|vbscript|data):(?:[^()]|\([^()]*\))*\)/giu, '](#)');
+    .replace(
+      /\]\(\s*((?:[^()\s]|\([^()]*\))*)([^)]*)\)/gu,
+      (_m, target: string, rest: string) => `](${safe(target)}${rest})`
+    )
+    .replace(
+      /^( {0,3}\[[^\]]+\]:\s*)(\S+)/gmu,
+      (_m, head: string, target: string) => `${head}${safe(target)}`
+    );
 }
 
 /** What the forward service needs. Read at call time, so a late start is seen. */
@@ -136,13 +178,15 @@ export interface PersonForwardDeps {
         };
       }
     | undefined;
-  /** Mesh, when it is running: an agent id to its manifest and home. */
+  /** Mesh, when it is running: an agent id to its registered manifest and home. */
   mesh: () =>
     | {
         get(agentId: string): { name: string; displayName?: string } | undefined;
         getProjectPath(agentId: string): string | undefined;
       }
     | undefined;
+  /** The clock, for how long a comment waits for Allow. A test pins it. */
+  now?: () => number;
 }
 
 /** One forward to send: everything already checked by the route. */
@@ -159,52 +203,92 @@ export interface ForwardRequest {
   itemId: string;
   /** The app's title for the item, when it sent one. */
   itemTitle?: string;
+  /** The agent the app asked for. Reached only when it is on the person's list. */
+  agentId?: string;
   /** The Wi-Fi hold, as a person's own post from Wi-Fi gets (DOR-3037). */
   bound?: PersonPostBound;
 }
 
-/** The agent a mini app forwards to, resolved. */
-interface ResolvedAgent {
+/** A comment waiting for the person's Allow, as the core prompt reads it. */
+export interface PendingForward {
+  /** Its id, for the Allow. Single use. */
+  id: string;
+  /** The agent the prompt asks about, with its registered name. */
+  agent: { id: string; name: string };
+  /** The mini app's name. */
+  appName: string;
+}
+
+/** A registered agent, named as the registry names it. */
+interface NamedAgent {
   id: string;
   name: string;
+}
+
+/** The agent a mini app forwards to, resolved to its Direct chat. */
+interface ResolvedAgent extends NamedAgent {
   roomId: string;
   agentAuthorId: string;
 }
 
+/** A held comment: the request exactly as the route parsed it, and when it lapses. */
+interface HeldForward {
+  request: ForwardRequest & { agentId: string };
+  expiresAt: number;
+}
+
 /** Forwards and their answers. See the module documentation. */
 export class PersonForwards {
-  constructor(private readonly deps: PersonForwardDeps) {}
+  private readonly held = new Map<string, HeldForward>();
+  private readonly now: () => number;
 
-  /**
-   * The agent the person picked for a mini app, or null when none is picked.
-   *
-   * @param extensionId - The mini app.
-   * @throws {PersonForwardError} `not_found` when the picked agent is gone.
-   */
-  agent(extensionId: string): { id: string; name: string } | null {
-    const id = forwardAgentOf(extensionId);
-    if (id === undefined) return null;
-    const mesh = this.deps.mesh();
-    if (!mesh) throw new PersonForwardError('unavailable', 'Agents aren’t loaded yet. Try again.');
-    const manifest = mesh.get(id);
-    if (!manifest) {
-      throw new PersonForwardError(
-        'not_found',
-        'The agent picked for this mini app is gone. Pick another in Settings → Extensions.'
-      );
-    }
-    return { id, name: manifest.displayName ?? manifest.name };
+  constructor(private readonly deps: PersonForwardDeps) {
+    this.now = deps.now ?? Date.now;
   }
 
   /**
-   * Post the person's words into their Direct chat with the picked agent.
+   * A registered agent's id and registered name, or undefined when Mesh does
+   * not know it. Never a name from a manifest or a request.
+   *
+   * @param agentId - The agent.
+   * @throws {PersonForwardError} `unavailable` while Mesh is not running.
+   */
+  registered(agentId: string): NamedAgent | undefined {
+    const mesh = this.deps.mesh();
+    if (!mesh) throw new PersonForwardError('unavailable', 'Agents aren’t loaded yet. Try again.');
+    const manifest = mesh.get(agentId);
+    return manifest ? { id: agentId, name: manifest.displayName ?? manifest.name } : undefined;
+  }
+
+  /**
+   * The agents the person allowed for a mini app, and the ids on the list
+   * Mesh no longer knows.
+   *
+   * @param extensionId - The mini app.
+   */
+  agents(extensionId: string): { agents: NamedAgent[]; missing: string[] } {
+    const agents: NamedAgent[] = [];
+    const missing: string[] = [];
+    for (const id of forwardAgentsOf(extensionId)) {
+      const agent = this.registered(id);
+      if (agent) agents.push(agent);
+      else missing.push(id);
+    }
+    return { agents, missing };
+  }
+
+  /**
+   * Post the person's words into their Direct chat with an allowed agent.
    *
    * @param request - The forward.
    * @returns The receipt.
-   * @throws {PersonForwardError} When no agent is picked, it is gone, or rooms are not running.
+   * @throws {PersonForwardError} `no_agent` when the agent is not allowed
+   *   (with `suggestedAgentId` when the request named a registered one),
+   *   `not_found` when it is gone, `invalid_input` when the list has several
+   *   and none was named, `unavailable` when rooms or Mesh are not running.
    */
   forward(request: ForwardRequest): ForwardReceipt {
-    const agent = this.resolve(request.extensionId);
+    const agent = this.resolve(this.targetOf(request));
     const rooms = this.deps.rooms();
     if (!rooms) throw new PersonForwardError('unavailable', 'Rooms aren’t running. Try again.');
     const appName = sanitizeIdentity(request.appName) ?? request.extensionId;
@@ -228,58 +312,161 @@ export class PersonForwards {
   }
 
   /**
+   * Keep a refused comment for the person's Allow on the core prompt.
+   *
+   * @param request - The forward the route parsed from the person's POST.
+   * @param agentId - The registered agent the request named.
+   * @returns What the prompt shows.
+   * @throws {PersonForwardError} `not_found` when the agent is not registered.
+   */
+  hold(request: ForwardRequest, agentId: string): PendingForward {
+    const agent = this.registered(agentId);
+    if (!agent) throw new PersonForwardError('not_found', 'There is no agent with that id here.');
+    this.prune();
+    // Bounded: a page that forwards in a loop must not grow this forever.
+    while (this.held.size >= PENDING_FORWARDS_MAX) {
+      const oldest = this.held.keys().next().value;
+      if (oldest === undefined) break;
+      this.held.delete(oldest);
+    }
+    const id = crypto.randomUUID();
+    this.held.set(id, {
+      request: { ...request, agentId },
+      expiresAt: this.now() + PENDING_FORWARD_TTL_MS,
+    });
+    return {
+      id,
+      agent,
+      appName: sanitizeIdentity(request.appName) ?? request.extensionId,
+    };
+  }
+
+  /**
+   * The person allowed the agent on the core prompt: add it to the mini app's
+   * list and send the comment DorkOS kept. Single use.
+   *
+   * @param extensionId - The mini app the Allow came through.
+   * @param viewer - The person, resolved by a route that ran the forward bar.
+   * @param pendingId - The held comment.
+   * @returns The receipt.
+   * @throws {PersonForwardError} `not_found` when nothing is held under that
+   *   id for this mini app and person, it lapsed, or the agent is gone.
+   */
+  allow(extensionId: string, viewer: AuthorRecord, pendingId: string): ForwardReceipt {
+    this.prune();
+    const held = this.held.get(pendingId);
+    if (!held || held.request.extensionId !== extensionId || held.request.viewer.id !== viewer.id) {
+      throw new PersonForwardError(
+        'not_found',
+        'That comment is no longer waiting. Send it again.'
+      );
+    }
+    this.held.delete(pendingId);
+    const { agentId } = held.request;
+    if (!this.registered(agentId)) {
+      throw new PersonForwardError('not_found', 'That agent is gone. Nothing was sent.');
+    }
+    setForwardAgents(extensionId, [...forwardAgentsOf(extensionId), agentId]);
+    return this.forward(held.request);
+  }
+
+  /**
+   * The person said no on the core prompt: drop the held comment.
+   *
+   * @param extensionId - The mini app.
+   * @param viewer - The person.
+   * @param pendingId - The held comment.
+   */
+  decline(extensionId: string, viewer: AuthorRecord, pendingId: string): void {
+    const held = this.held.get(pendingId);
+    if (held && held.request.extensionId === extensionId && held.request.viewer.id === viewer.id) {
+      this.held.delete(pendingId);
+    }
+  }
+
+  /**
    * The agent's answers to one of this mini app's forwards, oldest first.
    *
    * @param extensionId - The mini app.
    * @param viewer - The person.
    * @param forwardId - The forward's id.
    * @throws {PersonForwardError} `not_found` when it is not this mini app's
-   *   forward in the picked agent's Direct chat.
+   *   forward in the Direct chat of an agent on its list.
    */
   replies(extensionId: string, viewer: AuthorRecord, forwardId: string): ForwardReply[] {
-    const agent = this.resolve(extensionId);
     const rooms = this.deps.rooms();
     if (!rooms) throw new PersonForwardError('unavailable', 'Rooms aren’t running. Try again.');
-    const forward = rooms.readEntry(agent.roomId, viewer.id, forwardId);
-    if (!forward || forward.body.via?.extensionId !== extensionId) {
-      throw new PersonForwardError('not_found', 'This mini app sent no such comment.');
+    for (const id of forwardAgentsOf(extensionId)) {
+      let agent: ResolvedAgent;
+      try {
+        agent = this.resolve(id);
+      } catch {
+        continue;
+      }
+      const forward = rooms.readEntry(agent.roomId, viewer.id, forwardId);
+      if (!forward || forward.body.via?.extensionId !== extensionId) continue;
+      return rooms
+        .entriesAfter(agent.roomId, forward.seq)
+        .filter(
+          (entry) =>
+            entry.kind === 'post' &&
+            entry.authorId === agent.agentAuthorId &&
+            entry.body.answersEntryId === forwardId
+        )
+        .slice(0, FORWARD_REPLIES_MAX)
+        .map((entry) => ({
+          id: entry.id,
+          agent: { id: agent.id, name: agent.name },
+          markdown: defuseReplyMarkdown(entry.body.text),
+          createdAt: entry.createdAt,
+        }));
     }
-    return rooms
-      .entriesAfter(agent.roomId, forward.seq)
-      .filter(
-        (entry) =>
-          entry.kind === 'post' &&
-          entry.authorId === agent.agentAuthorId &&
-          entry.body.answersEntryId === forwardId
-      )
-      .slice(0, FORWARD_REPLIES_MAX)
-      .map((entry) => ({
-        id: entry.id,
-        agent: { id: agent.id, name: agent.name },
-        markdown: defuseReplyMarkdown(entry.body.text),
-        createdAt: entry.createdAt,
-      }));
+    throw new PersonForwardError('not_found', 'This mini app sent no such comment.');
   }
 
-  /** The picked agent and its Direct chat, or the refusal. */
-  private resolve(extensionId: string): ResolvedAgent {
-    const picked = this.agent(extensionId);
-    if (!picked) {
+  /** The allowed agent a forward goes to, or the refusal. */
+  private targetOf(request: ForwardRequest): string {
+    const allowed = forwardAgentsOf(request.extensionId);
+    if (request.agentId !== undefined) {
+      if (allowed.includes(request.agentId)) return request.agentId;
+      const suggested = this.registered(request.agentId);
+      if (!suggested)
+        throw new PersonForwardError('not_found', 'There is no agent with that id here.');
+      throw new PersonForwardError(
+        'no_agent',
+        `You haven’t allowed this mini app to send your comments to ${suggested.name}.`,
+        suggested.id
+      );
+    }
+    if (allowed.length === 1) return allowed[0]!;
+    if (allowed.length === 0) {
       throw new PersonForwardError(
         'no_agent',
         'Pick an agent for this mini app in Settings → Extensions first.'
       );
     }
-    const path = this.deps.mesh()?.getProjectPath(picked.id);
-    const chats = this.deps.directChats();
-    if (!path) {
+    throw new PersonForwardError('invalid_input', 'Say which agent with agentId.');
+  }
+
+  /** An agent and its Direct chat, or the refusal. */
+  private resolve(agentId: string): ResolvedAgent {
+    const picked = this.registered(agentId);
+    const path = picked ? this.deps.mesh()?.getProjectPath(agentId) : undefined;
+    if (!picked || !path) {
       throw new PersonForwardError(
         'not_found',
-        'The agent picked for this mini app is gone. Pick another in Settings → Extensions.'
+        'That agent is gone. Pick another in Settings → Extensions.'
       );
     }
+    const chats = this.deps.directChats();
     if (!chats) throw new PersonForwardError('unavailable', 'Rooms aren’t running. Try again.');
     const chat = chats.ensureForAgent(path, picked.name);
     return { ...picked, roomId: chat.roomId, agentAuthorId: chat.agentAuthorId };
+  }
+
+  /** Drop held comments that lapsed. */
+  private prune(): void {
+    const now = this.now();
+    for (const [id, held] of this.held) if (held.expiresAt <= now) this.held.delete(id);
   }
 }

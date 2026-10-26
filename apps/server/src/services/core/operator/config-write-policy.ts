@@ -651,7 +651,7 @@ export const CONFIG_WRITE_POLICY = {
   // The agent each mini app may forward the person's comments to (DOR-3325). A
   // caller that could set it would let a mini app make the person say
   // something to an agent they never chose.
-  'extensions.forwardAgent': 'operator-only',
+  'extensions.forwardAgents': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.

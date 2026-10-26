@@ -13,9 +13,12 @@
  * words into their Direct chat with the agent, and the agent treats them as a
  * message from the person. The app never touches the words in between.
  *
- * **Scoped to one agent.** The person picks, in Settings → Extensions, the one
- * agent a mini app may forward to. The app cannot name another. With no agent
- * picked, or no `capabilities.forward` in its manifest, every call is refused.
+ * **Scoped to the agents the person allowed.** A mini app may name an agent,
+ * but reaches it only once the person allowed it: on a DorkOS prompt the
+ * first time ("Send {app} comments to {agent}? Allow"), or in Settings →
+ * Extensions. DorkOS draws that prompt itself, outside the mini app, with the
+ * agent's registered name, and on Allow sends the comment it already has.
+ * With no `capabilities.forward` in the manifest, every call is refused.
  *
  * @module @dorkos/extension-api/agent-forward
  */
@@ -54,8 +57,10 @@ export interface ForwardReply {
   /** Who wrote it: always the agent, never the person. */
   readonly agent: ForwardAgent;
   /**
-   * What it says, as markdown with every `<` escaped and script links removed,
-   * so no HTML can come through. Render it as markdown, not as HTML.
+   * What it says, as markdown with every `&` and `<` escaped and every link
+   * target that is not `http(s)://`, `mailto:`, an anchor or a path replaced
+   * with `#`, so no HTML or script link can come through. Render it as
+   * markdown, not as HTML.
    */
   readonly markdown: string;
   /** ISO-8601 time it was posted. */
@@ -64,7 +69,7 @@ export interface ForwardReply {
 
 /** Why `api.forward` refused a call. See {@link ForwardError}. */
 export type ForwardErrorCode =
-  /** The person has not picked an agent for this mini app. */
+  /** The person has not allowed that agent (or any) for this mini app, or said no on the prompt. */
   | 'no_agent'
   /** No such forward, or the agent is gone. */
   | 'not_found'
@@ -103,7 +108,10 @@ export class ForwardError extends Error {
 export interface ForwardInput {
   /** Exactly what the person typed. 1 to {@link FORWARD_TEXT_MAX_CHARS} characters. */
   readonly text: string;
-  /** The app's own id for the item they typed it on. */
+  /**
+   * The app's own id for the item they typed it on: letters, digits and
+   * `. _ : / -` only, at most {@link FORWARD_ITEM_ID_MAX_CHARS}.
+   */
   readonly itemId: string;
   /**
    * The item's title, shown to the person above the message as quoted text
@@ -111,6 +119,11 @@ export interface ForwardInput {
    * agent as theirs.
    */
   readonly itemTitle?: string;
+  /**
+   * The agent to send it to, by id. Optional when the person allowed exactly
+   * one. One they have not allowed yet makes DorkOS ask them first.
+   */
+  readonly agentId?: string;
 }
 
 /**
@@ -128,13 +141,17 @@ export interface ForwardInput {
  * ```
  */
 export interface ExtensionForwardApi {
-  /** The agent the person picked for this mini app, or `null` when none. */
-  agent(): Promise<ForwardAgent | null>;
+  /** The agents the person allowed for this mini app. Empty when none. */
+  agents(): Promise<ForwardAgent[]>;
   /**
-   * Post what the person typed into their Direct chat with the picked agent,
+   * Post what the person typed into their Direct chat with an allowed agent,
    * as their own message. A muted "via {app} · {item}" line sits above it.
    * The agent answers as if they had typed it there. Recorded in the audit
    * trail with this mini app named.
+   *
+   * Naming an agent the person has not allowed yet shows them DorkOS's own
+   * prompt first; the promise settles when they answer. Allow sends the
+   * comment; no throws `no_agent` and sends nothing.
    *
    * Only works from the person's own window, signed in with a password. An
    * agent, a request from another site, a server half, and a DorkOS with no

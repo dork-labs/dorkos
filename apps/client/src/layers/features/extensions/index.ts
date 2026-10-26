@@ -16,3 +16,4 @@ export { ExtensionEventBridge, createExtensionEventBridge } from './model/extens
 export type { ExtensionEventSource } from './model/extension-event-bridge';
 export type { LoadedExtension, ExtensionAPIDeps } from './model/types';
 export { ExtensionsSettingsTab } from './ui/ExtensionsSettingsTab';
+export { ForwardConsentHost } from './ui/ForwardConsentHost';

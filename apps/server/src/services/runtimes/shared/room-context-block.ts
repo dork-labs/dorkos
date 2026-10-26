@@ -932,9 +932,12 @@ function entryLine(
   // the model happens to think it is standing; {@link ATTACHMENT_PATH_MAX_LENGTH}
   // is sized for that and still cannot truncate one.
   // A forwarded comment's app and item (DOR-3325): labels DorkOS recorded, so
-  // outside the fence, through `label()` like every other one.
+  // outside the fence, through `label()` like every other one. The app name
+  // is its author's choice, so brackets and colons go too: it must not close
+  // this label and open words that read as the person's. The item id is held
+  // to a charset with neither at the route.
   const via = entry.via
-    ? ` [via the ${label(entry.via.appName, VIA_LABEL_MAX_LENGTH)} app, item ${label(entry.via.itemId, VIA_LABEL_MAX_LENGTH)}]`
+    ? ` [via the ${label(entry.via.appName.replace(/[[\]:]/g, ' '), VIA_LABEL_MAX_LENGTH)} app, item ${label(entry.via.itemId, VIA_LABEL_MAX_LENGTH)}]`
     : '';
   const attached =
     entry.attachments.length > 0
