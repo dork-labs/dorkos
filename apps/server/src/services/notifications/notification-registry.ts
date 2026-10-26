@@ -44,6 +44,7 @@ import {
 } from './extension-decision-copy.js';
 import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
 import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
+import { runCompletedBody, runCompletedRelay, runCompletedTitle } from './run-completed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -52,13 +53,14 @@ import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
  * it stopped is the pipeline's own "never notify somebody about their own action"
  * rule spelled out as a type.
  *
- * `blocked` is here because it was already being reported — as a success, with
- * a green tick, which is the DOR-2101 defect. Dropping it from this union
+ * `needs_attention` is here because it was already being reported — as a
+ * success, with a green tick, which is the DOR-2101 and DOR-3123 defect.
+ * Dropping it from this union
  * instead would have swapped a wrong notification for no notification at all,
  * and a schedule that quietly does nothing every night is exactly what a person
  * needs telling about.
  */
-export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
+export type RunCompletionStatus = 'completed' | 'failed' | 'needs_attention';
 
 /**
  * What each kind of notification is told when it is raised.
@@ -180,6 +182,8 @@ export interface NotificationPayloads extends DeclaredPayloads {
     taskName: string;
     agentId?: string;
     status: RunCompletionStatus;
+    /** How much a `needs_attention` run got done (DOR-3123); absent otherwise. */
+    outcome?: 'partial' | 'nothing_done';
     /** How long it took, already written, e.g. `2m 14s`. */
     duration?: string;
     /** The first line of output or error. */
@@ -806,40 +810,18 @@ const ENTRIES: NotificationRegistryMap = {
   'run.completed': {
     kind: 'run.completed',
     // The one kind whose loudness the payload decides. A run that worked is
-    // history; one that failed, or that was never allowed to use a tool
-    // (DOR-2101), is worth a glance. Splitting it into separate kinds would
+    // history; one that failed, or that was refused a tool it reached for
+    // (DOR-2101, DOR-3123), is worth a glance. Splitting it into separate kinds would
     // mean a registry entry, a dedupe key and a row each, for one event.
     tier: (p) => (p.status === 'completed' ? 'quiet' : 'notable'),
     storage: 'event',
     subjectType: 'run',
     locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
-    title: (p) =>
-      p.status === 'failed'
-        ? `${p.taskName} failed`
-        : p.status === 'blocked'
-          ? `${p.taskName} could not use its tools`
-          : `${p.taskName} finished`,
-    body: (p) => {
-      const timing = p.duration
-        ? p.status === 'failed'
-          ? `Failed after ${p.duration}.`
-          : p.status === 'blocked'
-            ? // NOT "nobody was there to approve its tools" again: `detail` is the
-              // run's own refusal sentence, which ends in exactly those words, and
-              // the row printed the same fact twice (DOR-2101 review). Headline
-              // here, the tools themselves in the detail.
-              `Ran for ${p.duration} and used none of its tools.`
-            : `Done in ${p.duration}.`
-        : undefined;
-      return [timing, p.detail].filter(Boolean).join(' ') || undefined;
-    },
+    title: runCompletedTitle,
+    body: runCompletedBody,
     dedupeKey: (p) => `run:${p.runId}`,
-    // Failures always reach out; successes only where the operator asked for
-    // them. This is DOR-240's policy, moved from the notifier to the
-    // declaration. A blocked run reaches out too (DOR-2101): it is the one
-    // outcome a person cannot notice for themselves, because the task looks
-    // like it ran and its history is full of rows that say so.
-    relay: (p) => (p.status === 'completed' ? 'opt-in' : 'always'),
+    // Who it reaches out to: see `runCompletedRelay` (DOR-240, DOR-2101, DOR-3123).
+    relay: runCompletedRelay,
     // The chat message keeps the wording DOR-240 shipped rather than being
     // rebuilt from title and body: a phone message and an inbox row are not the
     // same sentence, and this one is already tuned.

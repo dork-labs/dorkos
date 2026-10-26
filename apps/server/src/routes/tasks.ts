@@ -323,11 +323,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
    * agent, and when each task last ran (one query for all of them, DOR-2914).
    */
   async function presentAll(tasks: Task[]): Promise<Task[]> {
-    const lastRuns = store.lastRunStarts();
+    // When each last ran, and whether its last finished run did its job.
+    const history = store.runHistory();
     const named = await withProposerNames(tasks);
-    return withProjects(
-      named.map((task) => ({ ...withRunTimes(task), lastRunAt: lastRuns.get(task.id) ?? null }))
-    );
+    return withProjects(named.map((task) => ({ ...withRunTimes(task), ...history(task.id) })));
   }
 
   // === Template endpoints ===

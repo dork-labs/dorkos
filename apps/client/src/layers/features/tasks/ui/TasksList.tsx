@@ -15,7 +15,9 @@ import {
   taskFilterSchema,
   taskSortOptions,
 } from '../lib/task-filter-schema';
+import { failingFirst, isFailing } from '../lib/schedule-health';
 import { TaskRow } from './TaskRow';
+import { FailingChip, FailingCount, NothingFailing } from './TasksFailing';
 
 /** Items beyond this index are rendered without stagger delay to keep animation snappy. */
 const STAGGER_ITEM_LIMIT = 8;
@@ -69,16 +71,27 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
   );
 
   // Apply filters and sort
-  const filteredTasks = useMemo(
-    () =>
-      applySortAndFilter(baseTasks, taskFilterSchema, filterState.values, taskSortOptions, {
+  const filteredTasks = useMemo(() => {
+    const sorted = applySortAndFilter(
+      baseTasks,
+      taskFilterSchema,
+      filterState.values,
+      taskSortOptions,
+      {
         // The control names TASK_DEFAULT_SORT_FIELD as the default, so the list
         // has to actually be in that order when the URL says nothing.
         field: filterState.sortField || TASK_DEFAULT_SORT_FIELD,
         direction: filterState.sortDirection,
-      }),
-    [baseTasks, filterState.values, filterState.sortField, filterState.sortDirection]
-  );
+      }
+    );
+    // Broken comes first under the default sort; a sort the person picked is
+    // theirs (DOR-3123, spec `schedules-failing` §2.3).
+    return filterState.sortField ? sorted : failingFirst(sorted);
+  }, [baseTasks, filterState.values, filterState.sortField, filterState.sortDirection]);
+
+  const failingCount = useMemo(() => baseTasks.filter(isFailing).length, [baseTasks]);
+  const failingFilterOn = filterState.values.health === 'failing';
+  const toggleFailing = () => filterState.set('health', failingFilterOn ? '' : 'failing');
 
   if (isLoading) {
     return (
@@ -97,15 +110,33 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
           bar keeps only its vertical rhythm and nothing double-pads. */}
       <FilterBar state={filterState} className="px-0">
         <FilterBar.Search placeholder="Filter tasks…" />
+        {/* Shown only while something is failing, or while it is on: an
+            active filter never disappears under the person. */}
+        {(failingCount > 0 || failingFilterOn) && (
+          <FailingChip count={failingCount} active={failingFilterOn} onToggle={toggleFailing} />
+        )}
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ agent: agentOptions }} />
         <FilterBar.Sort options={taskSortOptions} defaultField={TASK_DEFAULT_SORT_FIELD} />
-        <FilterBar.ResultCount count={filteredTasks.length} total={baseTasks.length} noun="task" />
+        <FilterBar.ResultCount
+          count={filteredTasks.length}
+          total={baseTasks.length}
+          noun="schedule"
+        >
+          {failingCount > 0 && (
+            <FailingCount
+              count={failingCount}
+              onShow={() => filterState.set('health', 'failing')}
+            />
+          )}
+        </FilterBar.ResultCount>
         <FilterBar.ActiveFilters />
       </FilterBar>
       <ScrollArea className="min-h-0 flex-1" data-testid={TOUR_ANCHORS.tasksList}>
         <div className="space-y-2 pb-4">
-          {filteredTasks.length === 0 && baseTasks.length > 0 ? (
+          {filteredTasks.length === 0 && failingFilterOn && failingCount === 0 ? (
+            <NothingFailing onShowAll={() => filterState.clear('health')} />
+          ) : filteredTasks.length === 0 && baseTasks.length > 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

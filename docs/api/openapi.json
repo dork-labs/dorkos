@@ -9982,6 +9982,9 @@
                 ]
               }
             ]
+          },
+          "health": {
+            "$ref": "#/components/schemas/TaskHealth"
           }
         },
         "required": [
@@ -10063,6 +10066,82 @@
             }
           }
         }
+      },
+      "TaskHealth": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failing"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/TaskFailureReason"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streak": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "reason",
+          "since",
+          "streak",
+          "lastRunId"
+        ]
+      },
+      "TaskFailureReason": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool_refused",
+              "tools_refused",
+              "signin_needed",
+              "error"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nothingDone": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "tools",
+          "nothingDone",
+          "message"
+        ]
       },
       "CreateTaskRequest": {
         "type": "object",
@@ -10350,6 +10429,9 @@
             },
             "default": null
           },
+          "outcome": {
+            "$ref": "#/components/schemas/TaskRunOutcome"
+          },
           "scheduledFor": {
             "type": [
               "string",
@@ -10390,7 +10472,7 @@
           "failed",
           "cancelled",
           "skipped",
-          "blocked"
+          "needs_attention"
         ]
       },
       "TaskRunTrigger": {
@@ -10400,6 +10482,18 @@
           "manual",
           "agent"
         ]
+      },
+      "TaskRunOutcome": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "partial",
+          "nothing_done",
+          null
+        ],
+        "default": null
       },
       "CancelTaskRunResponse": {
         "type": "object",

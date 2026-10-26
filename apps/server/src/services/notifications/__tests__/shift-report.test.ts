@@ -37,7 +37,7 @@ function turn(sessionId: string) {
 }
 
 /** A scheduled-run payload, varied per call so nothing dedupes by accident. */
-function run(id: string, status: 'completed' | 'failed' | 'blocked' = 'completed') {
+function run(id: string, status: 'completed' | 'failed' | 'needs_attention' = 'completed') {
   return {
     runId: id,
     taskId: 't1',
@@ -114,7 +114,7 @@ describe('composeShiftReport', () => {
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
     try {
       await service.notify('run.completed', run('r1'));
-      await service.notify('run.completed', run('r2', 'blocked'));
+      await service.notify('run.completed', run('r2', 'needs_attention'));
 
       expect(composeShiftReport(store, Date.now(), SETTLED)).toMatchObject({
         runsSucceeded: 1,
