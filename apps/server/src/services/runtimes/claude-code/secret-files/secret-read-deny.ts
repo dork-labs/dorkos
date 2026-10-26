@@ -21,6 +21,7 @@
  *
  * @module services/runtimes/claude-code/secret-files/secret-read-deny
  */
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
@@ -35,6 +36,12 @@ export const DATA_FOLDER_SECRETS = [
   'config.json',
   'mcp-local-token',
   'better-auth-secret',
+  // The key the CLI calls this server with.
+  'api-key',
+  // The database: sign-in sessions and connected-app tokens, with its -wal/-shm.
+  'dork.db*',
+  // The web-push private key.
+  'push/**',
   'extension-secrets/**',
   // Secrets moved out of agent folders (DOR-3292).
   'secrets/**',
@@ -43,8 +50,20 @@ export const DATA_FOLDER_SECRETS = [
   'browser-profiles/**',
 ] as const;
 
-/** The sign-in files inside every Claude Code account folder. */
-export const ACCOUNT_FOLDER_SECRETS = ['.credentials*', '.claude.json'] as const;
+/** The sign-in files inside every Claude Code account folder, backups included. */
+export const ACCOUNT_FOLDER_SECRETS = ['.credentials*', '.claude.json*', 'backups/**'] as const;
+
+/**
+ * Sign-ins named wherever they sit, since `*` crosses folders: any Claude
+ * account (an odd or added-later folder too), and the Codex and OpenCode
+ * sign-ins in their default and moved homes.
+ */
+export const ANYWHERE_SECRETS = [
+  '//**/.credentials*',
+  '//**/.claude.json*',
+  '//**/.codex/auth.json',
+  '//**/opencode/auth.json',
+] as const;
 
 /**
  * The person's own keys and tokens, in the home-folder spelling Claude Code
@@ -59,8 +78,9 @@ export const HOME_SECRETS = [
   '.docker/config.json',
   '.config/gcloud/**',
   // The default account's sign-in, whatever account this launch uses.
-  '.claude.json',
+  '.claude.json*',
   '.claude/.credentials*',
+  '.claude/backups/**',
   // The default data folder's secrets, whatever data folder this launch uses.
   ...DATA_FOLDER_SECRETS.map((entry) => `.dork/${entry}`),
 ] as const;
@@ -69,8 +89,21 @@ export const HOME_SECRETS = [
 export interface SecretFolders {
   /** DorkOS's data folder. */
   dorkHome: string;
-  /** Every Claude Code account folder DorkOS knows of, the launch's own included. */
-  accountRoots: readonly string[];
+  /** The launch's own Claude Code account folder. */
+  accountRoot: string;
+  /** Every other account folder DorkOS knows of. */
+  otherAccountRoots: readonly string[];
+}
+
+/** A path and, when it differs, the real place it points to. */
+function spellingsOf(folder: string): string[] {
+  const resolved = path.resolve(folder);
+  try {
+    const real = realpathSync.native(resolved);
+    return real === resolved ? [resolved] : [resolved, real];
+  } catch {
+    return [resolved];
+  }
 }
 
 /**
@@ -81,10 +114,18 @@ export interface SecretFolders {
  *   rule — failing closed, as the person-only data deny does.
  */
 export function secretReadDenyRules(folders: SecretFolders): string[] {
-  const targets: string[] = [];
-  const named = (folder: string, entries: readonly string[]): void => {
-    const root = rulePath(path.resolve(folder));
-    if (root === undefined) {
+  const targets: string[] = [...ANYWHERE_SECRETS];
+  const named = (folder: string, entries: readonly string[], required: boolean): void => {
+    for (const spelling of spellingsOf(folder)) {
+      const root = rulePath(spelling);
+      if (root !== undefined) {
+        for (const entry of entries) targets.push(`${root}/${entry}`);
+        continue;
+      }
+      // Another account's odd name stops nothing: the rules above still name
+      // its sign-in files wherever they sit. This launch's own folders must be
+      // named exactly, or the turn doesn't start.
+      if (!required) continue;
       throw new DirectoryGrantError(
         `Claude Code can't keep the secrets in "${folder}" away from agents, because its ` +
           `name has a character its safety rules can't match: a question mark, a backslash, a ` +
@@ -92,10 +133,10 @@ export function secretReadDenyRules(folders: SecretFolders): string[] {
           `Move that folder to a path without those characters, then try again.`
       );
     }
-    for (const entry of entries) targets.push(`${root}/${entry}`);
   };
-  named(folders.dorkHome, DATA_FOLDER_SECRETS);
-  for (const account of folders.accountRoots) named(account, ACCOUNT_FOLDER_SECRETS);
+  named(folders.dorkHome, DATA_FOLDER_SECRETS, true);
+  named(folders.accountRoot, ACCOUNT_FOLDER_SECRETS, true);
+  for (const account of folders.otherAccountRoots) named(account, ACCOUNT_FOLDER_SECRETS, false);
   for (const entry of HOME_SECRETS) targets.push(`~/${entry}`);
   const rules = targets.flatMap((target) => READ_TOOLS.map((tool) => `${tool}(${target})`));
   return [...new Set(rules)];

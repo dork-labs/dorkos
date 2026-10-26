@@ -773,7 +773,8 @@ export async function resolveLaunch(args: {
   // a secret (DOR-3299).
   applySecretReadDeny(sdkOptions, {
     dorkHome: resolveDorkHome(),
-    accountRoots: [accountRoot, ...resolveClaudeRootSet()],
+    accountRoot,
+    otherAccountRoots: resolveClaudeRootSet(),
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {

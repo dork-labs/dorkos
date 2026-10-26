@@ -11,8 +11,8 @@
  * Stand-in files only, in a throwaway home: each holds a canary, and the
  * check is whether that canary reaches the model in the next request. Nothing
  * here can spend or reach the internet: a fake HTTP server on 127.0.0.1 plays
- * the model, and the key is made up. Every refused row has a control that
- * shows the canary DOES reach the model without the rules.
+ * the model, and the key is made up. Every refused row has its own control
+ * that shows the canary DOES reach the model without the rules.
  *
  * `Grep` and `Glob` are not tested: the bundled CLI has neither tool ("No such
  * tool available: Grep … search file contents with `grep` via the Bash tool").
@@ -77,6 +77,7 @@ function reply(toolUse: boolean, call: ToolCall): string {
 }
 
 let root: string;
+let home: string;
 let dorkHome: string;
 let account: string;
 let folder: string;
@@ -107,7 +108,9 @@ async function resultsOf(call: ToolCall, mode: PermissionMode, deny: boolean): P
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
   const { port } = server.address() as AddressInfo;
   const options: Options = {};
-  if (deny) applySecretReadDeny(options, { dorkHome, accountRoots: [account] });
+  if (deny) {
+    applySecretReadDeny(options, { dorkHome, accountRoot: account, otherAccountRoots: [] });
+  }
   const abort = new AbortController();
   let childClosed: Promise<void> | undefined;
   const stream = query({
@@ -116,7 +119,7 @@ async function resultsOf(call: ToolCall, mode: PermissionMode, deny: boolean): P
       cwd: folder,
       env: {
         PATH: process.env.PATH ?? '',
-        HOME: root,
+        HOME: home,
         CLAUDE_CONFIG_DIR: account,
         ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
         ANTHROPIC_API_KEY: 'fake-key-never-real',
@@ -177,11 +180,16 @@ const LEVELS: [string, PermissionMode][] = [
 describe.skipIf(BINARY === null)('the model’s read tools and secret files (DOR-3299)', () => {
   beforeEach(() => {
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'secret-read-binary-')));
-    dorkHome = path.join(root, '.dork');
-    account = path.join(root, 'claude-account');
+    // Each place on its own, so every rule kind is proven by itself: the data
+    // folder and the account sit OUTSIDE the home folder, under plain names,
+    // so neither a `~/.dork/…` nor an anywhere rule can stand in for theirs.
+    home = path.join(root, 'home');
+    dorkHome = path.join(root, 'data', 'dorkhome');
+    account = path.join(root, 'accounts', 'work');
     folder = path.join(dorkHome, 'agents', 'scout');
     fs.mkdirSync(folder, { recursive: true });
     fs.mkdirSync(account, { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
   });
 
   afterEach(() => {
@@ -191,18 +199,35 @@ describe.skipIf(BINARY === null)('the model’s read tools and secret files (DOR
   const SECRETS: [string, () => string][] = [
     ['host.key', () => path.join(dorkHome, 'host.key')],
     ['an extension secret', () => path.join(dorkHome, 'extension-secrets', 'x.json')],
+    ['the CLI api key', () => path.join(dorkHome, 'api-key')],
+    // The write-ahead log beside the database: the CLI already refuses to Read
+    // a `.db` file as binary, so the rule is proven on the file it would read.
+    ['the database log', () => path.join(dorkHome, 'dork.db-wal')],
+    ['the push key', () => path.join(dorkHome, 'push', 'vapid.json')],
     ['the account sign-in', () => path.join(account, '.credentials.json')],
-    ['~/.claude.json', () => path.join(root, '.claude.json')],
-    ['an SSH key', () => path.join(root, '.ssh', 'id_ed25519')],
-    ['the gh token', () => path.join(root, '.config', 'gh', 'hosts.yml')],
-    ['~/.npmrc', () => path.join(root, '.npmrc')],
+    // Not the account folder's own `.claude.json`: the CLI rewrites it as it
+    // starts, so a canary there is gone before the turn. `~/.claude.json`
+    // below proves the same rule.
+    ['~/.claude.json', () => path.join(home, '.claude.json')],
+    ['an SSH key', () => path.join(home, '.ssh', 'id_ed25519')],
+    ['the gh token', () => path.join(home, '.config', 'gh', 'hosts.yml')],
+    ['~/.npmrc', () => path.join(home, '.npmrc')],
+    ['the Codex sign-in', () => path.join(home, '.codex', 'auth.json')],
+    ['the OpenCode sign-in', () => path.join(home, '.local', 'share', 'opencode', 'auth.json')],
   ];
 
-  it('reads a secret without the rules (the Read control)', async () => {
-    const file = plant(path.join(dorkHome, 'host.key'), 'CANARY-control');
-    const read = await resultsOf({ name: 'Read', input: { file_path: file } }, 'default', false);
-    expect(read).toContain('CANARY-control');
-  }, 60_000);
+  // The control, per row: without the rules the canary DOES come back, so a
+  // refusal below is the rules' doing and not the CLI's own.
+  it.each(SECRETS)(
+    'reads %s without the rules (the control)',
+    async (label, where) => {
+      const canary = `CANARY-${label.replace(/\W/g, '')}`;
+      const file = plant(where(), canary);
+      const out = await resultsOf({ name: 'Read', input: { file_path: file } }, 'default', false);
+      expect(out).toContain(canary);
+    },
+    60_000
+  );
 
   for (const [level, mode] of LEVELS) {
     it.each(SECRETS)(
@@ -211,6 +236,8 @@ describe.skipIf(BINARY === null)('the model’s read tools and secret files (DOR
         const canary = `CANARY-${label.replace(/\W/g, '')}`;
         const file = plant(where(), canary);
         const out = await resultsOf({ name: 'Read', input: { file_path: file } }, mode, true);
+        // The turn reached the tool's result, so the refusal is real, not an abort.
+        expect(out).toContain('toolu_probe');
         expect(out).not.toContain(canary);
       },
       60_000

@@ -5,12 +5,19 @@
  *
  * @vitest-environment node
  */
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import { applySecretReadDeny, secretReadDenyRules } from '../secret-read-deny.js';
 
-const FOLDERS = { dorkHome: '/Users/ana/.dork', accountRoots: ['/Users/ana/.claude4'] };
+const FOLDERS = {
+  dorkHome: '/Users/ana/.dork',
+  accountRoot: '/Users/ana/.claude4',
+  otherAccountRoots: ['/Users/ana/.claude2'],
+};
 
 describe('secretReadDenyRules', () => {
   it('names every secret for Read, Grep and Glob', () => {
@@ -22,8 +29,17 @@ describe('secretReadDenyRules', () => {
         '//Users/ana/.dork/extension-secrets/**',
         '//Users/ana/.dork/secrets/**',
         '//Users/ana/.dork/browser/storage-state.json',
+        '//Users/ana/.dork/api-key',
+        '//Users/ana/.dork/dork.db*',
+        '//Users/ana/.dork/push/**',
         '//Users/ana/.claude4/.credentials*',
-        '//Users/ana/.claude4/.claude.json',
+        '//Users/ana/.claude4/.claude.json*',
+        '//Users/ana/.claude4/backups/**',
+        '//Users/ana/.claude2/.credentials*',
+        '//**/.credentials*',
+        '//**/.claude.json*',
+        '//**/.codex/auth.json',
+        '//**/opencode/auth.json',
         '~/.ssh/**',
         '~/.aws/**',
         '~/.config/gh/hosts.yml',
@@ -31,7 +47,7 @@ describe('secretReadDenyRules', () => {
         '~/.npmrc',
         '~/.docker/config.json',
         '~/.config/gcloud/**',
-        '~/.claude.json',
+        '~/.claude.json*',
         '~/.claude/.credentials*',
         '~/.dork/host.key',
       ]) {
@@ -47,14 +63,34 @@ describe('secretReadDenyRules', () => {
   });
 
   it('escapes a folder with glob characters, and refuses one no rule can name', () => {
-    const rules = secretReadDenyRules({ dorkHome: '/Users/ana/Dork [x]', accountRoots: [] });
+    const rules = secretReadDenyRules({ ...FOLDERS, dorkHome: '/Users/ana/Dork [x]' });
     expect(rules).toContain('Read(//Users/ana/Dork \\[x\\]/host.key)');
-    expect(() => secretReadDenyRules({ dorkHome: '/Users/ana/dork?', accountRoots: [] })).toThrow(
+    expect(() => secretReadDenyRules({ ...FOLDERS, dorkHome: '/Users/ana/dork?' })).toThrow(
       DirectoryGrantError
     );
-    expect(() =>
-      secretReadDenyRules({ dorkHome: '/Users/ana/.dork', accountRoots: ['/Users/ana/c?'] })
-    ).toThrow(DirectoryGrantError);
+    expect(() => secretReadDenyRules({ ...FOLDERS, accountRoot: '/Users/ana/c?' })).toThrow(
+      DirectoryGrantError
+    );
+  });
+
+  it('lets another account with an odd name stop nothing: the anywhere rules cover it', () => {
+    const rules = secretReadDenyRules({ ...FOLDERS, otherAccountRoots: ['/Users/ana/c?'] });
+    expect(rules).toContain('Read(//**/.credentials*)');
+  });
+
+  it('also names the real place a symlinked data folder points to', () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'secret-spell-')));
+    try {
+      const real = path.join(root, 'real-dork');
+      mkdirSync(real);
+      const link = path.join(root, 'link-dork');
+      symlinkSync(real, link);
+      const rules = secretReadDenyRules({ ...FOLDERS, dorkHome: link });
+      expect(rules).toContain(`Read(/${link}/host.key)`);
+      expect(rules).toContain(`Read(/${real}/host.key)`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
