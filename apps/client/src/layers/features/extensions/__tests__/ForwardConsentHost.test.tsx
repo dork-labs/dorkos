@@ -30,8 +30,13 @@ describe('ForwardConsentHost', () => {
       });
     });
     expect(screen.getByText('Send Dorian Desk comments to DorkOS PM?')).toBeInTheDocument();
-    // The registered handle, which an agent cannot change, sits beside the name.
-    expect(screen.getByText(/Registered as @dorkos-pm\./)).toBeInTheDocument();
+    expect(
+      screen.getByText('They arrive in your chat as your own words, so it can act without asking.')
+    ).toBeInTheDocument();
+    // The registered handle, which an agent cannot change, on its own line.
+    expect(screen.getByText('Registered as @dorkos-pm')).toBeInTheDocument();
+    // Not now is where focus starts.
+    expect(screen.getByRole('button', { name: 'Not now' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
     await expect(answer).resolves.toBe(true);
   });
@@ -50,5 +55,15 @@ describe('ForwardConsentHost', () => {
     expect(await screen.findByText('Send A comments to Two?')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
     await expect(second).resolves.toBe(true);
+  });
+
+  it('Esc answers no', async () => {
+    render(<ForwardConsentHost />);
+    let answer: Promise<boolean> | undefined;
+    act(() => {
+      answer = requestForwardConsent({ appName: 'A', agentName: 'One', agentHandle: 'one' });
+    });
+    fireEvent.keyDown(screen.getByTestId('forward-consent'), { key: 'Escape' });
+    await expect(answer).resolves.toBe(false);
   });
 });

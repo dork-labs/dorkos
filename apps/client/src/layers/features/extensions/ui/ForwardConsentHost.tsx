@@ -2,7 +2,7 @@
  * The core prompt a mini app's first forward to an agent raises (DOR-3325).
  * Mounted once by the app shell, outside every extension's DOM; the mini app
  * can ask for it but never draws it. Allow lets DorkOS send the comment it
- * kept; Not now sends nothing.
+ * kept; Not now, the default focus and what Esc does, sends nothing.
  *
  * @module features/extensions/ui/ForwardConsentHost
  */
@@ -40,8 +40,10 @@ export function ForwardConsentHost() {
               Send {ask.appName} comments to {ask.agentName}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Registered as @{ask.agentHandle}. Your comments reach this agent as your own words.
+              They arrive in your chat as your own words, so it can act without asking.
             </AlertDialogDescription>
+            {/* The handle it was registered under: an agent can rename itself, not this. */}
+            <p className="text-muted-foreground text-xs">Registered as @{ask.agentHandle}</p>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => answerForwardConsent(ask, false)}>
