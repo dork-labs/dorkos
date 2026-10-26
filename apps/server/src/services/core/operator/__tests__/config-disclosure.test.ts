@@ -359,6 +359,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      // The old approvals still waiting for a copy (DOR-3068).
+      'extensions.legacyUnsourced',
       // Which rooms a mini app may reply in as the person (DOR-3017).
       'extensions.roomAccess',
       'extensions.trustedSources[].source',

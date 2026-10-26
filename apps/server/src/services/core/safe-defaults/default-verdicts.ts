@@ -81,6 +81,9 @@ export interface PermissiveDefault {
  */
 export const NO_RISK_DEFAULTS: readonly string[] = [
   'version',
+  // Absent by default: no old approval waits to be bound, so it binds nothing
+  // and approves nothing (DOR-3068). Only the '0.126.0' migration writes it.
+  'extensions.legacyUnsourced',
   'server.port',
   'server.cwd',
   'server.boundary',

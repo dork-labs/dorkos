@@ -240,7 +240,8 @@ export const UNPINNABLE_SENTENCE =
   "Its folder links to files outside it, so DorkOS can't check what would run.";
 
 /** Why a copy whose folder DorkOS cannot read whole can't be approved (DOR-3068). */
-export const UNREADABLE_SENTENCE = "DorkOS couldn't read all of its files, so it can't check what would run.";
+export const UNREADABLE_SENTENCE =
+  "DorkOS couldn't read all of its files, so it can't check what would run.";
 
 /**
  * The plain reason a copy has no files a yes could name: its folder links

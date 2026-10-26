@@ -816,9 +816,10 @@ export class DevLinkService {
       delete approvedPermissions[id];
       approvedToRun = approvedToRun.filter((approved) => approved !== id);
       if (!previous || !stillMeaningful(previous, record, installedBack, others, rootOf)) continue;
-      // Parked before approvals named content, it is pinned once on the next
-      // scan, like every other approval from before then (DOR-3068).
-      approvedSources[id] = markIfLegacy(previous);
+      // Parked before approvals named content, a run approval is pinned once on
+      // the next scan (DOR-3068). A source never approved to run stays unmarked,
+      // so no scan pins and runs it.
+      approvedSources[id] = runIds.has(id) ? markIfLegacy(previous) : previous;
       // The set the replaced approval had, or none (the full in-process set)
       // when it had none.
       const previousSet = record.restoreApprovals?.permissions?.[id];
