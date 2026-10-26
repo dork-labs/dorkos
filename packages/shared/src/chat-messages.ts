@@ -113,6 +113,36 @@ export const ChatMessageSenderSchema = z
 export type ChatMessageSender = z.infer<typeof ChatMessageSenderSchema>;
 
 /**
+ * One message another chat sent, as a queued row shows it to a person
+ * (DOR-3060): who sent it, from which chat, and their words, never the fenced
+ * envelope the model gets. A row carries several when agent messages wait
+ * together as one turn. The words are the sender's: a client renders them as
+ * plain text, with no markdown and no links.
+ */
+export const QueuedChatEntrySchema = z
+  .object({
+    /** The chat message's id (the sender's receipt id), the per-message action key. */
+    id: z.string(),
+    /** What it is. */
+    kind: ChatMessageKindSchema,
+    /** Who sent it, as the server recorded them. */
+    from: ChatMessageSenderSchema,
+    /** The sender's `chat_send` summary, when it gave one. */
+    summary: z.string().optional(),
+    /** The sender's words, never the fence. */
+    text: z.string(),
+    /**
+     * Set on a row written before this shape existed whose sender could not be
+     * found again: the sender reads "Another chat" and nothing links anywhere.
+     */
+    legacy: z.literal(true).optional(),
+  })
+  .openapi('QueuedChatEntry');
+
+/** One of {@link QueuedChatEntrySchema}. */
+export type QueuedChatEntry = z.infer<typeof QueuedChatEntrySchema>;
+
+/**
  * One message another chat sent, stamped by the server onto the user message
  * that carried it. A user message can carry several when agent messages that
  * waited together ran as one turn.
@@ -315,12 +345,43 @@ export function chatMessageWords(content: string): string | null {
   FENCE_PATTERN.lastIndex = 0;
   const match = FENCE_PATTERN.exec(content);
   FENCE_PATTERN.lastIndex = 0;
-  if (!match) return null;
-  const lines = match[0].split('\n').slice(1, -1);
+  return match ? wordsOfFence(match[0]) : null;
+}
+
+/**
+ * The words inside one complete fence, or null when it has no header to end.
+ *
+ * @param fence - One `--- BEGIN … ---` to `--- END … ---` block.
+ */
+function wordsOfFence(fence: string): string | null {
+  const lines = fence.split('\n').slice(1, -1);
   const kind = lines.findIndex((line) => line.startsWith('Kind: '));
   if (kind === -1) return null;
   return lines
     .slice(kind + 1)
     .join('\n')
+    .trim();
+}
+
+/** The line before every chat-message fence, telling the model whose words follow. */
+export const CHAT_MESSAGE_LEAD =
+  'This message is from another chat, not from the person you are talking with.';
+
+/**
+ * A message as a person reads it: every chat-message fence replaced by its
+ * words, and the line that leads each one removed (DOR-3060). The envelope is
+ * for the model; queues, transcripts, notifications and search show this.
+ * A message with no fence comes back unchanged.
+ *
+ * @param content - A user message's raw text.
+ */
+export function displayTextOf(content: string): string {
+  if (chatMessageFenceNonces(content).length === 0) return content;
+  return content
+    .replace(FENCE_PATTERN, (fence) => wordsOfFence(fence) ?? '')
+    .split('\n')
+    .filter((line) => line.trim() !== CHAT_MESSAGE_LEAD)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

@@ -30,6 +30,7 @@ import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { useSessionQueueOutcomes, useSessionStreamStore } from '@/layers/entities/session';
 import { useTransport } from '@/layers/shared/model';
 import { describeWaitingOn, queueDowngradeNotice, type QueueWaiting } from '../lib/queue-chips';
+import { queueSenderOf, type QueueSender } from '../lib/queue-sender';
 
 /**
  * One row of the queue as the panel draws it — the server's message plus the
@@ -46,6 +47,17 @@ export interface QueueItem {
    * not pretend to be yours.
    */
   mine: boolean;
+  /**
+   * True when another chat sent this message (DOR-3060). It is never editable:
+   * the words are another agent's, and rewording them would hand them to the
+   * agent as the person's own. The server refuses the reword too.
+   */
+  fromChat: boolean;
+  /**
+   * Who sent it, for a message from another chat: the agent and its chat, or
+   * `null` when the sender cannot be named. Absent on the person's own.
+   */
+  sender?: QueueSender | null;
   /**
    * What happened to this message, when that is worth saying: "queued instead of
    * steered, because this runtime cannot steer". `null` for the overwhelming
@@ -156,6 +168,10 @@ export function useMessageQueue({
         // chip reads as this window's, which is the honest answer for a surface
         // where there is only one window.
         mine: transport.clientId === undefined || message.enqueuedBy === transport.clientId,
+        fromChat: message.fromChats !== undefined || message.enqueuedBy.startsWith('chat:'),
+        ...(message.fromChats !== undefined || message.enqueuedBy.startsWith('chat:')
+          ? { sender: queueSenderOf(message.fromChats) }
+          : {}),
         notice: queueDowngradeNotice(outcomes[message.id]),
         ...(message.waitingOn ? { waiting: describeWaitingOn(message.waitingOn) } : {}),
       })),
@@ -279,7 +295,8 @@ export function useMessageQueue({
   const startEditing = useCallback(
     (id: string): string | null => {
       const item = queue.find((queued) => queued.id === id);
-      if (!item) return null;
+      // Another chat's message is moved or removed, never reworded (DOR-3060).
+      if (!item || item.fromChat) return null;
       setEditingId(id);
       return item.content;
     },

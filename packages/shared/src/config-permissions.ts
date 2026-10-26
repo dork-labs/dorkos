@@ -78,6 +78,28 @@ export const PermissionsSettingsSchema = z
      * them and offers to narrow each. Machine-managed; `[]` when it shared none.
      */
     sharedAtUpgrade: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The folder allow lists a person has let apply (DOR-3039): an agent's own
+     * `.claude/settings*.json` `permissions.allow` rules, which Claude Code
+     * ignores in a folder it has not been told to trust and DorkOS hands it
+     * instead. Each entry is `<agentId>@folder-allows-<digest>`, where the digest
+     * covers the agent's home and the exact rules shown on the approval card, so
+     * an edited list asks again instead of riding an old yes. Empty by default.
+     */
+    approvedFolderAllows: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The folder allow lists a person has turned down, in the same form as
+     * {@link approvedFolderAllows}, and never in both. A refusal expires on its
+     * own once the list changes, because the digest stops matching.
+     */
+    refusedFolderAllows: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The rules behind each agent's current yes in {@link approvedFolderAllows},
+     * by agent id, so a card can say what changed and a list that only lost
+     * rules can apply without asking. Read only where a stored yes still
+     * digests to them.
+     */
+    approvedFolderAllowRules: z.record(z.string(), z.array(z.string())).default(() => ({})),
   })
   .default(() => ({
     preset: 'trusted' as const,
@@ -86,4 +108,7 @@ export const PermissionsSettingsSchema = z
     trustedStoresAppliedAt: null,
     sharedAppsAppliedAt: null,
     sharedAtUpgrade: [],
+    approvedFolderAllows: [],
+    refusedFolderAllows: [],
+    approvedFolderAllowRules: {},
   }));

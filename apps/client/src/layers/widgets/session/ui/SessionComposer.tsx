@@ -300,6 +300,7 @@ export function SessionComposer({
   const [stopConfirm, setStopConfirm] = useState<{
     sessionId: string;
     queuedCount: number;
+    fromChatCount: number;
   } | null>(null);
   // Local truth for the queue item under edit when Stop was pressed, captured
   // BEFORE `leaveQueueForStop` fires its commit — so it survives regardless of
@@ -470,7 +471,9 @@ export function SessionComposer({
       performStop();
       return;
     }
-    setStopConfirm({ sessionId, queuedCount: waiting.length });
+    // Only the person's own words go back; other chats' messages are cancelled.
+    const fromChatCount = waiting.filter((m) => m.enqueuedBy.startsWith('chat:')).length;
+    setStopConfirm({ sessionId, queuedCount: waiting.length - fromChatCount, fromChatCount });
   }, [sessionId, stopPending, waiting.length, performStop]);
   const confirmStop = useCallback(() => {
     // Same single-flight guard as `handleStop`, for the same reason: Radix
@@ -797,6 +800,7 @@ export function SessionComposer({
           if (!open) setStopConfirm(null);
         }}
         queuedCount={stopConfirm?.queuedCount ?? 0}
+        fromChatCount={stopConfirm?.fromChatCount ?? 0}
         onConfirm={confirmStop}
       />
     </Conversation.Composer>

@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useCallback, useRef, type ReactNode } from 'react';
 import { useChatQueue } from '../model/use-chat-queue';
-import { useFakeServerQueue } from './fake-server-queue';
+import { queued, useFakeServerQueue } from './fake-server-queue';
 import {
   useSessionChatState,
   useSessionChatStore,
@@ -350,6 +350,41 @@ describe('useChatQueue', () => {
     expect(view.result.current.input).toBe('second');
 
     act(() => view.result.current.handleQueueNavigateDown());
+    expect(view.result.current.input).toBe('half-written thought');
+    expect(view.result.current.editingIndex).toBeNull();
+  });
+
+  // DOR-3060: another chat's message is never edited, so the arrows step over
+  // it rather than ending the walk on it.
+  it('arrow navigation steps over a message another chat sent', () => {
+    const view = mount(useHarness, {});
+    act(() =>
+      view.server.current.seed(
+        queued('q1', 'first'),
+        queued('q2', 'an agent said this', 'chat:chat-a'),
+        queued('q3', 'third')
+      )
+    );
+    view.sync();
+    act(() => view.result.current.setInput('half-written thought'));
+
+    act(() => view.result.current.handleQueueNavigateUp());
+    expect(view.result.current.input).toBe('third');
+    act(() => view.result.current.handleQueueNavigateUp());
+    expect(view.result.current.input).toBe('first');
+    act(() => view.result.current.handleQueueNavigateDown());
+    expect(view.result.current.input).toBe('third');
+    act(() => view.result.current.handleQueueNavigateDown());
+    expect(view.result.current.input).toBe('half-written thought');
+  });
+
+  it('arrow navigation is inert when only other chats’ messages wait', () => {
+    const view = mount(useHarness, {});
+    act(() => view.server.current.seed(queued('q1', 'an agent said this', 'chat:chat-a')));
+    view.sync();
+    act(() => view.result.current.setInput('half-written thought'));
+
+    act(() => view.result.current.handleQueueNavigateUp());
     expect(view.result.current.input).toBe('half-written thought');
     expect(view.result.current.editingIndex).toBeNull();
   });

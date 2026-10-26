@@ -47,6 +47,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import {
   autoAllowedByCall,
+  DORKOS_AGENT_TOOLS,
   hasAgentIdentity,
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
@@ -487,12 +488,30 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const decision = resolveModeDecision(gatePermissionMode(session));
-    // "Never ask" refuses ahead of everything below, the question and the safe
-    // lists included: whatever reaches this callback is a call the CLI would
-    // have asked about, and in this mode nobody is asked and nothing extra runs.
-    // `neverAsks` also covers a chat set to it whose turn a stricter ceiling
-    // holds to Plan, which would otherwise ask.
-    if (decision === 'refuse' || neverAsks(session)) {
+    // "Never ask": `neverAsks` also covers a chat set to it whose turn a
+    // stricter ceiling holds to Plan, which would otherwise ask.
+    const refusing = decision === 'refuse' || neverAsks(session);
+    if (
+      // Under Never ask only DorkOS's own tools pass here (DOR-3042). The
+      // CLI's read-only tools are still refused: `WebFetch` among them would
+      // let an unattended run reach a page nobody chose.
+      (!refusing || DORKOS_AGENT_TOOLS.has(toolName)) &&
+      autoAllowedByCall(session, toolName, input, context.mcpServer) &&
+      // The owner-facing verbs skip the card only for a session that resolves an
+      // agent identity: without one the rooms verbs run as the OWNER (see
+      // IDENTITY_SCOPED_TOOLS). The resolver memoizes.
+      (!IDENTITY_SCOPED_TOOLS.has(toolName) || (await hasAgentIdentity(resolveIdentity, log)))
+    ) {
+      log.debug('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
+      return { behavior: 'allow', updatedInput: input };
+    }
+
+    // "Never ask" refuses what any other mode would ask about, the question
+    // included: in this mode nobody is asked and nothing extra runs. DorkOS's
+    // own safe-listed calls above are not among them: they run without asking
+    // in every mode, so refusing them here would refuse what never asks, and a
+    // Never ask run could not read or post to its own room (DOR-3042).
+    if (refusing) {
       log.info('[canUseTool] refused: the chat is set to never ask', {
         toolName,
         toolUseID: context.toolUseID,
@@ -537,17 +556,6 @@ export function createCanUseTool(
         toolUseID: context.toolUseID,
       });
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
-    }
-
-    if (
-      autoAllowedByCall(session, toolName, input, context.mcpServer) &&
-      // The owner-facing verbs skip the card only for a session that resolves an
-      // agent identity: without one the rooms verbs run as the OWNER (see
-      // IDENTITY_SCOPED_TOOLS). The resolver memoizes.
-      (!IDENTITY_SCOPED_TOOLS.has(toolName) || (await hasAgentIdentity(resolveIdentity, log)))
-    ) {
-      log.debug('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
-      return { behavior: 'allow', updatedInput: input };
     }
 
     // Anything but an explicit `allow` asks, so a decision added later can

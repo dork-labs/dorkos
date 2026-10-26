@@ -184,6 +184,21 @@ describe('useMessageQueue — the editing cursor', () => {
     expect(view.result.current.editingIndex).toBe(1);
   });
 
+  // DOR-3060: another chat's message is moved or removed, never reworded.
+  it('will not edit a message another chat sent', () => {
+    const { server, view, sync } = mountQueue();
+    act(() => server.current.seed(queued('q1', 'an agent said this', 'chat:chat-a')));
+    sync();
+
+    expect(view.result.current.queue[0]!.fromChat).toBe(true);
+    let content: string | null = 'unset';
+    act(() => {
+      content = view.result.current.startEditing('q1');
+    });
+    expect(content).toBeNull();
+    expect(view.result.current.editingId).toBeNull();
+  });
+
   it('returns null for an item that is no longer queued', () => {
     const { view } = mountQueue();
     let content: string | null = 'unset';

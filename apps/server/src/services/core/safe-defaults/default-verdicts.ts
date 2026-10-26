@@ -463,6 +463,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // No agent's own folder allow list applies until a person approves those exact
+  // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
+  'permissions.approvedFolderAllows': [],
+  'permissions.refusedFolderAllows': [],
+  'permissions.approvedFolderAllowRules': {},
   // Nothing DorkOS installed for all your projects is shared into your home
   // directory until you say which agent tools may see it (DOR-1924). An empty
   // list IS off, so the empty default is the closed door.
