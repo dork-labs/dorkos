@@ -253,9 +253,22 @@ export interface AgentSession {
    * Background tasks this turn's own tool calls started and that have not
    * settled: a `run_in_background` shell, or a foreground one the CLI moved to
    * the background past its timeout. A CLI interrupt does not end them, so a
-   * Stop ends each by its task id (DOR-3285). Reset when a turn starts.
+   * Stop ends each by its task id (DOR-3285). Reset when a turn starts. Each
+   * id maps to its shell command, or `''` when the command is not known.
    */
-  turnTaskIds?: Set<string>;
+  turnTaskIds?: Map<string, string>;
+  /**
+   * Background tasks a Stop could not end, task id to command (DOR-3285). NOT
+   * reset per turn: the task outlives its turn, and its later end is what
+   * tells the stopped turn's line that it is over (`work_left_ended`).
+   */
+  leftRunningTasks?: Map<string, string>;
+  /**
+   * The command of each recent `Bash` tool call, by tool-use id, so the task it
+   * starts can carry its command (DOR-3285): the CLI's `task_started` names the
+   * tool call but not the command. Bounded, and consumed by `task_started`.
+   */
+  toolCommandsById?: Map<string, string>;
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;

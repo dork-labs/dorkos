@@ -1468,28 +1468,90 @@ describe('sdk-event-mapper records the turn’s background shells for Stop', () 
       ...(taskType ? { task_type: taskType } : {}),
     } as Parameters<typeof sdkTaskStarted>[3]);
 
+  /** A main-thread assistant message carrying one `Bash` tool call. */
+  const bashCall = (toolUseId: string, command: string) =>
+    ({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command } }],
+      },
+      session_id: 's',
+    }) as unknown as Parameters<typeof mapSdkMessage>[0];
+
   it('records a shell, and an untyped task, but not a subagent', async () => {
-    const session = { ...makeSession(), turnTaskIds: new Set<string>() } as AgentSession;
+    const session = { ...makeSession(), turnTaskIds: new Map<string, string>() } as AgentSession;
     for (const msg of [
       started('shell', 'local_bash'),
       started('untyped'),
       started('helper', 'local_agent'),
     ])
       await collectEvents(msg, session, 'test-session', makeToolState());
-    expect([...session.turnTaskIds!]).toEqual(['shell', 'untyped']);
+    expect([...session.turnTaskIds!.keys()]).toEqual(['shell', 'untyped']);
+  });
+
+  it('keeps the Bash command its tool call wrote alongside the task it started', async () => {
+    const session = { ...makeSession(), turnTaskIds: new Map<string, string>() } as AgentSession;
+    const toolState = Object.assign(makeToolState(), { toolInputReceived: new Set<string>() });
+    await collectEvents(
+      bashCall('toolu-shell', 'npm run deploy'),
+      session,
+      'test-session',
+      toolState
+    );
+    await collectEvents(started('shell', 'local_bash'), session, 'test-session', toolState);
+    await collectEvents(started('untyped'), session, 'test-session', toolState);
+
+    expect([...session.turnTaskIds!]).toEqual([
+      ['shell', 'npm run deploy'],
+      ['untyped', ''],
+    ]);
+    // Consumed by the task, so the remembered commands cannot grow without bound.
+    expect(session.toolCommandsById?.has('toolu-shell')).toBe(false);
   });
 
   it('drops a task once it has settled, whatever the ending', async () => {
     const session = {
       ...makeSession(),
-      turnTaskIds: new Set(['done', 'still-going']),
+      turnTaskIds: new Map([
+        ['done', ''],
+        ['still-going', ''],
+      ]),
     } as AgentSession;
-    await collectEvents(
+    const events = await collectEvents(
       sdkTaskNotification('done', 'completed', 'ok'),
       session,
       'test-session',
       makeToolState()
     );
-    expect([...session.turnTaskIds!]).toEqual(['still-going']);
+    expect([...session.turnTaskIds!.keys()]).toEqual(['still-going']);
+    // Not one a Stop left running, so the stopped turn's line has nothing to hear.
+    expect(events.map((e) => e.type)).toEqual(['background_task_done']);
+  });
+
+  it('tells the stopped turn when a command it left running ends, once', async () => {
+    const session = {
+      ...makeSession(),
+      leftRunningTasks: new Map([
+        ['stubborn', 'tail -f log'],
+        ['other', 'sleep 600'],
+      ]),
+    } as AgentSession;
+    const end = () =>
+      collectEvents(
+        sdkTaskNotification('stubborn', 'failed', 'exit 1'),
+        session,
+        'test-session',
+        makeToolState()
+      );
+
+    const events = await end();
+    expect(events.map((e) => e.type)).toEqual(['background_task_done', 'work_left_ended']);
+    expect(events[1]!.data).toEqual({ taskId: 'stubborn', status: 'failed' });
+    expect([...session.leftRunningTasks!.keys()]).toEqual(['other']);
+
+    // A repeated notification is not a second end.
+    expect((await end()).map((e) => e.type)).toEqual(['background_task_done']);
   });
 });

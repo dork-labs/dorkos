@@ -48,6 +48,14 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'shared',
     ],
   },
+  // WorkLeftShowcases (DOR-3285)
+  {
+    id: 'work-left-running',
+    title: 'Work left running',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: ['stop', 'still running', 'background', 'command', 'pill'],
+  },
   // ChatMessagingShowcases (spec spin-off-chats §6)
   {
     id: 'chat-messaging',

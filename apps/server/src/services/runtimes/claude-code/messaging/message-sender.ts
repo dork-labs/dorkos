@@ -134,7 +134,8 @@ export async function* executeSdkQuery(
   // detector (DOR-1087) — the suppression window is scoped to the turn the
   // operator actually interrupted.
   session.interruptRequestedAt = undefined;
-  session.turnTaskIds = new Set();
+  session.turnTaskIds = new Map();
+  session.toolCommandsById = undefined;
   // A usage limit is reported once per turn (spec claude-account-fleet D4).
   session.limitReportedThisTurn = false;
   session.rejectedLimitThisTurn = undefined;
