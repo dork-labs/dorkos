@@ -1,28 +1,28 @@
 {
  "schema": 1,
- "date": "2026-10-24",
- "collected_at": "2026-10-25T09:42:13.141Z",
- "snapshot": "snapshots/2026-10-24.json",
- "report_ref": "reports/2026-W42.md",
+ "date": "2026-10-25",
+ "collected_at": "2026-10-26T10:56:02.144Z",
+ "snapshot": "snapshots/2026-10-25.json",
+ "report_ref": "reports/2026-W43.md",
  "healthy": false,
  "failures": [
   "Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.",
-  "The local export from clone clone-71ebf1f648 is 5 days old (last 2026-10-20); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
+  "The local export from clone clone-71ebf1f648 is 6 days old (last 2026-10-20); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
  ],
  "warnings": [
   "Thin sample: review-recovery (n=1 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 254,
+ "api_calls": 25,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 22038,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 16825,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 1.045
+    "p95_over_timeout": 1.05
    },
    "status": "breach",
    "excess_hours": null,
@@ -31,12 +31,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 305,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 225,
    "min_n": 30,
    "stats": {
-    "share": 0.6033
+    "share": 0.5733
    },
    "status": "breach",
    "excess_hours": null
@@ -44,42 +44,42 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 305,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 225,
    "min_n": 30,
    "stats": {
-    "share": 0.1082
+    "share": 0.1244
    },
-   "status": "ok",
-   "excess_hours": 77.99
+   "status": "breach",
+   "excess_hours": 66.9
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 4774064,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 4046671,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 88,
-    "unreported_failed_jobs": 8
+    "failed_jobs": 60,
+    "unreported_failed_jobs": 6
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 8 of 88 failed queue test jobs wrote no retry-aware report (wf.harness-windows.harness-windows 4, wf.credential-free-build.credential-free-build 2, wf.test.community-pg 2); share 0 is over the reported suites only"
+   "note": "coverage unknown: 6 of 60 failed queue test jobs wrote no retry-aware report (wf.credential-free-build.credential-free-build 2, wf.harness-windows.harness-windows 2, wf.test.community-pg 2); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-09-27",
-   "to": "2026-10-24",
-   "n": 912,
+   "from": "2026-09-28",
+   "to": "2026-10-25",
+   "n": 863,
    "min_n": 1,
    "stats": {
-    "red_episodes": 37,
-    "restore_p90": 147.9
+    "red_episodes": 35,
+    "restore_p90": 138.1
    },
    "status": "breach",
    "excess_hours": null
@@ -87,12 +87,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 167,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 122,
    "min_n": 30,
    "stats": {
-    "share": 0.6707
+    "share": 0.5492
    },
    "status": "breach",
    "excess_hours": null
@@ -100,8 +100,8 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
+   "from": "2026-10-19",
+   "to": "2026-10-25",
    "n": 1,
    "min_n": 5,
    "stats": {
@@ -113,68 +113,68 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 184,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 137,
    "min_n": 30,
    "stats": {
-    "p50": 23.5,
-    "p90": 46.5
+    "p50": 23.4,
+    "p90": 42.2
    },
    "status": "breach",
-   "excess_hours": 46.94
+   "excess_hours": 31.97
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 87,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 68,
    "min_n": 20,
    "stats": {
     "p50": 27.7,
-    "p90": 68.7
+    "p90": 58.7
    },
    "status": "breach",
-   "excess_hours": 31.91
+   "excess_hours": 20.81
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 144,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 113,
    "min_n": 30,
    "stats": {
-    "p50": 258.3,
-    "p90": 2071.9
+    "p50": 430.2,
+    "p90": 3004.2
    },
    "status": "breach",
-   "excess_hours": 2028.79
+   "excess_hours": 1907.2
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 1246,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 1184,
    "min_n": 20,
    "stats": {
-    "p90": 191,
-    "killed_share": 0.0096
+    "p90": 145,
+    "killed_share": 0.0101
    },
    "status": "ok",
-   "excess_hours": 24.67
+   "excess_hours": 20.54
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-10-18",
-   "to": "2026-10-24",
-   "n": 976,
+   "from": "2026-10-19",
+   "to": "2026-10-25",
+   "n": 902,
    "min_n": 20,
    "stats": {
-    "p90": 5,
+    "p90": 4,
     "killed_share": 0
    },
    "status": "met",
@@ -188,16 +188,16 @@
  },
  "local_breaches": [],
  "machine": {
-  "n": 28467,
-  "clones": 3,
-  "load_per_core_p90": 4.24,
-  "mem_available_mb_p10": 504.4,
-  "swap_used_mb_p50": 4579
+  "n": 26847,
+  "clones": 4,
+  "load_per_core_p90": 4.49,
+  "mem_available_mb_p10": 559,
+  "swap_used_mb_p50": 1241
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 8,
-  "amber": 46,
-  "top": "Collector unhealthy 2 of 3 days (2026-10-23, 2026-10-24): Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI."
+  "red": 9,
+  "amber": 41,
+  "top": "Collector unhealthy 3 of 3 days (2026-10-23, 2026-10-24, 2026-10-25): Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI."
  }
 }

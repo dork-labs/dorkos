@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-10-19T10:39:25.357Z",
+ "updated_at": "2026-10-26T10:56:02.144Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -25,6 +25,10 @@
     },
     {
      "week": "2026-W42",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W43",
      "status": "breach"
     }
    ],
@@ -54,6 +58,10 @@
     {
      "week": "2026-W42",
      "status": "breach"
+    },
+    {
+     "week": "2026-W43",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -81,6 +89,10 @@
     },
     {
      "week": "2026-W42",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W43",
      "status": "breach"
     }
    ],
@@ -116,6 +128,10 @@
     {
      "week": "2026-W42",
      "status": "unmeasured"
+    },
+    {
+     "week": "2026-W43",
+     "status": "unmeasured"
     }
    ],
    "moved": []
@@ -143,6 +159,10 @@
     },
     {
      "week": "2026-W42",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W43",
      "status": "breach"
     }
    ],
@@ -172,6 +192,10 @@
     {
      "week": "2026-W42",
      "status": "met"
+    },
+    {
+     "week": "2026-W43",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -208,6 +232,10 @@
     {
      "week": "2026-W42",
      "status": "insufficient"
+    },
+    {
+     "week": "2026-W43",
+     "status": "insufficient"
     }
    ],
    "moved": []
@@ -236,6 +264,10 @@
     {
      "week": "2026-W42",
      "status": "ok"
+    },
+    {
+     "week": "2026-W43",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -272,6 +304,10 @@
     {
      "week": "2026-W42",
      "status": "breach"
+    },
+    {
+     "week": "2026-W43",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -300,13 +336,17 @@
     {
      "week": "2026-W42",
      "status": "breach"
+    },
+    {
+     "week": "2026-W43",
+     "status": "breach"
     }
    ],
    "moved": []
   },
   "local-commit": {
    "floor": {
-    "p90": 210
+    "p90": 115
    },
    "weeks": [
     {
@@ -328,9 +368,21 @@
     {
      "week": "2026-W42",
      "status": "ok"
+    },
+    {
+     "week": "2026-W43",
+     "status": "ok"
     }
    ],
-   "moved": []
+   "moved": [
+    {
+     "week": "2026-W43",
+     "stat": "p90",
+     "from": 210,
+     "to": 115,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    }
+   ]
   },
   "local-push": {
    "floor": {
@@ -356,6 +408,10 @@
     },
     {
      "week": "2026-W42",
+     "status": "met"
+    },
+    {
+     "week": "2026-W43",
      "status": "met"
     }
    ],
