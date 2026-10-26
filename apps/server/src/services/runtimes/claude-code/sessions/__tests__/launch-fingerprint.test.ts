@@ -139,6 +139,7 @@ describe('the pin list', () => {
       fastMode: 'relaunch',
       settingsEnv: 'relaunch',
       additionalDirectories: 'relaunch',
+      folderAllows: 'relaunch',
       toolSurface: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
@@ -320,6 +321,11 @@ describe('the relaunch pins', () => {
     [
       'additionalDirectories',
       { options: grantedOptions([{ path: '/rooms/r1/worktrees/ana', access: 'write' }]) },
+    ],
+    // An agent folder allow list a person approved (DOR-3039).
+    [
+      'folderAllows',
+      { options: options({ settings: { permissions: { allow: ['Bash(scripts/x:*)'] } } }) },
     ],
   ];
 

@@ -63,7 +63,7 @@ import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
 import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
@@ -97,6 +97,7 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
+import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -768,6 +769,22 @@ export async function resolveLaunch(args: {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
     sdkOptions.settings = { ...base, env: creditsSettings };
   }
+  // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
+  // folder it has not been told to trust.
+  const folderAllowsNotice = await applyFolderAllowsToLaunch({
+    teammate,
+    agent: meshAgent
+      ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
+      : undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    sdkOptions,
+    dorkHome: resolveDorkHome(),
+    accountRoot,
+    neverAsk: effectivePermissionMode === NEVER_ASK_MODE_ID,
+    chat: session,
+  });
+  if (folderAllowsNotice) statusEvents.push(folderAllowsNotice);
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.

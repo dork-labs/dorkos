@@ -268,9 +268,19 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
     config: {
       get: () => wiring.config.get('permissions'),
       // Merged onto the stored section, so a field the service does not know
-      // (`trustedStoresAppliedAt`) is never dropped by its write.
-      set: (next) =>
-        wiring.config.set('permissions', { ...wiring.config.get('permissions'), ...next }),
+      // (`trustedStoresAppliedAt`) is never dropped by its write. The folder
+      // allow records are never the service's to write: its `next` is built
+      // from a read taken before an await, so carrying them would put back a
+      // yes a person's newer answer had just replaced (DOR-3039).
+      set: (next) => {
+        const {
+          approvedFolderAllows: _approved,
+          refusedFolderAllows: _refused,
+          approvedFolderAllowRules: _rules,
+          ...owned
+        } = next as typeof next & Record<string, unknown>;
+        wiring.config.set('permissions', { ...wiring.config.get('permissions'), ...owned });
+      },
       trustStops: () => readTrustStops(wiring.config),
       setGlobalTrustStop: (stop) => {
         wiring.config.setDot('runtimes.defaultTrustStop', stop);
