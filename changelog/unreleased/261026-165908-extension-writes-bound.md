@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an extension can only write its own data, secrets and settings (DOR-3066)'
+  - 'fix(server): only a verified agent skips the login bar on extension writes (DOR-3066)'
 ---
 
 ### Fixed

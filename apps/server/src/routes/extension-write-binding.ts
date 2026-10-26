@@ -29,7 +29,6 @@
 import type { Context } from 'hono';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 import { requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 
 /** The header the extension API stamps on every write it makes for an extension. */
 export const EXTENSION_ID_HEADER = 'x-dorkos-extension';
@@ -63,7 +62,9 @@ export function refusedExtensionWrite(
       403
     );
   }
-  if (presentsAgentIdentity(facts)) return undefined;
+  // A VERIFIED agent identity, not merely the header: a key holder who adds a
+  // made-up `X-DorkOS-Agent` must not step around the cookie bar.
+  if (facts.agentIdentity !== undefined) return undefined;
   const refusal = requireOperatorCookieUnderLogin(
     facts,
     'an extension’s data, secrets or settings',

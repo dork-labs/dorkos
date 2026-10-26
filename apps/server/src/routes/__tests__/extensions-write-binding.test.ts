@@ -202,6 +202,15 @@ describe('the binding with login on', () => {
     expect((await request(target.server).put('/api/bind/alpha').send({})).status).toBe(200);
   });
 
+  it('refuses a key holder who only adds an unverified agent header', async () => {
+    target.mount(bindingApp({ user: { userId: 'u', credential: 'api-key' } }));
+    const res = await request(target.server)
+      .put('/api/bind/alpha')
+      .set({ 'X-DorkOS-Agent': 'made-up' })
+      .send({});
+    expect(res.status).toBe(403);
+  });
+
   it('still refuses a person’s page writing for another extension', async () => {
     target.mount(bindingApp({ user: { userId: 'u', credential: 'cookie' } }));
     const res = await request(target.server)
