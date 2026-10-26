@@ -4,11 +4,18 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AgentVisualSource } from '@/layers/entities/agent';
+const navigate = vi.hoisted(() => vi.fn());
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSafeNavigate: () => navigate,
+}));
+
 import { InboxRow, INBOX_STAGGER_LIMIT, staggerItem, staggerVariantsFor } from '../ui/InboxRow';
 
 /** Build a notification, overriding only what a test cares about. */
@@ -162,6 +169,16 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
 
     expect(screen.getByRole('button', { name: 'Open schedule' })).toBeInTheDocument();
     expect(screen.queryByText(/Full autonomy|Allow|Raise/)).toBeNull();
+  });
+
+  it('opens the Schedules page filtered to the failing ones', () => {
+    navigate.mockClear();
+    render(<InboxRow notification={failing} onOpen={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { health: 'failing' } })
+    );
   });
 
   it('gives the reason two lines and the action its own full-width line on a phone', () => {

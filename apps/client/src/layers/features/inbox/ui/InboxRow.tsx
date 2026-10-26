@@ -89,7 +89,10 @@ export interface InboxRowProps {
 /** The action a failing run's notice declares (`run.completed`, DOR-3123). */
 const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
 
-/** "Open schedule": takes the person to the Schedules page, where the fix lives. */
+/**
+ * "Open schedule": takes the person to the Schedules page, filtered to the
+ * failing schedules, where the fix lives.
+ */
 function OpenScheduleAction() {
   const navigate = useSafeNavigate();
   return (
@@ -101,7 +104,8 @@ function OpenScheduleAction() {
       // Full width and 44px tall on a phone, under the text; beside it from `sm`.
       className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
       onClick={() => {
-        if (navigate !== null) void navigate({ ...appRoutes.tasks(), search: {} });
+        if (navigate !== null)
+          void navigate({ ...appRoutes.tasks(), search: { health: 'failing' } });
       }}
     >
       Open schedule
