@@ -50,7 +50,7 @@ import path from 'node:path';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 
 import { Slots } from '../../lib/concurrency/slots.js';
-import { runGit } from '../workspace/providers/git.js';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 
 /** How long a folder in no repository first stays "no project" before git is asked again. */
 export const NEGATIVE_ROOT_TTL_MS = 60_000;
@@ -87,8 +87,8 @@ export function projectRootFromCommonDir(commonDir: string): string | null {
 
 /** The collaborators a {@link ProjectRootResolver} uses; tests replace them. */
 export interface ProjectRootDeps {
-  /** The repo's git runner (`services/workspace/providers/git.ts`). */
-  runGit: typeof runGit;
+  /** The audited git runner (`@dorkos/shared/safe-git`, DOR-3343). */
+  runGit: typeof runSafeGit;
   /** The clock, in epoch ms. */
   now: () => number;
   /** Canonical spelling of a directory (`@dorkos/shared/canonical-directory`). */
@@ -158,7 +158,7 @@ export function negativeTtl(misses: number): number {
 }
 
 const defaultDeps: ProjectRootDeps = {
-  runGit,
+  runGit: runSafeGit,
   now: Date.now,
   canonical: canonicalDirectory,
 };

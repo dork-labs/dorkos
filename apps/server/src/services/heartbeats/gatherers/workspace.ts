@@ -14,6 +14,7 @@
  * @module services/heartbeats/gatherers/workspace
  */
 import { execFile } from 'node:child_process';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
@@ -27,13 +28,22 @@ export type RunCommand = (
   options: { cwd: string; signal: AbortSignal }
 ) => Promise<string>;
 
-/** The real command runner, bounded to two seconds. */
+/**
+ * The real command runner, bounded to two seconds. git goes through the
+ * audited runner (`@dorkos/shared/safe-git`, DOR-3343); `gh` runs only where
+ * DorkOS may run git at all.
+ */
 export const runCommand: RunCommand = (command, args, { cwd, signal }) =>
-  new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024 }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout)
-    );
-  });
+  command === 'git'
+    ? runSafeGit(args, cwd, { signal, timeoutMs: 2000, maxBuffer: 256 * 1024 })
+    : new Promise((resolve, reject) => {
+        execFile(
+          command,
+          args,
+          { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout))
+        );
+      });
 
 /** One cached `gh pr checks` answer. */
 interface CachedChecks {

@@ -13,10 +13,16 @@
  * **`git status`, `log`, `diff` and `show` stay on the list.** Each can run a program a repo's
  * config names (`core.fsmonitor`, `diff.external`, a `textconv` driver). That config lives in the
  * local `.git/config` (or the user's own), which a clone or fetch never brings and a held turn
- * cannot write unasked (an edit or any other command asks). So the program it could run is one
- * somebody on this computer set up. The flags that name another repo or config (`-C`, `-c`,
- * `--git-dir`, `--exec-path`) are refused by the subcommand check, and `--output` and `--ext-diff`
- * by name.
+ * cannot write unasked (an edit or any other command asks). The flags that name another repo or
+ * config (`-C`, `-c`, `--git-dir`, `--exec-path`) are refused by the subcommand check, and
+ * `--output` and `--ext-diff` by name.
+ *
+ * **The precondition, stated (DOR-3343):** this is safe only while the repo's config names no
+ * program the agent chose. An earlier turn of the same agent that was NOT held could have written
+ * its own `.git/config` with file tools, and the held turn's `git status` would then run that
+ * program. It runs as the agent, never as the DorkOS server, but it does get around the hold, so
+ * it is a named residual until held turns check the config first. The git DorkOS runs as the
+ * server goes through the audited runner (`@dorkos/shared/safe-git`) instead.
  *
  * Not checked: what a recursive search finds below a folder. The tools here do not follow a
  * symlinked folder while recursing unless told to, and the options that tell them are refused.

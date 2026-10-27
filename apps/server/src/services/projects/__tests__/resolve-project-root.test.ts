@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { runGit } from '../../workspace/providers/git.js';
+import { runSafeGit as runGit } from '@dorkos/shared/safe-git';
 import {
   createProjectRootResolver,
   MAX_CONCURRENT_ROOT_LOOKUPS,

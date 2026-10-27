@@ -10,6 +10,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
+import { runSafeGit } from '@dorkos/shared/safe-git';
+import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import {
   gitConfigArgs,
   internalGitConfig,
@@ -142,7 +144,13 @@ export async function isBareRepository(dir: string): Promise<boolean> {
  * @param cwd - The checkout directory.
  */
 export async function computeDirtyState(cwd: string): Promise<DirtyState> {
-  const porcelain = await runGit(['status', '--porcelain=v1'], cwd);
+  // An agent's checkout: DorkOS runs no git there yet (DOR-3343), so it can't
+  // tell, and counts it as dirty. Removing it then needs `force`.
+  if (!mayRunGitHere(cwd)) return { dirty: true, uncommitted: [], untracked: [], unpushed: 0 };
+  // Anywhere else, the audited runner.
+  const porcelain = await runSafeGit(['status', '--porcelain=v1'], cwd, {
+    timeoutMs: GIT_TIMEOUT_MS,
+  });
   const lines = porcelain.split('\n').filter((l) => l.length > 0);
   const untracked = lines.filter((l) => l.startsWith('??')).map((l) => l.slice(3));
   const uncommitted = lines.filter((l) => !l.startsWith('??')).map((l) => l.slice(3));
@@ -151,7 +159,9 @@ export async function computeDirtyState(cwd: string): Promise<DirtyState> {
   // committed-but-unpushed work; 0 for a fresh checkout sitting on a pushed base.
   let unpushed = 0;
   try {
-    const out = await runGit(['rev-list', '--count', 'HEAD', '--not', '--remotes'], cwd);
+    const out = await runSafeGit(['rev-list', '--count', 'HEAD', '--not', '--remotes'], cwd, {
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
     unpushed = Number.parseInt(out.trim(), 10) || 0;
   } catch {
     // No remotes, or not a git checkout — the 0 default stands.

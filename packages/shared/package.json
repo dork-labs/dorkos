@@ -97,6 +97,10 @@
       "types": "./src/git-hardening.ts",
       "default": "./dist/git-hardening.js"
     },
+    "./safe-git": {
+      "types": "./src/safe-git.ts",
+      "default": "./dist/safe-git.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"

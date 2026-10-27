@@ -101,12 +101,17 @@ describe('mayRunGitHere: the git kill switch', () => {
     const project = repoThatRunsItsOwnSettings(path.join(scratch, 'project'));
     registerTestHomes([path.join(scratch, 'agents', 'ana')]);
     expect(mayRunGitHere(project)).toBe(true);
-    await expect(getGitStatus(project)).resolves.toMatchObject({ branch: 'main', modified: 1 });
-    expect(fs.existsSync(marker)).toBe(true);
-
-    fs.rmSync(marker);
+    // The repository's own clean filter fires under plain git.
     vi.unstubAllEnvs();
     git(project, 'status', '--porcelain=v1');
+    expect(fs.existsSync(marker)).toBe(true);
+    fs.rmSync(marker);
+
+    // The stand-in fires when DorkOS starts git; the filter itself is now
+    // refused by the runner's audit, so status is read from a clean copy.
+    vi.stubEnv('PATH', `${standIns}${path.delimiter}${process.env.PATH ?? ''}`);
+    git(project, 'config', '--unset', 'filter.mark.clean');
+    await expect(getGitStatus(project)).resolves.toMatchObject({ branch: 'main', modified: 1 });
     expect(fs.existsSync(marker)).toBe(true);
   });
 

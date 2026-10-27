@@ -10,14 +10,10 @@
  *
  * @module mesh/git-tracked
  */
-import { execFile } from 'child_process';
 import { access } from 'fs/promises';
 import path from 'path';
-import { promisify } from 'util';
-import { gitConfigArgs, internalGitConfig } from '@dorkos/shared/git-hardening';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { MANIFEST_DIR, MANIFEST_FILE } from './manifest.js';
-
-const execFileAsync = promisify(execFile);
 
 /** How long git gets to answer before the fallback probe decides instead. */
 const GIT_TIMEOUT_MS = 5_000;
@@ -79,15 +75,12 @@ export async function isManifestGitTracked(
   if (!(await hasGitDirAbove(projectPath))) return false;
   try {
     // The folder is an agent's, which DorkOS did not create; its own git
-    // configuration must not run anything (DOR-2326).
-    await execFileAsync(
-      'git',
-      [...gitConfigArgs(internalGitConfig()), 'ls-files', '--error-unmatch', '--', manifestPath],
-      {
-        cwd: projectPath,
-        timeout: GIT_TIMEOUT_MS,
-      }
-    );
+    // configuration must not run anything (DOR-2326), so the read goes through
+    // the audited runner (DOR-3343). A refused repository counts as "git could
+    // not answer" below, which keeps the manifest when a repository is above.
+    await runSafeGit(['ls-files', '--error-unmatch', '--', manifestPath], projectPath, {
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
     return true;
   } catch (err) {
     const code = (err as { code?: number | string }).code;

@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Dirent } from 'fs';
 
 vi.mock('fs/promises');
-vi.mock('child_process', () => ({
-  execFile: vi.fn(),
+vi.mock('@dorkos/shared/safe-git', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/safe-git')>()),
+  runSafeGit: vi.fn(),
 }));
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
@@ -21,7 +22,7 @@ vi.mock('../../../lib/boundary.js', () => ({
 
 describe('FileListService', () => {
   let fileLister: typeof import('../file-lister.js').fileLister;
-  let execFileMock: ReturnType<typeof vi.fn>;
+  let runSafeGitMock: ReturnType<typeof vi.fn>;
   let fs: typeof import('fs/promises');
 
   beforeEach(async () => {
@@ -29,8 +30,8 @@ describe('FileListService', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
 
-    const cp = await import('child_process');
-    execFileMock = vi.mocked(cp.execFile);
+    const safeGit = await import('@dorkos/shared/safe-git');
+    runSafeGitMock = vi.mocked(safeGit.runSafeGit);
 
     fs = await import('fs/promises');
 
@@ -43,30 +44,11 @@ describe('FileListService', () => {
   });
 
   function mockGitSuccess(files: string[]) {
-    execFileMock.mockImplementation(
-      (
-        _cmd: string,
-        _args: string[],
-        _opts: unknown,
-        cb?: (err: Error | null, result: { stdout: string }) => void
-      ) => {
-        if (cb) {
-          cb(null, { stdout: files.join('\n') + '\n' });
-        }
-        return undefined;
-      }
-    );
+    runSafeGitMock.mockResolvedValue(files.join('\n') + '\n');
   }
 
   function mockGitFailure() {
-    execFileMock.mockImplementation(
-      (_cmd: string, _args: string[], _opts: unknown, cb?: (err: Error | null) => void) => {
-        if (cb) {
-          cb(new Error('not a git repo'));
-        }
-        return undefined;
-      }
-    );
+    runSafeGitMock.mockRejectedValue(new Error('not a git repo'));
   }
 
   function makeDirent(name: string, isDir: boolean): Dirent {
@@ -123,7 +105,7 @@ describe('FileListService', () => {
 
     expect(first.files).toEqual(second.files);
     // execFile called only once due to caching (promisify wraps it)
-    expect(execFileMock).toHaveBeenCalledTimes(1);
+    expect(runSafeGitMock).toHaveBeenCalledTimes(1);
   });
 
   it('invalidates cache after TTL expires', async () => {
@@ -138,7 +120,7 @@ describe('FileListService', () => {
     const result = await fileLister.listFiles('/project');
 
     expect(result.files).toEqual(['a.ts', 'b.ts']);
-    expect(execFileMock).toHaveBeenCalledTimes(2);
+    expect(runSafeGitMock).toHaveBeenCalledTimes(2);
   });
 
   it('excludes node_modules and .git in readdir fallback', async () => {
@@ -205,6 +187,6 @@ describe('FileListService', () => {
     const result = await fileLister.listFiles('/proj-a');
 
     expect(result.files).toEqual(['a.ts', 'new.ts']);
-    expect(execFileMock).toHaveBeenCalledTimes(2);
+    expect(runSafeGitMock).toHaveBeenCalledTimes(2);
   });
 });

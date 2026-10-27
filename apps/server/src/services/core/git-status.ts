@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../../config/constants.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
-import { internalGitArgs } from '../../lib/git-safety.js';
 import { mayRunGitHere } from './agent-identity/index.js';
 
 /**
@@ -14,7 +12,6 @@ import { mayRunGitHere } from './agent-identity/index.js';
  *
  * @module services/git-status
  */
-const execFileAsync = promisify(execFile);
 
 /**
  * Get git status for a working directory.
@@ -41,14 +38,9 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse | Git
   }
 
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      [...internalGitArgs(), 'status', '--porcelain=v1', '--branch'],
-      {
-        cwd,
-        timeout: GIT.STATUS_TIMEOUT_MS,
-      }
-    );
+    const stdout = await runSafeGit(['status', '--porcelain=v1', '--branch'], cwd, {
+      timeoutMs: GIT.STATUS_TIMEOUT_MS,
+    });
     return parsePorcelainOutput(stdout);
   } catch {
     return { error: 'not_git_repo' as const };
