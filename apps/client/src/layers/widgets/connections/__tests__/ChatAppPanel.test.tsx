@@ -132,7 +132,7 @@ describe('ChatAppPanel', () => {
     expect(fix).toHaveTextContent('3 messages not sent while paused');
     const button = within(fix).getByRole('button', { name: 'Confirm this setting' });
     expect(button).toHaveAccessibleDescription(
-      'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Not yours? Open it and remove it.'
+      'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Not yours? Remove it below.'
     );
     await user.click(button);
     await waitFor(() =>

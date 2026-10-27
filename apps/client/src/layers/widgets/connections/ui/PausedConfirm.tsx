@@ -2,6 +2,8 @@ import { Pause } from 'lucide-react';
 import type { AdapterConfirmation } from '@dorkos/shared/relay-schemas';
 import {
   pausedConfirmHint,
+  pausedConfirmLabel,
+  pausedMessage,
   pausedMeta,
   pausedNotSent,
   pausedReferenceList,
@@ -34,20 +36,22 @@ export function PausedConfirm({ kind, name, id, confirmation, confirm }: PausedC
   return (
     <PanelFix
       icon={Pause}
-      message="Paused · confirm the setting it sends."
+      message={pausedMessage(confirmation)}
+      // Quiet lines on the amber panel use its own colour, not muted grey,
+      // which falls under 4.5:1 there in dark mode.
       detail={
         <>
           <span
-            className="text-muted-foreground block break-words"
+            className="text-status-warning-fg/80 block break-words"
             title={many ? pausedReferenceList(confirmation) : undefined}
           >
             {pausedMeta(kind, confirmation)}
             {many && <span className="sr-only">: {pausedReferenceList(confirmation)}</span>}
           </span>
-          {notSent && <span className="text-muted-foreground block">{notSent}</span>}
+          {notSent && <span className="text-status-warning-fg/80 block">{notSent}</span>}
         </>
       }
-      action="Confirm this setting"
+      action={pausedConfirmLabel(confirmation)}
       actionHint={pausedConfirmHint(confirmation)}
       pending={confirm.isPending}
       onAction={() => confirm.mutate({ id, name, fingerprint: confirmation.fingerprint })}

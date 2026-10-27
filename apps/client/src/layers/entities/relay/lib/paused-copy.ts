@@ -55,7 +55,38 @@ export function pausedReferenceList(confirmation: AdapterConfirmation): string {
  */
 export function pausedConfirmHint(confirmation: AdapterConfirmation): string {
   const what = whatItSends(confirmation, false);
-  return `Lets it send ${what}${toHost(confirmation)} again. Not yours? Open it and remove it.`;
+  return `Lets it send ${what}${toHost(confirmation)} again. Not yours? Remove it below.`;
+}
+
+/**
+ * The paused line, singular or plural by how many settings it sends.
+ *
+ * @param confirmation - What the server listed it with.
+ */
+export function pausedMessage(confirmation: AdapterConfirmation): string {
+  return confirmation.references.length > 1
+    ? 'Paused · confirm the settings it sends.'
+    : 'Paused · confirm the setting it sends.';
+}
+
+/**
+ * The Confirm button's label, singular or plural by how many settings it sends.
+ *
+ * @param confirmation - What the server listed it with.
+ */
+export function pausedConfirmLabel(confirmation: AdapterConfirmation): string {
+  return confirmation.references.length > 1 ? 'Confirm these settings' : 'Confirm this setting';
+}
+
+/**
+ * The Needs you row's notice: what Confirm does, led by what it dropped meanwhile.
+ *
+ * @param notSent - Messages dropped while paused.
+ */
+export function pausedRowNotice(notSent: number): string {
+  if (notSent <= 0) return 'Confirm what it sends to start it again.';
+  const count = notSent > 99 ? '99+ messages' : notSent === 1 ? '1 message' : `${notSent} messages`;
+  return `${count} not sent. Confirm what it sends.`;
 }
 
 /**

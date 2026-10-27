@@ -110,7 +110,7 @@ export function PanelFix({
               onClick={onAction}
               disabled={pending}
               aria-describedby={actionHint ? hintId : undefined}
-              className="h-auto min-h-8 max-w-full whitespace-normal max-sm:min-h-11"
+              className="h-auto min-h-8 max-w-full whitespace-normal max-md:min-h-11"
             >
               {pending && <Spinner size="xs" />}
               {action}
@@ -120,7 +120,7 @@ export function PanelFix({
         </div>
       )}
       {actionHint && (
-        <p id={hintId} className="text-muted-foreground text-xs">
+        <p id={hintId} className="text-status-warning-fg/80 text-xs">
           {actionHint}
         </p>
       )}

@@ -18,6 +18,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
 import { PausedConnectionList } from '../ui/PausedConnectionList';
+import { waitingLabel } from '../ui/InboxBell';
 
 const DEPLOY: PausedConnectionItem = {
   id: 'wh',
@@ -47,6 +48,20 @@ function renderList(items: PausedConnectionItem[]) {
 
 afterEach(cleanup);
 
+describe('the bell with a paused connection waiting', () => {
+  it('says "is" for one waiting item and "are" for more', () => {
+    expect(waitingLabel(0, 0, 0, 0, 0, 1)).toBe(
+      '1 paused connection is waiting on you. Open to answer.'
+    );
+    expect(waitingLabel(0, 0, 0, 0, 0, 2)).toBe(
+      '2 paused connections are waiting on you. Open to answer.'
+    );
+    expect(waitingLabel(1, 0, 0, 0, 0, 1)).toBe(
+      '1 request and 1 paused connection are waiting on you. Open to answer.'
+    );
+  });
+});
+
 describe('PausedConnectionList', () => {
   it('shows nothing when no connection is paused', () => {
     renderList([]);
@@ -57,19 +72,22 @@ describe('PausedConnectionList', () => {
     const user = userEvent.setup();
     const transport = renderList([DEPLOY]);
 
+    // Two lines under the title: the notice, then the source line.
     expect(screen.getByText('Deploy hooks is paused')).toBeInTheDocument();
-    expect(screen.getByText('Paused · confirm the setting it sends.')).toBeInTheDocument();
-    expect(
-      screen.getByText('Webhook · env:DEPLOY_TOKEN → xn--hks-ted.example.dev')
-    ).toBeInTheDocument();
-    expect(screen.getByText('1 message not sent while paused')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Nothing else changes.'
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText('1 message not sent. Confirm what it sends.')).toBeInTheDocument();
+    const source = screen.getByText('Webhook · env:DEPLOY_TOKEN → xn--hks-ted.example.dev');
+    expect(source).toHaveAttribute('title', 'env:DEPLOY_TOKEN');
+    expect(screen.queryByText('Paused · confirm the setting it sends.')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Confirm this setting' }));
+    // The hint sits behind ⓘ, and is still the button's description.
+    const hint =
+      'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Nothing else changes.';
+    const button = screen.getByRole('button', { name: 'Confirm this setting' });
+    expect(button).toHaveAccessibleDescription(hint);
+    await user.click(screen.getByRole('button', { name: 'More about this' }));
+    expect(screen.getAllByText(hint).length).toBeGreaterThan(0);
+
+    await user.click(button);
     await waitFor(() =>
       expect(transport.confirmRelayAdapterReferences).toHaveBeenCalledWith('wh', 'fp-1')
     );

@@ -49,9 +49,12 @@ export {
 } from './lib/dead-letter-reasons';
 export {
   pausedConfirmHint,
+  pausedConfirmLabel,
+  pausedMessage,
   pausedMeta,
   pausedNotSent,
   pausedReferenceList,
   pausedRowHint,
   pausedRowMeta,
+  pausedRowNotice,
 } from './lib/paused-copy';

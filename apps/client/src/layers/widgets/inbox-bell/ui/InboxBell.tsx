@@ -67,8 +67,10 @@ const allClearVariants = {
  * @param asks - Prompts agents are parked on.
  * @param extensions - Installed extensions waiting to be turned on.
  * @param decisions - Decisions extensions are asking a person about.
+ * @param paused - Connections paused until their owner confirms what they send.
+ * @internal Exported for testing only.
  */
-function waitingLabel(
+export function waitingLabel(
   approvals: number,
   schedules: number,
   asks: number,
@@ -77,7 +79,9 @@ function waitingLabel(
   paused = 0
 ): string {
   if (paused > 0) {
-    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} waiting on you. Open to answer.`;
+    const verb =
+      approvals + schedules + asks + extensions + decisions + paused === 1 ? 'is' : 'are';
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} ${verb} waiting on you. Open to answer.`;
   }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
     return decisions === 1

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterConfirmation } from '@dorkos/shared/relay-schemas';
 import {
   pausedConfirmHint,
+  pausedConfirmLabel,
+  pausedMessage,
   pausedMeta,
   pausedNotSent,
   pausedReferenceList,
   pausedRowHint,
   pausedRowMeta,
+  pausedRowNotice,
 } from '../lib/paused-copy';
 
 const base = (refs: string[], host?: string): AdapterConfirmation => ({
@@ -33,8 +36,22 @@ describe('paused-copy', () => {
 
   it('says what Confirm lets it do, by name', () => {
     expect(pausedConfirmHint(base(['env:DEPLOY_TOKEN'], 'hooks.example.dev'))).toBe(
-      'Lets it send DEPLOY_TOKEN to hooks.example.dev again. Not yours? Open it and remove it.'
+      'Lets it send DEPLOY_TOKEN to hooks.example.dev again. Not yours? Remove it below.'
     );
+  });
+
+  it('says one setting or several in the paused line and on the button', () => {
+    expect(pausedMessage(base(['env:A']))).toBe('Paused · confirm the setting it sends.');
+    expect(pausedConfirmLabel(base(['env:A']))).toBe('Confirm this setting');
+    expect(pausedMessage(base(['env:A', 'env:B']))).toBe('Paused · confirm the settings it sends.');
+    expect(pausedConfirmLabel(base(['env:A', 'env:B']))).toBe('Confirm these settings');
+  });
+
+  it('leads the Needs you notice with what it dropped, when it dropped anything', () => {
+    expect(pausedRowNotice(0)).toBe('Confirm what it sends to start it again.');
+    expect(pausedRowNotice(1)).toBe('1 message not sent. Confirm what it sends.');
+    expect(pausedRowNotice(3)).toBe('3 messages not sent. Confirm what it sends.');
+    expect(pausedRowNotice(100)).toBe('99+ messages not sent. Confirm what it sends.');
   });
 
   it('counts dropped messages: none, singular, plural, capped at 99+', () => {
