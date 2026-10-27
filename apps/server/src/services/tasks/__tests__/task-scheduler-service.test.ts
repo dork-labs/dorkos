@@ -2292,6 +2292,228 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** Run one scheduled dispatch of a fresh task through the relay path. */
+    async function dispatchOnce(
+      name: string,
+      extra: Partial<CreateTaskStoreInput> = {}
+    ): Promise<ReturnType<TaskStore['getRun']>> {
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...extra }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      await service.stop();
+      return store.getRun(run.id);
+    }
+
+    // DOR-3033: "never started" is only true when nothing answered. A run the
+    // adapter turned away says why.
+    it('says every slot was busy when the adapter had no room', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, code: 'at_capacity', error: 'Adapter at capacity' },
+      });
+      const run = await dispatchOnce('Busy Slots');
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(run?.status).toBe('failed');
+      expect(run?.error).toBe('Every agent slot stayed busy, so this run didn’t start.');
+    });
+
+    it('names the hourly turn limit when the bus refused the run for it', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        rejected: [{ endpointHash: 'h', reason: 'turn_ceiling' }],
+      });
+      const run = await dispatchOnce('Turn Ceiling');
+      expect(run?.error).toBe(
+        'The hourly limit on agent turns was reached, so this run didn’t start.'
+      );
+    });
+
+    // DOR-3033: a run whose delivery found nobody tries once more, and a
+    // receiver that came back in the meantime runs it.
+    it('tries once more when nothing answered, and runs when something does', async () => {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValueOnce({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const pending = dispatchOnce('Retry Works');
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      const run = await pending;
+      vi.useRealTimers();
+      // Two dispatches; the cancel the test's own `stop()` sends is not one.
+      const dispatches = mockRelay.publish.mock.calls.filter(
+        (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+      );
+      expect(dispatches).toHaveLength(2);
+      expect(run?.status).toBe('running');
+    });
+
+    // DOR-3033 review: the retry waits 30 s, and a run that ended in the
+    // meantime (a Stop, a shutdown) must not be started anyway.
+    it('does not retry a run that ended while it waited', async () => {
+      mockRelay.publish.mockResolvedValue({ messageId: 'm', deliveredTo: 0 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(
+        taskInput({ name: 'Ended Meanwhile', prompt: 'p', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      store.updateRun(run.id, { status: 'cancelled', error: 'Run cancelled' });
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      await pending;
+      vi.useRealTimers();
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(store.getRun(run.id)?.status).toBe('cancelled');
+      await service.stop();
+    });
+
+    /** The default runtime, declaring three modes, so a level can be compared. */
+    function runtimeWithModes(): SchedulerRuntimes {
+      const base = singleRuntimeSource(mockAgent);
+      const mode = (id: string, asks: string, reach: string) => ({ id, label: id, asks, reach });
+      const permissionModes = {
+        supported: true,
+        default: 'acceptEdits',
+        values: [
+          mode('plan', 'always', 'read'),
+          mode('acceptEdits', 'when-risky', 'edit'),
+          mode('bypassPermissions', 'never', 'everything'),
+        ],
+      };
+      return {
+        ...base,
+        getAllCapabilities: () =>
+          ({ [base.getDefaultType()]: { permissionModes } }) as unknown as ReturnType<
+            SchedulerRuntimes['getAllCapabilities']
+          >,
+      };
+    }
+
+    /** Dispatch a task whose first delivery finds nobody, and hand back the run and the wait. */
+    async function waitingForRetry(name: string, over: Record<string, unknown> = {}) {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValue({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...over }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimeWithModes(),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      const finish = async () => {
+        let settled = false;
+        void pending.finally(() => (settled = true));
+        for (let step = 0; step < 20 && !settled; step += 1) {
+          await vi.advanceTimersByTimeAsync(5_000);
+        }
+        await pending;
+        vi.useRealTimers();
+        await service.stop();
+      };
+      const dispatches = () =>
+        mockRelay.publish.mock.calls.filter(
+          (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+        );
+      return { task, run, service, finish, dispatches };
+    }
+
+    // DOR-3033 review (Security Must): Stop on a run nothing received yet ends
+    // it, and the retry does not start it.
+    it('pressing Stop during the wait ends the run, and it never starts', async () => {
+      const { run, service, finish, dispatches } = await waitingForRetry('Stopped Meanwhile');
+      await expect(service.cancelRun(run.id)).resolves.toEqual({ state: 'stopping' });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)).toMatchObject({
+        status: 'cancelled',
+        error: 'Stopped before it started.',
+      });
+    });
+
+    it('lowering the level during the wait runs the retry at the new level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Lowered Meanwhile', {
+        permissionMode: 'bypassPermissions',
+      });
+      store.updateTask(task.id, { permissionMode: 'acceptEdits' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    // DOR-3033 review (Security Must): a lower level binds queued work; a
+    // raise never reaches it (DOR-3175).
+    it('raising the level during the wait keeps the retry at the original level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Raised Meanwhile', {
+        permissionMode: 'acceptEdits',
+      });
+      store.updateTask(task.id, { permissionMode: 'bypassPermissions' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    it('turning the schedule off during the wait means no run', async () => {
+      const { task, run, finish, dispatches } = await waitingForRetry('Disabled Meanwhile');
+      store.updateTask(task.id, { enabled: false });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)?.status).toBe('skipped');
+    });
+
+    it('words a run that never reported its ending as that, not as never started', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, error: 'adapter delivery timeout (3660s)' },
+      });
+      const run = await dispatchOnce('Never Reported');
+      expect(run?.error).toBe('This run went past its time limit without reporting how it ended.');
+    });
+
+    // DOR-3033: a run stopped at its deadline says how long it had.
+    it('carries the task’s time limit for the receiver to name', async () => {
+      await dispatchOnce('Time Limit', { maxRuntime: 30 * 60_000 });
+      const payload = mockRelay.publish.mock.calls[0]![1] as { timeLimit?: string };
+      expect(payload.timeLimit).toBe('30m');
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
@@ -2310,10 +2532,24 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      // Nothing answering gets one retry 30 s later before the run is called
+      // failed (DOR-3033); the fake clock walks that wait.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const dispatching = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      let settled = false;
+      void dispatching.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      await dispatching;
+      vi.useRealTimers();
       const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
+      expect(mockRelay.publish).toHaveBeenCalledTimes(2);
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
       expect(updatedRun?.error).toBe(

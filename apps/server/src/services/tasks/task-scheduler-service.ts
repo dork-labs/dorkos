@@ -686,11 +686,10 @@ export class TaskSchedulerService {
     // run's own ending — is a plain no-op rather than a message on the bus.
     if (isTerminalRunStatus(run.status)) return { state: 'already_finished' };
 
-    const controller = this.runs.directController(runId);
-    if (controller) {
-      controller.abort(OPERATOR_CANCEL);
-      return { state: 'stopping' };
-    }
+    // A run this process drives, or one nothing has received yet: either way
+    // this process can end it without asking the bus (`RunAccounting.stopHere`).
+    const stoppedHere = this.runs.stopHere(runId, this.store, OPERATOR_CANCEL);
+    if (stoppedHere) return stoppedHere;
 
     if (!this.relay) {
       return {
