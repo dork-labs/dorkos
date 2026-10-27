@@ -291,4 +291,22 @@ describe('mayRunGitHere: the git kill switch', () => {
     expect(tree.map((entry) => entry.name)).toContain('a.txt');
     expect(fs.existsSync(marker)).toBe(false);
   });
+
+  it('refuses a main checkout that has a worktree under the workspace root', async () => {
+    const main = repoThatRunsItsOwnSettings(path.join(scratch, 'main-checkout'));
+    git(main, 'add', '.');
+    commit(main, 'two');
+    fs.writeFileSync(path.join(main, 'a.txt'), 'three\n');
+    const root = path.join(scratch, 'ws-shared');
+    const tree = path.join(root, 'proj', 'agent-tree');
+    fs.rmSync(root, { recursive: true, force: true });
+    git(main, 'worktree', 'add', '-q', '-b', 'agent-side', tree);
+    registerTestHomes([]);
+    setGitGuardRoots(() => [root]);
+    fs.rmSync(marker, { force: true });
+    expect(mayRunGitHere(main)).toBe(false);
+    expect(mayRunGitHere(path.join(main, 'sub'))).toBe(false);
+    await expect(getGitStatus(main)).resolves.toEqual({ error: 'not_git_repo' });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
 });

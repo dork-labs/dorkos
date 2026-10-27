@@ -12,7 +12,10 @@
  * folder itself, and every folder above it that holds a `.git` (git keeps
  * climbing past one that is not a real repository), each walked both as spelled
  * and as the real path; and for each `.git` file, the git folder it points at
- * and that folder's shared `commondir`. Agent folders are the DorkOS data
+ * and that folder's shared `commondir`; and every linked worktree of each
+ * repository found, since all of a repository's worktrees share its one
+ * settings file (so a main checkout with a worktree in an agent folder is
+ * refused too). Agent folders are the DorkOS data
  * directory (agents, workspaces, rooms), the configured agents and workspace
  * directories, every registered agent home, and any folder the home resolver
  * says belongs to an agent. Read from the filesystem alone: deciding never runs
@@ -70,14 +73,17 @@ export function mayRunGitHere(cwd: string): boolean {
 
 /**
  * Every place git could read settings from for `dir`: the folder, each folder
- * above it holding a `.git` (from both its spelled and its real path), and the
- * git folder and `commondir` each `.git` file names. `null` when a `.git` file
- * cannot be read as a pointer.
+ * above it holding a `.git` (from both its spelled and its real path), the git
+ * folder and `commondir` each `.git` file names, and every linked worktree of
+ * each repository found. A worktree shares its repository's one settings
+ * file, so an agent in any worktree can change what git reads in all of them.
+ * `null` when a `.git` file cannot be read as a pointer.
  *
  * @param dir - An absolute, normalized folder.
  */
 function gitPlaces(dir: string): string[] | null {
   const places = new Set([dir]);
+  const commonDirs = new Set<string>();
   for (const start of new Set([dir, nativeRealPath(dir)])) {
     places.add(start);
     for (let current = start; ; current = path.dirname(current)) {
@@ -85,27 +91,61 @@ function gitPlaces(dir: string): string[] | null {
       const stat = fs.lstatSync(dotGit, { throwIfNoEntry: false });
       if (stat) {
         places.add(current);
-        if (!stat.isDirectory() && !addPointer(current, dotGit, places)) return null;
+        const common = stat.isDirectory() ? dotGit : addPointer(current, dotGit, places);
+        if (common === null) return null;
+        commonDirs.add(common);
       }
       if (path.dirname(current) === current) break;
     }
   }
+  for (const common of commonDirs) addLinkedWorktrees(common, places);
   return [...places];
 }
 
-/** Add the git folder and `commondir` a `.git` file names; `false` if it names none. */
-function addPointer(top: string, dotGit: string, places: Set<string>): boolean {
+/**
+ * Add the git folder and `commondir` a `.git` file names, and answer the
+ * repository's shared folder; `null` if the file names none.
+ */
+function addPointer(top: string, dotGit: string, places: Set<string>): string | null {
   const match = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'));
-  if (!match) return false;
+  if (!match) return null;
   const gitDir = path.resolve(top, match[1]!);
   places.add(gitDir);
   try {
-    const common = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
-    places.add(path.resolve(gitDir, common));
+    const common = path.resolve(
+      gitDir,
+      fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()
+    );
+    places.add(common);
+    return common;
   } catch {
     // No commondir: a submodule's git folder, which is its own common folder.
+    return gitDir;
   }
-  return true;
+}
+
+/**
+ * Add the folder of every linked worktree a repository lists: each
+ * `<common>/worktrees/<name>/gitdir` names that worktree's `.git` file. Read
+ * from the filesystem alone; an entry that cannot be read is one git cannot
+ * use either.
+ */
+function addLinkedWorktrees(common: string, places: Set<string>): void {
+  const admin = path.join(common, 'worktrees');
+  let names: string[];
+  try {
+    names = fs.readdirSync(admin);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    try {
+      const dotGit = fs.readFileSync(path.join(admin, name, 'gitdir'), 'utf8').trim();
+      if (dotGit) places.add(path.dirname(path.resolve(admin, name, dotGit)));
+    } catch {
+      // No gitdir file: a half-made or pruned entry.
+    }
+  }
 }
 
 /** The file system's own spelling of `dir`, or `dir` when it does not exist. */
