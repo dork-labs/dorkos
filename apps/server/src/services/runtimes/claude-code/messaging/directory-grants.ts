@@ -322,7 +322,7 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
         ...personOnlyFileRules(dorkHome),
-        ...agentHomesSelfGrantRules(dorkHome),
+        ...agentHomesSelfGrantRules(dorkHome, 'authority'),
       ],
     },
   } as Options['settings'];
@@ -351,17 +351,21 @@ export function personOnlyFileRules(dorkHome: string): string[] {
 }
 
 /**
- * Write-deny rules for every agent home in the data folder's self-grant files
- * (`agents/*\/.claude/**`, `agents/*\/.mcp.json`, `agents/*\/.dork/agent.json`),
- * through every spelling of the data directory. On every launch, not only
- * beside an applied folder allow list (DOR-3068 S1): those files are what an
- * agent's pin and allow list read, so one agent's file tools rewriting another's
- * would approve its own change. The `*` matches one folder: each agent home,
- * never the folders below it.
+ * Write-deny rules for every agent home's self-grant files in the data folder,
+ * through every spelling of the data directory. The `*` matches one folder:
+ * each agent home, never the folders below it.
+ *
+ * - `'authority'`, on every launch (DOR-3068 S1): the four files that grant
+ *   power, `.claude/settings.json`, `.claude/settings.local.json`,
+ *   `.mcp.json` and `.dork/agent.json`. One agent's file tools rewriting
+ *   another's would approve its own change. An agent's skills, commands and
+ *   `CLAUDE.md` stay writable: that is instructions, not code.
+ * - `'all'`, beside an applied folder allow list: the whole `.claude/` folder.
  *
  * @param dorkHome - The data directory.
+ * @param scope - Which files: the four authority files, or all of `.claude/`.
  */
-export function agentHomesSelfGrantRules(dorkHome: string): string[] {
+export function agentHomesSelfGrantRules(dorkHome: string, scope: 'authority' | 'all'): string[] {
   const foreign = isForeignWindowsPath(dorkHome);
   const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
   const real = foreign ? undefined : realpathOrUndefined(home);
@@ -370,8 +374,10 @@ export function agentHomesSelfGrantRules(dorkHome: string): string[] {
     const root = rulePath(spelling);
     if (root === undefined) continue;
     const agents = `${root}/agents`;
+    const claude =
+      scope === 'all' ? ['.claude/**'] : ['.claude/settings.json', '.claude/settings.local.json'];
     for (const tool of ALL_WRITE_TOOLS) {
-      rules.add(`${tool}(${agents}/*/.claude/**)`);
+      for (const file of claude) rules.add(`${tool}(${agents}/*/${file})`);
       rules.add(`${tool}(${agents}/*/.mcp.json)`);
       rules.add(`${tool}(${agents}/*/.dork/agent.json)`);
     }

@@ -4,7 +4,7 @@
  * DOR-3068 S1 against the real bundled Claude Code binary: with the rules
  * every launch carries (`applyPersonOnlyDataDeny`), the model's Write and Edit
  * can't change DorkOS's `config.json` (where every pin, approval and the
- * upgrade marker live) or another agent's self-grant files, at Ask first, Act
+ * upgrade marker live) or another agent's authority files, at Ask first, Act
  * and Full. Each refusal leaves the file byte for byte as it was, and each
  * has a control showing the same call DOES change the file without the rules.
  *
@@ -233,6 +233,12 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
       );
     }
   }
+
+  it("still edits the agent's own skill file under the rules (instructions, not code)", async () => {
+    const file = plant(path.join(folder, '.claude', 'skills', 'x', 'SKILL.md'));
+    await runCalls(CHANGES[1][1](file), 'bypassPermissions', true);
+    expect(fs.readFileSync(file, 'utf8')).not.toBe(ORIGINAL);
+  }, 60_000);
 
   it("still writes a plain file in the agent's own folder under the rules", async () => {
     const file = plant(path.join(folder, 'notes.md'));

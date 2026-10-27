@@ -647,7 +647,7 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       // And the config files, which hold every approval (DOR-3068).
       ...personOnlyFileRules(resolveDorkHome()),
       // And every agent home's self-grant files, on every launch (DOR-3068 S1).
-      ...agentHomesSelfGrantRules(resolveDorkHome()),
+      ...agentHomesSelfGrantRules(resolveDorkHome(), 'authority'),
     ];
     const settings = options.settings as {
       fastMode: boolean;
