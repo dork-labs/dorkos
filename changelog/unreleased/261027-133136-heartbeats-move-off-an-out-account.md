@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(heartbeats): an agent keeps waking when its account runs out'
+  - 'fix(heartbeats): the seat check takes its folder from the wiring'
 ---
 
 ### Fixed
