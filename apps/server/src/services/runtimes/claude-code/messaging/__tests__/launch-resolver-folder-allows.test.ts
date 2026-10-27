@@ -190,7 +190,10 @@ describe('an agent folder allow list at launch', () => {
     // the self-grant set rides only beside an applied list.
     const before = denyOf((await launch(home)).sdkOptions.settings);
     expect(before).toContain(`Edit(/${home}/.claude/**)`);
-    expect(before.some((rule) => rule.includes('~/.claude.json'))).toBe(false);
+    // Write rules only: every launch now also carries read denies on the account files (DOR-3299).
+    expect(before.some((rule) => rule.startsWith('Edit(') && rule.includes('~/.claude.json'))).toBe(
+      false
+    );
 
     recordFolderAllowApproval({ agentId: AGENT.id, home, rules: [RULE] });
     const deny = denyOf((await launch(home)).sdkOptions.settings);

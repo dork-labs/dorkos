@@ -709,6 +709,7 @@ export const CONFIG_WRITE_POLICY = {
   'harness.approvedFolderConfig': 'operator-only',
   'harness.approvedFolderConfigParts': 'operator-only',
   'harness.refusedFolderConfig': 'operator-only',
+  'harness.folderConfigPinned': 'operator-only',
   // Which agent tools DorkOS shares your globally installed packages with
   // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
   // home directory, which is the "how far DorkOS reaches on disk" line this

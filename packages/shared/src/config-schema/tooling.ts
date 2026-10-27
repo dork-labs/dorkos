@@ -293,6 +293,13 @@ export const HarnessConfigSchema = z
      */
     refusedFolderConfig: z.array(z.string().min(1)).default(() => []),
     /**
+     * Whether DorkOS has pinned the agents that already existed (DOR-3068). It
+     * does that once, at the first start with the folder settings pin; after
+     * that, an agent with no record whose home runs anything waits for a
+     * person. Carried across a config wipe, so a wipe never re-pins.
+     */
+    folderConfigPinned: z.boolean().default(false),
+    /**
      * The two decisions global scope records: which agent tools DorkOS shares
      * your globally installed packages with, and when it last asked.
      *
@@ -334,6 +341,7 @@ export const HarnessConfigSchema = z
     approvedFolderConfig: [],
     approvedFolderConfigParts: {},
     refusedFolderConfig: [],
+    folderConfigPinned: false,
     global: { harnesses: [], askedAt: null },
   }));
 

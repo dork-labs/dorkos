@@ -47,6 +47,7 @@ import {
   type FolderAllowApprovalGateway,
 } from '../folder-allow-approval.js';
 import { readFolderConfigParts } from '../folder-config-pin.js';
+import { pinRegisteredFolderConfigsOnce } from '../pin-folder-configs.js';
 
 const AGENT = { id: '01AGENT', name: 'Marketing' };
 const HOOK = { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'x' }] }] };
@@ -67,7 +68,7 @@ const ownTurn = (cwd = home) => resolveFolderConfigForLaunch({ agent: AGENT, hom
 /** Let a fire-and-forget card settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-beforeEach(() => {
+beforeEach(async () => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'folder-config-launch-')));
   home = path.join(root, 'agent');
   write('.claude/settings.json', { hooks: {} });
@@ -93,22 +94,58 @@ beforeEach(() => {
     consume: () => ({ outcome: current.outcome }) as never,
   };
   setFolderAllowApprovalGateway(gateway);
+  // Most cases are about an agent DorkOS already had: the upgrade pinned it.
+  await pinnedAtUpgrade();
+  store.harness = { ...store.harness, folderConfigPinned: false };
 });
+
+/** The agent existed at the upgrade, so the one-time step pinned it as it stood. */
+function pinnedAtUpgrade(): Promise<number> {
+  return pinRegisteredFolderConfigsOnce(async () => [{ id: AGENT.id, projectPath: home }]);
+}
 
 afterEach(() => {
   setFolderAllowApprovalGateway(null);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('pinned on first use, once', () => {
-  it('pins an agent with no record to what its folder holds, and holds nothing back', async () => {
+describe('pinned once: at the upgrade, or on first use when nothing runs (M4)', () => {
+  it('keeps an agent the upgrade pinned as it stood, and holds nothing back', async () => {
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    expect(await pinnedAtUpgrade()).toBe(1);
     expect(await ownTurn()).toEqual({ held: [], inHome: false });
     expect(lastApprovedParts(AGENT.id, home)).toEqual(readFolderConfigParts(home).digests);
     expect(requests).toEqual([]);
   });
 
+  it('pins a new agent on first use only when nothing in its home runs', async () => {
+    await pinnedAtUpgrade();
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [] });
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    expect(await ownTurn()).toEqual({ held: [], inHome: false });
+    expect(requests).toEqual([]);
+  });
+
+  it('holds a new agent whose home runs anything, and asks a person', async () => {
+    await pinnedAtUpgrade();
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    write('.claude/settings.json', { hooks: HOOK });
+    expect((await ownTurn()).held).toEqual(['hooks', 'mcpJson', 'manifest']);
+    await settle();
+    expect(requests).toHaveLength(1);
+    expect(lastApprovedParts(AGENT.id, home)).toBeUndefined();
+  });
+
+  it('pins at the upgrade once ever, never an agent registered after', async () => {
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    expect(await pinnedAtUpgrade()).toBe(1);
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    expect(await pinnedAtUpgrade()).toBe(0);
+    expect(lastApprovedParts(AGENT.id, home)).toBeUndefined();
+  });
+
   it('never pins on first use again once a record exists', async () => {
-    await ownTurn();
+    await pinnedAtUpgrade();
     write('.claude/settings.json', { hooks: HOOK });
     expect((await ownTurn()).held).toEqual(['hooks']);
     // Still held on the next launch: a change never approves itself.
@@ -349,6 +386,9 @@ describe('an agent that renames itself', () => {
 
 describe('a first-use pin that cannot be written', () => {
   it('holds everything back and asks nobody', async () => {
+    // A new agent whose home runs nothing, so its first launch tries to pin it.
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [] });
     store.failWrites = true;
     expect(await ownTurn()).toEqual({ held: ['hooks', 'mcpJson', 'manifest'], inHome: true });
     expect(requests).toEqual([]);
@@ -367,8 +407,9 @@ describe('the runtime an agent file names (M3)', () => {
     };
 
   it('is honoured as a person last approved it, and held once the agent changes it', async () => {
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
     write('.dork/agent.json', { id: AGENT.id, mcpServers: [], runtime: 'claude-code' });
-    await ownTurn(); // pins on first use
+    await ownTurn(); // a new agent whose home runs nothing: pinned on first use
     expect(runtimeUnlessHeld(manifest(), home)).toBe('claude-code');
     write('.dork/agent.json', {
       id: AGENT.id,
@@ -398,5 +439,54 @@ describe('held hooks leave out the folder settings sources (M1)', () => {
     const options: Options = { cwd: home, settingSources: ['local', 'project', 'user'] };
     applyFolderConfigToLaunch(options, home, { held: ['mcpJson'], inHome: true });
     expect(options.settingSources).toEqual(['local', 'project', 'user']);
+  });
+});
+
+describe("Security's conditions on the first-use pin (M4)", () => {
+  const unpin = () => {
+    store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+  };
+
+  it('never treats a hooks-only agent as empty', async () => {
+    unpin();
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [] });
+    write('.claude/settings.json', { hooks: HOOK });
+    expect(readFolderConfigParts(home).inert).toBe(false);
+    expect((await ownTurn()).held).toEqual(['hooks', 'mcpJson', 'manifest']);
+  });
+
+  it('pins nothing when pins exist but the upgrade marker is gone', async () => {
+    // beforeEach pinned this agent and cleared the marker: a lost marker, not a first start.
+    const other = path.join(root, 'other');
+    fs.mkdirSync(other, { recursive: true });
+    expect(
+      await pinRegisteredFolderConfigsOnce(async () => [{ id: '01OTHER', projectPath: other }])
+    ).toBe(0);
+    expect(lastApprovedParts('01OTHER', other)).toBeUndefined();
+    expect(store.harness.folderConfigPinned).toBe(true);
+  });
+
+  it('shows the card what would run, and withdraws it when the folder changes again', async () => {
+    const denied: string[] = [];
+    setFolderAllowApprovalGateway({
+      request: (input: unknown) => {
+        requests.push(input as never);
+        return {
+          approvalId: 'a1',
+          token: 't',
+          expiresAt: new Date(Date.now() + 5_000).toISOString(),
+        };
+      },
+      consume: () => ({ outcome: 'pending' }) as never,
+      deny: (approvalId: string) => {
+        denied.push(approvalId);
+      },
+    } as never);
+    write('.claude/settings.json', { hooks: HOOK });
+    await ownTurn();
+    await settle();
+    expect((requests[0] as unknown as { detail?: string }).detail).toContain('"command": "x"');
+    write('.claude/settings.json', { hooks: HOOK, statusLine: { type: 'command', command: 'y' } });
+    await vi.waitFor(() => expect(denied).toEqual(['a1']));
   });
 });

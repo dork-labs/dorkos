@@ -219,6 +219,7 @@ describe('UserConfigSchema', () => {
         approvedFolderConfig: [],
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
+        folderConfigPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -648,6 +649,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         approvedFolderConfig: [],
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
+        folderConfigPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.

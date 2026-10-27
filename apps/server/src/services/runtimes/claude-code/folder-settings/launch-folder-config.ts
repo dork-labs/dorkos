@@ -33,7 +33,11 @@ import { logger } from '../../../../lib/logger.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 import { folderAllowApprovalGateway } from './folder-allow-approval.js';
 import { folderInstructions } from './folder-instructions.js';
-import { askForFolderConfig, mayAskAboutFolderConfig } from './folder-config-approval.js';
+import {
+  askForFolderConfig,
+  folderConfigDetail,
+  mayAskAboutFolderConfig,
+} from './folder-config-approval.js';
 import {
   approvedPartsAtHome,
   hasFolderConfigRecord,
@@ -82,10 +86,14 @@ export async function resolveFolderConfigForLaunch(
   if (!agent || !home) return NOTHING_HELD;
   const now = readFolderConfigParts(home);
   const state = { agentId: agent.id, home, digests: now.digests };
-  // Pinned once, on first use: what the person was already running. Never
-  // for a home that already holds a yes for any agent id (an agent that
-  // renamed its own id is not new).
-  const firstUse = !hasFolderConfigRecord(agent.id, home);
+  // The agents that existed at the upgrade were pinned then
+  // (`pin-folder-configs.ts`). An agent with no record since starts with
+  // nothing approved: pinned on first use only when nothing in its home runs,
+  // so a home an agent planted waits for a person (DOR-3068 M4). Never for a
+  // home that already holds a yes for any agent id (an agent that renamed its
+  // own id is not new).
+  const firstUse = !hasFolderConfigRecord(agent.id, home) && now.inert;
+  const unknown = !firstUse && !hasFolderConfigRecord(agent.id, home);
   if (firstUse) {
     try {
       recordFolderConfigApproval(state, 'pinned on first use');
@@ -100,7 +108,9 @@ export async function resolveFolderConfigForLaunch(
     }
   }
   let changed: FolderConfigPart[] = [];
-  if (!firstUse && !isFolderConfigApproved(state)) {
+  if (unknown) {
+    changed = [...FOLDER_CONFIG_PARTS];
+  } else if (!firstUse && !isFolderConfigApproved(state)) {
     // The agent's own yes, else the one its home holds under another id.
     const previous = lastApprovedParts(agent.id, home) ?? approvedPartsAtHome(home);
     changed = previous ? changedParts(now.digests, previous) : [...FOLDER_CONFIG_PARTS];
@@ -119,7 +129,12 @@ export async function resolveFolderConfigForLaunch(
   });
   // A file DorkOS can't read is never put to a person: a yes could not make it run.
   const askable = held.filter((part) => !now.unverifiable.includes(part));
-  const request = { ...state, agentName: agent.name, changed: askable };
+  const request = {
+    ...state,
+    agentName: agent.name,
+    changed: askable,
+    detail: folderConfigDetail(now.values, askable),
+  };
   const gateway = folderAllowApprovalGateway();
   if (gateway && mayAskAboutFolderConfig(request)) {
     void askForFolderConfig(gateway, request).catch((err: unknown) => {

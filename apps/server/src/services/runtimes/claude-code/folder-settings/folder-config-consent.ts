@@ -60,6 +60,8 @@ export interface FolderConfigRequest {
   digests: FolderConfigDigests;
   /** The parts that differ from the agent's last yes, in card order. */
   changed: readonly FolderConfigPart[];
+  /** What those parts would run, for the card. Never sent to an agent. */
+  detail?: string;
 }
 
 /** The agent, its home and a state of its settings. */
@@ -355,8 +357,8 @@ function safeRead(home: string, part: FolderConfigPart): string | undefined {
  * The account an agent file names, unless its agent-file part is held back
  * (changed since a person's yes, or unreadable): then none, exactly as the
  * launch decides (DOR-3068). For the places that predict a launch's account
- * before it runs. An agent with no record yet keeps its account: its first
- * launch pins it.
+ * before it runs. An agent with no record keeps it only when nothing in its
+ * home runs (which an account alone already contradicts).
  *
  * @param manifest - The agent file as read, or `null`.
  * @param home - The agent's home, if any.
@@ -368,7 +370,10 @@ export function accountUnlessHeld(
   const account = manifest?.account;
   if (!account || !home || !manifest?.id) return account;
   try {
-    if (!hasFolderConfigRecord(manifest.id, home)) return account;
+    // No record: held unless nothing in the home runs, as the launch decides.
+    if (!hasFolderConfigRecord(manifest.id, home)) {
+      return readFolderConfigParts(home).inert ? account : undefined;
+    }
     const now = readFolderConfigParts(home);
     const approved = lastApprovedParts(manifest.id, home) ?? approvedPartsAtHome(home);
     if (!approved || now.unverifiable.includes('manifest')) return undefined;
@@ -395,7 +400,9 @@ export function runtimeUnlessHeld(
   const runtime = manifest?.runtime;
   if (!runtime || !home || !manifest?.id) return runtime;
   try {
-    if (!hasFolderConfigRecord(manifest.id, home)) return runtime;
+    if (!hasFolderConfigRecord(manifest.id, home)) {
+      return readFolderConfigParts(home).inert ? runtime : undefined;
+    }
     const now = readFolderConfigParts(home);
     const approved = lastApprovedParts(manifest.id, home) ?? approvedPartsAtHome(home);
     if (!approved || now.unverifiable.includes('manifest')) return undefined;
@@ -403,4 +410,31 @@ export function runtimeUnlessHeld(
   } catch {
     return undefined;
   }
+}
+
+/** Whether DorkOS has pinned the agents that already existed (`harness.folderConfigPinned`). */
+export function folderConfigsPinned(): boolean {
+  return (
+    (configManager.get('harness') as { folderConfigPinned?: boolean } | undefined)
+      ?.folderConfigPinned === true
+  );
+}
+
+/** Record that the agents that already existed were pinned, so it never happens again. */
+export function markFolderConfigsPinned(): void {
+  if (folderConfigsPinned()) return;
+  const harness = configManager.get('harness');
+  configManager.set('harness', { ...harness, folderConfigPinned: true });
+  logConfigWrite(
+    'pinning the agents DorkOS already had',
+    'harness',
+    harness,
+    configManager.get('harness')
+  );
+}
+
+/** Whether any agent's folder settings were ever pinned or decided. */
+export function hasAnyFolderConfigRecord(): boolean {
+  const { approved, refused, parts } = storedDecisions();
+  return approved.length > 0 || refused.length > 0 || Object.keys(parts).length > 0;
 }

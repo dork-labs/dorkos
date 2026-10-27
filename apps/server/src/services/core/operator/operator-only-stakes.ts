@@ -222,6 +222,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'harness.approvedFolderConfig',
       'harness.approvedFolderConfigParts',
       'harness.refusedFolderConfig',
+      'harness.folderConfigPinned',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
       'runtimes.codex.transport',

@@ -557,6 +557,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
  * text should be softened.
  */
 export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = {
+  'harness.folderConfigPinned': {
+    value: false,
+    reason:
+      "On its first start with the folder settings pin (DOR-3068), DorkOS pins the agents that already existed, as they stand, so a person's own agents don't all stop at once; only agents seen after that, whose homes run anything, wait for a person. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
+  },
   'runtimes.claudeCode.defaultAccountOnlyProjects': {
     value: null,
     reason:

@@ -426,6 +426,7 @@ export const CONFIG_DISCLOSURE = {
   // each yes are nothing an agent needs.
   'harness.approvedFolderConfig': 'expose',
   'harness.refusedFolderConfig': 'expose',
+  'harness.folderConfigPinned': 'expose',
   'harness.approvedFolderConfigParts': 'withhold',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that

@@ -73,6 +73,7 @@ import { wireConnectorServices } from './startup/steps/connector-services.js';
 import { wireDocDelivery } from './startup/steps/doc-delivery.js';
 import { wireMcpTasksAndSkills } from './startup/steps/mcp-tasks-skills.js';
 import { mountCoreRoutes } from './startup/steps/core-routes.js';
+import { pinRegisteredFolderConfigsOnce } from './services/runtimes/claude-code/folder-settings/pin-folder-configs.js';
 import { mountLateRoutes } from './startup/steps/late-routes.js';
 import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
@@ -261,6 +262,9 @@ async function start() {
   };
   const upToTasks = { ...upToDocDelivery, ...(await wireMcpTasksAndSkills(refs, upToDocDelivery)) };
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
+  // Pin the agents DorkOS already had, once ever, before any turn launches:
+  // only agents seen after this first start wait for a person (DOR-3068).
+  await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);
   await mountLateRoutes(refs, upToCoreRoutes);
   await composeCapabilities(refs, upToCoreRoutes);
   await upToCoreRoutes.seedPersonSet();

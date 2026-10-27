@@ -11,6 +11,7 @@ import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
 import type { MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { pinRegisteredFolderConfigsOnce } from '../../folder-settings/pin-folder-configs.js';
 import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
 import {
   _internal,
@@ -112,7 +113,7 @@ const accountAsked = () =>
   vi.mocked(resolveLaunchAccountRoot).mock.calls.at(-1)?.[0].agentAccountId;
 const factoryLaunch = () => factory.mock.calls.at(-1)?.[2] as { withholdAgentServers?: boolean };
 
-beforeEach(() => {
+beforeEach(async () => {
   root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'launch-folder-config-')));
   home = path.join(root, 'agent');
   write('.claude/settings.json', { hooks: {} });
@@ -124,6 +125,8 @@ beforeEach(() => {
     roomsDir: null,
   });
   store.sections = { harness: {}, permissions: {} };
+  // The agent existed at the upgrade, so the one-time step pinned it as it stood.
+  await pinRegisteredFolderConfigsOnce(async () => [{ id: AGENT.id, projectPath: home }]);
   cards = [];
   factory = vi.fn(() => ({}));
   vi.mocked(resolveLaunchAccountRoot).mockClear();

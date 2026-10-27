@@ -984,6 +984,12 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
       type: 'string[]',
       default: '[]',
     },
+    'harness.folderConfigPinned': {
+      description:
+        'Whether DorkOS has pinned the agents it already had. It does this once, so a new agent whose folder runs anything waits for your yes. Only a person can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
     'harness.global.harnesses': {
       description:
         'The agent tools that can see the packages you installed for all your projects. Empty means none of them can. Add one with `dorkos harness global --enable <tool>`, and DorkOS links those packages\u2019 skills into the folder that tool reads. Only a person can change this list.',

@@ -54,6 +54,15 @@ export interface FolderConfigParts {
   digests: FolderConfigDigests;
   /** Parts holding a file DorkOS could not read: never approved, never asked about. */
   unverifiable: FolderConfigPart[];
+  /**
+   * Whether nothing in the home runs or widens anything: no code setting with
+   * a value, no hook script or power-widening frontmatter, no MCP server, no
+   * account, and the default runtime. Such a home is pinned on first use
+   * without asking (DOR-3068 M4); any other one waits for a person.
+   */
+  inert: boolean;
+  /** Each part's value as read, for the card that shows a person what would run. */
+  values: Record<FolderConfigPart, unknown>;
 }
 
 /**
@@ -269,6 +278,46 @@ function manifestPart(home: string): PartValue {
   };
 }
 
+/** Whether a value holds nothing: absent, null, or an empty string, list or object. */
+function isEmptyValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.values(value).every(isEmptyValue);
+  return false;
+}
+
+/** The hooks part with no code setting set, no script and no frontmatter field. */
+function hooksInert(value: unknown): boolean {
+  const { files, agentFiles, ...settings } = (value ?? {}) as Record<string, unknown>;
+  return isEmptyValue(settings) && isEmptyValue(files) && isEmptyValue(agentFiles);
+}
+
+/** No `.mcp.json`, or one that declares no server. */
+function mcpJsonInert(value: unknown): boolean {
+  if (value === null) return true;
+  const servers = (value as { mcpServers?: unknown } | undefined)?.mcpServers;
+  return (
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    isEmptyValue(servers) &&
+    Object.keys(value as object).every((key) => key === 'mcpServers')
+  );
+}
+
+/** An agent file with no servers, no account, and no runtime other than the default. */
+function manifestInert(value: unknown): boolean {
+  if (value === null) return true;
+  const fields = value as {
+    id?: unknown;
+    runtime?: unknown;
+    mcpServers?: unknown;
+    account?: unknown;
+  };
+  if (typeof value !== 'object' || !Object.hasOwn(fields, 'id')) return false;
+  const runtimeInert = fields.runtime === null || fields.runtime === 'claude-code';
+  return runtimeInert && isEmptyValue(fields.mcpServers) && isEmptyValue(fields.account);
+}
+
 /**
  * Read an agent home's folder settings and digest each part.
  *
@@ -290,7 +339,21 @@ export function readFolderConfigParts(
     digests[part] = sha256(canonicalJson(values[part].value));
     if (!values[part].verifiable) unverifiable.push(part);
   }
-  return { digests, unverifiable };
+  const inert =
+    unverifiable.length === 0 &&
+    hooksInert(values.hooks.value) &&
+    mcpJsonInert(values.mcpJson.value) &&
+    manifestInert(values.manifest.value);
+  return {
+    digests,
+    unverifiable,
+    inert,
+    values: {
+      hooks: values.hooks.value,
+      mcpJson: values.mcpJson.value,
+      manifest: values.manifest.value,
+    },
+  };
 }
 
 /**

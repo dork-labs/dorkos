@@ -113,6 +113,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.approvedHooks',
       'harness.autoAdopt',
       'harness.autoSync',
+      'harness.folderConfigPinned',
       'harness.global.askedAt',
       'harness.global.harnesses',
       'harness.refusedFolderConfig',

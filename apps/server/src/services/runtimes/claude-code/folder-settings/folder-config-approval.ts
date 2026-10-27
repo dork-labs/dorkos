@@ -16,6 +16,7 @@ import path from 'node:path';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ApprovalBinding } from '../../../core/approvals/approval-service.js';
 import { hashApprovalInput, quoteSummaryValue } from '../../../core/approvals/index.js';
+import { storableDetail } from '../../../core/approvals/approval-storable.js';
 import { logger } from '../../../../lib/logger.js';
 import type { FolderAllowApprovalGateway } from './folder-allow-approval.js';
 import {
@@ -26,7 +27,11 @@ import {
   recordFolderConfigRefusal,
   type FolderConfigRequest,
 } from './folder-config-consent.js';
-import type { FolderConfigPart } from './folder-config-pin.js';
+import {
+  canonicalJson,
+  readFolderConfigParts,
+  type FolderConfigPart,
+} from './folder-config-pin.js';
 
 /**
  * What the card is about. Not a capability anyone can invoke, so
@@ -74,6 +79,39 @@ export function summariseFolderConfig(request: FolderConfigRequest): string {
   const name = quoteSummaryValue(request.agentName);
   const changed = listOf(request.changed.map((part) => PART_WORDS[part]));
   return `${name} changed ${changed}. Its turns run without the change until you allow it.`;
+}
+
+/** The words a part goes by in a card's detail. */
+const PART_HEADINGS: Record<FolderConfigPart, string> = {
+  hooks: 'Hooks, code settings, scripts and skill, command and subagent settings',
+  mcpJson: '.mcp.json',
+  manifest: 'Agent file: runtime, MCP servers and account',
+};
+
+/**
+ * What the changed parts would run, as the card shows it: each part's value,
+ * read and built on the server, fenced as data.
+ *
+ * @param values - Each part's value as read.
+ * @param parts - The parts the card asks about.
+ */
+export function folderConfigDetail(
+  values: Record<FolderConfigPart, unknown>,
+  parts: readonly FolderConfigPart[]
+): string {
+  return parts
+    .map((part) => `${PART_HEADINGS[part]}:\n${JSON.stringify(values[part] ?? null, null, 2)}`)
+    .join('\n\n');
+}
+
+/** Whether the folder no longer holds the state the card asks about. */
+function isStale(request: FolderConfigRequest): boolean {
+  try {
+    const now = readFolderConfigParts(request.home).digests;
+    return canonicalJson(now) !== canonicalJson(request.digests);
+  } catch {
+    return true;
+  }
 }
 
 /** Cards on screen now, so a second turn does not raise a second card. */
@@ -135,6 +173,8 @@ export async function askForFolderConfig(
     const ticket = gateway.request({
       ...binding,
       summary: summariseFolderConfig(request),
+      // A card with a detail never offers "Always": every change is seen first.
+      ...(request.detail ? { detail: storableDetail(request.detail) } : {}),
       requestedBy: request.agentName,
     });
     logger.info("[FolderConfig] Waiting on a person to allow an agent's changed folder settings", {
@@ -159,6 +199,17 @@ export async function askForFolderConfig(
         return false;
       }
       if (Number.isFinite(deadline) && Date.now() > deadline) return false;
+      if (isStale(request)) {
+        // Stale: the card's Allow would approve settings that are no longer there.
+        (gateway as { deny?: (id: string, reason?: string) => unknown }).deny?.(
+          ticket.approvalId,
+          'The folder changed again. Review the new version.'
+        );
+        logger.info('[FolderConfig] Changed again while the card was open', {
+          agentId: request.agentId,
+        });
+        return false;
+      }
       await _internal.sleep(_internal.pollIntervalMs);
     }
   } finally {
