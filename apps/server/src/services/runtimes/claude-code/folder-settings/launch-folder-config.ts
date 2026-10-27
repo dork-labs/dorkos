@@ -6,8 +6,8 @@
  * Every launch for a registered agent home, a teammate's included:
  *
  * - **Its file tools can't write the self-grant files.** Edit, Write,
- *   MultiEdit and NotebookEdit are denied `<home>/.claude/**`, `<home>/.mcp.json`
- *   and `<home>/.dork/agent.json`. Run on the real CLI, Claude Code does not
+ *   MultiEdit and NotebookEdit are denied `<home>/.claude/**`, `<home>/.agents/**`
+ *   (where its skills really live), `<home>/.mcp.json` and `<home>/.dork/agent.json`. Run on the real CLI, Claude Code does not
  *   protect these under Bypass. Bash still can, which is why the pin exists.
  * - **A changed part is held back** (`folder-config-pin.ts`). Hooks or the MCP
  *   servers file: when the turn stands in the home or a folder inside it (by
@@ -191,6 +191,9 @@ export function homeWriteDenyRules(home: string): string[] | undefined {
   for (const spelling of spellings) {
     const targets: [string, 'folder' | 'file'][] = [
       [path.join(spelling, '.claude'), 'folder'],
+      // Where the home's skills really live: `.claude/skills/<x>` is a symlink
+      // into it, so an edit here is an edit to the skill.
+      [path.join(spelling, '.agents'), 'folder'],
       [path.join(spelling, '.mcp.json'), 'file'],
       [path.join(spelling, '.dork', 'agent.json'), 'file'],
     ];
