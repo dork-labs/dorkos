@@ -1,0 +1,230 @@
+/**
+ * DorkOS never runs git in an agent folder (DOR-3343, the kill switch).
+ *
+ * Two markers, either of which proves git ran: the repository's own settings
+ * name a clean filter that writes a marker file, and `git` and `gh` on PATH are
+ * stand-ins that write the same marker before handing over to the real git.
+ * The first case proves both fire in a folder that is no agent's, so the
+ * others cannot pass by accident. Then each of the four server paths that ran
+ * git in an agent's folder — git status, the carry-over summary, the diff's
+ * HEAD baseline and the heartbeat workspace gatherer — must give its empty
+ * answer, and the marker must never appear.
+ */
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { getGitStatus } from '../../git-status.js';
+import { runGitForSummary } from '../../../session/fleet/carry-over-summary.js';
+import { gitShowHead } from '../../../diff/git-baseline.js';
+import { createWorkspaceGatherer } from '../../../heartbeats/gatherers/workspace.js';
+import { mayRunGitHere, setGitGuardRoots } from '../may-run-git.js';
+import { clearTestHomes, registerTestHomes } from './agent-home-fixture.js';
+
+vi.mock('../../../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  BoundaryError: class BoundaryError extends Error {},
+}));
+
+/** The real git, found once before PATH gets the stand-ins. */
+const realGit = execFileSync('sh', ['-c', 'command -v git']).toString().trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync(realGit, args, { cwd, stdio: 'pipe' }).toString().trim();
+const commit = (cwd: string, message: string, ...extra: string[]) =>
+  git(
+    cwd,
+    '-c',
+    'user.email=a@example.com',
+    '-c',
+    'user.name=a',
+    'commit',
+    '-q',
+    ...extra,
+    '-m',
+    message
+  );
+
+describe('mayRunGitHere: the git kill switch', () => {
+  let scratch: string;
+  let marker: string;
+  let standIns: string;
+
+  /**
+   * A repository whose own settings run a program when git reads it: a clean
+   * filter on every file, and a tracked file changed since the last commit.
+   */
+  function repoThatRunsItsOwnSettings(dir: string): string {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    git(dir, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(dir, '.gitattributes'), '* filter=mark\n');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+    git(dir, 'add', '.');
+    commit(dir, 'one');
+    const filter = path.join(scratch, 'filter.sh');
+    fs.writeFileSync(filter, `#!/bin/sh\ntouch '${marker}'\ncat\n`, { mode: 0o755 });
+    git(dir, 'config', 'filter.mark.clean', filter);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+    return dir;
+  }
+
+  beforeAll(() => {
+    scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'may-run-git-')));
+    marker = path.join(scratch, 'ran');
+    standIns = path.join(scratch, 'bin');
+    fs.mkdirSync(standIns);
+    fs.writeFileSync(
+      path.join(standIns, 'git'),
+      `#!/bin/sh\ntouch '${marker}'\nexec '${realGit}' "$@"\n`,
+      { mode: 0o755 }
+    );
+    fs.writeFileSync(path.join(standIns, 'gh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, {
+      mode: 0o755,
+    });
+  });
+  afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  beforeEach(() => {
+    vi.stubEnv('PATH', `${standIns}${path.delimiter}${process.env.PATH ?? ''}`);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    clearTestHomes();
+    setGitGuardRoots(() => []);
+    fs.rmSync(marker, { force: true });
+  });
+
+  it('both markers fire in a folder that is no agent`s, which still gets git status', async () => {
+    const project = repoThatRunsItsOwnSettings(path.join(scratch, 'project'));
+    registerTestHomes([path.join(scratch, 'agents', 'ana')]);
+    expect(mayRunGitHere(project)).toBe(true);
+    await expect(getGitStatus(project)).resolves.toMatchObject({ branch: 'main', modified: 1 });
+    expect(fs.existsSync(marker)).toBe(true);
+
+    fs.rmSync(marker);
+    vi.unstubAllEnvs();
+    git(project, 'status', '--porcelain=v1');
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  describe('in an agent home', () => {
+    let home: string;
+    beforeAll(() => {
+      home = path.join(scratch, 'agents', 'ana');
+    });
+
+    it('git status answers "not a repository" and runs nothing', async () => {
+      repoThatRunsItsOwnSettings(home);
+      registerTestHomes([home]);
+      await expect(getGitStatus(home)).resolves.toEqual({ error: 'not_git_repo' });
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('git status refuses a subfolder of the home too', async () => {
+      repoThatRunsItsOwnSettings(home);
+      const sub = path.join(home, 'src');
+      fs.mkdirSync(sub, { recursive: true });
+      registerTestHomes([home]);
+      await expect(getGitStatus(sub)).resolves.toEqual({ error: 'not_git_repo' });
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('the carry-over summary reads nothing', async () => {
+      repoThatRunsItsOwnSettings(home);
+      registerTestHomes([home]);
+      await expect(runGitForSummary(home, ['status', '--short'])).resolves.toBeUndefined();
+      await expect(runGitForSummary(home, ['diff', '--stat'])).resolves.toBeUndefined();
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('the diff has no HEAD baseline', async () => {
+      repoThatRunsItsOwnSettings(home);
+      registerTestHomes([home]);
+      await expect(gitShowHead(home, path.join(home, 'a.txt'))).resolves.toBeNull();
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('the heartbeat workspace gatherer finds nothing and runs neither git nor gh', async () => {
+      repoThatRunsItsOwnSettings(home);
+      registerTestHomes([home]);
+      const changes = await createWorkspaceGatherer()({
+        agent: { id: 'ana', name: 'Ana', projectPath: home, cwd: home },
+        since: new Date(0).toISOString(),
+        now: new Date(),
+        signal: new AbortController().signal,
+        ownBeatSessions: new Set(),
+      });
+      expect(changes).toEqual([]);
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('the gatherer never starts a command at all', async () => {
+      registerTestHomes([home]);
+      const run = vi.fn(async () => '');
+      await createWorkspaceGatherer(run)({
+        agent: { id: 'ana', name: 'Ana', projectPath: home, cwd: home },
+        since: null,
+        now: new Date(),
+        signal: new AbortController().signal,
+        ownBeatSessions: new Set(),
+      });
+      expect(run).not.toHaveBeenCalled();
+    });
+  });
+
+  it('refuses a worktree whose git folder lives in an agent home', () => {
+    const home = path.join(scratch, 'agents', 'bo');
+    fs.mkdirSync(home, { recursive: true });
+    git(home, 'init', '-q', '-b', 'main');
+    commit(home, 'one', '--allow-empty');
+    const tree = path.join(scratch, 'elsewhere', 'bo-tree');
+    git(home, 'worktree', 'add', '-q', '-b', 'side', tree);
+    registerTestHomes([home]);
+    expect(mayRunGitHere(tree)).toBe(false);
+    expect(mayRunGitHere(path.join(tree, 'sub'))).toBe(false);
+  });
+
+  it.runIf(process.platform === 'darwin')(
+    'refuses an agent home spelled in other case on a case-blind disk',
+    async () => {
+      const home = path.join(scratch, 'agents', 'dee');
+      repoThatRunsItsOwnSettings(home);
+      registerTestHomes([home]);
+      const shouted = path.join(scratch, 'AGENTS', 'DEE');
+      expect(mayRunGitHere(shouted)).toBe(false);
+      await expect(getGitStatus(shouted)).resolves.toEqual({ error: 'not_git_repo' });
+      expect(fs.existsSync(marker)).toBe(false);
+    }
+  );
+
+  it('refuses a folder whose .git file cannot be read as a pointer', () => {
+    const dir = path.join(scratch, 'odd');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '.git'), 'not a pointer\n');
+    registerTestHomes([]);
+    expect(mayRunGitHere(dir)).toBe(false);
+  });
+
+  it('refuses the rooms directory, the workspace root and the data directory', () => {
+    const rooms = path.join(scratch, 'dork', 'rooms');
+    const workspaces = path.join(scratch, 'custom-workspaces');
+    registerTestHomes([], { roomsDir: rooms });
+    setGitGuardRoots(() => [workspaces]);
+    expect(mayRunGitHere(path.join(rooms, 'r1', 'repo'))).toBe(false);
+    expect(mayRunGitHere(path.join(workspaces, 'w1'))).toBe(false);
+    vi.stubEnv('DORK_HOME', path.join(scratch, 'dork-home'));
+    try {
+      expect(mayRunGitHere(path.join(scratch, 'dork-home', 'agents', 'x'))).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('refuses a managed workspace an agent owns, wherever it is', () => {
+    const home = path.join(scratch, 'agents', 'cy');
+    const checkout = path.join(scratch, 'checkouts', 'cy-1');
+    fs.mkdirSync(checkout, { recursive: true });
+    registerTestHomes([home], { managed: { [checkout]: home } });
+    expect(mayRunGitHere(checkout)).toBe(false);
+  });
+});
