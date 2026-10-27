@@ -46,6 +46,11 @@ import {
 } from './navigation';
 import { GET_FULLSCREEN_STATE_CHANNEL } from './fullscreen';
 import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
+import { applyExtraCaCerts } from '../extra-ca-certs';
+
+// A company network's certificates, which the fused app binary no longer reads
+// by itself (DOR-3361), before anything in the main process opens a connection.
+applyExtraCaCerts({ warn: (message) => log.warn(`[tls] ${message}`) });
 
 /** The custom URL scheme `dorkos://` deep links arrive on. */
 const DEEP_LINK_PROTOCOL = 'dorkos';
