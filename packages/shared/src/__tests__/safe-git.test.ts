@@ -250,4 +250,20 @@ describe('runSafeGit', () => {
     git(sup, 'status', '--porcelain=v1');
     expect(fs.existsSync(marker)).toBe(true);
   });
+
+  it('reads a husky repository, but its hooks folder still refuses a write', async () => {
+    const dir = repo('husky');
+    const hooks = path.join(dir, '.husky');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\n`, {
+      mode: 0o755,
+    });
+    git(dir, 'config', 'core.hooksPath', '.husky');
+    // A read passes, and runs no hook from the folder the repository names.
+    await expect(runSafeGit(['status', '--porcelain=v1'], dir)).resolves.toContain(' M a.txt');
+    await expect(runSafeGit(['checkout', '-q', '-b', 'read-side'], dir)).resolves.toBe('');
+    expect(fs.existsSync(marker)).toBe(false);
+    // A write's audit still refuses it, even right after a read passed.
+    await expect(assertRepoConfigSafe(dir)).rejects.toMatchObject({ keys: ['core.hookspath'] });
+  });
 });

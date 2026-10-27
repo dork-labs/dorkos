@@ -323,15 +323,31 @@ function unsafeKeysIn(file: string): Promise<string[]> {
   });
 }
 
+/** How {@link assertRepoConfigSafe} judges one repository. */
+export interface RepoConfigAuditOptions {
+  /**
+   * Also accept `core.hooksPath` (husky writes one). Only the read runner
+   * sets it: every read passes `-c core.hooksPath=/dev/null`, so the
+   * repository's own value changes nothing there. A workspace write keeps a
+   * person's hooks, so there the key stays refused (DOR-3345).
+   */
+  allowHooksPath?: boolean;
+}
+
 /**
  * Refuse a folder whose repository settings hold any key off the safe list.
- * Cached per settings file by its size and times.
+ * Cached per settings file by its size and times, separately for each way of
+ * judging it.
  *
  * @param cwd - The folder git would run in.
+ * @param options - Whether `core.hooksPath` is accepted (reads only).
  * @throws {GitRepoConfigUnsafeError} When a settings file sets a key off the
  *   list, cannot be read, or a `.git` pointer cannot be followed.
  */
-export async function assertRepoConfigSafe(cwd: string): Promise<void> {
+export async function assertRepoConfigSafe(
+  cwd: string,
+  { allowHooksPath = false }: RepoConfigAuditOptions = {}
+): Promise<void> {
   const places = findGitPlaces(cwd);
   if (places === null) throw new GitRepoConfigUnsafeError(path.join(cwd, '.git'), []);
   for (const gitDir of places.gitDirs) {
@@ -339,13 +355,16 @@ export async function assertRepoConfigSafe(cwd: string): Promise<void> {
       const stat = fs.statSync(file, { throwIfNoEntry: false });
       if (!stat) continue;
       const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
-      if (auditedAt.get(file) === stamp) continue;
-      const unsafe = await unsafeKeysIn(file);
+      const cacheKey = allowHooksPath ? `${file}\0read` : file;
+      if (auditedAt.get(cacheKey) === stamp) continue;
+      const unsafe = (await unsafeKeysIn(file)).filter(
+        (key) => !(allowHooksPath && key.toLowerCase() === 'core.hookspath')
+      );
       if (unsafe.length > 0) {
-        auditedAt.delete(file);
+        auditedAt.delete(cacheKey);
         throw new GitRepoConfigUnsafeError(file, unsafe);
       }
-      auditedAt.set(file, stamp);
+      auditedAt.set(cacheKey, stamp);
     }
   }
 }
@@ -391,7 +410,7 @@ async function spawnSafeGit(
   options: SafeGitOptions,
   encoding: 'utf8' | 'buffer'
 ): Promise<string | Buffer> {
-  await assertRepoConfigSafe(cwd);
+  await assertRepoConfigSafe(cwd, { allowHooksPath: true });
   return new Promise((resolve, reject) => {
     execFile(
       'git',
