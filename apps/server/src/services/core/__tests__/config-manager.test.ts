@@ -585,6 +585,11 @@ describe('ConfigManager', () => {
       autoAdopt: false,
       approvedHooks: [],
       refusedHooks: [],
+      // Each agent's own folder settings, pinned on first use (DOR-3068).
+      approvedFolderConfig: [],
+      approvedFolderConfigParts: {},
+      refusedFolderConfig: [],
+      folderConfigPinned: false,
       // Nothing installed for all your projects is shared into a home directory
       // until somebody says which agent tools may see it, and `askedAt: null`
       // says the question has never been put (DOR-1924).
@@ -4677,6 +4682,10 @@ describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
       autoAdopt: false,
       approvedHooks: [],
       refusedHooks: [],
+      approvedFolderConfig: [],
+      approvedFolderConfigParts: {},
+      refusedFolderConfig: [],
+      folderConfigPinned: false,
       global: { harnesses: [], askedAt: null },
     });
   });

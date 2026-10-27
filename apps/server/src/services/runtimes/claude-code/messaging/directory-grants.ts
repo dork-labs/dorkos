@@ -218,11 +218,29 @@ export function applyDirectoryGrants(
  *   rewrite it could raise its own level.
  * - `session-relay/` holds the pins that say which hub and which keys this
  *   computer trusts (and, with B4, `approval-keys.json`).
+ * - `plugins/` holds the plugins installed for every project. A plugin's
+ *   commands name the tools they may use and its hooks run code, so an agent
+ *   that could rewrite one could hand itself tools (DOR-3068).
  *
  * Bash is not covered, as the module note says: a turn with a shell it was not
  * asked about is outside what file rules can hold.
  */
-export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay'] as const;
+export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay', 'plugins'] as const;
+
+/**
+ * The plugins installed into a project, at any depth: `<project>/.dork/plugins/`
+ * (DOR-3068). Discovery reads every known project's, not only the turn's own,
+ * so one absolute any-depth rule per write tool covers them all without
+ * listing projects. A plugin's own `.dork/extensions/` sits inside it.
+ *
+ * A project's own `.dork/extensions/` is deliberately NOT here: agents build
+ * mini apps by editing exactly those files (`test_extension`). What keeps an
+ * edit there from running unseen is the approval, which asks again when the
+ * folder changes.
+ */
+export const PROJECT_PLUGIN_DENY_RULES: readonly string[] = WRITE_TOOLS.map(
+  (tool) => `${tool}(//**/.dork/plugins/**)`
+);
 
 /**
  * A Windows drive path seen on a POSIX host (tests, mostly), which
@@ -262,7 +280,8 @@ function namesOf(dorkHome: string, name: string): string[] {
 }
 
 /**
- * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS}, merged into
+ * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS} and every
+ * project's installed plugins ({@link PROJECT_PLUGIN_DENY_RULES}), merged into
  * the launch's settings beside any grant rules. Whatever the permission mode:
  * a deny rule holds under `bypassPermissions` too (see the module note).
  *
@@ -291,7 +310,11 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
     ...base,
     permissions: {
       ...permissions,
-      deny: [...(permissions.deny ?? []), ...folders.flatMap(readOnlyRules)],
+      deny: [
+        ...(permissions.deny ?? []),
+        ...folders.flatMap(readOnlyRules),
+        ...PROJECT_PLUGIN_DENY_RULES,
+      ],
     },
   } as Options['settings'];
 }

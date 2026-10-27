@@ -113,7 +113,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
-import { checkClaudeLaunchAccount } from './launch-account-check.js';
+import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import {
   getOrCreateProjector,
@@ -1120,7 +1120,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // that would be refused predicts no account at all (spec
     // `flow-multiproject` §8.4).
     const launch = resolveLaunchAccountRoot({
-      agentAccountId: manifest?.account,
+      agentAccountId: accountUnlessHeld(manifest, home),
       agentId: manifest?.id,
       project: await projectOfFolder(projectDir),
     });
