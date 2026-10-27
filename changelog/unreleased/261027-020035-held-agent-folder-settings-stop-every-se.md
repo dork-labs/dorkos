@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Held agent folder settings stop every setting that runs code, and the runtime (DOR-3068)
+- While an agent's changed settings wait for your yes, none of its settings that run code take effect, and neither does a switch to another runtime. The agent keeps working on the default runtime until you allow the change.
