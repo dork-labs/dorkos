@@ -51,6 +51,16 @@ describe('InboxRow meta line', () => {
     expect(screen.getByText(meta)).toHaveAttribute('title', meta);
   });
 
+  it('gives a secret-files notice’s body two lines on a phone and one above', () => {
+    render(
+      <InboxRow
+        notification={build({ kind: 'agent.secret_files', body: 'Move them yourself.' })}
+        onOpen={() => {}}
+      />
+    );
+    expect(screen.getByText('Move them yourself.')).toHaveClass('line-clamp-2', 'sm:truncate');
+  });
+
   it('draws no meta line when the notice has none', () => {
     render(<InboxRow notification={build()} onOpen={() => {}} />);
     expect(document.querySelector('.font-mono')).not.toBeInTheDocument();

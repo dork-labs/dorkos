@@ -93,10 +93,10 @@ describe('SecretFileScanService', () => {
     const one = { agentId: 'a', agentName: 'Scout', files: [ENV], total: 1, fingerprint: 'f' };
     const many = { ...one, files: [ENV, 'id_rsa'], total: 2 };
     expect(entry.body!(one)).toBe(
-      "Scout can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder. Move it somewhere outside its folder yourself."
+      'Move it out of its folder to keep it out of its searches. Scout may still be able to read it.'
     );
     expect(entry.body!(many)).toBe(
-      "Scout can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder. Move them somewhere outside its folder yourself."
+      'Move them out of its folder to keep them out of its searches. Scout may still be able to read them.'
     );
     expect(entry.title(many)).toBe('Scout can read 2 secret files in its folder');
   });

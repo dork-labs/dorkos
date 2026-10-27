@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix: the secret-files notice names its files and ends on what to do (DOR-3292)'
+  - 'fix: the secret-files notice says what moving does, on two lines on a phone (DOR-3292)'
 ---
 
 ### Fixed

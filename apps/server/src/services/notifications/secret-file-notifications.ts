@@ -99,8 +99,8 @@ export const SECRET_FILE_ENTRIES: {
     // It ends on what the person does, by hand: there is no Move action (part 1).
     body: (p) =>
       p.total === 1
-        ? `${p.agentName} can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder. Move it somewhere outside its folder yourself.`
-        : `${p.agentName} can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder. Move them somewhere outside its folder yourself.`,
+        ? `Move it out of its folder to keep it out of its searches. ${p.agentName} may still be able to read it.`
+        : `Move them out of its folder to keep them out of its searches. ${p.agentName} may still be able to read them.`,
     dedupeKey: (p) => `secret-files:${p.agentId}:${p.fingerprint}`,
     dedupeWindowMs: SECRET_FILES_DEDUPE_MS,
     relay: 'never',
