@@ -61,6 +61,19 @@ export const REPO_CONFIG_CAPABILITY_IDS: Record<RepoConfigKind, string> = {
 export const REPO_TOOLS_CAPABILITY_ID = 'runtime.apply_repo_tools';
 
 /**
+ * Whether an id is one of the repo-pin cards. Only the launch raises these:
+ * neither is in the capability registry, so no tool, route or
+ * `request_permission` can name one, and the test seed route refuses them.
+ *
+ * @param capabilityId - The id to check.
+ */
+export function isRepoPinCapabilityId(capabilityId: string): boolean {
+  return (
+    capabilityId === REPO_CONFIG_CAPABILITY_IDS.hooks || capabilityId === REPO_TOOLS_CAPABILITY_ID
+  );
+}
+
+/**
  * Each card's fallback title. A repo-pin card always carries its own title
  * ({@link repoConfigTitle}); the summary names what changed.
  */
