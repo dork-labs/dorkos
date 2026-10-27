@@ -30,7 +30,6 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { usageLimitNow, storedUsageLimit } from '../../rooms/notices/usage-limit.js';
 import { nearlyOut, pickReseatAccount } from '../../rooms/reseat/reseat-accounts.js';
 import { accountUsageForSession } from '../../session/fleet/session-account.js';
-import { resolveSessionCwd } from '../../workspace/resolve-session-cwd.js';
 
 /** Where a beat turn runs. */
 export type BeatSeat =
@@ -86,13 +85,19 @@ export function decideBeatSeat(input: {
   return { kind: 'wait', until: pick.earliestResetAt };
 }
 
-/** The production port, over the running server's usage store and ranking. */
-export function createBeatSeatPort(): BeatSeatPort {
+/**
+ * The production port, over the running server's usage store and ranking.
+ *
+ * @param folderOf - The folder a turn of the agent stands in. Handed in by the
+ *   heartbeats wiring, one of the few places allowed to resolve it (the
+ *   one-resolution-per-turn guard in `resolve-session-cwd.subagent.test.ts`).
+ */
+export function createBeatSeatPort(folderOf: (agentPath: string) => Promise<string>): BeatSeatPort {
   return {
     async seatFor(agent, sessionId, opts) {
       try {
         if (!runtimeRegistry.has(agent.runtime)) return { kind: 'stay' };
-        const { cwd } = await resolveSessionCwd({ agentPath: agent.projectPath });
+        const cwd = await folderOf(agent.projectPath);
         const usage = await accountUsageForSession(
           getAccountUsageStore(),
           runtimeRegistry.get(agent.runtime),

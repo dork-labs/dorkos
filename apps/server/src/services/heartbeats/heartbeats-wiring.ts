@@ -222,7 +222,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     ownTurnRunning: (agentId) => ownTurnRunning(resolveAgentIdForPath, agentId),
     resolveCwd: async (agent) => (await resolveSessionCwd({ agentPath: agent.projectPath })).cwd,
     triage: triage.port,
-    seats: createBeatSeatPort(),
+    seats: createBeatSeatPort(async (agentPath) => (await resolveSessionCwd({ agentPath })).cwd),
   });
   const hub = new EventWakes({
     clock: systemClock,
