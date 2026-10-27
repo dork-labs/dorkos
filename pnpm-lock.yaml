@@ -2041,6 +2041,13 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+    optionalDependencies:
+      opencode-darwin-arm64:
+        specifier: 1.19.3
+        version: 1.19.3
+      opencode-linux-x64:
+        specifier: 1.19.3
+        version: 1.19.3
 
   packages/typescript-config: {}
 
@@ -10341,6 +10348,16 @@ packages:
 
   openapi3-ts@4.6.1:
     resolution: {integrity: sha512-XW9MOldkhoICNeXVzzmXzmOW5G73ppOEGmh7fLCqHjgfdEYCGGN+00MlVCeUZgovjjfC56j9tvtDt1zGabNjjA==}
+
+  opencode-darwin-arm64@1.19.3:
+    resolution: {integrity: sha512-NmDF28jD8W7m9a/k4mc3rajEWftDemGecrzBJItzTWwN0Eu5WFSEFBocvmmasUr4nh8ei9Zl1pwRvv66R4dN6A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  opencode-linux-x64@1.19.3:
+    resolution: {integrity: sha512-wz+kXi7ZkvLW04hEIocW3RoEznALJ3YGnvNlZdXFarYF0v1jyDyAwpPGZkxb4JZDrw4oy48/LDZ8wCFIQDTxhw==}
+    cpu: [x64]
+    os: [linux]
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -22168,6 +22185,12 @@ snapshots:
   openapi3-ts@4.6.1:
     dependencies:
       yaml: 2.9.1
+
+  opencode-darwin-arm64@1.19.3:
+    optional: true
+
+  opencode-linux-x64@1.19.3:
+    optional: true
 
   optionator@0.9.4:
     dependencies:

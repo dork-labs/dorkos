@@ -34,6 +34,7 @@ import {
   resolveAgentHome,
 } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
+import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import {
@@ -250,10 +251,18 @@ export async function resolveRuntimeTypeForNewSession(opts: {
       // registers ONLY 'test-mode' while every manifest on disk says
       // 'claude-code' (the AgentRuntime enum has no test-mode member), so
       // without this guard no agent-seeded session can ever start there.
-      if (manifest?.runtime) {
-        if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
+      // A runtime the agent itself changed waits for a person (DOR-3068 M3).
+      const runtime = runtimeUnlessHeld(manifest, manifestDir);
+      if (manifest?.runtime && !runtime) {
+        logger.warn('[POST /messages] manifest runtime is held; using default', {
+          manifestDir,
+          defaultRuntime: runtimeRegistry.getDefaultType(),
+        });
+      }
+      if (runtime) {
+        if (runtimeRegistry.has(runtime)) return runtime;
         logger.info('[POST /messages] manifest runtime not registered; using default', {
-          manifestRuntime: manifest.runtime,
+          manifestRuntime: runtime,
           defaultRuntime: runtimeRegistry.getDefaultType(),
           manifestDir,
         });

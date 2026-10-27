@@ -367,6 +367,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
+      // Not a secret: the part digests behind each folder settings yes (DOR-3068).
+      'harness.approvedFolderConfigParts',
       'mcp.apiKey',
       // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
       'permissions.approvedFolderAllowRules',

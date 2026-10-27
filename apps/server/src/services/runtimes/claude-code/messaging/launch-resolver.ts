@@ -109,6 +109,10 @@ import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
+import {
+  applyFolderConfigToLaunch,
+  resolveFolderConfigForLaunch,
+} from '../folder-settings/launch-folder-config.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -246,6 +250,16 @@ export async function resolveLaunch(args: {
       // No manifest found -- the launch inherits the server defaults
     }
   }
+  // The agent's own hooks, MCP servers and account run only as a person last
+  // allowed them; a changed part is held back and a card asks (DOR-3068).
+  const folderConfig = await resolveFolderConfigForLaunch({
+    agent: meshAgent
+      ? { id: meshAgent.id, name: meshAgent.displayName ?? meshAgent.name ?? meshAgent.id }
+      : undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+  });
+  const agentFileHeld = folderConfig.held.includes('manifest');
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
@@ -387,7 +401,8 @@ export async function resolveLaunch(args: {
       // The account this agent is pinned to, off the manifest already read
       // above. It reaches the spawn env and stops there — nothing writes it to
       // `session_metadata`, because disk stays the per-session truth.
-      agentAccountId: manifest?.account,
+      // Not while a changed agent file waits for a person (DOR-3068).
+      agentAccountId: agentFileHeld ? undefined : manifest?.account,
       agentId: manifest?.id,
       project: await projectOfFolder(effectiveCwd),
     });
@@ -775,6 +790,8 @@ export async function resolveLaunch(args: {
   );
   // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
   applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome());
+  // And the agent home's self-grant files, plus the switches for held-back parts.
+  applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
   // Every turn, at every level: the model's own Read, Grep and Glob never open
   // a secret (DOR-3299).
   applySecretReadDeny(sdkOptions, {
@@ -820,6 +837,7 @@ export async function resolveLaunch(args: {
       hiddenToolNames: toolVisibility.hiddenToolNames,
       identity: toolIdentity,
       ...(opts.connectorTools !== undefined ? { connectorTools: opts.connectorTools } : {}),
+      ...(agentFileHeld ? { withholdAgentServers: true } : {}),
     });
   }
 

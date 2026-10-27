@@ -642,6 +642,8 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       ),
       // And the config files, which hold every approval (DOR-3068).
       ...personOnlyFileRules(resolveDorkHome()),
+      // And every project's installed plugins (DOR-3068).
+      ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
     ];
     const settings = options.settings as {
       fastMode: boolean;

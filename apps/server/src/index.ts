@@ -16,6 +16,8 @@ import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
+import { setGitGuardRoots } from './services/core/agent-identity/index.js';
+import { resolveAgentsDirectory } from './lib/agents-home.js';
 import { logger, logError } from './lib/logger.js';
 import {
   captureLiveStandingGrants,
@@ -73,6 +75,7 @@ import { wireConnectorServices } from './startup/steps/connector-services.js';
 import { wireDocDelivery } from './startup/steps/doc-delivery.js';
 import { wireMcpTasksAndSkills } from './startup/steps/mcp-tasks-skills.js';
 import { mountCoreRoutes } from './startup/steps/core-routes.js';
+import { pinRegisteredFolderConfigsOnce } from './services/runtimes/claude-code/folder-settings/pin-folder-configs.js';
 import { mountLateRoutes } from './startup/steps/late-routes.js';
 import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
@@ -201,6 +204,12 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // DorkOS never runs git in an agent folder (DOR-3343). Config can move the
+  // agents and workspace directories out of the data dir, so read them per call.
+  setGitGuardRoots(() => [
+    resolveWorkspaceRoot({ dorkHome, config: configManager.get('workspace') }),
+    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
+  ]);
   if (workspaceConfig.enabled) {
     const {
       service: workspaceService,
@@ -264,6 +273,9 @@ async function start() {
   };
   const upToTasks = { ...upToDocDelivery, ...(await wireMcpTasksAndSkills(refs, upToDocDelivery)) };
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
+  // Pin the agents DorkOS already had, once ever, before any turn launches:
+  // only agents seen after this first start wait for a person (DOR-3068).
+  await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);
   await mountLateRoutes(refs, upToCoreRoutes);
   await composeCapabilities(refs, upToCoreRoutes);
   await upToCoreRoutes.seedPersonSet();

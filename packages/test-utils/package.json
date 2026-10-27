@@ -10,6 +10,7 @@
     "./decision-model-conformance": "./src/decision-model-conformance.ts",
     "./directory-membership-vectors": "./src/directory-membership-vectors.ts",
     "./mock-factories": "./src/mock-factories.ts",
+    "./opencode-binary": "./src/opencode-binary.ts",
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts",
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
@@ -52,5 +53,9 @@
     "supertest": "^7.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
+  },
+  "optionalDependencies": {
+    "opencode-darwin-arm64": "1.19.3",
+    "opencode-linux-x64": "1.19.3"
   }
 }

@@ -202,6 +202,13 @@ export const PIN_DISPOSITIONS = {
    */
   permissionsDeny: 'relaunch',
   /**
+   * Whether the launch held back an agent folder's own hooks and MCP servers
+   * file (`settings.disableAllHooks`, `strictMcpConfig`, DOR-3068). Both are
+   * read at launch, so a change a person just allowed, or one that started
+   * waiting, has to relaunch.
+   */
+  folderConfig: 'relaunch',
+  /**
    * The tool list each in-process (`sdk`) MCP server would give a fresh
    * launch: a digest of its tools' names and input JSON Schemas, recorded by
    * the server factory against the instance (`mcp-tools/tool-surface.ts`). An
@@ -626,6 +633,12 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
       additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
       folderAllows: digest(JSON.stringify(folderAllowsFromSettings(options.settings))),
       permissionsDeny: digest(JSON.stringify(denyRulesFromSettings(options.settings))),
+      folderConfig: [
+        typeof options.settings === 'object' &&
+          options.settings !== null &&
+          (options.settings as { disableAllHooks?: boolean }).disableAllHooks === true,
+        options.strictMcpConfig === true,
+      ].join(FIELD_SEP),
       toolSurface: describeToolSurfaces(options.mcpServers),
       settingsEnv: digest(
         serializeEnv(

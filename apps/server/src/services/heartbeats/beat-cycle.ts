@@ -30,8 +30,9 @@ import {
 } from '@dorkos/shared/heartbeat-schemas';
 import { isWithinWorkingHours, type ResolvedWorkingHours } from '@dorkos/shared/working-hours';
 import { FAILURE_STORM_AT, type BeatClock } from './beat-scheduler.js';
-import { resolveBeatChat } from './beat-chat.js';
+import { resolveBeatChat, type BeatChat } from './beat-chat.js';
 import type { BeatTurnLauncher } from './beat-launch.js';
+import type { BeatSeat, BeatSeatPort } from './accounts/beat-seat.js';
 import type { BeatPlan } from './beat-plan.js';
 import { buildBeatPrompt, type ReportMaterial } from './beat-prompt.js';
 import { registerBeatTurn, settleBeatTurn, type BeatTurn } from './beat-turns.js';
@@ -87,6 +88,8 @@ export interface BeatCycleDeps {
   onFinished(beat: FinishedBeat): void;
   /** Triage on a decision model (§6.2); absent, the rules decide alone. */
   triage?: BeatTriagePort;
+  /** Which account a beat turn runs on (`beat-seat.ts`); absent, it runs where its chat is. */
+  seats?: BeatSeatPort;
 }
 
 /** What this beat opened, for the runner to close if anything throws. */
@@ -301,21 +304,33 @@ function parseKeys(raw: string | null | undefined): string[] {
  * @param deps - What it reaches.
  * @param ctx - The beat.
  * @param track - Filled in as the turn starts.
+ * @param afterLimit - This is the one re-run of a turn that ran into a usage limit.
  */
 export async function runTurn(
   deps: BeatCycleDeps,
   ctx: BeatContext,
-  track: BeatTrack
+  track: BeatTrack,
+  afterLimit = false
 ): Promise<BeatResult> {
   const { agent } = ctx;
   const state = deps.store.getState(agent.id);
-  const chat = resolveBeatChat(
+  const today = resolveBeatChat(
     state,
     new Date(deps.clock.now()),
     deps.hoursFor(agent.id).timezone,
     deps.mintId
   );
-  if (!chat.isNew && deps.launcher.isBusy(chat.sessionId)) return busy(deps, ctx);
+  if (!today.isNew && deps.launcher.isBusy(today.sessionId)) return busy(deps, ctx);
+  // An account out of usage would only burn the beat: move it to a fresh chat
+  // on another account, or wait when none can take it (`beat-seat.ts`).
+  const seat: BeatSeat = (await deps.seats?.seatFor(agent, today.sessionId, { afterLimit })) ?? {
+    kind: 'stay',
+  };
+  if (seat.kind === 'wait') return outOfUsage(deps, ctx, seat.until);
+  const chat: BeatChat =
+    seat.kind === 'move'
+      ? { ...today, sessionId: (deps.mintId ?? randomUUID)(), isNew: true }
+      : today;
   const messageId = (deps.mintId ?? randomUUID)();
   const content = buildBeatPrompt({
     agentName: agent.name,
@@ -336,6 +351,7 @@ export async function runTurn(
     kind: ctx.kind,
   });
   track.chatSessionId = chat.sessionId;
+  track.settled = false;
   type Settled = [outcome: 'ok' | 'failed', refusal?: string];
   let settle: (...result: Settled) => void = () => undefined;
   const settled = new Promise<Settled>((resolve) => {
@@ -357,6 +373,7 @@ export async function runTurn(
     agentPath: agent.projectPath,
     runtime: agent.runtime,
     content,
+    ...(seat.kind === 'move' ? { account: seat.accountId } : {}),
     ...(carried !== undefined ? { permissionCeiling: carried } : {}),
     onSettled: (outcome, refusal) => settle(outcome, refusal),
   });
@@ -381,7 +398,23 @@ export async function runTurn(
   // which is not the agent failing.
   if (refusal !== undefined)
     return refused(deps, ctx, track, { status: 'refused', message: refusal });
+  // Its account ran out mid-beat: run the beat once more, on another account.
+  if (!afterLimit && !turn?.ended && deps.seats?.hitLimit(sessionId)) {
+    return runTurn(deps, ctx, track, true);
+  }
   return afterTurn(deps, ctx, sessionId, outcome, turn);
+}
+
+/** Every account the beat may use is out of usage: skip it, so nothing it gathered is lost. */
+function outOfUsage(deps: BeatCycleDeps, ctx: BeatContext, until: string | null): BeatResult {
+  finish(deps, ctx, {
+    outcome: 'skipped',
+    summary: until
+      ? `Every account it may use is out of usage until ${until}; it waits.`
+      : 'Every account it may use is out of usage; it waits.',
+    reason: 'OUT_OF_USAGE',
+  });
+  return { outcome: 'skipped' };
 }
 
 /** The beat chat is mid-turn: look again when it is free. */
