@@ -4362,6 +4362,10 @@
               "destructive"
             ]
           },
+          "consequence": {
+            "type": "string",
+            "maxLength": 40
+          },
           "summary": {
             "type": "string",
             "maxLength": 500

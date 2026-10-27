@@ -44,7 +44,14 @@ import {
   setRepoConfigActivity,
   type RepoConfigActivityEntry,
 } from '../repo-config-activity.js';
-import { _internal, askForRepoConfig, summariseRepoConfig } from '../repo-config-approval.js';
+import {
+  _internal,
+  askForRepoConfig,
+  describeRepoConfigCapability,
+  repoConfigCapabilityId,
+  repoConfigTitle,
+  summariseRepoConfig,
+} from '../repo-config-approval.js';
 import {
   isRepoConfigApproved,
   isRepoConfigRefused,
@@ -339,6 +346,74 @@ describe('the card while it is open', () => {
     await vi.waitFor(() => expect(denied.length).toBeGreaterThan(0), { timeout: 5_000 });
     expect(denied[0].reason).toBe('The hook changed again. Review the new version.');
     expect(activity.map((a) => a.state)).not.toContain('running');
+  });
+
+  // DOR-3359: the title says what Allow does, and the badge what a yes does.
+  it.each([
+    [['.claude/hooks/guard.mjs'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
+    [['scripts/check.sh'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
+    [['.claude/settings.json'], 'Allow a changed setting in "wt"?', 'runtime.apply_repo_hooks'],
+    [['.claude/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
+    [['.agents/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
+    [['.claude/agents/r.md'], 'Allow a changed subagent in "wt"?', 'runtime.apply_repo_tools'],
+    [['.claude/commands/c.md'], 'Allow a changed command in "wt"?', 'runtime.apply_repo_tools'],
+    [
+      ['.claude/skills/x/SKILL.md', '.claude/agents/r.md'],
+      'Allow 2 changed repo files in "wt"?',
+      'runtime.apply_repo_tools',
+    ],
+    [
+      ['.claude/skills/x/SKILL.md', '.claude/settings.json'],
+      'Allow 2 changed repo files in "wt"?',
+      'runtime.apply_repo_hooks',
+    ],
+  ])('titles a change to %j and picks its badge', (names, title, capabilityId) => {
+    const changed = { ...request('/x/wt', 'd'), names };
+    expect(repoConfigTitle(changed)).toBe(title);
+    expect(repoConfigCapabilityId(changed)).toBe(capabilityId);
+    expect(summariseRepoConfig(changed)).not.toContain('paused in');
+  });
+
+  it('titles the first-time card as trusting the repo, with the code badge', () => {
+    const trust = {
+      ...request('/x/wt', 'd'),
+      names: ['.claude/skills/x/SKILL.md'],
+      trust: { commonDir: '/x/.git', baseline: { sha: 'a'.repeat(40), branch: 'main' } },
+    };
+    expect(repoConfigTitle(trust)).toBe("Trust this repo's hooks and skills?");
+    expect(repoConfigCapabilityId(trust)).toBe('runtime.apply_repo_hooks');
+    expect(summariseRepoConfig(trust)).not.toContain('paused in');
+  });
+
+  it('badges only the repo-pin cards, and leaves local settings and MCP alone', () => {
+    expect(describeRepoConfigCapability('runtime.apply_repo_hooks')?.consequence).toBe(
+      'Runs code on this Mac'
+    );
+    expect(describeRepoConfigCapability('runtime.apply_repo_tools')?.consequence).toBe(
+      'Widens what agents can run'
+    );
+    expect(describeRepoConfigCapability('runtime.apply_repo_local_settings')).toEqual({
+      title: "Load a worktree's local settings",
+      tier: 'destructive',
+    });
+    expect(describeRepoConfigCapability('runtime.apply_repo_mcp')?.consequence).toBeUndefined();
+    expect(repoConfigTitle({ ...request('/x/wt', 'd'), kind: 'local' })).toBeUndefined();
+  });
+
+  it('raises the card with its own title and spends the yes under the same capability', async () => {
+    const pending = askForRepoConfig(
+      gateway,
+      { ...request('/x/wt', 'd1'), names: ['.claude/skills/x/SKILL.md'] },
+      async () => ({ digest: 'd1' }),
+      vi.fn()
+    );
+    answer.outcome = 'granted';
+    expect(await pending).toBe(true);
+    expect(cards[0]).toMatchObject({
+      capabilityId: 'runtime.apply_repo_tools',
+      title: 'Allow a changed skill in "wt"?',
+    });
+    expect(isRepoConfigApproved('hooks', 'd1')).toBe(true);
   });
 
   it('says how many files changed, and never names the guard', () => {

@@ -198,6 +198,9 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
 
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
   const heading = approval.serviceAction?.actionName ?? approval.capabilityTitle;
+  // A heading that is the action, or the question a consequence badge answers,
+  // wraps instead of truncating (see the heading row below).
+  const wrapsHeading = Boolean(approval.serviceAction || approval.consequence);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -240,18 +243,17 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
       >
         <div className="min-w-0 flex-1">
           {/* A connected-app action's heading IS the action ("Delete message"),
-              so on a narrow card it wraps, and the badge moves under it, rather
-              than cutting the action's name short. */}
+              and a card that names its consequence asks a whole question
+              ("Allow a changed skill in "wt"?"). Either way, on a narrow card the
+              heading wraps and the badge moves under it, rather than cutting the
+              question short. */}
           <div
-            className={cn(
-              'flex min-w-0 items-center gap-2',
-              approval.serviceAction && 'flex-wrap gap-y-0.5'
-            )}
+            className={cn('flex min-w-0 items-center gap-2', wrapsHeading && 'flex-wrap gap-y-0.5')}
           >
             <span
               className={cn(
                 'text-foreground text-sm font-medium',
-                approval.serviceAction ? 'min-w-0 break-words' : 'truncate'
+                wrapsHeading ? 'min-w-0 break-words' : 'truncate'
               )}
             >
               {heading}
@@ -268,7 +270,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                   approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
                 )}
               >
-                {TIER_LABEL[approval.tier]}
+                {approval.consequence ?? TIER_LABEL[approval.tier]}
               </Badge>
             )}
           </div>
