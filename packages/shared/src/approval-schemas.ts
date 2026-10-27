@@ -28,6 +28,12 @@ extendZodWithOpenApiOnce();
 export const APPROVAL_SUMMARY_MAX_LENGTH = 500;
 
 /**
+ * Longest consequence badge a card shows. It sits beside the title, so it is a
+ * few words, and only DorkOS's own capabilities set one.
+ */
+export const APPROVAL_CONSEQUENCE_MAX_LENGTH = 40;
+
+/**
  * Longest {@link PendingApprovalSchema.shape.detail} an approval will hold.
  *
  * Sized off the biggest thing a capability can legitimately put there. Today
@@ -277,6 +283,12 @@ export const PendingApprovalSchema = z
     capabilityTitle: z.string(),
     /** Permission tier of the capability being requested. */
     tier: z.enum(CAPABILITY_TIERS),
+    /**
+     * What a yes does, in a few words ("Runs code on this Mac"), for the badge
+     * in place of the tier's own label. Set by the capability, for cards whose
+     * tier label would mislead (repo pins, DOR-3359); absent everywhere else.
+     */
+    consequence: z.string().max(APPROVAL_CONSEQUENCE_MAX_LENGTH).optional(),
     /** One plain sentence describing what would happen. */
     summary: z.string().max(APPROVAL_SUMMARY_MAX_LENGTH),
     /** Opaque label for who asked, when the request carried one. */

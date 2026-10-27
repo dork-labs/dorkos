@@ -48,26 +48,106 @@ export const REPO_CONFIG_CAPABILITY_IDS: Record<RepoConfigKind, string> = {
   mcpJson: 'runtime.apply_repo_mcp',
 };
 
-/** Each card's title; the summary names the worktree and what changed. */
+/**
+ * The hooks card's sibling for a change that only widens what agents can run:
+ * a skill, subagent or command, never a hook or a setting (DOR-3359). Its own
+ * id so its badge can say so; the stored yes is the hooks kind's either way.
+ */
+export const REPO_TOOLS_CAPABILITY_ID = 'runtime.apply_repo_tools';
+
+/**
+ * Each card's fallback title. A repo-pin card always carries its own title
+ * ({@link repoConfigTitle}); the summary names what changed.
+ */
 const TITLES: Record<RepoConfigKind, string> = {
   hooks: 'Run an edited repo hook',
   local: "Load a worktree's local settings",
   mcpJson: "Start a repo's changed MCP servers",
 };
 
+/** What a yes on a repo-pin card does, for its badge in place of "Cannot be undone". */
+const CONSEQUENCES = {
+  runsCode: 'Runs code on this Mac',
+  widens: 'Widens what agents can run',
+} as const;
+
 /**
  * Describe a repo settings card's capability. `destructive`, as the hook card
- * is: a yes lets code run unattended.
+ * is: a yes lets code run unattended. The repo-pin cards also name what a yes
+ * does; the local-settings and MCP cards keep the tier's own label.
  *
  * @param capabilityId - The id `ApprovalService` is resolving.
  */
 export function describeRepoConfigCapability(
   capabilityId: string
-): { title: string; tier: CapabilityTier } | undefined {
+): { title: string; tier: CapabilityTier; consequence?: string } | undefined {
+  if (capabilityId === REPO_TOOLS_CAPABILITY_ID) {
+    return {
+      title: 'Allow a changed repo skill',
+      tier: 'destructive',
+      consequence: CONSEQUENCES.widens,
+    };
+  }
   const kind = (Object.keys(REPO_CONFIG_CAPABILITY_IDS) as RepoConfigKind[]).find(
     (k) => REPO_CONFIG_CAPABILITY_IDS[k] === capabilityId
   );
-  return kind ? { title: TITLES[kind], tier: 'destructive' } : undefined;
+  if (!kind) return undefined;
+  return kind === 'hooks'
+    ? { title: TITLES.hooks, tier: 'destructive', consequence: CONSEQUENCES.runsCode }
+    : { title: TITLES[kind], tier: 'destructive' };
+}
+
+/** What one changed repo file is, as a card title names it. */
+type RepoFileKind = 'hook' | 'setting' | 'skill' | 'subagent' | 'command';
+
+/**
+ * What one changed file is, by where it sits under `.claude` or `.agents`.
+ * Anything else is a script a hook runs, so a hook.
+ *
+ * @param rel - The file's repo-relative path.
+ */
+function repoFileKind(rel: string): RepoFileKind {
+  const parts = rel.split('/');
+  const at = Math.max(parts.lastIndexOf('.claude'), parts.lastIndexOf('.agents'));
+  const first = at === -1 ? undefined : parts[at + 1];
+  if (first === 'settings.json') return 'setting';
+  if (first === 'skills') return 'skill';
+  if (first === 'agents') return 'subagent';
+  if (first === 'commands') return 'command';
+  return 'hook';
+}
+
+/** Whether a yes on this card only widens tools: no hook, no setting, no trust. */
+function onlyWidens(request: RepoConfigRequest): boolean {
+  if (request.kind !== 'hooks' || request.trust || request.names.length === 0) return false;
+  return request.names.every((name) => {
+    const kind = repoFileKind(name);
+    return kind === 'skill' || kind === 'subagent' || kind === 'command';
+  });
+}
+
+/**
+ * The capability a card is raised under, which decides its badge.
+ *
+ * @param request - The setting and what changed.
+ */
+export function repoConfigCapabilityId(request: RepoConfigRequest): string {
+  return onlyWidens(request) ? REPO_TOOLS_CAPABILITY_ID : REPO_CONFIG_CAPABILITY_IDS[request.kind];
+}
+
+/**
+ * A repo-pin card's title: what Allow does (designer copy, DOR-3359). The
+ * local-settings and MCP cards keep their capability's title.
+ *
+ * @param request - The setting and what changed.
+ */
+export function repoConfigTitle(request: RepoConfigRequest): string | undefined {
+  if (request.kind !== 'hooks') return undefined;
+  if (request.trust) return "Trust this repo's hooks and skills?";
+  const wt = quoteSummaryValue(worktreeName(request.cwd));
+  return request.names.length === 1
+    ? `Allow a changed ${repoFileKind(request.names[0]!)} in ${wt}?`
+    : `Allow ${request.names.length} changed repo files in ${wt}?`;
 }
 
 /** One repo setting, as a person is asked about it. */
@@ -110,7 +190,6 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
   const reason = request.trust?.reason;
   if (request.trust) {
     // A trust card is about the repo's default branch, never an edit here.
-    lines.push(`Repo hooks paused in ${wt}.`);
     lines.push(TRUST_REASONS[reason ?? 'moved']);
     lines.push(
       reason === 'hooks-moved'
@@ -119,8 +198,8 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
     );
   } else if (request.kind === 'hooks') {
     // Where the change came from is this worktree (its branch or its edits),
-    // never necessarily an agent; what it is comes from the file's place.
-    lines.push(`Repo hooks paused in ${wt}.`);
+    // never necessarily an agent; what it is comes from the file's place. The
+    // title names the worktree (DOR-3359).
     lines.push(
       request.names.length === 1
         ? `${quoteSummaryValue(request.names[0])} differs from the default branch. ${whatItSets(request.names[0]!)}`
@@ -230,8 +309,9 @@ export async function askForRepoConfig(
   reread: RepoConfigReread,
   onChanged: () => void
 ): Promise<boolean> {
+  const title = repoConfigTitle(request);
   const binding: ApprovalBinding = {
-    capabilityId: REPO_CONFIG_CAPABILITY_IDS[request.kind],
+    capabilityId: repoConfigCapabilityId(request),
     // Content only, as the stored entry is: the yes is for exactly this diff.
     inputHash: hashApprovalInput({ kind: request.kind, digest: request.digest }),
   };
@@ -241,6 +321,7 @@ export async function askForRepoConfig(
   try {
     const ticket = gateway.request({
       ...binding,
+      ...(title ? { title } : {}),
       summary: summariseRepoConfig(request),
       detail: request.detail,
       ...(request.agentName ? { requestedBy: request.agentName } : {}),

@@ -423,6 +423,41 @@ describe('ApprovalService', () => {
       });
     });
 
+    // DOR-3359: a repo-pin card asks its own question and names what a yes does.
+    it('takes a per-request title and the capability’s consequence badge', () => {
+      const described = new ApprovalService(db, {
+        describeCapability: (id) =>
+          id === 'runtime.apply_repo_tools'
+            ? {
+                title: 'Allow a changed repo skill',
+                tier: 'destructive',
+                consequence: 'Widens what agents can run',
+              }
+            : { title: 'Install a marketplace package', tier: 'act' },
+      });
+
+      described.request({
+        capabilityId: 'runtime.apply_repo_tools',
+        inputHash: BINDING.inputHash,
+        summary: 'A skill differs from the default branch.',
+        title: 'Allow a changed skill in "wt"?',
+      });
+      described.request({
+        capabilityId: 'marketplace.install',
+        inputHash: 'other',
+        summary: 'Install "sentry-monitor"',
+      });
+
+      const [repo, install] = described.listPending();
+      expect(repo).toMatchObject({
+        capabilityTitle: 'Allow a changed skill in "wt"?',
+        tier: 'destructive',
+        consequence: 'Widens what agents can run',
+      });
+      expect(install.capabilityTitle).toBe('Install a marketplace package');
+      expect(install).not.toHaveProperty('consequence');
+    });
+
     it('over-warns rather than under-warns on an id the registry does not know', () => {
       const described = new ApprovalService(db, { describeCapability: () => undefined });
 
