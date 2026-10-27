@@ -15,7 +15,6 @@
  *
  * @module services/notifications/secret-file-notifications
  */
-import path from 'node:path';
 import type { NotificationRegistryEntry } from './notification-registry.js';
 
 /** The payload of the one kind, joined into `NotificationPayloads`. */
@@ -52,6 +51,23 @@ export function shownName(name: string): string {
 /** The most paths one row carries. */
 export const SECRET_FILES_LISTED = 20;
 
+/** How many paths the row's meta line names before it says "+N more". */
+const SECRET_FILES_IN_META = 2;
+
+/**
+ * The row's meta line when there are several files: the first few paths, then
+ * how many more, e.g. `.env · apps/web/.env.local · +2 more`. Nothing for one
+ * file, which the title already names.
+ *
+ * @param p - The notice's payload.
+ */
+export function secretFilesMeta(p: SecretFilePayloads['agent.secret_files']): string | undefined {
+  if (p.total <= 1) return undefined;
+  const named = p.files.slice(0, SECRET_FILES_IN_META).map(shownName);
+  const more = p.total - named.length;
+  return [...named, ...(more > 0 ? [`+${more} more`] : [])].join(' · ');
+}
+
 /**
  * As long as the inbox keeps a row (`NOTIFICATION_RETENTION_DAYS`, 30): a
  * longer window would claim a silence the store cannot keep, since dedupe
@@ -71,18 +87,20 @@ export const SECRET_FILE_ENTRIES: {
     storage: 'event',
     subjectType: 'agent',
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
+    // One file: its path inside the folder, so `apps/web/.env` is not just `.env`.
     title: (p) =>
       p.total === 1 && p.files[0]
-        ? `${p.agentName} can read ${shownName(path.basename(p.files[0]))} in its folder`
+        ? `${p.agentName} can read ${shownName(p.files[0])} in its folder`
         : `${p.agentName} can read ${p.total} secret files in its folder`,
     // The designer's `row.line.unbounded` (spec v0.3.6): no advice the agent
     // can step around. Today it reads outside its folder too (Full, and the
     // shell until DOR-3300), so moving a file keeps it out of searches through
     // the folder and nothing more, and the line says exactly that.
+    // It ends on what the person does, by hand: there is no Move action (part 1).
     body: (p) =>
       p.total === 1
-        ? `${p.agentName} can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder.`
-        : `${p.agentName} can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder.`,
+        ? `${p.agentName} can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder. Move it somewhere outside its folder yourself.`
+        : `${p.agentName} can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder. Move them somewhere outside its folder yourself.`,
     dedupeKey: (p) => `secret-files:${p.agentId}:${p.fingerprint}`,
     dedupeWindowMs: SECRET_FILES_DEDUPE_MS,
     relay: 'never',

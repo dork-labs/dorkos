@@ -39,6 +39,24 @@ afterEach(() => {
   cleanup();
 });
 
+describe('InboxRow meta line', () => {
+  it('names the files a secret-files notice lists, in full on hover', () => {
+    const meta = '.env · apps/web/.env.local · +2 more';
+    render(
+      <InboxRow
+        notification={build({ kind: 'agent.secret_files', meta, body: 'Move them yourself.' })}
+        onOpen={() => {}}
+      />
+    );
+    expect(screen.getByText(meta)).toHaveAttribute('title', meta);
+  });
+
+  it('draws no meta line when the notice has none', () => {
+    render(<InboxRow notification={build()} onOpen={() => {}} />);
+    expect(document.querySelector('.font-mono')).not.toBeInTheDocument();
+  });
+});
+
 describe('InboxRow faces', () => {
   it('draws the kind glyph when the caller never resolved an agent', () => {
     render(<InboxRow notification={build()} onOpen={() => {}} />);

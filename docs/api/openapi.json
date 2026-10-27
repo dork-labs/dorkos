@@ -18175,6 +18175,9 @@
               "refused",
               "failed"
             ]
+          },
+          "meta": {
+            "type": "string"
           }
         },
         "required": [

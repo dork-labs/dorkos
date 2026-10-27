@@ -68,10 +68,8 @@ export function PermissionsTab() {
         <h3 className="text-sm font-semibold">What agents may do</h3>
         <p className="text-muted-foreground text-sm">
           Allowed runs without asking. Ask waits for your yes. Blocked is refused.{' '}
-          {BLOCKED_IS_NOT_A_SANDBOX}
-        </p>
-        <p className="text-muted-foreground text-sm">
-          {RULES_DONT_HIDE_FOLDER_FILES[0]} {RULES_DONT_HIDE_FOLDER_FILES[1]}
+          {BLOCKED_IS_NOT_A_SANDBOX} {RULES_DONT_HIDE_FOLDER_FILES[0]}{' '}
+          {RULES_DONT_HIDE_FOLDER_FILES[1]}
         </p>
         <FieldCard>
           <FieldCardContent className="divide-border divide-y">

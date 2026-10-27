@@ -128,7 +128,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'ask',
         asks: 'always',
         reach: 'edit',
-        promise: 'Never asks you. Reads in its own folder still run.',
+        promise: 'Reads in its own folder still run, whatever its rules say.',
       },
       {
         id: 'acceptEdits',

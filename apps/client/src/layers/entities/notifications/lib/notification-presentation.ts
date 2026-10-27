@@ -17,7 +17,6 @@ import {
   Clock,
   Download,
   Hourglass,
-  KeyRound,
   LogIn,
   Mail,
   MessageCircleQuestion,
@@ -25,6 +24,7 @@ import {
   MonitorSmartphone,
   Puzzle,
   RotateCcw,
+  ShieldAlert,
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
@@ -112,7 +112,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
-  'agent.secret_files': KeyRound,
+  'agent.secret_files': ShieldAlert,
 };
 
 /** How loudly a notification draws. */
@@ -342,6 +342,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
       return { ...appRoutes.home(), search: { inbox: subject.id } };
     }
     return sessionId === undefined ? null : toSession({ session: sessionId });
+  }
+  if (kind === 'agent.secret_files') {
+    // The agent's own Permissions page, where its rules and the line about
+    // files in its folder sit, rather than the whole Team (DOR-3292).
+    return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.

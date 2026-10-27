@@ -356,6 +356,12 @@ export const NotificationDTOSchema = z
      * every other notice, which draws its kind's own icon.
      */
     mark: z.enum(['refused', 'failed']).optional(),
+    /**
+     * A short mono line under the body, rebuilt from the payload on read: the
+     * files an `agent.secret_files` notice names, e.g. `.env · apps/web/.env.local
+     * · +2 more` (DOR-3292). Paths only, never contents. Absent on every other kind.
+     */
+    meta: z.string().optional(),
   })
   .openapi('Notification');
 

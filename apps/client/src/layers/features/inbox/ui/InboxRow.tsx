@@ -220,6 +220,14 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
             {notification.body}
           </span>
         )}
+        {notification.meta !== undefined && (
+          <span
+            className="text-muted-foreground block truncate font-mono text-xs"
+            title={notification.meta}
+          >
+            {notification.meta}
+          </span>
+        )}
       </span>
       {/* The compact form ("5m", "2h", "3d"), not the sentence form ("45m ago").
           Two reasons, and they point the same way: these rows sit beside

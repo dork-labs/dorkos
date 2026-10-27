@@ -12,6 +12,7 @@ import { findingsFingerprint, SecretFileScanService } from '../secret-file-scan-
 import {
   SECRET_FILE_ENTRIES,
   SECRET_FILES_DEDUPE_MS,
+  secretFilesMeta,
   shownName,
 } from '../../../notifications/secret-file-notifications.js';
 import { NOTIFICATION_RETENTION_DAYS } from '../../../notifications/notification-store.js';
@@ -73,7 +74,18 @@ describe('SecretFileScanService', () => {
     // Said again only once the inbox has let the old row go.
     expect(SECRET_FILES_DEDUPE_MS).toBe(NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     expect(entry.tier).toBe('notable');
-    expect(entry.title({ ...base, fingerprint: one })).toBe(`Scout can read ${ENV} in its folder`);
+    // One file: its path inside the folder, not just its name.
+    const nested = { ...base, files: [`apps/web/${ENV}`], fingerprint: one };
+    expect(entry.title(nested)).toBe(`Scout can read apps/web/${ENV} in its folder`);
+  });
+
+  it('names several files in a meta line, and none for one', () => {
+    const one = { agentId: 'a', agentName: 'Scout', files: [ENV], total: 1, fingerprint: 'f' };
+    expect(secretFilesMeta(one)).toBeUndefined();
+    const two = { ...one, files: [ENV, `apps/web/${ENV}.local`], total: 2 };
+    expect(secretFilesMeta(two)).toBe(`${ENV} · apps/web/${ENV}.local`);
+    const four = { ...one, files: [ENV, `apps/web/${ENV}.local`, 'id_rsa', 'k.pem'], total: 4 };
+    expect(secretFilesMeta(four)).toBe(`${ENV} · apps/web/${ENV}.local · +2 more`);
   });
 
   it('says what moving a file does and does not do, for one file and for several', () => {
@@ -81,10 +93,10 @@ describe('SecretFileScanService', () => {
     const one = { agentId: 'a', agentName: 'Scout', files: [ENV], total: 1, fingerprint: 'f' };
     const many = { ...one, files: [ENV, 'id_rsa'], total: 2 };
     expect(entry.body!(one)).toBe(
-      "Scout can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder."
+      "Scout can read files outside its folder without asking you, so moving it out won't stop it. It does keep it out of searches through its folder. Move it somewhere outside its folder yourself."
     );
     expect(entry.body!(many)).toBe(
-      "Scout can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder."
+      "Scout can read files outside its folder without asking you, so moving these out won't stop it. It does keep them out of searches through its folder. Move them somewhere outside its folder yourself."
     );
     expect(entry.title(many)).toBe('Scout can read 2 secret files in its folder');
   });
