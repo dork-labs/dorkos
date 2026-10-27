@@ -322,6 +322,7 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
         ...personOnlyFileRules(dorkHome),
+        ...agentHomesSelfGrantRules(dorkHome),
       ],
     },
   } as Options['settings'];
@@ -344,6 +345,35 @@ export function personOnlyFileRules(dorkHome: string): string[] {
     if (root === undefined) continue;
     for (const file of PERSON_ONLY_DATA_FILES) {
       for (const tool of ALL_WRITE_TOOLS) rules.add(`${tool}(${root}/${file})`);
+    }
+  }
+  return [...rules];
+}
+
+/**
+ * Write-deny rules for every agent home in the data folder's self-grant files
+ * (`agents/*\/.claude/**`, `agents/*\/.mcp.json`, `agents/*\/.dork/agent.json`),
+ * through every spelling of the data directory. On every launch, not only
+ * beside an applied folder allow list (DOR-3068 S1): those files are what an
+ * agent's pin and allow list read, so one agent's file tools rewriting another's
+ * would approve its own change. The `*` matches one folder: each agent home,
+ * never the folders below it.
+ *
+ * @param dorkHome - The data directory.
+ */
+export function agentHomesSelfGrantRules(dorkHome: string): string[] {
+  const foreign = isForeignWindowsPath(dorkHome);
+  const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
+  const real = foreign ? undefined : realpathOrUndefined(home);
+  const rules = new Set<string>();
+  for (const spelling of new Set([home, ...(real ? [real] : [])])) {
+    const root = rulePath(spelling);
+    if (root === undefined) continue;
+    const agents = `${root}/agents`;
+    for (const tool of ALL_WRITE_TOOLS) {
+      rules.add(`${tool}(${agents}/*/.claude/**)`);
+      rules.add(`${tool}(${agents}/*/.mcp.json)`);
+      rules.add(`${tool}(${agents}/*/.dork/agent.json)`);
     }
   }
   return [...rules];
