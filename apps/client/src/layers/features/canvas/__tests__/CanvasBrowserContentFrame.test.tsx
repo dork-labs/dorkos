@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 // Genuine host-hook composition; mock HTTP replay is unit input, never server acceptance.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { CanvasChannelReplayResponse } from '@dorkos/shared/canvas-channel-schemas';
 import { DocFrameHandshake, FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
@@ -166,8 +166,9 @@ it('a connected page that leaves its document is not challenged again; Reload br
   fireEvent.load(frame);
   await act(async () => {});
   expect(started()).toHaveLength(1);
-  expect(screen.getByText(OFFLINE)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+  // The strip carries its own Reload, the same text button the frame banners use.
+  const strip = screen.getByText(OFFLINE).parentElement!;
+  fireEvent.click(within(strip).getByRole('button', { name: 'Reload' }));
   await waitFor(() => expect(screen.getByTitle('Embedded browser')).not.toBe(frame));
   expect(screen.queryByText(OFFLINE)).toBeNull();
   // A new navigation carries a new nonce.

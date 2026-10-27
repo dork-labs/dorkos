@@ -278,12 +278,20 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       )}
 
       {docFrame.requiresReload && (
-        <p
-          role="status"
-          className="text-muted-foreground border-border/60 border-b px-2 py-1 text-xs"
-        >
-          Page is offline. Reload to reconnect.
-        </p>
+        <div className="text-muted-foreground border-border/60 flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
+          <p role="status">Page is offline. Reload to reconnect.</p>
+          {/* The same text button the frame's own banners use. */}
+          <button
+            type="button"
+            onClick={() => {
+              notePersonNavigated();
+              setReloadNonce((n) => n + 1);
+            }}
+            className="text-foreground shrink-0 hover:underline"
+          >
+            Reload
+          </button>
+        </div>
       )}
       {bridgeRefusal !== null && <FrameBridgeNotice reason={bridgeRefusal} />}
 
