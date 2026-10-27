@@ -13,6 +13,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.126.0] - 2026-10-27
+
+> DorkOS 0.126.0 applies an agent folder's own allow list once you approve it, keeps Claude Code agents out of secret files, says plainly when a schedule is failing, makes Stop end the commands a turn started, and lets you answer an agent from inside a mini app.
+
+### Added
+
+- Answer an agent from inside a mini app. The first time a mini app sends your comment to an agent, DorkOS asks you once. The comment then lands in your direct chat with that agent as your own message, and the agent treats it just as if you had typed it there. You can change which agents it reaches in Settings → Extensions. A muted line above the message says which mini app and item it came from, and the agent's answer can show up back in the mini app under the agent's name. A mini app can check with DorkOS whether you really wrote a comment. This works only when you sign in to DorkOS with a password. On the computer DorkOS runs on, also turn on "Ask for a password on this computer too" in Settings. Each comment sent this way is in the audit trail. (DOR-3325)
+
+### Changed
+
+- The desktop app now refuses to start with debugging switches.
+
+### Fixed
+
+- An agent's own allow list (`permissions.allow` in its folder's `.claude/settings.json` or `.claude/settings.local.json`) now applies under DorkOS. Before this, Claude Code ignored it in agent folders, so a chat set to **Never ask** refused even the commands the agent's folder allows, and said nothing about why. DorkOS now asks you with an approval card that lists the agent's rules. After you allow it, the rules apply from the agent's next turn. If the agent adds rules, the list stops applying until you approve the change; the card shows what was added and removed. A list that only loses rules keeps applying without asking. Some rules are never applied: rules naming DorkOS's own tools, rules with a wildcard tool name, rules that allow a whole tool (like a bare `Bash`, which runs any command, or `Edit(./**)`), file rules that reach outside the agent's folder, and a few other rules that match almost anything. While a list applies, the agent's file tools also can't change its own settings, the settings of other agents kept in DorkOS's agents folder, DorkOS's own data, or Claude Code's account files. A list the card can't show in full isn't asked about or applied, so you never approve a rule you couldn't see. The rules apply only when the agent works in its own folder (not a subfolder or a worktree), and never on a teammate's turn. While a list is waiting, a Never ask chat shows a line once saying why it's refusing.
+- A Claude Code agent's file-reading tools can no longer open these files, at every permission level, Full autonomy included: DorkOS's own keys, settings and their backups, database, chat bot tokens, stored secrets and browser logins; the Claude Code, Codex and OpenCode sign-ins; and your SSH keys, AWS and Google Cloud keys, GitHub token and npm token. Before this, at Ask first and Act an agent could read them without asking. Tools like `git` and `gh` still read their own files as usual. Commands an agent runs in a shell are not covered yet, and neither are Codex and OpenCode agents. (DOR-3299)
+- In a Claude Code chat, Stop now also ends the commands the agent started in that turn, even ones that moved to the background after running a long time. Before, a long command could keep running after you pressed Stop and finish its work anyway. If a command won't stop, a line under the stopped reply names it with its own Stop button, and a pill at the top says how many are still running. The line stays after a reload and says when everything has ended. (DOR-3285)
+- Scheduled runs that take longer than two minutes now finish and show their real result. Before, they were marked failed with "the run never started", even though the work went on and often finished.
+- When a scheduled run really can't start, it says why, for example: every agent slot was busy, the hourly limit on agent turns was reached, or nothing was there to run it. If nothing was there, it tries once more 30 seconds later.
+- A run stopped at its time limit now says how long the limit was.
+- A scheduled run that was refused a tool now says "Needs attention", not "Completed". Its history shows how many tools were refused and names them.
+- Runs set to Never ask now record the tools they refused.
+- The Schedules list shows how many schedules are failing, with a Failing filter, and puts them first unless you pick another sort. Each failing schedule says why.
+- When a schedule is set to a level that asks, like Accept edits, its warning now says how to fix it: use Never ask with an allow list.
+- A schedule that starts failing sends one notice. It says why and has an Open schedule button that shows your failing schedules. No more arrive until it runs cleanly and fails again.
+- A message another agent queues in a busy chat now shows its own words in the queue, instead of the block of instructions DorkOS wraps it in for the agent. The agent still gets the full wrapper, which keeps it from mistaking another agent's words for yours.
+- Message search shows those words too, for messages indexed from now on. To clean up older results, delete the search index and let DorkOS rebuild it.
+- Another agent's queued message can be moved or removed but not edited, and Stop no longer puts it back in your message box as if you had written it. The Stop question now says which messages come back and which are cancelled, and the arrow keys skip over other agents' messages.
+- A queued message from another agent now says who sent it and which chat it came from, with a link to that chat when it can be opened. The queue's count shows how many are yours and how many came from other agents.
+- DorkOS no longer runs git in folders an agent can change: every agent's home folder (including a project folder you set up as an agent), workspaces, worktrees and rooms, and projects that have a worktree in one of those. For now, chats in those folders don't show the git branch, the diff view can't compare with the last commit there, the file list there doesn't skip ignored files, the Workspaces page shows those checkouts as unreadable, and heartbeats skip new commits and failing checks. (DOR-3343)
+- When Claude Code can't read its sign-in, the app now says so instead of saying you're signed out, and tells you to check your Mac for a password prompt.
+- Long schedule names, empty rooms and long pasted paths in room messages now stay within the phone screen (DOR-3188, DOR-3189, DOR-3193).
+
+### Security
+
+- DorkOS's tool server now refuses very large tool inputs (over 10,000 items) and requests over 1 MB before reading them further.
+
 ## [0.125.4] - 2026-10-24
 
 > DorkOS 0.125.4 names a signed-out Claude account, and signs in to that account, not your default.
@@ -263,34 +300,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.
 
-## [0.121.0] - 2026-10-17
+Older releases (v0.1.0 – v0.121.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.121.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.121.0.md).
 
-> DorkOS 0.121.0 makes connecting apps work again, lets agents keep longer notes, and draws diagrams in documents.
-
-### Added
-
-- Agents can now keep **notes files** for things too long for their main memory file, like a checklist or how a tricky part of a project works. Each new notes file gets a one-line description, and an agent opens one only when it needs it, so notes cost nothing until they are used. They live in `.dork/memory/` next to the main file, and are never committed to git.
-- Mermaid diagrams now draw in markdown documents on the canvas, in the app's own colors in light and dark. The diagram code loads only when a document has one.
-- An agent can see where its message stands: a queued message says how many messages are ahead of it, and reading a chat lists your recent messages to it as waiting, delivered, answered or not delivered, with the reason (DOR-2994)
-
-### Changed
-
-- When an agent runs in DorkOS, Claude Code's own memory is now switched off, so the agent keeps one memory instead of two. Before, its notes could end up split between the two. An agent that already has notes in Claude Code's memory keeps using them until they are copied over, so nothing goes missing.
-- In canvas documents, `[[Page name]]` now shows as a link, and a line that is only `::name` shows as a placeholder block. Both are kept exactly as written when you save. Write `\::name` to keep such a line as plain text.
-- Tables you add while editing a document are saved without column alignment marks (`| - |` instead of `| :- |`).
-- Undo no longer reverses a change that arrived from outside the editor, such as an agent rewriting the file. Your own edits still undo as before.
-
-### Fixed
-
-- Connecting any app through DorkOS, such as Vercel, Cloudflare, Gmail or Slack, failed at once with "isn't available right now". It now opens the sign-in again.
-- A message one agent sends another chat no longer shows as delivered when that chat could not start, for example because too many chats were open. It now shows as not delivered, with the reason, so the sender knows to send it again (DOR-2994)
-- An agent's scheduled beat that its chat could not start is now recorded as "could not start" instead of as a beat that ran (DOR-2994)
-- A message still waiting in line is no longer marked as answered just because the other chat sent something unrelated (DOR-2994)
-- When too many agent chats are already running, a message is refused with a plain note that nothing was kept and it should be sent again, instead of a note about spin-off chats (DOR-2994)
-
-Older releases (v0.1.0 – v0.120.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.120.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.120.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.125.4...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.0...HEAD
+[0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
@@ -300,4 +313,3 @@ Older releases (v0.1.0 – v0.120.0) are archived in [changelog/archive/CHANGELO
 [0.124.0]: https://github.com/dork-labs/dorkos/compare/v0.123.0...v0.124.0
 [0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
 [0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
-[0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
