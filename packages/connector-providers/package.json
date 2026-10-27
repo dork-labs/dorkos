@@ -1,6 +1,6 @@
 {
   "name": "@dork-labs/connector-providers",
-  "version": "0.125.4",
+  "version": "0.126.0",
   "description": "Confined external connector SDK adapters and the connector contract shared by DorkOS runtimes and hosted services.",
   "license": "MIT",
   "repository": {
