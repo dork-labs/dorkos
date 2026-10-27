@@ -50,6 +50,14 @@ describe('listTreeThroughLinks', () => {
     ).resolves.toEqual(new Map());
   });
 
+  it('finds nothing through a link whose in-repo target is missing', async () => {
+    fs.symlinkSync('../../.agents/skills/gone', path.join(repo.main, '.claude/skills/gone'));
+    const commit = repo.commit('a dangling link');
+    await expect(
+      listTreeThroughLinks(repo.main, commit, ['.claude/skills/gone/SKILL.md'])
+    ).resolves.toEqual(new Map());
+  });
+
   it('refuses an absolute link, even one that names a real folder', async () => {
     await expect(
       listTreeThroughLinks(repo.main, head, ['.claude/skills/abs/SKILL.md'])

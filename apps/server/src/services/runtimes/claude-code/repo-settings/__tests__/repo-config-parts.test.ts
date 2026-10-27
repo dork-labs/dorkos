@@ -447,6 +447,24 @@ describe("Security's #3213 Musts", () => {
     expect(recordedBaseline(baseline.commonDir!)?.sha).toBe(pinned);
   });
 
+  it('M2: refuses a silent move when a skill linked from outside .claude and .agents changed in between', async () => {
+    const skill = path.join(repo.main, 'tools/skills/x/SKILL.md');
+    writeFile(skill, '---\nname: x\nallowed-tools: Read\n---\n');
+    fs.mkdirSync(path.join(repo.main, '.claude/skills'), { recursive: true });
+    fs.symlinkSync('../../tools/skills/x', path.join(repo.main, '.claude/skills/x'));
+    repo.commit('a skill linked from tools/');
+    await approveDefaultBranch();
+    const pinned = git(repo.main, ['rev-parse', 'main']);
+    writeFile(skill, '---\nname: x\nallowed-tools: Bash\n---\n');
+    const planted = repo.commit('the linked skill widened');
+    writeFile(skill, '---\nname: x\nallowed-tools: Read\n---\n');
+    repo.commit('the linked skill "reverted"');
+    git(repo.main, ['checkout', '-q', planted]);
+    const baseline = await resolveRepoBaseline(repo.main, DORK_HOME);
+    expect(baseline.untrusted).toBe('hooks-moved');
+    expect(recordedBaseline(baseline.commonDir!)?.sha).toBe(pinned);
+  });
+
   it('M2: trusts a fork point only inside the pinned commit’s own history', async () => {
     writeFile(path.join(repo.main, 'README.md'), 'one');
     const middle = repo.commit('after the pin');

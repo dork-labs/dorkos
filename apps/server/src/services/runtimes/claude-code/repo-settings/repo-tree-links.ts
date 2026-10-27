@@ -92,6 +92,38 @@ async function followLinks(
 }
 
 /**
+ * Where every symlink in `listed` leads inside the repo at `commit`, following
+ * a link to a link up to {@link MAX_HOPS}; repo-relative, each once. A link
+ * out of the repo leads nowhere here. What the in-between check adds as
+ * literal pathspecs, so a skill folder linked from anywhere in the repo is
+ * covered, not only one in `.agents/` (Security, #3213 at `eca35b89a1`).
+ *
+ * @param root - The repo's working tree top.
+ * @param commit - The commit to read.
+ * @param listed - Entries of that commit, path to id and mode.
+ */
+export async function linkTargets(
+  root: string,
+  commit: string,
+  listed: Map<string, TreeEntry>
+): Promise<string[]> {
+  const targets = new Set<string>();
+  let links = [...listed].filter(([, entry]) => entry.mode === SYMLINK_MODE);
+  for (let hop = 0; hop < MAX_HOPS && links.length > 0; hop++) {
+    const next: string[] = [];
+    for (const [link, entry] of links) {
+      const target = resolveInside(link, (await readBlob(root, entry.oid)).toString());
+      if (target === undefined || targets.has(target)) continue;
+      targets.add(target);
+      next.push(target);
+    }
+    const entries = next.length > 0 ? await listEntries(root, commit, next) : new Map();
+    links = [...entries].filter(([, entry]) => entry.mode === SYMLINK_MODE);
+  }
+  return [...targets];
+}
+
+/**
  * Where a link at `link` pointing to `text` leads, repo-relative, or
  * `undefined` when that is outside the repo (absolute, or up past its top).
  */

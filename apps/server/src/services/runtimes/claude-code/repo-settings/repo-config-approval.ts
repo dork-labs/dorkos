@@ -123,8 +123,8 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
     lines.push(`Repo hooks paused in ${wt}.`);
     lines.push(
       request.names.length === 1
-        ? `Its ${quoteSummaryValue(request.names[0])} differs from the default branch. ${whatItSets(request.names[0]!)}`
-        : `${request.names.length} files here differ from the default branch: hooks, settings or skill tools.`
+        ? `${quoteSummaryValue(request.names[0])} differs from the default branch. ${whatItSets(request.names[0]!)}`
+        : `${request.names.length} files here differ from the default branch.`
     );
     lines.push("Until you approve it, this repo's hooks, skills and commands stay off here.");
   } else if (request.kind === 'local') {
@@ -162,8 +162,8 @@ function whatItSets(rel: string): string {
   const rest = parts.slice(parts.lastIndexOf('.claude') + 1);
   if (parts.includes('.claude') && rest[0] === 'hooks') return "It's a hook script.";
   if (rest[0] === 'settings.json') return 'It sets what runs on tool calls.';
-  if (rest[0] === 'skills') return "It sets a skill's allowed tools or hooks.";
-  if (rest[0] === 'agents') return "It sets a subagent's tools or hooks.";
+  if (rest[0] === 'skills') return 'It changes which tools or hooks a skill has.';
+  if (rest[0] === 'agents') return 'It changes what a subagent can do.';
   return "It's a script a hook runs.";
 }
 

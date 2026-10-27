@@ -237,7 +237,7 @@ describe('committed hooks', () => {
     expect(cards).toHaveLength(1);
     expect(cards[0].capabilityId).toBe('runtime.apply_repo_hooks');
     expect(cards[0].summary).toContain(
-      'Its ".claude/hooks/guard.mjs" differs from the default branch. It\'s a hook script.'
+      '".claude/hooks/guard.mjs" differs from the default branch. It\'s a hook script.'
     );
     expect(cards[0].summary).toContain(
       'Matching the default branch again also turns them back on.'
@@ -346,9 +346,7 @@ describe('the card while it is open', () => {
       ...request('/x/wt', 'd'),
       names: ['.claude/settings.json', '.claude/hooks/a.mjs', '.claude/hooks/b.mjs'],
     });
-    expect(summary).toContain(
-      '3 files here differ from the default branch: hooks, settings or skill tools.'
-    );
+    expect(summary).toContain('3 files here differ from the default branch.');
     expect(summary).toContain('Your permission settings for "Ops" still apply.');
   });
 });
@@ -463,10 +461,22 @@ describe('skills Harness Sync links in from .agents (QA, #3213 at 775e51d964)', 
     await settle();
     expect(cards).toHaveLength(1);
     expect(cards[0].summary).toContain(
-      'Its ".claude/skills/opensrc/SKILL.md" differs from the default branch.'
+      '".claude/skills/opensrc/SKILL.md" differs from the default branch.'
     );
-    expect(cards[0].summary).toContain("It sets a skill's allowed tools or hooks.");
+    expect(cards[0].summary).toContain('It changes which tools or hooks a skill has.');
     expect(cards[0].summary).not.toMatch(/edited|a hook that runs/);
+  });
+
+  it('counts a skill behind a link whose in-repo target the commit lacks as changed', async () => {
+    fs.mkdirSync(path.join(repo.main, '.claude/skills'), { recursive: true });
+    fs.symlinkSync('../../.agents/skills/gone', path.join(repo.main, '.claude/skills/gone'));
+    repo.commit('a dangling link');
+    store.harness = {};
+    await pinRepoBaseline(repo.main);
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, '.agents/skills/gone/SKILL.md'), SKILL);
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    expect(decision.pauseHooks).toBe(true);
   });
 
   it('refuses a committed link that leads out of the repo: its skill counts as changed', async () => {

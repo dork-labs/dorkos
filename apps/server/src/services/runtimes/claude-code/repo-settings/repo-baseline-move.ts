@@ -31,6 +31,7 @@ import { namedTargets, pickAgentFileFields } from '../folder-settings/folder-con
 import { isWithin, repoRelative, sha256 } from './repo-files.js';
 import { changedPaths, listTree, listTreeMatching, readBlob, touchedBetween } from './repo-git.js';
 import { pickPowerSettings } from './repo-local-settings.js';
+import { linkTargets } from './repo-tree-links.js';
 import { fileDiff } from './text-diff.js';
 
 /** Where every file the check reads lives, as git glob pathspecs. */
@@ -226,7 +227,9 @@ export async function hooksChangedBetween(
   // those name counts as a change: wider than the endpoints, because a commit
   // in between becomes a trusted fork point, and a subagent, skill or command
   // added there and reverted after carries hooks and tools of its own.
-  const scripts = [
+  // And where every link under those folders leads, at either end: a skill
+  // folder linked from anywhere in the repo is read through, so it counts.
+  const reached = [
     ...new Set([
       ...(await reachedAt(root, from, dorkHome)),
       ...(await reachedAt(root, to, dorkHome)),
@@ -234,18 +237,17 @@ export async function hooksChangedBetween(
   ];
   return touchedBetween(root, from, to, [
     ...BETWEEN_PATHSPECS.map((spec) => `:(glob)${spec}`),
-    ...scripts.map((rel) => `:(literal)${rel}`),
+    ...reached.map((rel) => `:(literal)${rel}`),
   ]);
 }
 
-/** The scripts a commit's hooks reach, repo-relative. */
+/** The scripts a commit's hooks reach and where its links lead, repo-relative. */
 async function reachedAt(root: string, commit: string, dorkHome: string): Promise<string[]> {
-  return reachedScripts(
-    root,
-    commit,
-    await listTreeMatching(root, commit, HOOK_PATHSPECS),
-    dorkHome
-  );
+  const listed = await listTreeMatching(root, commit, HOOK_PATHSPECS);
+  return [
+    ...(await reachedScripts(root, commit, listed, dorkHome)),
+    ...(await linkTargets(root, commit, listed)),
+  ];
 }
 
 /** What a trust card shows about a default-branch commit. */
