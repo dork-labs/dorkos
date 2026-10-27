@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(rooms): a picture or PDF an agent puts on a room's canvas shows for everyone"
+  - 'fix(rooms): keep shared canvas files named, deduped and size-checked first'
 ---
 
 ### Fixed

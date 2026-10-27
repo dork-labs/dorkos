@@ -23,8 +23,10 @@ const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64'
 );
-const PNG_NAME = `${createHash('sha256').update(PNG).digest('hex')}.png`;
+const PNG_HASH = createHash('sha256').update(PNG).digest('hex');
 const ROOM = '01ROOMCANVASMEDIA000000000';
+/** A copy's address: `<where>-<bytes hash>.<ext>`. */
+const COPY = new RegExp(`^/api/rooms/${ROOM}/canvas/media/[0-9a-f]{16}-${PNG_HASH}\\.png$`);
 
 let root: string;
 let anaCwd: string;
@@ -42,21 +44,27 @@ beforeEach(async () => {
   await fs.writeFile(path.join(anaCwd, 'out', 'chart.png'), PNG);
   await fs.writeFile(path.join(kaiCwd, 'secret.png'), PNG);
   await initBoundary(root);
+  table = [];
 });
 
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
+/** What the room's table holds, for dedupe. */
+let table: { id: string; src: string | null }[];
+
 /** Share as Ana, from her own folder, with a 1 MB limit. */
 function share(command: UiCommand, ownCopy: string | null = null): Promise<UiCommand> {
   return shareCanvasMedia({
     roomId: ROOM,
+    authorId: 'author-ana',
     command,
     cwd: anaCwd,
     ownCopy: async () => ownCopy,
     roomsDir,
     maxFileSize: () => 1024 * 1024,
+    documents: () => table,
   });
 }
 
@@ -73,13 +81,21 @@ describe('shareCanvasMedia', () => {
       target: { roomId: ROOM },
     });
     expect(shared.action).toBe('open_canvas');
-    expect(srcOf(shared)).toBe(`/api/rooms/${ROOM}/canvas/media/${PNG_NAME}`);
+    expect(srcOf(shared)).toMatch(COPY);
     expect(isRoomCanvasMediaUrl(srcOf(shared), ROOM)).toBe(true);
-    // Everything else the agent sent is kept.
-    expect((shared as { content: { alt: string } }).content.alt).toBe('Chart');
+    // Everything else the agent sent is kept, and the tab keeps the file's real name.
+    expect((shared as { content: { alt: string; title: string } }).content).toMatchObject({
+      alt: 'Chart',
+      title: 'chart.png',
+    });
     expect((shared as { target: { roomId: string } }).target.roomId).toBe(ROOM);
-    const copied = await fs.readFile(path.join(roomsDir, ROOM, 'canvas-media', PNG_NAME));
+    const copied = await fs.readFile(
+      path.join(roomsDir, ROOM, 'canvas-media', srcOf(shared).split('/').pop()!)
+    );
     expect(copied.equals(PNG)).toBe(true);
+    // Nothing half-written is left behind.
+    const left = await fs.readdir(path.join(roomsDir, ROOM, 'canvas-media'));
+    expect(left.filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 
   it('resolves a relative path against the agent’s own folder', async () => {
@@ -87,7 +103,7 @@ describe('shareCanvasMedia', () => {
       action: 'open_canvas',
       content: { type: 'image', src: 'out/chart.png' },
     });
-    expect(srcOf(shared)).toBe(`/api/rooms/${ROOM}/canvas/media/${PNG_NAME}`);
+    expect(srcOf(shared)).toMatch(COPY);
   });
 
   it('gives the same picture the same address, so a second open is the same document', async () => {
@@ -96,6 +112,24 @@ describe('shareCanvasMedia', () => {
       content: { type: 'image', src: 'out/chart.png' },
     };
     expect(srcOf(await share(command))).toBe(srcOf(await share(command)));
+  });
+
+  it('turns a re-rendered picture at the same path into an update of its document', async () => {
+    const command: UiCommand = {
+      action: 'open_canvas',
+      content: { type: 'image', src: 'out/chart.png' },
+      target: { roomId: ROOM },
+    };
+    const first = await share(command);
+    table = [{ id: 'doc-chart', src: srcOf(first) }];
+    await fs.writeFile(path.join(anaCwd, 'out', 'chart.png'), Buffer.concat([PNG, PNG]));
+    const second = await share(command);
+    expect(second).toMatchObject({
+      action: 'update_canvas',
+      documentId: 'doc-chart',
+      target: { roomId: ROOM },
+    });
+    expect(srcOf(second)).not.toBe(srcOf(first));
   });
 
   it('turns an open_file of a PDF into the open it implied', async () => {
@@ -110,7 +144,7 @@ describe('shareCanvasMedia', () => {
       content: { type: 'pdf' },
       target: { roomId: ROOM },
     });
-    expect(srcOf(shared)).toMatch(/\/canvas\/media\/[0-9a-f]{64}\.pdf$/);
+    expect(srcOf(shared)).toMatch(/\/canvas\/media\/[0-9a-f]{16}-[0-9a-f]{64}\.pdf$/);
   });
 
   it('accepts a file in the agent’s own copy of the room’s files', async () => {
@@ -121,7 +155,7 @@ describe('shareCanvasMedia', () => {
       { action: 'open_canvas', content: { type: 'image', src: path.join(copy, 'mock.png') } },
       copy
     );
-    expect(srcOf(shared)).toBe(`/api/rooms/${ROOM}/canvas/media/${PNG_NAME}`);
+    expect(srcOf(shared)).toMatch(COPY);
   });
 
   it('refuses another member’s file, with the reason, and copies nothing', async () => {
@@ -144,11 +178,18 @@ describe('shareCanvasMedia', () => {
     ).rejects.toMatchObject({ code: 'ATTACHMENT_TOO_LARGE' });
   });
 
-  it('refuses a kind of file the canvas cannot show', async () => {
+  it('refuses a kind of file the canvas cannot show, glTF included', async () => {
     await fs.writeFile(path.join(anaCwd, 'out', 'notes.txt'), 'hi');
+    await fs.writeFile(path.join(anaCwd, 'out', 'scene.gltf'), '{}');
     await expect(
       share({ action: 'open_canvas', content: { type: 'image', src: 'out/notes.txt' } })
     ).rejects.toMatchObject({ code: 'ATTACHMENT_UNREADABLE' });
+    await expect(
+      share({ action: 'open_canvas', content: { type: 'model3d', src: 'out/scene.gltf' } })
+    ).rejects.toMatchObject({
+      code: 'ATTACHMENT_UNREADABLE',
+      message: expect.stringContaining('.glb'),
+    });
   });
 
   it('leaves URLs, inline data, this room’s copies and non-media content alone', async () => {
@@ -157,7 +198,10 @@ describe('shareCanvasMedia', () => {
       { action: 'open_canvas', content: { type: 'image', src: 'data:image/png;base64,AAAA' } },
       {
         action: 'open_canvas',
-        content: { type: 'image', src: `/api/rooms/${ROOM}/canvas/media/${PNG_NAME}` },
+        content: {
+          type: 'image',
+          src: `/api/rooms/${ROOM}/canvas/media/${'c'.repeat(16)}-${PNG_HASH}.png`,
+        },
       },
       { action: 'open_canvas', content: { type: 'markdown', content: '# hi' } },
       { action: 'open_file', sourcePath: 'src/index.ts' },
@@ -171,13 +215,18 @@ describe('shareCanvasMedia', () => {
 
 describe('findRoomCanvasMedia', () => {
   it('finds a copied file, and nothing for a name no copy could have', async () => {
-    await share({ action: 'open_canvas', content: { type: 'image', src: 'out/chart.png' } });
-    const found = await findRoomCanvasMedia(roomsDir, ROOM, PNG_NAME);
-    expect(found).toMatchObject({ contentType: 'image/png', size: PNG.byteLength });
+    const shared = await share({
+      action: 'open_canvas',
+      content: { type: 'image', src: 'out/chart.png' },
+    });
+    const name = srcOf(shared).split('/').pop()!;
+    const found = await findRoomCanvasMedia(roomsDir, ROOM, name);
+    expect(found?.contentType).toBe('image/png');
 
     expect(await findRoomCanvasMedia(roomsDir, ROOM, '../../agents/kai/secret.png')).toBeNull();
     expect(await findRoomCanvasMedia(roomsDir, ROOM, 'chart.png')).toBeNull();
-    expect(await findRoomCanvasMedia(roomsDir, '..', PNG_NAME)).toBeNull();
-    expect(await findRoomCanvasMedia(roomsDir, 'OTHERROOM', PNG_NAME)).toBeNull();
+    expect(await findRoomCanvasMedia(roomsDir, ROOM, `${PNG_HASH}.png`)).toBeNull();
+    expect(await findRoomCanvasMedia(roomsDir, '..', name)).toBeNull();
+    expect(await findRoomCanvasMedia(roomsDir, 'OTHERROOM', name)).toBeNull();
   });
 });

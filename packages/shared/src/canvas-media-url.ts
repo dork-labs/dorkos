@@ -12,12 +12,15 @@
  * @module shared/canvas-media-url
  */
 
-/** A copied file's name: the SHA-256 of its bytes, then its lower-case suffix. */
-export const ROOM_CANVAS_MEDIA_FILE = /^[0-9a-f]{64}(\.[a-z0-9]{1,10})?$/;
+/**
+ * A copied file's name: a short hash of who shared which path, the SHA-256 of
+ * its bytes, then its lower-case suffix.
+ */
+export const ROOM_CANVAS_MEDIA_FILE = /^[0-9a-f]{16}-[0-9a-f]{64}(\.[a-z0-9]{1,10})?$/;
 
 /** The whole address, with the room id and the file name captured. */
 const ROOM_CANVAS_MEDIA_URL =
-  /^\/api\/rooms\/([A-Za-z0-9][A-Za-z0-9._-]*)\/canvas\/media\/([0-9a-f]{64}(?:\.[a-z0-9]{1,10})?)$/;
+  /^\/api\/rooms\/([A-Za-z0-9][A-Za-z0-9._-]*)\/canvas\/media\/([0-9a-f]{16}-[0-9a-f]{64}(?:\.[a-z0-9]{1,10})?)$/;
 
 /**
  * The address one copied file is served at.

@@ -173,14 +173,17 @@ async function resolveOwnPath(
  *
  * @param roots - The agent's working directory, its own copies and the rooms directory.
  * @param named - The path the agent wrote, absolute or relative to the working directory.
- * @param doing - What the agent was trying to do, for the refusal: "attach it".
- * @returns The bytes and the name to store them under.
+ * @param opts.doing - What the agent was trying to do, for the refusal: "attach it".
+ * @param opts.maxBytes - The biggest file accepted, checked BEFORE a byte is read, so
+ *   a huge recording is refused without being loaded into memory.
+ * @returns The bytes, the name to store them under, and the real path they came from.
  */
 export async function readOwnFile(
   roots: { cwd: string; ownCopies: readonly string[]; roomsDir?: string },
   named: string,
-  doing = 'attach it'
-): Promise<{ bytes: Buffer; name: string }> {
+  opts: { doing?: string; maxBytes?: number } = {}
+): Promise<{ bytes: Buffer; name: string; resolved: string }> {
+  const doing = opts.doing ?? 'attach it';
   const label = path.basename(named) || named;
   let resolved: string;
   try {
@@ -215,12 +218,18 @@ export async function readOwnFile(
     if (!stat.isFile()) {
       throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
     }
+    if (opts.maxBytes !== undefined && stat.size > opts.maxBytes) {
+      throw new RoomError(
+        'ATTACHMENT_TOO_LARGE',
+        `${label} is ${megabytes(stat.size)}, and the limit is ${megabytes(opts.maxBytes)}.`
+      );
+    }
     bytes = await handle.readFile().catch(() => null);
   } finally {
     await handle.close().catch(() => undefined);
   }
   if (!bytes) throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be read.`);
-  return { bytes, name: label };
+  return { bytes, name: label, resolved };
 }
 
 /**
@@ -295,7 +304,10 @@ export async function stageAgentAttachments(request: AgentAttachmentRequest): Pr
   try {
     const ids: string[] = [];
     for (const named of paths) {
-      const { bytes, name: original } = await readOwnFile(roots, named);
+      const { bytes, name: original } = await readOwnFile(roots, named, {
+        maxBytes: limits.maxFileSize,
+      });
+      // Checked again on the bytes: the file can grow between the stat and the read.
       if (bytes.byteLength > limits.maxFileSize) {
         throw new RoomError(
           'ATTACHMENT_TOO_LARGE',

@@ -221,7 +221,7 @@ describe('the room canvas routes', () => {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       'base64'
     );
-    const name = `${createHash('sha256').update(PNG).digest('hex')}.png`;
+    const name = `${'c'.repeat(16)}-${createHash('sha256').update(PNG).digest('hex')}.png`;
     let home: string;
 
     beforeEach(async () => {
@@ -281,7 +281,7 @@ describe('the room canvas routes', () => {
         `/api/rooms/${roomId}/canvas/media/..%2F..%2Fsecret.png`
       );
       const missing = await request(testServer).get(
-        `/api/rooms/${roomId}/canvas/media/${'0'.repeat(64)}.png`
+        `/api/rooms/${roomId}/canvas/media/${'c'.repeat(16)}-${'0'.repeat(64)}.png`
       );
       expect(traversal.status).toBe(404);
       expect(missing.status).toBe(404);

@@ -24,7 +24,8 @@
  *
  * @module routes/room-canvas
  */
-import { createReadStream } from 'node:fs';
+import { constants as fsConstants } from 'node:fs';
+import fs, { type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { Hono, type Context } from 'hono';
@@ -52,6 +53,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { parseByteRange, servesInlineHere } from '../lib/file-route-guards.js';
+import { logger } from '../lib/logger.js';
 import { errorBody } from '../lib/route-utils.js';
 import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
@@ -175,9 +177,19 @@ router.get('/media/:file', (c) =>
     if (!media) {
       return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
     }
-    const range = parseByteRange(c.req.header('range'), media.size);
+    // Opened once, never through a symlink, and every later question asked of
+    // that descriptor, so the file served is the file that was checked.
+    let file: FileHandle;
+    try {
+      file = await fs.open(media.filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    } catch {
+      return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
+    }
+    const { size } = await file.stat();
+    const range = parseByteRange(c.req.header('range'), size);
     if (range.kind === 'unsatisfiable') {
-      c.header('Content-Range', `bytes */${media.size}`);
+      await file.close();
+      c.header('Content-Range', `bytes */${size}`);
       return c.json(errorBody('Requested range not satisfiable', 'RANGE_NOT_SATISFIABLE'), 416);
     }
     const headers: Record<string, string> = {
@@ -193,14 +205,20 @@ router.get('/media/:file', (c) =>
     }
     const status = range.kind === 'range' ? 206 : 200;
     if (range.kind === 'range') {
-      headers['Content-Range'] = `bytes ${range.start}-${range.end}/${media.size}`;
+      headers['Content-Range'] = `bytes ${range.start}-${range.end}/${size}`;
       headers['Content-Length'] = String(range.end - range.start + 1);
     } else {
-      headers['Content-Length'] = String(media.size);
+      headers['Content-Length'] = String(size);
     }
-    const stream = createReadStream(
-      media.filePath,
+    if (c.req.method === 'HEAD') {
+      await file.close();
+      return c.body(null, status, headers);
+    }
+    const stream = file.createReadStream(
       range.kind === 'range' ? { start: range.start, end: range.end } : {}
+    );
+    stream.on('error', (err) =>
+      logger.error('[rooms] canvas media stream failed', { err, file: media.filePath })
     );
     return c.body(Readable.toWeb(stream) as ReadableStream<Uint8Array>, status, headers);
   })

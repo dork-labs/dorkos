@@ -22,11 +22,11 @@ describe('roomDocumentReading — what travelled with the row', () => {
       // A local file an agent put on the table, which the server copied into the room.
       {
         type: 'image',
-        src: '/api/rooms/01ROOM/canvas/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+        src: '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
       },
       {
         type: 'pdf',
-        src: '/api/rooms/01ROOM/canvas/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf',
+        src: '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf',
       },
     ];
     for (const content of shapes) {

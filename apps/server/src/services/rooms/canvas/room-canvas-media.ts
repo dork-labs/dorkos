@@ -20,16 +20,21 @@
  * copy of this room's files — decided by `readOwnFile`, the one function
  * `post_to_room` attachments use. Never another member's copy, never a room's
  * shared `repo/`, never through a symlink. Only the media types the raw-file
- * route already serves (plus CSV), and no bigger than the person's own upload
- * limit.
+ * route already serves (plus CSV, minus glTF, whose model points at files beside
+ * it that are not copied), and no bigger than the person's own upload limit,
+ * checked before a byte is read.
  *
- * ## Where it goes
+ * ## Where it goes, and why two names
  *
- * `<rooms>/<roomId>/canvas-media/<sha256 of the bytes>.<ext>`. Named by content,
- * so opening the same picture twice is the same document (the source key is the
- * `src`), and a re-rendered picture is a new one. Files are never deleted when a
- * document closes: two documents may share one, and a room's folder goes with
- * the room.
+ * `<rooms>/<roomId>/canvas-media/<where>-<what>.<ext>`: `<where>` is a short
+ * hash of the agent and the real path it named, `<what>` the SHA-256 of the
+ * bytes. The bytes half means a name never changes what it holds, so the file
+ * can be cached for good. The path half is how a re-rendered picture refreshes
+ * the document already on the table instead of adding a second one beside it —
+ * the source key is the `src`, which changes with the bytes, so an open of a
+ * path this agent already shared here becomes an update of that document, the
+ * way a session canvas dedupes a file by its path (DOR-212). Files are never
+ * deleted when a document closes: a room's folder goes with the room.
  *
  * @module server/services/rooms/canvas/room-canvas-media
  */
@@ -54,11 +59,17 @@ import { RoomError } from '../room-errors.js';
 /** The folder, inside one room's folder, that holds its canvas media. */
 const MEDIA_DIR = 'canvas-media';
 
-/** What a room canvas copy may be: the raw route's media, plus CSV, which the viewer fetches. */
-const CANVAS_MEDIA_TYPES: Readonly<Record<string, string>> = {
-  ...MEDIA_CONTENT_TYPES,
-  '.csv': 'text/csv',
-};
+/**
+ * What a room canvas copy may be: the raw route's media, plus CSV, which the
+ * viewer fetches. glTF is left out: its model names its buffers and textures by
+ * relative path, and those are not copied, so it would never load. `.glb`
+ * carries them inside and is kept.
+ */
+const CANVAS_MEDIA_TYPES: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries({ ...MEDIA_CONTENT_TYPES, '.csv': 'text/csv' }).filter(
+    ([extension]) => extension !== '.gltf'
+  )
+);
 
 /** Canvas shapes that name a file by `src`. */
 type MediaContent = Extract<UiCanvasContent, { src: string }>;
@@ -73,16 +84,25 @@ function loadsOnItsOwn(src: string): boolean {
   return /^(https?:|data:)/i.test(src.trim());
 }
 
-/** How big a file is, said the way a person says it. */
-function megabytes(bytes: number): string {
-  const mb = bytes / 1024 / 1024;
-  return mb >= 10 ? `${Math.round(mb)} MB` : `${Math.round(mb * 10) / 10} MB`;
+/** A short, stable hash of who shared which real path. */
+function whereKey(authorId: string, resolved: string): string {
+  return createHash('sha256').update(`${authorId}\0${resolved}`).digest('hex').slice(0, 16);
+}
+
+/** One document already on the room's table, as much of it as dedupe needs. */
+export interface TableDocument {
+  /** The document's id. */
+  id: string;
+  /** Its content's `src`, when it has one. */
+  src: string | null;
 }
 
 /** Everything one share needs. */
 export interface ShareCanvasMediaInput {
   /** The room the document is going on. */
   roomId: string;
+  /** The agent sharing, resolved server-side. */
+  authorId: string;
   /** The validated command. `open_canvas`, `update_canvas` and `open_file` can name media. */
   command: UiCommand;
   /** Extension → viewer overrides, so `open_file` picks the viewer the canvas would. */
@@ -95,6 +115,8 @@ export interface ShareCanvasMediaInput {
   roomsDir: string;
   /** The person's upload limit, in bytes. Asked only for a local file. */
   maxFileSize: () => number;
+  /** What is on the room's table now. Asked only for a local file. */
+  documents: () => readonly TableDocument[];
 }
 
 /** The media content a command names, or `null` when it names none. */
@@ -111,17 +133,53 @@ function mediaOf(
   return content !== undefined && isMediaContent(content) ? content : null;
 }
 
-/** The command again, now showing `content`. An `open_file` becomes the open it implied. */
-function withContent(command: UiCommand, content: MediaContent): UiCommand {
+/**
+ * The command again, now showing `content`.
+ *
+ * An `open_file` becomes the open it implied. An open of a path this agent has
+ * already shared here becomes an update of that document, so a re-rendered
+ * picture refreshes its tab rather than adding one.
+ */
+function withContent(
+  command: UiCommand,
+  content: MediaContent,
+  existing: string | null
+): UiCommand {
+  if (command.action === 'update_canvas') return { ...command, content };
+  const target =
+    command.action === 'open_canvas' || command.action === 'open_file' ? command.target : undefined;
+  if (existing !== null) {
+    return {
+      action: 'update_canvas',
+      content,
+      documentId: existing,
+      ...(target !== undefined ? { target } : {}),
+    };
+  }
   if (command.action === 'open_file') {
     return {
       action: 'open_canvas',
       content,
       ...(command.channel !== undefined ? { channel: command.channel } : {}),
-      ...(command.target !== undefined ? { target: command.target } : {}),
+      ...(target !== undefined ? { target } : {}),
     };
   }
   return { ...command, content } as UiCommand;
+}
+
+/** Write `bytes` at `target` unless an identical file is already there. */
+async function writeOnce(target: string, bytes: Buffer): Promise<void> {
+  // The name carries the bytes' hash: a file already there is already right.
+  if (await fs.stat(target).catch(() => null)) return;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const staged = `${target}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(staged, bytes);
+    await fs.rename(staged, target);
+  } catch (err) {
+    await fs.rm(staged, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }
 
 /**
@@ -132,7 +190,7 @@ function withContent(command: UiCommand, content: MediaContent): UiCommand {
  * media, a `src` the browser loads by itself, or one already pointing at this
  * room's media.
  *
- * @param input - The room, the command, and the agent's own folders.
+ * @param input - The room, the agent, the command, and the agent's own folders.
  * @returns The command to apply.
  * @throws {RoomError} When the file is not the agent's, cannot be read, is too
  *   big, or is not a kind of file the canvas can show — so the agent hears why
@@ -154,7 +212,7 @@ export async function shareCanvasMedia(input: ShareCanvasMediaInput): Promise<Ui
     throw new RoomError(
       'ATTACHMENT_UNREADABLE',
       `${label} is not a kind of file the room's canvas can show. Use a picture, PDF, ` +
-        'sound, video, 3D model or CSV file.'
+        'sound, video, 3D model (.glb rather than .gltf) or CSV file.'
     );
   }
   if (input.cwd === undefined) {
@@ -164,42 +222,36 @@ export async function shareCanvasMedia(input: ShareCanvasMediaInput): Promise<Ui
     );
   }
   const ownCopy = await input.ownCopy();
-  const { bytes } = await readOwnFile(
+  const { bytes, resolved } = await readOwnFile(
     { cwd: input.cwd, ownCopies: ownCopy ? [ownCopy] : [], roomsDir: input.roomsDir },
     src,
-    "put it on the room's canvas"
+    { doing: "put it on the room's canvas", maxBytes: input.maxFileSize() }
   );
-  const maxFileSize = input.maxFileSize();
-  if (bytes.byteLength > maxFileSize) {
-    throw new RoomError(
-      'ATTACHMENT_TOO_LARGE',
-      `${label} is ${megabytes(bytes.byteLength)}, and the limit is ${megabytes(maxFileSize)}.`
-    );
-  }
 
-  const fileName = `${createHash('sha256').update(bytes).digest('hex')}${extension}`;
-  const dir = path.join(input.roomsDir, roomId, MEDIA_DIR);
-  const target = path.join(dir, fileName);
-  await fs.mkdir(dir, { recursive: true });
-  // Same bytes, same name: a file already there is already right.
-  if (!(await fs.stat(target).catch(() => null))) {
-    const staged = `${target}.${randomUUID()}.tmp`;
-    await fs.writeFile(staged, bytes);
-    await fs.rename(staged, target);
-  }
-  return withContent(command, { ...content, src: roomCanvasMediaUrl(roomId, fileName) });
+  const where = whereKey(input.authorId, resolved);
+  const fileName = `${where}-${createHash('sha256').update(bytes).digest('hex')}${extension}`;
+  await writeOnce(path.join(input.roomsDir, roomId, MEDIA_DIR, fileName), bytes);
+
+  const url = roomCanvasMediaUrl(roomId, fileName);
+  const samePlace = `${roomCanvasMediaUrl(roomId, where)}-`;
+  const existing =
+    input.documents().find((doc) => doc.src !== url && doc.src?.startsWith(samePlace))?.id ?? null;
+  // The tab is titled from the src's file name, which is now a hash, so the
+  // name the agent's file really has is carried over unless it gave one.
+  return withContent(command, { ...content, src: url, title: content.title ?? label }, existing);
 }
 
 /**
  * {@link shareCanvasMedia} for one agent in one room, with everything it needs
  * read from where this install keeps it: the agent's own copy of the room's
  * files from its VERIFIED identity (never from the path it named), the person's
- * upload limit, and the viewer overrides `open_file` honours.
+ * upload limit, the viewer overrides `open_file` honours, and the room's table.
+ * The room service is asked for only when the command names a local file.
  *
  * The caller must already know the agent is a member of the room: this writes
  * into the room's folder.
  *
- * @param authors - The author registry, to find the agent's home and label.
+ * @param rooms - The room service, resolved late.
  * @param input.roomId - The room the document is going on.
  * @param input.authorId - The agent, resolved server-side.
  * @param input.command - The validated command.
@@ -208,7 +260,10 @@ export async function shareCanvasMedia(input: ShareCanvasMediaInput): Promise<Ui
  * @throws {RoomError} As {@link shareCanvasMedia} does.
  */
 export async function shareRoomCanvasMedia(
-  authors: Pick<AuthorRegistry, 'getById'>,
+  rooms: () => {
+    authorRegistry: Pick<AuthorRegistry, 'getById'>;
+    canvas: { list(roomId: string): readonly { id: string; content: UiCanvasContent }[] };
+  },
   input: { roomId: string; authorId: string; command: UiCommand; cwd: string | undefined }
 ): Promise<UiCommand> {
   const roomsDir = path.join(resolveDorkHome(), 'rooms');
@@ -219,14 +274,19 @@ export async function shareRoomCanvasMedia(
     // An unreadable config means the built-in viewer table, as everywhere else.
   }
   return shareCanvasMedia({
-    roomId: input.roomId,
-    command: input.command,
-    cwd: input.cwd,
+    ...input,
     roomsDir,
     maxFileSize: () => configManager.get('uploads').maxFileSize,
     ...(viewerOverrides !== undefined ? { viewerOverrides } : {}),
+    documents: () =>
+      rooms()
+        .canvas.list(input.roomId)
+        .map((doc) => ({
+          id: doc.id,
+          src: isMediaContent(doc.content) ? doc.content.src : null,
+        })),
     ownCopy: async () => {
-      const author = authors.getById(input.authorId);
+      const author = rooms().authorRegistry.getById(input.authorId);
       if (author?.kind !== 'agent') return null;
       return ownRoomCopy(roomsDir, input.roomId, {
         agentPath: author.naturalKey,
@@ -242,10 +302,6 @@ export interface RoomCanvasMediaFile {
   filePath: string;
   /** What to serve it as. */
   contentType: string;
-  /** Its size in bytes. */
-  size: number;
-  /** When it was written, for the validator. */
-  mtimeMs: number;
 }
 
 /**
@@ -267,5 +323,5 @@ export async function findRoomCanvasMedia(
   const filePath = path.join(roomsDir, roomId, MEDIA_DIR, fileName);
   const stat = await fs.lstat(filePath).catch(() => null);
   if (!stat?.isFile()) return null;
-  return { filePath, contentType, size: stat.size, mtimeMs: stat.mtimeMs };
+  return { filePath, contentType };
 }

@@ -22,7 +22,7 @@ describe('resolveCanvasFetchUrl', () => {
 
   it('loads a room’s own copy of a canvas file as-is', () => {
     const src =
-      '/api/rooms/01ROOM/canvas/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4';
+      '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4';
     expect(resolveCanvasFetchUrl(src, toLocal).url).toBe(src);
   });
 

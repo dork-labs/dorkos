@@ -64,6 +64,7 @@ describe('control_ui putting a local file on a room', () => {
   let harness: RoomHarness;
   let backend: string;
   let client: Client;
+  let ana: string;
 
   beforeEach(async () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-ui-media-')));
@@ -88,7 +89,7 @@ describe('control_ui putting a local file on a room', () => {
       { kind: 'channel', title: 'Studio', members: [], agentPaths: [anaPath] },
       harness.human
     ).id;
-    harness.authors.resolveAgent(anaPath, 'Ana');
+    ana = harness.authors.resolveAgent(anaPath, 'Ana').id;
 
     uiTurnFacts.clear();
     const registry = composeRegistry([uiDomain], { logger: noopLogger });
@@ -151,5 +152,25 @@ describe('control_ui putting a local file on a room', () => {
     expect(answer).toMatchObject({ success: false, target: 'room', roomId: backend });
     expect(String(answer.reason)).toContain('your own folder');
     expect(harness.service.canvas.list(backend)).toHaveLength(0);
+  });
+
+  it('copies the picture on the room-turn path too, the one the report came from', async () => {
+    uiTurnFacts.bindTurn(SESSION_ID, {
+      roomTurn: { roomId: backend, authorId: ana, turnId: 'room-turn-1', cwd: anaPath },
+    });
+    const answer = await controlUi({
+      action: 'open_canvas',
+      content: { type: 'image', src: 'studio/board.png' },
+    });
+    expect(answer).toMatchObject({ success: true, target: 'room', roomId: backend });
+
+    const [document] = harness.service.canvas.list(backend);
+    const src = (document.content as { src: string }).src;
+    expect(isRoomCanvasMediaUrl(src, backend)).toBe(true);
+    // The event the room turn's collector reads carries the copy, not the path.
+    const sent = (getOrCreateProjector(SESSION_ID).peekInProgressTurn() ?? []).filter(
+      (event) => event.type === 'ui_command'
+    ) as unknown as { command: { content: { src: string } } }[];
+    expect(sent.at(-1)?.command.content.src).toBe(src);
   });
 });

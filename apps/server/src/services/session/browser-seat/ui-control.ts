@@ -272,7 +272,7 @@ export async function controlUi(
   // ever sees an effect the model was told did not happen.
   if (roomTurn !== undefined) {
     const shared = await shareMediaOrRefuse(roomTurn.roomId, () =>
-      shareRoomCanvasMedia(getRoomService().authorRegistry, {
+      shareRoomCanvasMedia(getRoomService, {
         roomId: roomTurn.roomId,
         authorId: roomTurn.authorId,
         command,
@@ -656,7 +656,7 @@ async function applyToTargetedRoom(input: {
   const command = archived
     ? input.command
     : await shareMediaOrRefuse(roomId, () =>
-        shareRoomCanvasMedia(rooms.authorRegistry, {
+        shareRoomCanvasMedia(() => rooms, {
           roomId,
           authorId,
           command: input.command,

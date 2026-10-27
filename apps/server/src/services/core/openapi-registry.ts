@@ -7195,10 +7195,10 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Read a file an agent put on a room’s canvas',
   description:
-    "When an agent puts a picture, PDF, sound, video, 3D model or CSV from its own folder on a room's canvas, the server copies it into the room and the document's `src` becomes this address, so every member can see it. Only a file in the agent's own folder or its own copy of the room's files is copied; anything else is refused when the agent asks. Readable by any member, the same gate every canvas read uses; a room you are not in answers as one that does not exist. The name is the SHA-256 of the bytes, so it never changes what it holds. Served with `X-Content-Type-Options: nosniff`, a script-neutering sandbox on SVG, and a single byte `Range` so sound and video can seek.",
+    "When an agent puts a picture, PDF, sound, video, 3D model or CSV from its own folder on a room's canvas, the server copies it into the room and the document's `src` becomes this address, so every member can see it. Only a file in the agent's own folder or its own copy of the room's files is copied; anything else is refused when the agent asks. Readable by any member, the same gate every canvas read uses; a room you are not in answers as one that does not exist. The name carries the SHA-256 of the bytes, so it never changes what it holds. Served with `X-Content-Type-Options: nosniff`, a script-neutering sandbox on SVG, and a single byte `Range` so sound and video can seek.",
   request: {
     params: RoomIdParams.extend({
-      file: z.string().regex(/^[0-9a-f]{64}(\.[a-z0-9]{1,10})?$/),
+      file: z.string().regex(/^[0-9a-f]{16}-[0-9a-f]{64}(\.[a-z0-9]{1,10})?$/),
     }),
   },
   responses: {

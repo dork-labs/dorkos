@@ -5,7 +5,7 @@ import {
   roomCanvasMediaUrl,
 } from '../canvas-media-url.js';
 
-const NAME = `${'b'.repeat(64)}.png`;
+const NAME = `${'c'.repeat(16)}-${'b'.repeat(64)}.png`;
 
 describe('canvas-media-url', () => {
   it('spells the address the server writes, and recognises it', () => {
@@ -21,7 +21,7 @@ describe('canvas-media-url', () => {
       'docs/logo.png',
       '/api/rooms/01ROOM/attachments/x',
       `/api/rooms/01ROOM/canvas/media/../${NAME}`,
-      `/api/rooms/01ROOM/canvas/media/${'b'.repeat(63)}.png`,
+      `/api/rooms/01ROOM/canvas/media/${'b'.repeat(64)}.png`,
       `https://evil.test/api/rooms/01ROOM/canvas/media/${NAME}`,
     ]) {
       expect(isRoomCanvasMediaUrl(src), src).toBe(false);
