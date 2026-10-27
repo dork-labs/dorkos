@@ -76,7 +76,7 @@ import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
-import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,
@@ -101,6 +101,9 @@ import type { MessageSenderOpts } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import {
@@ -874,6 +877,17 @@ export async function resolveLaunch(args: {
               ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
             ],
           }),
+        ],
+      },
+      // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
+      // DorkOS's own safe tools are let through here, with the gate's own
+      // per-call decision. Answers nothing in any other mode.
+      {
+        matcher: `^${IN_SESSION_TOOL_PREFIX}`,
+        hooks: [
+          createNeverAskHook(session, resolveIdentity, logger, () =>
+            hasMarks(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+          ),
         ],
       },
       {
