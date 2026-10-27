@@ -640,9 +640,14 @@ jobs:
       # its own package.json fallback then collided with the newly-tagged
       # release version and the guard false-failed (DOR-884). Every shard runs
       # the server suite that contains that guard, so every shard needs tags.
+      # No saved credential: nothing here pushes or fetches after checkout. The
+      # server suite reads this checkout as a project, and DorkOS's audited git
+      # runner refuses a repository whose settings include another file, which
+      # is how the checkout saves its credential (DOR-3343).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
