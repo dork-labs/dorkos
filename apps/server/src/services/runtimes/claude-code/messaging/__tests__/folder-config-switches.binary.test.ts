@@ -24,9 +24,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
+
+vi.mock('../../../../../lib/logger.js', () => ({
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../../../../core/config-manager.js', () => ({
+  configManager: { get: () => undefined, set: vi.fn() },
+}));
+
+import { applyFolderConfigToLaunch } from '../../folder-settings/launch-folder-config.js';
 
 const BINARY = resolveBundledClaudeBinary();
 const CLAUDE_MD_MARK = 'folder-instructions-reached-the-model';
@@ -261,6 +270,73 @@ describe.skipIf(BINARY === null)('the folder-config switches on the real CLI', (
       projectMcpServer();
       await runTurn({ strictMcpConfig: true, mcpServers: {} });
       expect(mcpStarted()).toBe(false);
+    }, 60_000);
+  });
+
+  // DOR-3068 M1: held hooks leave out the folder's own settings sources, so a
+  // changed `env` or helper command has no effect, while CLAUDE.md still
+  // reaches the model through the system prompt.
+  describe('held hooks, launched the way DorkOS launches them', () => {
+    /** The options a held launch carries, built by the real apply step. */
+    function heldOptions(): Partial<Options> {
+      const options: Options = {
+        cwd: folder,
+        settingSources: ['local', 'project', 'user'],
+        systemPrompt: { type: 'preset', preset: 'claude_code' },
+      };
+      applyFolderConfigToLaunch(options, folder, { held: ['hooks'], inHome: true });
+      return options;
+    }
+
+    /** A folder `env` whose PATH puts a `touch` first that leaves its own mark. */
+    function envOverride(): void {
+      const bin = path.join(root, 'evil-bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const fake = path.join(bin, 'touch');
+      fs.writeFileSync(fake, `#!/bin/sh\n: > ${JSON.stringify(path.join(folder, 'env-ran'))}\n`);
+      fs.chmodSync(fake, 0o755);
+      folderSettings({ env: { PATH: `${bin}:${process.env.PATH ?? ''}` } });
+    }
+    const envRan = () => fs.existsSync(path.join(folder, 'env-ran'));
+
+    /** A folder `apiKeyHelper` that leaves a mark when the CLI runs it. */
+    function keyHelper(): void {
+      const mark = path.join(folder, 'helper-ran');
+      folderSettings({ apiKeyHelper: `: > ${JSON.stringify(mark)}; echo fake-key-never-real` });
+    }
+    const helperRan = () => fs.existsSync(path.join(folder, 'helper-ran'));
+
+    it('applies a folder env when every source loads (the control)', async () => {
+      envOverride();
+      await runTurn();
+      expect(envRan()).toBe(true);
+    }, 60_000);
+
+    it('applies no folder env under the hold, and the turn still runs', async () => {
+      envOverride();
+      await runTurn(heldOptions());
+      expect(envRan()).toBe(false);
+      expect(probeRan()).toBe(true);
+    }, 60_000);
+
+    it('runs a folder apiKeyHelper when every source loads (the control)', async () => {
+      keyHelper();
+      await runTurn();
+      expect(helperRan()).toBe(true);
+    }, 60_000);
+
+    it('runs no folder apiKeyHelper under the hold', async () => {
+      keyHelper();
+      await runTurn(heldOptions());
+      expect(helperRan()).toBe(false);
+    }, 60_000);
+
+    it('still hands the model the folder’s CLAUDE.md under the hold', async () => {
+      fs.writeFileSync(path.join(folder, 'CLAUDE.md'), `Remember: ${CLAUDE_MD_MARK}.`);
+      folderSettings(MARKING_HOOK);
+      await runTurn(heldOptions());
+      expect(hookRan()).toBe(false);
+      expect(bodies.some((body) => body.includes(CLAUDE_MD_MARK))).toBe(true);
     }, 60_000);
   });
 });

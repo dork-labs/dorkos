@@ -13,7 +13,11 @@
  *   servers file: when the turn stands in the home or a folder inside it (by
  *   real path: Claude Code collects settings and `.mcp.json` up the tree), the launch turns
  *   the folder's hooks off (`settings.disableAllHooks`) and starts only the MCP
- *   servers DorkOS passes itself (`strictMcpConfig`). The agent file: its
+ *   servers DorkOS passes itself (`strictMcpConfig`). Held hooks also leave out
+ *   the `project` and `local` settings sources, which is what stops a changed
+ *   `env`, helper command or plugin, and a skill, command or subagent that
+ *   widens its own tools; the folder's `CLAUDE.md` text is passed in the system
+ *   prompt instead (`folder-instructions.ts`). The agent file: its
  *   `account` is ignored and its own MCP servers are not passed. DorkOS's own
  *   hooks and tool server, and the folder's `CLAUDE.md`, are untouched; all of
  *   that was run on the real CLI (`folder-config-switches.binary.test.ts`).
@@ -28,6 +32,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 import { folderAllowApprovalGateway } from './folder-allow-approval.js';
+import { folderInstructions } from './folder-instructions.js';
 import { askForFolderConfig, mayAskAboutFolderConfig } from './folder-config-approval.js';
 import {
   approvedPartsAtHome,
@@ -224,4 +229,30 @@ export function applyFolderConfigToLaunch(
     permissions: { ...permissions, deny: denied },
   } as Options['settings'];
   if (decision.inHome) sdkOptions.strictMcpConfig = true;
+  if (decision.inHome && decision.held.includes('hooks')) leaveOutFolderSettings(sdkOptions, home);
+}
+
+/**
+ * Leave out the folder's own settings sources, and hand the model its
+ * `CLAUDE.md` text another way.
+ *
+ * @param sdkOptions - The launch options, mutated.
+ * @param home - The registered agent home.
+ */
+function leaveOutFolderSettings(sdkOptions: Options, home: string): void {
+  if (sdkOptions.settingSources) {
+    sdkOptions.settingSources = sdkOptions.settingSources.filter(
+      (source) => source !== 'project' && source !== 'local'
+    );
+  }
+  const text = folderInstructions(sdkOptions.cwd ?? home, home);
+  const prompt = sdkOptions.systemPrompt;
+  if (!text || typeof prompt !== 'object' || Array.isArray(prompt) || prompt.type !== 'preset') {
+    return;
+  }
+  const block = `<folder_instructions>\nThis folder's settings are paused until a person approves a change. Its instructions still apply:\n\n${text}\n</folder_instructions>`;
+  sdkOptions.systemPrompt = {
+    ...prompt,
+    append: prompt.append ? `${prompt.append}\n\n${block}` : block,
+  };
 }

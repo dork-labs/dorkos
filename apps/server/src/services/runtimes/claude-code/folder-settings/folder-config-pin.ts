@@ -74,6 +74,13 @@ export const CODE_SETTINGS_KEYS = [
   'awsCredentialExport',
   'otelHeadersHelper',
   'env',
+  // The rest of the CLI's own list of settings that run a command (DOR-3068 M1).
+  'gcpAuthRefresh',
+  'proxyAuthHelper',
+  'subagentStatusLine',
+  'fileSuggestion',
+  // Which `.claude/agents` file the main thread runs as.
+  'agent',
 ] as const;
 
 /** The settings files read for {@link CODE_SETTINGS_KEYS}, in Claude Code's order. */

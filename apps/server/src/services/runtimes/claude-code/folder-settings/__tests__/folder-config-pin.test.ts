@@ -334,3 +334,51 @@ describe('plugin hooks, helpers and agent-file frontmatter', () => {
     ).toEqual([]);
   });
 });
+
+describe('settings and frontmatter that widen power (M1, M2)', () => {
+  const text = (rel: string, body: string) => {
+    const file = path.join(home, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+  };
+
+  it.each([
+    ['proxyAuthHelper', 'sh helper.sh'],
+    ['gcpAuthRefresh', 'sh refresh.sh'],
+    ['agent', 'reviewer'],
+  ])('pins the %s setting', (key, value) => {
+    expect(partsMovedBy(() => write('.claude/settings.json', { [key]: value }))).toEqual(['hooks']);
+  });
+
+  it("pins a skill's allowed-tools", () => {
+    expect(
+      partsMovedBy(() =>
+        text('.claude/skills/x/SKILL.md', '---\nname: x\nallowed-tools: Bash\n---\nDo it.\n')
+      )
+    ).toEqual(['hooks']);
+  });
+
+  it("pins a subagent's permissionMode", () => {
+    expect(
+      partsMovedBy(() =>
+        text('.claude/agents/helper.md', '---\nname: helper\npermissionMode: acceptEdits\n---\n')
+      )
+    ).toEqual(['hooks']);
+  });
+
+  it('walks commands, which share the skill frontmatter', () => {
+    expect(
+      partsMovedBy(() =>
+        text('.claude/commands/go.md', '---\nallowed-tools: Bash Write\n---\nGo.\n')
+      )
+    ).toEqual(['hooks']);
+  });
+
+  it('ignores a command whose frontmatter widens nothing', () => {
+    expect(
+      partsMovedBy(() =>
+        text('.claude/commands/notes.md', '---\ndescription: notes\n---\nTake notes.\n')
+      )
+    ).toEqual([]);
+  });
+});

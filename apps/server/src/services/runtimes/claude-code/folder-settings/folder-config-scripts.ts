@@ -193,10 +193,19 @@ function sortedByPath<T>(root: string, entries: Map<string, T>): [string, T][] {
 }
 
 /** The frontmatter fields that make an agent or skill run code or start servers. */
-const AGENT_FILE_FIELDS = ['hooks', 'mcpServers'] as const;
+const AGENT_FILE_FIELDS = [
+  'hooks',
+  'mcpServers',
+  // Fields that let a skill, command or subagent skip DorkOS's permission
+  // check or raise its own mode (DOR-3068 M2).
+  'allowed-tools',
+  'tools',
+  'disallowedTools',
+  'permissionMode',
+] as const;
 
 /**
- * The `hooks` and `mcpServers` frontmatter of the home's subagents and skills,
+ * The power-widening frontmatter (`AGENT_FILE_FIELDS`) of the home's subagents, skills and commands,
  * by path, for files that set either; `undefined` when one can't be vouched
  * for (over 64 KB, unreadable, not a file, too deep, more than 200 files).
  * Frontmatter that does not parse is a value of its own (its block's hash),
@@ -262,6 +271,8 @@ export function agentFileHooks(home: string): [string, unknown][] | undefined {
     return true;
   };
   if (!walkAgents(path.join(root, '.claude', 'agents'), 1)) return undefined;
+  // Commands share the skill frontmatter, so they can carry hooks and tools too.
+  if (!walkAgents(path.join(root, '.claude', 'commands'), 1)) return undefined;
   const skillsDir = path.join(root, '.claude', 'skills');
   const skills = listDir(skillsDir);
   if (skills === undefined) return undefined;

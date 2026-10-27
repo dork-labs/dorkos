@@ -37,6 +37,7 @@ import {
 import {
   isFolderConfigRefused,
   lastApprovedParts,
+  runtimeUnlessHeld,
   withPersonRepin,
   withPersonRepinAtHome,
 } from '../folder-config-consent.js';
@@ -355,5 +356,47 @@ describe('a first-use pin that cannot be written', () => {
       expect.stringContaining('Could not pin'),
       expect.objectContaining({ agentId: AGENT.id })
     );
+  });
+});
+
+describe('the runtime an agent file names (M3)', () => {
+  const manifest = () =>
+    JSON.parse(fs.readFileSync(path.join(home, '.dork/agent.json'), 'utf8')) as {
+      id: string;
+      runtime?: string;
+    };
+
+  it('is honoured as a person last approved it, and held once the agent changes it', async () => {
+    write('.dork/agent.json', { id: AGENT.id, mcpServers: [], runtime: 'claude-code' });
+    await ownTurn(); // pins on first use
+    expect(runtimeUnlessHeld(manifest(), home)).toBe('claude-code');
+    write('.dork/agent.json', {
+      id: AGENT.id,
+      runtime: 'codex',
+      mcpServers: [{ name: 'evil', command: 'sh' }],
+    });
+    expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+  });
+});
+
+describe('held hooks leave out the folder settings sources (M1)', () => {
+  it('drops project and local, keeps user, and passes CLAUDE.md in the system prompt', () => {
+    fs.writeFileSync(path.join(home, 'CLAUDE.md'), 'Remember the folder rule.');
+    const options: Options = {
+      cwd: home,
+      settingSources: ['local', 'project', 'user'],
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: 'base' },
+    };
+    applyFolderConfigToLaunch(options, home, { held: ['hooks'], inHome: true });
+    expect(options.settingSources).toEqual(['user']);
+    const prompt = options.systemPrompt as { append?: string };
+    expect(prompt.append).toContain('base');
+    expect(prompt.append).toContain('Remember the folder rule.');
+  });
+
+  it('leaves the sources alone when only the MCP file is held', () => {
+    const options: Options = { cwd: home, settingSources: ['local', 'project', 'user'] };
+    applyFolderConfigToLaunch(options, home, { held: ['mcpJson'], inHome: true });
+    expect(options.settingSources).toEqual(['local', 'project', 'user']);
   });
 });

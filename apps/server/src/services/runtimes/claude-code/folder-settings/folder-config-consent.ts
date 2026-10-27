@@ -377,3 +377,30 @@ export function accountUnlessHeld(
     return undefined;
   }
 }
+
+/**
+ * The runtime an agent file names, unless its agent-file part is held back
+ * (changed since a person's yes, or unreadable): then none, so the session
+ * falls back to the default runtime (DOR-3068 M3). Without this, an agent
+ * could write `runtime: "codex"` and a server into its own agent file, and the
+ * next session would start that server on a runtime the pin never reads.
+ *
+ * @param manifest - The agent file as read, or `null`.
+ * @param home - The agent's home, if any.
+ */
+export function runtimeUnlessHeld(
+  manifest: { id?: string; runtime?: string } | null,
+  home: string | null | undefined
+): string | undefined {
+  const runtime = manifest?.runtime;
+  if (!runtime || !home || !manifest?.id) return runtime;
+  try {
+    if (!hasFolderConfigRecord(manifest.id, home)) return runtime;
+    const now = readFolderConfigParts(home);
+    const approved = lastApprovedParts(manifest.id, home) ?? approvedPartsAtHome(home);
+    if (!approved || now.unverifiable.includes('manifest')) return undefined;
+    return approved.manifest === now.digests.manifest ? runtime : undefined;
+  } catch {
+    return undefined;
+  }
+}
