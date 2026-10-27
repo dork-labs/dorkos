@@ -33,8 +33,14 @@ import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
   STALE_APPROVAL_CODE,
+  UNPINNABLE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
-import { isExpectedCopy, type ExtensionManager } from '../services/extensions/extension-manager.js';
+import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
+import {
+  ApprovalRefusedError,
+  whyUnpinnable,
+} from '../services/extensions/pin/extension-content-pin.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -140,6 +146,7 @@ export function registerExtensionApprovalRoutes(
       // not approve the newcomer on the strength of a decision about the old.
       const body = readJsonBody(c);
       const hasBody = body !== undefined && Object.keys(body as object).length > 0;
+      let expectedDigest: string | undefined;
       if (hasBody) {
         const expected = ApproveExtensionRequestSchema.safeParse(body);
         if (!expected.success) {
@@ -157,9 +164,41 @@ export function registerExtensionApprovalRoutes(
             409
           );
         }
+        // The files the card showed (DOR-3068): the manager refuses the yes
+        // when they changed since, with the live digest read at the click.
+        expectedDigest = expected.data.expectedDigest;
       }
 
-      const extension = await extensionManager.approveToRun(id);
+      // A yes names the files the person was shown (DOR-3068), so every copy
+      // but a dev link (approved by path, DOR-2696) must say which they were.
+      // A card that named none was drawn for a copy DorkOS could not check, or
+      // is out of date; either way the person reads why in plain words.
+      if (!record.devLink && expectedDigest === undefined) {
+        return c.json(
+          record.currentDigest
+            ? {
+                error: 'This extension changed since you saw it. Nothing was turned on.',
+                code: STALE_APPROVAL_CODE,
+              }
+            : { error: await whyUnpinnable(record), code: UNPINNABLE_APPROVAL_CODE },
+          409
+        );
+      }
+
+      let extension;
+      try {
+        extension = await extensionManager.approveToRun(id, { expectedDigest });
+      } catch (err) {
+        if (!(err instanceof ApprovalRefusedError)) throw err;
+        return c.json(
+          // The reason alone for one that cannot be checked: its own short
+          // block, which the app shows under a title that says nothing ran.
+          err.reason === 'stale'
+            ? { error: `${err.message} Nothing was turned on.`, code: STALE_APPROVAL_CODE }
+            : { error: err.message, code: UNPINNABLE_APPROVAL_CODE },
+          409
+        );
+      }
       if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       await activity?.emit({

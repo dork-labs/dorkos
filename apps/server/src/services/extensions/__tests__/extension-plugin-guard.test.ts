@@ -16,6 +16,7 @@ import os from 'os';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { containmentRootOf } from '../extension-plugin-guard.js';
 
 let tmp: string;
 let project: string;
@@ -101,6 +102,47 @@ describe('containment (N1)', () => {
     await write(path.join(pluginRoot, 'node_modules', 'leftpad', 'index.js'), 'exports.pad = 2;\n');
     const own = await compiler.compile(record());
     expect('code' in own).toBe(true);
+  });
+
+  it('contains a directly installed copy to its own folder too, path trust included (DOR-3068)', async () => {
+    const home = path.join(tmp, 'agents', 'a');
+    const own = path.join(home, '.dork', 'extensions', 'notes');
+    await write(path.join(tmp, 'secret.ts'), 'export const secret = "id_rsa";\n');
+    await write(path.join(own, 'helper.ts'), 'export const helper = 1;\n');
+    const direct = record({ id: 'notes', path: own, realPath: own, sourcePlugin: undefined });
+
+    await write(
+      path.join(own, 'index.ts'),
+      "import { helper } from './helper';\nexport const x = helper;\n"
+    );
+    expect('code' in (await compiler.compile(direct))).toBe(true);
+
+    await write(
+      path.join(own, 'index.ts'),
+      "import { secret } from '../../../../../secret';\nexport const x = secret;\n"
+    );
+    const escaped = await compiler.compile(direct);
+    expect('error' in escaped && JSON.stringify(escaped.error)).toContain(
+      "outside this plugin's folder"
+    );
+
+    await write(
+      path.join(own, 'server.ts'),
+      "import { secret } from '../../../../../secret';\nexport default () => secret;\n"
+    );
+    const server = await compiler.compileServer({
+      ...direct,
+      serverEntryPath: path.join(own, 'server.ts'),
+    });
+    expect('error' in server).toBe(true);
+  });
+
+  it('leaves a dev link’s containment as it was, and contains any other copy to its folder', () => {
+    const own = '/work/agent/.dork/extensions/notes';
+    expect(containmentRootOf({ path: own, realPath: own })).toBe(own);
+    expect(containmentRootOf({ path: own, devLink: { path: '/work/notes' } })).toBeNull();
+    // A copy's own node_modules sits inside its folder, so it still builds.
+    expect(containmentRootOf({ path: own, runPath: '/snap/abc/notes' })).toBe('/snap/abc/notes');
   });
 
   it('refuses the same escape in a server bundle', async () => {

@@ -211,6 +211,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.disabled',
       'extensions.approvedToRun',
       'extensions.approvedSources',
+      'extensions.legacyUnsourced',
       'extensions.approvedPermissions',
       'extensions.dismissedApprovals',
       'extensions.trustedSources[].source',
