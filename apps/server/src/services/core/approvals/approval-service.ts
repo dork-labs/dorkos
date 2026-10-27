@@ -55,7 +55,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   type ApprovalOrigin,
@@ -67,7 +67,12 @@ import {
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { isAlwaysOffered } from './always-offered.js';
-import { recordedArea, toPendingApproval, type ApprovalRow } from './approval-card.js';
+import {
+  recordedArea,
+  toPendingApproval,
+  type ApprovalRow,
+  type CapabilityDescriptorLookup,
+} from './approval-card.js';
 
 export { isAlwaysOffered };
 import {
@@ -184,7 +189,8 @@ export interface ApprovalRequestInput {
   /**
    * The card's title for this one request, in place of the capability's own
    * title. For a card whose question depends on what it is about, such as a
-   * repo pin naming its worktree (DOR-3359). Swept and capped like the summary.
+   * repo pin naming its worktree (DOR-3359). Honoured only for a capability
+   * whose descriptor sets `titledPerRequest`; swept and capped like the summary.
    */
   title?: string;
   /**
@@ -314,36 +320,6 @@ export interface ApprovalConnectorAuthority {
   /** Immutable operation revision selected by the invocation. */
   readonly operationRevisionId: string;
 }
-
-/**
- * How the service learns a capability's human-facing title and permission tier.
- *
- * Deliberately NOT part of {@link ApprovalRequestInput}: if a requester could
- * state its own tier, an `act` operation could dress itself as `destructive` to
- * scare an operator, or a `destructive` one could soften itself to look routine.
- * The card's identity region is derived from the capability registry, which is
- * the single source of truth every other agent-facing surface is generated from,
- * so it cannot be spoofed by whoever is asking.
- *
- * Injected as a function rather than a registry import because the registry is
- * composed from the very domains that request approvals — a static import would
- * close a cycle, and the registry is composed later in boot than this service.
- *
- * Deliberately not exported: it is the shape of one option, and no consumer needs
- * to name it.
- *
- * @param capabilityId - The capability id to describe.
- * @returns Its title and tier, or `undefined` when the registry has no such id.
- */
-type CapabilityDescriptorLookup = (capabilityId: string) =>
-  | {
-      title: string;
-      tier: CapabilityTier;
-      source?: CapabilitySource;
-      /** What a yes does, for the badge in place of the tier's own label. */
-      consequence?: string;
-    }
-  | undefined;
 
 /** Construction options for {@link ApprovalService}. */
 export interface ApprovalServiceOptions {
@@ -638,9 +614,10 @@ export class ApprovalService {
       id: ulid(),
       tokenHash: hashToken(token),
       capabilityId: input.capabilityId,
-      capabilityTitle: input.title
-        ? storableSummary(input.title)
-        : (descriptor?.title ?? input.capabilityId),
+      capabilityTitle:
+        input.title && descriptor?.titledPerRequest
+          ? storableSummary(input.title)
+          : (descriptor?.title ?? input.capabilityId),
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
       authorityBindingDigest: input.connectorAuthority?.digest ?? null,

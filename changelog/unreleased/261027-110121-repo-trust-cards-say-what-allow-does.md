@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): repo trust cards ask what Allow does, and the badge says what a yes does (DOR-3359)'
+  - 'fix(server): only the repo-pin cards may title themselves, and a long worktree name is cut in the middle (DOR-3359)'
 ---
 
 ### Changed
