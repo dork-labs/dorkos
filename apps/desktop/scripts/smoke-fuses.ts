@@ -16,8 +16,11 @@ import { helperBinary } from './helper-binary';
  *
  * - `NODE_OPTIONS=--require <file>` loads nothing;
  * - `--inspect` opens no inspector;
- * - `ELECTRON_RUN_AS_NODE=1` still runs a script. That one is a named residual,
- *   not an accident: isolated extensions need it until DOR-3358.
+ * - `ELECTRON_RUN_AS_NODE=1` still runs a script. That row is PR 1's named
+ *   residual, not the goal: isolated extensions and Playwright's browser
+ *   download need run-as-node until DOR-3358. PR 2 (Keychain) adds a sibling
+ *   row that must pass: run-as-node runs, but reading the Keychain item fails
+ *   with no prompt.
  *
  * Every probe runs first on the stock Electron binary from `node_modules`, whose
  * fuses are all at their defaults, and must take effect there. A probe that
