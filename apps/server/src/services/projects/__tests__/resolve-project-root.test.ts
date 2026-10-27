@@ -268,12 +268,46 @@ describe('the cache', () => {
     }
   });
 
-  it('reads git\'s own "not a git repository" as the only answer worth backing off on', () => {
-    expect(isNotARepository(notARepo())).toBe(true);
-    expect(isNotARepository({ stderr: Buffer.from('fatal: not a git repository') })).toBe(true);
+  it('reads git\'s own "no repository" from its exit code, whatever its wording', () => {
+    for (const stderr of [
+      'fatal: not a git repository (or any of the parent directories): .git\n',
+      'fatal: not a git repository (or any parent up to mount point /tmp)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n',
+      "fatal: cannot use bare repository '/x' (safe.bareRepository is 'explicit')\n",
+      '',
+    ]) {
+      expect(
+        isNotARepository(Object.assign(new Error('Command failed'), { code: 128, stderr }))
+      ).toBe(true);
+    }
+    // The same words without git's exit code are not git's answer.
     expect(isNotARepository(new Error('not a git repository'))).toBe(false);
+    expect(isNotARepository({ stderr: 'fatal: not a git repository', code: 1 })).toBe(false);
+    expect(isNotARepository({ killed: true, code: 128, stderr: '' })).toBe(false);
     expect(isNotARepository({ killed: true, stderr: '' })).toBe(false);
     expect(isNotARepository(undefined)).toBe(false);
+  });
+
+  it('backs off the same way for both of git\'s "no repository" wordings', async () => {
+    for (const stderr of [
+      'fatal: not a git repository (or any of the parent directories): .git\n',
+      'fatal: not a git repository (or any parent up to mount point /tmp)\n',
+    ]) {
+      const fakeGit = vi.fn(async () => {
+        throw Object.assign(new Error('Command failed'), { code: 128, stderr });
+      });
+      let clock = 0;
+      const resolver = createProjectRootResolver({
+        runGit: fakeGit as unknown as typeof runGit,
+        now: () => clock,
+        canonical: (dir) => dir,
+      });
+      await resolver.resolve('/repos/none');
+      clock += NEGATIVE_ROOT_TTL_MS;
+      await resolver.resolve('/repos/none');
+      clock += NEGATIVE_ROOT_TTL_MS; // a second answered miss waits twice as long
+      expect(resolver.peek('/repos/none')).toBeNull();
+      expect(fakeGit).toHaveBeenCalledTimes(2);
+    }
   });
 
   it(`never runs more than ${MAX_CONCURRENT_ROOT_LOOKUPS} git calls at once across cold folders`, async () => {

@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): DorkOS reads git only through one runner that checks the repository first (DOR-3343)'
   - "fix(server): making or removing a workspace checks the source repo's settings first (DOR-3343)"
+  - "fix(server): a folder's project lookup reads git's exit code, not its wording (DOR-3343)"
 ---
 
 ### Fixed

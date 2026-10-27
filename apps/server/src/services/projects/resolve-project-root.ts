@@ -62,8 +62,8 @@ export const MAX_NEGATIVE_ROOT_TTL_MS = 10 * 60_000;
 export const MAX_CONCURRENT_ROOT_LOOKUPS = 4;
 
 /**
- * The locale every root lookup runs git in, so its "not a git repository"
- * answer reads the same on a translated git ({@link isNotARepository}).
+ * The locale every root lookup runs git in, so git's messages read the same
+ * on a translated git. {@link isNotARepository} no longer reads them.
  */
 export const ROOT_LOOKUP_GIT_ENV: Readonly<Record<string, string>> = { LC_ALL: 'C', LANG: 'C' };
 
@@ -125,18 +125,22 @@ export interface ProjectRootResolver {
 }
 
 /**
- * Whether a failed `git rev-parse` was git saying the folder is in no
- * repository, as opposed to a timeout, a missing folder or a missing `git`.
- * Only that answer says something about the folder worth backing off on.
+ * Whether a failed `git rev-parse` was git itself answering that the folder is
+ * in no repository it will read, as opposed to a timeout, a missing `git` or a
+ * repository the audited runner refused. Only that answer says something
+ * about the folder worth backing off on.
+ *
+ * Decided by git's exit code, 128, never by its wording (DOR-3343): git says
+ * "or any of the parent directories" on one machine and "or any parent up to
+ * mount point" on another, and refuses an implicit bare repository with a
+ * third. A process git ran but that was killed for its timeout has no code.
  *
  * @param err - What the git runner threw.
  */
 export function isNotARepository(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
-  const stderr = (err as { stderr?: unknown }).stderr;
-  const text =
-    typeof stderr === 'string' ? stderr : Buffer.isBuffer(stderr) ? stderr.toString() : '';
-  return /not a git repository|cannot use bare repository/i.test(text);
+  const { code, killed } = err as { code?: unknown; killed?: unknown };
+  return code === 128 && killed !== true;
 }
 
 /** One cached lookup. See {@link createProjectRootResolver}. */
