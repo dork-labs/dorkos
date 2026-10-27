@@ -5,6 +5,7 @@ covers:
   - "fix(server): a folder's project lookup reads git's exit code, not its wording (DOR-3343)"
   - 'fix(server): a repository that names its own hooks folder can still be read (DOR-3343)'
   - "fix(server): the git audit reads a worktree's own settings only when git does (DOR-3343)"
+  - 'fix(server): git status through the runner stays fast on a fresh checkout (DOR-3343)'
 ---
 
 ### Fixed

@@ -291,7 +291,12 @@ export function minimalGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.Proces
     GIT_NO_LAZY_FETCH: '1',
     GIT_ALLOW_PROTOCOL: '',
     GIT_TERMINAL_PROMPT: '0',
-    GIT_OPTIONAL_LOCKS: '0',
+    // No GIT_OPTIONAL_LOCKS=0: `status` must be free to write back its
+    // refreshed index, as git always does. Without that, every file in a fresh
+    // checkout stays "racily clean" and each status re-reads all of them (on a
+    // fresh 20k-file checkout, 0.6 s every time against 0.09 s once written).
+    // A caller reading someone else's live worktree passes `--no-optional-locks`
+    // itself (the Workspaces scan does).
     GIT_PAGER: 'cat',
   };
 }

@@ -147,7 +147,7 @@ describe('runSafeGit', () => {
         `case "$*" in *"config --file"*) exec '${realGit}' "$@";; esac`,
         `{ echo "args=$*"; echo "lazy=$GIT_NO_LAZY_FETCH"; echo "proto=[$GIT_ALLOW_PROTOCOL]";`,
         ` echo "global=$GIT_CONFIG_GLOBAL"; echo "nosystem=$GIT_CONFIG_NOSYSTEM";`,
-        ` echo "probe=[$DORKOS_SAFE_GIT_PROBE]"; } > '${seen}'`,
+        ` echo "probe=[$DORKOS_SAFE_GIT_PROBE]"; echo "locks=[$GIT_OPTIONAL_LOCKS]"; } > '${seen}'`,
         `exec '${realGit}' "$@"`,
         '',
       ].join('\n'),
@@ -166,6 +166,27 @@ describe('runSafeGit', () => {
     expect(text).toContain('global=/dev/null');
     expect(text).toContain('nosystem=1');
     expect(text).toContain('probe=[]');
+    // Optional locks stay on, so `status` can write back its refreshed index.
+    expect(text).toContain('locks=[]');
+  });
+
+  it('lets status write back a refreshed index, unless the caller says not to', async () => {
+    const dir = repo('index-refresh');
+    git(dir, 'checkout', '--', 'a.txt');
+    const index = path.join(dir, '.git', 'index');
+    const stale = () => {
+      const future = new Date(Date.now() + 5_000);
+      fs.utimesSync(path.join(dir, 'a.txt'), future, future);
+      return fs.statSync(index).mtimeMs;
+    };
+    // A reader of someone else's live worktree keeps its hands off the index.
+    let before = stale();
+    await runSafeGit(['--no-optional-locks', 'status', '--porcelain=v1'], dir);
+    expect(fs.statSync(index).mtimeMs).toBe(before);
+    // A plain read refreshes it, so the next read of a fresh checkout is fast.
+    before = stale();
+    await runSafeGit(['status', '--porcelain=v1'], dir);
+    expect(fs.statSync(index).mtimeMs).not.toBe(before);
   });
 
   it('keeps the safe list to keys that run nothing', () => {
