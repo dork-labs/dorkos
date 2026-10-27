@@ -90,7 +90,7 @@ export const ExtensionsConfigSchema = z
     approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
     /**
      * The approved ids that named no copy when content pins arrived (DOR-3068),
-     * written once by the `'0.126.0'` config migration. Only these are bound,
+     * written once by the `'0.126.1'` config migration. Only these are bound,
      * on a later scan, to the extension installed directly under
      * `{dorkHome}/extensions/<id>`; an id is dropped from here once bound. An
      * unsourced id not listed is never bound, so a folder an agent creates

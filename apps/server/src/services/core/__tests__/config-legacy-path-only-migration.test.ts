@@ -1,5 +1,5 @@
 /**
- * The `'0.126.0'` migration marks every extension approval that predates
+ * The `'0.126.1'` migration marks every extension approval that predates
  * content pins (DOR-3068), so only those are pinned to the files a scan finds,
  * never a digest-less approval written since.
  *
@@ -21,9 +21,9 @@ function memoryStore(initial: Record<string, unknown>) {
   };
 }
 
-describe("the '0.126.0' migration (DOR-3068)", () => {
+describe("the '0.126.1' migration (DOR-3068)", () => {
   it('is the key that runs it', () => {
-    expect(CONFIG_MIGRATIONS['0.126.0']).toBe(markLegacyPathOnlyApprovals);
+    expect(CONFIG_MIGRATIONS['0.126.1']).toBe(markLegacyPathOnlyApprovals);
   });
 
   it('marks only approvals that name no content, and nothing else', () => {

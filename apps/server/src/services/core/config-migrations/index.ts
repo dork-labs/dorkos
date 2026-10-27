@@ -1339,12 +1339,12 @@ export const CONFIG_MIGRATIONS = {
   // `ui` section lacks them, and touches nothing else (DOR-3074). See
   // `seedUiDmViewLeaves`.
   '0.125.0': seedUiDmViewLeaves,
-  // v0.125.4 is the newest tag, so this opens 0.126.0. Frozen from merge;
+  // v0.126.0 is the newest tag, so this opens 0.126.1. Frozen from merge;
   // anything further opens `'0.127.0'`.
   //
   // Marks each extension approval that names no content with
   // `legacyPathOnly: true`, and touches nothing else (DOR-3068). Only a marked
   // approval is pinned to the files the next scan finds. See
   // `markLegacyPathOnlyApprovals`.
-  '0.126.0': markLegacyPathOnlyApprovals,
+  '0.126.1': markLegacyPathOnlyApprovals,
 } as const;

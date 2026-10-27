@@ -372,7 +372,7 @@ describe('pinning older path-only approvals, once (migration)', () => {
       enabled: ['notes'],
       disabled: [],
       approvedToRun: ['notes'],
-      // As the '0.126.0' config migration marks an approval that predates content pins.
+      // As the '0.126.1' config migration marks an approval that predates content pins.
       approvedSources: { notes: { path: COPY_PATH, legacyPathOnly: true } },
     };
   });

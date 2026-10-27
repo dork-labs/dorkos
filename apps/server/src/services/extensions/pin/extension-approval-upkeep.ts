@@ -48,7 +48,7 @@ export function bindUnsourcedApprovals(
   const before = configManager.get('extensions');
   const sources = before.approvedSources ?? {};
   const additions: Record<string, ExtensionApprovedSource> = {};
-  // Only the ids the '0.126.0' migration listed as unsourced (DOR-3068): a
+  // Only the ids the '0.126.1' migration listed as unsourced (DOR-3068): a
   // folder created later at an old approved name never inherits the approval.
   const legacy = new Set(before.legacyUnsourced ?? []);
   for (const record of records) {
@@ -193,7 +193,7 @@ export function upkeepApprovals(
 }
 
 /**
- * End the one chance older approvals get (DOR-3068). The '0.126.0' config
+ * End the one chance older approvals get (DOR-3068). The '0.126.1' config
  * migration marks approvals written before approvals named content
  * (`legacyUnsourced`, `legacyPathOnly`); the first scan after start binds and
  * pins the ones whose copy it finds. Anything still marked afterwards had no

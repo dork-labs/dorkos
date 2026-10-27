@@ -99,7 +99,7 @@ export const ExtensionApprovedSourceSchema = z.object({
    */
   pinnedOnFirstUse: z.string().optional(),
   /**
-   * Set once, by the `'0.126.0'` config migration, on an approval written
+   * Set once, by the `'0.126.1'` config migration, on an approval written
    * before approvals named content (DOR-3068). Only such an approval is pinned
    * to the files the next scan finds; a digest-less approval written since is
    * never pinned to whatever is on disk.
