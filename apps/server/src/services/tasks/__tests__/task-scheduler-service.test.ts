@@ -2293,6 +2293,22 @@ describe('TaskSchedulerService', () => {
     });
 
     /** Run one scheduled dispatch of a fresh task through the relay path. */
+    /**
+     * Walk the fake clock until `pending` settles. Each step first yields a real
+     * turn, so dispatch work still on real I/O (a slow runner) has set its retry
+     * timer before the clock moves; a fixed count of steps could run out first
+     * and leave the 30 s wait unwalked, hanging the test (DOR-3368).
+     */
+    async function settleUnderFakeClock<T>(pending: Promise<T>): Promise<T> {
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      while (!settled) {
+        await new Promise((resolve) => setImmediate(resolve));
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      return pending;
+    }
+
     async function dispatchOnce(
       name: string,
       extra: Partial<CreateTaskStoreInput> = {}
@@ -2343,13 +2359,7 @@ describe('TaskSchedulerService', () => {
         .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
         .mockResolvedValueOnce({ messageId: 'm2', deliveredTo: 1 });
       vi.useFakeTimers({ toFake: ['setTimeout'] });
-      const pending = dispatchOnce('Retry Works');
-      let settled = false;
-      void pending.finally(() => (settled = true));
-      for (let step = 0; step < 20 && !settled; step += 1) {
-        await vi.advanceTimersByTimeAsync(5_000);
-      }
-      const run = await pending;
+      const run = await settleUnderFakeClock(dispatchOnce('Retry Works'));
       vi.useRealTimers();
       // Two dispatches; the cancel the test's own `stop()` sends is not one.
       const dispatches = mockRelay.publish.mock.calls.filter(
@@ -2380,12 +2390,7 @@ describe('TaskSchedulerService', () => {
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
       const run = store.listRuns({ taskId: task.id })[0]!;
       store.updateRun(run.id, { status: 'cancelled', error: 'Run cancelled' });
-      let settled = false;
-      void pending.finally(() => (settled = true));
-      for (let step = 0; step < 20 && !settled; step += 1) {
-        await vi.advanceTimersByTimeAsync(5_000);
-      }
-      await pending;
+      await settleUnderFakeClock(pending);
       vi.useRealTimers();
       expect(mockRelay.publish).toHaveBeenCalledTimes(1);
       expect(store.getRun(run.id)?.status).toBe('cancelled');
@@ -2434,12 +2439,7 @@ describe('TaskSchedulerService', () => {
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
       const run = store.listRuns({ taskId: task.id })[0]!;
       const finish = async () => {
-        let settled = false;
-        void pending.finally(() => (settled = true));
-        for (let step = 0; step < 20 && !settled; step += 1) {
-          await vi.advanceTimersByTimeAsync(5_000);
-        }
-        await pending;
+        await settleUnderFakeClock(pending);
         vi.useRealTimers();
         await service.stop();
       };
@@ -2535,16 +2535,9 @@ describe('TaskSchedulerService', () => {
       // Nothing answering gets one retry 30 s later before the run is called
       // failed (DOR-3033); the fake clock walks that wait.
       vi.useFakeTimers({ toFake: ['setTimeout'] });
-      const dispatching = (service as unknown as Dispatchable).dispatch(
-        task,
-        new Date(1_700_000_000_000)
+      await settleUnderFakeClock(
+        (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000))
       );
-      let settled = false;
-      void dispatching.finally(() => (settled = true));
-      for (let step = 0; step < 20 && !settled; step += 1) {
-        await vi.advanceTimersByTimeAsync(5_000);
-      }
-      await dispatching;
       vi.useRealTimers();
       const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
