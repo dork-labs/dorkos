@@ -266,4 +266,26 @@ describe('runSafeGit', () => {
     // A write's audit still refuses it, even right after a read passed.
     await expect(assertRepoConfigSafe(dir)).rejects.toMatchObject({ keys: ['core.hookspath'] });
   });
+
+  it("reads a checkout like GitHub's: sparse checkout switched off, its worktree config unread", async () => {
+    const dir = repo('ci-shaped');
+    git(dir, 'sparse-checkout', 'disable');
+    git(dir, 'config', '--local', '--unset-all', 'extensions.worktreeConfig');
+    // The keys `sparse-checkout disable` left in config.worktree, which git
+    // ignores while the extension is off.
+    expect(fs.existsSync(path.join(dir, '.git', 'config.worktree'))).toBe(true);
+    await expect(runSafeGit(['status', '--porcelain=v1'], dir)).resolves.toContain(' M a.txt');
+  });
+
+  it('audits config.worktree whenever the repository turns worktree config on', async () => {
+    const dir = repo('worktree-config');
+    git(dir, 'config', 'extensions.worktreeConfig', 'true');
+    const filter = path.join(scratch, 'filter.sh');
+    fs.writeFileSync(filter, `#!/bin/sh\ntouch '${marker}'\ncat\n`, { mode: 0o755 });
+    git(dir, 'config', '--worktree', 'filter.mark.clean', filter);
+    await expect(runSafeGit(['status', '--porcelain=v1'], dir)).rejects.toMatchObject({
+      keys: ['filter.mark.clean'],
+    });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
 });

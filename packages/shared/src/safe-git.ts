@@ -297,10 +297,10 @@ export function minimalGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.Proces
 }
 
 /** The last stat each settings file passed the audit at. */
-const auditedAt = new Map<string, string>();
+const auditedAt = new Map<string, { stamp: string; worktreeConfig: boolean }>();
 
 /** The keys a settings file sets that are off the safe list. */
-function unsafeKeysIn(file: string): Promise<string[]> {
+function keysIn(file: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
@@ -314,8 +314,8 @@ function unsafeKeysIn(file: string): Promise<string[]> {
           ...new Set(
             stdout
               .split('\0')
-              .map((key) => key.trim())
-              .filter((key) => key !== '' && !SAFE_REPO_CONFIG_KEY.test(key.toLowerCase()))
+              .map((key) => key.trim().toLowerCase())
+              .filter((key) => key !== '')
           ),
         ]);
       }
@@ -339,6 +339,13 @@ export interface RepoConfigAuditOptions {
  * Cached per settings file by its size and times, separately for each way of
  * judging it.
  *
+ * Each git folder's `config` is always audited. Its `config.worktree` is
+ * audited only when an audited `config` names `extensions.worktreeConfig`,
+ * which is the only time git reads that file: `git sparse-checkout disable`
+ * leaves sparse-checkout keys there, and a checkout that then turns the
+ * extension off (as GitHub's checkout action does) is not refused for a file
+ * git never opens.
+ *
  * @param cwd - The folder git would run in.
  * @param options - Whether `core.hooksPath` is accepted (reads only).
  * @throws {GitRepoConfigUnsafeError} When a settings file sets a key off the
@@ -350,23 +357,42 @@ export async function assertRepoConfigSafe(
 ): Promise<void> {
   const places = findGitPlaces(cwd);
   if (places === null) throw new GitRepoConfigUnsafeError(path.join(cwd, '.git'), []);
+  let worktreeConfigOn = false;
   for (const gitDir of places.gitDirs) {
-    for (const file of [path.join(gitDir, 'config'), path.join(gitDir, 'config.worktree')]) {
-      const stat = fs.statSync(file, { throwIfNoEntry: false });
-      if (!stat) continue;
-      const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
-      const cacheKey = allowHooksPath ? `${file}\0read` : file;
-      if (auditedAt.get(cacheKey) === stamp) continue;
-      const unsafe = (await unsafeKeysIn(file)).filter(
-        (key) => !(allowHooksPath && key.toLowerCase() === 'core.hookspath')
-      );
-      if (unsafe.length > 0) {
-        auditedAt.delete(cacheKey);
-        throw new GitRepoConfigUnsafeError(file, unsafe);
-      }
-      auditedAt.set(cacheKey, stamp);
-    }
+    const passed = await auditFile(path.join(gitDir, 'config'), allowHooksPath);
+    worktreeConfigOn ||= passed.worktreeConfig;
   }
+  if (!worktreeConfigOn) return;
+  for (const gitDir of places.gitDirs) {
+    await auditFile(path.join(gitDir, 'config.worktree'), allowHooksPath);
+  }
+}
+
+/**
+ * Audit one settings file, or answer from the cache when it has not changed.
+ * Answers whether it names `extensions.worktreeConfig`.
+ */
+async function auditFile(
+  file: string,
+  allowHooksPath: boolean
+): Promise<{ worktreeConfig: boolean }> {
+  const stat = fs.statSync(file, { throwIfNoEntry: false });
+  if (!stat) return { worktreeConfig: false };
+  const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
+  const cacheKey = allowHooksPath ? `${file}\0read` : file;
+  const cached = auditedAt.get(cacheKey);
+  if (cached?.stamp === stamp) return { worktreeConfig: cached.worktreeConfig };
+  const keys = await keysIn(file);
+  const unsafe = keys.filter(
+    (key) => !SAFE_REPO_CONFIG_KEY.test(key) && !(allowHooksPath && key === 'core.hookspath')
+  );
+  if (unsafe.length > 0) {
+    auditedAt.delete(cacheKey);
+    throw new GitRepoConfigUnsafeError(file, unsafe);
+  }
+  const worktreeConfig = keys.includes('extensions.worktreeconfig');
+  auditedAt.set(cacheKey, { stamp, worktreeConfig });
+  return { worktreeConfig };
 }
 
 /**
