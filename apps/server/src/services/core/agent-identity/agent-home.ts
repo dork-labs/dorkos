@@ -101,6 +101,13 @@ export interface AgentHomeRegistry {
   managedWorkspaceOwner(dir: string): string | null;
   /** `<dorkHome>/rooms`: no repo under it is ever an agent's home repo. */
   roomsDir: string | null;
+  /**
+   * Whether the home list can be trusted yet. `false` while the agent registry
+   * has not started (or failed to): the git kill switch then refuses every
+   * folder rather than treat "no homes known" as "no homes" (DOR-3343).
+   * Absent means always.
+   */
+  homesKnown?(): boolean;
 }
 
 let registry: AgentHomeRegistry | undefined;
@@ -362,6 +369,19 @@ export function isInsideRoomsDir(target: string): boolean {
 function insideRoomsDir(target: string): boolean {
   const roomsDir = registry?.roomsDir;
   return roomsDir ? isWithin(roomsDir, target) : false;
+}
+
+/**
+ * Whether the wired registry can say which folders are agent homes. `true`
+ * when nothing is wired (a unit test), since boot always wires it.
+ */
+export function agentHomesKnown(): boolean {
+  if (!registry?.homesKnown) return true;
+  try {
+    return registry.homesKnown();
+  } catch {
+    return false;
+  }
 }
 
 /**

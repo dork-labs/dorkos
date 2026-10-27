@@ -3,26 +3,34 @@
  *
  * `git` reads a repository's own settings, and some of those settings name a
  * program to run. When the repository is one an agent can write — its home, a
- * workspace or worktree it works in, a room's files — an agent with file tools
- * alone could choose that program, and DorkOS would run it as the server. Until
- * every git call goes through one runner that checks those settings first, the
- * server answers "not a repository" in agent folders without starting git.
+ * workspace or worktree it works in, a room's files — DorkOS must not read it
+ * with git as the server. Until every git call goes through one runner that
+ * checks those settings first, the server answers "not a repository" in agent
+ * folders without starting git.
  *
  * A folder is refused when any of these is, or is inside, an agent folder: the
- * folder itself, the repository it sits in (the nearest folder holding `.git`),
- * and, for a `.git` file, the git folder it points at and that folder's shared
- * `commondir`. Agent folders are the DorkOS data directory (agents, workspaces,
- * rooms), the configured agents and workspace directories, every registered
- * agent home, and any folder the home resolver says belongs to an agent. Read
- * from the filesystem alone: deciding never runs git. Anything unreadable
- * refuses.
+ * folder itself, and every folder above it that holds a `.git` (git keeps
+ * climbing past one that is not a real repository), each walked both as spelled
+ * and as the real path; and for each `.git` file, the git folder it points at
+ * and that folder's shared `commondir`. Agent folders are the DorkOS data
+ * directory (agents, workspaces, rooms), the configured agents and workspace
+ * directories, every registered agent home, and any folder the home resolver
+ * says belongs to an agent. Read from the filesystem alone: deciding never runs
+ * git. Anything unreadable refuses, and so does every folder while the server
+ * cannot yet say which folders are agent homes.
  *
  * @module services/core/agent-identity/may-run-git
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { isInsideAgentHome, isInsideRoomsDir, isWithin, resolveAgentHome } from './agent-home.js';
+import {
+  agentHomesKnown,
+  isInsideAgentHome,
+  isInsideRoomsDir,
+  isWithin,
+  resolveAgentHome,
+} from './agent-home.js';
 
 let configuredRoots: () => readonly string[] = () => [];
 
@@ -45,6 +53,7 @@ export function setGitGuardRoots(roots: () => readonly string[]): void {
  */
 export function mayRunGitHere(cwd: string): boolean {
   try {
+    if (!agentHomesKnown()) return false;
     const dir = path.resolve(cwd);
     const places = gitPlaces(dir);
     if (places === null) return false;
@@ -60,37 +69,50 @@ export function mayRunGitHere(cwd: string): boolean {
 }
 
 /**
- * The folder, the repository it sits in, and for a `.git` file the git folder
- * and `commondir` it names. `null` when a `.git` file cannot be read.
+ * Every place git could read settings from for `dir`: the folder, each folder
+ * above it holding a `.git` (from both its spelled and its real path), and the
+ * git folder and `commondir` each `.git` file names. `null` when a `.git` file
+ * cannot be read as a pointer.
  *
  * @param dir - An absolute, normalized folder.
  */
 function gitPlaces(dir: string): string[] | null {
-  const places = [dir];
-  const top = nearestGitAncestor(dir);
-  if (top === null) return places;
-  places.push(top);
-  const dotGit = path.join(top, '.git');
-  if (fs.lstatSync(dotGit).isDirectory()) return places;
+  const places = new Set([dir]);
+  for (const start of new Set([dir, nativeRealPath(dir)])) {
+    places.add(start);
+    for (let current = start; ; current = path.dirname(current)) {
+      const dotGit = path.join(current, '.git');
+      const stat = fs.lstatSync(dotGit, { throwIfNoEntry: false });
+      if (stat) {
+        places.add(current);
+        if (!stat.isDirectory() && !addPointer(current, dotGit, places)) return null;
+      }
+      if (path.dirname(current) === current) break;
+    }
+  }
+  return [...places];
+}
+
+/** Add the git folder and `commondir` a `.git` file names; `false` if it names none. */
+function addPointer(top: string, dotGit: string, places: Set<string>): boolean {
   const match = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'));
-  if (!match) return null;
+  if (!match) return false;
   const gitDir = path.resolve(top, match[1]!);
-  places.push(gitDir);
+  places.add(gitDir);
   try {
     const common = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
-    places.push(path.resolve(gitDir, common));
+    places.add(path.resolve(gitDir, common));
   } catch {
     // No commondir: a submodule's git folder, which is its own common folder.
   }
-  return places;
+  return true;
 }
 
-function nearestGitAncestor(dir: string): string | null {
-  let current = dir;
-  for (;;) {
-    if (fs.existsSync(path.join(current, '.git'))) return current;
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
+/** The file system's own spelling of `dir`, or `dir` when it does not exist. */
+function nativeRealPath(dir: string): string {
+  try {
+    return fs.realpathSync.native(dir);
+  } catch {
+    return dir;
   }
 }

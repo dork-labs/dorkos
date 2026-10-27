@@ -19,7 +19,10 @@ import { getGitStatus } from '../../git-status.js';
 import { runGitForSummary } from '../../../session/fleet/carry-over-summary.js';
 import { gitShowHead } from '../../../diff/git-baseline.js';
 import { createWorkspaceGatherer } from '../../../heartbeats/gatherers/workspace.js';
+import { scanWorktrees } from '../../../workspace/worktree-scan.js';
+import { fileLister } from '../../file-lister.js';
 import { mayRunGitHere, setGitGuardRoots } from '../may-run-git.js';
+import { setAgentHomeRegistry } from '../agent-home.js';
 import { clearTestHomes, registerTestHomes } from './agent-home-fixture.js';
 
 vi.mock('../../../../lib/boundary.js', () => ({
@@ -226,5 +229,66 @@ describe('mayRunGitHere: the git kill switch', () => {
     fs.mkdirSync(checkout, { recursive: true });
     registerTestHomes([home], { managed: { [checkout]: home } });
     expect(mayRunGitHere(checkout)).toBe(false);
+  });
+
+  it('refuses a worktree with an empty .git folder planted inside it', async () => {
+    const home = repoThatRunsItsOwnSettings(path.join(scratch, 'agents', 'eve'));
+    git(home, 'add', '.');
+    commit(home, 'two');
+    const tree = path.join(scratch, 'elsewhere', 'eve-tree');
+    fs.rmSync(tree, { recursive: true, force: true });
+    git(home, 'worktree', 'add', '-q', '-b', 'eve-side', tree);
+    fs.writeFileSync(path.join(tree, 'a.txt'), 'three\n');
+    const sub = path.join(tree, 'sub');
+    fs.mkdirSync(path.join(sub, '.git'), { recursive: true });
+    registerTestHomes([home]);
+    fs.rmSync(marker, { force: true });
+    expect(mayRunGitHere(sub)).toBe(false);
+    await expect(getGitStatus(sub)).resolves.toEqual({ error: 'not_git_repo' });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('refuses a home that was registered in other case', () => {
+    if (process.platform !== 'darwin') return;
+    const home = path.join(scratch, 'agents', 'fay');
+    fs.mkdirSync(home, { recursive: true });
+    registerTestHomes([path.join(scratch, 'AGENTS', 'FAY')]);
+    expect(mayRunGitHere(home)).toBe(false);
+  });
+
+  it('refuses every folder while the agent list is not up yet', async () => {
+    const project = repoThatRunsItsOwnSettings(path.join(scratch, 'project-early'));
+    setAgentHomeRegistry({
+      isRegisteredHome: () => false,
+      listRegisteredHomes: () => [],
+      managedWorkspaceOwner: () => null,
+      roomsDir: null,
+      homesKnown: () => false,
+    });
+    expect(mayRunGitHere(project)).toBe(false);
+    await expect(getGitStatus(project)).resolves.toEqual({ error: 'not_git_repo' });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('the workspaces scan lists an agent checkout without running git in it', async () => {
+    const root = path.join(scratch, 'ws-root');
+    const checkout = repoThatRunsItsOwnSettings(path.join(root, 'proj', 'one'));
+    registerTestHomes([]);
+    setGitGuardRoots(() => [root]);
+    const result = await scanWorktrees(root);
+    expect(result.worktrees).toEqual([
+      expect.objectContaining({ path: checkout, readable: false, branch: null }),
+    ]);
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('the file list in an agent home is read from disk, not git', async () => {
+    const home = repoThatRunsItsOwnSettings(path.join(scratch, 'agents', 'gus'));
+    registerTestHomes([home]);
+    const listed = await fileLister.listFiles(home);
+    expect(listed.files).toContain('a.txt');
+    const tree = await fileLister.listTree(home, home, 1, false);
+    expect(tree.map((entry) => entry.name)).toContain('a.txt');
+    expect(fs.existsSync(marker)).toBe(false);
   });
 });
