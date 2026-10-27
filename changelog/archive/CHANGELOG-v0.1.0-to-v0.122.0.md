@@ -1,7 +1,25 @@
-# Changelog archive: v0.1.0 – v0.121.0
+# Changelog archive: v0.1.0 – v0.122.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.122.0] - 2026-10-18
+
+> DorkOS 0.122.0 gives every agent one Direct chat with you, lets docs on the canvas link to each other, and stops agents waking up for nothing.
+
+### Added
+
+- Markdown docs on the canvas can now link to each other, behind the new **Docs** experiment in Settings → Advanced → Experiments. Type `[[` to pick another doc from your chat's folder, or write a doc's title or file name between double brackets. Clicking a link opens that doc in the canvas. A link to a doc that doesn't exist yet looks different. It starts working the next time DorkOS reads the folder's docs: after you create or rename a file in the Files panel, save a doc with a new title, or come back to the DorkOS window.
+
+### Changed
+
+- Every agent now has one standing Direct chat with you. Clicking the agent, opening its chat, or tapping a message it sent you all lead there. It always opens as a normal chat, never as a room.
+- Messages an agent sends you while it works elsewhere land in its Direct chat, with an unread dot on the agent. When you answer, the agent sees what it sent you, so "yes, go ahead" makes sense to it.
+- Your old one-on-one direct messages with an agent now open as the start of that agent's Direct chat. Nothing was deleted. A direct message with two or more agents, or with another person, is still a room.
+
+### Fixed
+
+- Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.
 
 ## [0.121.0] - 2026-10-17
 
@@ -7389,6 +7407,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
 [0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
