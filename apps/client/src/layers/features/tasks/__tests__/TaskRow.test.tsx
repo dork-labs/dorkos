@@ -543,6 +543,80 @@ describe('ScheduleRow', () => {
       expect(screen.getByText('🤖')).toBeTruthy();
     });
 
+    /** An agent fixture with the given name. */
+    function namedAgent(name: string) {
+      return {
+        id: 'agent-1',
+        name,
+        icon: '🤖',
+        color: '#6366f1',
+        description: '',
+        runtime: 'claude-code' as const,
+        capabilities: [],
+        behavior: { responseMode: 'always' as const },
+        registeredAt: new Date().toISOString(),
+        registeredBy: 'test',
+        mcpServers: [],
+        personaEnabled: true,
+        isSystem: false,
+        workspace: { mode: 'home' as const },
+      };
+    }
+
+    /** Render one row with this agent and schedule name, and return its two names. */
+    function renderNames(agentName: string, scheduleName: string) {
+      const agent = namedAgent(agentName);
+      const Wrapper = createWrapper(createMockTransport());
+      const { container } = render(
+        <Wrapper>
+          <TaskRow
+            task={{ ...activeSchedule, agentId: agent.id, displayName: scheduleName }}
+            agent={agent}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+          />
+        </Wrapper>
+      );
+      return {
+        agentName: container.querySelector('[data-slot="task-agent-name"]'),
+        taskName: container.querySelector('[data-slot="task-name"]'),
+      };
+    }
+
+    it('keeps the agent name at its cap and wraps a long schedule name to two lines', () => {
+      // At 390px a long schedule name used to squeeze the agent name to "q"
+      // and cut itself to one line (QA, DOR-3123).
+      const { agentName, taskName } = renderNames(
+        'an agent name that is much too long for a phone row',
+        'A schedule name that also cannot fit on a phone row'
+      );
+
+      expect(agentName).toHaveClass('shrink-0', 'max-w-[40%]', 'truncate');
+      expect(agentName).not.toHaveClass('shrink');
+      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2');
+      expect(taskName).not.toHaveClass('truncate');
+      expect(agentName).toHaveAttribute(
+        'title',
+        'an agent name that is much too long for a phone row'
+      );
+      expect(taskName).toHaveAttribute(
+        'title',
+        'A schedule name that also cannot fit on a phone row'
+      );
+    });
+
+    it('caps a long agent name beside a short schedule name, which stays whole', () => {
+      const { agentName, taskName } = renderNames(
+        'an agent name that is much too long for a phone row',
+        'Backup'
+      );
+
+      expect(agentName).toHaveClass('shrink-0', 'max-w-[40%]', 'truncate');
+      expect(taskName).toHaveTextContent('Backup');
+      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2');
+    });
+
     it('draws the agent as an agent — square, filled, Bot-marked — not a bare colour dot', () => {
       const agent = {
         id: 'agent-1',

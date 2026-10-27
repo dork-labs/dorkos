@@ -24,7 +24,12 @@ import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js
  * @module services/runtimes/claude-code/tooling/claude-cli-auth
  */
 import { resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
-import { findBinaryOnPath, logProbeFailure, runBinaryProbe } from '../../shared/run-probe.js';
+import {
+  findBinaryOnPath,
+  isProbeTimeoutError,
+  logProbeFailure,
+  runBinaryProbe,
+} from '../../shared/run-probe.js';
 
 /** Hard bound on each Claude CLI probe (the PATH locate, `--version`, and `auth status`). */
 export const CLAUDE_PROBE_TIMEOUT_MS = 5_000;
@@ -61,6 +66,8 @@ export async function resolveClaudeBinaryPath(): Promise<string | null> {
 export interface ClaudeAuthStatus {
   /** Whether the CLI reports an authenticated session. */
   loggedIn: boolean;
+  /** The CLI did not answer; its sign-in state is unknown. */
+  unreadable?: boolean;
   /**
    * How the CLI is authenticated, verbatim from the CLI. Measured against claude
    * 2.1.224: `claude.ai` (a stored subscription sign-in EXISTS in this config
@@ -130,7 +137,8 @@ function parseAuthStatus(statusJson: string): ClaudeAuthStatus | null {
  *   environment. The readiness ladder passes the selected account pin; omission
  *   uses the supported ambient Claude auth profile, never the full server env.
  * @returns The reported status, or `null` when the CLI could not be asked at all
- *   (no binary, signed out — which exits non-zero — or a bounded-out probe).
+ *   (no binary or a signed-out CLI that exits non-zero). A bounded-out read
+ *   returns unreadable: true; loggedIn: false then means unknown, not signed out.
  */
 export async function readClaudeAuthStatus(
   binary: string | null,
@@ -147,8 +155,9 @@ export async function readClaudeAuthStatus(
     );
     return parseAuthStatus(out);
   } catch (err) {
-    // Non-zero exit (signed out) or a bounded-out probe. Reported once per
+    // A bounded-out read cannot establish sign-in state. Other failures are reported once per
     // distinct failure so "authentication: missing" is never unexplainable.
+    if (isProbeTimeoutError(err)) return { loggedIn: false, unreadable: true };
     logProbeFailure(AUTH_PROBE_LABEL, binary, err);
     return null;
   }

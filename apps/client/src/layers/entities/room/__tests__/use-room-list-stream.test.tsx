@@ -127,12 +127,21 @@ describe('useRoomListStream', () => {
     expect([...handlers.keys()].sort()).toEqual([
       'read_cursor',
       'room_activity',
+      'room_awaiting',
       'room_created',
       'room_member_added',
       'room_member_removed',
       'room_presence',
       'room_updated',
     ]);
+  });
+
+  it('refetches the list when a room starts or stops waiting on a person (DOR-3236)', () => {
+    // Unlike presence, this fires only when the count changes, and the list is
+    // where a folded section reads it from.
+    const { invalidated } = setup();
+    handlers.get('room_awaiting')!({ roomId: 'room-1', awaiting: 1 });
+    expect(invalidated.length).toBeGreaterThan(0);
   });
 
   it('feeds the working store from presence without refetching the list', () => {

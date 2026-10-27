@@ -24,6 +24,7 @@ import {
   CanvasChannelNotificationSchema,
 } from './canvas-channel-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { ForwardViaSchema } from './chat-messages.js';
 import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
@@ -645,6 +646,14 @@ export const RoomSummarySchema = RoomSchema.extend({
     .optional()
     .describe(
       "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
+    ),
+  awaiting: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "How many of this room's turns are stopped, waiting on a person — a tool approval, a question or an MCP prompt — right now. `0` when none are. The server always sends it; it is optional only so a caller that predates it still parses. Read from the server's own session state (a live pending interaction on a session bound to this room), never from anything an agent reports, and a count only: no session, prompt or tool is named. A folded sidebar section keeps a room with one on screen. The `room_awaiting` event carries the same count when it changes."
     ),
   viewerHasPosted: z
     .boolean()
@@ -1410,6 +1419,9 @@ export const RoomEntryBodySchema = z
       .describe(
         'The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question.'
       ),
+    via: ForwardViaSchema.optional().describe(
+      "Set on a person's comment a mini app forwarded into their Direct chat with an agent (DOR-3325): the app and the item it was typed on. The text is only what the person typed; this is shown as a muted line above it."
+    ),
   })
   .openapi('RoomEntryBody');
 

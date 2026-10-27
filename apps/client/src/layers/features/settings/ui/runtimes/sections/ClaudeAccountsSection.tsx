@@ -1,5 +1,4 @@
 import { describeWriteFailure } from '../runtime-write-error';
-import { AccountSigninIdentity } from '@/layers/entities/runtime';
 /**
  * Claude Code's declared `claude-accounts` settings section.
  *
@@ -8,7 +7,7 @@ import { AccountSigninIdentity } from '@/layers/entities/runtime';
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleAlert, Trash2 } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
 import {
   CREDITS_ACCOUNT_ID,
@@ -19,16 +18,13 @@ import {
 } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
-  accountWindow,
   claudeAccountOptions,
-  cn,
   CREDITS_ACCOUNT_LABEL,
   isAbsoluteAccountPath,
   shortenHomePath,
 } from '@/layers/shared/lib';
 import {
   Button,
-  buttonVariants,
   DirectoryPicker,
   InfoTip,
   Input,
@@ -40,7 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
   SettingRow,
-  UsageBar,
 } from '@/layers/shared/ui';
 import {
   accountKeys,
@@ -53,12 +48,11 @@ import {
   type AccountUsageView,
 } from '@/layers/shared/model';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { useAccountIdentityGate } from '@/layers/entities/runtime';
-import { AccountColorControl } from './AccountColorControl';
+import { AccountSignin, useAccountIdentityGate } from '@/layers/entities/runtime';
 import { AccountUsageBars } from './AccountUsageBars';
 import { FoundAccountsGroup } from './FoundAccountsGroup';
 import { ProjectLimitsList } from './AccountProjectRules';
-import { AccountRowRules, type AccountRule } from './AccountRowRules';
+import { ClaudeAccountRow } from './ClaudeAccountRow';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -404,6 +398,13 @@ export function ClaudeAccountsSection() {
       </div>
 
       {!identityGate && <ClaudeUsageBlock accounts={accounts} usage={usage} />}
+      {claudeCode && accounts.length === 0 && !identityGate && (
+        <AccountSignin
+          accountRoot={claudeCode.resolvedAccount}
+          name={nameFor(claudeCode.resolvedAccount)}
+          state={usage.byId.get(IMPLICIT_ACCOUNT_ID)?.signInState}
+        />
+      )}
 
       {/* "Default", not "Account": this is the bottom of a three-rung ladder now
           (spec `billing-account-ladder`), and an agent or a single session can
@@ -468,10 +469,11 @@ export function ClaudeAccountsSection() {
       )}
 
       {accounts.map((account) => (
-        <AccountRow
+        <ClaudeAccountRow
           key={account.path}
           name={nameFor(account.path)}
           account={account}
+          signInState={usage.byPath.get(account.path)?.signInState}
           isActive={account.id !== null && account.id === resolvedAccountId}
           onRemove={() => removeAccount(account.path)}
           onChooseColor={(color) => chooseColor(account.path, color)}
@@ -501,7 +503,8 @@ export function ClaudeAccountsSection() {
           (spec §6.5, "Main's own row"). It is not a registry entry, so it has no
           remove button, and its color is stored on its own. */}
       {mainUsage && (
-        <AccountRow
+        <ClaudeAccountRow
+          signInState={mainUsage.signInState}
           name={mainUsage.label ?? nameFor(mainUsage.path)}
           account={{
             path: mainUsage.path,
@@ -670,101 +673,5 @@ function FlowNote() {
       </button>
       .
     </p>
-  );
-}
-
-/**
- * One account: what it is called, where it lives, and whether DorkOS can read
- * it. A registered account can be removed; this computer's own sign-in (Main,
- * passed without `onRemove`) cannot.
- */
-function AccountRow({
-  name,
-  account,
-  isActive,
-  onRemove,
-  onChooseColor,
-  rule,
-  disabled,
-  identity,
-}: {
-  name: string;
-  account: Pick<Account, 'path' | 'color' | 'colorIsDefault' | 'isAccountRoot'>;
-  isActive: boolean;
-  /** Removes the account from the registry; absent for an account that is not in it. */
-  onRemove?: () => void;
-  onChooseColor: (color: string | null) => void;
-  /**
-   * The account's rules (spec `flow-multiproject` §8.5, Re-seat P0): its id,
-   * the projects it is kept to, and its automatic moves. Absent for a row
-   * nothing can name.
-   */
-  rule?: AccountRule | null;
-  disabled: boolean;
-  /** The account's identity and usage, present only while the identity gate is open. */
-  identity: { usage: AccountUsage | undefined } | null;
-}) {
-  return (
-    <div className="flex items-start gap-3" data-testid="claude-account-row">
-      {identity && (
-        <span className="mt-1 flex">
-          <AccountColorControl
-            name={name}
-            color={account.color}
-            colorIsDefault={account.colorIsDefault}
-            onChoose={onChooseColor}
-            disabled={disabled}
-          />
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">
-          {name}
-          {isActive && <span className="text-muted-foreground ml-2 text-xs">in use</span>}
-        </p>
-        <p className="text-muted-foreground truncate font-mono text-xs" title={account.path}>
-          {shortenHomePath(account.path)}
-        </p>
-        {rule && <AccountSigninIdentity accountId={rule.accountId} name={name} />}
-        {rule && <AccountRowRules name={name} rule={rule} disabled={disabled} />}
-        {!account.isAccountRoot && (
-          <p
-            className="text-muted-foreground mt-1 flex items-start gap-1.5 text-xs"
-            data-testid="claude-account-not-ready"
-          >
-            <CircleAlert className="text-destructive mt-px size-3 shrink-0" aria-hidden />
-            <span>Not a Claude Code account yet. No chats show from it.</span>
-          </p>
-        )}
-      </div>
-      {identity && (
-        <div className="w-36 shrink-0 space-y-1 pt-0.5">
-          <UsageBar window={accountWindow(identity.usage, 'five_hour')} label="5h" compact />
-          <UsageBar window={accountWindow(identity.usage, 'seven_day')} label="wk" compact />
-        </div>
-      )}
-      {onRemove ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRemove}
-          disabled={disabled}
-          aria-label={`Remove ${name}`}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      ) : (
-        // Holds the remove button's place so every row's bars line up. It wears
-        // the button's own classes, so its width follows the button's. Not a
-        // button and not focusable: nothing to click, nothing to announce.
-        <span
-          aria-hidden="true"
-          data-testid="claude-account-remove-spacer"
-          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'invisible')}
-        >
-          <Trash2 className="size-3.5" />
-        </span>
-      )}
-    </div>
   );
 }

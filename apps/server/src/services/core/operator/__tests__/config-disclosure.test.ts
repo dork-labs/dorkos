@@ -359,11 +359,15 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      // The agent a mini app forwards the person's comments to (DOR-3325).
+      'extensions.forwardAgents',
       // Which rooms a mini app may reply in as the person (DOR-3017).
       'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'mcp.apiKey',
+      // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
+      'permissions.approvedFolderAllowRules',
       'providers',
       'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.defaultAccountOnlyProjects',

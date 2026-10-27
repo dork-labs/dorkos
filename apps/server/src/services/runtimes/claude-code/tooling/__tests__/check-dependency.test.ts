@@ -1,3 +1,4 @@
+import { resetCredentialReadHealth } from '../credential-read-health.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { CredentialProvider } from '../../../../core/credential-provider.js';
 import { resolveClaudeBinaryBeforePath } from '../../sdk/sdk-utils.js';
@@ -114,6 +115,7 @@ function stubConfig(providers: Record<string, string> = {}) {
 describe('checkClaudeDependencies — CLI binary check', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCredentialReadHealth();
     resetProbeFailureNotices();
   });
   afterEach(() => {
@@ -200,6 +202,7 @@ describe('checkClaudeDependencies — CLI binary check', () => {
 describe('checkClaudeDependencies — authentication check', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCredentialReadHealth();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -315,6 +318,7 @@ describe('checkClaudeDependencies — sign-in expiry', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCredentialReadHealth();
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     mockedDeadlines.mockResolvedValue(null);

@@ -33,6 +33,9 @@ export const GENERIC_EVENTS = [
   // happened," not silently dropped once past the cap. No UI subscribes yet.
   'relay_chat_unclaimed_burst',
   'task_run_failed',
+  // A run ended, however it ended (DOR-3123). The Schedules list re-reads on
+  // it, because whether a schedule is failing is decided by its latest run.
+  'task_run_finished',
   // A finished run's output grew: its agent reported back after the run's own
   // turn ended (DOR-2717). The run list re-reads on it.
   'task_run_updated',
@@ -89,6 +92,9 @@ export const GENERIC_EVENTS = [
   // claim-time, where `room_activity` above is durable and entry-time — which is
   // exactly why it is a sixth name rather than a payload field on the fifth.
   'room_presence',
+  // How many of a room's turns are waiting on a person changed (DOR-3236).
+  // Ephemeral like `room_presence`, and its own name for the same reason.
+  'room_awaiting',
   // Somebody moved their read cursor — the same person on a second device, most
   // of the time. One event for every kind of thread a person reads (a room, an
   // agent session, the inbox), so a subscriber filters on `threadKind` rather

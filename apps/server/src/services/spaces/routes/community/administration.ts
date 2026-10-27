@@ -37,6 +37,7 @@ import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
+import { requirePerson } from '../../moderation/person.js';
 import { mapIconBlobError, requestBytes } from './community-icon.js';
 import {
   DELETABLE,
@@ -44,31 +45,11 @@ import {
   deletionProjection,
   deletionTakedown,
 } from './deletion-status.js';
-
-interface SettingsRow {
-  id: string;
-  name: string;
-  description: string | null;
-  admission_policy: 'invite_only' | 'closed' | 'open';
-  icon_blob_key: string | null;
-  icon_content_type: string | null;
-  settings_version: number;
-  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
-  lifecycle_version: number;
-}
-
-function projectSettings(row: SettingsRow) {
-  return {
-    communityId: row.id,
-    name: row.name,
-    description: row.description,
-    admissionPolicy: row.admission_policy,
-    hasIcon: row.icon_blob_key !== null,
-    settingsVersion: row.settings_version,
-    lifecycle: row.lifecycle,
-    lifecycleVersion: row.lifecycle_version,
-  };
-}
+import {
+  assertReadableLifecycle,
+  projectSettings,
+  type SettingsRow,
+} from '../../content/settings-projection.js';
 
 function parseIfMatch(value: string | undefined): number | null {
   const match = value?.match(/^(?:W\/)?"?(\d+)"?$/);
@@ -109,18 +90,6 @@ async function lockSettings(client: PoolClient, communityId: string): Promise<Se
   return result.rows[0];
 }
 
-function assertReadableLifecycle(row: SettingsRow): void {
-  if (row.lifecycle === 'suspended') {
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
-  }
-  if (row.lifecycle === 'deletion_pending') {
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
-  }
-  if (row.lifecycle === 'pending_owner') {
-    throw new ApiError(403, 'FORBIDDEN', 'This space has no owner.');
-  }
-}
-
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
   app: Hono,
@@ -139,8 +108,10 @@ export function registerAdministrationRoutes(
     singleSignOn: boolean;
   }
 ): void {
+  // A person's paired DorkOS app reads these too, through their `read` grant, so it can show the
+  // space's settings; an agent's credential is refused (DOR-3005). Every write stays browser-only.
   app.get('/settings', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor } = await requirePerson(c, auth, pool, 'read');
     const result = await pool.query<SettingsRow>(
       `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
               icon_content_type,lifecycle,lifecycle_version

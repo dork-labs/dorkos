@@ -17,6 +17,11 @@ export interface Person {
   member: Member;
   /** Inside the write's transaction: refuse if the credential was revoked meanwhile. */
   recheck: (client: PoolClient) => Promise<void>;
+  /**
+   * How they reached the space: their own browser `session`, or the `grant` they approved for
+   * their DorkOS install. A route that shows a grant less than a browser reads it (DOR-3005).
+   */
+  credential: 'session' | 'grant';
 }
 
 /**
@@ -42,13 +47,18 @@ export async function requirePerson(
   options: HeldRemovalOption = {}
 ): Promise<Person> {
   // A browser session: the existing path, with its own clearance check in `requireLiveRole`.
-  if (!bearer(c)) return { member: await requireMember(c, auth, pool), recheck: async () => {} };
+  if (!bearer(c))
+    return {
+      member: await requireMember(c, auth, pool),
+      recheck: async () => {},
+      credential: 'session',
+    };
   const principal = await requirePrincipal(c, auth, pool, scope, true, options);
   if (principal.kind !== 'human')
     throw new ApiError(403, 'FORBIDDEN', 'Only a person can do this, not an agent.');
   const row = await pool.query<Member>(
-    // member-kind: by-grant
-    'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
+    // A grant is a person's, never an agent's, and the kind says so here too: fail closed.
+    "SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active",
     [principal.id, principal.community_id]
   );
   if (!row.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'You have not joined this space.');
@@ -56,5 +66,6 @@ export async function requirePerson(
     member: row.rows[0],
     recheck: (client) =>
       assertPrincipalCurrentInTransaction(client, principal, scope, undefined, options),
+    credential: 'grant',
   };
 }

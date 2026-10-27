@@ -101,6 +101,7 @@ import { CreateAgentDialog } from '@/layers/features/agent-creation';
 import { ImportProjectsDialog } from '@/layers/features/mesh';
 import { PipHost } from '@/layers/features/pip-panel';
 import { TourHost } from '@/layers/features/tours';
+import { ForwardConsentHost } from '@/layers/features/extensions';
 import { NotificationCenter } from '@/layers/features/notifications';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import { PanelGroup, Panel } from 'react-resizable-panels';
@@ -957,6 +958,8 @@ export function AppShell() {
         <ImportProjectsDialog />
         <ShortcutsPanel />
         <Toaster />
+        {/* A mini app's first forward to an agent asks here, outside the app (DOR-3325). */}
+        <ForwardConsentHost />
         <PipHost />
         <TourHost />
         {/* Draws nothing. Knocks when something starts waiting on you, and

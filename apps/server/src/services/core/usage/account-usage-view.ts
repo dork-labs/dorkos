@@ -5,6 +5,7 @@
  *
  * @module services/core/usage/account-usage-view
  */
+import { accountSigninState } from '../../observability/account-signin-state.js';
 import {
   resolveAccountColor,
   toAccountUsage,
@@ -31,18 +32,24 @@ export function usageOfAccount(
       : account.canonicalPath !== null
         ? records.get(`${account.runtime}@${account.canonicalPath}`)
         : undefined;
-  return toAccountUsage(
-    record?.ledger ?? null,
-    {
-      runtime: account.runtime,
-      accountId: account.routable ? account.id : null,
-      path: account.path ?? '',
-      label: account.label,
-      color: account.color,
-    },
-    now,
-    record?.subscriptionType ?? null
-  );
+  return {
+    ...toAccountUsage(
+      record?.ledger ?? null,
+      {
+        runtime: account.runtime,
+        accountId: account.routable ? account.id : null,
+        path: account.path ?? '',
+        label: account.label,
+        color: account.color,
+      },
+      now,
+      record?.subscriptionType ?? null
+    ),
+    signInState: accountSigninState(
+      account.runtime,
+      account.canonicalPath ?? account.path ?? undefined
+    ),
+  };
 }
 
 /**

@@ -20,6 +20,11 @@ const { redirect, remote, local, navigate, sentTo, spaces, address } = vi.hoiste
 }));
 // A one-agent DM's redirect to its Direct chat has its own tests
 // (`use-direct-chat-redirect.test.tsx`); every room here is drawn.
+// The private space's Settings tab is a hub's alone (DOR-3005); these tests run on a computer.
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
+  useIsHub: () => false,
+}));
 vi.mock('../model/use-direct-chat-redirect', () => ({ useDirectChatRedirect: () => 'show' }));
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({

@@ -6,6 +6,7 @@
 import type { Health, Snapshot } from './data.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
+import { checkLiveWorkflows } from './required-workflows.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -137,7 +138,7 @@ function checkSafeguard(
 export function globalChecks(gh: Gh, files: HandFiles): GlobalChecks {
   const { config } = files;
   const repo = config.github_repo;
-  const failures: string[] = [];
+  const failures: string[] = checkLiveWorkflows(gh, files).map((f) => f.message);
   const ruleset = reconcileRuleset(readRuleset(gh, repo, config.ruleset.id), files);
   if (!ruleset.ok) {
     failures.push(

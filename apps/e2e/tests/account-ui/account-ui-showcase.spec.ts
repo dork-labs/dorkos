@@ -91,9 +91,10 @@ test.describe('Claude account UI showcases @smoke', () => {
   // Tall enough for the tallest section (Settings' accounts, ~7850px since each
   // row gained its "Only for" line and "Limit to projects…" and the section a
   // "Project limits" list, DOR-2526, then a DorkOS credits entry and its notes
-  // in each Runs on showcase, DOR-2623): axe does not look at text outside the
-  // viewport, and `scan` fails rather than pass a region it could not see.
-  test.use({ viewport: { width: 1440, height: 9000 } });
+  // in each Runs on showcase, DOR-2623, then each row's sign-in state and
+  // button, DOR-3245, which took it past 9000px): axe does not look at text
+  // outside the viewport, and `scan` fails rather than pass a region it could not see.
+  test.use({ viewport: { width: 1440, height: 12000 } });
   test.describe.configure({ timeout: 240_000 });
 
   for (const theme of ['light', 'dark'] as const) {

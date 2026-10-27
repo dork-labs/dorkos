@@ -380,6 +380,8 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
           })();
           return {
             [Symbol.asyncIterator]: async function* () {
+              // This is a post-init delivery stall, not a sign-in read stall.
+              yield initMsg();
               yield taskSettledMsg('task-that-never-delivers');
               yield resultMsg();
               // The CLI now waits on stdin, exactly as it does in production.

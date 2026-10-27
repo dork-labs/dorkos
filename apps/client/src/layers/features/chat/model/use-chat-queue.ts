@@ -103,6 +103,21 @@ interface UseChatQueueReturn {
 }
 
 /**
+ * The nearest row at or past `from`, walking by `step`, that the person may
+ * edit; -1 when there is none.
+ *
+ * @param queue - The queue, head first.
+ * @param from - The index to start at.
+ * @param step - -1 toward the head, 1 toward the tail.
+ */
+function nextEditable(queue: readonly QueueItem[], from: number, step: -1 | 1): number {
+  for (let index = from; index >= 0 && index < queue.length; index += step) {
+    if (!queue[index]!.fromChat) return index;
+  }
+  return -1;
+}
+
+/**
  * Facade hook that wraps useMessageQueue with draft-aware queue editing callbacks.
  *
  * Owns the draft ref that preserves the user's in-progress composition when they
@@ -421,14 +436,17 @@ export function useChatQueue({
     setInput(draftRef.current);
   }, [commitEditInPlace, messageQueue, setInput]);
 
+  // The arrows step over another chat's messages, which are never edited
+  // (DOR-3060): landing on one would end the walk through the queue.
   const handleQueueNavigateUp = useCallback(() => {
     const { editingIndex, queue } = messageQueue;
+    const next = nextEditable(queue, (editingIndex ?? queue.length) - 1, -1);
     if (editingIndex === null) {
-      if (queue.length === 0) return;
+      if (next === -1) return;
       draftRef.current = input;
-      editAtPosition(queue.length - 1);
-    } else if (editingIndex > 0) {
-      editAtPosition(editingIndex - 1);
+      editAtPosition(next);
+    } else if (next !== -1) {
+      editAtPosition(next);
     } else {
       leaveQueue();
     }
@@ -437,8 +455,9 @@ export function useChatQueue({
   const handleQueueNavigateDown = useCallback(() => {
     const { editingIndex, queue } = messageQueue;
     if (editingIndex === null) return;
-    if (editingIndex < queue.length - 1) {
-      editAtPosition(editingIndex + 1);
+    const next = nextEditable(queue, editingIndex + 1, 1);
+    if (next !== -1) {
+      editAtPosition(next);
     } else {
       leaveQueue();
     }

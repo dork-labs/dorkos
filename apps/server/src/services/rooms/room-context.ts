@@ -688,6 +688,12 @@ export function buildRoomContext(
       // through raw so the renderer can sanitize it again at render.
       topicLabel: topicNames.get(entry.id) ?? null,
       attachments: attachmentsOf(entry.id),
+      // A person's comment a mini app forwarded (DOR-3325): which app and item,
+      // so the agent knows what "yes, do it" is about. The title stays out: it
+      // is the app's words, and the renderer prints this outside the fence.
+      ...(entry.body.via
+        ? { via: { appName: entry.body.via.appName, itemId: entry.body.via.itemId } }
+        : {}),
     };
   };
 

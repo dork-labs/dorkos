@@ -16,7 +16,9 @@
  *
  * @module services/runtimes/claude-code/turn-permission
  */
+import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type { PermissionMode } from '@dorkos/shared/types';
 import { ceilingCarriesOutsider, clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
@@ -320,4 +322,31 @@ export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
       return 'ask';
     }
   }
+}
+
+/**
+ * The one permission-update scope DorkOS mirrors into its own session state.
+ *
+ * The SDK's other destinations name settings FILES — the operator's, the
+ * project's, the machine-local override — and a mode written there outlives the
+ * conversation the card was answered in. `'session'` is the only one whose
+ * lifetime matches the row DorkOS keeps per session.
+ */
+const SESSION_SCOPED: PermissionUpdateDestination = 'session';
+
+/**
+ * The mode a batch of accepted permission suggestions leaves the session in, or
+ * `undefined` when none of them touches the mode.
+ *
+ * Last one wins, for the same reason the SDK applies them in order: a batch that
+ * names the mode twice ends at the second value, not the first.
+ *
+ * @param suggestions - The SDK permission updates being forwarded verbatim.
+ */
+export function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
+  let mode: PermissionMode | undefined;
+  for (const update of suggestions) {
+    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
+  }
+  return mode;
 }

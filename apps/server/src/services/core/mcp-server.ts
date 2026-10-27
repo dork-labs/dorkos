@@ -1,3 +1,4 @@
+import { MCP_SERVER_OPTIONS } from './capabilities/mcp-input/limits.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-helpers.js';
@@ -88,11 +89,14 @@ export function createExternalMcpServer(
   agentIdentityPresented?: boolean,
   hiddenToolNames?: ReadonlySet<string>
 ): McpServer {
-  const server = new McpServer({
-    name: 'dorkos',
-    version: '1.0.0',
-    icons: SERVER_ICONS,
-  });
+  const server = new McpServer(
+    {
+      name: 'dorkos',
+      version: '1.0.0',
+      icons: SERVER_ICONS,
+    },
+    MCP_SERVER_OPTIONS
+  );
 
   // The external /mcp surface has no per-session context, so every relay send
   // acts as a single, server-controlled external principal — the LLM never

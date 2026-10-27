@@ -1,6 +1,6 @@
 {
   "name": "@dorkos/desktop",
-  "version": "0.125.2",
+  "version": "0.125.4",
   "description": "You, multiplied. The DorkOS desktop app: build and run your business with an agent team.",
   "author": "144 Studio, LLC",
   "private": true,
@@ -48,7 +48,7 @@
     "hono": "^4.13.9",
     "node-pty": "^1.1.0",
     "uuid": "^13.0.2",
-    "zod": "^4.6.2",
+    "zod": "^4.6.6",
     "playwright-core": "1.63.0",
     "ws": "^8.22.0"
   },
@@ -60,7 +60,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.42",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "^41.10.7",
+    "electron": "^42.11.16",
     "electron-builder": "^26.17.0",
     "electron-builder-squirrel-windows": "26.17.0",
     "electron-vite": "^5.0.0",

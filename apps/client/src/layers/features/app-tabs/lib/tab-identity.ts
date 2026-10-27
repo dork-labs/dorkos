@@ -355,9 +355,9 @@ export function schedulesBadge(input: SchedulesBadgeInput): RouteBadge | null {
         status,
         count: failed,
         sentence:
-          failed === 1
-            ? '1 schedule failed its last run'
-            : `${failed} schedules failed their last run`,
+          // The same word the Schedules list counts with (DOR-3123): a
+          // schedule is failing until a run comes back clean.
+          failed === 1 ? '1 schedule is failing' : `${failed} schedules are failing`,
       };
     case 'working':
       return { status, sentence: runningSentence(input.running) };

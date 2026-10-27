@@ -313,14 +313,14 @@ A sender's own entry carries one quiet status, read from the per-turn delivery r
 
 ## 9. Email (designed here, not built)
 
-> **Mail provider under review (2026-10-19).** Using one provider for both inbound and outbound is proposed, pending a spike due Oct 23. Don't build against this section until a decision is logged.
+> **Decided (2026-10-24).** Agent email on DorkOS Cloud runs on Resend, for inbound and outbound, on one shared receiving domain. Each address carries its space in the local part, the part before the `@`. The bullets below are updated to match.
 
 Email is a bridge onto a conversation, the same shape as Telegram and Slack after step 1. Nothing here is built by this spec; it fixes the shape so the conversation model does not have to change when email arrives. Background: `research/20261006_email-phone-first-class.md` (§4 and the `ContactProvider` port).
 
 - **One port, `EmailProvider`**, with the research's verbs: provision an address, send, receive (a cursor, so a closed lid loses nothing), release. Receive is required; live push is optional.
-- **DorkOS Cloud's provider:** inbound through Cloudflare Email Routing to a Worker, which stores each message until the app pulls it over the cloud link; outbound through Resend, signed with DKIM. Each space gets its own subdomain under one registrable mail domain kept apart from dorkos.ai, so one space's bad sending cannot hurt another's reputation or the product's own mail. (The domain is not chosen yet.)
+- **DorkOS Cloud's provider:** Resend, for both inbound and outbound. Inbound mail waits at the provider until the app pulls it over the cloud link, so a closed lid loses nothing. Outbound is signed with DKIM. Every space shares one receiving domain, kept apart from dorkos.ai so the product's own mail is never at risk. The space lives in the address's local part, not in a subdomain.
 - **Self-hosters bring their own mailbox:** IMAP and SMTP, or Gmail. A laptop is never a mail server: inbound always lands somewhere always-on first, outbound always goes through a relay.
-- **Inbound is a bridge entry.** A message to `{handle}[+{name}]@{space}.{mail domain}` resolves to one conversation (§6) and lands as an entry with an external origin, authored by the outside sender. The agent reads it fenced as outsider words, exactly like a stranger's Telegram message: information, never orders (`<working_rules>`).
+- **Inbound is a bridge entry.** A message to an address on the shared domain, whose local part names the space and the handle (and optionally a conversation name), resolves to one conversation (§6) and lands as an entry with an external origin, authored by the outside sender. The agent reads it fenced as outsider words, exactly like a stranger's Telegram message: information, never orders (`<working_rules>`).
 - **Mail threads map to threads.** `Message-ID`, `In-Reply-To` and `References` map to entry threads, kept in a helper table beside the log the way `room_bridge_messages` maps Telegram and Slack message ids.
 - **Outbound is a post.** An agent's entry in an email conversation is sent as a reply on the same mail thread. Sending to someone outside the team still needs a person's yes where the trust rules say so.
 

@@ -688,6 +688,7 @@ describe('Tasks routes', () => {
         resolvedRuntime: null,
         resolvedModel: null,
         refusedTools: null,
+        outcome: null,
         scheduledFor: null,
         missedTicks: null,
         createdAt: new Date().toISOString(),

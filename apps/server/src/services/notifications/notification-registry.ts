@@ -26,9 +26,10 @@
  *
  * @module services/notifications/notification-registry
  */
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { runtimeSigninTitle, runtimeSigninBody } from './runtime-signin-copy.js';
 import {
   NOTIFICATION_KINDS,
+  signinSubjectId,
   type NotificationActionDTO,
   type NotificationKind,
   type NotificationSubjectType,
@@ -43,6 +44,7 @@ import {
 } from './extension-decision-copy.js';
 import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
 import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
+import { RUN_COMPLETED_COPY, type RunCompletedPayload } from './run-completed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -51,13 +53,14 @@ import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
  * it stopped is the pipeline's own "never notify somebody about their own action"
  * rule spelled out as a type.
  *
- * `blocked` is here because it was already being reported — as a success, with
- * a green tick, which is the DOR-2101 defect. Dropping it from this union
+ * `needs_attention` is here because it was already being reported — as a
+ * success, with a green tick, which is the DOR-2101 and DOR-3123 defect.
+ * Dropping it from this union
  * instead would have swapped a wrong notification for no notification at all,
  * and a schedule that quietly does nothing every night is exactly what a person
  * needs telling about.
  */
-export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
+export type RunCompletionStatus = 'completed' | 'failed' | 'needs_attention';
 
 /**
  * What each kind of notification is told when it is raised.
@@ -173,19 +176,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
     completedAt: string;
   };
   /** A scheduled task run reached a terminal status. */
-  'run.completed': {
-    runId: string;
-    taskId: string;
-    taskName: string;
-    agentId?: string;
-    status: RunCompletionStatus;
-    /** How long it took, already written, e.g. `2m 14s`. */
-    duration?: string;
-    /** The first line of output or error. */
-    detail?: string;
-    /** The sentence an out-of-app channel says. Preserves the wording DOR-240 shipped. */
-    channelMessage: string;
-  };
+  'run.completed': RunCompletedPayload;
   /** A direct message arrived. */
   'dm.received': {
     roomId: string;
@@ -250,6 +241,10 @@ export interface NotificationPayloads extends DeclaredPayloads {
    * and the episode, and nothing about the session that tripped over it.
    */
   'signin.required': {
+    /** The account whose sign-in stopped working. */
+    accountRoot?: string;
+    /** Its display name, never a credential. */
+    accountName?: string;
     /** The runtime type, e.g. `claude-code`. */
     runtime: string;
     /**
@@ -801,40 +796,16 @@ const ENTRIES: NotificationRegistryMap = {
   'run.completed': {
     kind: 'run.completed',
     // The one kind whose loudness the payload decides. A run that worked is
-    // history; one that failed, or that was never allowed to use a tool
-    // (DOR-2101), is worth a glance. Splitting it into separate kinds would
+    // history; one that failed, or that was refused a tool it reached for
+    // (DOR-2101, DOR-3123), is worth a glance. Splitting it into separate kinds would
     // mean a registry entry, a dedupe key and a row each, for one event.
     tier: (p) => (p.status === 'completed' ? 'quiet' : 'notable'),
     storage: 'event',
     subjectType: 'run',
     locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
-    title: (p) =>
-      p.status === 'failed'
-        ? `${p.taskName} failed`
-        : p.status === 'blocked'
-          ? `${p.taskName} could not use its tools`
-          : `${p.taskName} finished`,
-    body: (p) => {
-      const timing = p.duration
-        ? p.status === 'failed'
-          ? `Failed after ${p.duration}.`
-          : p.status === 'blocked'
-            ? // NOT "nobody was there to approve its tools" again: `detail` is the
-              // run's own refusal sentence, which ends in exactly those words, and
-              // the row printed the same fact twice (DOR-2101 review). Headline
-              // here, the tools themselves in the detail.
-              `Ran for ${p.duration} and used none of its tools.`
-            : `Done in ${p.duration}.`
-        : undefined;
-      return [timing, p.detail].filter(Boolean).join(' ') || undefined;
-    },
+    // Its title, body, action and reach: see `run-completed-copy.ts`.
+    ...RUN_COMPLETED_COPY,
     dedupeKey: (p) => `run:${p.runId}`,
-    // Failures always reach out; successes only where the operator asked for
-    // them. This is DOR-240's policy, moved from the notifier to the
-    // declaration. A blocked run reaches out too (DOR-2101): it is the one
-    // outcome a person cannot notice for themselves, because the task looks
-    // like it ran and its history is full of rows that say so.
-    relay: (p) => (p.status === 'completed' ? 'opt-in' : 'always'),
     // The chat message keeps the wording DOR-240 shipped rather than being
     // rebuilt from title and body: a phone message and an inbox row are not the
     // same sentence, and this one is already tuned.
@@ -980,14 +951,7 @@ const ENTRIES: NotificationRegistryMap = {
     // next month as it was that night, and the resolution row that follows says
     // plainly that it came back.
     //
-    // **One row per RUNTIME, even when a machine runs several accounts on it**
-    // (DOR-1682). A Claude credential belongs to an account root, and DorkOS
-    // supports several; the watch tracks each of them separately, but reports one
-    // condition per runtime, because `subjectId` below is the runtime type and
-    // the app's standing banner reads the newest row per runtime. A second dead
-    // account therefore adds nothing to the inbox — what it adds is that this
-    // row's resolution waits for it: the "working again" row is written when the
-    // LAST failing account proves itself, never when the first does.
+    // Each account owns its subject and escalation episode.
     kind: 'signin.required',
     tier: 'blocking',
     storage: 'standing-recorded',
@@ -995,7 +959,7 @@ const ENTRIES: NotificationRegistryMap = {
     // turn that tripped over it. Clicking through opens Settings → Runtimes,
     // which is where signing in again actually happens.
     subjectType: 'system',
-    locate: (p) => ({ subjectId: p.runtime }),
+    locate: (p) => ({ subjectId: signinSubjectId(p.runtime, p.accountRoot) }),
     // **Past tense on both edges, because a stored row outlives what it
     // describes.** `session.error` set the pattern with "stopped on an error",
     // and the reason is the same: the raise row sits in the inbox long after
@@ -1009,25 +973,14 @@ const ENTRIES: NotificationRegistryMap = {
     // The third sentence is the restart case, and it is deliberately NOT the
     // all-clear: boot closes an episode it can never see the end of, and saying
     // "working again" there would be DorkOS asserting something nobody checked.
-    title: (p) => {
-      const name = runtimeDisplayName(p.runtime);
-      if (!p.clearedAt) return `Your ${name} sign-in stopped working`;
-      return p.closedAtBoot
-        ? `DorkOS restarted while your ${name} sign-in was broken`
-        : `Your ${name} sign-in is working again`;
-    },
-    body: (p) => {
-      if (!p.clearedAt) return 'Scheduled tasks and agent replies cannot run until you sign in.';
-      return p.closedAtBoot
-        ? 'It stopped tracking that. If the sign-in is still broken, the next task or reply will say so.'
-        : undefined;
-    },
-    // ONE per runtime per EPISODE, however many tasks, rooms and relay
+    title: runtimeSigninTitle,
+    body: runtimeSigninBody,
+    // One per account episode, however many tasks, rooms and relay
     // deliveries trip over the same dead credential — the watch's own store is
     // what collapses them, synchronously, before any of them can say anything.
     // The `since` is what keeps a SECOND episode distinct from the first; see
     // the payload field for why the ledger makes that non-negotiable.
-    dedupeKey: (p) => `signin:${p.runtime}:${p.since}`,
+    dedupeKey: (p) => `signin:${signinSubjectId(p.runtime, p.accountRoot)}:${p.since}`,
     // **Zero, and it has to be.** The two rows of one episode share this key by
     // design — that shared string is what files them, the escalation timer and
     // the resolution under one identity. Any positive window would therefore

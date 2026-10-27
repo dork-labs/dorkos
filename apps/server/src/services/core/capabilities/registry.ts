@@ -46,6 +46,7 @@ import {
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
+import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
@@ -766,6 +767,11 @@ export function composeRegistry(
         }
         throw new Error(`Capability registry: no capability registered for id "${id}".`);
       }
+      // What only the hub may do on an agent computer, and every action nobody
+      // there could approve, is refused first, trusted callers included
+      // (`agent-computer/hub-owned.ts`).
+      const sealed = agentComputerActionRefusal(capability);
+      if (sealed) throw new CapabilityGateRefusal({ outcome: 'denied', payload: sealed });
       const supplied = context ?? {};
 
       // A present `trusted` that is not a genuine marker is refused LOUDLY rather

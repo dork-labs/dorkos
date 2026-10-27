@@ -343,6 +343,13 @@ export const NotificationDTOSchema = z
     outcome: NotificationOutcomeSchema.optional(),
     /** Who decided, on an `extension.decision` history row only. */
     decision: NotificationDecisionSchema.optional(),
+    /**
+     * Which mark a failing scheduled run's notice draws (DOR-3123), the same
+     * marks the Schedules row uses: `refused` for a run that was refused a tool
+     * (a padlock), `failed` for one that did not finish (a cross). Absent on
+     * every other notice, which draws its kind's own icon.
+     */
+    mark: z.enum(['refused', 'failed']).optional(),
   })
   .openapi('Notification');
 
@@ -764,3 +771,16 @@ export const WebPushPayloadSchema = z
 
 /** Exactly what a push carries to a browser. */
 export type WebPushPayload = z.infer<typeof WebPushPayloadSchema>;
+
+/** Stable sign-in subject; legacy runtime-only subjects remain readable. */
+export function signinSubjectId(runtime: string, accountRoot?: string): string {
+  return accountRoot ? `${runtime}:${accountRoot}` : runtime;
+}
+
+/** Read an account target from a sign-in subject without guessing a default. */
+export function signinTarget(subjectId: string): { runtime: string; accountRoot?: string } {
+  const separator = subjectId.indexOf(':');
+  return separator < 0
+    ? { runtime: subjectId }
+    : { runtime: subjectId.slice(0, separator), accountRoot: subjectId.slice(separator + 1) };
+}

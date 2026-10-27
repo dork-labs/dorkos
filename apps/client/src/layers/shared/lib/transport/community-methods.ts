@@ -13,6 +13,7 @@ import {
   type CommunityConnectionTransport,
 } from '@dorkos/shared/community-connections';
 import { CommunityTeammateSpendSchema } from '@dorkos/shared/community-teammates';
+import { COMMUNITY_SPACE_READ_SCHEMAS } from '@dorkos/shared/community-space-settings';
 import {
   CommunityNavigationResolveResponseSchema,
   CommunityNavigationStateSchema,
@@ -93,6 +94,12 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
           body: JSON.stringify({ monthlyLimitUsd }),
         })
       );
+    },
+    async readCommunitySpace(ref, read) {
+      // A fixed read name, never a path: the server asks the space for one fixed path per read.
+      return COMMUNITY_SPACE_READ_SCHEMAS[read].parse(
+        await fetchJSON(baseUrl, `${path(ref)}/space/${read}`)
+      ) as never;
     },
     async getCommunityNavigation() {
       return CommunityNavigationStateSchema.parse(

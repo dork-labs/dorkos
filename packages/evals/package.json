@@ -28,7 +28,7 @@
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

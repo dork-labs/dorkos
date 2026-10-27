@@ -36,7 +36,7 @@ import type {
   RuntimeKeyStatus,
 } from '@dorkos/shared/runtime-connect';
 import { MODELS_KEY } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { accountKeys, useTransport } from '@/layers/shared/model';
 import { REQUIREMENTS_KEY } from './use-runtime-requirements';
 
 /**
@@ -333,6 +333,7 @@ export function useDelegateRuntimeLogin(
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['claude-signin-policy'] });
       if (result.ok) {
+        void queryClient.invalidateQueries({ queryKey: accountKeys.all });
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
         // The catalog changed with the connection: a new provider's models are
         // now offered, and the old ones may not be (DOR-1660).

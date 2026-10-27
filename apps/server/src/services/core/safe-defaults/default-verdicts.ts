@@ -303,6 +303,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // Ships ABSENT, which means none: no mini app reaches any room until a
   // person picks one. A wipe empties it, which is stricter, never looser.
   'extensions.roomAccess',
+  // The agent each mini app may forward the person's comments to (DOR-3325).
+  // Ships ABSENT, which means none: no mini app forwards anything until a
+  // person picks an agent. A wipe empties it, which is stricter, never looser.
+  'extensions.forwardAgents',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,
@@ -463,6 +467,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // No agent's own folder allow list applies until a person approves those exact
+  // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
+  'permissions.approvedFolderAllows': [],
+  'permissions.refusedFolderAllows': [],
+  'permissions.approvedFolderAllowRules': {},
   // Nothing DorkOS installed for all your projects is shared into your home
   // directory until you say which agent tools may see it (DOR-1924). An empty
   // list IS off, so the empty default is the closed door.

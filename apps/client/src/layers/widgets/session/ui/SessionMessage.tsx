@@ -34,6 +34,7 @@ import { Message, formatTime } from '@/layers/features/conversation';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
 import {
   ChatFromMark,
+  ForwardViaLine,
   MessageProvider,
   RoomPostMark,
   type InteractiveToolHandle,
@@ -289,6 +290,7 @@ function SessionMessageRow({
                 ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
                 : {})}
           />
+          {fromRoom?.via && <ForwardViaLine via={fromRoom.via} />}
           <Message.Content id={contentId}>
             {foldsReply
               ? renderReplyBody(message)

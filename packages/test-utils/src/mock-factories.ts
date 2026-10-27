@@ -16,13 +16,12 @@ import type {
   InterruptOutcome,
   InterruptReason,
   InterruptReceipt,
-  Task,
   ServerConfig,
-  TaskRun,
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { transportSliceMocks } from './mock-transport-slices.js';
+export { createMockSchedule, createMockRun } from './mock-tasks.js';
 import { mockOnboardingMethods, mockProfileMethods } from './mock-person-methods.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
@@ -221,69 +220,6 @@ export function createMockCommandEntry(overrides: Partial<CommandEntry> = {}): C
     fullCommand: '/test:example',
     description: 'A test command',
     filePath: '.claude/commands/test/example.md',
-    ...overrides,
-  };
-}
-
-/** Create a mock Task with sensible defaults. */
-export function createMockSchedule(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'sched-1',
-    name: 'daily-review',
-    displayName: 'Daily Review',
-    description: 'Review open PRs daily',
-    prompt: 'Review open PRs',
-    cron: '0 9 * * 1-5',
-    enabled: true,
-    sticky: false,
-    status: 'active',
-    agentId: null,
-    timezone: null,
-    defaultCron: '0 9 * * 1-5',
-    defaultTimezone: null,
-    timingOverridden: false,
-    packageOwned: null,
-    approvalChanges: [],
-    maxRuntime: null,
-    permissionMode: 'acceptEdits',
-    runtime: null,
-    model: null,
-    effort: null,
-    account: null,
-    filePath: '/tmp/tasks/daily-review/SKILL.md',
-    nextRun: new Date(Date.now() + 86400000).toISOString(),
-    nextRuns: [],
-    reason: null,
-    proposedBySessionId: null,
-    proposedByAgentPath: null,
-    proposedByName: null,
-    origin: null,
-    reasonSource: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
-
-/** Create a mock TaskRun with sensible defaults. */
-export function createMockRun(overrides: Partial<TaskRun> = {}): TaskRun {
-  return {
-    id: 'run-1',
-    scheduleId: 'sched-1',
-    sessionId: 'session-1',
-    status: 'completed',
-    trigger: 'scheduled',
-    startedAt: new Date().toISOString(),
-    finishedAt: new Date(Date.now() + 60000).toISOString(),
-    durationMs: 60000,
-    outputSummary: null,
-    error: null,
-    resolvedRuntime: null,
-    resolvedModel: null,
-    refusedTools: null,
-    scheduledFor: null,
-    missedTicks: null,
-    createdAt: new Date().toISOString(),
     ...overrides,
   };
 }

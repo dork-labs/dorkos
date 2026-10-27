@@ -13,16 +13,16 @@ export type SystemHealthState = 'healthy' | 'degraded' | 'error';
  * Derive system health state from entity hook data.
  *
  * Priority: `error` > `degraded` > `healthy`.
- * Error conditions: failed or blocked Tasks runs in last 24h, dead letters,
- * unreachable mesh agents. A blocked run counts (DOR-2101): a schedule that is
- * turned down at every tool it reaches for does nothing, every night, and the
- * health chip staying green over it is the same silence the run row used to
- * keep.
+ * Error conditions: failed or needs-attention Tasks runs in last 24h, dead
+ * letters, unreachable mesh agents. A needs-attention run counts (DOR-2101,
+ * DOR-3123): a schedule that is turned down at a tool it reaches for does not
+ * do its job, every night, and the health chip staying green over it is the
+ * same silence the run row used to keep.
  * Degraded condition: any relay adapter disconnected but no error conditions.
  */
 export function useSystemHealth(): SystemHealthState {
   const { data: failedRuns } = useTaskRuns({ status: 'failed' });
-  const { data: blockedRuns } = useTaskRuns({ status: 'blocked' });
+  const { data: refusedRuns } = useTaskRuns({ status: 'needs_attention' });
   const { data: deadLetters } = useAggregatedDeadLetters();
   const { data: meshStatus } = useMeshStatus();
   const { data: adapters } = useRelayAdapters();
@@ -34,7 +34,7 @@ export function useSystemHealth(): SystemHealthState {
 
     const isRecent = (run: { createdAt: string }): boolean =>
       new Date(run.createdAt).getTime() > twentyFourHoursAgo;
-    const hasRecentFailedRuns = failedRuns?.some(isRecent) || blockedRuns?.some(isRecent);
+    const hasRecentFailedRuns = failedRuns?.some(isRecent) || refusedRuns?.some(isRecent);
     const hasDeadLetters = deadLetters?.some((group) => group.count > 0);
     const hasUnreachableAgents = (meshStatus?.unreachableCount ?? 0) > 0;
 
@@ -50,5 +50,5 @@ export function useSystemHealth(): SystemHealthState {
     }
 
     return 'healthy';
-  }, [now, failedRuns, blockedRuns, deadLetters, meshStatus, adapters]);
+  }, [now, failedRuns, refusedRuns, deadLetters, meshStatus, adapters]);
 }
