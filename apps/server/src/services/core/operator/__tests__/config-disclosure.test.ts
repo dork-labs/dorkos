@@ -367,6 +367,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.trustedSources[].trustedAt',
       // Not a secret: the part digests behind each folder settings yes (DOR-3068).
       'harness.approvedFolderConfigParts',
+      // Not a secret: the commit each repo was last compared against (DOR-3298).
+      'harness.repoBaselines',
       'mcp.apiKey',
       // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
       'permissions.approvedFolderAllowRules',

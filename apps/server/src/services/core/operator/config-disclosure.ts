@@ -428,6 +428,13 @@ export const CONFIG_DISCLOSURE = {
   'harness.refusedFolderConfig': 'expose',
   'harness.folderConfigPinned': 'expose',
   'harness.approvedFolderConfigParts': 'withhold',
+  // Which repo and worktree settings a person let run or turned down
+  // (DOR-3298): kinds and content digests, no secrets. The commit each repo was
+  // last compared against is nothing an agent needs.
+  'harness.approvedRepoConfig': 'expose',
+  'harness.refusedRepoConfig': 'expose',
+  'harness.repoBaselines': 'withhold',
+  'harness.repoBaselinesPinned': 'expose',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that
   // can say "your all-projects packages are not shared with Codex" is more

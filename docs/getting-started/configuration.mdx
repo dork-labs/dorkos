@@ -940,6 +940,15 @@ It reads your other tools' folders too, so a project that never used Claude Code
 
 If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`, say — DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
 
+Hooks in a project or worktree get the same care, even when the folder isn't an agent's own. Three things wait for your yes there:
+
+- **Your local settings file.** `.claude/settings.local.json` isn't checked in, so nobody reviews it. If it adds hooks, helper commands, MCP servers, environment variables or allowed commands, DorkOS leaves the whole file out until you approve what's in it. The project's checked-in settings and its `CLAUDE.md` still load.
+- **Changed hooks.** If the project's checked-in hooks, the scripts they run, or the hooks a subagent or skill sets differ from the default branch, none of the project's hooks run in that worktree until you approve the change. Your agent's permission settings still apply. Undoing the edit turns them back on.
+- **New allowed commands.** If the checked-in settings allow a command the default branch doesn't, DorkOS asks before that command runs, as it would without the rule.
+- **A changed `.mcp.json`.** If it differs from the default branch, only the default branch's MCP servers start until you approve the change.
+
+Each one shows a card with the change, and a line in Activity naming the files. You approve a change once, and every worktree with the same change runs it. A project DorkOS sees for the first time waits for your yes once, and so does a default branch that changes its hooks. Projects DorkOS already knew when you upgraded are trusted as they were. A folder outside git counts as having no default branch, so its hooks and MCP servers wait for your yes too. Without git installed at all, only the local settings file is checked.
+
 <TypeTable
   type={{
     'harness.autoSync': {
@@ -987,6 +996,27 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
     'harness.folderConfigPinned': {
       description:
         'Whether DorkOS has pinned the agents it already had. It does this once, so a new agent whose folder runs anything waits for your yes. Only a person can change this.',
+    'harness.approvedRepoConfig': {
+      description:
+        'The project and worktree settings you allowed to run: a local settings file, changed hooks, or a changed `.mcp.json`. Each entry is the content you approved, so the same change runs in every worktree. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.refusedRepoConfig': {
+      description:
+        'Project and worktree settings you turned down. DorkOS doesn\u2019t ask about them again until they change. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.repoBaselines': {
+      description:
+        'The default-branch commit DorkOS last compared each project against. If the default branch jumps somewhere that doesn\u2019t build on it, hooks pause until you approve. Only a person can change this.',
+      type: 'object',
+      default: '{}',
+    },
+    'harness.repoBaselinesPinned': {
+      description:
+        'Whether DorkOS has pinned the projects it already knew. It does this once, so a project it sees for the first time after that waits for your yes. Only a person can change this.',
       type: 'boolean',
       default: 'false',
     },

@@ -107,6 +107,11 @@ import {
   applyFolderConfigToLaunch,
   resolveFolderConfigForLaunch,
 } from '../folder-settings/launch-folder-config.js';
+import {
+  applyRepoConfigToLaunch,
+  applyRepoMcpServers,
+  resolveRepoConfigForLaunch,
+} from '../repo-settings/launch-repo-config.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -793,6 +798,16 @@ export async function resolveLaunch(args: {
     accountRoot,
     otherAccountRoots: resolveClaudeRootSet(),
   });
+  // Outside the home: a worktree's unreviewed local settings, and repo hooks or
+  // MCP servers that differ from the default branch, wait for a person (DOR-3298).
+  const repoConfig = await resolveRepoConfigForLaunch({
+    agentName: agentDisplayName ?? undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    teammate,
+    dorkHome: resolveDorkHome(),
+  });
+  applyRepoConfigToLaunch(sdkOptions, repoConfig);
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
@@ -825,6 +840,7 @@ export async function resolveLaunch(args: {
       ...(agentFileHeld ? { withholdAgentServers: true } : {}),
     });
   }
+  applyRepoMcpServers(sdkOptions, repoConfig);
 
   // Nothing here sets `allowedTools`, on purpose (DOR-519). The retired tool-group
   // toggles used to feed it a list, on the premise that the SDK option restricts which tools

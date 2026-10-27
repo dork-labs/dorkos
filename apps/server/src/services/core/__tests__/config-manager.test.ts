@@ -590,6 +590,11 @@ describe('ConfigManager', () => {
       approvedFolderConfigParts: {},
       refusedFolderConfig: [],
       folderConfigPinned: false,
+      // Repo and worktree settings outside an agent home (DOR-3298).
+      approvedRepoConfig: [],
+      refusedRepoConfig: [],
+      repoBaselines: {},
+      repoBaselinesPinned: false,
       // Nothing installed for all your projects is shared into a home directory
       // until somebody says which agent tools may see it, and `askedAt: null`
       // says the question has never been put (DOR-1924).
@@ -4686,6 +4691,11 @@ describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
       approvedFolderConfigParts: {},
       refusedFolderConfig: [],
       folderConfigPinned: false,
+      // Repo and worktree settings outside an agent home (DOR-3298).
+      approvedRepoConfig: [],
+      refusedRepoConfig: [],
+      repoBaselines: {},
+      repoBaselinesPinned: false,
       global: { harnesses: [], askedAt: null },
     });
   });

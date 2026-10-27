@@ -30,6 +30,7 @@ import {
   setFolderAllowApprovalGateway,
 } from '../../services/runtimes/claude-code/folder-settings/folder-allow-approval.js';
 import { describeFolderConfigCapability } from '../../services/runtimes/claude-code/folder-settings/folder-config-approval.js';
+import { describeRepoConfigCapability } from '../../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
 import { describeGlobalActivationCapability } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
 import {
   describeTemplateCreationCapability,
@@ -184,6 +185,7 @@ export async function wireConnectorEventsAndApprovals(
         describeHookProjectionCapability(capabilityId) ??
         describeFolderAllowCapability(capabilityId) ??
         describeFolderConfigCapability(capabilityId) ??
+        describeRepoConfigCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
         describeTemplateCreationCapability(capabilityId) ??
         describeWorkspaceCreationCapability(capabilityId)

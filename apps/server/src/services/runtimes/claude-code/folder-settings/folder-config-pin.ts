@@ -232,8 +232,14 @@ function hooksPart(home: string, dorkHome: string): PartValue {
 /** Settings keys whose string value is itself a command DorkOS runs. */
 const HELPER_KEYS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper'];
 
-/** Every string `command` anywhere under a parsed settings slice, and each helper command. */
-function collectCommands(value: unknown, out: string[]): void {
+/**
+ * Every string `command` anywhere under a parsed settings slice, and each
+ * helper command. Also read by the repo settings check (DOR-3298).
+ *
+ * @param value - A parsed settings slice.
+ * @param out - Where the commands are pushed.
+ */
+export function collectCommands(value: unknown, out: string[]): void {
   if (Array.isArray(value)) {
     for (const item of value) collectCommands(item, out);
     return;
