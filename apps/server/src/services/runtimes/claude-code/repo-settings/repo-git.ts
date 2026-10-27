@@ -11,25 +11,22 @@
  * files are read by the caller and hashed in-process ({@link gitBlobId}).
  *
  * **The repo is the agent's.** These reads run in a repo an agent can write,
- * config included, so each one also carries {@link UNTRUSTED_REPO_ARGS} and a
- * minimal environment: no lazy fetch of a missing object (a promisor remote's
- * `core.sshCommand` would otherwise run as the server), no transport at all, no
- * ssh, credential or askpass helper, and none of the server's own environment.
- * A read that would need any of them fails, and a failed read pauses the
- * repo's settings. This is a guard, not the general fix: every git call
- * DorkOS makes in an agent folder moves to one shared runner (DOR-3343), and
- * this module moves to it when it lands.
+ * config included, so every one goes through `runSafeGitBuffer`: today the
+ * stand-in in `safe-git-interim.ts`, and DOR-3343's shared runner
+ * (`@dorkos/shared/safe-git`) once it is on main, which also audits the
+ * repo's settings key by key. Either way: no lazy fetch of a missing object (a
+ * promisor remote's `core.sshCommand` would otherwise run as the server), no
+ * transport at all, no ssh, credential or askpass helper, and none of the
+ * server's own environment. A read that would need any of them fails, and a
+ * failed read pauses the repo's settings.
  *
  * @module services/runtimes/claude-code/repo-settings/repo-git
  */
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import { internalGitArgs } from '../../../../lib/git-safety.js';
-
-const execFileAsync = promisify(execFile);
+// Switch to '@dorkos/shared/safe-git' once DOR-3343's runner (#3216) is on main.
+import { gitRuns, runSafeGitBuffer } from './safe-git-interim.js';
 
 /** How long one git read may take. */
 const GIT_TIMEOUT_MS = 5_000;
@@ -41,69 +38,16 @@ const GIT_MAX_BUFFER = 4 * 1024 * 1024;
  * Switches that keep a repo's own files from changing what a commit holds or
  * descends from. An agent can write all of them: replace refs
  * (`git replace <commit> <its own>`) swap a commit's tree under the same id,
- * `info/grafts` rewrites parents, and a crafted commit-graph file can claim
- * parents a commit does not have. Forged pack or loose objects are not caught
- * here; that residual needs DorkOS's own copy of the default branch (DOR-3339).
+ * and a crafted commit-graph file can claim parents a commit does not have.
+ * `info/grafts` has no switch the runner lets a caller set, so a repo that
+ * has one is refused ({@link locateRepo}). Forged pack or loose objects are
+ * not caught here; that residual needs DorkOS's own copy of the default
+ * branch (DOR-3339).
  */
 const BASELINE_GIT_ARGS = ['--no-replace-objects', '-c', 'core.commitGraph=false'];
 
-/** The environment twin of {@link BASELINE_GIT_ARGS}, for the switches with no flag. */
-const BASELINE_GIT_ENV = {
-  GIT_NO_REPLACE_OBJECTS: '1',
-  // A graft file that never exists, so the repo's `info/grafts` is never read.
-  GIT_GRAFT_FILE: path.join(path.sep, 'nonexistent', 'dorkos-no-grafts'),
-};
-
-/** Config that keeps an agent's repo config from running anything (DOR-3298 M3). */
-const UNTRUSTED_REPO_ARGS = [
-  '-c',
-  'protocol.allow=never',
-  '-c',
-  'core.sshCommand=',
-  '-c',
-  'credential.helper=',
-  '-c',
-  'core.askPass=',
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'core.hooksPath=/dev/null',
-];
-
-/**
- * The whole environment a read gets: enough to find git and the person's own
- * global config, and nothing of the server's.
- */
-function untrustedRepoEnv(): NodeJS.ProcessEnv {
-  // eslint-disable-next-line no-restricted-syntax -- git needs PATH to be found and HOME for the person's own global config; nothing else of the server's environment is passed.
-  const { PATH, HOME } = process.env;
-  return {
-    ...(PATH ? { PATH } : {}),
-    ...(HOME ? { HOME } : {}),
-    LC_ALL: 'C',
-    GIT_NO_LAZY_FETCH: '1',
-    GIT_ALLOW_PROTOCOL: '',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_ASKPASS: '',
-    SSH_ASKPASS: '',
-    ...BASELINE_GIT_ENV,
-  };
-}
-
 /** Whether git is installed, asked once per process. */
 let gitInstalled: Promise<boolean> | undefined;
-
-/** Ask once whether git runs at all, rather than guessing it from a failed read. */
-function isGitInstalled(): Promise<boolean> {
-  gitInstalled ??= execFileAsync('git', ['--version'], {
-    env: untrustedRepoEnv(),
-    timeout: GIT_TIMEOUT_MS,
-  }).then(
-    () => true,
-    (err: unknown) => (err as NodeJS.ErrnoException).code !== 'ENOENT'
-  );
-  return gitInstalled;
-}
 
 /** Thrown when git itself is not installed: the repo's committed settings then pause. */
 export class GitMissingError extends Error {
@@ -114,35 +58,27 @@ export class GitMissingError extends Error {
 }
 
 /**
- * Run one git command in `cwd` and return its stdout.
+ * Run one git command in `cwd` through the safe runner and return its stdout.
+ * Every option goes in as an argument, never the environment: the runner
+ * takes only the locale.
  *
  * @param cwd - The folder to run in.
- * @param args - The subcommand and its arguments.
+ * @param args - The subcommand and its arguments, after any global options.
  * @throws {GitMissingError} When git is not installed.
- * @throws Any other git failure, as `execFile` reports it.
+ * @throws Any other git failure, as the runner reports it.
  */
-async function git(
-  cwd: string,
-  args: string[],
-  extraEnv: Record<string, string> = {}
-): Promise<Buffer> {
+async function git(cwd: string, args: string[]): Promise<Buffer> {
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      [...internalGitArgs(), ...UNTRUSTED_REPO_ARGS, ...BASELINE_GIT_ARGS, ...args],
-      {
-        cwd,
-        env: { ...untrustedRepoEnv(), ...extraEnv },
-        timeout: GIT_TIMEOUT_MS,
-        maxBuffer: GIT_MAX_BUFFER,
-        encoding: 'buffer',
-      }
-    );
-    return stdout;
+    return await runSafeGitBuffer([...BASELINE_GIT_ARGS, ...args], cwd, {
+      timeoutMs: GIT_TIMEOUT_MS,
+      maxBuffer: GIT_MAX_BUFFER,
+      env: { LC_ALL: 'C' },
+    });
   } catch (err) {
     // A spawn reports a missing folder the same way as a missing program, so
     // ask git itself rather than guess.
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !(await isGitInstalled())) {
+    gitInstalled ??= gitRuns();
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !(await gitInstalled)) {
       throw new GitMissingError();
     }
     throw err;
@@ -150,13 +86,9 @@ async function git(
 }
 
 /** One git command's stdout as trimmed text, or `undefined` when it failed (git present). */
-async function gitText(
-  cwd: string,
-  args: string[],
-  extraEnv: Record<string, string> = {}
-): Promise<string | undefined> {
+async function gitText(cwd: string, args: string[]): Promise<string | undefined> {
   try {
-    return (await git(cwd, args, extraEnv)).toString('utf8').trim();
+    return (await git(cwd, args)).toString('utf8').trim();
   } catch (err) {
     if (err instanceof GitMissingError) throw err;
     return undefined;
@@ -211,11 +143,13 @@ export async function locateRepo(cwd: string): Promise<RepoLocation | null> {
   const top = workTreeTop(cwd);
   if (!top) return null;
   // `--git-common-dir` may print a path relative to `cwd` on older git.
-  const out = await gitText(
-    cwd,
-    ['rev-parse', '--is-inside-work-tree', '--show-toplevel', '--git-common-dir'],
-    { GIT_WORK_TREE: top }
-  );
+  const out = await gitText(cwd, [
+    `--work-tree=${top}`,
+    'rev-parse',
+    '--is-inside-work-tree',
+    '--show-toplevel',
+    '--git-common-dir',
+  ]);
   const [inside, root, commonDir] = (out ?? '').split('\n');
   if (inside !== 'true' || !root || !commonDir) {
     throw new RepoLocationError(`git could not place ${cwd} in the repo at ${top}`);
@@ -229,7 +163,11 @@ export async function locateRepo(cwd: string): Promise<RepoLocation | null> {
   if (realRoot !== top) {
     throw new RepoLocationError(`git puts the work tree of ${top} at ${root}`);
   }
-  return { root: top, commonDir: path.resolve(cwd, commonDir) };
+  const shared = path.resolve(cwd, commonDir);
+  if (existsSync(path.join(shared, 'info', 'grafts'))) {
+    throw new RepoLocationError(`${shared} has a grafts file, which rewrites history`);
+  }
+  return { root: top, commonDir: shared };
 }
 
 /** The default branch's name and the commit it points at. */

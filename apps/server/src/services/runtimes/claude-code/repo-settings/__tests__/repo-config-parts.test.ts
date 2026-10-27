@@ -465,3 +465,10 @@ describe("Security's #3213 Musts", () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 });
+
+describe('a repo that rewrites its own history', () => {
+  it('is refused when it has a grafts file, which the runner cannot switch off', async () => {
+    writeFile(path.join(repo.main, '.git', 'info', 'grafts'), '');
+    await expect(resolveRepoBaseline(repo.main, DORK_HOME)).rejects.toThrow(/grafts/);
+  });
+});
