@@ -16,6 +16,8 @@ import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
+import { setGitGuardRoots } from './services/core/agent-identity/index.js';
+import { resolveAgentsDirectory } from './lib/agents-home.js';
 import { logger, logError } from './lib/logger.js';
 import {
   captureLiveStandingGrants,
@@ -201,6 +203,12 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // DorkOS never runs git in an agent folder (DOR-3343). Config can move the
+  // agents and workspace directories out of the data dir, so read them per call.
+  setGitGuardRoots(() => [
+    resolveWorkspaceRoot({ dorkHome, config: configManager.get('workspace') }),
+    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
+  ]);
   if (workspaceConfig.enabled) {
     const {
       service: workspaceService,
