@@ -85,6 +85,13 @@ const additions = [
   ],
   ['.agents/flow/config.json', '.agents/flower/config.json'],
   ['.dork/plugins/flow/config/local.json', '.dork/plugins/flow/configuration/local.json'],
+  // DOR-3366: #3223 changed the desktop main process and was called "no security paths".
+  // Security gates the whole desktop app as one entry (#dorkos, 2026-10-27).
+  ['apps/desktop/src/main/index.ts', 'apps/desktopx/src/main/index.ts'],
+  ['apps/desktop/build/entitlements.mac.plist', 'apps/desktop-notes/build/entitlements.mac.plist'],
+  ['apps/desktop/src/server-entry.ts', 'apps/client/src/server-entry.ts'],
+  ['apps/desktop/electron-builder.yml', 'apps/desktop-notes/electron-builder.yml'],
+  ['apps/desktop/scripts/build-server.ts', 'apps/desktopx/scripts/build-server.ts'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {

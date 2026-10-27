@@ -229,7 +229,7 @@ export function handRegisteredInSessionToolSet(
 
   const raw: SdkMcpTool[] = [
     ...getCoreTools(deps),
-    ...getAccountTools(deps),
+    ...getAccountTools(deps, resolveTaskProvenance),
     // The caller is the session's identity anchor, so the Activity entry names
     // the agent that started the session, even from its room worktree. The
     // calling chat is what the new one says started it (spec
