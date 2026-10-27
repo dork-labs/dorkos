@@ -322,7 +322,7 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
         ...personOnlyFileRules(dorkHome),
-        ...agentHomesSelfGrantRules(dorkHome, 'authority'),
+        ...agentHomesSelfGrantRules(dorkHome, 'launch'),
       ],
     },
   } as Options['settings'];
@@ -355,17 +355,21 @@ export function personOnlyFileRules(dorkHome: string): string[] {
  * through every spelling of the data directory. The `*` matches one folder:
  * each agent home, never the folders below it.
  *
- * - `'authority'`, on every launch (DOR-3068 S1): the four files that grant
- *   power, `.claude/settings.json`, `.claude/settings.local.json`,
- *   `.mcp.json` and `.dork/agent.json`. One agent's file tools rewriting
- *   another's would approve its own change. An agent's skills, commands and
- *   `CLAUDE.md` stay writable: that is instructions, not code.
- * - `'all'`, beside an applied folder allow list: the whole `.claude/` folder.
+ * - `'launch'`, on every launch (DOR-3068 S1): the four files that grant
+ *   power (`.claude/settings.json`, `.claude/settings.local.json`,
+ *   `.mcp.json`, `.dork/agent.json`), and the home's skills, commands and
+ *   subagents, whose frontmatter widens tools. That is `.claude/skills/**`,
+ *   `.claude/commands/**`, `.claude/agents/**` and `.agents/**`, where Harness
+ *   Sync keeps the real skills `.claude/skills/<x>` links to. One agent's file
+ *   tools rewriting another's would approve its own change. `CLAUDE.md` stays
+ *   writable: that is instructions, not code.
+ * - `'all'`, beside an applied folder allow list: the whole `.claude/` folder,
+ *   and `.agents/**` with it.
  *
  * @param dorkHome - The data directory.
- * @param scope - Which files: the four authority files, or all of `.claude/`.
+ * @param scope - Which files: every launch's set, or all of `.claude/`.
  */
-export function agentHomesSelfGrantRules(dorkHome: string, scope: 'authority' | 'all'): string[] {
+export function agentHomesSelfGrantRules(dorkHome: string, scope: 'launch' | 'all'): string[] {
   const foreign = isForeignWindowsPath(dorkHome);
   const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
   const real = foreign ? undefined : realpathOrUndefined(home);
@@ -374,16 +378,27 @@ export function agentHomesSelfGrantRules(dorkHome: string, scope: 'authority' | 
     const root = rulePath(spelling);
     if (root === undefined) continue;
     const agents = `${root}/agents`;
-    const claude =
-      scope === 'all' ? ['.claude/**'] : ['.claude/settings.json', '.claude/settings.local.json'];
+    const files = [
+      ...(scope === 'all' ? ['.claude/**'] : LAUNCH_SELF_GRANT_CLAUDE_FILES),
+      '.agents/**',
+      '.mcp.json',
+      '.dork/agent.json',
+    ];
     for (const tool of ALL_WRITE_TOOLS) {
-      for (const file of claude) rules.add(`${tool}(${agents}/*/${file})`);
-      rules.add(`${tool}(${agents}/*/.mcp.json)`);
-      rules.add(`${tool}(${agents}/*/.dork/agent.json)`);
+      for (const file of files) rules.add(`${tool}(${agents}/*/${file})`);
     }
   }
   return [...rules];
 }
+
+/** The parts of a home's `.claude/` every launch denies to every agent's file tools. */
+const LAUNCH_SELF_GRANT_CLAUDE_FILES = [
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.claude/skills/**',
+  '.claude/commands/**',
+  '.claude/agents/**',
+];
 
 /**
  * The grants a launch's settings carry, read back from the rules

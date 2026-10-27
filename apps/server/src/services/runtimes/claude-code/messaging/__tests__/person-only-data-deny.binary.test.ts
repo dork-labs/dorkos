@@ -174,14 +174,42 @@ const CHANGES: [string, (file: string) => ToolCall[]][] = [
   ],
 ];
 
-/** The files only a person may change, from an agent's own folder. */
+/** Another agent's home in the data folder. */
+const other = () => path.join(dorkHome, 'agents', 'other');
+
+/**
+ * The files only a person may change, from an agent's own folder. Each is
+ * planted holding {@link ORIGINAL}; the one through a link plants the real
+ * skill in `.agents/skills/x` and links `.claude/skills/x` to it, as Harness
+ * Sync does, and edits through the link.
+ */
 const TARGETS: [string, () => string][] = [
-  ['config.json', () => path.join(dorkHome, 'config.json')],
+  ['config.json', () => plant(path.join(dorkHome, 'config.json'))],
+  ["another agent's settings", () => plant(path.join(other(), '.claude', 'settings.json'))],
   [
-    "another agent's settings",
-    () => path.join(dorkHome, 'agents', 'other', '.claude', 'settings.json'),
+    "another agent's skill, where it really lives",
+    () => plant(path.join(other(), '.agents', 'skills', 'x', 'SKILL.md')),
   ],
+  ["another agent's skill, through its .claude/skills link", () => plantLinked(other(), 'x')],
+  ["another agent's command", () => plant(path.join(other(), '.claude', 'commands', 'x.md'))],
+  ["another agent's subagent", () => plant(path.join(other(), '.claude', 'agents', 'x.md'))],
 ];
+
+/** Plant a target holding {@link ORIGINAL}. */
+function plant(file: string): string {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, ORIGINAL);
+  return file;
+}
+
+/** Plant a skill in `<home>/.agents/skills/<name>`, and return it through its `.claude/skills` link. */
+function plantLinked(home: string, name: string): string {
+  plant(path.join(home, '.agents', 'skills', name, 'SKILL.md'));
+  const link = path.join(home, '.claude', 'skills', name);
+  fs.mkdirSync(path.dirname(link), { recursive: true });
+  fs.symlinkSync(path.join('..', '..', '.agents', 'skills', name), link);
+  return path.join(link, 'SKILL.md');
+}
 
 const LEVELS: [string, PermissionMode][] = [
   ['Ask first', 'default'],
@@ -203,18 +231,11 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  /** Plant a target holding {@link ORIGINAL}. */
-  const plant = (file: string) => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, ORIGINAL);
-    return file;
-  };
-
   for (const [tool, calls] of CHANGES) {
     it.each(TARGETS)(
       `${tool} changes %s without the rules (the control)`,
       async (_label, where) => {
-        const file = plant(where());
+        const file = where();
         await runCalls(calls(file), 'bypassPermissions', false);
         expect(fs.readFileSync(file, 'utf8')).not.toBe(ORIGINAL);
       },
@@ -225,7 +246,7 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
       it.each(TARGETS)(
         `${tool} leaves %s byte for byte at ${level}`,
         async (_label, where) => {
-          const file = plant(where());
+          const file = where();
           await runCalls(calls(file), mode, true);
           expect(fs.readFileSync(file, 'utf8')).toBe(ORIGINAL);
         },
@@ -234,8 +255,20 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
     }
   }
 
-  it("still edits the agent's own skill file under the rules (instructions, not code)", async () => {
-    const file = plant(path.join(folder, '.claude', 'skills', 'x', 'SKILL.md'));
+  it("refuses the agent's own skill too: the rule names every home, and frontmatter widens tools (DOR-3349 frees the body)", async () => {
+    const file = plantLinked(folder, 'mine');
+    await runCalls(CHANGES[1][1](file), 'bypassPermissions', true);
+    expect(fs.readFileSync(file, 'utf8')).toBe(ORIGINAL);
+  }, 60_000);
+
+  it("still edits the agent's own CLAUDE.md under the rules (instructions, not a grant)", async () => {
+    const file = plant(path.join(folder, 'CLAUDE.md'));
+    await runCalls(CHANGES[1][1](file), 'bypassPermissions', true);
+    expect(fs.readFileSync(file, 'utf8')).not.toBe(ORIGINAL);
+  }, 60_000);
+
+  it("still edits a skill in a repo worktree's .claude/skills, outside every agent home", async () => {
+    const file = plant(path.join(root, 'repos', 'app-wt', '.claude', 'skills', 'x', 'SKILL.md'));
     await runCalls(CHANGES[1][1](file), 'bypassPermissions', true);
     expect(fs.readFileSync(file, 'utf8')).not.toBe(ORIGINAL);
   }, 60_000);
