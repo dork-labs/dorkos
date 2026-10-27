@@ -59,7 +59,11 @@ export function SigninIdentityShowcases() {
               >
                 <p className="mb-1 text-sm font-medium">{account.name}</p>
                 <p className="text-muted-foreground mb-2 text-xs">{account.path}</p>
-                <AccountSigninIdentity accountId={account.accountId} name={account.name} />
+                <AccountSigninIdentity
+                  accountId={account.accountId}
+                  accountRoot={account.path}
+                  name={account.name}
+                />
               </div>
             ))}
             <div data-testid="identity-shot-policy">

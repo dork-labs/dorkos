@@ -26,20 +26,17 @@ export function SigninPolicySection() {
     );
   const { deniedOrganizations, folders, accounts } = policy.data;
   return (
-    <section className="space-y-3 border-t pt-4" aria-label="Never use">
+    <section className="mt-6 space-y-3" aria-label="Never use">
       <h3 className="text-sm font-medium">Never use</h3>
       <p className="text-muted-foreground text-xs">DorkOS won’t run agents on these.</p>
-      {deniedOrganizations.length === 0 && (
-        <p className="text-muted-foreground text-xs">
-          Add a sign-in to exclude before confirming any account.
-        </p>
+      {deniedOrganizations.length === 0 && folders.length === 0 && (
+        <p className="text-muted-foreground text-xs">Nothing here yet.</p>
       )}
       {folders.map((folder) => (
-        <div
-          key={folder.accountId}
-          className="flex flex-wrap items-center justify-between gap-2 text-xs"
-        >
-          <span>{shortenHomePath(folder.path)} · DorkOS never opens this folder.</span>
+        <div key={folder.accountId} className="flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 truncate" title={folder.path}>
+            {shortenHomePath(folder.path)} · DorkOS never opens this folder.
+          </span>
           <OwnerSigninAction
             label="Remove folder"
             title="Confirm it’s you to remove this folder"
@@ -97,9 +94,14 @@ export function SigninPolicySection() {
           <Label htmlFor="excluded-org-id">Organization ID</Label>
           <Input
             id="excluded-org-id"
+            className="font-mono"
+            aria-describedby="excluded-org-id-hint"
             value={orgId}
             onChange={(event) => setOrgId(event.target.value)}
           />
+          <p id="excluded-org-id-hint" className="text-muted-foreground text-xs">
+            From Anthropic’s account settings. DorkOS won’t look it up.
+          </p>
           <OwnerSigninAction
             label="Add a sign-in"
             title="Confirm it’s you to exclude this sign-in"

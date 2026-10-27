@@ -37,6 +37,8 @@ export function OwnerSigninAction({
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // This browser can't step up as the owner; only the Mac running DorkOS can.
+  const [ownerElsewhere, setOwnerElsewhere] = useState(false);
   const transport = useTransport();
   const client = useQueryClient();
   async function apply() {
@@ -54,18 +56,28 @@ export function OwnerSigninAction({
       setOpen(false);
     } catch (failure) {
       const reason = (failure as { body?: { reason?: string } }).body?.reason;
-      setError(
-        reason === 'no-owner' || reason === 'no-password'
-          ? 'Confirm this on the Mac running DorkOS.'
-          : 'Couldn’t change this sign-in. Check your password and try again.'
-      );
+      if (reason === 'no-owner' || reason === 'no-password') {
+        setOwnerElsewhere(true);
+        setOpen(false);
+      } else {
+        setError('Couldn’t change this sign-in. Check your password and try again.');
+      }
     } finally {
       setPending(false);
     }
   }
+  if (ownerElsewhere) {
+    return <p className="text-muted-foreground text-xs">Confirm this on the Mac running DorkOS.</p>;
+  }
   return (
     <>
-      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="pointer-coarse:min-h-11"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
         {label}
       </Button>
       <Dialog
