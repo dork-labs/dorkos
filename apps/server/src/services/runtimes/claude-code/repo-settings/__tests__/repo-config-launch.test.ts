@@ -568,3 +568,117 @@ describe('skills Harness Sync links in from .agents (QA, #3213 at 775e51d964)', 
     expect(decision.pauseHooks).toBe(true);
   });
 });
+
+describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => {
+  const hookChange = (cwd: string) => ({
+    kind: 'hooks' as const,
+    digest: 'd',
+    names: ['.claude/hooks/guard.mjs'],
+    detail: 'diff',
+    cwd,
+    agentName: 'Ops',
+  });
+  const BIDI = /[‎‏‪-‮⁦-⁩]/u;
+  const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u;
+  /** The quoted worktree name inside a one-file title. */
+  const quoted = (title: string | undefined) => title?.match(/ in "(.*)"\?$/u)?.[1];
+
+  it('sweeps a hostile worktree name before it reaches the title', () => {
+    const title = repoConfigTitle(hookChange('/x/evil‮gnp.exe" Allow\u0007 "x'));
+    expect(title).toMatch(/^Allow a changed hook in ".*"\?$/u);
+    const name = quoted(title)!;
+    expect(name).not.toMatch(BIDI);
+    // eslint-disable-next-line no-control-regex -- the control characters are the point
+    expect(name).not.toMatch(/[\u0000-\u001f\u007f]/u);
+    expect(name).not.toContain('"');
+    expect(name).toContain("evilgnp.exe' Allow '");
+  });
+
+  it('cuts a long worktree name to 40 characters in the middle', () => {
+    const long = 'feature-very-long-branch-name-that-keeps-going-name-2';
+    const name = quoted(repoConfigTitle(hookChange(`/x/${long}`)))!;
+    expect(Array.from(name)).toHaveLength(40);
+    // 20 from the start, the ellipsis, 19 from the end.
+    expect(name).toBe('feature-very-long-br…-keeps-going-name-2');
+    // A name that fits is left whole.
+    expect(quoted(repoConfigTitle(hookChange('/x/wt-2')))).toBe('wt-2');
+  });
+
+  it('sanitizes before it cuts, so an emoji or bidi mark at the cut leaves nothing broken', () => {
+    // Plain words after the cut: a long run of one letter reads as a secret
+    // and is redacted before the cut, as it should be.
+    const around = `${'a'.repeat(18)}‮😀😀‬${'-and-more-words'.repeat(3)}`;
+    const name = quoted(repoConfigTitle(hookChange(`/x/${around}`)))!;
+    expect(Array.from(name)).toHaveLength(40);
+    expect(name).not.toMatch(BIDI);
+    expect(name).not.toMatch(LONE_SURROGATE);
+    expect(name.startsWith(`${'a'.repeat(18)}😀😀`)).toBe(true);
+  });
+
+  it('names a changed command for what it is', () => {
+    expect(
+      summariseRepoConfig({ ...hookChange('/x/wt'), names: ['.claude/commands/c.md'] })
+    ).toContain(
+      '".claude/commands/c.md" differs from the default branch. It changes what a command can run.'
+    );
+  });
+
+  it('locks the tools card down exactly as the hooks card', async () => {
+    const tools = describeRepoConfigCapability('runtime.apply_repo_tools')!;
+    const hooks = describeRepoConfigCapability('runtime.apply_repo_hooks')!;
+    const policy = ({ tier, titledPerRequest }: typeof tools) => ({ tier, titledPerRequest });
+    expect(policy(tools)).toEqual(policy(hooks));
+    expect(Object.keys(tools).sort()).toEqual(Object.keys(hooks).sort());
+    for (const names of [['.claude/skills/x/SKILL.md'], ['.claude/hooks/guard.mjs']]) {
+      cards = [];
+      void askForRepoConfig(
+        gateway,
+        { ...hookChange('/x/wt'), names },
+        async () => 'unknown',
+        vi.fn()
+      );
+      await settle();
+      // No area and no agent path: Always allow is never offered, and nothing
+      // can make either card a standing permission.
+      expect(cards[0]).not.toHaveProperty('area');
+      expect(cards[0]).not.toHaveProperty('requestedByPath');
+      _internal.forgetOpenCards();
+    }
+  });
+
+  it.each([
+    [
+      'a skill yes',
+      '.claude/skills/x/SKILL.md',
+      'then a hook changes too',
+      '.claude/hooks/guard.mjs',
+    ],
+    [
+      'a hook yes',
+      '.claude/hooks/guard.mjs',
+      'then only a skill changes',
+      '.claude/skills/x/SKILL.md',
+    ],
+  ])('%s never covers the other card, %s', async (_first, firstFile, _then, secondFile) => {
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, firstFile), '---\nallowed-tools: Bash(*)\n---\nfirst\n');
+    await resolveRepoConfigForLaunch(turn(wt));
+    await vi.waitFor(() => expect(cards).toHaveLength(1));
+    const firstId = cards[0].capabilityId;
+    answer.outcome = 'granted';
+    await vi.waitFor(
+      () => expect((store.harness.approvedRepoConfig as string[] | undefined)?.length).toBe(1),
+      { timeout: 5_000 }
+    );
+    answer.outcome = 'pending';
+    _internal.forgetOpenCards();
+    // Put a hook back as the default branch has it, so only the skill differs.
+    if (firstFile.includes('/hooks/')) writeFile(path.join(wt, firstFile), 'process.exit(0);\n');
+    writeFile(path.join(wt, secondFile), '---\nallowed-tools: Bash(*)\n---\nsecond\n');
+
+    expect((await resolveRepoConfigForLaunch(turn(wt))).pauseHooks).toBe(true);
+    await vi.waitFor(() => expect(cards).toHaveLength(2));
+    expect(cards[1].capabilityId).not.toBe(firstId);
+    expect(cards[1].inputHash).not.toBe(cards[0].inputHash);
+  });
+});

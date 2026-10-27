@@ -25,7 +25,12 @@
 import path from 'node:path';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ApprovalBinding } from '../../../core/approvals/approval-service.js';
-import { hashApprovalInput, quoteSummaryValue } from '../../../core/approvals/index.js';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import {
+  hashApprovalInput,
+  quoteSummaryValue,
+  redactSecretsInText,
+} from '../../../core/approvals/index.js';
 import { storableDetail } from '../../../core/approvals/approval-storable.js';
 import { logger } from '../../../../lib/logger.js';
 import type { FolderAllowApprovalGateway } from '../folder-settings/folder-allow-approval.js';
@@ -78,14 +83,22 @@ const CONSEQUENCES = {
  *
  * @param capabilityId - The id `ApprovalService` is resolving.
  */
-export function describeRepoConfigCapability(
-  capabilityId: string
-): { title: string; tier: CapabilityTier; consequence?: string } | undefined {
+export function describeRepoConfigCapability(capabilityId: string):
+  | {
+      title: string;
+      tier: CapabilityTier;
+      consequence?: string;
+      titledPerRequest?: true;
+    }
+  | undefined {
+  // Both repo-pin ids carry the same policy: destructive, titled only by
+  // repoConfigTitle's fixed templates, never an area (so never Always allow).
   if (capabilityId === REPO_TOOLS_CAPABILITY_ID) {
     return {
       title: 'Allow a changed repo skill',
       tier: 'destructive',
       consequence: CONSEQUENCES.widens,
+      titledPerRequest: true,
     };
   }
   const kind = (Object.keys(REPO_CONFIG_CAPABILITY_IDS) as RepoConfigKind[]).find(
@@ -93,8 +106,35 @@ export function describeRepoConfigCapability(
   );
   if (!kind) return undefined;
   return kind === 'hooks'
-    ? { title: TITLES.hooks, tier: 'destructive', consequence: CONSEQUENCES.runsCode }
+    ? {
+        title: TITLES.hooks,
+        tier: 'destructive',
+        consequence: CONSEQUENCES.runsCode,
+        titledPerRequest: true,
+      }
     : { title: TITLES[kind], tier: 'destructive' };
+}
+
+/** Longest worktree name a card title shows, in characters (designer, 10:16 Oct 27). */
+const TITLE_WORKTREE_MAX = 40;
+
+/**
+ * A worktree's name as a card title quotes it. Sanitized first, then cut
+ * (Security): secrets redacted, invisible and control characters stripped,
+ * double quotes turned single, and only then shortened to
+ * {@link TITLE_WORKTREE_MAX} characters, counted as code points so a cut
+ * never splits one. The cut is in the middle, because the start and the end
+ * are what tell two worktrees apart; the diff header keeps the full name.
+ *
+ * @param cwd - The worktree's folder.
+ */
+export function worktreeTitleName(cwd: string): string {
+  const clean = sanitizeIdentity(redactSecretsInText(worktreeName(cwd)), Infinity) ?? 'worktree';
+  const points = Array.from(clean.replace(/["“”]/g, "'"));
+  if (points.length <= TITLE_WORKTREE_MAX) return `"${points.join('')}"`;
+  const head = Math.ceil((TITLE_WORKTREE_MAX - 1) / 2);
+  const tail = TITLE_WORKTREE_MAX - 1 - head;
+  return `"${points.slice(0, head).join('')}…${points.slice(-tail).join('')}"`;
 }
 
 /** What one changed repo file is, as a card title names it. */
@@ -144,7 +184,7 @@ export function repoConfigCapabilityId(request: RepoConfigRequest): string {
 export function repoConfigTitle(request: RepoConfigRequest): string | undefined {
   if (request.kind !== 'hooks') return undefined;
   if (request.trust) return "Trust this repo's hooks and skills?";
-  const wt = quoteSummaryValue(worktreeName(request.cwd));
+  const wt = worktreeTitleName(request.cwd);
   return request.names.length === 1
     ? `Allow a changed ${repoFileKind(request.names[0]!)} in ${wt}?`
     : `Allow ${request.names.length} changed repo files in ${wt}?`;
@@ -243,6 +283,8 @@ function whatItSets(rel: string): string {
   if (rest[0] === 'settings.json') return 'It sets what runs on tool calls.';
   if (rest[0] === 'skills') return 'It changes which tools or hooks a skill has.';
   if (rest[0] === 'agents') return 'It changes what a subagent can do.';
+  // Designer, #dorkos 11:04 Oct 27.
+  if (rest[0] === 'commands') return 'It changes what a command can run.';
   return "It's a script a hook runs.";
 }
 

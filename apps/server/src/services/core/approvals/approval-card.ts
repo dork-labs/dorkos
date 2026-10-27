@@ -4,7 +4,11 @@
  * @module services/core/approvals/approval-card
  */
 import type { approvals } from '@dorkos/db';
-import { isExtensionCapabilityId, type CapabilitySource } from '@dorkos/shared/capabilities';
+import {
+  isExtensionCapabilityId,
+  type CapabilitySource,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
@@ -103,3 +107,39 @@ export function toPendingApproval(
     expiresAt: row.expiresAt,
   };
 }
+
+/**
+ * How the service learns a capability's human-facing title and permission tier.
+ *
+ * Deliberately NOT part of {@link ApprovalRequestInput}: if a requester could
+ * state its own tier, an `act` operation could dress itself as `destructive` to
+ * scare an operator, or a `destructive` one could soften itself to look routine.
+ * The card's identity region is derived from the capability registry, which is
+ * the single source of truth every other agent-facing surface is generated from,
+ * so it cannot be spoofed by whoever is asking.
+ *
+ * Injected as a function rather than a registry import because the registry is
+ * composed from the very domains that request approvals — a static import would
+ * close a cycle, and the registry is composed later in boot than this service.
+ *
+ * Lives beside the card it describes; only the service names it.
+ *
+ * @param capabilityId - The capability id to describe.
+ * @returns Its title and tier, or `undefined` when the registry has no such id.
+ */
+export type CapabilityDescriptorLookup = (capabilityId: string) =>
+  | {
+      title: string;
+      tier: CapabilityTier;
+      source?: CapabilitySource;
+      /** What a yes does, for the badge in place of the tier's own label. */
+      consequence?: string;
+      /**
+       * Whether a request's own `title` is honoured. Only server code that
+       * builds titles from fixed templates sets it (the repo pins); for any
+       * other capability a request's title is ignored, so no request an agent
+       * can shape names its own card.
+       */
+      titledPerRequest?: true;
+    }
+  | undefined;
