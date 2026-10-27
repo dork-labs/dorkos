@@ -5,19 +5,29 @@
  * no file-system monitor, no implicit bare repository).
  *
  * Only plumbing that runs no repository-configured program is used here:
- * `rev-parse`, `symbolic-ref`, `ls-tree`, `cat-file` and `merge-base`. Nothing
- * reads the working tree through git, so a repository's own clean filter or
- * diff driver is never started; working files are read by the caller and
- * hashed in-process ({@link gitBlobId}).
+ * `rev-parse`, `symbolic-ref`, `ls-tree`, `cat-file`, `merge-base`,
+ * `diff-tree` and `rev-list`. Nothing reads the working tree through git, so
+ * a repository's own clean filter or diff driver is never started; working
+ * files are read by the caller and hashed in-process ({@link gitBlobId}).
+ *
+ * **The repo is the agent's.** These reads run in a repo an agent can write,
+ * config included, so each one also carries {@link UNTRUSTED_REPO_ARGS} and a
+ * minimal environment: no lazy fetch of a missing object (a promisor remote's
+ * `core.sshCommand` would otherwise run as the server), no transport at all, no
+ * ssh, credential or askpass helper, and none of the server's own environment.
+ * A read that would need any of them fails, and a failed read pauses the
+ * repo's settings. This is a guard, not the general fix: every git call
+ * DorkOS makes in an agent folder moves to one shared runner (DOR-3343), and
+ * this module moves to it when it lands.
  *
  * @module services/runtimes/claude-code/repo-settings/repo-git
  */
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { hardenedGitEnv, internalGitArgs } from '../../../../lib/git-safety.js';
+import { internalGitArgs } from '../../../../lib/git-safety.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,7 +54,58 @@ const BASELINE_GIT_ENV = {
   GIT_GRAFT_FILE: path.join(path.sep, 'nonexistent', 'dorkos-no-grafts'),
 };
 
-/** Thrown when git itself is not installed: the one case the check does not block on. */
+/** Config that keeps an agent's repo config from running anything (DOR-3298 M3). */
+const UNTRUSTED_REPO_ARGS = [
+  '-c',
+  'protocol.allow=never',
+  '-c',
+  'core.sshCommand=',
+  '-c',
+  'credential.helper=',
+  '-c',
+  'core.askPass=',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.hooksPath=/dev/null',
+];
+
+/**
+ * The whole environment a read gets: enough to find git and the person's own
+ * global config, and nothing of the server's.
+ */
+function untrustedRepoEnv(): NodeJS.ProcessEnv {
+  // eslint-disable-next-line no-restricted-syntax -- git needs PATH to be found and HOME for the person's own global config; nothing else of the server's environment is passed.
+  const { PATH, HOME } = process.env;
+  return {
+    ...(PATH ? { PATH } : {}),
+    ...(HOME ? { HOME } : {}),
+    LC_ALL: 'C',
+    GIT_NO_LAZY_FETCH: '1',
+    GIT_ALLOW_PROTOCOL: '',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: '',
+    SSH_ASKPASS: '',
+    ...BASELINE_GIT_ENV,
+  };
+}
+
+/** Whether git is installed, asked once per process. */
+let gitInstalled: Promise<boolean> | undefined;
+
+/** Ask once whether git runs at all, rather than guessing it from a failed read. */
+function isGitInstalled(): Promise<boolean> {
+  gitInstalled ??= execFileAsync('git', ['--version'], {
+    env: untrustedRepoEnv(),
+    timeout: GIT_TIMEOUT_MS,
+  }).then(
+    () => true,
+    (err: unknown) => (err as NodeJS.ErrnoException).code !== 'ENOENT'
+  );
+  return gitInstalled;
+}
+
+/** Thrown when git itself is not installed: the repo's committed settings then pause. */
 export class GitMissingError extends Error {
   constructor() {
     super('git is not installed');
@@ -60,14 +121,18 @@ export class GitMissingError extends Error {
  * @throws {GitMissingError} When git is not installed.
  * @throws Any other git failure, as `execFile` reports it.
  */
-async function git(cwd: string, args: string[]): Promise<Buffer> {
+async function git(
+  cwd: string,
+  args: string[],
+  extraEnv: Record<string, string> = {}
+): Promise<Buffer> {
   try {
     const { stdout } = await execFileAsync(
       'git',
-      [...internalGitArgs(), ...BASELINE_GIT_ARGS, ...args],
+      [...internalGitArgs(), ...UNTRUSTED_REPO_ARGS, ...BASELINE_GIT_ARGS, ...args],
       {
         cwd,
-        env: { ...hardenedGitEnv(), ...BASELINE_GIT_ENV },
+        env: { ...untrustedRepoEnv(), ...extraEnv },
         timeout: GIT_TIMEOUT_MS,
         maxBuffer: GIT_MAX_BUFFER,
         encoding: 'buffer',
@@ -75,9 +140,9 @@ async function git(cwd: string, args: string[]): Promise<Buffer> {
     );
     return stdout;
   } catch (err) {
-    // A spawn reports a missing folder the same way as a missing program: only
-    // an existing folder means git itself is not there.
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && existsSync(cwd)) {
+    // A spawn reports a missing folder the same way as a missing program, so
+    // ask git itself rather than guess.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !(await isGitInstalled())) {
       throw new GitMissingError();
     }
     throw err;
@@ -85,9 +150,13 @@ async function git(cwd: string, args: string[]): Promise<Buffer> {
 }
 
 /** One git command's stdout as trimmed text, or `undefined` when it failed (git present). */
-async function gitText(cwd: string, args: string[]): Promise<string | undefined> {
+async function gitText(
+  cwd: string,
+  args: string[],
+  extraEnv: Record<string, string> = {}
+): Promise<string | undefined> {
   try {
-    return (await git(cwd, args)).toString('utf8').trim();
+    return (await git(cwd, args, extraEnv)).toString('utf8').trim();
   } catch (err) {
     if (err instanceof GitMissingError) throw err;
     return undefined;
@@ -102,18 +171,65 @@ export interface RepoLocation {
   commonDir: string;
 }
 
+/** The nearest folder at or above `dir` holding a `.git` entry, by real path. */
+function workTreeTop(dir: string): string | null {
+  let at: string;
+  try {
+    at = realpathSync.native(dir);
+  } catch {
+    return null;
+  }
+  for (;;) {
+    if (existsSync(path.join(at, '.git'))) return at;
+    const up = path.dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
+/** Thrown when git places a folder's work tree somewhere the filesystem says it isn't. */
+export class RepoLocationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RepoLocationError';
+  }
+}
+
 /**
  * The repo a folder is in, or `null` when it is in none.
  *
+ * The work tree's top is found on disk (the nearest `.git` entry), never taken
+ * from git: a repo's own `core.worktree` moves where git says it is, which
+ * would put the turn's folder outside the tree the check reads (DOR-3298 M1).
+ * Git is then pinned to that top, and must agree the folder is inside it.
+ *
  * @param cwd - The folder a turn launches in.
  * @throws {GitMissingError} When git is not installed.
+ * @throws {RepoLocationError} When a `.git` is there but git disagrees.
  */
 export async function locateRepo(cwd: string): Promise<RepoLocation | null> {
+  const top = workTreeTop(cwd);
+  if (!top) return null;
   // `--git-common-dir` may print a path relative to `cwd` on older git.
-  const out = await gitText(cwd, ['rev-parse', '--show-toplevel', '--git-common-dir']);
-  if (!out) return null;
-  const [root, commonDir] = out.split('\n');
-  return root && commonDir ? { root, commonDir: path.resolve(cwd, commonDir) } : null;
+  const out = await gitText(
+    cwd,
+    ['rev-parse', '--is-inside-work-tree', '--show-toplevel', '--git-common-dir'],
+    { GIT_WORK_TREE: top }
+  );
+  const [inside, root, commonDir] = (out ?? '').split('\n');
+  if (inside !== 'true' || !root || !commonDir) {
+    throw new RepoLocationError(`git could not place ${cwd} in the repo at ${top}`);
+  }
+  let realRoot: string;
+  try {
+    realRoot = realpathSync.native(root);
+  } catch {
+    realRoot = path.resolve(root);
+  }
+  if (realRoot !== top) {
+    throw new RepoLocationError(`git puts the work tree of ${top} at ${root}`);
+  }
+  return { root: top, commonDir: path.resolve(cwd, commonDir) };
 }
 
 /** The default branch's name and the commit it points at. */
@@ -288,6 +404,25 @@ export async function listTreeMatching(
     if (mode && oid) out.set(fields[i + 1], { oid, mode });
   }
   return out;
+}
+
+/**
+ * Whether any commit in `from..to` touched `pathspecs` (git pathspecs with
+ * their own `:(glob)` or `:(literal)` magic).
+ *
+ * @param root - The repo's working tree top.
+ * @param from - The older commit.
+ * @param to - The newer one.
+ * @param pathspecs - What may not have been touched.
+ */
+export async function touchedBetween(
+  root: string,
+  from: string,
+  to: string,
+  pathspecs: readonly string[]
+): Promise<boolean> {
+  const out = await git(root, ['rev-list', '--max-count=1', `${from}..${to}`, '--', ...pathspecs]);
+  return out.toString('utf8').trim() !== '';
 }
 
 /**

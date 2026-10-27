@@ -143,7 +143,9 @@ export async function readRepoConfig(
 ): Promise<RepoReading> {
   const root = real(baseline.root);
   const here = real(cwd);
-  if (!isWithin(root, here)) return CLEAN;
+  // Outside the tree git was pinned to: something is wrong, so nothing is
+  // trusted (the caller pauses everything), never "nothing changed" (M1).
+  if (!isWithin(root, here)) throw new Error(`${here} is outside its repo's work tree`);
   const prefix = repoRelative(root, here);
   const settingsRel = under(prefix, '.claude/settings.json');
   const hooksRel = under(prefix, '.claude/hooks');
@@ -211,111 +213,158 @@ export async function readRepoConfig(
     return merged;
   });
 
-  // Hooks: the settings keys, the frontmatter, then each script.
-  const hookFiles: string[] = [];
-  const hookDiffs: string[] = [];
-  const hookContent: [string, string][] = [];
-  let hooksApprovable =
-    walked !== undefined && agentFiles !== undefined && settings.kind !== 'unverifiable';
-  const settingsChanged =
-    settings.kind === 'unverifiable' ||
-    settings.kind === 'malformed' ||
-    (workingPicked !== null &&
-      !baselinePicked.some((picked) => canonicalJson(picked) === canonicalJson(workingPicked)));
-  if (settingsChanged) {
-    hookFiles.push(settingsRel);
-    const working =
-      settings.kind === 'malformed' ? { malformed: sha256(settings.text) } : workingPicked;
-    hookContent.push([settingsRel, canonicalJson(working)]);
-    hookDiffs.push(
-      fileDiff(
-        settingsRel,
-        baselinePicked[0] ? JSON.stringify(baselinePicked[0], null, 2) : null,
-        settings.kind === 'malformed' ? settings.text : JSON.stringify(workingPicked, null, 2)
-      )
-    );
-  }
-  let agentMcpChanged = false;
-  for (const [rel0, picked] of agentFiles ?? []) {
-    const rel = under(prefix, rel0);
-    const working = canonicalJson(picked);
-    const baseTexts = await Promise.all(trees.map((tree) => blobText(tree.get(rel))));
-    const basePicked = baseTexts.map((text) => (text === null ? null : pickAgentFileFields(text)));
-    if (basePicked.some((base) => base !== null && canonicalJson(base) === working)) continue;
-    const servers = (picked as { mcpServers?: unknown }).mcpServers;
-    if (canonicalJson(servers ?? null) !== canonicalJson(basePicked[0]?.mcpServers ?? null)) {
-      agentMcpChanged = true;
+  // Compared against ONE trusted commit at a time: the worktree is unchanged
+  // only when every file matches the same commit, never a mix no single commit
+  // holds (DOR-3298 M2). Otherwise its changes are named against the tip.
+  const compare = async (
+    sel: Map<string, BaselineFile>[],
+    picks: (Record<string, unknown> | null)[]
+  ) => {
+    // Hooks: the settings keys, the frontmatter, then each script.
+    const hookFiles: string[] = [];
+    const hookDiffs: string[] = [];
+    const hookContent: [string, string][] = [];
+    let hooksApprovable =
+      walked !== undefined && agentFiles !== undefined && settings.kind !== 'unverifiable';
+    const settingsChanged =
+      settings.kind === 'unverifiable' ||
+      settings.kind === 'malformed' ||
+      (workingPicked !== null &&
+        !picks.some((picked) => canonicalJson(picked) === canonicalJson(workingPicked)));
+    if (settingsChanged) {
+      hookFiles.push(settingsRel);
+      const working =
+        settings.kind === 'malformed' ? { malformed: sha256(settings.text) } : workingPicked;
+      hookContent.push([settingsRel, canonicalJson(working)]);
+      hookDiffs.push(
+        fileDiff(
+          settingsRel,
+          picks[0] ? JSON.stringify(picks[0], null, 2) : null,
+          settings.kind === 'malformed' ? settings.text : JSON.stringify(workingPicked, null, 2)
+        )
+      );
     }
-    hookFiles.push(rel);
-    hookContent.push([rel, working]);
-    hookDiffs.push(
-      fileDiff(
-        rel,
-        basePicked[0] ? JSON.stringify(basePicked[0], null, 2) : null,
-        JSON.stringify(picked, null, 2)
-      )
-    );
-  }
-  if (agentFiles === undefined) {
-    const rel = under(prefix, '.claude/agents');
-    hookFiles.push(rel);
-    hookContent.push([rel, 'unverifiable']);
-  }
-  for (const abs of [...scriptPaths].sort()) {
-    const rel = displayPath(root, abs);
-    const script = readScript(abs);
-    if (script.kind === 'absent' || script.kind === 'dir') continue;
-    if (script.kind === 'unverifiable') {
-      hooksApprovable = false;
+    let agentMcpChanged = false;
+    for (const [rel0, picked] of agentFiles ?? []) {
+      const rel = under(prefix, rel0);
+      const working = canonicalJson(picked);
+      const baseTexts = await Promise.all(sel.map((tree) => blobText(tree.get(rel))));
+      const basePicked = baseTexts.map((text) =>
+        text === null ? null : pickAgentFileFields(text)
+      );
+      if (basePicked.some((base) => base !== null && canonicalJson(base) === working)) continue;
+      const servers = (picked as { mcpServers?: unknown }).mcpServers;
+      if (canonicalJson(servers ?? null) !== canonicalJson(basePicked[0]?.mcpServers ?? null)) {
+        agentMcpChanged = true;
+      }
+      hookFiles.push(rel);
+      hookContent.push([rel, working]);
+      hookDiffs.push(
+        fileDiff(
+          rel,
+          basePicked[0] ? JSON.stringify(basePicked[0], null, 2) : null,
+          JSON.stringify(picked, null, 2)
+        )
+      );
+    }
+    if (agentFiles === undefined) {
+      const rel = under(prefix, '.claude/agents');
       hookFiles.push(rel);
       hookContent.push([rel, 'unverifiable']);
-      continue;
     }
-    const oid = gitBlobId(script.bytes, baseline.oidLength);
-    const same =
-      isWithin(root, abs) &&
-      trees.some((tree) => {
-        const entry = tree.get(rel);
-        return entry?.oid === oid && (entry.mode === '120000') === script.symlink;
-      });
-    if (same) continue;
-    hookFiles.push(rel);
-    hookContent.push([rel, oid]);
-    const before = isWithin(root, abs) ? trees[0]?.get(rel) : undefined;
-    hookDiffs.push(
-      fileDiff(
-        rel,
-        before ? await first.read(before.oid) : null,
-        script.symlink ? `-> ${script.bytes.toString('utf8')}` : script.bytes.toString('utf8')
-      )
-    );
-  }
-  if (walked === undefined) {
-    hookFiles.push(hooksRel);
-    hookContent.push([hooksRel, 'unverifiable']);
-  }
+    for (const abs of [...scriptPaths].sort()) {
+      const rel = displayPath(root, abs);
+      const script = readScript(abs);
+      if (script.kind === 'absent' || script.kind === 'dir') continue;
+      if (script.kind === 'unverifiable') {
+        hooksApprovable = false;
+        hookFiles.push(rel);
+        hookContent.push([rel, 'unverifiable']);
+        continue;
+      }
+      const oid = gitBlobId(script.bytes, baseline.oidLength);
+      const same =
+        isWithin(root, abs) &&
+        sel.some((tree) => {
+          const entry = tree.get(rel);
+          return entry?.oid === oid && (entry.mode === '120000') === script.symlink;
+        });
+      if (same) continue;
+      hookFiles.push(rel);
+      hookContent.push([rel, oid]);
+      const before = isWithin(root, abs) ? sel[0]?.get(rel) : undefined;
+      hookDiffs.push(
+        fileDiff(
+          rel,
+          before ? await first.read(before.oid) : null,
+          script.symlink ? `-> ${script.bytes.toString('utf8')}` : script.bytes.toString('utf8')
+        )
+      );
+    }
+    if (walked === undefined) {
+      hookFiles.push(hooksRel);
+      hookContent.push([hooksRel, 'unverifiable']);
+    }
 
-  // `.mcp.json`: each file, and the default branch's servers from the repo top down.
-  const mcpFiles: string[] = [];
-  const mcpDiffs: string[] = [];
-  const mcpContent: [string, string][] = [];
-  let mcpApprovable = true;
-  for (const rel of mcpRels) {
-    const read = readSettingsFile(path.join(root, rel));
-    if (read.kind === 'absent') continue;
-    if (read.kind === 'unverifiable') {
-      mcpApprovable = false;
+    // `.mcp.json`: each file, and the default branch's servers from the repo top down.
+    const mcpFiles: string[] = [];
+    const mcpDiffs: string[] = [];
+    const mcpContent: [string, string][] = [];
+    let mcpApprovable = true;
+    for (const rel of mcpRels) {
+      const read = readSettingsFile(path.join(root, rel));
+      if (read.kind === 'absent') continue;
+      if (read.kind === 'unverifiable') {
+        mcpApprovable = false;
+        mcpFiles.push(rel);
+        mcpContent.push([rel, 'unverifiable']);
+        continue;
+      }
+      const working = canonicalText(read.text);
+      const baseTexts = await Promise.all(sel.map((tree) => blobText(tree.get(rel))));
+      if (baseTexts.some((text) => text !== null && canonicalText(text) === working)) continue;
       mcpFiles.push(rel);
-      mcpContent.push([rel, 'unverifiable']);
-      continue;
+      mcpContent.push([rel, working]);
+      mcpDiffs.push(fileDiff(rel, baseTexts[0] ?? null, read.text));
     }
-    const working = canonicalText(read.text);
-    const baseTexts = await Promise.all(trees.map((tree) => blobText(tree.get(rel))));
-    if (baseTexts.some((text) => text !== null && canonicalText(text) === working)) continue;
-    mcpFiles.push(rel);
-    mcpContent.push([rel, working]);
-    mcpDiffs.push(fileDiff(rel, baseTexts[0] ?? null, read.text));
+
+    return {
+      hookFiles,
+      hookDiffs,
+      hookContent,
+      hooksApprovable,
+      settingsChanged,
+      agentMcpChanged,
+      mcpFiles,
+      mcpDiffs,
+      mcpContent,
+      mcpApprovable,
+      picks,
+    };
+  };
+  let result: Awaited<ReturnType<typeof compare>> | undefined;
+  for (const [index, tree] of trees.entries()) {
+    const at = await compare([tree], [baselinePicked[index] ?? null]);
+    if (at.hookFiles.length === 0 && at.mcpFiles.length === 0) {
+      result = at;
+      break;
+    }
   }
+  result ??= await compare(trees.slice(0, 1), baselinePicked.slice(0, 1));
+  const {
+    hookFiles,
+    hookDiffs,
+    hookContent,
+    hooksApprovable,
+    settingsChanged,
+    agentMcpChanged,
+    mcpFiles,
+    mcpDiffs,
+    mcpContent,
+    mcpApprovable,
+    picks,
+  } = result;
+
   const baselineServers = await defaultBranchServers(
     [...mcpRels].reverse(),
     atHead,
@@ -324,7 +373,7 @@ export async function readRepoConfig(
   );
 
   // Every allow rule a trusted commit has was reviewed; the rest were not.
-  const reviewedAllows = new Set(baselinePicked.flatMap(allowRules));
+  const reviewedAllows = new Set(picks.flatMap(allowRules));
   const hooks =
     hookFiles.length === 0
       ? null
@@ -339,7 +388,7 @@ export async function readRepoConfig(
               MCP_KEYS.some(
                 (key) =>
                   canonicalJson(workingPicked?.[key] ?? null) !==
-                  canonicalJson(baselinePicked[0]?.[key] ?? null)
+                  canonicalJson(picks[0]?.[key] ?? null)
               )),
           addedAllows: allowRules(workingPicked).filter((rule) => !reviewedAllows.has(rule)),
         };

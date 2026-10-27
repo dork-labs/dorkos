@@ -11,8 +11,12 @@
  * - **Committed hooks** (`.claude/settings.json` code keys, `.claude/hooks/**`
  *   and the repo files hook commands name): when they differ from the default
  *   branch (`repo-baseline.ts`) and that content is not approved, the launch
- *   sets `settings.disableAllHooks`. None of the repo's hooks run; DorkOS's own
- *   SDK hooks still do, and so does `CLAUDE.md`. A change to the settings that
+ *   leaves out the repo's `project` and `local` settings sources: none of the
+ *   repo's hooks, code settings (`env`, helpers, plugins), skills, commands or
+ *   subagents load. The person's own settings and hooks, and DorkOS's own SDK
+ *   hooks, still apply, and the repo's `CLAUDE.md` text is passed in the
+ *   system prompt. So does a repo when git isn't installed, or when git puts
+ *   the work tree somewhere else. A change to the settings that
  *   pick `.mcp.json` servers also pins MCP as below. Allow rules the default
  *   branch does not have are added to `permissions.ask` at the flag layer, so
  *   those tools go through DorkOS's own permission check (ask beats allow).
@@ -37,6 +41,7 @@ import path from 'node:path';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import { folderAllowApprovalGateway } from '../folder-settings/folder-allow-approval.js';
+import { leaveOutFolderSettings } from '../folder-settings/launch-folder-config.js';
 import { notePaused, noteRunning } from './repo-config-activity.js';
 import {
   askForRepoConfig,
@@ -80,6 +85,8 @@ export interface RepoConfigLaunch {
   mcpServers: Record<string, unknown> | null;
   /** Allow rules nobody reviewed, made to ask instead. */
   askRules: string[];
+  /** The repo's top, for the instructions a paused launch still passes; `null` outside one. */
+  repoRoot: string | null;
 }
 
 /** Nothing paused. */
@@ -88,6 +95,7 @@ const NOTHING_PAUSED: RepoConfigLaunch = {
   pauseHooks: false,
   mcpServers: null,
   askRules: [],
+  repoRoot: null,
 };
 
 /** Everything paused, for a check that failed. */
@@ -96,6 +104,7 @@ const ALL_PAUSED: RepoConfigLaunch = {
   pauseHooks: true,
   mcpServers: {},
   askRules: [],
+  repoRoot: null,
 };
 
 /** Whether `cwd` is the home folder itself, by real path. */
@@ -159,6 +168,12 @@ async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> 
   }
 
   const baseline = await resolveRepoBaseline(cwd, turn.dorkHome);
+  decision.repoRoot = baseline.root;
+  if (baseline.status === 'no-git') {
+    // Nothing to compare the committed settings against: they pause (S1).
+    decision.pauseHooks = true;
+    decision.mcpServers = {};
+  }
   if (baseline.status === 'compared') {
     const reading = await readRepoConfig(cwd, baseline, dorkHome);
     const hooks = reading.hooks;
@@ -343,7 +358,6 @@ export function applyRepoConfigToLaunch(sdkOptions: Options, decision: RepoConfi
         : {}
     ) as { permissions?: { ask?: string[] } };
     const next: Record<string, unknown> = { ...base };
-    if (decision.pauseHooks) next.disableAllHooks = true;
     if (decision.askRules.length > 0) {
       next.permissions = {
         ...base.permissions,
@@ -353,6 +367,12 @@ export function applyRepoConfigToLaunch(sdkOptions: Options, decision: RepoConfi
     sdkOptions.settings = next as Options['settings'];
   }
   if (decision.mcpServers) sdkOptions.strictMcpConfig = true;
+  // Paused: leave out the repo's own settings sources, which is what stops a
+  // changed `env`, helper command, plugin or skill as well as its hooks, while
+  // the person's own settings and hooks still apply (DOR-3298 M5).
+  if (decision.pauseHooks) {
+    leaveOutFolderSettings(sdkOptions, decision.repoRoot ?? sdkOptions.cwd ?? '.');
+  }
 }
 
 /**

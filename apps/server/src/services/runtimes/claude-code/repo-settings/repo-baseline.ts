@@ -32,11 +32,14 @@
  *
  * ## Older versions count too
  *
- * A file is unchanged when it matches the default branch's commit OR the commit
- * the worktree's branch started from (`git merge-base HEAD <commit>`). Both are
- * on the default branch, so both were reviewed; without the second, every
- * worktree started before the last hook change on the default branch would
- * pause for nothing.
+ * The worktree is unchanged when every file matches the default branch's
+ * commit, OR every file matches the commit its branch started from
+ * (`git merge-base HEAD <commit>`): one commit for all of them, never a mix no
+ * single commit holds. The second counts only when it is in the pinned
+ * commit's own history, so a commit an agent made on top and then "reverted"
+ * on the way to the tip is never trusted as a fork point (DOR-3298 M2).
+ * Without it, every worktree started before the last hook change on the
+ * default branch would pause for nothing.
  *
  * ## Without git
  *
@@ -160,7 +163,11 @@ export async function resolveRepoBaseline(cwd: string, dorkHome: string): Promis
     }
   }
   const fork = await mergeBase(repo.root, 'HEAD', branch.sha);
-  const commits = fork && fork !== branch.sha ? [branch.sha, fork] : [branch.sha];
+  const reviewedFork =
+    fork !== null &&
+    fork !== branch.sha &&
+    (fork === recorded.sha || (await isAncestor(repo.root, fork, recorded.sha)));
+  const commits = reviewedFork ? [branch.sha, fork] : [branch.sha];
   return { ...base, commits, candidate: branch, oidLength };
 }
 

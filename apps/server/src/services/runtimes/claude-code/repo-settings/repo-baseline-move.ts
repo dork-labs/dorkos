@@ -27,7 +27,7 @@ import path from 'node:path';
 import { canonicalJson, collectCommands } from '../folder-settings/folder-config-pin.js';
 import { namedTargets, pickAgentFileFields } from '../folder-settings/folder-config-scripts.js';
 import { isWithin, repoRelative, sha256 } from './repo-files.js';
-import { changedPaths, listTree, listTreeMatching, readBlob } from './repo-git.js';
+import { changedPaths, listTree, listTreeMatching, readBlob, touchedBetween } from './repo-git.js';
 import { pickPowerSettings } from './repo-local-settings.js';
 import { fileDiff } from './text-diff.js';
 
@@ -97,8 +97,8 @@ async function reachedScripts(
   listed: Map<string, { oid: string; mode: string }>,
   dorkHome: string
 ): Promise<string[]> {
-  const commands: string[] = [];
   const reached = new Set<string>();
+  const plugins = path.resolve(dorkHome, 'plugins');
   for (const [rel, entry] of listed) {
     const kind = kindOf(rel);
     if (kind === 'script' && entry.mode === SYMLINK_MODE) {
@@ -114,13 +114,21 @@ async function reachedScripts(
         kind === 'settings'
           ? pickPowerSettings(JSON.parse(text) as unknown)
           : pickAgentFileFields(text);
-      if (picked) collectCommands(picked, commands);
+      if (!picked) continue;
+      // A command resolves from the folder its `.claude` sits in, as the launch
+      // resolves it from the turn's folder (DOR-3298 M4): never the repo top.
+      const commands: string[] = [];
+      collectCommands(picked, commands);
+      const owner = path.join(
+        root,
+        ...rel.split('/').slice(0, rel.split('/').lastIndexOf('.claude'))
+      );
+      for (const target of namedTargets(owner, plugins, commands)) {
+        if (isWithin(root, target) && target !== root) reached.add(repoRelative(root, target));
+      }
     } catch {
       // A settings file that doesn't parse is compared as a file of its own.
     }
-  }
-  for (const target of namedTargets(root, path.resolve(dorkHome, 'plugins'), commands)) {
-    if (isWithin(root, target) && target !== root) reached.add(repoRelative(root, target));
   }
   return [...reached];
 }
@@ -195,12 +203,45 @@ export async function hooksChangedBetween(
   to: string,
   dorkHome: string
 ): Promise<boolean> {
-  for (const counted of await countedPaths(root, from, to, dorkHome)) {
-    if (counted.kind === 'script') return true;
-    const { before, after } = await sides(root, from, to, counted);
+  const counted = await countedPaths(root, from, to, dorkHome);
+  for (const entry of counted) {
+    if (entry.kind === 'script') return true;
+    const { before, after } = await sides(root, from, to, entry);
     if (before !== after) return true;
   }
-  return false;
+  // The endpoints agree, but a commit in between may have run something: an
+  // agent commits a hook on top of the pinned commit, then "reverts" it on the
+  // way to the tip, and checks the middle out (DOR-3298 M2). Any commit in the
+  // range that touched a hook script, a settings file, an `.mcp.json` or a
+  // script those name counts as a change.
+  const scripts = [
+    ...new Set([
+      ...(await reachedAt(root, from, dorkHome)),
+      ...(await reachedAt(root, to, dorkHome)),
+    ]),
+  ];
+  return touchedBetween(root, from, to, [
+    ...BETWEEN_PATHSPECS,
+    ...scripts.map((rel) => `:(literal)${rel}`),
+  ]);
+}
+
+/** The hook-running paths a commit in between may not touch, as git pathspecs. */
+const BETWEEN_PATHSPECS = [
+  ':(glob)**/.claude/hooks/**',
+  ':(glob)**/.claude/settings.json',
+  ':(glob)**/.claude/settings.local.json',
+  ':(glob)**/.mcp.json',
+];
+
+/** The scripts a commit's hooks reach, repo-relative. */
+async function reachedAt(root: string, commit: string, dorkHome: string): Promise<string[]> {
+  return reachedScripts(
+    root,
+    commit,
+    await listTreeMatching(root, commit, HOOK_PATHSPECS),
+    dorkHome
+  );
 }
 
 /** What a trust card shows about a default-branch commit. */

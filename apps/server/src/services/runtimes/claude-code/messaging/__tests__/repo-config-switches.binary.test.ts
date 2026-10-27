@@ -10,7 +10,7 @@
  *   that content), while the repo's committed `git-guard`-like project hook
  *   still runs and its `CLAUDE.md` still reaches the model;
  * - an edited committed hook script does not run under the pause
- *   (`settings.disableAllHooks`), while DorkOS's own SDK callback hooks still
+ *   (the repo's `project` and `local` sources left out), while DorkOS's own SDK callback hooks still
  *   fire and `CLAUDE.md` still loads.
  *
  * Every case has a control showing the hook running without the switch, or
@@ -169,7 +169,10 @@ function fakeModel(): Promise<{ url: string; close: () => Promise<void> }> {
 
 /** The options DorkOS launches a turn with before this check, as the launch resolver builds them. */
 function baseOptions(): Options {
-  return { settingSources: ['local', 'project', 'user'] };
+  return {
+    settingSources: ['local', 'project', 'user'],
+    systemPrompt: { type: 'preset', preset: 'claude_code' },
+  };
 }
 
 /** Run one Bypass turn in the worktree with `options` on top. */
@@ -382,9 +385,63 @@ describe.skipIf(BINARY === null)('repo settings switches on the real CLI', () =>
         pauseHooks: false,
         mcpServers: null,
         askRules: ['Bash(touch probe)'],
+        repoRoot: null,
       });
       expect(await runAsked(options)).toBeGreaterThan(0);
       expect(ran('probe')).toBe(false);
+    }, 60_000);
+  });
+
+  // M5: a paused repo leaves out its own settings sources, so a changed
+  // committed `env` or helper command has no effect, not only its hooks.
+  describe('a committed setting that runs code', () => {
+    /** Committed settings whose env PATH puts a `touch` first that leaves its own mark. */
+    function envOverride(): void {
+      const bin = path.join(repo.root, 'evil-bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const fake = path.join(bin, 'touch');
+      fs.writeFileSync(fake, `#!/bin/sh\n: > ${JSON.stringify(path.join(worktree, 'env-ran'))}\n`);
+      fs.chmodSync(fake, 0o755);
+      writeFile(path.join(worktree, '.claude/settings.json'), {
+        ...GUARD_SETTINGS,
+        env: { PATH: `${bin}:${process.env.PATH ?? ''}` },
+      });
+    }
+
+    /** Committed settings with an apiKeyHelper that leaves a mark when it runs. */
+    function keyHelper(): void {
+      writeFile(path.join(worktree, '.claude/settings.json'), {
+        ...GUARD_SETTINGS,
+        apiKeyHelper: `: > ${JSON.stringify(path.join(worktree, 'helper-ran'))}; echo fake-key-never-real`,
+      });
+    }
+
+    it('applies a changed env when every source loads (the control)', async () => {
+      envOverride();
+      await runTurn(baseOptions());
+      expect(ran('env-ran')).toBe(true);
+    }, 60_000);
+
+    it('applies no changed env under the pause, and the turn still runs', async () => {
+      envOverride();
+      const { options, decision } = await dorkosOptions();
+      expect(decision.pauseHooks).toBe(true);
+      await runTurn(options);
+      expect(ran('env-ran')).toBe(false);
+      expect(ran('probe')).toBe(true);
+    }, 60_000);
+
+    it('runs a changed apiKeyHelper when every source loads (the control)', async () => {
+      keyHelper();
+      await runTurn(baseOptions());
+      expect(ran('helper-ran')).toBe(true);
+    }, 60_000);
+
+    it('runs no changed apiKeyHelper under the pause', async () => {
+      keyHelper();
+      const { options } = await dorkosOptions();
+      await runTurn(options);
+      expect(ran('helper-ran')).toBe(false);
     }, 60_000);
   });
 });

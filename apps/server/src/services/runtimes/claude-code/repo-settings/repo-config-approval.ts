@@ -155,7 +155,8 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
 /** Why a repo's default branch waits for a person, as a trust card says it. */
 const TRUST_REASONS: Record<string, string> = {
   'first-seen': "DorkOS hasn't seen this repo before.",
-  'hooks-moved': "This repo's default branch changed its hooks.",
+  // The ref is whatever the repo says its default branch is, which an agent can move (S9).
+  'hooks-moved': 'The commit this repo calls its default branch changed its hooks.',
   moved: "This repo's default branch moved somewhere DorkOS can't confirm.",
 };
 

@@ -382,3 +382,86 @@ describe('a default branch that moved forward', () => {
     expect((await resolveRepoBaseline(wt, DORK_HOME)).untrusted).toBe('hooks-moved');
   });
 });
+
+describe("Security's #3213 Musts", () => {
+  it('M1: still sees an edited hook when the repo moves its own work tree', async () => {
+    fs.mkdirSync(path.join(repo.root, 'elsewhere'));
+    git(repo.main, ['config', 'core.worktree', path.join(repo.root, 'elsewhere')]);
+    writeFile(path.join(repo.main, '.claude/hooks/guard.mjs'), 'evil();\n');
+    expect((await read(repo.main)).hooks?.files).toEqual(['.claude/hooks/guard.mjs']);
+  });
+
+  it('M2: refuses a silent move when a commit in between touched a hook', async () => {
+    const pinned = git(repo.main, ['rev-parse', 'main']);
+    writeFile(path.join(repo.main, '.claude/hooks/guard.mjs'), 'evil();\n');
+    const planted = repo.commit('a planted hook');
+    writeFile(path.join(repo.main, '.claude/hooks/guard.mjs'), GUARD_SCRIPT);
+    repo.commit('the hook "reverted"');
+    git(repo.main, ['checkout', '-q', planted]);
+    const baseline = await resolveRepoBaseline(repo.main, DORK_HOME);
+    expect(baseline.untrusted).toBe('hooks-moved');
+    expect(recordedBaseline(baseline.commonDir!)?.sha).toBe(pinned);
+  });
+
+  it('M2: trusts a fork point only inside the pinned commit’s own history', async () => {
+    writeFile(path.join(repo.main, 'README.md'), 'one');
+    const middle = repo.commit('after the pin');
+    writeFile(path.join(repo.main, 'README.md'), 'two');
+    const tip = repo.commit('the tip');
+    const wt = path.join(repo.root, 'from-middle');
+    git(repo.main, ['worktree', 'add', '-q', '-b', 'from-middle', wt, middle]);
+    expect((await resolveRepoBaseline(wt, DORK_HOME)).commits).toEqual([tip]);
+  });
+
+  it('M2: never accepts a mix of files no single trusted commit holds', async () => {
+    writeFile(path.join(repo.main, '.claude/hooks/a.sh'), 'a v1\n');
+    writeFile(path.join(repo.main, '.claude/hooks/b.sh'), 'b v1\n');
+    repo.commit('two hooks');
+    await approveDefaultBranch();
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(repo.main, '.claude/hooks/a.sh'), 'a v2\n');
+    writeFile(path.join(repo.main, '.claude/hooks/b.sh'), 'b v2\n');
+    repo.commit('both hooks v2');
+    await approveDefaultBranch();
+    // a stays at the fork's v1, b is edited to the tip's v2: each file matches
+    // some trusted commit, but no commit holds both.
+    writeFile(path.join(wt, '.claude/hooks/b.sh'), 'b v2\n');
+    expect((await read(wt)).hooks?.files.length).toBeGreaterThan(0);
+  });
+
+  it('M4: resolves a nested settings file’s commands from its own folder', async () => {
+    writeFile(path.join(repo.main, 'pkg/.claude/settings.json'), {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'node scripts/fmt.js' }] },
+        ],
+      },
+    });
+    writeFile(path.join(repo.main, 'pkg/scripts/fmt.js'), 'ok();\n');
+    repo.commit('a nested hook');
+    await approveDefaultBranch();
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(repo.main, 'pkg/scripts/fmt.js'), 'evil();\n');
+    repo.commit('only the nested script changed');
+    expect((await resolveRepoBaseline(wt, DORK_HOME)).untrusted).toBe('hooks-moved');
+  });
+
+  it('M3: a missing object never makes git fetch or run the repo’s ssh command', async () => {
+    const marker = path.join(repo.root, 'ssh-ran');
+    const ssh = path.join(repo.root, 'fake-ssh.sh');
+    fs.writeFileSync(ssh, `#!/bin/sh\n: > ${JSON.stringify(marker)}\nexit 1\n`);
+    fs.chmodSync(ssh, 0o755);
+    git(repo.main, ['config', 'core.repositoryformatversion', '1']);
+    git(repo.main, ['config', 'extensions.partialClone', 'origin']);
+    git(repo.main, ['config', 'remote.origin.url', 'ssh://example.invalid/repo.git']);
+    git(repo.main, ['config', 'remote.origin.promisor', 'true']);
+    git(repo.main, ['config', 'core.sshCommand', ssh]);
+    const wt = repo.addWorktree('wt');
+    // Drop the hook script's blob, so reading it would need a fetch.
+    const oid = git(repo.main, ['rev-parse', 'HEAD:.claude/hooks/guard.mjs']);
+    fs.rmSync(path.join(repo.main, '.git', 'objects', oid.slice(0, 2), oid.slice(2)));
+    writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'changed();\n');
+    await read(wt).catch(() => undefined);
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+});

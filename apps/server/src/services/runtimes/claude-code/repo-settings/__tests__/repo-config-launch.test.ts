@@ -229,8 +229,9 @@ describe('committed hooks', () => {
     const decision = await resolveRepoConfigForLaunch(turn(wt));
     const options = launchOptions();
     applyRepoConfigToLaunch(options, decision);
-    expect((options.settings as { disableAllHooks?: boolean }).disableAllHooks).toBe(true);
-    expect(options.settingSources).toEqual(['local', 'project', 'user']);
+    // Paused: the repo's own settings sources are left out (M5); the person's stay.
+    expect(options.settingSources).toEqual(['user']);
+    expect((options.settings as { disableAllHooks?: boolean }).disableAllHooks).toBeUndefined();
     await settle();
     expect(cards).toHaveLength(1);
     expect(cards[0].capabilityId).toBe('runtime.apply_repo_hooks');
@@ -365,10 +366,8 @@ describe('review fixes', () => {
     const decision = await resolveRepoConfigForLaunch(turn(wt));
     const options = launchOptions();
     applyRepoConfigToLaunch(options, decision);
-    expect(options.settings).toMatchObject({
-      disableAllHooks: true,
-      permissions: { ask: ['Bash(*)'] },
-    });
+    expect(options.settings).toMatchObject({ permissions: { ask: ['Bash(*)'] } });
+    expect(options.settingSources).toEqual(['user']);
   });
 });
 
@@ -409,7 +408,9 @@ describe('trusting a default branch DorkOS has not pinned', () => {
     await vi.waitFor(() => expect(cards).toHaveLength(1));
     await settle();
     expect(cards).toHaveLength(1);
-    expect(cards[0].summary).toContain("This repo's default branch changed its hooks.");
+    expect(cards[0].summary).toContain(
+      'The commit this repo calls its default branch changed its hooks.'
+    );
     expect(cards[0].detail).toContain('v2');
     expect(cards[0].detail).toContain('.claude/hooks/guard.mjs (pinned commit)');
     expect(cards[0].detail).not.toContain('.mcp.json');
