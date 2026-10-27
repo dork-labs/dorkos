@@ -39,6 +39,7 @@ import { queueManagerChange } from './raises/report-beat.js';
 import { BeatOutbox } from './outbox.js';
 import { BeatRunner, type BeatAgent } from './beat-runner.js';
 import { createBeatTurnLauncher, ownTurnRunning } from './beat-launch.js';
+import { createBeatSeatPort } from './accounts/beat-seat.js';
 import { noteTurnStarted } from './beat-turns.js';
 import { EventWakes, wakeAgent } from './event-wakes.js';
 import { systemClock } from './beat-scheduler.js';
@@ -221,6 +222,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     ownTurnRunning: (agentId) => ownTurnRunning(resolveAgentIdForPath, agentId),
     resolveCwd: async (agent) => (await resolveSessionCwd({ agentPath: agent.projectPath })).cwd,
     triage: triage.port,
+    seats: createBeatSeatPort(),
   });
   const hub = new EventWakes({
     clock: systemClock,
