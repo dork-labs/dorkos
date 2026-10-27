@@ -12,6 +12,7 @@ import {
 import { personAwareFetch } from '../person-aware-fetch';
 import {
   finishPersonStepUp,
+  getPersonStepUpDismissible,
   getPersonStepUpOpen,
   subscribePersonStepUp,
 } from '../person-step-up-signal';
@@ -127,6 +128,25 @@ describe('personAwareFetch', () => {
     expect(opened).toBe(1);
     expect(calls).toBe(4);
   });
+
+  it.each([
+    ['a person-only action', '/api/approvals/a/grant', true],
+    ['the first chat', '/api/sessions/s1/messages', false],
+  ])(
+    'asks before %s with Cancel only where there is something to go back to',
+    async (_l, url, dismissible) => {
+      let seen: boolean | null = null;
+      const stop = subscribePersonStepUp(() => {
+        if (!getPersonStepUpOpen()) return;
+        seen = getPersonStepUpDismissible();
+        queueMicrotask(() => finishPersonStepUp(false));
+      });
+      const base = vi.fn(async () => needsStepUp());
+      await personAwareFetch(base, ORIGIN)(url, { method: 'POST', body: '{}' });
+      stop();
+      expect(seen).toBe(dismissible);
+    }
+  );
 
   it('never asks for any other 401', async () => {
     const opened = vi.fn();

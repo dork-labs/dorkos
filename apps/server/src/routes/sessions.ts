@@ -48,7 +48,7 @@ import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.j
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
-import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
+import { askForPersonBeforeChat, personOnlyModeChange } from '../http/person-session-refusal.js';
 import { workspaceCallerOf } from './session-workspace-caller.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
@@ -559,7 +559,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // PATCH /api/sessions/:id - Update session settings
-  router.patch('/:id', async (c) => {
+  router.patch('/:id', personOnlyModeChange(), async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 

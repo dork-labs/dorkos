@@ -38,6 +38,7 @@ import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
 import {
   checkOwnerPassword,
+  ownerPasswordRetryAfterMs,
   type OwnerPasswordCheck,
 } from '../services/core/auth/owner-password.js';
 import { personProofFor } from '../services/core/auth/person-proof.js';
@@ -71,7 +72,11 @@ const PASSWORD_REFUSALS: Record<
   { status: 400 | 403 | 409 | 429; code: PersonSessionRefusalCode; error: string }
 > = {
   required: { status: 400, code: 'wrong-password', error: 'Enter your password.' },
-  wrong: { status: 403, code: 'wrong-password', error: 'That password didn’t match. Try again.' },
+  wrong: {
+    status: 403,
+    code: 'wrong-password',
+    error: 'That’s not your DorkOS password. Try again.',
+  },
   'too-many-attempts': {
     status: 429,
     code: 'too-many-attempts',
@@ -137,6 +142,12 @@ export function createPersonSessionRoutes(deps: PersonSessionDeps = liveDeps): H
     const check = await deps.checkPassword(parsed.success ? parsed.data.password : undefined);
     if (check !== 'ok') {
       const { status, code, error } = PASSWORD_REFUSALS[check];
+      if (check === 'too-many-attempts') {
+        // When it is checked again, so the app can count down rather than guess.
+        const retryAfterSeconds = Math.ceil(ownerPasswordRetryAfterMs() / 1000);
+        c.header('Retry-After', String(retryAfterSeconds));
+        return c.json({ ...errorBody(error, code), retryAfterSeconds }, status);
+      }
       return c.json(errorBody(error, code), status);
     }
     const ownerId = deps.ownerId();

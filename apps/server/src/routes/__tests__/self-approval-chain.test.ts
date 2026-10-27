@@ -283,8 +283,14 @@ describe('an agent holding the API key cannot approve its own work', () => {
       // owner's session the answer is the step-up, and nothing is decided.
       const { approvalId } = await askAsAgent();
 
-      const res = await request(fixtureServer).post(`/api/approvals/${approvalId}/grant`).send({});
+      const bare = await request(fixtureServer).post(`/api/approvals/${approvalId}/grant`).send({});
+      expect(bare.status).toBe(401);
 
+      // The app's window is asked to step up instead.
+      const res = await request(fixtureServer)
+        .post(`/api/approvals/${approvalId}/grant`)
+        .set('x-dorkos-app', '1')
+        .send({});
       expect(res.status).toBe(401);
       expect(res.body.code).toBe(PERSON_SESSION_REQUIRED_CODE);
       expect(stillPending(approvalId)).toBe(true);

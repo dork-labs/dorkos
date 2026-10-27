@@ -9,6 +9,8 @@
  * (the route may still refuse for its own reasons: an unknown id, a bad body).
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 
@@ -69,6 +71,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     password: 'a-long-password-1',
   };
   let person: Record<string, string> = {};
+  let apiKey = '';
 
   /** Send one request; its status and JSON body. */
   async function send(
@@ -101,6 +104,14 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     expect(signUp.status).toBe(200);
     // The owner's one step-up at this computer.
     person = await stepUpAt(server.baseUrl, OWNER.password);
+    // A key, as the CLI holds one: a program, never the person.
+    const minted = await fetch(new URL('/api/auth/api-key/create', server.baseUrl), {
+      method: 'POST',
+      headers: { ...origin, ...person },
+      body: JSON.stringify({ name: 'cli' }),
+    });
+    expect(minted.status).toBe(200);
+    apiKey = ((await minted.json()) as { key: string }).key;
   }, BOOT_HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -163,16 +174,116 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     expect(proved.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
   });
 
-  it('parks a task a header-less caller schedules, rather than arming it', async () => {
-    const res = await send({
+  it('asks the app for the step-up before scheduling a task, and arms nothing', async () => {
+    const write: PersonWrite = {
       method: 'POST',
       path: '/api/tasks',
       body: { name: 'probe', prompt: 'hi', cron: '0 0 1 1 *', cwd: '/tmp' },
-    });
-    if (res.status < 300) {
-      expect(res.json.status).toBe('pending_approval');
-    } else {
-      expect([400, 401, 403, 404]).toContain(res.status);
+    };
+    const asked = await send(write, { origin: server!.baseUrl, 'x-client-id': 'window-1' });
+    expect(asked.status).toBe(401);
+    expect(asked.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+    // A program is never asked; its task is refused or parked for approval, never armed.
+    const bare = await send(write);
+    if (bare.status < 300) expect(bare.json.status).toBe('pending_approval');
+    else expect([400, 401, 403]).toContain(bare.status);
+  });
+
+  it('lets only the person change what a chat may do', async () => {
+    const write: PersonWrite = {
+      method: 'PATCH',
+      path: `/api/sessions/${randomUUID()}`,
+      body: { permissionMode: 'bypassPermissions' },
+    };
+    expect((await send(write)).status).toBe(403);
+    const app = await send(write, { origin: server!.baseUrl, 'x-client-id': 'window-1' });
+    expect(app.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+    // Refused; an agent that cannot be named does not even learn the chat exists.
+    const agent = await send(write, { 'x-dorkos-agent': 'not-a-real-token' });
+    expect([403, 404]).toContain(agent.status);
+    const owner = await send(write, { origin: server!.baseUrl, ...person });
+    expect([401, 403]).not.toContain(owner.status);
+  });
+
+  it('keeps the local MCP token from a program', async () => {
+    for (const verb of ['rotate-token', 'reveal-token']) {
+      const res = await send({ method: 'POST', path: `/api/config/mcp/${verb}`, body: {} });
+      expect([401, 403]).toContain(res.status);
     }
+  });
+
+  describe('package sources and the CLI', () => {
+    const add: PersonWrite = {
+      method: 'POST',
+      path: '/api/marketplace/sources',
+      body: { name: 'probe', source: 'https://example.com/marketplace', enabled: true },
+    };
+
+    it.each([
+      ['with a key', { authorization: 'Bearer KEY' }],
+      ['with no key', {}],
+    ])('tells the CLI %s exactly where in the app to add one, never a bare 401', async (_l, h) => {
+      const headers = Object.fromEntries(
+        Object.entries(h).map(([k, v]) => [k, v.replace('KEY', apiKey)])
+      );
+      const res = await send(add, headers);
+      expect(res.status).toBe(403);
+      expect(res.json).toEqual({
+        error:
+          'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.',
+        code: 'marketplace_source_needs_app',
+      });
+    });
+
+    it('asks the app for the step-up, and lets the owner’s session by', async () => {
+      const asked = await send(add, { origin: server!.baseUrl, 'x-client-id': 'window-1' });
+      expect(asked.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+      const owner = await send(add, { origin: server!.baseUrl, ...person });
+      expect(owner.json.code).not.toBe('marketplace_source_needs_app');
+      expect(owner.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
+    });
+  });
+
+  describe('operator-only settings (C4)', () => {
+    const configFile = () => path.join(server!.dorkHome, 'config.json');
+
+    it('refuses a keyed caller an operator-only setting and writes nothing', async () => {
+      const before = readFileSync(configFile());
+      const res = await send(
+        { method: 'PATCH', path: '/api/config', body: { tunnel: { authtoken: 'planted' } } },
+        { authorization: `Bearer ${apiKey}` }
+      );
+      expect(res.status).toBe(403);
+      expect(res.json.error).toBe('Only a person can change those settings');
+      expect(['operator_only_config', 'operator_cookie_required']).toContain(res.json.code);
+      expect(readFileSync(configFile()).equals(before)).toBe(true);
+    });
+
+    it('refuses a mixed patch whole, and writes nothing', async () => {
+      const before = readFileSync(configFile());
+      const res = await send(
+        {
+          method: 'PATCH',
+          path: '/api/config',
+          body: { ui: { theme: 'dark' }, tunnel: { authtoken: 'planted' } },
+        },
+        { authorization: `Bearer ${apiKey}` }
+      );
+      expect(res.status).toBe(403);
+      expect(readFileSync(configFile()).equals(before)).toBe(true);
+    });
+
+    it('lets the owner’s session make the same change', async () => {
+      const res = await send(
+        {
+          method: 'PATCH',
+          path: '/api/config',
+          body: { ui: { theme: 'dark' }, tunnel: { authtoken: 'planted' } },
+        },
+        { origin: server!.baseUrl, ...person }
+      );
+      expect(res.status).toBe(200);
+      expect(JSON.parse(readFileSync(configFile(), 'utf8')).tunnel.authtoken).toBe('planted');
+    });
   });
 });

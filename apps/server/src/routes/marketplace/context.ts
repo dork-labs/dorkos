@@ -30,13 +30,17 @@ import {
 } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
 import { NEEDS_PERSON_AT_THIS_COMPUTER, readCallerAuthority } from '../../lib/caller-authority.js';
-import { isAtThisComputer } from '../../services/core/auth/gate-policy.js';
+import { isAtThisComputer, personSessionRequired } from '../../services/core/auth/gate-policy.js';
+import { notePersonSessionMissing } from '../../lib/person-without-session.js';
+import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { readQuery } from '../../http/request-query.js';
 import {
   OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
   describeMarketplaceSourceRefusal,
+  MARKETPLACE_SOURCE_NEEDS_APP_CODE,
+  marketplaceSourceNeedsApp,
   marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
 } from '../../services/marketplace/sources/source-write-policy.js';
@@ -273,13 +277,20 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     action: MarketplaceSourceAction
   ): Response | undefined => {
     const facts = honoRequestFacts(c);
+    // A key is a program, never the person (DOR-3330): once an owner exists,
+    // only their session changes a source, and anything else is told where.
+    const namesAMachine =
+      presentsAgentIdentity(facts) || facts.headers[APPROVAL_TOKEN_HEADER] !== undefined;
+    if (!namesAMachine && facts.user?.credential !== 'cookie' && personSessionRequired(facts)) {
+      if (!facts.user) notePersonSessionMissing(facts);
+      return c.json(
+        { error: marketplaceSourceNeedsApp(action), code: MARKETPLACE_SOURCE_NEEDS_APP_CODE },
+        403
+      );
+    }
     if (resolveDecisionAuthority(readCallerAuthority(facts)).allowed) {
       // A person; package sources are a front-door setting, so they change only
-      // at this computer (DOR-2969). Locality alone, not the full front-door
-      // bar: with the password asked here, `dorkos marketplace add` presents an
-      // API key from this computer, and that verb stays the operator's (pinned
-      // in `marketplace.test.ts`). With it off, the open gate reads no key, so
-      // once an owner exists the person adds sources in the app (DOR-3330).
+      // at this computer (DOR-2969). With no owner yet, locality alone.
       if (isAtThisComputer(facts)) return undefined;
       return c.json(
         {

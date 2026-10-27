@@ -313,7 +313,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/devices');
     // 80 -> 81: the forced-limit seam for re-seating, test runtime only (DOR-3143).
     expect(mounts).toContain('/api/test/account-world');
-    expect(mounts).toHaveLength(81);
+    // 81 -> 82: the step-up before a task change, on the bare path (DOR-3330).
+    expect(mounts).toContain('/api/tasks');
+    expect(mounts).toHaveLength(82);
     const byHand = [
       '/',
       '/x/fixture',

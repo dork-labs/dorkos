@@ -92,6 +92,9 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 vi.mock('../../services/core/auth/index.js', () => ({
   hasAnyApiKey: vi.fn(() => false),
   readOwnerEmail: vi.fn(() => null),
+  // No owner yet: the person at this computer needs no session (DOR-3330).
+  readOwnerAccount: vi.fn(() => null),
+  getAuth: vi.fn(() => undefined),
 }));
 
 // The local-token module reads env/fs at import; mock the two accessors the

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -56,6 +56,7 @@ import {
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import {
+  clearsTheAgentBar,
   readCallerAuthority,
   refuseFrontDoorChange,
   refuseUnlessAccountOwner,
@@ -732,6 +733,26 @@ router.put('/agents/defaultAgent', (c) => {
 });
 
 /**
+ * Only the person sees or replaces the local MCP token over HTTP (DOR-3330):
+ * it lets an outside tool act on this DorkOS. Once an owner exists that takes
+ * their session; the app asks for it. A program running as the same OS user
+ * can still read the token's file on disk, as it can the rest of the data folder.
+ *
+ * @param c - The request.
+ * @returns The refusal, or `undefined` for the person.
+ */
+function refuseLocalTokenToAProgram(c: Context<ApiEnv>): Response | undefined {
+  if (clearsTheAgentBar(honoRequestFacts(c))) return undefined;
+  return c.json(
+    {
+      error: 'Only you can see or change this token. Do it in the DorkOS app.',
+      code: 'person_required',
+    },
+    403
+  );
+}
+
+/**
  * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
  * token (DOR-278).
  *
@@ -767,6 +788,8 @@ router.post('/mcp/rotate-token', (c) => {
         409
       );
     }
+    const notYou = refuseLocalTokenToAProgram(c);
+    if (notYou) return notYou;
 
     const dorkHome = resolveDorkHome();
     const localToken = rotateMcpLocalToken(dorkHome);
@@ -787,12 +810,8 @@ router.post('/mcp/rotate-token', (c) => {
  * rotate: 409 when an `MCP_API_KEY` override is set or the caller is not one the
  * gate leaves open (the local token does not apply there).
  *
- * Honest scope note: in login-off mode this endpoint sits behind the same
- * loopback trust boundary as the cockpit, so any local process with socket
- * reach can call it just as the settings tab does — the cockpit and a local
- * process are indistinguishable without login. The reveal endpoint therefore
- * does not (and cannot) make the token unreadable to local callers; turning on
- * login is the boundary that does.
+ * Only the person may call it (`refuseLocalTokenToAProgram`, DOR-3330); once
+ * an owner exists that takes their session at this computer.
  */
 router.post('/mcp/reveal-token', (c) => {
   try {
@@ -817,6 +836,8 @@ router.post('/mcp/reveal-token', (c) => {
         409
       );
     }
+    const notYou = refuseLocalTokenToAProgram(c);
+    if (notYou) return notYou;
 
     const localToken = getMcpLocalToken();
     if (!localToken) {

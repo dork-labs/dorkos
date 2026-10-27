@@ -1031,6 +1031,7 @@ describe('PATCH /api/config', () => {
 
       await request(server)
         .patch('/api/config')
+        .set('x-dorkos-app', '1')
         .send({ auth: { enabled: true } })
         .expect(401);
     });
@@ -1043,8 +1044,14 @@ describe('PATCH /api/config', () => {
     signedInUser = undefined;
     agentHeader = undefined;
 
+    // A program hears the route's refusal; the app is asked to step up.
     await request(server)
       .patch('/api/config')
+      .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
+      .expect(403);
+    await request(server)
+      .patch('/api/config')
+      .set('x-dorkos-app', '1')
       .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
       .expect(401);
 

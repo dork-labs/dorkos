@@ -181,6 +181,23 @@ describe('the person bar at this computer, with an owner and no password asked',
       expect(cookiesOf(res)).toBe('');
     });
 
+    it('says how long to wait after too many wrong passwords', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await request(target.server)
+          .post('/api/person-session')
+          .set(appHeaders())
+          .send({ password: 'not-it' });
+      }
+      const res = await request(target.server)
+        .post('/api/person-session')
+        .set(appHeaders())
+        .send({ password: PASSWORD });
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe('too-many-attempts');
+      expect(res.body.retryAfterSeconds).toBeGreaterThan(0);
+      expect(Number(res.headers['retry-after'])).toBe(res.body.retryAfterSeconds);
+    });
+
     it.each([
       ['an agent', { 'x-dorkos-agent': 'not-a-real-token' }],
       ['a key', { authorization: 'Bearer some-key' }],

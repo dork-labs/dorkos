@@ -30,6 +30,14 @@ export const PERSON_SESSION_PATH = '/api/person-session';
  */
 export const PERSON_PROOF_HEADER = 'x-dorkos-person';
 
+/**
+ * The marker the app window's own API calls carry, so a refusal for want of
+ * the person's session is answered with the step-up only where someone can
+ * answer it. Not a credential: it decides which refusal a caller hears, never
+ * what it may do. A program without it hears the route's own refusal.
+ */
+export const PERSON_APP_HEADER = 'x-dorkos-app';
+
 /** Where the app page keeps its person proof (its own origin's storage). */
 export const PERSON_PROOF_STORAGE_KEY = 'dorkos.person-proof';
 

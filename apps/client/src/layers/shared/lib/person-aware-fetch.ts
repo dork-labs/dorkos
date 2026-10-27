@@ -11,6 +11,7 @@
  * @module shared/lib/person-aware-fetch
  */
 import {
+  PERSON_APP_HEADER,
   PERSON_PROOF_HEADER,
   PERSON_SESSION_PATH,
   PERSON_SESSION_REQUIRED_CODE,
@@ -18,6 +19,9 @@ import {
 
 import { readPersonProof } from './person-proof-store';
 import { requestPersonStepUp } from './person-step-up-signal';
+
+/** A chat message: `POST /api/sessions/:id/messages`. */
+const CHAT_MESSAGE = /^\/api\/sessions\/[^/]+\/messages$/;
 
 /** How long the call sent again after the step-up may take. */
 const RETRY_TIMEOUT_MS = 30_000;
@@ -60,6 +64,8 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
       new Headers(init?.headers).forEach((value, name) => headers.set(name, value));
       const proof = readPersonProof();
       if (proof) headers.set(PERSON_PROOF_HEADER, proof);
+      // This window can answer the step-up, so it is asked rather than refused.
+      headers.set(PERSON_APP_HEADER, '1');
       return [input instanceof Request ? input.clone() : input, { ...init, headers }];
     };
 
@@ -68,7 +74,11 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     const replayable = !(init?.body instanceof ReadableStream) && !(input instanceof Request);
     if (!replayable || target.pathname === PERSON_SESSION_PATH) return res;
     if (!(await asksForPersonSession(res))) return res;
-    if (!(await requestPersonStepUp())) return res;
+    // Before a chat there is nothing to go back to; anything else may be cancelled.
+    const dismissible = !(
+      init?.method?.toUpperCase() === 'POST' && CHAT_MESSAGE.test(target.pathname)
+    );
+    if (!(await requestPersonStepUp({ dismissible }))) return res;
     // A fresh clock for the retry: the caller's timeout kept running while the
     // person typed their password, and may already have fired.
     const [again, retryInit] = build();

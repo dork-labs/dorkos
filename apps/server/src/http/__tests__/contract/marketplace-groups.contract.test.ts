@@ -1117,13 +1117,23 @@ describe('contract: the marketplace groups with login on', () => {
     }
   });
 
-  it('lets an API key change the package sources, as a person’s terminal does', async () => {
-    const added = await call(
+  it('refuses an API key the package sources, and says where in the app (DOR-3330)', async () => {
+    // A key is a program, never the person: the CLI is told where to go instead.
+    const refused = await call(
       server,
       'POST',
       '/api/marketplace/sources',
       { name: 'contract', source: pathToFileURL(MARKET).href },
       apiKey
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.json.code).toBe('marketplace_source_needs_app');
+    const added = await call(
+      server,
+      'POST',
+      '/api/marketplace/sources',
+      { name: 'contract', source: pathToFileURL(MARKET).href },
+      cookie
     );
     expect(added.status).toBe(201);
     await check(server, {
@@ -1137,7 +1147,7 @@ describe('contract: the marketplace groups with login on', () => {
       'DELETE',
       '/api/marketplace/sources/contract',
       undefined,
-      apiKey
+      cookie
     );
     expect(removed.status).toBe(204);
   });

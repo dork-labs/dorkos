@@ -53,6 +53,8 @@ process.once('exit', () => {
 export interface ComposedServer {
   /** Where it listens, e.g. `http://127.0.0.1:53511`. */
   readonly baseUrl: string;
+  /** Its throwaway data directory, for a test that checks what it wrote. */
+  readonly dorkHome: string;
   /** The last of what the server printed, for a failure message. */
   log(): string;
   /** Stop it and delete its data directory. */
@@ -210,7 +212,7 @@ async function bootOnce(extra: Record<string, string>): Promise<ComposedServer> 
     await close();
     throw error;
   }
-  return { baseUrl, log: () => log, close };
+  return { baseUrl, dorkHome, log: () => log, close };
 }
 
 /**

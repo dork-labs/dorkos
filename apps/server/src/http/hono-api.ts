@@ -106,6 +106,7 @@ import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
 import { createPersonSessionRoutes } from '../routes/person-session.js';
+import { askForPersonBeforeTaskWrite } from './person-session-refusal.js';
 import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
@@ -437,7 +438,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
-  if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  if (deps.tasks) {
+    // The person at this computer is asked to step up before a task change (DOR-3330).
+    app.use('/api/tasks', askForPersonBeforeTaskWrite());
+    app.use('/api/tasks/*', askForPersonBeforeTaskWrite());
+    app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  }
   if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));

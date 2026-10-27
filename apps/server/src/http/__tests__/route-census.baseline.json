@@ -23,6 +23,8 @@
     "ALL /api/session-relay/*",
     "ALL /api/sessions/:id/*",
     "ALL /api/sign-in-landings/*",
+    "ALL /api/tasks",
+    "ALL /api/tasks/*",
     "ALL /api/test/mcp-oauth/mcp",
     "ALL /mcp",
     "DELETE /api/communities/:ref/agents/:localAgentId",

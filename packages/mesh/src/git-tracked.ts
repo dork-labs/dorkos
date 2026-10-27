@@ -38,9 +38,22 @@ const MAX_GIT_PROBE_DEPTH = 64;
  * directory that is gone — a linked worktree whose parent was deleted — fails
  * with the very similar `fatal: not a git repository: /gone`, and that one is
  * NOT an answer: there is a working tree here whose files are somebody's. Only
- * the walked-and-found-nothing wording may be read as "no repo".
+ * the walked-and-found-nothing wording may be read as "no repo". git words
+ * that walk two ways: up to the root, or up to the edge of a mounted disk (a
+ * temp folder on its own disk stops there unless told to cross).
  */
-const NOT_A_REPO = /not a git repository \(or any of the parent directories\)/i;
+const NOT_A_REPO =
+  /not a git repository \(or any (?:of the parent directories|parent up to mount point [^)]*)\)/i;
+
+/**
+ * Whether git's error says it walked up and found no repository at all.
+ *
+ * @param stderr - What git printed.
+ * @internal Exported for tests.
+ */
+export function saysNoRepository(stderr: string): boolean {
+  return NOT_A_REPO.test(stderr);
+}
 
 /**
  * Whether `<projectPath>/.dork/agent.json` is tracked by git.
@@ -91,7 +104,7 @@ export async function isManifestGitTracked(
     // git ran and said there is no repository here. A definite answer, not a
     // failure — and the one every managed agent under `{dorkHome}/agents`
     // gives, so it must not warn.
-    if (NOT_A_REPO.test(String((err as { stderr?: unknown }).stderr ?? ''))) return false;
+    if (saysNoRepository(String((err as { stderr?: unknown }).stderr ?? ''))) return false;
     // git never even started because the directory is gone (an unreachable
     // agent being swept). There is no file to protect and nothing to say.
     if (!(await exists(projectPath))) return false;

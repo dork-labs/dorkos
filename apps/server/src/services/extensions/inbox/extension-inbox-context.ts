@@ -14,7 +14,7 @@ import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/exten
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
 import { expressRequestFacts } from '../http/express-bridge.js';
-import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import {
   isPersonWithoutSession,
   PERSON_SESSION_REQUIRED_MESSAGE,
@@ -127,7 +127,8 @@ export function personVerdict(request: RequestFacts, extensionName: string): Per
 function extensionPersonRefusal(request: RequestFacts, extensionName: string) {
   const facts: RequestFacts = { ...request, method: undefined };
   const refusal = assessPerson(facts, requirePersonCopy(extensionName));
-  if (refusal && personSessionWasMissing(facts) && isPersonWithoutSession(facts)) {
+  const fromTheApp = facts.headers[PERSON_APP_HEADER] !== undefined;
+  if (refusal && fromTheApp && personSessionWasMissing(facts) && isPersonWithoutSession(facts)) {
     const message = PERSON_SESSION_REQUIRED_MESSAGE;
     return { status: 401, body: { error: message, code: PERSON_SESSION_REQUIRED_CODE, message } };
   }

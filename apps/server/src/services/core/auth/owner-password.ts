@@ -135,6 +135,17 @@ export async function checkOwnerPassword(
 }
 
 /**
+ * How long until a step-up is checked again after too many wrong passwords,
+ * in milliseconds, or `0` when it is checked now.
+ *
+ * @param now - The current time, for tests.
+ */
+export function ownerPasswordRetryAfterMs(now = Date.now()): number {
+  if (recentFailures(now) < OWNER_PASSWORD_MAX_FAILURES) return 0;
+  return Math.max(0, failures[0]! + OWNER_PASSWORD_FAILURE_WINDOW_MS - now);
+}
+
+/**
  * Forget every recorded wrong password.
  *
  * @internal Tests only.
