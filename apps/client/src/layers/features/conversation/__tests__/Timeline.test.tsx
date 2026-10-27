@@ -524,9 +524,15 @@ describe('Conversation.Timeline', () => {
   });
 
   it('draws the host’s empty state when there is nothing in the conversation', () => {
-    mount({ rows: [], empty: <p>Nothing said here yet</p> });
+    const { container } = mount({ rows: [], empty: <p>Nothing said here yet</p> });
 
     expect(screen.getByText('Nothing said here yet')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="conversation-empty"]')).toHaveClass(
+      'min-h-0',
+      'flex-1',
+      'items-center',
+      'justify-center'
+    );
   });
 
   it('is not empty while a message of this reader’s own is still in flight', () => {

@@ -22,7 +22,7 @@ import {
 } from '../../../middleware/extension-proxy-rate-limit.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
 import { OUTBOUND_FORCED } from './reply-headers.js';
-import { currentServerRole } from '../../../lib/server-role.js';
+import { isPersonalComputer } from '../../core/server-role/role-checks.js';
 
 /**
  * Headers that must not be forwarded to the upstream API.
@@ -308,10 +308,11 @@ export function createProxyForwarder(
       if (contentType) headers['Content-Type'] = contentType;
       // Forward `Location` so a caller that got a 3xx above can see where the
       // upstream pointed and decide for itself.
-      // Never on a hub (DOR-2937): there a `Location` to another site would
-      // make the hub's own address a redirect anywhere.
+      // Only on a person's own computer: on a hub (DOR-2937) a `Location` to
+      // another site would make the hub's own address a redirect anywhere, and
+      // an agent computer (DOR-2940) gets the hub's answer.
       const location = upstreamRes.headers.get('location');
-      if (location && currentServerRole() !== 'hub') headers.Location = location;
+      if (location && isPersonalComputer()) headers.Location = location;
 
       return { status: upstreamRes.status, headers, text: await upstreamRes.text() };
     } catch (err) {

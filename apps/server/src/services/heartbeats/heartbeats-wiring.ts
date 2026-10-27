@@ -21,6 +21,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { agentConnectionAttachments, pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import { resolveWorkingHours, zonedDay } from '@dorkos/shared/working-hours';
 import { configManager } from '../core/config-manager.js';
+import { runsSchedules } from '../core/agent-computer/sealed.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { CommitmentService } from '../commitments/index.js';
 import { resolveAgentIdForPath } from '../mesh/agent-path-lookup.js';
@@ -106,7 +107,7 @@ function ownRunReader(db: Db) {
       .where(
         and(
           eq(pulseSchedules.agentId, agentId),
-          inArray(pulseRuns.status, ['failed', 'blocked']),
+          inArray(pulseRuns.status, ['failed', 'needs_attention']),
           ...(sinceIso ? [gt(pulseRuns.createdAt, sinceIso)] : [])
         )
       )
@@ -116,7 +117,7 @@ function ownRunReader(db: Db) {
       .map((row) => ({
         id: row.id,
         taskName: row.name,
-        status: row.status as 'failed' | 'blocked',
+        status: row.status as 'failed' | 'needs_attention',
         at: row.finishedAt ?? row.createdAt,
       }));
 }
@@ -173,7 +174,8 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   // (`session/origin/outsider-turns.ts`). Set at every boot, heartbeats on or off.
   setLaunchOriginReader((sessionId) => runtimeRegistry.getSessionLaunchOrigin(sessionId));
   const store = new HeartbeatStore(db);
-  const enabled = () => configManager.get('heartbeats').enabled;
+  // Never on an agent computer, which beats only when its hub says (DOR-2940).
+  const enabled = () => runsSchedules() && configManager.get('heartbeats').enabled;
   const chain = createReportsToChain({ get: (id) => deps.meshCore()?.get(id) });
   const ownerAccountId = () =>
     auditTrail()?.accounts.owner().accountId ?? OWNER_FALLBACK_ACCOUNT_ID;

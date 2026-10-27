@@ -80,6 +80,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     logger.info('[DorkOS] Hub mode: no agent runtimes on this server');
     return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay: null };
   }
+  if (currentServerRole() === 'agent-computer') return registerAgentComputerRuntimes(deps);
   const { db, dorkHome } = deps;
   let claudeRuntime: ClaudeCodeRuntime | null = null;
   let doeRuntime: DoeRuntime | null = null;
@@ -284,4 +285,36 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
   return { claudeRuntime, doeRuntime, relayAgentRuntime, creditsRelay };
+}
+
+/**
+ * The runtimes of a sealed agent computer (DOR-2940): OpenCode, and nothing
+ * else, whatever the config says. Claude Code and Codex never register there:
+ * both sign in with a person's own account, and an agent computer holds none.
+ * OpenCode's model access will come from the hub; until then its sidecar plans
+ * with no credits relay, so a turn that needs one fails closed. No relay
+ * adapter is handed a runtime, so no chat app connection starts.
+ *
+ * @param deps - See {@link RuntimeStartupDeps}.
+ * @returns See {@link RegisteredRuntimes}.
+ */
+function registerAgentComputerRuntimes(deps: RuntimeStartupDeps): RegisteredRuntimes {
+  const sessionAttachmentStore = new LocalSessionAttachmentStore(deps.dorkHome);
+  setSessionAttachmentStore(sessionAttachmentStore);
+  openCodeServerManager.usePlanners({
+    planSidecar: planOpenCodeSidecar,
+    planTurn: planOpenCodeTurn,
+  });
+  const openCodeRuntime = new OpenCodeRuntime({
+    provider: openCodeServerManager,
+    sessionMap: new OpenCodeSessionMap(deps.db),
+    attachments: sessionAttachmentStore,
+  });
+  openCodeRuntime.setSessionSettings(runtimeRegistry);
+  runtimeRegistry.register(openCodeRuntime);
+  runtimeRegistry.setDefault(openCodeRuntime.type);
+  // The cloud routes refuse here, but their manager must exist to answer.
+  initCloudLinkManager();
+  logger.info('[DorkOS] Agent computer: OpenCode is the only agent runtime on this server');
+  return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay: null };
 }

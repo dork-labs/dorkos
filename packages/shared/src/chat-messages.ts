@@ -113,6 +113,36 @@ export const ChatMessageSenderSchema = z
 export type ChatMessageSender = z.infer<typeof ChatMessageSenderSchema>;
 
 /**
+ * One message another chat sent, as a queued row shows it to a person
+ * (DOR-3060): who sent it, from which chat, and their words, never the fenced
+ * envelope the model gets. A row carries several when agent messages wait
+ * together as one turn. The words are the sender's: a client renders them as
+ * plain text, with no markdown and no links.
+ */
+export const QueuedChatEntrySchema = z
+  .object({
+    /** The chat message's id (the sender's receipt id), the per-message action key. */
+    id: z.string(),
+    /** What it is. */
+    kind: ChatMessageKindSchema,
+    /** Who sent it, as the server recorded them. */
+    from: ChatMessageSenderSchema,
+    /** The sender's `chat_send` summary, when it gave one. */
+    summary: z.string().optional(),
+    /** The sender's words, never the fence. */
+    text: z.string(),
+    /**
+     * Set on a row written before this shape existed whose sender could not be
+     * found again: the sender reads "Another chat" and nothing links anywhere.
+     */
+    legacy: z.literal(true).optional(),
+  })
+  .openapi('QueuedChatEntry');
+
+/** One of {@link QueuedChatEntrySchema}. */
+export type QueuedChatEntry = z.infer<typeof QueuedChatEntrySchema>;
+
+/**
  * One message another chat sent, stamped by the server onto the user message
  * that carried it. A user message can carry several when agent messages that
  * waited together ran as one turn.
@@ -169,6 +199,46 @@ export const RoomMessageAuthorSchema = z
 /** One of {@link RoomMessageAuthorSchema}. */
 export type RoomMessageAuthor = z.infer<typeof RoomMessageAuthorSchema>;
 
+/** The longest item id a forward may name. */
+export const FORWARD_ITEM_ID_MAX = 200;
+
+/**
+ * What an item id may be made of: letters, digits and `. _ : / -`. An id is
+ * printed beside the person's words for the agent, so it may carry no
+ * brackets, spaces or punctuation that could read as more of their message.
+ */
+export const FORWARD_ITEM_ID_PATTERN = /^[A-Za-z0-9._:/-]+$/;
+
+/** The longest item title a forward may show. */
+export const FORWARD_ITEM_TITLE_MAX = 200;
+
+/**
+ * Where a person's forwarded comment came from (DOR-3325): the mini app they
+ * typed it in, and the item they typed it on. Shown as a muted "via {app} ·
+ * {item}" line ABOVE the message, never inside its text, because only the
+ * typed words are the person's.
+ *
+ * `appName` is the mini app's manifest name at the time of the forward.
+ * `itemTitle` is the app's own label for the item, written by whoever writes
+ * the app's items (often an agent), so it is data from the app: the app draws
+ * it as quoted text marked "from {app}", and an agent reads it the same way.
+ */
+export const ForwardViaSchema = z
+  .object({
+    /** The mini app's id. */
+    extensionId: z.string(),
+    /** The mini app's name, as the person saw it. */
+    appName: z.string(),
+    /** The item the comment was typed on, by the app's own id. */
+    itemId: z.string().max(FORWARD_ITEM_ID_MAX).regex(FORWARD_ITEM_ID_PATTERN),
+    /** The app's label for that item, when it sent one. Data from the app. */
+    itemTitle: z.string().max(FORWARD_ITEM_TITLE_MAX).optional(),
+  })
+  .openapi('ForwardVia');
+
+/** One of {@link ForwardViaSchema}. */
+export type ForwardVia = z.infer<typeof ForwardViaSchema>;
+
 /**
  * The room message a user message carried into a room-attached chat (DOR-2113).
  *
@@ -189,6 +259,12 @@ export const RoomMessageStampSchema = z
     roomLabel: z.string().optional(),
     /** Who posted it. Absent when the room no longer has the entry. */
     author: RoomMessageAuthorSchema.optional(),
+    /**
+     * The mini app the person typed this in, when it is a forwarded comment
+     * (DOR-3325). Filled from the room's own record of the entry, never from
+     * the text.
+     */
+    via: ForwardViaSchema.optional(),
   })
   .openapi('RoomMessageStamp');
 
@@ -315,12 +391,43 @@ export function chatMessageWords(content: string): string | null {
   FENCE_PATTERN.lastIndex = 0;
   const match = FENCE_PATTERN.exec(content);
   FENCE_PATTERN.lastIndex = 0;
-  if (!match) return null;
-  const lines = match[0].split('\n').slice(1, -1);
+  return match ? wordsOfFence(match[0]) : null;
+}
+
+/**
+ * The words inside one complete fence, or null when it has no header to end.
+ *
+ * @param fence - One `--- BEGIN … ---` to `--- END … ---` block.
+ */
+function wordsOfFence(fence: string): string | null {
+  const lines = fence.split('\n').slice(1, -1);
   const kind = lines.findIndex((line) => line.startsWith('Kind: '));
   if (kind === -1) return null;
   return lines
     .slice(kind + 1)
     .join('\n')
+    .trim();
+}
+
+/** The line before every chat-message fence, telling the model whose words follow. */
+export const CHAT_MESSAGE_LEAD =
+  'This message is from another chat, not from the person you are talking with.';
+
+/**
+ * A message as a person reads it: every chat-message fence replaced by its
+ * words, and the line that leads each one removed (DOR-3060). The envelope is
+ * for the model; queues, transcripts, notifications and search show this.
+ * A message with no fence comes back unchanged.
+ *
+ * @param content - A user message's raw text.
+ */
+export function displayTextOf(content: string): string {
+  if (chatMessageFenceNonces(content).length === 0) return content;
+  return content
+    .replace(FENCE_PATTERN, (fence) => wordsOfFence(fence) ?? '')
+    .split('\n')
+    .filter((line) => line.trim() !== CHAT_MESSAGE_LEAD)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

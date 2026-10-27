@@ -560,6 +560,20 @@ describe('StreamManager', () => {
         reason: 'credits-not-covered',
       } as SessionEvent,
     ],
+    // Background commands a Stop could not end (DOR-3285): a dropped frame
+    // hides work still running on the computer.
+    [
+      'work_left_running',
+      {
+        type: 'work_left_running',
+        seq: 3,
+        tasks: [{ taskId: 'tail', command: 'tail -f server.log' }],
+      } as SessionEvent,
+    ],
+    [
+      'work_left_ended',
+      { type: 'work_left_ended', seq: 4, taskId: 'tail', status: 'completed' } as SessionEvent,
+    ],
     // The in-session capability hold (DOR-939) and its resolution. Same failure
     // mode as the four above and the reason DOR-963 exists: the pair shipped
     // with a server emitter, a store fold, and an inline card — and no entry in

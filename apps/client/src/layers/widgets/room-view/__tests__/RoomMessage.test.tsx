@@ -537,6 +537,21 @@ describe('RoomMessage — the action surface', () => {
     expect(list.closest('.msg-prose')).not.toBeNull();
   });
 
+  it('wraps a plain long path without breaking fenced code blocks', () => {
+    renderRow(
+      entry({
+        body: {
+          text: '/Users/dorian/a-very-long-folder-name/another-very-long-folder-name/report.md',
+        },
+      })
+    );
+
+    const content = screen.getByTestId('room-entry').querySelector('[data-slot="message-content"]');
+    expect(content).toHaveClass('wrap-anywhere');
+    expect(content?.className).toContain('[&_pre]:overflow-x-auto');
+    expect(content?.className).toContain('[&_pre]:wrap-normal');
+  });
+
   it('opens the thread panel when the reply button is pressed', () => {
     renderRow(entry({ id: 'reply-9', parentEntryId: 'root-1', threadRootEntryId: 'root-1' }));
 

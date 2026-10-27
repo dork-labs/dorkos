@@ -61,6 +61,36 @@ export interface RecordedTurnStart {
 }
 
 /**
+ * The index of the person's message that opened the turn a recorded event
+ * belongs to, found by the turn's text, or `null` when it cannot be.
+ *
+ * The turn is the last `turn_start` before the event in `seq`. Earlier turns
+ * that carried the same text are counted, so a repeated "continue" lands on
+ * the right one. Shared with `work-left-overlay` (DOR-3285).
+ *
+ * @param messages - History as the runtime assembled it.
+ * @param seq - The recorded event's `seq`.
+ * @param starts - The session's recorded turn starts, in seq order.
+ */
+export function turnOpenerIndex(
+  messages: readonly HistoryMessage[],
+  seq: number,
+  starts: readonly RecordedTurnStart[]
+): number | null {
+  const opener = starts.filter((start) => start.seq < seq).at(-1);
+  const text = opener?.userMessage;
+  if (!opener || !text) return null;
+  let skip = starts.filter((start) => start.seq < opener.seq && start.userMessage === text).length;
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]!;
+    if (message.role !== 'user' || !message.content.includes(text)) continue;
+    if (skip === 0) return i;
+    skip -= 1;
+  }
+  return null;
+}
+
+/**
  * The index of the history message a substitution's turn opened with, or
  * `null` when it cannot be found.
  *
@@ -76,19 +106,8 @@ function openingMessageIndex(
   row: RecordedModelSubstitution,
   starts: readonly RecordedTurnStart[]
 ): number | null {
-  const opener = starts.filter((start) => start.seq < row.event.seq).at(-1);
-  const text = opener?.userMessage;
-  if (opener && text) {
-    let skip = starts.filter(
-      (start) => start.seq < opener.seq && start.userMessage === text
-    ).length;
-    for (let i = 0; i < messages.length; i++) {
-      const message = messages[i]!;
-      if (message.role !== 'user' || !message.content.includes(text)) continue;
-      if (skip === 0) return i;
-      skip -= 1;
-    }
-  }
+  const byText = turnOpenerIndex(messages, row.event.seq, starts);
+  if (byText !== null) return byText;
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i]!;
     if (

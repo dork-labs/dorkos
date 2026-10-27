@@ -14,6 +14,9 @@
 #
 # A purpose is one plain sentence saying what the gate catches or does.
 gates:
+  - id: wf.security-approve-tests.acl
+    source: .github/workflows/security-approve-tests.yml
+    purpose: Tests hardened helper policy and disposable Keychain ACL isolation on a CI macOS user.
   - id: wf.security-review-initialize.initialize
     source: .github/workflows/security-review-initialize.yml
     purpose: Writes PR-head review statuses and audit comments using trusted base code, including for fork contributions.

@@ -208,13 +208,22 @@ export const pulseRuns = sqliteTable(
     status: text('status', {
       // `skipped` is a tick the scheduler deliberately did not run — the cap was
       // full when it came round (DOR-1482). `timeout` predates it and no writer
-      // produces it; both are terminal, neither is a failure. `blocked` is a run
-      // that ran and was refused every tool it reached for, because nobody was
-      // there to approve them (DOR-2101) — also terminal, also not a failure.
+      // produces it; both are terminal, neither is a failure. `needs_attention`
+      // is a run that ran and was refused a tool it reached for, because nobody
+      // was there to approve it (DOR-3123) — also terminal, also not a failure.
+      // It replaced `blocked`, whose rows a migration rewrote.
       //
       // Drizzle's `enum` is a TYPE, not a CHECK constraint: SQLite stores this
       // column as plain TEXT, so widening the list needs no SQL migration.
-      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout', 'skipped', 'blocked'],
+      enum: [
+        'running',
+        'completed',
+        'failed',
+        'cancelled',
+        'timeout',
+        'skipped',
+        'needs_attention',
+      ],
     }).notNull(),
     startedAt: text('started_at').notNull(), // ISO 8601 TEXT
     finishedAt: text('finished_at'),
@@ -258,6 +267,13 @@ export const pulseRuns = sqliteTable(
      * answer rather than an absent one.
      */
     refusedTools: text('refused_tools'),
+    /**
+     * How much a `needs_attention` run got done: `partial` when it carried on
+     * without the refused tool and something else succeeded, `nothing_done`
+     * when nothing it reached for succeeded (DOR-3123). NULL on every other
+     * status, and on every run older than the column.
+     */
+    outcome: text('outcome', { enum: ['partial', 'nothing_done'] }),
     /**
      * The scheduled occurrence this run stood for, ISO 8601 (DOR-2718). Not
      * when it started: a computer that slept through 09:00 and woke at 09:40

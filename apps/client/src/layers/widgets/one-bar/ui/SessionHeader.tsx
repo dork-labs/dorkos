@@ -11,6 +11,7 @@ import { AccountBadge } from '@/layers/features/status';
 import { useOneBarState } from '../model/one-bar-context';
 import { useLastKnownAgent } from '../model/use-last-known-agent';
 import { OneBar } from './OneBar';
+import { WorkLeftPill } from './WorkLeftPill';
 
 /**
  * `/session` route bar — who you are talking to, and which conversation.
@@ -179,6 +180,8 @@ export function SessionHeader({
               `claude-account-ui` §6.3). Draws nothing unless two or more
               accounts can be told apart. */}
           <AccountBadge sessionId={sessionId ?? null} />
+          {/* Commands a Stop could not end, still running (DOR-3285). */}
+          <WorkLeftPill sessionId={sessionId ?? null} />
         </>
       }
     />

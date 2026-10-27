@@ -210,10 +210,10 @@ describe('schedules', () => {
   it('turns failed and parked runs into keyed changes', async () => {
     const changes = await createSchedulesGatherer(() => [
       { id: 'run1', taskName: 'Invoices', status: 'failed', at: '2026-10-12T09:30:00Z' },
-      { id: 'run2', taskName: 'Digest', status: 'blocked', at: '2026-10-12T09:40:00Z' },
+      { id: 'run2', taskName: 'Digest', status: 'needs_attention', at: '2026-10-12T09:40:00Z' },
     ])(ctx());
     expect(changes.map((c) => c.key)).toEqual(['run:run1', 'run:run2']);
-    expect(changes[1]!.summary).toMatch(/waiting for a person/);
+    expect(changes[1]!.summary).toMatch(/needs a person/);
   });
 });
 

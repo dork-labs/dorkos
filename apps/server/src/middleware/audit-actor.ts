@@ -16,6 +16,11 @@
  * | The per-install local token on `/mcp`         | the owner                      | mcp-local    | `mcp`   |
  * | Nothing (login off)                           | the owner                      | none         | `app`   |
  *
+ * **On an agent computer no request is ever the owner or a person** (DOR-2940):
+ * nobody signs in there. An agent is named as above; the local token is
+ * `DorkOS` under the name "Local MCP token"; anything else is `DorkOS`. A
+ * person's credential, which cannot exist there, is never read.
+ *
  * The agent question is asked first, for the reason `lib/caller-principal.ts`
  * gives: an agent may legitimately hold one of the person's API keys.
  *
@@ -37,6 +42,7 @@ import type { AgentIdentity } from '../services/core/agent-identity/agent-identi
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { auditTrail, type AuditTrail } from '../services/audit/audit-trail.js';
 import { credentialRef } from '../services/audit/account-ids.js';
+import { isAgentComputer } from '../services/core/server-role/role-checks.js';
 
 /**
  * What the audit scope reads off one request. The chain hands over getters, so
@@ -95,6 +101,14 @@ function resolveRequestActor(
       // use can be matched to the session it was minted for.
       ...(token ? { credential: credentialRef('agent-token', token) } : {}),
     };
+  }
+  if (isAgentComputer()) {
+    return request.mcpLocalToken === true
+      ? {
+          actor: trail.accounts.system('Local MCP token'),
+          credential: credentialRef('mcp-local', 'local-token'),
+        }
+      : { actor: trail.accounts.system() };
   }
   const user = request.user;
   if (user) {
