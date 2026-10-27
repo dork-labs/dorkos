@@ -876,6 +876,26 @@ describe('<working_rules>', () => {
     expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
   });
 
+  // Red when: the allow-list rule (DOR-3039) is dropped, loses one of its three
+  // points, or moves outside the block. A folder's own allow rules wait for a
+  // person's approval and apply from the next turn, so an agent that adds one
+  // must not call it done, nor add one to get past a refusal.
+  it('carries the allow-list rule exactly once, inside the block', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+
+    const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    const rule =
+      "Commands you add to your folder's allow list don't apply until a person approves them, and then only\n" +
+      "from your next turn. Don't add one to get past a refusal; tell the person what you need. If you do add\n" +
+      "one, tell them it's waiting on their approval, never that it's done.";
+    expect(text.split(rule)).toHaveLength(2);
+    const rules = rulesIn(text);
+    expect(rules).toContain(rule);
+    expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
+  });
+
   // Red when: anything per-session is interpolated. It sits in claude-code's
   // cached prefix and codex's stable half.
   it('is byte-identical between two different sessions', async () => {
