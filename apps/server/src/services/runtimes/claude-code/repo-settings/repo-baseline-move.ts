@@ -21,7 +21,7 @@
  *
  * Anything else under `.claude/` (commands, skill text) does not count at the
  * two commits. A commit in between that touched anything under a `.claude/`
- * does, so a move past one asks (DOR-3298 M2).
+ * or an `.agents/` does, so a move past one asks (DOR-3298 M2).
  *
  * @module services/runtimes/claude-code/repo-settings/repo-baseline-move
  */
@@ -35,6 +35,14 @@ import { fileDiff } from './text-diff.js';
 
 /** Where every file the check reads lives, as git glob pathspecs. */
 const HOOK_PATHSPECS = ['**/.claude/**', '**/.mcp.json'];
+
+/**
+ * What a commit in between may not touch: the above, and `.agents/`, where
+ * Harness Sync keeps the skills `.claude/skills/<x>` links to. The baseline
+ * reads those links through (`repo-tree-links.ts`), so a skill's frontmatter
+ * changed there and reverted after would otherwise slip past M2.
+ */
+const BETWEEN_PATHSPECS = [...HOOK_PATHSPECS, '**/.agents/**'];
 
 /** A symlink's git mode. */
 const SYMLINK_MODE = '120000';
@@ -225,7 +233,7 @@ export async function hooksChangedBetween(
     ]),
   ];
   return touchedBetween(root, from, to, [
-    ...HOOK_PATHSPECS.map((spec) => `:(glob)${spec}`),
+    ...BETWEEN_PATHSPECS.map((spec) => `:(glob)${spec}`),
     ...scripts.map((rel) => `:(literal)${rel}`),
   ]);
 }

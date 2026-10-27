@@ -57,12 +57,12 @@ import { recordBaseline, recordedBaseline, type RecordedBaseline } from './repo-
 import {
   GitMissingError,
   isAncestor,
-  listTree,
   locateRepo,
   mergeBase,
   readBlob,
   resolveDefaultBranch,
 } from './repo-git.js';
+import { listTreeThroughLinks } from './repo-tree-links.js';
 
 /** Why there is no trusted commit to compare against. */
 export type UntrustedReason =
@@ -209,8 +209,10 @@ export async function baselineTrees(
   baseline: RepoBaseline,
   paths: readonly string[]
 ): Promise<BaselineTrees> {
+  // Through the links in each commit, as the worktree reads them: a skill
+  // Harness Sync links in from `.agents/skills` is otherwise never found.
   const trees = await Promise.all(
-    baseline.commits.map((commit) => listTree(baseline.root, commit, paths))
+    baseline.commits.map((commit) => listTreeThroughLinks(baseline.root, commit, paths))
   );
   return {
     trees,

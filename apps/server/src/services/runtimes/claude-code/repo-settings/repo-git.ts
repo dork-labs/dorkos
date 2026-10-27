@@ -244,13 +244,40 @@ export async function listTree(
   commit: string,
   paths: readonly string[]
 ): Promise<Map<string, { oid: string; mode: string }>> {
+  return lsTree(root, commit, paths, { recursive: true });
+}
+
+/**
+ * The entries at `paths` themselves in a commit, never what a folder holds: a
+ * folder comes back as a tree, a symlink as its link blob. What
+ * `repo-tree-links.ts` reads to find a symlinked folder on a path.
+ *
+ * @param root - The repo's working tree top.
+ * @param commit - The commit to read.
+ * @param paths - The entries to list, repo-relative.
+ */
+export async function listEntries(
+  root: string,
+  commit: string,
+  paths: readonly string[]
+): Promise<Map<string, { oid: string; mode: string }>> {
+  return lsTree(root, commit, paths, { recursive: false });
+}
+
+/** `ls-tree` over literal paths, parsed into path to id and mode. */
+async function lsTree(
+  root: string,
+  commit: string,
+  paths: readonly string[],
+  { recursive }: { recursive: boolean }
+): Promise<Map<string, { oid: string; mode: string }>> {
   const out = new Map<string, { oid: string; mode: string }>();
   if (paths.length === 0) return out;
   // Literal: a file named like pathspec magic (`:(exclude)…`) is just a name.
   const raw = await git(root, [
     '--literal-pathspecs',
     'ls-tree',
-    '-r',
+    ...(recursive ? ['-r'] : []),
     '-z',
     '--full-tree',
     commit,

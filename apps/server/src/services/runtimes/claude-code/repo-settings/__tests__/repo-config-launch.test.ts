@@ -9,6 +9,7 @@
  *
  * @vitest-environment node
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -235,8 +236,12 @@ describe('committed hooks', () => {
     await settle();
     expect(cards).toHaveLength(1);
     expect(cards[0].capabilityId).toBe('runtime.apply_repo_hooks');
-    expect(cards[0].summary).toContain('"Ops" edited ".claude/hooks/guard.mjs", a hook');
-    expect(cards[0].summary).toContain('Undoing the edit also turns them back on.');
+    expect(cards[0].summary).toContain(
+      'Its ".claude/hooks/guard.mjs" differs from the default branch. It\'s a hook script.'
+    );
+    expect(cards[0].summary).toContain(
+      'Matching the default branch again also turns them back on.'
+    );
     expect(cards[0].summary).not.toMatch(/git-guard/);
     expect(cards[0].detail).toContain('+console.log("allow");');
     expect(activity[0].summary).toBe('Paused repo hooks in wt: .claude/hooks/guard.mjs changed.');
@@ -341,7 +346,9 @@ describe('the card while it is open', () => {
       ...request('/x/wt', 'd'),
       names: ['.claude/settings.json', '.claude/hooks/a.mjs', '.claude/hooks/b.mjs'],
     });
-    expect(summary).toContain('"Ops" changed 3 hook files.');
+    expect(summary).toContain(
+      '3 files here differ from the default branch: hooks, settings or skill tools.'
+    );
     expect(summary).toContain('Your permission settings for "Ops" still apply.');
   });
 });
@@ -417,5 +424,62 @@ describe('trusting a default branch DorkOS has not pinned', () => {
 
     answer.outcome = 'granted';
     await vi.waitFor(() => expect(recordedSha()).toBe(moved));
+  });
+});
+
+describe('skills Harness Sync links in from .agents (QA, #3213 at 775e51d964)', () => {
+  const SKILL = '---\nname: opensrc\nallowed-tools: Bash(opensrc:*)\n---\nFetch sources.\n';
+
+  /** Commit a skill in `.agents/skills/<name>`, linked from `.claude/skills/<name>`, and re-pin. */
+  async function commitLinkedSkill(name: string, link = `../../.agents/skills/${name}`) {
+    writeFile(path.join(repo.main, '.agents/skills', name, 'SKILL.md'), SKILL);
+    fs.mkdirSync(path.join(repo.main, '.claude/skills'), { recursive: true });
+    fs.symlinkSync(link, path.join(repo.main, '.claude/skills', name));
+    repo.commit(`a linked skill: ${name}`);
+    store.harness = {};
+    await pinRepoBaseline(repo.main);
+  }
+
+  it('raises no card for a clean worktree whose skills are links, on any turn', async () => {
+    await commitLinkedSkill('opensrc');
+    const wt = repo.addWorktree('wt');
+    for (let turnNo = 0; turnNo < 2; turnNo++) {
+      const decision = await resolveRepoConfigForLaunch(turn(wt));
+      expect(decision.pauseHooks).toBe(false);
+    }
+    await settle();
+    expect(cards).toHaveLength(0);
+  });
+
+  it('still cards a skill frontmatter change made in .agents, through the link', async () => {
+    await commitLinkedSkill('opensrc');
+    const wt = repo.addWorktree('wt');
+    writeFile(
+      path.join(wt, '.agents/skills/opensrc/SKILL.md'),
+      SKILL.replace('Bash(opensrc:*)', 'Bash')
+    );
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    expect(decision.pauseHooks).toBe(true);
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].summary).toContain(
+      'Its ".claude/skills/opensrc/SKILL.md" differs from the default branch.'
+    );
+    expect(cards[0].summary).toContain("It sets a skill's allowed tools or hooks.");
+    expect(cards[0].summary).not.toMatch(/edited|a hook that runs/);
+  });
+
+  it('refuses a committed link that leads out of the repo: its skill counts as changed', async () => {
+    const outside = path.join(repo.root, 'outside', 'evil');
+    writeFile(path.join(outside, 'SKILL.md'), SKILL);
+    fs.mkdirSync(path.join(repo.main, '.claude/skills'), { recursive: true });
+    fs.symlinkSync(outside, path.join(repo.main, '.claude/skills/evil'));
+    fs.symlinkSync('../../../outside/evil', path.join(repo.main, '.claude/skills/evil-rel'));
+    repo.commit('links out of the repo');
+    store.harness = {};
+    await pinRepoBaseline(repo.main);
+    const wt = repo.addWorktree('wt');
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    expect(decision.pauseHooks).toBe(true);
   });
 });

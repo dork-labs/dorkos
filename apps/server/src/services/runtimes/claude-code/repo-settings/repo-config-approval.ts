@@ -106,7 +106,6 @@ export function worktreeName(cwd: string): string {
 export function summariseRepoConfig(request: RepoConfigRequest): string {
   const wt = quoteSummaryValue(worktreeName(request.cwd));
   const agent = request.agentName ? quoteSummaryValue(request.agentName) : undefined;
-  const who = agent ?? 'An agent';
   const lines: string[] = [];
   const reason = request.trust?.reason;
   if (request.trust) {
@@ -119,13 +118,15 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
         : "Approving trusts its default branch's hooks, shown here."
     );
   } else if (request.kind === 'hooks') {
+    // Where the change came from is this worktree (its branch or its edits),
+    // never necessarily an agent; what it is comes from the file's place.
     lines.push(`Repo hooks paused in ${wt}.`);
     lines.push(
       request.names.length === 1
-        ? `${who} edited ${quoteSummaryValue(request.names[0])}, a hook that runs on every tool call.`
-        : `${who} changed ${request.names.length} hook files.`
+        ? `Its ${quoteSummaryValue(request.names[0])} differs from the default branch. ${whatItSets(request.names[0]!)}`
+        : `${request.names.length} files here differ from the default branch: hooks, settings or skill tools.`
     );
-    lines.push("Until you approve it, none of this repo's hooks run in this worktree.");
+    lines.push("Until you approve it, this repo's hooks, skills and commands stay off here.");
   } else if (request.kind === 'local') {
     lines.push(`Local settings paused in ${wt}.`);
     lines.push(`Its settings.local.json sets ${request.names.join(', ')}, which nobody reviewed.`);
@@ -146,10 +147,24 @@ export function summariseRepoConfig(request: RepoConfigRequest): string {
     lines.push(
       request.kind === 'local'
         ? 'Deleting the file also ends the pause.'
-        : 'Undoing the edit also turns them back on.'
+        : 'Matching the default branch again also turns them back on.'
     );
   }
   return lines.join(' ');
+}
+
+/**
+ * What one changed file sets, by where it sits: a skill or subagent's
+ * frontmatter widens tools, it is not a hook.
+ */
+function whatItSets(rel: string): string {
+  const parts = rel.split('/');
+  const rest = parts.slice(parts.lastIndexOf('.claude') + 1);
+  if (parts.includes('.claude') && rest[0] === 'hooks') return "It's a hook script.";
+  if (rest[0] === 'settings.json') return 'It sets what runs on tool calls.';
+  if (rest[0] === 'skills') return "It sets a skill's allowed tools or hooks.";
+  if (rest[0] === 'agents') return "It sets a subagent's tools or hooks.";
+  return "It's a script a hook runs.";
 }
 
 /** Why a repo's default branch waits for a person, as a trust card says it. */
