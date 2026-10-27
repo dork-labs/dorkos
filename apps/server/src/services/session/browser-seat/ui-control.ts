@@ -178,7 +178,8 @@ export interface UiCallerContext {
   /**
    * True when the call arrived over the loopback runtime listener — an agent
    * reaching in from outside the DorkOS app, with no way to ask a person about
-   * an action that writes to their machine. See {@link ./ui-surface-consent}.
+   * an action that writes to their machine. Never true for Claude Code, whose
+   * own surface raises a card instead. See {@link ./ui-surface-consent}.
    */
   fromRuntimeSurface?: boolean;
 }
