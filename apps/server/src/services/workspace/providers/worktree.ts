@@ -48,8 +48,13 @@ export class WorktreeProvider implements WorkspaceProvider {
       [...gitDir, 'worktree', 'add', '-b', req.branch, '--end-of-options', req.path],
       req.source,
       // A person's own hooks run; for anyone else, git runs none of the
-      // source's hooks or fsmonitor in DorkOS's process (DOR-2335).
-      { config: req.personGit ? PERSON_REPO_GIT_CONFIG : internalGitConfig() }
+      // source's hooks or fsmonitor in DorkOS's process (DOR-2335). Either
+      // way the source's settings are audited first (DOR-3343): every agent
+      // worktree of it can write them.
+      {
+        config: req.personGit ? PERSON_REPO_GIT_CONFIG : internalGitConfig(),
+        audit: [req.source],
+      }
     );
     return { path: req.path, branch: req.branch };
   }
@@ -60,7 +65,11 @@ export class WorktreeProvider implements WorkspaceProvider {
     const gitDir = (await isBareRepository(workspace.source))
       ? [`--git-dir=${workspace.source}`]
       : [];
-    await runGit([...gitDir, ...args], workspace.source);
+    // `worktree remove` reads the source's settings and the worktree's own
+    // (`config.worktree`), which its agent can write: both are audited.
+    await runGit([...gitDir, ...args], workspace.source, {
+      audit: [workspace.source, workspace.path],
+    });
     // `worktree remove` leaves a non-empty dir only on failure; tidy any remnant.
     await fs.rm(workspace.path, { recursive: true, force: true });
   }

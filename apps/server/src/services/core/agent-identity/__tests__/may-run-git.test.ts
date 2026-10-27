@@ -18,7 +18,8 @@ import path from 'node:path';
 import { getGitStatus } from '../../git-status.js';
 import { runGitForSummary } from '../../../session/fleet/carry-over-summary.js';
 import { gitShowHead } from '../../../diff/git-baseline.js';
-import { createWorkspaceGatherer } from '../../../heartbeats/gatherers/workspace.js';
+import { createWorkspaceGatherer, runCommand } from '../../../heartbeats/gatherers/workspace.js';
+import { GitRepoConfigUnsafeError } from '@dorkos/shared/safe-git';
 import { scanWorktrees } from '../../../workspace/worktree-scan.js';
 import { fileLister } from '../../file-lister.js';
 import { mayRunGitHere, setGitGuardRoots } from '../may-run-git.js';
@@ -82,9 +83,13 @@ describe('mayRunGitHere: the git kill switch', () => {
       `#!/bin/sh\ntouch '${marker}'\nexec '${realGit}' "$@"\n`,
       { mode: 0o755 }
     );
-    fs.writeFileSync(path.join(standIns, 'gh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, {
-      mode: 0o755,
-    });
+    fs.writeFileSync(
+      path.join(standIns, 'gh'),
+      `#!/bin/sh\ntouch '${marker}' '${marker}.gh'\nexit 1\n`,
+      {
+        mode: 0o755,
+      }
+    );
   });
   afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
   beforeEach(() => {
@@ -313,5 +318,14 @@ describe('mayRunGitHere: the git kill switch', () => {
     expect(mayRunGitHere(path.join(main, 'sub'))).toBe(false);
     await expect(getGitStatus(main)).resolves.toEqual({ error: 'not_git_repo' });
     expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it('audits a repository before the heartbeat runs gh in it', async () => {
+    const project = repoThatRunsItsOwnSettings(path.join(scratch, 'gh-project'));
+    fs.rmSync(`${marker}.gh`, { force: true });
+    await expect(
+      runCommand('gh', ['pr', 'checks'], { cwd: project, signal: new AbortController().signal })
+    ).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    expect(fs.existsSync(`${marker}.gh`)).toBe(false);
   });
 });

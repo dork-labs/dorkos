@@ -32,7 +32,7 @@ const ALLOWED: Record<string, string> = {
   'apps/server/src/services/rooms/repo/room-repo-git.ts':
     "Rooms' own runner: pins git to the room's repository and audits its settings first.",
   'apps/server/src/services/workspace/providers/git.ts':
-    "Makes and removes workspaces from a source repository (clone, worktree add and remove): writes that need the source's transports and, for a person's own repository, their hooks. Its reads use the runner.",
+    "Makes and removes workspaces (clone, worktree add and remove): writes that need a person's own hooks, and a clone from an address its transports. Every command run in a source or a checkout audits that repository's settings first and starts git with the runner's minimal environment; only the clone itself keeps the server's, for an address's transports and logins, after auditing a source on this machine. Its reads use the runner.",
   'apps/server/src/services/marketplace/lib/git/git-runner.ts':
     "Fetches a package from its author's address into a new temporary folder, with the transport allowlist.",
   'apps/server/src/services/core/agent-templates/template-downloader.ts':

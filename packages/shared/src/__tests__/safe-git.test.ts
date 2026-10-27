@@ -229,4 +229,25 @@ describe('runSafeGit', () => {
       keys: ['filter.mark.clean'],
     });
   });
+
+  it("never recurses into a submodule, whose own settings it doesn't audit", async () => {
+    const sub = repo('sub-src');
+    git(sub, 'add', '.');
+    git(sub, '-c', 'user.email=a@example.com', '-c', 'user.name=a', 'commit', '-q', '-m', 'two');
+    const sup = repo('super');
+    git(sup, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'mod');
+    git(sup, '-c', 'user.email=a@example.com', '-c', 'user.name=a', 'commit', '-q', '-m', 'mod');
+    // What an agent can commit without touching the parent's settings: the
+    // gitlink and a nested repository, with no `submodule.*` keys to audit.
+    git(sup, 'config', '--remove-section', 'submodule.mod');
+    const inner = path.join(sup, 'mod');
+    plantFilter(inner);
+    fs.writeFileSync(path.join(inner, 'a.txt'), 'changed\n');
+    // The runner first: plain git refreshes the submodule's index, after
+    // which no read needs the filter again.
+    await expect(runSafeGit(['status', '--porcelain=v1'], sup)).resolves.toBeTypeOf('string');
+    expect(fs.existsSync(marker)).toBe(false);
+    git(sup, 'status', '--porcelain=v1');
+    expect(fs.existsSync(marker)).toBe(true);
+  });
 });

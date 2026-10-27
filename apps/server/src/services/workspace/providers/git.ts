@@ -10,7 +10,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
-import { runSafeGit } from '@dorkos/shared/safe-git';
+import { assertRepoConfigSafe, minimalGitEnv, runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import {
   gitConfigArgs,
@@ -84,6 +84,14 @@ export interface RunGitOptions {
    * error text sets `LC_ALL=C` here so the text is not translated.
    */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Folders whose repository settings must pass the audit before git runs
+   * (`assertRepoConfigSafe`, DOR-3343). When given, git also starts with the
+   * runner's minimal environment instead of the server's. Every command that
+   * makes or removes a workspace from a source repository passes it: the
+   * source shares its settings with every agent worktree made from it.
+   */
+  audit?: readonly string[];
 }
 
 /**
@@ -103,18 +111,23 @@ export const PERSON_REPO_GIT_CONFIG: readonly GitConfigEntry[] = SESSION_GIT_CON
 export async function runGit(
   args: string[],
   cwd: string,
-  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig(), env }: RunGitOptions = {}
+  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig(), env, audit }: RunGitOptions = {}
 ): Promise<string> {
+  if (audit) {
+    for (const dir of audit) await assertRepoConfigSafe(dir);
+  }
   const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
     cwd,
     timeout: timeoutMs,
-    env: {
-      // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/credential vars; only the transport allowlist and prompt are added.
-      ...process.env,
-      ...env,
-      GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
-      GIT_TERMINAL_PROMPT: '0',
-    },
+    env: audit
+      ? minimalGitEnv()
+      : {
+          // eslint-disable-next-line no-restricted-syntax -- a clone from an address needs PATH/HOME/credential vars; only the transport allowlist and prompt are added.
+          ...process.env,
+          ...env,
+          GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
+          GIT_TERMINAL_PROMPT: '0',
+        },
   });
   return stdout;
 }
@@ -129,7 +142,9 @@ export async function runGit(
  */
 export async function isBareRepository(dir: string): Promise<boolean> {
   try {
-    const out = await runGit([`--git-dir=${dir}`, 'rev-parse', '--is-bare-repository'], dir);
+    const out = await runGit([`--git-dir=${dir}`, 'rev-parse', '--is-bare-repository'], dir, {
+      audit: [dir],
+    });
     return out.trim() === 'true';
   } catch {
     return false;

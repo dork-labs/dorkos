@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initBoundary } from '../../../lib/boundary.js';
 import { CloneProvider } from '../providers/clone.js';
 import { runGit, UnsafeWorkspaceSourceError } from '../providers/git.js';
+import { GitRepoConfigUnsafeError } from '@dorkos/shared/safe-git';
 import { WorktreeProvider } from '../providers/worktree.js';
 
 /** Every git the code under test starts, counted by a pass-through mock. */
@@ -187,5 +188,60 @@ describe('a workspace source git could misread', () => {
     const req = request(source, 'ok');
     await new CloneProvider(root).create(req);
     expect(existsSync(path.join(req.path, '.git'))).toBe(true);
+  });
+});
+
+// The source shares its settings with every agent worktree made from it, so a
+// program they name must not run when a workspace is made or removed (DOR-3343).
+describe.skipIf(process.platform === 'win32')('a source whose settings name a program', () => {
+  /** A smudge filter on every file in the source, writing the marker when it runs. */
+  function plantSmudge(): void {
+    writeFileSync(path.join(source, '.gitattributes'), '* filter=mark\n');
+    writeFileSync(path.join(source, 'a.txt'), 'a\n');
+    git(['add', '.'], source);
+    git(['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'a'], source);
+    const filter = path.join(base, 'smudge.sh');
+    writeFileSync(filter, `#!/bin/sh\ntouch '${marker}'\ncat\n`);
+    chmodSync(filter, 0o755);
+    git(['config', 'filter.mark.smudge', filter], source);
+  }
+
+  it('fires under plain git, so the refusals below mean something', () => {
+    plantSmudge();
+    git(['worktree', 'add', '-q', '-b', 'plain', path.join(base, 'plain-tree')], source);
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  it.each([
+    ['anyone', false],
+    ['a person', true],
+  ])('refuses a worktree workspace %s asks for, and runs nothing', async (_who, personGit) => {
+    plantSmudge();
+    await expect(
+      new WorktreeProvider(root).create({ ...request(source, 'wt'), personGit })
+    ).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path.join(root, 'wt'))).toBe(false);
+  });
+
+  it('refuses to remove a worktree whose source has since gained one', async () => {
+    const provider = new WorktreeProvider(root);
+    const req = request(source, 'later');
+    await provider.create(req);
+    plantSmudge();
+    await expect(
+      provider.remove({ path: req.path, source } as Parameters<WorktreeProvider['remove']>[0], {
+        force: false,
+      })
+    ).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('refuses a clone of it', async () => {
+    plantSmudge();
+    await expect(new CloneProvider(root).create(request(source, 'cl'))).rejects.toBeInstanceOf(
+      GitRepoConfigUnsafeError
+    );
+    expect(existsSync(marker)).toBe(false);
   });
 });

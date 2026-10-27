@@ -14,7 +14,7 @@
  * @module services/heartbeats/gatherers/workspace
  */
 import { execFile } from 'node:child_process';
-import { runSafeGit } from '@dorkos/shared/safe-git';
+import { assertRepoConfigSafe, runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
@@ -30,20 +30,21 @@ export type RunCommand = (
 
 /**
  * The real command runner, bounded to two seconds. git goes through the
- * audited runner (`@dorkos/shared/safe-git`, DOR-3343); `gh` runs only where
- * DorkOS may run git at all.
+ * audited runner (`@dorkos/shared/safe-git`, DOR-3343). `gh` starts git
+ * itself, so it runs only where DorkOS may run git at all, and only after the
+ * same audit of the repository's settings.
  */
-export const runCommand: RunCommand = (command, args, { cwd, signal }) =>
-  command === 'git'
-    ? runSafeGit(args, cwd, { signal, timeoutMs: 2000, maxBuffer: 256 * 1024 })
-    : new Promise((resolve, reject) => {
-        execFile(
-          command,
-          args,
-          { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024 },
-          (err, stdout) => (err ? reject(err) : resolve(stdout))
-        );
-      });
+export const runCommand: RunCommand = async (command, args, { cwd, signal }) => {
+  if (command === 'git') {
+    return runSafeGit(args, cwd, { signal, timeoutMs: 2000, maxBuffer: 256 * 1024 });
+  }
+  if (command === 'gh') await assertRepoConfigSafe(cwd);
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024 }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout)
+    );
+  });
+};
 
 /** One cached `gh pr checks` answer. */
 interface CachedChecks {

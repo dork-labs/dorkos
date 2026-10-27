@@ -253,8 +253,16 @@ function nativeRealPath(dir: string): string {
   }
 }
 
-/** The minimal environment git runs with. */
-function safeGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.ProcessEnv {
+/**
+ * The minimal environment the runner starts git with: only what git needs to
+ * start, no system or global git settings, no lazy fetch, no transport, no
+ * prompt. Exported for the few git writes that audit first with
+ * {@link assertRepoConfigSafe} but cannot use the runner's read-only settings
+ * (making and removing a workspace).
+ *
+ * @param locale - `LC_ALL` and `LANG` for git, if the caller reads its error text.
+ */
+export function minimalGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.ProcessEnv {
   // eslint-disable-next-line no-restricted-syntax -- the runner picks the few variables git needs to start; nothing else of the server's environment reaches git.
   const parent = process.env;
   const env: NodeJS.ProcessEnv = {};
@@ -299,7 +307,7 @@ function unsafeKeysIn(file: string): Promise<string[]> {
       ['config', '--file', file, '--no-includes', '--name-only', '--list', '-z'],
       // Run from the file system root: `--file` reads only that file, and no
       // repository is found above `/` to add its own settings.
-      { cwd: path.parse(file).root, timeout: AUDIT_TIMEOUT_MS, env: safeGitEnv() },
+      { cwd: path.parse(file).root, timeout: AUDIT_TIMEOUT_MS, env: minimalGitEnv() },
       (err, stdout) => {
         if (err) return reject(new GitRepoConfigUnsafeError(file, []));
         resolve([
@@ -393,7 +401,7 @@ async function spawnSafeGit(
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
         signal: options.signal,
-        env: safeGitEnv(options.env),
+        env: minimalGitEnv(options.env),
         encoding,
       },
       (err, stdout, stderr) => {
