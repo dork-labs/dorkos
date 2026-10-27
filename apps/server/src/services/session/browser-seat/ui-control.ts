@@ -46,6 +46,7 @@ import {
   type CanvasApplyResult,
 } from '../../canvas/index.js';
 import { getRoomService, RoomError, type RoomService } from '../../rooms/index.js';
+import { shareRoomCanvasMedia } from '../../rooms/canvas/room-canvas-media.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
 // The leaf module rather than the `core/capabilities` barrel, for the reason
 // `./devtools-reads` states in full: the barrel closes an import cycle back to
@@ -270,13 +271,21 @@ export async function controlUi(
   // A refusal pushes NO event at all, so no room, no session and no viewer
   // ever sees an effect the model was told did not happen.
   if (roomTurn !== undefined) {
-    const applied = applyToRoomCanvas(roomTurn, caller.cwd, command);
+    const shared = await shareMediaOrRefuse(roomTurn.roomId, () =>
+      shareRoomCanvasMedia(getRoomService().authorRegistry, {
+        roomId: roomTurn.roomId,
+        authorId: roomTurn.authorId,
+        command,
+        cwd: roomTurn.cwd ?? caller.cwd,
+      })
+    );
+    const applied = applyToRoomCanvas(roomTurn, caller.cwd, shared);
     if (!applied.applied) {
       throw new CapabilityToolError({ success: false, target: 'room', reason: applied.reason });
     }
     emitToSession(sessionId, {
       type: 'ui_command',
-      command,
+      command: shared,
       // The stamp the room turn's collector reads. It exists for one decision —
       // "did the handler already apply this?" — and the client never reads it.
       // Without it the collector would apply the same command a second time.
@@ -592,14 +601,14 @@ function sessionUiStateReport(sessionId: string): UiStateReport {
  * @returns What was written, or why nothing was.
  * @throws {CapabilityToolError} On every refusal.
  */
-function applyToTargetedRoom(input: {
+async function applyToTargetedRoom(input: {
   sessionId: string;
   roomId: string;
   command: UiCommand;
   roomTurn: UiRoomTurn | undefined;
   cwd?: string;
-}): Record<string, unknown> {
-  const { sessionId, roomId, command, roomTurn } = input;
+}): Promise<Record<string, unknown>> {
+  const { sessionId, roomId, roomTurn } = input;
   let rooms: RoomService;
   try {
     rooms = getRoomService();
@@ -630,6 +639,30 @@ function applyToTargetedRoom(input: {
   }
 
   const cwd = roomTurn?.cwd ?? input.cwd;
+  // Membership BEFORE a local file is copied into the room's folder, so a room
+  // this agent is not in never receives a byte from it. The writer checks again,
+  // and refuses an archived room, which therefore gets no copy either.
+  let archived: boolean;
+  try {
+    archived = rooms.requireMembership(roomId, authorId).archived;
+  } catch {
+    throw new CapabilityToolError({
+      success: false,
+      target: 'room',
+      roomId,
+      reason: TARGET_ROOM_NOT_FOUND_MESSAGE,
+    });
+  }
+  const command = archived
+    ? input.command
+    : await shareMediaOrRefuse(roomId, () =>
+        shareRoomCanvasMedia(rooms.authorRegistry, {
+          roomId,
+          authorId,
+          command: input.command,
+          cwd,
+        })
+      );
   try {
     const applied = rooms.canvas.applyTargeted({
       sessionId,
@@ -656,7 +689,7 @@ function applyToTargetedRoom(input: {
       success: true,
       target: 'room',
       roomId,
-      action: command.action,
+      action: input.command.action,
       documentId: applied.documentId,
       rev: applied.rev,
       viewers: applied.viewers,
@@ -671,6 +704,40 @@ function applyToTargetedRoom(input: {
         err instanceof RoomError && err.code === 'ROOM_NOT_FOUND'
           ? TARGET_ROOM_NOT_FOUND_MESSAGE
           : 'That room’s canvas could not be reached just now.',
+    });
+  }
+}
+
+/**
+ * Copy a local picture, PDF or other media file a canvas command names into the
+ * room, so every member can see it, or refuse out loud.
+ *
+ * Without this the document reached the table naming a file in the agent's own
+ * folder, every other member saw a card instead of the picture, and the agent
+ * was told it worked. A file that is not the agent's, is too big, or is not a
+ * kind the canvas shows is refused here with the reason, before anything is
+ * written.
+ *
+ * @param roomId - The room, for the refusal.
+ * @param share - The share itself.
+ * @returns The command to apply, pointing at the room's copy.
+ * @throws {CapabilityToolError} With the sentence the agent needs.
+ */
+async function shareMediaOrRefuse(
+  roomId: string,
+  share: () => Promise<UiCommand>
+): Promise<UiCommand> {
+  try {
+    return await share();
+  } catch (err) {
+    throw new CapabilityToolError({
+      success: false,
+      target: 'room',
+      roomId,
+      reason:
+        err instanceof RoomError
+          ? err.message
+          : 'That file could not be put on the room’s canvas just now.',
     });
   }
 }

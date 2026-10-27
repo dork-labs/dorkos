@@ -168,13 +168,18 @@ async function resolveOwnPath(
 /**
  * Read one named file, refusing anything outside the agent's own folders.
  *
+ * Exported for the room canvas, which shares a local picture or PDF by the same
+ * rule (`room-canvas-media.ts`): one answer to "which files are this agent's".
+ *
  * @param roots - The agent's working directory, its own copies and the rooms directory.
  * @param named - The path the agent wrote, absolute or relative to the working directory.
+ * @param doing - What the agent was trying to do, for the refusal: "attach it".
  * @returns The bytes and the name to store them under.
  */
-async function readOwnFile(
+export async function readOwnFile(
   roots: { cwd: string; ownCopies: readonly string[]; roomsDir?: string },
-  named: string
+  named: string,
+  doing = 'attach it'
 ): Promise<{ bytes: Buffer; name: string }> {
   const label = path.basename(named) || named;
   let resolved: string;
@@ -185,7 +190,7 @@ async function readOwnFile(
       throw new RoomError(
         'ATTACHMENT_PATH_REFUSED',
         `${label} is not in your own folder or your own copy of a room's files, so you cannot ` +
-          'attach it. Copy it into one of those first, then attach it from there.'
+          `${doing}. Copy it into one of those first, then ${doing} from there.`
       );
     }
     throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be opened.`);
