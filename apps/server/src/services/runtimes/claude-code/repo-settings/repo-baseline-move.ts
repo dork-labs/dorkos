@@ -19,7 +19,9 @@
  * - subagent and skill files, by their `hooks` and `mcpServers` frontmatter;
  * - the repo files any of those commands name.
  *
- * Anything else under `.claude/` (commands, skill text) does not count.
+ * Anything else under `.claude/` (commands, skill text) does not count at the
+ * two commits. A commit in between that touched anything under a `.claude/`
+ * does, so a move past one asks (DOR-3298 M2).
  *
  * @module services/runtimes/claude-code/repo-settings/repo-baseline-move
  */
@@ -212,8 +214,10 @@ export async function hooksChangedBetween(
   // The endpoints agree, but a commit in between may have run something: an
   // agent commits a hook on top of the pinned commit, then "reverts" it on the
   // way to the tip, and checks the middle out (DOR-3298 M2). Any commit in the
-  // range that touched a hook script, a settings file, an `.mcp.json` or a
-  // script those name counts as a change.
+  // range that touched anything under a `.claude/`, an `.mcp.json` or a script
+  // those name counts as a change: wider than the endpoints, because a commit
+  // in between becomes a trusted fork point, and a subagent, skill or command
+  // added there and reverted after carries hooks and tools of its own.
   const scripts = [
     ...new Set([
       ...(await reachedAt(root, from, dorkHome)),
@@ -221,18 +225,10 @@ export async function hooksChangedBetween(
     ]),
   ];
   return touchedBetween(root, from, to, [
-    ...BETWEEN_PATHSPECS,
+    ...HOOK_PATHSPECS.map((spec) => `:(glob)${spec}`),
     ...scripts.map((rel) => `:(literal)${rel}`),
   ]);
 }
-
-/** The hook-running paths a commit in between may not touch, as git pathspecs. */
-const BETWEEN_PATHSPECS = [
-  ':(glob)**/.claude/hooks/**',
-  ':(glob)**/.claude/settings.json',
-  ':(glob)**/.claude/settings.local.json',
-  ':(glob)**/.mcp.json',
-];
 
 /** The scripts a commit's hooks reach, repo-relative. */
 async function reachedAt(root: string, commit: string, dorkHome: string): Promise<string[]> {

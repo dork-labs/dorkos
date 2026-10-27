@@ -6,8 +6,9 @@
  *
  * What it holds until then, for a repo an agent can write (config included):
  * no lazy fetch of a missing object, no transport at all, no ssh, credential or
- * ask-pass program, no file-system monitor, no hooks, and an environment of
- * only `PATH`, `HOME` and the locale. A read that would need any of them fails,
+ * ask-pass program, no file-system monitor, no hooks, no system or personal git
+ * config, and an environment of only `PATH`, `HOME` and the locale. A read that
+ * would need any of them fails,
  * and the caller pauses the repo. What it does NOT do, and the runner will: the
  * key-by-key audit of the repo's own settings, which refuses a filter, driver
  * or partial-clone remote before git starts.
@@ -45,8 +46,9 @@ const SAFE_GIT_ARGS = [
   'credential.helper=',
   '-c',
   'core.askPass=',
+  // Empty, not `false`: before git 2.36, `false` is a program name run from PATH.
   '-c',
-  'core.fsmonitor=false',
+  'core.fsmonitor=',
   '-c',
   'core.hooksPath=/dev/null',
   '-c',
@@ -57,13 +59,17 @@ const SAFE_GIT_ARGS = [
 
 /** The whole environment git gets: enough to start, nothing of the server's. */
 function safeGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.ProcessEnv {
-  // eslint-disable-next-line no-restricted-syntax -- git needs PATH to be found and HOME for the person's own global config; nothing else of the server's environment is passed.
+  // eslint-disable-next-line no-restricted-syntax -- git needs PATH to be found and HOME to start; nothing else of the server's environment is passed.
   const { PATH, HOME } = process.env;
   return {
     ...(PATH ? { PATH } : {}),
     ...(HOME ? { HOME } : {}),
     LC_ALL: locale.LC_ALL ?? 'C',
     ...(locale.LANG ? { LANG: locale.LANG } : {}),
+    // Neither the system's nor the person's own config, as the runner: either
+    // can `include.path` anything, and these reads need neither.
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
     GIT_NO_LAZY_FETCH: '1',
     GIT_ALLOW_PROTOCOL: '',
     GIT_TERMINAL_PROMPT: '0',
