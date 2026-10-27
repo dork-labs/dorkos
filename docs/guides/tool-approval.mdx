@@ -193,7 +193,7 @@ A chat an agent starts with the `session_start` tool runs at the same setting as
 
 ### Never ask
 
-**Never ask** is a switch inside the **Ask first** stop, for Claude Code chats. With it on, the agent runs only the tools your Claude Code settings already allow (the `allow` rules in the project's `.claude/settings.json` and `.claude/settings.local.json`, and in your own Claude Code user settings), and refuses everything else. It never stops to ask you, and it never gets to do more than Ask first lets it.
+**Never ask** is a switch inside the **Ask first** stop, for Claude Code chats. With it on, the agent runs only the tools your Claude Code settings already allow (the `allow` rules in the project's `.claude/settings.json` and `.claude/settings.local.json`, and in your own Claude Code user settings), and refuses the tools they don't allow. It never stops to ask you, and it never gets to do more than Ask first lets it. Reading inside its own folder is not a tool you can take away: Claude Code still runs searches there, so keep secrets outside the folder.
 
 Use it for an agent that answers people on its own, where nobody is there to approve anything. A refused tool shows up in the chat as a blocked step. DorkOS's own safe tools still run, as they do in every mode: the agent can read and post in its rooms and check how much of an account is used. In a turn a stranger's message started, it can't send to another chat or read your accounts.
 
