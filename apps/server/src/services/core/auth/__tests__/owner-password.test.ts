@@ -83,6 +83,34 @@ describe('checkOwnerPassword', () => {
     expect(ownerPasswordRetryAfterMs(now)).toBe(0);
   });
 
+  // Security, #3212: the slot is claimed before the slow hash check, so guesses sent in parallel
+  // do not all slip past the wait while the first one is still being checked.
+  it('checks only one of many wrong passwords sent at once', async () => {
+    let calls = 0;
+    const slow = deps({
+      verifier: async () => ({
+        storedHash: async () => hash,
+        verify: async () => {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return false;
+        },
+        maxLength: 128,
+      }),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => checkOwnerPassword(`guess ${i}`, slow))
+    );
+    expect(calls).toBe(1);
+    expect(results.filter((r) => r === 'wrong')).toHaveLength(1);
+    expect(results.filter((r) => r === 'too-many-attempts')).toHaveLength(9);
+  });
+
+  it('does not count a check that found no password to compare against', async () => {
+    expect(await checkOwnerPassword('x', deps({ verifier: async () => null }))).toBe('no-password');
+    expect(ownerPasswordRetryAfterMs(now)).toBe(0);
+  });
+
   it('forgets wrong passwords older than the window', async () => {
     expect(await checkOwnerPassword('guess', deps())).toBe('wrong');
     now += OWNER_PASSWORD_FAILURE_WINDOW_MS;

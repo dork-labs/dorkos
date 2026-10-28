@@ -139,12 +139,27 @@ export async function checkOwnerPassword(
   if (password === undefined || password === '') return 'required';
   const ownerId = deps.ownerId();
   if (!ownerId) return 'no-owner';
+  // Claim the slot before the first `await` (Security, #3212): the hash check
+  // takes tens of milliseconds, and a failure counted only after it let every
+  // request that arrived meanwhile pass the wait above, so parallel guesses
+  // skipped the delay. Counted as a wrong password until it proves right.
+  failures.push(now);
+  const release = () => {
+    const at = failures.lastIndexOf(now);
+    if (at !== -1) failures.splice(at, 1);
+  };
   let matched = false;
   try {
     const verifier = await deps.verifier();
-    if (!verifier) return 'no-password';
+    if (!verifier) {
+      release();
+      return 'no-password';
+    }
     const hash = await verifier.storedHash(ownerId);
-    if (!hash) return 'no-password';
+    if (!hash) {
+      release();
+      return 'no-password';
+    }
     matched = password.length <= verifier.maxLength && (await verifier.verify({ hash, password }));
   } catch (error) {
     logger.warn('[Auth] The owner password could not be checked', {
@@ -155,7 +170,6 @@ export async function checkOwnerPassword(
     failures = [];
     return 'ok';
   }
-  failures.push(now);
   logger.warn('[Auth] A wrong owner password was given for a step-up');
   return 'wrong';
 }
