@@ -81,6 +81,9 @@ export interface PermissiveDefault {
  */
 export const NO_RISK_DEFAULTS: readonly string[] = [
   'version',
+  // Absent by default: no old approval waits to be bound, so it binds nothing
+  // and approves nothing (DOR-3068). Only the '0.126.1' migration writes it.
+  'extensions.legacyUnsourced',
   'server.port',
   'server.cwd',
   'server.boundary',
@@ -303,6 +306,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // Ships ABSENT, which means none: no mini app reaches any room until a
   // person picks one. A wipe empties it, which is stricter, never looser.
   'extensions.roomAccess',
+  // The agent each mini app may forward the person's comments to (DOR-3325).
+  // Ships ABSENT, which means none: no mini app forwards anything until a
+  // person picks an agent. A wipe empties it, which is stricter, never looser.
+  'extensions.forwardAgents',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,
@@ -463,6 +470,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // Wiped, every agent is pinned again on its next turn to what its folder
+  // holds then (DOR-3068). That is the one door a wipe opens, and only to
+  // whatever was already on disk when the person wiped it.
+  'harness.approvedFolderConfig': [],
+  'harness.approvedFolderConfigParts': {},
+  'harness.refusedFolderConfig': [],
   // No agent's own folder allow list applies until a person approves those exact
   // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
   'permissions.approvedFolderAllows': [],
@@ -547,6 +560,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
  * text should be softened.
  */
 export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = {
+  'harness.folderConfigPinned': {
+    value: false,
+    reason:
+      "On its first start with the folder settings pin (DOR-3068), DorkOS pins the agents that already existed, as they stand, so a person's own agents don't all stop at once; only agents seen after that, whose homes run anything, wait for a person. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
+  },
   'runtimes.claudeCode.defaultAccountOnlyProjects': {
     value: null,
     reason:

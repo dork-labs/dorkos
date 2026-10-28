@@ -746,6 +746,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
   });
 
   it('sends the approval and confirms it, so one click is the whole job', async () => {
+    const digest = `sha256:${'b'.repeat(64)}`;
     mockFetch({
       '/api/extensions': [
         makeExtension({
@@ -753,6 +754,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
           origin: 'user',
           hasServerEntry: true,
           approvedToRun: false,
+          digest,
         }),
       ],
       '/api/extensions/full-stack/approve': {
@@ -781,9 +783,11 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     const approveCall = vi
       .mocked(fetch)
       .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/full-stack/approve'));
+    // And the files it was drawn for (DOR-3068), which the server requires.
     expect(JSON.parse(String((approveCall?.[1] as RequestInit | undefined)?.body))).toEqual({
       version: '1.0.0',
       plugin: null,
+      expectedDigest: digest,
     });
   });
 

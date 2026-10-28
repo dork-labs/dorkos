@@ -4,20 +4,14 @@ import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
-import { resolveProposerName } from '../../../tasks/task-provenance.js';
+import {
+  createCreateExtensionHandler,
+  type ExtensionCreatorResolver,
+} from './extension-create-tool.js';
 
-/**
- * Which session is creating an extension, read at CALL time (the SDK rekeys a
- * session mid-first-turn, as `TaskProvenanceResolver` explains).
- *
- * Present only on the in-session server, where the caller is one of our
- * agents. Absent on the external `/mcp` server, whose caller cannot be told
- * from an outsider, so nothing it creates is approved without a person.
- */
-export type ExtensionCreatorResolver = () => {
-  /** The calling session's working directory, the key its agent's name resolves from. */
-  agentPath?: string;
-};
+// `create_extension`'s handler lives beside this file; both are named from here
+// as before, so callers and tests keep one import (DOR-3068).
+export { createCreateExtensionHandler, type ExtensionCreatorResolver };
 
 /**
  * Full ExtensionAPI reference as markdown with TypeScript code blocks.
@@ -466,69 +460,6 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
 }
 
 /**
- * Handler factory for `create_extension` — scaffolds a new extension with
- * manifest, starter code, compiles, and enables it in one step.
- *
- * On the in-session server the caller is one of our agents, so a Trusted
- * install approves the new copy as it is created (ADR 261006-225605) and the
- * approval is recorded in Activity as `extension.auto_approved`, naming the
- * agent, the copy and the permissions it covers.
- *
- * @param deps - Shared MCP tool dependencies
- * @param resolveCreator - Who is creating it; absent on the external `/mcp` server.
- */
-export function createCreateExtensionHandler(
-  deps: McpToolDeps,
-  resolveCreator?: ExtensionCreatorResolver
-) {
-  return async (args: {
-    name: string;
-    description?: string;
-    template?: string;
-    scope?: string;
-  }) => {
-    const manager = requireExtensionManager(deps);
-    if (!manager) {
-      return jsonContent({ error: 'Extension system is not available' }, true);
-    }
-
-    const template = (args.template ?? 'dashboard-card') as
-      'dashboard-card' | 'right-panel-tab' | 'command' | 'settings-panel' | 'data-provider';
-    const scope = (args.scope ?? 'global') as 'global' | 'local';
-
-    try {
-      const result = await manager.createExtension({
-        name: args.name,
-        description: args.description,
-        template,
-        scope,
-        approveIfTrusted: resolveCreator !== undefined,
-      });
-      if (result.autoApproved) {
-        const agentPath = resolveCreator?.().agentPath;
-        const name = (await resolveProposerName(agentPath)) ?? 'An agent';
-        await deps.activityService?.emit({
-          actorType: 'agent',
-          actorLabel: name,
-          ...(agentPath ? { actorId: agentPath } : {}),
-          category: 'config',
-          eventType: 'extension.auto_approved',
-          resourceType: 'extension',
-          resourceId: result.id,
-          resourceLabel: result.id,
-          summary: `${name} created extension ${result.id}, approved to run because agents are trusted`,
-          metadata: { path: result.path, permissions: result.autoApproved },
-        });
-      }
-      return jsonContent(result);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Extension creation failed';
-      return jsonContent({ error: message }, true);
-    }
-  };
-}
-
-/**
  * Handler factory for `test_extension` — compiles an extension and activates
  * it against a mock API to verify it loads without errors.
  *
@@ -591,7 +522,7 @@ export function extensionToolDefinitions(
     ),
     tool(
       'list_extensions',
-      'List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local (.dork/extensions/ in active CWD) extensions. Includes hasServerEntry, hasDataProxy, and serverStatus fields.',
+      "List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local extensions (.dork/extensions/ in the active CWD, in known projects, and in every agent's own folder). Includes hasServerEntry, hasDataProxy, and serverStatus fields.",
       {},
       createListExtensionsHandler(deps)
     ),
@@ -604,7 +535,10 @@ export function extensionToolDefinitions(
     tool(
       'create_extension',
       'Scaffold a new DorkOS extension with manifest and starter code. Creates the directory, writes extension.json and index.ts, compiles, and enables the extension in one step. ' +
-        'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs.',
+        'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs. ' +
+        'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
+        'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
+        'Edits to its screen code (what the app shows) still wait for the person to approve them.',
       {
         name: z
           .string()
@@ -621,7 +555,8 @@ export function extensionToolDefinitions(
           .enum(['global', 'local'])
           .optional()
           .describe(
-            'Install scope: global (~/.dork/extensions/) or local (.dork/extensions/ in CWD). Default: global'
+            'Install scope: global (~/.dork/extensions/) or local (.dork/extensions/ in CWD). Default: global. ' +
+              "Ignored in an agent's own chat, which always creates it in that agent's folder."
           ),
       },
       createCreateExtensionHandler(deps, resolveCreator)

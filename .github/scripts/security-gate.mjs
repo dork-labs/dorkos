@@ -63,8 +63,18 @@ export function groupMembers(entries, group) {
   return members;
 }
 
-function hasApproval(review, sensitive) {
-  return review?.state === 'success' && (!sensitive || review.description !== 'no security paths');
+function hasApproval(review, sensitive, botUserId) {
+  if (review?.state !== 'success') return false;
+  // Preserve the trusted initializer's automatic classification, never a user's
+  // imitation. Sensitive approvals always require the dedicated App.
+  if (!sensitive && review.description === 'no security paths')
+    return review.creator?.login === 'github-actions[bot]';
+  return Boolean(
+    Number.isSafeInteger(Number(botUserId)) &&
+    Number(botUserId) > 0 &&
+    review.creator?.id === Number(botUserId) &&
+    review.description !== 'no security paths'
+  );
 }
 
 function validateFiles(files) {
@@ -101,7 +111,7 @@ export async function checkPullRequest(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true } = {}
+  { write = false, requireApproval = true, botUserId } = {}
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
@@ -109,9 +119,14 @@ export async function checkPullRequest(
   if (pr.head.sha !== sha) throw new Error(`PR #${number} head moved`);
   const sensitive = await sensitiveDiff(api, number, pr, pattern);
   let review = latestReview(await api.statuses(sha));
-  if (write && (!sensitive || !hasApproval(review, sensitive))) {
+  if (write && (!sensitive || !hasApproval(review, sensitive, botUserId))) {
     const state = sensitive ? 'pending' : 'success';
-    if (review?.state !== state || (!sensitive && review?.description !== 'no security paths')) {
+    if (
+      review?.state !== state ||
+      (!sensitive &&
+        (review?.description !== 'no security paths' ||
+          review?.creator?.login !== 'github-actions[bot]'))
+    ) {
       review = await api.setStatus(
         sha,
         state,
@@ -127,7 +142,7 @@ export async function checkPullRequest(
   // Only ABSENT status permits computed clearance. Never bypass an explicit
   // pending/failure (or reused automatic approval on a now-sensitive diff).
   const computed = !write && !review && !sensitive;
-  if (requireApproval && !computed && !hasApproval(review, sensitive))
+  if (requireApproval && !computed && !hasApproval(review, sensitive, botUserId))
     throw new Error(
       `PR #${number}: security-review pending on ${sha}; Security must approve, then rerun security-gate`
     );
@@ -161,11 +176,11 @@ async function audit(api, number, sha, review) {
   if (previous?.body.includes(marker)) return;
   await api.comment(
     number,
-    `Security gate: \`${CONTEXT} = ${review?.state ?? 'missing'}\` on \`${sha}\`, set by @${review?.creator?.login ?? 'unknown'}. Status id: ${review?.id ?? 'unknown'}.\n${marker}\n\nTamper-evident, not tamper-proof: shared GitHub credentials can post this status. The security-reviewed label is a human signal only.`
+    `Security gate: \`${CONTEXT} = ${review?.state ?? 'missing'}\` on \`${sha}\`, set by @${review?.creator?.login ?? 'unknown'}. Status id: ${review?.id ?? 'unknown'}.\n${marker}\n\nSensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.`
   );
 }
 
-export async function checkMergeGroup(api, event, pattern) {
+export async function checkMergeGroup(api, event, pattern, botUserId) {
   const group = event.merge_group;
   const members = groupMembers(await api.queue(group.base_ref), group);
   const results = [];
@@ -184,7 +199,7 @@ export async function checkMergeGroup(api, event, pattern) {
     );
     const review = latestReview(await api.statuses(sha));
     const computed = !review && !sensitive;
-    if (!computed && !hasApproval(review, sensitive))
+    if (!computed && !hasApproval(review, sensitive, botUserId))
       throw new Error(
         `PR #${number}: no security-review success on ${sha}; pending Security approval`
       );
@@ -289,21 +304,37 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     );
     if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
       if (!process.env.SECURITY_PATH_PATTERN) throw new Error('Security path list missing');
-      console.log(await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN));
+      console.log(
+        await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN, {
+          botUserId: process.env.SECURITY_APPROVAL_BOT_USER_ID,
+        })
+      );
     } else if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
       // This event checks out ONLY the trusted base SHA, never PR code.
       // This writer has its own workflow, never the required verifier's identity.
       if (process.env.SECURITY_GATE_MODE === 'initialize') {
         const pattern = securityPathPattern();
+        const trustedWorkflow = readFileSync(
+          new URL('../workflows/security-gate.yml', import.meta.url),
+          'utf8'
+        );
         await checkPullRequest(api, event, pattern, {
           write: true,
           requireApproval: false,
+          botUserId: /^ {2}SECURITY_APPROVAL_BOT_USER_ID: '([^']+)'$/m.exec(trustedWorkflow)?.[1],
         });
       } else {
         throw new Error('Target event requires explicit initializer mode');
       }
     } else if (process.env.GITHUB_EVENT_NAME === 'merge_group') {
-      console.log(await checkMergeGroup(api, event, process.env.SECURITY_PATH_PATTERN));
+      console.log(
+        await checkMergeGroup(
+          api,
+          event,
+          process.env.SECURITY_PATH_PATTERN,
+          process.env.SECURITY_APPROVAL_BOT_USER_ID
+        )
+      );
     } else {
       throw new Error('Unsupported security gate event');
     }

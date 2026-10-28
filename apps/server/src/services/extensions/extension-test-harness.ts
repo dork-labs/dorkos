@@ -17,8 +17,10 @@ import type { TestExtensionResult } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   describeExtensionLoadRefusal,
+  mayLoadClientHalf,
   mayRunExtensionCode,
 } from './extension-load-policy.js';
+import { bundleDigestOf } from './pin/extension-path-trust.js';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
@@ -242,6 +244,17 @@ export async function testClientExtension(
       id,
       phase: 'compilation',
       error: 'Compiled bundle not found in cache',
+    };
+  }
+
+  // Step 2b: The bundle runs here, in this process, so new screen code waits
+  // for a person even when path trust keeps the server half running (DOR-3068).
+  if (!mayLoadClientHalf(record, configManager.get('extensions'), bundleDigestOf(bundle))) {
+    return {
+      status: 'error',
+      id,
+      phase: 'approval',
+      error: describeExtensionLoadRefusal(id),
     };
   }
 

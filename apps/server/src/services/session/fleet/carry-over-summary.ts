@@ -23,7 +23,7 @@ import { promisify } from 'node:util';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { internalGitArgs } from '../../../lib/git-safety.js';
-import { isInsideRoomsDir } from '../../core/agent-identity/index.js';
+import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
 
 /** How many recent user and assistant messages the summary keeps. */
@@ -238,14 +238,14 @@ export interface SummaryDeps {
 const execFileAsync = promisify(execFile);
 
 /**
- * Run git through the repo's hardened arguments, bounded in time, never inside
- * a room's files, and answer `undefined` on any failure.
+ * Run git through the repo's hardened arguments, bounded in time, never in an
+ * agent folder (DOR-3343), and answer `undefined` on any failure.
  *
  * @param cwd - The folder.
  * @param args - The git arguments.
  */
 export async function runGitForSummary(cwd: string, args: string[]): Promise<string | undefined> {
-  if (isInsideRoomsDir(cwd)) return undefined;
+  if (!mayRunGitHere(cwd)) return undefined;
   try {
     const { stdout } = await execFileAsync('git', [...internalGitArgs(), ...args], {
       cwd,

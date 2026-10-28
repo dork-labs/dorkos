@@ -11,6 +11,7 @@
  * @module services/tasks/run-terminal-broadcaster
  */
 import { wakeAgent } from '../heartbeats/event-wakes.js';
+import { logger } from '../../lib/logger.js';
 import type { TaskRun } from '@dorkos/shared/types';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { RunTerminalListener } from './task-store.js';
@@ -50,6 +51,27 @@ export function broadcastRunTerminal(run: TaskRun): void {
 }
 
 /**
+ * A schedule's failing streak, or `undefined` when there is no lookup or the
+ * lookup throws. Never throws itself: the run-terminal listener runs every
+ * consumer for a run, and one broken read must not skip the rest.
+ *
+ * @param streakOf - The lookup, when the caller wired one.
+ * @param scheduleId - The schedule the run belongs to.
+ */
+function readStreak(
+  streakOf: ((scheduleId: string) => number) | undefined,
+  scheduleId: string
+): number | undefined {
+  if (!streakOf) return undefined;
+  try {
+    return streakOf(scheduleId);
+  } catch (err) {
+    logger.warn(`run-terminal: could not read the failing streak of ${scheduleId}`, err);
+    return undefined;
+  }
+}
+
+/**
  * Build the run-terminal listener that `index.ts` registers on the TaskStore.
  *
  * Composes the three consumers that ride the one terminal seam:
@@ -70,15 +92,22 @@ export function broadcastRunTerminal(run: TaskRun): void {
  *   null when the feed is unavailable (the emit is then a no-op).
  * @param lateOutput - The store and runtime lookup the fourth consumer needs;
  *   omitted, a run's later turns reach its session but not its record.
+ * @param streakOf - How many finished runs of a schedule have failed in a row
+ *   (`Task.health.streak`); omitted, every failing run raises a notice.
  * @returns A listener that runs every terminal consumer for one run.
  */
 export function createRunTerminalListener(
   activityService: ActivityService | null,
-  lateOutput?: LateRunOutputDeps
+  lateOutput?: LateRunOutputDeps,
+  streakOf?: (scheduleId: string) => number
 ): RunTerminalListener {
   return (run, task) => {
     broadcastRunTerminal(run);
-    void notifyRunCompleted(run, task);
+    // How long the schedule has been failing, this run included, so a failing
+    // streak raises one notice rather than one per run (DOR-3123). A lookup
+    // that throws must not cost the consumers below, so it falls back to
+    // "no streak known", which notifies every run, as before.
+    void notifyRunCompleted(run, task, readStreak(streakOf, run.scheduleId));
     emitTerminalRunActivity(activityService, task, run);
     if (lateOutput) followLateRunOutput(lateOutput, run);
     // A run of a schedule the agent owns that failed or stopped for a person

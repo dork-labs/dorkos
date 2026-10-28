@@ -425,6 +425,23 @@ interface Answer {
 }
 
 /** Send one request with `node:http` and return what it answered, whatever the status. */
+/**
+ * Approve an extension as the app does: the yes names the version and the
+ * files its waiting card showed (DOR-3068), so a copy that changed since is
+ * refused rather than approved unseen.
+ */
+async function approveAsThePerson(server: ComposedServer | undefined, id: string): Promise<Answer> {
+  const pending = await call(server, 'GET', '/api/extensions/pending-approvals');
+  const card = (
+    pending.json as { approvals: { id: string; version: string; digest?: string }[] }
+  ).approvals.find((approval) => approval.id === id);
+  expect(card?.digest, `no waiting card with a digest for ${id}`).toMatch(/^sha256:/);
+  return call(server, 'POST', `/api/extensions/${id}/approve`, {
+    version: card!.version,
+    expectedDigest: card!.digest,
+  });
+}
+
 function call(
   server: ComposedServer | undefined,
   method: string,
@@ -660,7 +677,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
 
   it('approves each extension for a person, and starts it', async () => {
     for (const id of [ROUTED, PROXIED, ISOLATED]) {
-      const approved = await call(server, 'POST', `/api/extensions/${id}/approve`, {});
+      const approved = await approveAsThePerson(server, id);
       expect(approved.status, approved.text).toBe(200);
       expect(approved.json.extension).toMatchObject({ id, approvedToRun: true });
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
@@ -1127,7 +1144,8 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
 
   it('starts each once a person approves it', async () => {
     for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
-      await setup(server, 'POST', `/api/extensions/${id}/approve`, {});
+      const approved = await approveAsThePerson(server, id);
+      expect(approved.status, approved.text).toBe(200);
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
       expect(started.status, started.text).toBe(200);
     }

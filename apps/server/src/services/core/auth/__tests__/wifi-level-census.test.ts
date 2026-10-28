@@ -189,6 +189,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'POST /api/rooms/:id/threads',
       // A mini app's reply as the person, in a room picked at the computer (DOR-3017).
       'POST /api/extensions/:id/rooms/:roomId/threads/:entryId/replies',
+      // A comment the person typed in a mini app, forwarded as their own (DOR-3325).
+      'POST /api/extensions/:id/forward',
       'POST /api/extensions/:id/start-work',
       'POST /api/relay/messages',
     ],

@@ -54,6 +54,7 @@ import {
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
 import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { withPersonRepin } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -511,10 +512,23 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       let updated;
       // Through the observer of outside changes when it names the runtime, model
       // or effort, so this person's change is never reported as one (DOR-2337).
-      try {
-        updated = await writeAgentManifest(body, meshCore.getProjectPath(id), async () =>
+      const home = meshCore.getProjectPath(id);
+      const write = () =>
+        writeAgentManifest(body, home, async () =>
           patch.recorded(await meshCore.update(id, patch.fields))
         );
+      try {
+        // A person's own account change moves the agent's folder settings pin
+        // with it; anyone else's waits for a card on its next turn (DOR-3068).
+        updated =
+          home && Object.hasOwn(body, 'account') && clearsTheAgentBar(honoRequestFacts(c))
+            ? await withPersonRepin(
+                { agentId: id, home },
+                'manifest',
+                "changing an agent's account",
+                write
+              )
+            : await write();
       } catch (err) {
         if (!(err instanceof ManifestUnreadableError)) throw err;
         return c.json({ error: err.message, code: 'MANIFEST_UNREADABLE' }, 409);

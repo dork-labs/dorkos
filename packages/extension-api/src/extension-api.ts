@@ -4,6 +4,7 @@ import type { ExtensionEventsAPI } from './extension-events.js';
 import type { StartWorkInput } from './start-work.js';
 import type { ExtensionPageBadge } from './page-badge.js';
 import type { ExtensionRoomsApi } from './room-threads.js';
+import type { ExtensionForwardApi } from './agent-forward.js';
 
 /**
  * Slot identifiers matching the Phase 2 registry.
@@ -529,4 +530,13 @@ export interface ExtensionAPI {
    * Probe with `api.rooms !== undefined`.
    */
   readonly rooms: ExtensionRoomsApi;
+
+  /**
+   * Forward what the person typed here to the one agent they picked for this
+   * mini app, as their own words (DOR-3325), and read its answers back.
+   * Declare `capabilities.forward` in the manifest so the choice of agent is
+   * offered. See {@link ExtensionForwardApi}. Probe with
+   * `api.forward !== undefined`.
+   */
+  readonly forward: ExtensionForwardApi;
 }

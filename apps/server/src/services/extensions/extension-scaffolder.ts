@@ -15,6 +15,8 @@ import {
 } from './extension-templates.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import type { CreateExtensionResult } from './extension-manager-types.js';
+import { installFolderDigest } from '../marketplace/lib/install-digest.js';
+import { logger } from '../../lib/logger.js';
 
 /**
  * Resolve an extension name to a directory sitting directly inside `root`.
@@ -69,10 +71,18 @@ async function directoryExists(dir: string): Promise<boolean> {
  * Scaffold a new extension directory with manifest and starter code.
  *
  * @param options - Creation parameters
- * @param dorkHome - Resolved DorkOS data directory
- * @param currentCwd - Active working directory (required for local scope)
- * @returns The new folder, the files written in it, and the manifest written
- *   (status/bundleReady populated by caller after enable)
+ * @param options.dorkHome - Resolved DorkOS data directory
+ * @param options.currentCwd - Active working directory (required for local scope)
+ * @param options.agentHome - The creating agent's own folder (DOR-3068). When
+ *   given, the extension is created at `<agentHome>/.dork/extensions/<name>`
+ *   (scope `local`), whatever `scope` says.
+ * @param options.knownIds - Every id DorkOS knows anywhere. An agent's create
+ *   refuses one: its folder is scanned beside every other agent's and
+ *   project's, so a reused id there could re-arm another copy's approval.
+ * @returns The new folder, the files written in it, the manifest written
+ *   (status/bundleReady populated by caller after enable), the digest of the
+ *   folder as written, or null when it cannot be read, and the scope it was
+ *   really created in (DOR-3068)
  */
 export async function scaffoldExtension(options: {
   name: string;
@@ -81,8 +91,19 @@ export async function scaffoldExtension(options: {
   scope: 'global' | 'local';
   dorkHome: string;
   currentCwd: string | null;
-}): Promise<{ targetDir: string; files: string[]; manifest: object }> {
-  const { name, description, template, scope, dorkHome, currentCwd } = options;
+  agentHome?: string;
+  knownIds?: readonly string[];
+}): Promise<{
+  targetDir: string;
+  files: string[];
+  manifest: object;
+  digest: string | null;
+  scope: 'global' | 'local';
+}> {
+  const { name, description, template, scope, dorkHome, currentCwd, agentHome } = options;
+  if (agentHome && options.knownIds?.includes(name)) {
+    throw new Error(`Extension '${name}' already exists. Pick another name.`);
+  }
 
   // The name becomes a directory name, so it is checked before it is used as
   // one. Anything with a dot, a slash, or a non-ASCII character is refused.
@@ -97,7 +118,26 @@ export async function scaffoldExtension(options: {
   const localRoot = currentCwd ? path.join(currentCwd, '.dork', 'extensions') : null;
 
   let extensionsRoot: string;
-  if (scope === 'local') {
+  let usedScope = scope;
+  // An agent whose folder holds the DorkOS home (a home of `~`) has no folder
+  // of its own to keep mini apps in: its `.dork/extensions` IS the global one.
+  const homeRoot = agentHome ? path.join(agentHome, '.dork', 'extensions') : null;
+  const ownRoot = homeRoot && path.resolve(homeRoot) !== path.resolve(globalRoot) ? homeRoot : null;
+  if (agentHome && !ownRoot) {
+    logger.warn(
+      `[Extensions] ${agentHome} holds the DorkOS home, so '${name}' is created in the global ` +
+        `folder, where every edit waits for a person`
+    );
+  }
+  if (ownRoot) {
+    // An agent's mini app lives in its own folder (DOR-3068), where its
+    // server edits keep running without a person's click.
+    extensionsRoot = ownRoot;
+    usedScope = 'local';
+  } else if (agentHome) {
+    extensionsRoot = globalRoot;
+    usedScope = 'global';
+  } else if (scope === 'local') {
     if (!localRoot) {
       throw new Error('Cannot create local extension: no working directory is active');
     }
@@ -137,12 +177,13 @@ export async function scaffoldExtension(options: {
   // was never a way to produce a useful override anyway.
   // The target scope first, so a same-scope collision keeps naming its own path.
   const rootsToCheck = [extensionsRoot];
-  const otherRoot = scope === 'local' ? globalRoot : localRoot;
-  // Skipped when the two resolve to one directory — the working directory IS the
-  // DorkOS home, which `extension-discovery.ts` handles for the same reason
-  // (DOR-1336). Checking it twice would only repeat the same answer.
-  if (otherRoot && path.resolve(otherRoot) !== path.resolve(extensionsRoot)) {
-    rootsToCheck.push(otherRoot);
+  // Every other root this create could collide with. Skipped when one resolves
+  // to a root already listed — the working directory IS the DorkOS home, which
+  // `extension-discovery.ts` handles for the same reason (DOR-1336).
+  for (const otherRoot of [globalRoot, localRoot]) {
+    if (otherRoot && !rootsToCheck.some((root) => path.resolve(root) === path.resolve(otherRoot))) {
+      rootsToCheck.push(otherRoot);
+    }
   }
 
   for (const root of rootsToCheck) {
@@ -172,7 +213,10 @@ export async function scaffoldExtension(options: {
     files.push('server.ts');
   }
 
-  return { targetDir, files, manifest };
+  // What DorkOS wrote, so code built later can be held to exactly these files.
+  const found = await installFolderDigest(targetDir);
+  const digest = found.kind === 'digest' ? found.digest : null;
+  return { targetDir, files, manifest, digest, scope: usedScope };
 }
 
 /**
@@ -183,7 +227,7 @@ export async function scaffoldExtension(options: {
  * @param record - The extension record after enable (may be undefined if enable failed)
  */
 export function buildCreateResult(
-  scaffoldResult: { targetDir: string; files: string[] },
+  scaffoldResult: { targetDir: string; files: string[]; scope?: 'global' | 'local' },
   options: { name: string; template: ExtensionTemplate; scope: 'global' | 'local' },
   record:
     | {
@@ -196,7 +240,8 @@ export function buildCreateResult(
   const result: CreateExtensionResult = {
     id: options.name,
     path: scaffoldResult.targetDir,
-    scope: options.scope,
+    // Where it was really created: an agent's own folder, or global (DOR-3068).
+    scope: scaffoldResult.scope ?? options.scope,
     template: options.template,
     status: (record?.status as CreateExtensionResult['status']) ?? 'compile_error',
     bundleReady: record?.bundleReady ?? false,

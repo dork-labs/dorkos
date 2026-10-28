@@ -86,13 +86,14 @@ const FAMILIES: Record<string, readonly string[]> = {
     '@openai/codex-darwin-arm64',
     '@openai/codex-win32-x64',
   ],
-  // No per-platform siblings in the manifests: the opencode sidecar is
+  // The SDK, and the two platform builds of the CLI the server's real-binary
+  // tests run (optional dependencies, hash-checked in
+  // runtimes/opencode/__tests__/pinned-opencode.ts). The sidecar people get is
   // provisioned at runtime from OPENCODE_PACKAGE_VERSION in
-  // apps/server/src/services/runtimes/opencode/providers/provision.ts, which is
-  // a constant in a source file rather than a manifest entry, so the parity
-  // test below cannot see it. The dedicated sidecar-pin test at the end of this
-  // file is what holds it to this family's version.
-  '@opencode-ai/sdk': ['@opencode-ai/sdk'],
+  // apps/server/src/services/runtimes/opencode/providers/provision.ts, a
+  // constant rather than a manifest entry, so the parity test below cannot see
+  // it; the dedicated sidecar-pin test at the end of this file holds it here.
+  '@opencode-ai/sdk': ['@opencode-ai/sdk', 'opencode-darwin-arm64', 'opencode-linux-x64'],
   // NOT ignored in dependabot.yml, deliberately — see the `groups` comment
   // there. Both of these publish every platform sibling at the parent's
   // version, so the single catch-all group carries the whole family in one PR.
@@ -351,8 +352,8 @@ describe('dependabot lockstep families', () => {
   });
 
   it('holds the opencode sidecar pin at the version the manifests declare for its SDK', () => {
-    // The opencode sidecar (`opencode-ai`) is not a manifest dependency at all —
-    // it is npm-installed on demand at the version of a CONSTANT in the server's
+    // The opencode sidecar people get (`opencode-ai`) is not a manifest
+    // dependency (only the tests' two platform builds are) — it is npm-installed on demand at the version of a CONSTANT in the server's
     // source. provision.ts states the coupling in its own TSDoc ("pinned to
     // match the `@opencode-ai/sdk` already depended on by the server ... so the
     // CLI and the SDK the sidecar talks to never drift"), and that pin is

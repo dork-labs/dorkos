@@ -459,7 +459,11 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.extensions) {
     app.route(
       '/api/extensions',
-      createExtensionsRoutes({ ...deps.extensions, activity: deps.activity })
+      createExtensionsRoutes({
+        ...deps.extensions,
+        activity: deps.activity,
+        mesh: () => deps.mesh?.meshCore,
+      })
     );
     app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
   }

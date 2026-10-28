@@ -504,15 +504,16 @@ export async function writeFileAtomic(filePath: string, content: string): Promis
  *
  * @param manifestPath - Where the manifest lives.
  * @param manifest - The manifest, minus its format version.
- * @returns `false` when a newer manifest was kept instead.
+ * @returns The text written, or null when a newer manifest was kept instead.
  */
 export async function writeBuildManifest(
   manifestPath: string,
   manifest: Omit<BuildManifest, 'v'>
-): Promise<boolean> {
+): Promise<string | null> {
   const existing = await readManifest(manifestPath);
-  if (existing && existing.startedAt > manifest.startedAt) return false;
+  if (existing && existing.startedAt > manifest.startedAt) return null;
   const full: BuildManifest = { v: MANIFEST_FORMAT_VERSION, ...manifest };
-  await writeFileAtomic(manifestPath, JSON.stringify(full));
-  return true;
+  const text = JSON.stringify(full);
+  await writeFileAtomic(manifestPath, text);
+  return text;
 }

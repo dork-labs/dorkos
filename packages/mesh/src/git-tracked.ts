@@ -86,6 +86,10 @@ export async function isManifestGitTracked(
   logger: Pick<import('@dorkos/shared/logger').Logger, 'warn'>
 ): Promise<boolean> {
   const manifestPath = path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE);
+  // No `.git` above it (or no folder at all): no repository can track the
+  // file. Decided on disk before git runs, so the answer never depends on how
+  // git words its error, which differs by version and by file system.
+  if (!(await hasGitDirAbove(projectPath))) return false;
   try {
     // The folder is an agent's, which DorkOS did not create; its own git
     // configuration must not run anything (DOR-2326).

@@ -69,6 +69,17 @@ A mini app can show a room thread on its own page and let you reply there, so yo
 
 Authors: see `api.rooms` in `contributing/extension-authoring.md`.
 
+## Answering an agent from a mini app
+
+A mini app can send a comment you type there to one of your agents, as your own words. It needs `"capabilities": { "forward": true }` in its manifest.
+
+- **You choose the agents.** The first time a mini app sends a comment to an agent, DorkOS asks you: "Send Dorian Desk comments to DorkOS PM?" Allow sends the comment you typed. Not now sends nothing. Change the list later on the mini app's card in Settings → Extensions, under **Sends your comments to**.
+- **It's your message.** Your comment appears in your Direct chat with the agent, and the agent treats it as if you typed it there. A muted line above it says which mini app and item it came from.
+- **Only your words count as yours.** The item's title shows in that muted line as text from the mini app, never as part of what you said.
+- **Answers come back.** The mini app can show the agent's reply under your comment, under the agent's name.
+- **It needs a password.** It works only when DorkOS asks you for a password, so it can tell your words from a program's. Turn on "Ask for a password on this computer too" to use it at this computer.
+- **The audit trail records each one,** with the mini app, the agent and the item named.
+
 ## Messaging an agent from the server half
 
 `ctx.agent.send({ to, text, context?, idempotencyKey })` sends one of your agents a message from an extension's server half. `to` is an agent id or a chat id. A message to an agent goes to the one chat that extension keeps with it. A chat id must be one of your own chats, or one that extension started; another extension's chats, rooms, bridged chats and scheduled runs are refused.
@@ -115,7 +126,11 @@ An extension can say where its tab belongs by default, with `showIn` on `registe
 
 ## Testing locally
 
-The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file in one of those two directories, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+
+A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code and it keeps running. A change to what it shows on screen waits for you to approve it again.
+
+An extension that saves files into its own folder changes the files you approved, so it stops and waits for you. Save data with `loadData`/`saveData` instead.
 
 A newly installed extension also shows up in the **Activity inbox** (the bell at the top right) with one short row: "Turn on My Extension?", a line saying what it adds, and three buttons. **Turn it on** starts it straight away, with no reload. **Not now** turns nothing off and removes nothing; the inbox just stops asking until the extension changes version or moves. The line under the question comes from your manifest: list what you add in `contributions` (for example `"right-panel": true`) and say what it is for in `purpose`, a short phrase that finishes the sentence "This adds a My Extension tab that …".
 

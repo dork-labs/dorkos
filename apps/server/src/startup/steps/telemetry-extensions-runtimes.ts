@@ -236,7 +236,9 @@ export async function startTelemetryExtensionsAndRuntimes(
   refs.extensionManager = await startExtensions(
     dorkHome,
     coreExtensions,
-    env.DORKOS_DEFAULT_CWD ?? null
+    env.DORKOS_DEFAULT_CWD ?? null,
+    // Agents' own folders hold the mini apps they made (DOR-3068).
+    () => refs.meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? []
   );
 
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
