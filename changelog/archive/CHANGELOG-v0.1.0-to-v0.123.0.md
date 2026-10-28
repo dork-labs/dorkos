@@ -1,7 +1,24 @@
-# Changelog archive: v0.1.0 – v0.122.0
+# Changelog archive: v0.1.0 – v0.123.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.123.0] - 2026-10-18
+
+> DorkOS 0.123.0 lets a busy agent wait its turn instead of failing, makes a sign-in work only the way you made it, and makes the tab you're on easier to see.
+
+### Fixed
+
+- When every agent on your computer is busy, a new message now waits for one to finish instead of failing. Before, naming several agents in one room post could make each of them say it "ran into a problem". The room and the chat now say the agent is waiting, and it answers as soon as another agent finishes.
+- How many agents can run at once now depends on your computer's memory: one per 2 GB, between 12 and 32. A 48 GB machine runs 24 instead of 12. You can set your own number with `runtimes.claudeCode.maxWarmProcesses`.
+- If an agent still can't start, the room says why in plain words instead of "ran into a problem".
+- Fixed a rare case where an agent that had just started could be shut down before its first reply.
+- In the desktop app, the tab you're on now stands out from the others in both light and dark mode. Before, it could look darker than the tabs beside it. With Increase Contrast turned on, it also gets an outline.
+
+### Security
+
+- A sign-in now works only the way you made it: on this computer, over Wi-Fi, or through remote access. Reach DorkOS another way and you sign in again there. Wi-Fi sign-ins last up to 7 days. After this update, your other devices ask you to sign in once more. (DOR-2969)
+- API keys can now only be made on the computer DorkOS runs on. (DOR-2969)
 
 ## [0.122.0] - 2026-10-18
 
@@ -7407,6 +7424,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
 [0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
 [0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0

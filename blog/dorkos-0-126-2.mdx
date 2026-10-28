@@ -1,0 +1,22 @@
+---
+title: DorkOS 0.126.2
+description: A message one of an agent's chats read no longer makes its other chats ask you to approve their commands.
+date: 2026-10-28
+author: DorkOS Team
+category: release
+tags: [release, permissions]
+---
+
+DorkOS 0.126.2 cuts the extra approval prompts. When one of an agent's chats reads a message from outside your team, its other chats no longer fall back to asking you first. And when an agent can't start a chat at a higher level, it now tells you why.
+
+## Highlights
+
+- **Fewer approval prompts.** A room post one of an agent's chats read no longer makes a chat it messages ask you to approve its commands.
+- **A clear reason.** When an agent can't start a chat at a higher level, it says why.
+
+## All Changes
+
+### Fixed
+
+- When an agent can't start a new chat at a higher level, it now says why: it read messages from others, a person set it lower, or DorkOS couldn't find its level. Before, it always said the chat "runs at Default", even when it didn't. (DOR-3386)
+- An agent's message to another chat is held back only when the chat it came from read something from outside your team. Before, when DorkOS had lost track of the sending chat's level (after a restart, say), any other chat of that agent reading a room post could hold it back, and the chat it woke then asked you to approve its commands. (DOR-3386)
