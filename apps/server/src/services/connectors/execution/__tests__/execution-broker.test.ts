@@ -359,6 +359,76 @@ describe('ConnectorExecutionBroker', () => {
     });
   });
 
+  // #3196 review, S2: the owner's approval card can say the turn read outside words.
+  it('carries the calling turn’s marks, derived by the broker, to the managed attempt', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    const baseOutbox = {
+      connectionId: CONNECTION_ID,
+      providerInstanceId: provider.instanceId,
+      executionConfigGeneration: 1,
+      ownerKind: OWNER.kind,
+      ownerId: OWNER.installationId,
+      managedConnectionId: EXTERNAL_REF,
+      scopeKind: 'agent_grants' as const,
+      subjectId: 'agent-a',
+      requestHash: 'request-a',
+      requestJson: '{}',
+      safeReason: null,
+      attemptCount: 0,
+      nextAttemptAt: null,
+      leaseOwner: null,
+      leasedUntil: null,
+      createdAt: '2026-09-06T12:00:00.000Z',
+      updatedAt: '2026-09-06T12:00:00.000Z',
+      resolvedAt: null,
+      compactedAt: null,
+    };
+    db.insert(connectorManagedAuthorityOutbox)
+      .values([
+        {
+          ...baseOutbox,
+          commandId: 'scope-applied',
+          scopeVersion: 4,
+          state: 'applied',
+          resolvedAt: '2026-09-06T12:00:00.000Z',
+        },
+        {
+          ...baseOutbox,
+          commandId: 'scope-pending',
+          scopeVersion: 5,
+          state: 'pending',
+        },
+      ])
+      .run();
+    const contexts = new ManagedConnectorExecutionContextStore();
+    let captured: ManagedConnectorExecutionContext | undefined;
+    provider.onCommand = (command) => {
+      captured = contexts.resolve(command);
+    };
+    broker = new ConnectorExecutionBroker(
+      authorization,
+      new ConnectorUsageStore(db),
+      { revalidate: () => true },
+      () => new Date('2026-09-06T12:00:01.000Z'),
+      contexts,
+      undefined,
+      () => ['outsider']
+    );
+
+    await expect(execute()).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(captured).toEqual({
+      agentId: 'agent-a',
+      attemptIndex: 1,
+      grantScopeVersion: 4,
+      grantSubject: 'agent',
+      hostedRevisionId: '10000000-0000-4000-8000-000000000001',
+      attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a', marks: ['outsider'] },
+    });
+  });
+
   it('never tells an agent to try again soon when the refusal is not retryable', async () => {
     db.update(connectorProviderInstances)
       .set({ mode: 'managed' })
