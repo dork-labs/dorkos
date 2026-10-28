@@ -150,14 +150,14 @@ describe('PersonStepUpHost', () => {
     });
 
     it('counts down after too many tries, with the field off until then', async () => {
-      answer(429, { error: 'Too many.', code: 'too-many-attempts', retryAfterSeconds: 240 });
+      answer(429, { error: 'Too many.', code: 'too-many-attempts', retryAfterSeconds: 32 });
       render(<PersonStepUpHost />);
       ask(false);
 
       await confirmWith('whatever');
 
       expect((await screen.findByRole('alert')).textContent).toBe(
-        'Too many tries. Try again in 4 min.'
+        'Too many tries. Try again in 32 sec.'
       );
       expect((screen.getByLabelText('DorkOS password') as HTMLInputElement).disabled).toBe(true);
     });

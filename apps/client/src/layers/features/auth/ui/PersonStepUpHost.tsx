@@ -148,13 +148,7 @@ function PersonStepUpDialog({ dismissible }: { dismissible: boolean }) {
                 />
               </>
             )}
-            {failure && (
-              <FailureLine
-                id={failureId}
-                failure={failure}
-                minutesLeft={Math.ceil(secondsLeft / 60)}
-              />
-            )}
+            {failure && <FailureLine id={failureId} failure={failure} secondsLeft={secondsLeft} />}
             {!noPassword && !offline && (
               <button
                 type="button"
@@ -200,15 +194,16 @@ function PersonStepUpDialog({ dismissible }: { dismissible: boolean }) {
 function FailureLine({
   id,
   failure,
-  minutesLeft,
+  secondsLeft,
 }: {
   id: string;
   failure: Failure;
-  minutesLeft: number;
+  secondsLeft: number;
 }) {
+  // The wait grows with each wrong password but never passes a minute, so it reads in seconds.
   const text = {
     'wrong-password': 'That’s not your DorkOS password. Try again.',
-    'too-many-attempts': `Too many tries. Try again in ${Math.max(1, minutesLeft)} min.`,
+    'too-many-attempts': `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`,
     'no-password': 'This computer has no DorkOS password yet.',
     offline: 'Can’t reach DorkOS on this computer.',
     other: failure.message,
