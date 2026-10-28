@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.126.2] - 2026-10-28
+
+> DorkOS 0.126.2 stops a message one of an agent's chats read from making its other chats ask you to approve their commands, and says plainly why an agent can't start a chat at a higher level.
+
+### Fixed
+
+- When an agent can't start a new chat at a higher level, it now says why: it read messages from others, a person set it lower, or DorkOS couldn't find its level. Before, it always said the chat "runs at Default", even when it didn't. (DOR-3386)
+- An agent's message to another chat is held back only when the chat it came from read something from outside your team. Before, when DorkOS had lost track of the sending chat's level (after a restart, say), any other chat of that agent reading a room post could hold it back, and the chat it woke then asked you to approve its commands. (DOR-3386)
+
 ## [0.126.1] - 2026-10-27
 
 > DorkOS 0.126.1 makes changed extension code and a Claude Code agent's changed settings wait for your yes, tells you about secret files in an agent's folder, lets Never ask chats use DorkOS's safe tools again, and keeps heartbeats going when a Claude account runs out.
@@ -286,26 +295,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changing how DorkOS is reached now happens only in the app on the computer it runs on, by its owner: remote access, Wi-Fi access, the password setting, accounts and keys, and which code DorkOS runs. API keys and agents can't change these either. (DOR-2969)
 - An agent can't edit the file that holds the permission levels you set for agents, or the files that say which connections and keys this computer trusts for reaching it from anywhere. Its file editing tools are refused there at every permission level. (DOR-2969)
 
-## [0.123.0] - 2026-10-18
+Older releases (v0.1.0 – v0.123.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.123.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.123.0.md).
 
-> DorkOS 0.123.0 lets a busy agent wait its turn instead of failing, makes a sign-in work only the way you made it, and makes the tab you're on easier to see.
-
-### Fixed
-
-- When every agent on your computer is busy, a new message now waits for one to finish instead of failing. Before, naming several agents in one room post could make each of them say it "ran into a problem". The room and the chat now say the agent is waiting, and it answers as soon as another agent finishes.
-- How many agents can run at once now depends on your computer's memory: one per 2 GB, between 12 and 32. A 48 GB machine runs 24 instead of 12. You can set your own number with `runtimes.claudeCode.maxWarmProcesses`.
-- If an agent still can't start, the room says why in plain words instead of "ran into a problem".
-- Fixed a rare case where an agent that had just started could be shut down before its first reply.
-- In the desktop app, the tab you're on now stands out from the others in both light and dark mode. Before, it could look darker than the tabs beside it. With Increase Contrast turned on, it also gets an outline.
-
-### Security
-
-- A sign-in now works only the way you made it: on this computer, over Wi-Fi, or through remote access. Reach DorkOS another way and you sign in again there. Wi-Fi sign-ins last up to 7 days. After this update, your other devices ask you to sign in once more. (DOR-2969)
-- API keys can now only be made on the computer DorkOS runs on. (DOR-2969)
-
-Older releases (v0.1.0 – v0.122.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.122.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.122.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.1...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.2...HEAD
+[0.126.2]: https://github.com/dork-labs/dorkos/compare/v0.126.1...v0.126.2
 [0.126.1]: https://github.com/dork-labs/dorkos/compare/v0.126.0...v0.126.1
 [0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
@@ -315,4 +308,3 @@ Older releases (v0.1.0 – v0.122.0) are archived in [changelog/archive/CHANGELO
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
 [0.124.1]: https://github.com/dork-labs/dorkos/compare/v0.124.0...v0.124.1
 [0.124.0]: https://github.com/dork-labs/dorkos/compare/v0.123.0...v0.124.0
-[0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
