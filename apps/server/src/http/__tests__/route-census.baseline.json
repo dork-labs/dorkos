@@ -120,6 +120,7 @@
     "GET /api/communities/:ref/rooms/:roomId/standing",
     "GET /api/community-connections",
     "GET /api/community-connections/:ref",
+    "GET /api/community-connections/:ref/administer",
     "GET /api/community-connections/:ref/answer-in",
     "GET /api/community-connections/:ref/disconnect-impact",
     "GET /api/community-connections/:ref/space/me",

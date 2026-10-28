@@ -24,6 +24,9 @@ import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './p
 import { RemoteDmCommunityAdapter } from './adapter/remote-dm-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxStore } from './community-outbox-store.js';
+import { RemoteAdministerCredentials } from './administer/administer-credentials.js';
+import { pairingScopes } from './administer/pairing-scopes.js';
+import { EncryptedFileCredentialStore } from '../../core/credential-provider.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
 import type {
   CommunityOutboxRetryInput,
@@ -35,6 +38,7 @@ let officialSpace: OfficialSpace | undefined;
 let wakePolicy: RemoteWakePolicy | undefined;
 let teammateSpend: TeammateSpend | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
+let administer: RemoteAdministerCredentials | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
 let lifecycle: RemoteCommunityLifecycle | undefined;
@@ -207,8 +211,22 @@ export function getTeammateSpend(): TeammateSpend {
   return teammateSpend;
 }
 
+/**
+ * The manage credentials connections hold apart from their grants (DOR-3005). Built with the
+ * pairing service, so it hears every connection removed from then on. For person-only routes
+ * only: never hand it to an agent's path or tool.
+ */
+export function getRemoteAdministerCredentials(): RemoteAdministerCredentials {
+  return (administer ??= new RemoteAdministerCredentials(
+    getRemoteConnectionStore(),
+    new EncryptedFileCredentialStore(resolveDorkHome())
+  ));
+}
+
 /** The production pairing service over the same protected connection store. */
 export function getRemotePairingService(): RemoteCommunityPairingService {
+  // Built first, so it hears every connection removed from here on and drops its credential.
+  const administerCredentials = getRemoteAdministerCredentials();
   return (pairing ??= new RemoteCommunityPairingService(
     getRemoteConnectionStore(),
     (communityRef, ownerKey) =>
@@ -220,7 +238,11 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     (communityRef, ownerKey) =>
       db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0,
     readRemoteInstallationAgents,
-    (url, origin, communityId) => getOfficialSpace().noteDiscovery(url, origin, communityId)
+    (url, origin, communityId) => getOfficialSpace().noteDiscovery(url, origin, communityId),
+    {
+      scopes: (origin, communityId) => pairingScopes(origin, communityId),
+      keep: (ref, owner, token) => administerCredentials.save(ref, owner, token),
+    }
   ));
 }
 
