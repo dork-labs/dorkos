@@ -26,7 +26,7 @@ import {
   type TurnMarkKind,
   type TurnMarks,
 } from '../turn-marks.js';
-import { markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
+import { markedBoundOf, marksOf, recordTurnLevels, unknownLevelMarks } from '../turn-levels.js';
 import { countWhileRunning, resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
@@ -272,6 +272,35 @@ describe('the readers', () => {
       await elsewhere.next();
       expect(await holdRequesterFor(context, preflight)).toBeUndefined();
       await elsewhere.return(undefined);
+    } finally {
+      clearTestHomes();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // DOR-3386 (Security's marked-lanes design, point 2): a sender whose level is unknown answers
+  // for its own chat. A sibling room seat of the same agent running a marked turn no longer marks
+  // a message from the agent's direct chat; the marked chat's own message still carries the mark.
+  it('scope an unknown-level sender to its own chat, not a marked sibling', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'dorkos-turn-marks-scope-'));
+    const home = path.join(root, 'agents', 'lane');
+    await mkdir(home, { recursive: true });
+    registerTestHomes([home]);
+    try {
+      const seat = fresh();
+      const direct = fresh();
+      const running = recorded().sendMessage(seat, 'hi', {
+        cwd: home,
+        permissionCeiling: 'runtime-default',
+      });
+      await running.next();
+      expect(agentMarksRunning(home)).toEqual({ outsider: true });
+      expect(unknownLevelMarks([direct], home)).toEqual({});
+      noteTurnOrigin(seat, { kind: 'relay-binding' } as never);
+      expect(unknownLevelMarks([seat], home)).toEqual({ outsider: true });
+      // A caller that names no chat is still read through its agent.
+      expect(unknownLevelMarks([], home)).toEqual({ outsider: true });
+      await running.return(undefined);
     } finally {
       clearTestHomes();
       await rm(root, { recursive: true, force: true });
