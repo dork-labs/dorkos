@@ -67,6 +67,7 @@ const EXPECTED_BLOCKS = [
   'working_rules',
   'agent_memory',
   'dorkos_context',
+  'dorkos_areas',
   'user_profile',
   'env',
 ] as const;
