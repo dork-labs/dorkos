@@ -4,6 +4,8 @@ covers:
   - "fix(server): bind the person session to the app's own page; ask before the first chat (DOR-3330)"
   - "fix(server): the proof at sign-in's own endpoints and the desktop window (DOR-3330)"
   - 'fix(server): person bars on tasks, chat mode, sources and the local token; final step-up copy (DOR-3330)'
+  - 'fix(server): wrong owner passwords slow the next try instead of locking it (DOR-3330)'
+  - "fix(server): parallel wrong owner passwords can't skip the wait (DOR-3330)"
 ---
 
 ### Security
