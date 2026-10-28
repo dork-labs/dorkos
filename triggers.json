@@ -1,7 +1,7 @@
 {
  "schema": 1,
- "date": "2026-10-26",
- "computed_at": "2026-10-27T10:20:14.852Z",
+ "date": "2026-10-27",
+ "computed_at": "2026-10-28T11:11:40.233Z",
  "constraint": "collector-health",
  "canary_since": "2026-09-21T05:17:15Z",
  "open": [
@@ -10,88 +10,88 @@
    "rule": "collector-health",
    "severity": "red",
    "scope": "",
-   "what": "Collector unhealthy 3 of 3 days (2026-10-24, 2026-10-25, 2026-10-26): Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.",
+   "what": "Collector unhealthy 3 of 3 days (2026-10-25, 2026-10-26, 2026-10-27): Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.",
    "action": "Fix this first. Every other number comes from the same run.",
    "ledger_entry": null,
    "first_fired": "2026-10-23",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "headroom:wf.browser-test.browser-shard",
    "rule": "headroom",
    "severity": "red",
    "scope": "wf.browser-test.browser-shard",
-   "what": "wf.browser-test.browser-shard p95 uses 104.5% of its time limit (n=906).",
+   "what": "wf.browser-test.browser-shard p95 uses 94.5% of its time limit (n=678).",
    "action": "Make it faster. Raising the limit hides it; the next green run still gets killed.",
    "ledger_entry": "261013-144138",
    "first_fired": "2026-09-25",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "machine-saturated",
    "rule": "machine-saturated",
    "severity": "red",
    "scope": "",
-   "what": "3 machines running the hooks is saturated — RAM: 480 MB free p10.",
+   "what": "3 machines running the hooks is saturated — RAM: 356 MB free p10.",
    "action": "Run fewer suites at once (ci/config.yaml local.heavy_run_slots), or close what is holding the memory. No pipeline change helps.",
    "ledger_entry": null,
    "first_fired": "2026-09-21",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:headroom",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "headroom",
-   "what": "headroom under floor: 104.5% (n=13801, 2026-10-20 to 2026-10-26).",
+   "what": "headroom under floor: 94.5% (n=12080, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "261013-144138",
    "first_fired": "2026-09-25",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:main-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "main-green",
-   "what": "main-green under floor: red_episodes 34, restore_p90 139.7 (n=800, 2026-09-29 to 2026-10-26).",
+   "what": "main-green under floor: red_episodes 27, restore_p90 147.9 (n=765, 2026-09-30 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:queue-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "queue-green",
-   "what": "queue-green under floor: 57.6% (n=151, 2026-10-20 to 2026-10-26).",
+   "what": "queue-green under floor: 45.1% (n=113, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175500",
    "first_fired": "2026-10-18",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:review-completes",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "review-completes",
-   "what": "review-completes under floor: 50% (n=110, 2026-10-20 to 2026-10-26).",
+   "what": "review-completes under floor: 47.9% (n=94, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260920-175925",
    "first_fired": "2026-10-21",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:wasted-queue-builds",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "wasted-queue-builds",
-   "what": "wasted-queue-builds under floor: 15.2% (n=151, 2026-10-20 to 2026-10-26).",
+   "what": "wasted-queue-builds under floor: 12.4% (n=113, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260923-095512",
    "first_fired": "2026-10-25",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "verdict:260923-220553",
@@ -102,7 +102,7 @@
    "action": "Revert it (status: reverted, name the PR), or re-state the hypothesis.",
    "ledger_entry": null,
    "first_fired": "2026-10-08",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "main-red:c75f36bc6e5a",
@@ -113,30 +113,483 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-23",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:lead-time",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "lead-time",
-   "what": "lead-time under floor: p50 477.8, p90 4238.6 (n=96, 2026-10-20 to 2026-10-26).",
+   "what": "lead-time under floor: p50 575.6, p90 4326.5 (n=76, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-204500",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
   {
    "id": "slo-floor:local-commit",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "local-commit",
-   "what": "local-commit under floor: p90 138.9, 0% (n=872, 2026-10-20 to 2026-10-26).",
+   "what": "local-commit under floor: p90 149, 0% (n=468, 2026-10-21 to 2026-10-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": null,
    "first_fired": "2026-10-26",
-   "last_fired": "2026-10-26"
+   "last_fired": "2026-10-27"
   },
+  {
+   "id": "slo-floor:queue-build",
+   "rule": "slo-floor",
+   "severity": "amber",
+   "scope": "queue-build",
+   "what": "queue-build under floor: p50 25.9, p90 57.4 (n=54, 2026-10-21 to 2026-10-27).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260921-011949",
+   "first_fired": "2026-10-12",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "verdict:260919-175501",
+   "rule": "verdict",
+   "severity": "amber",
+   "scope": "260919-175501",
+   "what": "260919-175501 partial: gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group 0.0227 vs target 0.015.",
+   "action": "Worth another change? If not, close it with a follow-up entry.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-30",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "verdict:260919-175503",
+   "rule": "verdict",
+   "severity": "amber",
+   "scope": "260919-175503",
+   "what": "260919-175503 partial: headroom 0.908 vs target 0.8.",
+   "action": "Worth another change? If not, close it with a follow-up entry.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-04",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.browser-test.browser-shard",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-shard",
+   "what": "wf.browser-test.browser-shard failed 6%, was 3.8% (1.58x). 7d vs 7d, n=678/2952.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": "261013-144138",
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.claude-code-review.review",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.claude-code-review.review",
+   "what": "wf.claude-code-review.review failed 56.2%, was 3.6% (15.51x). 7d vs 7d, n=105/276.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.credential-free-build.credential-free-build",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.credential-free-build.credential-free-build",
+   "what": "wf.credential-free-build.credential-free-build failed 6.1%, was 1.1% (5.69x). 7d vs 7d, n=343/1023.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-23",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.desktop-smoke.packaged-runtime",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.desktop-smoke.packaged-runtime",
+   "what": "wf.desktop-smoke.packaged-runtime failed 6.9%, was 0.8% (8.44x). 7d vs 7d, n=102/246.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": "261002-161720",
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.lint.lint",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.lint.lint",
+   "what": "wf.lint.lint failed 1.7%, was 0.6% (2.92x). 7d vs 7d, n=350/1022.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.site-build.site-build",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.site-build.site-build",
+   "what": "wf.site-build.site-build failed 4.6%, was 1.2% (3.75x). 7d vs 7d, n=366/1050.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-24",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.test.community-pg",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.test.community-pg",
+   "what": "wf.test.community-pg failed 5.6%, was 2.5% (2.19x). 7d vs 7d, n=341/1021.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-26",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.test.test",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test failed 33.6%, was 25.2% (1.34x). 7d vs 7d, n=390/1105.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-23",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.test.test-shard",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.test.test-shard",
+   "what": "wf.test.test-shard failed 5.6%, was 3.2% (1.72x). 7d vs 7d, n=2050/5218.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": "260921-011949",
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "repeat-ejection:wf.browser-test.browser-test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-test",
+   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 16 of 20 queue ejections in 7d; 5 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "repeat-ejection:wf.security-gate.security-gate",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.security-gate.security-gate",
+   "what": "wf.security-gate.security-gate failed on 8 of 20 queue ejections in 7d; 2 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "repeat-ejection:wf.test.test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test (with wf.test.community-pg and wf.test.test-shard) failed on 8 of 20 queue ejections in 7d; 2 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-cost:wf.cli-smoke-test.hub-smoke-test",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.cli-smoke-test.hub-smoke-test",
+   "what": "wf.cli-smoke-test.hub-smoke-test p90 1.8 min, was 1.3 (+44.7%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": "261016-192347",
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-cost:wf.cli-smoke-test.integration-test",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.cli-smoke-test.integration-test",
+   "what": "wf.cli-smoke-test.integration-test p90 1.9 min, was 1.2 (+53.3%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-cost:wf.cli-smoke-test.smoke-test-docker",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.cli-smoke-test.smoke-test-docker",
+   "what": "wf.cli-smoke-test.smoke-test-docker p90 1.8 min, was 1.1 (+59.7%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-cost:wf.merge-tail.arm",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.merge-tail.arm",
+   "what": "wf.merge-tail.arm p90 1.7 min, was 1.3 (+28%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-18",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "gate-cost:wf.test.community-packaged",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.test.community-packaged",
+   "what": "wf.test.community-packaged p90 12.2 min, was 9 (+35.6%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": "261018-131608",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175500",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "queue-green",
+   "what": "260919-175500 proposed 30+ days ago, untouched: Quarantine lane: a test data has classified flaky runs and reports, but cannot eject a queue build",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175500",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175502",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "pr-feedback",
+   "what": "260919-175502 proposed 30+ days ago, untouched: Turbo remote cache through Vercel Remote Cache",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175504",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "pr-feedback",
+   "what": "260919-175504 proposed 30+ days ago, untouched: Affected-only PR typecheck and lint, and a single prettier check",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175507",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "tracked.cache-hit-rate",
+   "what": "260919-175507 proposed 30+ days ago, untouched: Cache-scope fix for the Windows pnpm store and the Playwright browsers",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175507",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175508",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "gate.wf.typecheck.typecheck.failure_rate",
+   "what": "260919-175508 proposed 30+ days ago, untouched: The six CI-only checks join pnpm verify",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175508",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175509",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "main-green",
+   "what": "260919-175509 proposed 30+ days ago, untouched: Retire push-to-main legs that re-test the queue tree",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175510",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "gate.wf.update-homebrew.update-formula.failure_rate",
+   "what": "260919-175510 proposed 30+ days ago, untouched: Homebrew tap token, and a release-publishing token that triggers the cask",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175510",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175511",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "tracked.review-findings-unfixed-share",
+   "what": "260919-175511 proposed 30+ days ago, untouched: The automated review becomes a blocking review-gate (plan §5.3)",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175511",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175512",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "tracked.escaped",
+   "what": "260919-175512 proposed 30+ days ago, untouched: A zero-cost second-opinion reviewer, only if escape data calls for it",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175512",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-175513",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "tracked.escaped",
+   "what": "260919-175513 proposed 30+ days ago, untouched: Visual and runtime checks for the escapes a diff review cannot see",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-175512",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260919-204500",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "lead-time",
+   "what": "260919-204500 proposed 30+ days ago, untouched: Event-driven merge-tail: arm on workflow_run completion, keep the cron as a backstop",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260919-204500",
+   "first_fired": "2026-10-20",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260920-175925",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "review-completes",
+   "what": "260920-175925 proposed 30+ days ago, untouched: The automated review finishes the first time (plan §5.3 reliability half)",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260920-175925",
+   "first_fired": "2026-10-21",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260920-180654",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "",
+   "what": "260920-180654 proposed 30+ days ago, untouched: Fix or delete rooms/canvas/room-follow.spec.ts › moves this window onto the document the person you follow is on",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-21",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260920-184120",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "tracked.time-to-detect",
+   "what": "260920-184120 due 2026-10-04, no verdict: A main canary — the required suites run against main HEAD four times a day",
+   "action": "Check its PR numbers are in the entry and its days were collected.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-12",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260921-011949",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "queue-build",
+   "what": "260921-011949 proposed 30+ days ago, untouched: Client tests that never touch the DOM run on node, not jsdom",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260921-011949",
+   "first_fired": "2026-10-22",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260921-023128",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "",
+   "what": "260921-023128 proposed 30+ days ago, untouched: Two relay tests are deadline-sensitive under in-run contention",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-22",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260923-095512",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "wasted-queue-builds",
+   "what": "260923-095512 proposed 30+ days ago, untouched: merge-tail stops re-arming a PR the queue rejected twice for the same check",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": "260923-095512",
+   "first_fired": "2026-10-24",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260925-225053",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "",
+   "what": "260925-225053 proposed 30+ days ago, untouched: The banned-words guard reads the operating skills",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-26",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260926-165100",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "",
+   "what": "260926-165100 proposed 30+ days ago, untouched: Session start keeps the main checkout's main level with origin/main",
+   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-27",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260928-075416",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "queue-green",
+   "what": "260928-075416 due 2026-10-05, no verdict: Boot the marketing-site leg on one browser shard, and print leg output",
+   "action": "Check its PR numbers are in the entry and its days were collected.",
+   "ledger_entry": "260919-175500",
+   "first_fired": "2026-10-13",
+   "last_fired": "2026-10-27"
+  },
+  {
+   "id": "stale-ledger:260928-075417",
+   "rule": "stale-ledger",
+   "severity": "amber",
+   "scope": "queue-build",
+   "what": "260928-075417 due 2026-10-05, no verdict: Site leg on one shard must not slow the browser shards",
+   "action": "Check its PR numbers are in the entry and its days were collected.",
+   "ledger_entry": "260921-011949",
+   "first_fired": "2026-10-13",
+   "last_fired": "2026-10-27"
+  }
+ ],
+ "cleared": [
   {
    "id": "slo-floor:pr-feedback",
    "rule": "slo-floor",
@@ -149,127 +602,6 @@
    "last_fired": "2026-10-26"
   },
   {
-   "id": "slo-floor:queue-build",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "queue-build",
-   "what": "queue-build under floor: p50 27.2, p90 56.5 (n=63, 2026-10-20 to 2026-10-26).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260921-011949",
-   "first_fired": "2026-10-12",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "verdict:260919-175501",
-   "rule": "verdict",
-   "severity": "amber",
-   "scope": "260919-175501",
-   "what": "260919-175501 partial: gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group 0.0227 vs target 0.015.",
-   "action": "Worth another change? If not, close it with a follow-up entry.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-30",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "verdict:260919-175503",
-   "rule": "verdict",
-   "severity": "amber",
-   "scope": "260919-175503",
-   "what": "260919-175503 partial: headroom 0.908 vs target 0.8.",
-   "action": "Worth another change? If not, close it with a follow-up entry.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-04",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.claude-code-review.review",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.claude-code-review.review",
-   "what": "wf.claude-code-review.review failed 54.1%, against none at all the week before. 7d vs 7d, n=122/279.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.credential-free-build.credential-free-build",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.credential-free-build.credential-free-build",
-   "what": "wf.credential-free-build.credential-free-build failed 3.5%, was 0.9% (3.86x). 7d vs 7d, n=403/1001.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-23",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.lint.lint",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.lint.lint",
-   "what": "wf.lint.lint failed 1.9%, was 0.3% (6.43x). 7d vs 7d, n=413/996.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.site-build.site-build",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.site-build.site-build",
-   "what": "wf.site-build.site-build failed 2.3%, was 1% (2.4x). 7d vs 7d, n=427/1025.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-24",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.test.community-pg",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.test.community-pg",
-   "what": "wf.test.community-pg failed 4%, was 2.5% (1.6x). 7d vs 7d, n=400/1001.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-26",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.test.test",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.test.test",
-   "what": "wf.test.test failed 27.1%, was 24.9% (1.09x). 7d vs 7d, n=454/1078.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-23",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "repeat-ejection:wf.browser-test.browser-test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 19 of 28 queue ejections in 7d; 4 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "repeat-ejection:wf.test.test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.test.test",
-   "what": "wf.test.test (with wf.test.community-pg and wf.test.test-shard) failed on 6 of 28 queue ejections in 7d; 1 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-10-26"
-  },
-  {
    "id": "repeat-ejection:wf.typecheck.typecheck",
    "rule": "repeat-ejection",
    "severity": "amber",
@@ -279,316 +611,6 @@
    "ledger_entry": "260919-175502",
    "first_fired": "2026-10-20",
    "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-cost:wf.merge-tail.arm",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.merge-tail.arm",
-   "what": "wf.merge-tail.arm p90 1.7 min, was 1.3 (+30.9%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-18",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "gate-cost:wf.test.community-packaged",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.test.community-packaged",
-   "what": "wf.test.community-packaged p90 9.6 min, was 7.6 (+27%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": "261018-131608",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175500",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "queue-green",
-   "what": "260919-175500 proposed 30+ days ago, untouched: Quarantine lane: a test data has classified flaky runs and reports, but cannot eject a queue build",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175500",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175502",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "pr-feedback",
-   "what": "260919-175502 proposed 30+ days ago, untouched: Turbo remote cache through Vercel Remote Cache",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175504",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "pr-feedback",
-   "what": "260919-175504 proposed 30+ days ago, untouched: Affected-only PR typecheck and lint, and a single prettier check",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175507",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "tracked.cache-hit-rate",
-   "what": "260919-175507 proposed 30+ days ago, untouched: Cache-scope fix for the Windows pnpm store and the Playwright browsers",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175507",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175508",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "gate.wf.typecheck.typecheck.failure_rate",
-   "what": "260919-175508 proposed 30+ days ago, untouched: The six CI-only checks join pnpm verify",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175508",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175509",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "260919-175509 proposed 30+ days ago, untouched: Retire push-to-main legs that re-test the queue tree",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175510",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "gate.wf.update-homebrew.update-formula.failure_rate",
-   "what": "260919-175510 proposed 30+ days ago, untouched: Homebrew tap token, and a release-publishing token that triggers the cask",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175510",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175511",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "tracked.review-findings-unfixed-share",
-   "what": "260919-175511 proposed 30+ days ago, untouched: The automated review becomes a blocking review-gate (plan §5.3)",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175511",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175512",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "tracked.escaped",
-   "what": "260919-175512 proposed 30+ days ago, untouched: A zero-cost second-opinion reviewer, only if escape data calls for it",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175512",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-175513",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "tracked.escaped",
-   "what": "260919-175513 proposed 30+ days ago, untouched: Visual and runtime checks for the escapes a diff review cannot see",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-175512",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260919-204500",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "lead-time",
-   "what": "260919-204500 proposed 30+ days ago, untouched: Event-driven merge-tail: arm on workflow_run completion, keep the cron as a backstop",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260919-204500",
-   "first_fired": "2026-10-20",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260920-175925",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "review-completes",
-   "what": "260920-175925 proposed 30+ days ago, untouched: The automated review finishes the first time (plan §5.3 reliability half)",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260920-175925",
-   "first_fired": "2026-10-21",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260920-180654",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "",
-   "what": "260920-180654 proposed 30+ days ago, untouched: Fix or delete rooms/canvas/room-follow.spec.ts › moves this window onto the document the person you follow is on",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-21",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260920-184120",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "tracked.time-to-detect",
-   "what": "260920-184120 due 2026-10-04, no verdict: A main canary — the required suites run against main HEAD four times a day",
-   "action": "Check its PR numbers are in the entry and its days were collected.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-12",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260921-011949",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "queue-build",
-   "what": "260921-011949 proposed 30+ days ago, untouched: Client tests that never touch the DOM run on node, not jsdom",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260921-011949",
-   "first_fired": "2026-10-22",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260921-023128",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "",
-   "what": "260921-023128 proposed 30+ days ago, untouched: Two relay tests are deadline-sensitive under in-run contention",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-22",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260923-095512",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "wasted-queue-builds",
-   "what": "260923-095512 proposed 30+ days ago, untouched: merge-tail stops re-arming a PR the queue rejected twice for the same check",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260923-095512",
-   "first_fired": "2026-10-24",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260925-225053",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "",
-   "what": "260925-225053 proposed 30+ days ago, untouched: The banned-words guard reads the operating skills",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-26",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260928-075416",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "queue-green",
-   "what": "260928-075416 due 2026-10-05, no verdict: Boot the marketing-site leg on one browser shard, and print leg output",
-   "action": "Check its PR numbers are in the entry and its days were collected.",
-   "ledger_entry": "260919-175500",
-   "first_fired": "2026-10-13",
-   "last_fired": "2026-10-26"
-  },
-  {
-   "id": "stale-ledger:260928-075417",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "queue-build",
-   "what": "260928-075417 due 2026-10-05, no verdict: Site leg on one shard must not slow the browser shards",
-   "action": "Check its PR numbers are in the entry and its days were collected.",
-   "ledger_entry": "260921-011949",
-   "first_fired": "2026-10-13",
-   "last_fired": "2026-10-26"
-  }
- ],
- "cleared": [
-  {
-   "id": "gate-failure-spike:wf.browser-test.browser-test",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test failed 10.1%, was 7.7% (1.31x). 7d vs 7d, n=556/1083.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-25",
-   "last_fired": "2026-10-25"
-  },
-  {
-   "id": "gate-failure-spike:wf.docs-openapi-check.openapi-fresh",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.docs-openapi-check.openapi-fresh",
-   "what": "wf.docs-openapi-check.openapi-fresh failed 2.1%, was 0.6% (3.66x). 7d vs 7d, n=530/1059.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-22",
-   "last_fired": "2026-10-25"
-  },
-  {
-   "id": "gate-failure-spike:wf.scripts-test.fixtures",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.scripts-test.fixtures",
-   "what": "wf.scripts-test.fixtures failed 0.5%, was 0.2% (2.07x). 7d vs 7d, n=641/1324.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-25",
-   "last_fired": "2026-10-25"
-  },
-  {
-   "id": "gate-failure-spike:wf.typecheck.typecheck",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.typecheck.typecheck",
-   "what": "wf.typecheck.typecheck failed 8.5%, was 4.1% (2.05x). 7d vs 7d, n=519/1041.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-10-24",
-   "last_fired": "2026-10-25"
-  },
-  {
-   "id": "gate-cost:job-minutes-per-merged-pr",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "tracked.job-minutes-per-merged-pr",
-   "what": "Job minutes per merged PR 1163.2, was 837.5 (+38.9%). 7d vs 7d.",
-   "action": "A job added to a required path, or more runs thrown away. Both land here.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-22",
-   "last_fired": "2026-10-25"
-  },
-  {
-   "id": "gate-cost:wf.desktop-smoke.packaged-runtime",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.desktop-smoke.packaged-runtime",
-   "what": "wf.desktop-smoke.packaged-runtime p90 18.5 min, was 13.8 (+33.3%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": "261002-161720",
-   "first_fired": "2026-10-21",
-   "last_fired": "2026-10-25"
   }
  ]
 }
