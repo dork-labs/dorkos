@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): a chat's message carries its own marks, not a sibling chat's (DOR-3386)"
+  - 'fix(server): a refused session_start says what held its level (DOR-3386)'
 ---
 
 ### Fixed
