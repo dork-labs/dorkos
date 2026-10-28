@@ -50,7 +50,8 @@ describe('a session_start refusal says why the level is held', () => {
 
   it('names a person’s setting when that is what holds it', async () => {
     const error = await refusalOf(askFullFrom(FULL, false, 'ask'));
-    expect(error).toMatch(/A person set this agent to/);
+    // The cap can be a person's choice or the configured default, so it names neither alone.
+    expect(error).toMatch(/This agent's level is Ask first \(set by a person, or the default\)/);
     expect(error).not.toMatch(/This chat runs at/);
   });
 

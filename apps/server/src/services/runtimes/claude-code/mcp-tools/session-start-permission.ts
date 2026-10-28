@@ -341,7 +341,8 @@ function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
         `start chats at ${held} at most, not ${asked}. ${lower} ` +
         `A person can start one at ${asked}.`
       : ceiling.heldBy === 'person-set'
-        ? `A person set this agent to ${held}, so it cannot start a chat at ${asked}. ${lower}`
+        ? `This agent's level is ${held} (set by a person, or the default), so it cannot ` +
+          `start a chat at ${asked}. ${lower}`
         : ceiling.heldBy === 'unknown-level'
           ? `DorkOS could not find this chat's level, so it counts as ${held} and cannot ` +
             `start a chat at ${asked}. ${lower} A person can set this chat's level again.`
