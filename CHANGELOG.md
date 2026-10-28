@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.126.2] - 2026-10-28
 
-> DorkOS 0.126.2 stops a message one of an agent's chats read from making its other chats ask you to approve their commands, and says plainly why an agent can't start a chat at a higher level.
+> DorkOS 0.126.2 cuts the extra approval prompts. When one of an agent's chats reads a message from outside your team, its other chats no longer fall back to asking you first. And when an agent can't start a chat at a higher level, it now tells you why.
 
 ### Fixed
 
