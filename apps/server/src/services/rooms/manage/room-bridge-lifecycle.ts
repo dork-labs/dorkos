@@ -60,6 +60,7 @@ export interface RebridgeRequest {
 
 /** Disconnecting, re-bridging, and the bridge's own small writes. */
 export class RoomBridgeLifecycle {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly roster: RoomRoster;
   private readonly bridges: BridgeStore;
@@ -74,6 +75,7 @@ export class RoomBridgeLifecycle {
     private readonly updates: RoomUpdates,
     private readonly systemPosts: RoomSystemPosts
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.roster = core.roster;
     this.bridges = core.bridges;
@@ -222,10 +224,14 @@ export class RoomBridgeLifecycle {
       // store drops the `room_sessions` row inside `removeMember`.
       if (currentAgentMember) {
         this.roster.remove(room.id, currentAgentMember.authorId);
-        eventFanOut.broadcast('room_member_removed', {
-          roomId: room.id,
-          authorId: currentAgentMember.authorId,
-        });
+        eventFanOut.broadcast(
+          'room_member_removed',
+          {
+            roomId: room.id,
+            authorId: currentAgentMember.authorId,
+          },
+          this.roomAudience(room.id, currentAgentMember.authorId)
+        );
       }
       // Seeded IN the add, never patched after — mention-only on a bridged
       // channel, the manifest default on a dm (§3.4). This is the write A3.6b
@@ -233,7 +239,11 @@ export class RoomBridgeLifecycle {
       const responseMode: ResponseMode | undefined =
         room.kind === 'channel' ? 'mention-only' : undefined;
       const added = this.roster.add(room, { agentPath: request.agentPath, responseMode });
-      eventFanOut.broadcast('room_member_added', { roomId: room.id, authorId: added.authorId });
+      eventFanOut.broadcast(
+        'room_member_added',
+        { roomId: room.id, authorId: added.authorId },
+        this.roomAudience(room.id)
+      );
     }
 
     // Re-point the row to the binding that now owns it — for the swap always,
@@ -327,11 +337,15 @@ export class RoomBridgeLifecycle {
         : { archived: false };
     const updated = this.store.updateRoom(room.id, patch);
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-    eventFanOut.broadcast('room_updated', {
-      roomId: updated.id,
-      title: updated.title,
-      archived: updated.archived,
-    });
+    eventFanOut.broadcast(
+      'room_updated',
+      {
+        roomId: updated.id,
+        title: updated.title,
+        archived: updated.archived,
+      },
+      this.roomAudience(updated.id)
+    );
     return updated;
   }
 }

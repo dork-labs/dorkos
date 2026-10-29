@@ -24,6 +24,8 @@ import {
 } from './authorization-service.js';
 import { ConnectorUsageStore, type ConnectorUsageOutcome } from './usage-store.js';
 import type { ManagedConnectorExecutionContextBindingPort } from './managed-execution-context.js';
+import type { ManagedConnectorTurnMark } from '@dorkos/shared/connector-managed-schemas';
+import { liveTurnMarks } from './managed-turn-marks.js';
 
 /** One fully parsed invocation reaching the execution broker after tier enforcement. */
 export interface ConnectorBrokerExecutionInput {
@@ -104,7 +106,8 @@ export class ConnectorExecutionBroker {
     private readonly principalRevalidation: ConnectorExecutionPrincipalRevalidationPort,
     private readonly now: () => Date = () => new Date(),
     private readonly managedExecutionContext?: ManagedConnectorExecutionContextBindingPort,
-    private readonly signIns?: ConnectorSignInEndedPort
+    private readonly signIns?: ConnectorSignInEndedPort,
+    private readonly turnMarks: (sessionId?: string) => ManagedConnectorTurnMark[] = liveTurnMarks
   ) {}
 
   /** Dispatch one logical operation with at most one explicitly safe retry. */
@@ -297,6 +300,7 @@ export class ConnectorExecutionBroker {
             retryable: false,
           };
         }
+        const marks = this.turnMarks(authorized.sessionId);
         this.managedExecutionContext.bind(command, {
           agentId: authorized.agentId,
           attemptIndex,
@@ -308,6 +312,7 @@ export class ConnectorExecutionBroker {
             actorKind: authorized.actorKind,
             actorId: authorized.actorId,
             ...(authorized.sessionId ? { sessionId: authorized.sessionId } : {}),
+            ...(marks.length > 0 ? { marks } : {}),
           },
         });
       }

@@ -5,22 +5,24 @@
  * this test.
  *
  * The protection: a turn a stranger started runs at the asking mode at most,
- * and so does every turn its messages start, however many agents they pass
- * through. And every such turn is recorded as one that read an outsider's
- * words, so a note it saves to the agent's memory says so in the stamp DorkOS
- * writes, and cannot rewrite a note the operator gave.
+ * and so does a session it starts. Every turn its messages start, however many
+ * agents they pass through, is recorded as one that read an outsider's words:
+ * a note it saves to the agent's memory says so in the stamp DorkOS writes,
+ * and cannot rewrite a note the operator gave, and its risky actions and shell
+ * ask (DOR-3390: marks gate actions, not levels).
  *
  * One hop per case, each through the real seam that records turn levels and
  * the real `memory_write` capability over a real memory file:
  *
- * | Hop                                   | Held to asking | Marked |
- * | ------------------------------------- | -------------- | ------ |
- * | a room post mentioning another agent  | yes            | yes    |
- * | a relay message to another agent      | yes            | yes    |
- * | a chat message to another chat        | yes            | yes    |
- * | a session the turn starts             | yes            | yes    |
- * | a stranger's line only in the window  | no (fenced)    | yes    |
- * | the note the turn saves to memory     | n/a            | yes    |
+ * | Hop                                   | Held to asking  | Marked |
+ * | ------------------------------------- | --------------- | ------ |
+ * | a room post, in the own circle        | no (gated)      | yes    |
+ * | a room post, outside the own circle   | yes             | yes    |
+ * | a relay message to another agent      | yes             | yes    |
+ * | a chat message to another chat        | no (gated)      | yes    |
+ * | a session the turn starts             | yes             | yes    |
+ * | a stranger's line only in the window  | no (fenced)     | yes    |
+ * | the note the turn saves to memory     | n/a             | yes    |
  *
  * The relay adapter's own half (an agent sender's turn is sent with the
  * runtime-default ceiling) is pinned in
@@ -163,7 +165,7 @@ afterEach(async () => {
 });
 
 describe("a stranger's words, one agent hop later", () => {
-  it('a room post: Bo is held to asking, and his note says it came from outsider words', async () => {
+  it('a room post: Bo runs at his own level, marked, and his note says it came from outsider words', async () => {
     // Both conversations are at Full autonomy; a stranger's message wakes Ana's.
     const ana = fresh('ana');
     const bo = fresh('bo');
@@ -172,15 +174,34 @@ describe("a stranger's words, one agent hop later", () => {
     await run(runtime, ana, strangerTurn);
     expect(runsAt(sent.get(ana))).toBe('default');
 
-    // Ana posts mentioning Bo; Bo's turn is started by her post.
+    // Ana posts mentioning Bo; Bo's turn is started by her post. In the owner's own circle
+    // (DOR-3390) the mark gates Bo's risky actions; it no longer caps his level.
+    const post = fresh('post');
+    noteEntryLevel(post, postLevelFor([ana]));
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }, false, '', { ownCircle: true })
+    );
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
+
+    expect((await boWrites({ action: 'add', text: 'ship on Fridays' }, bo)).saved).toBe(true);
+    expect(await lastNote()).toMatch(OUTSIDER_STAMP);
+  });
+
+  it('a room post outside the own circle: Bo may see the stranger’s own line, so he is held', async () => {
+    // A bridged room, or one with a stranger's line in Bo's view (DOR-3390, Security's M-B): the
+    // reader sees the outside words first-hand, one agent hop later, and is held as before.
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     const post = fresh('post');
     noteEntryLevel(post, postLevelFor([ana]));
     await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
     expect(runsAt(sent.get(bo))).toBe('default');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
-
-    expect((await boWrites({ action: 'add', text: 'ship on Fridays' }, bo)).saved).toBe(true);
-    expect(await lastNote()).toMatch(OUTSIDER_STAMP);
   });
 
   it('a relay message: a turn held to the runtime default reads as an outsider’s', async () => {
@@ -239,28 +260,35 @@ describe("a stranger's words, one agent hop later", () => {
     const ana = fresh('ana');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     const bound = markedBoundOf(ana, '/agents/ana')!;
-    const session = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling: bound };
-    expect(ceilingOn(session)).toBe('stranger');
-    const hook = createHeldTurnHook(
-      session,
-      async () => ({}),
-      { debug() {}, info() {} },
-      { cwd: '/agents/bo', roots: ['/agents/bo'] }
-    );
-    const out = await hook(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: 's',
-        transcript_path: '/t',
-        cwd: '/agents/bo',
-        tool_name: 'Bash',
-        tool_input: { command: 'python3 -c 1' },
-        tool_use_id: 't',
-      } as never,
-      't',
-      { signal: new AbortController().signal }
-    );
-    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: 'ask' } });
+    const hookSays = (permissionMode: 'acceptEdits' | 'bypassPermissions') => {
+      const session = { permissionMode, turnPermissionCeiling: bound };
+      expect(ceilingOn(session)).toBe('stranger');
+      const hook = createHeldTurnHook(
+        session,
+        async () => ({}),
+        { debug() {}, info() {} },
+        { cwd: '/agents/bo', roots: ['/agents/bo'] }
+      );
+      return hook(
+        {
+          hook_event_name: 'PreToolUse',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/agents/bo',
+          tool_name: 'Bash',
+          tool_input: { command: 'python3 -c 1' },
+          tool_use_id: 't',
+        } as never,
+        't',
+        { signal: new AbortController().signal }
+      );
+    };
+    // A child set below Full: its folder's allow rules ask.
+    expect(await hookSays('acceptEdits')).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
+    });
+    // A child set to Full asks nobody anything (DOR-3394); it asked here until then.
+    expect(await hookSays('bypassPermissions')).toEqual({});
   });
 
   it('a post two of the author’s turns vouch for keeps the mark if either read an outsider', async () => {
@@ -478,15 +506,15 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(runsAt(sent.get(bo))).toBe('default');
   });
 
-  it('a marked chat_send stays capped', async () => {
+  it('a marked chat_send stays marked, at the receiver’s own level (DOR-3390)', async () => {
     const ana = fresh('ana');
     const bo = fresh('bo');
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     const stored = await senderBound(passedOnLevelOf(ana), caller(ana), ownLevelFull);
-    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
     await run(runtime, bo, { permissionCeiling: stored });
-    expect(runsAt(sent.get(bo))).toBe('default');
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
   });
 
   // Trust first (Dorian 2026-10-19): unknown is not marked.
@@ -502,7 +530,7 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
   });
 
-  it('an email read by a connector event, then one chat_send, then a room post: still capped', async () => {
+  it('an email read by a connector event, then one chat_send, then a room post: still marked', async () => {
     // LifeOS's turn is started by a connector event (an email arriving), at Full.
     const lifeos = fresh('lifeos');
     const bo = fresh('bo');
@@ -512,8 +540,10 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(passedOnLevelOf(lifeos)?.outsider).toBe(true);
     const stored = await senderBound(passedOnLevelOf(lifeos), caller(lifeos), ownLevelFull);
     await run(runtime, bo, { permissionCeiling: stored });
-    expect(runsAt(sent.get(bo))).toBe('default');
-    // Bo posts into a room: the agent it wakes is capped too.
+    // DOR-3390: marked, so its risky actions ask, at its own level.
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
+    // Bo posts into a room: the agent it wakes is marked too.
     expect(postLevelFor([bo])?.outsider).toBe(true);
   });
 
@@ -558,9 +588,10 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     noteTurnOrigin(lifeos, { kind: 'interactive' });
     await run(runtime, lifeos);
     expect(postLevelFor([lifeos])?.outsider).toBe(true);
+    // The mark rides on, without the stranger's hold: the person's turn was not held (DOR-3390).
     expect(markedBoundOf(lifeos, '/agents/lifeos')).toEqual([
       expect.objectContaining({ outsider: true }),
-      'runtime-default',
+      { asks: 'never', reach: 'everything', outsider: true },
     ]);
   });
 });

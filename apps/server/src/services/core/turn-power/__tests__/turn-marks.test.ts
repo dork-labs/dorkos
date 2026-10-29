@@ -56,7 +56,8 @@ const MARKED: TurnPermissionLevel = { ...LEVEL, outsider: true };
 let counter = 0;
 const fresh = () => `turn-marks-${(counter += 1)}`;
 
-function recorded(): AgentRuntime {
+/** A runtime through the level seam, every chat set to `stored` (Full unless said). */
+function recorded(stored = 'bypassPermissions'): AgentRuntime {
   return recordTurnLevels(
     {
       type: 'claude-code',
@@ -65,12 +66,16 @@ function recorded(): AgentRuntime {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => stored
   );
 }
 
-async function ran(sessionId: string, opts?: Parameters<AgentRuntime['sendMessage']>[2]) {
-  for await (const _event of recorded().sendMessage(sessionId, 'hi', opts)) {
+async function ran(
+  sessionId: string,
+  opts?: Parameters<AgentRuntime['sendMessage']>[2],
+  stored?: string
+) {
+  for await (const _event of recorded(stored).sendMessage(sessionId, 'hi', opts)) {
     // drain
   }
 }
@@ -197,14 +202,19 @@ describe('the readers', () => {
     const action = gatedActionForMcpTool('tasks_delete');
     const plain = fresh();
     const marked = fresh();
+    const markedAtFull = fresh();
     await ran(plain);
-    await ran(marked, { permissionCeiling: 'runtime-default' });
+    // Below Full: a chat set to Full asks nobody anything (DOR-3394); this ran at Full until then.
+    await ran(marked, { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    await ran(markedAtFull, { permissionCeiling: 'runtime-default' });
 
     const forPlain = await resolveCallPermission({ action, identity, sessionId: plain });
     const forMarked = await resolveCallPermission({ action, identity, sessionId: marked });
+    const atFull = await resolveCallPermission({ action, identity, sessionId: markedAtFull });
     // Trusted runs a destructive action of our own agents, recorded; a marked turn still asks.
     expect(forPlain).toMatchObject({ area: 'tasks', state: 'allowed' });
     expect(forMarked).toMatchObject({ area: 'tasks', state: 'ask' });
+    expect(atFull).toMatchObject({ area: 'tasks', state: 'allowed' });
   });
 
   it('hold an edit to who the agent is for a person in a marked turn (DOR-3036)', async () => {
@@ -222,13 +232,18 @@ describe('the readers', () => {
     )!;
     const plain = fresh();
     const marked = fresh();
+    const markedAtFull = fresh();
     await ran(plain);
-    await ran(marked, { permissionCeiling: 'runtime-default' });
+    // Below Full, as above (DOR-3394); this ran at Full until then.
+    await ran(marked, { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    await ran(markedAtFull, { permissionCeiling: 'runtime-default' });
 
     const forPlain = await resolveCallPermission({ action, identity, sessionId: plain });
     const forMarked = await resolveCallPermission({ action, identity, sessionId: marked });
+    const atFull = await resolveCallPermission({ action, identity, sessionId: markedAtFull });
     expect(forPlain).toMatchObject({ state: 'allowed' });
     expect(forMarked).toMatchObject({ state: 'ask' });
+    expect(atFull).toMatchObject({ state: 'allowed' });
   });
 
   it('keep the destructive hold from a chat known by a second id while its agent reads an outsider', async () => {
@@ -270,7 +285,10 @@ describe('the readers', () => {
         permissionCeiling: 'runtime-default',
       });
       await elsewhere.next();
-      expect(await holdRequesterFor(context, preflight)).toBeUndefined();
+      // The chat is set to Full (its canonical id's record says so), so the marked sibling no
+      // longer sends the call to a card (DOR-3394): it waits out the window like any Full chat's.
+      // Until then this was `toBeUndefined()`. A chat below Full never reaches the window at all.
+      expect(await holdRequesterFor(context, preflight)).toBeDefined();
       await elsewhere.return(undefined);
     } finally {
       clearTestHomes();

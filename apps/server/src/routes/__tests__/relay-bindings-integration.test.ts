@@ -555,14 +555,16 @@ describe('Multi-instance adapter flow', () => {
       'telegram-1',
       { token: 'token1' },
       undefined,
-      undefined
+      undefined,
+      'person'
     );
     expect(vi.mocked(adapterManager.addAdapter)).toHaveBeenCalledWith(
       'telegram',
       'telegram-2',
       { token: 'token2' },
       undefined,
-      undefined
+      undefined,
+      'person'
     );
   });
 

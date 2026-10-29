@@ -1,14 +1,16 @@
 /**
- * A turn started from Wi-Fi runs at the runtime's default at most, and so does
- * everything it causes (DOR-3037): one test per path, through the real seam
- * that records turn levels.
+ * A turn started from Wi-Fi runs at the runtime's default at most (DOR-3037),
+ * and everything it causes is marked: one test per path, through the real seam
+ * that records turn levels. What our own agent passes on one hop later is
+ * marked and gated, not held (DOR-3390, Security 2026-10-29): its shell asks,
+ * it saves no standing rule, and its risky actions ask.
  *
- * | Path                                         | Held to Default |
- * | -------------------------------------------- | --------------- |
- * | the turn itself, on a Full autonomy agent    | yes             |
- * | a room post from Wi-Fi, and a mention after  | yes             |
- * | a `chat_send` to another chat                | yes             |
- * | a `session_start` spin-off                   | yes             |
+ * | Path                                         | Held to Default    |
+ * | -------------------------------------------- | ------------------ |
+ * | the turn itself, on a Full autonomy agent    | yes                |
+ * | a room post from Wi-Fi                       | yes                |
+ * | a mention after it, or a `chat_send`         | no: marked, gated  |
+ * | a `session_start` spin-off                   | yes                |
  * | a schedule it makes (`tasks_create`)         | parks for a person |
  *
  * The routes that put the hold on are pinned beside them
@@ -26,10 +28,16 @@ import {
   noteEntryHeldToDefault,
   noteEntryLevel,
   markedBoundOf,
+  marksOf,
   passedOnLevelOf,
   postLevelFor,
   recordTurnLevels,
+  setEntryMarksStore,
 } from '../turn-levels.js';
+import {
+  carriesOutsiderMark,
+  heldForOutsider,
+} from '../../../runtimes/claude-code/turn-permission.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
@@ -117,14 +125,70 @@ describe('a turn started from Wi-Fi', () => {
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: wifiPost, authorId: 'owner' }));
     expect(runsAt(sent.get(ana))).toBe('default');
 
+    // DOR-3390 (Security's Must 3): the next agent is marked and gated, at its own level. Its
+    // shell asks, it saves no standing rule, a schedule it makes parks, and it passes the mark on.
     const mention = fresh('post');
     noteEntryLevel(mention, postLevelFor([ana]));
-    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: mention, authorId: 'ana' }));
-    expect(runsAt(sent.get(bo))).toBe('default');
+    // In the owner's own circle: outside it Bo would be held (Security's M-B).
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: mention, authorId: 'ana' }, false, '', { ownCircle: true })
+    );
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
+    const session = {
+      permissionMode: 'bypassPermissions' as const,
+      turnPermissionCeiling: sent.get(bo)!.permissionCeiling!,
+    };
+    expect(carriesOutsiderMark(session)).toBe(true);
+    expect(heldForOutsider(session)).toBe(false);
+    expect(marksOf(bo, '/agents/bo')).toEqual({ outsider: true });
+    expect(passedOnLevelOf(bo)?.outsider).toBe(true);
+  });
+
+  it('a mark from Wi-Fi never raises the next agent past the sender’s person-set level', async () => {
+    // Security's Must 1: Ana is set to Act (acceptEdits) by a person; Bo is at Full.
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'acceptEdits', [bo]: 'bypassPermissions' });
+    const wifiPost = fresh('post');
+    noteEntryHeldToDefault(wifiPost);
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: wifiPost, authorId: 'owner' }));
+    const mention = fresh('post');
+    noteEntryLevel(mention, postLevelFor([ana]));
+    const act = levelOfMode(MODES, 'acceptEdits')!;
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: mention, authorId: 'ana' }, false, 'r', {
+        ownCircle: true,
+        posterCap: () => act,
+      })
+    );
+    expect(runsAt(sent.get(bo))).toBe('acceptEdits');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
   });
 
-  it('a chat_send carries the hold to the receiving chat', async () => {
+  it('a post whose writer’s turn this process did not record still holds its reader', async () => {
+    // Security's Must 2: after a restart only the row's marks are left, and they hold.
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [bo]: 'bypassPermissions' });
+    const rowOnly = fresh('post');
+    setEntryMarksStore({ write: () => {}, read: () => ({ outsider: true }) });
+    try {
+      await run(
+        runtime,
+        bo,
+        ceilingForEntry(AUTHORS, { id: rowOnly, authorId: 'ana' }, false, 'r', { ownCircle: true })
+      );
+    } finally {
+      setEntryMarksStore(null);
+    }
+    expect(runsAt(sent.get(bo))).toBe('default');
+  });
+
+  it('a chat_send carries the mark to the receiving chat, at its own level', async () => {
     const ana = fresh('ana');
     const bo = fresh('bo');
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
@@ -140,7 +204,8 @@ describe('a turn started from Wi-Fi', () => {
       )
     );
     await run(runtime, bo, { permissionCeiling: stored });
-    expect(runsAt(sent.get(bo))).toBe('default');
+    expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
   });
 
   it('a session_start spin-off carries the hold', async () => {

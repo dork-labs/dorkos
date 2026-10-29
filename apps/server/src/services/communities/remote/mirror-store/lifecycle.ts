@@ -60,6 +60,11 @@ export function purgeContent(
     .all();
   tx.delete(roomAttachments).where(inArray(roomAttachments.roomId, localRoomIds)).run();
   tx.delete(roomEntries).where(inArray(roomEntries.roomId, localRoomIds)).run();
+  const removedMembers = tx
+    .select({ roomId: roomMembers.roomId, authorId: roomMembers.authorId })
+    .from(roomMembers)
+    .where(inArray(roomMembers.roomId, localRoomIds))
+    .all();
   tx.delete(roomMembers).where(inArray(roomMembers.roomId, localRoomIds)).run();
   tx.delete(roomSessions).where(inArray(roomSessions.roomId, localRoomIds)).run();
   tx.delete(readCursors)
@@ -85,7 +90,7 @@ export function purgeContent(
     .set({ redactionCursor: null })
     .where(inArray(communityRoomMirrors.localRoomId, localRoomIds))
     .run();
-  return { localRoomIds, attachments };
+  return { localRoomIds, attachments, removedMembers };
 }
 
 /**

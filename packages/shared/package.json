@@ -161,6 +161,10 @@
       "types": "./src/mesh-schemas.ts",
       "default": "./dist/mesh-schemas.js"
     },
+    "./global-mcp-schemas": {
+      "types": "./src/global-mcp-schemas.ts",
+      "default": "./dist/global-mcp-schemas.js"
+    },
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
@@ -248,6 +252,10 @@
     "./community-private-wire": {
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
+    },
+    "./community-administer": {
+      "types": "./src/community-administer.ts",
+      "default": "./dist/community-administer.js"
     },
     "./community-connections": {
       "types": "./src/community-connections.ts",
