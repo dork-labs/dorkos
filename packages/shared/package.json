@@ -249,6 +249,10 @@
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
     },
+    "./community-administer": {
+      "types": "./src/community-administer.ts",
+      "default": "./dist/community-administer.js"
+    },
     "./community-connections": {
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"

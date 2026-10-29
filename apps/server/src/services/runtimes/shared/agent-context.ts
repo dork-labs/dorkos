@@ -55,6 +55,7 @@ import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
+import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, how an agent works in it,
@@ -108,7 +109,7 @@ When you tell a person about a chat, agent, ticket or pull request, name it by i
 Never show a raw id. A chat link is [Chat title](/session?session=<full id>). Three tools return one
 ready to use: the one whose name ends in \`session_start\`, the one that ends in \`chat_send\` and the
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
-Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
+What you can do here is listed area by area in the next block.
 Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
 \`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.
 ${fallback}
@@ -604,7 +605,8 @@ async function buildAgentBlock(
 
   // --- DorkOS knowledge block (default ON) ---
   if (conventions?.dorkosKnowledge !== false) {
-    tail.push(buildDorkosContextBlock());
+    // The areas ride with it: the same switch, because both say what DorkOS is (DOR-3219).
+    tail.push(buildDorkosContextBlock(), buildDorkosAreasBlock());
   }
 
   // --- Agent browser notice (only when its saved session is missing) ---

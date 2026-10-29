@@ -390,6 +390,7 @@ export async function sweepCommunityDeletions(
       'owner_replacements',
       'invite_uses',
       'pending_admissions',
+      'connection_administer_grants',
       'connection_grants',
       'connection_pairings',
       'invites',
