@@ -51,6 +51,7 @@ import {
   hasAgentIdentity,
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
+import { carriedWriteAsks } from '../tool-gate/carried-turn-writes.js';
 import {
   carriesOutsiderMark,
   gatePermissionMode,
@@ -560,8 +561,11 @@ export function createCanUseTool(
 
     // A turn that carries an outsider's words on runs at its own level, but its
     // shell asks at every level until it runs sandboxed (DOR-3390): the held-turn
-    // hook sends such a Bash call here even at Full, and lets plain reads by.
-    const carriedShell = toolName === 'Bash' && carriesOutsiderMark(session);
+    // hook sends such a Bash call here even at Full, and lets plain reads by. An
+    // edit to git's files or the agent's own asks the same way (`carried-turn-writes.ts`).
+    const carriedShell =
+      carriesOutsiderMark(session) &&
+      (toolName === 'Bash' || carriedWriteAsks(toolName, input, session.cwd ?? process.cwd()));
     // Anything but an explicit `allow` asks, so a decision added later can
     // never fall through to the auto-allow below.
     if (decision !== 'allow' || carriedShell) {

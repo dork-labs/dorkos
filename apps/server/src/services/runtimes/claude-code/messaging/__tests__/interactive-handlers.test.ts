@@ -224,6 +224,26 @@ describe('createCanUseTool — approval gate', () => {
     ).toEqual({ behavior: 'allow', updatedInput: { command: 'ls' } });
   });
 
+  // DOR-3390, Security's M-A and M-C: the hook sends an edit to git's files or the agent's own
+  // here, and Full must not auto-allow it, or the card the hook asked for never shows.
+  it('asks about an edit to .git or .dork at Full in a carried turn, and not without the mark', async () => {
+    const CARRIED = { asks: 'never', reach: 'everything', outsider: true } as const;
+    const session = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
+    const canUseTool = createCanUseTool(session, noopLog);
+    void canUseTool('Edit', { file_path: '/agents/ana/.git/config' }, makeContext('tool-git'));
+    void canUseTool('Write', { file_path: '/agents/ana/.dork/SOUL.md' }, makeContext('tool-soul'));
+    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-git')).toBe(true));
+    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-soul')).toBe(true));
+    const free = makeSession('bypassPermissions');
+    expect(
+      await createCanUseTool(free, noopLog)(
+        'Edit',
+        { file_path: '/agents/ana/.git/config' },
+        makeContext('t3')
+      )
+    ).toEqual({ behavior: 'allow', updatedInput: { file_path: '/agents/ana/.git/config' } });
+  });
+
   it('auto-allows read-only tools even in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);

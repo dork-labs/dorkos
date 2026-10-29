@@ -16,7 +16,8 @@
  *
  * | Hop                                   | Held to asking  | Marked |
  * | ------------------------------------- | --------------- | ------ |
- * | a room post mentioning another agent  | no (gated)      | yes    |
+ * | a room post, in the own circle        | no (gated)      | yes    |
+ * | a room post, outside the own circle   | yes             | yes    |
  * | a relay message to another agent      | yes             | yes    |
  * | a chat message to another chat        | no (gated)      | yes    |
  * | a session the turn starts             | yes             | yes    |
@@ -173,16 +174,34 @@ describe("a stranger's words, one agent hop later", () => {
     await run(runtime, ana, strangerTurn);
     expect(runsAt(sent.get(ana))).toBe('default');
 
-    // Ana posts mentioning Bo; Bo's turn is started by her post.
+    // Ana posts mentioning Bo; Bo's turn is started by her post. In the owner's own circle
+    // (DOR-3390) the mark gates Bo's risky actions; it no longer caps his level.
     const post = fresh('post');
     noteEntryLevel(post, postLevelFor([ana]));
-    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
-    // DOR-3390: the mark gates Bo's risky actions; it no longer caps his level.
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }, false, '', { ownCircle: true })
+    );
     expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
 
     expect((await boWrites({ action: 'add', text: 'ship on Fridays' }, bo)).saved).toBe(true);
     expect(await lastNote()).toMatch(OUTSIDER_STAMP);
+  });
+
+  it('a room post outside the own circle: Bo may see the stranger’s own line, so he is held', async () => {
+    // A bridged room, or one with a stranger's line in Bo's view (DOR-3390, Security's M-B): the
+    // reader sees the outside words first-hand, one agent hop later, and is held as before.
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
+    const post = fresh('post');
+    noteEntryLevel(post, postLevelFor([ana]));
+    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
+    expect(runsAt(sent.get(bo))).toBe('default');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
   });
 
   it('a relay message: a turn held to the runtime default reads as an outsider’s', async () => {

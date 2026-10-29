@@ -81,6 +81,7 @@ import {
 } from '@dorkos/shared/permissions';
 
 import { marksOf } from '../turn-power/turn-levels.js';
+import { HELD_IN_A_MARKED_TURN, markedTurnCardArea } from './marked-turn-holds.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
@@ -322,14 +323,6 @@ function stricter(a: ResolvedPermission, b: ResolvedPermission): ResolvedPermiss
 }
 
 /**
- * Edits every later turn of the agent reads (who it is in `SOUL.md`, what its beat does in
- * `HEARTBEAT.md`, its persona and settings), so in a marked turn they are held for a person
- * (DOR-3036): a stranger's or a teammate's words must not rewrite who the agent is for everyone
- * after. A card, every time, whatever the preset.
- */
-const HELD_IN_A_MARKED_TURN: ReadonlySet<string> = new Set(['operator.update_agent']);
-
-/**
  * Resolve the permission for one call, reading the config and the calling
  * agent's manifest fresh.
  *
@@ -355,16 +348,31 @@ export async function resolveCallPermission(request: {
   input?: unknown;
   /** The calling session, when the surface verified one. */
   sessionId?: string;
+  /**
+   * The chat and agent a turn-bound runtime principal names, for a surface that verified the
+   * principal but no session or identity (the connector loopback): its turn's marks count too.
+   */
+  principalTurn?: { sessionId: string; agentPath: string };
 }): Promise<CallPermission | null> {
-  const { action, identity } = request;
+  const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn = marksOf(request.sessionId, identity?.agentPath).outsider === true;
+  const strangerTurn =
+    marksOf(request.sessionId, identity?.agentPath).outsider === true ||
+    (principalTurn !== undefined &&
+      marksOf(principalTurn.sessionId, principalTurn.agentPath).outsider === true);
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
   const areas = areasForCall(action, request.input);
-  if (areas.length === 0) return null;
+  if (areas.length === 0) {
+    // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
+    // under the area it acts in, every time.
+    const cardArea = strangerTurn ? markedTurnCardArea(action.id) : undefined;
+    return cardArea !== undefined
+      ? { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' }
+      : null;
+  }
   // The strictest area DorkOS knows about, for the two refusals below.
   const refusalArea = areas.find(isFloorArea) ?? areas[0]!;
 
