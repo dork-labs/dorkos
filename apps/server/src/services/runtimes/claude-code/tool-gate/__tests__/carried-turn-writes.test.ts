@@ -138,6 +138,21 @@ describe('an unmarked turn at Full is unchanged', () => {
 });
 
 describe('the two checks on their own', () => {
+  it('folds case, since macOS ignores it (Security M-1)', () => {
+    for (const file of [
+      '.GIT/config',
+      '.Git/hooks/pre-commit',
+      'sub/.GitAttributes',
+      '.GITMODULES',
+      '.Dork/SOUL.md',
+      path.join(home, '.DORK', 'memory', 'x.md'),
+    ]) {
+      expect(carriedWriteAsks('Write', { file_path: file }, home)).toBe(true);
+    }
+    expect(runsGit('GIT status')).toBe(true);
+    expect(runsGit('/usr/bin/Git diff')).toBe(true);
+  });
+
   it('reads a write tool’s path, and leaves every other tool alone', () => {
     expect(carriedWriteAsks('NotebookEdit', { notebook_path: '.dork/a.ipynb' }, home)).toBe(true);
     expect(carriedWriteAsks('Read', { file_path: '.git/config' }, home)).toBe(false);

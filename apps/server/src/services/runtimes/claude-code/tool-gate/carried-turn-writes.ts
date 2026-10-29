@@ -34,10 +34,14 @@ const GUARDED_FOLDERS: ReadonlySet<string> = new Set(['.git', '.dork']);
 /** File names an edit asks about wherever they are. */
 const GUARDED_FILES: ReadonlySet<string> = new Set(['.gitattributes', '.gitmodules']);
 
-/** Whether one path, as given and where it really is, names a guarded folder or file. */
+/**
+ * Whether one path, as given and where it really is, names a guarded folder or file. Case is
+ * folded first: macOS and Windows disks ignore it, so `.GIT/config` is `.git/config` there, and
+ * `realpathSync` keeps the case the caller typed.
+ */
 function guarded(target: string): boolean {
   return [target, realLocation(target)].some((where) => {
-    const parts = where.split(path.sep);
+    const parts = where.toLowerCase().split(path.sep);
     return (
       parts.slice(0, -1).some((part) => GUARDED_FOLDERS.has(part)) ||
       GUARDED_FILES.has(parts.at(-1) ?? '') ||
@@ -78,5 +82,6 @@ export function runsGit(command: string): boolean {
     .trim()
     .split(/\s+/)[0]
     ?.replace(/^(['"])(.*)\1$/, '$2');
-  return first !== undefined && path.basename(first) === 'git';
+  // Case folded for the same reason as paths: on macOS `GIT status` runs git.
+  return first !== undefined && path.basename(first).toLowerCase() === 'git';
 }
