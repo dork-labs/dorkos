@@ -15,12 +15,17 @@ import { helperBinary } from './helper-binary';
  * checks that each one does what it says, on the app binary and on the Helper:
  *
  * - `NODE_OPTIONS=--require <file>` loads nothing;
- * - `--inspect` opens no inspector;
+ * - `--inspect` on a normal launch of the app opens no inspector;
  * - `ELECTRON_RUN_AS_NODE=1` still runs a script. That row is PR 1's named
  *   residual, not the goal: isolated extensions and Playwright's browser
  *   download need run-as-node until DOR-3358. PR 2 (Keychain) adds a sibling
  *   row that must pass: run-as-node runs, but reading the Keychain item fails
  *   with no prompt.
+ *
+ * `--inspect` under run-as-node still opens an inspector on Electron 42.11.16:
+ * the inspect fuse does not reach that mode. It is part of the same residual,
+ * since run-as-node already runs any code, and it closes with DOR-3358. So the
+ * inspect probe is a normal launch, where the fuse does apply.
  *
  * Every probe runs first on the stock Electron binary from `node_modules`, whose
  * fuses are all at their defaults, and must take effect there. A probe that
@@ -54,7 +59,7 @@ export interface FuseEffects {
   runAsNode: boolean;
   /** `NODE_OPTIONS=--require` loaded a file. */
   nodeOptions: boolean;
-  /** `--inspect` opened an inspector. */
+  /** `--inspect` on a normal launch opened an inspector. */
   inspect: boolean;
 }
 
@@ -67,10 +72,18 @@ export const EXPECTED_EFFECTS: FuseEffects = {
 
 const RAN = 'dorkos-fuse-probe-ran';
 const PRELOADED = 'dorkos-fuse-probe-preloaded';
-const INSPECTOR_PREFIX = 'dorkos-fuse-probe-inspector:';
+/** What Node prints on standard error when `--inspect` opened an inspector. */
+const INSPECTOR_LISTENING = /Debugger listening on ws:\/\//;
 
 /** One probe launch can't take longer than this; a hung launch is a failure. */
 const PROBE_TIMEOUT_MS = 30_000;
+
+/**
+ * How long a normal launch with `--inspect` gets. The inspector line comes
+ * before any app code runs, so a few seconds is plenty; the launch is then
+ * stopped, since the packaged app would otherwise go on starting DorkOS.
+ */
+const INSPECT_LAUNCH_MS = 10_000;
 
 /** launchd's PATH, so nothing from the runner's shell answers for the app. */
 const LAUNCHD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -106,7 +119,8 @@ export function wrongFuses(wire: Partial<Record<number, number>>): string[] {
 /**
  * Work out what the three probe launches did from their output.
  *
- * @param outputs - Standard output of the run-as-node, NODE_OPTIONS and inspect probes.
+ * @param outputs - Standard output of the run-as-node and NODE_OPTIONS probes,
+ *   and everything the normal `--inspect` launch printed.
  */
 export function readEffects(outputs: {
   runAsNode: string;
@@ -116,7 +130,7 @@ export function readEffects(outputs: {
   return {
     runAsNode: outputs.runAsNode.includes(RAN),
     nodeOptions: outputs.nodeOptions.includes(PRELOADED),
-    inspect: new RegExp(`${INSPECTOR_PREFIX}ws://`).test(outputs.inspect),
+    inspect: INSPECTOR_LISTENING.test(outputs.inspect),
   };
 }
 
@@ -131,21 +145,38 @@ function runAsNode(binary: string, args: string[], home: string, extra: NodeJS.P
 }
 
 /**
+ * Launch `binary` normally (not as Node) with `--inspect`, stop it after
+ * {@link INSPECT_LAUNCH_MS}, and return everything it printed.
+ */
+function launchWithInspect(binary: string, args: string[], home: string): string {
+  const result = spawnSync(binary, ['--inspect=127.0.0.1:0', ...args], {
+    env: { PATH: LAUNCHD_PATH, HOME: home },
+    encoding: 'utf-8',
+    timeout: INSPECT_LAUNCH_MS,
+  });
+  return `${result.stdout ?? ''}${result.stderr ?? ''}`;
+}
+
+/**
  * Launch `binary` three ways and report what each did.
  *
  * @param binary - An Electron binary (stock, the packaged app, or its Helper).
  * @param dir - A scratch folder for the preload file and HOME.
+ * @param appArgs - What a normal launch needs after `--inspect`: a quitting
+ *   app for stock Electron, nothing for the packaged app (it loads its own).
+ *   `null` skips the normal launch (the Helper, which is not launched alone)
+ *   and reports `inspect` as expected; its fuses are the app's, one framework.
  */
-export function probeBinary(binary: string, dir: string): FuseEffects {
+export function probeBinary(binary: string, dir: string, appArgs: string[] | null): FuseEffects {
   const preload = path.join(dir, 'preload.cjs');
   writeFileSync(preload, `process.stdout.write(${JSON.stringify(PRELOADED)});\n`);
   const ran = `process.stdout.write(${JSON.stringify(RAN)})`;
-  const inspector = `process.stdout.write(${JSON.stringify(INSPECTOR_PREFIX)} + (require('inspector').url() || 'none'))`;
-  return readEffects({
+  const effects = readEffects({
     runAsNode: runAsNode(binary, ['-e', ran], dir),
     nodeOptions: runAsNode(binary, ['-e', ran], dir, { NODE_OPTIONS: `--require ${preload}` }),
-    inspect: runAsNode(binary, ['--inspect=127.0.0.1:0', '-e', inspector], dir),
+    inspect: appArgs === null ? '' : launchWithInspect(binary, appArgs, dir),
   });
+  return appArgs === null ? { ...effects, inspect: EXPECTED_EFFECTS.inspect } : effects;
 }
 
 /** Describe effects for an error message. */
@@ -171,17 +202,25 @@ export async function assertFuses(appPath: string): Promise<string> {
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-fuses-')));
   try {
     const stock = createRequire(import.meta.url)('electron') as string;
-    const control = probeBinary(stock, dir);
+    const quitter = path.join(dir, 'quit.cjs');
+    writeFileSync(
+      quitter,
+      "const { app } = require('electron');\napp.whenReady().then(() => app.quit());\n"
+    );
+    const control = probeBinary(stock, dir, [quitter]);
     if (!control.runAsNode || !control.nodeOptions || !control.inspect) {
       throw new Error(
         `A fuse probe does not work even on stock Electron (${stock}): ${describe(control)}. ` +
           `Fix the probe; a probe that can't succeed there proves nothing here.`
       );
     }
-    const binaries = [path.join(appPath, 'Contents', 'MacOS', path.basename(appPath, '.app'))];
-    binaries.push(helperBinary(appPath));
-    for (const binary of binaries) {
-      const effects = probeBinary(binary, dir);
+    const app = path.join(appPath, 'Contents', 'MacOS', path.basename(appPath, '.app'));
+    const probes: [string, string[] | null][] = [
+      [app, []],
+      [helperBinary(appPath), null],
+    ];
+    for (const [binary, appArgs] of probes) {
+      const effects = probeBinary(binary, dir, appArgs);
       if (describe(effects) !== describe(EXPECTED_EFFECTS)) {
         throw new Error(
           `${path.basename(binary)} launched with ${describe(effects)}; its fuses should give ` +
@@ -190,8 +229,9 @@ export async function assertFuses(appPath: string): Promise<string> {
       }
     }
     return (
-      `wire matches electron-builder.yml; NODE_OPTIONS and --inspect do nothing on the app or ` +
-      `its Helper; run-as-node still runs (residual, DOR-3358)`
+      `wire matches electron-builder.yml; NODE_OPTIONS does nothing on the app or its Helper, ` +
+      `--inspect does nothing on a normal launch; run-as-node still runs, --inspect included ` +
+      `(residual, DOR-3358)`
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

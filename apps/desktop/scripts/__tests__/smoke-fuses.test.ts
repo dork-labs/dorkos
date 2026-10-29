@@ -78,14 +78,14 @@ describe('the packaged fuse check', () => {
       readEffects({
         runAsNode: 'dorkos-fuse-probe-ran',
         nodeOptions: 'dorkos-fuse-probe-preloadeddorkos-fuse-probe-ran',
-        inspect: 'dorkos-fuse-probe-inspector:ws://127.0.0.1:9229/abc',
+        inspect: 'Debugger listening on ws://127.0.0.1:9229/abc\nFor help, see: https://nodejs.org',
       })
     ).toEqual({ runAsNode: true, nodeOptions: true, inspect: true });
     expect(
       readEffects({
         runAsNode: '',
         nodeOptions: 'dorkos-fuse-probe-ran',
-        inspect: 'dorkos-fuse-probe-inspector:none',
+        inspect: 'DorkOS refused a debugging switch: --inspect',
       })
     ).toEqual({ runAsNode: false, nodeOptions: false, inspect: false });
   });
