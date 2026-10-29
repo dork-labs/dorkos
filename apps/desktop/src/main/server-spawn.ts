@@ -360,6 +360,11 @@ function buildServerEnv(
     DORKOS_PORT: String(port),
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     DORKOS_MANAGED_BY: MANAGED_BY,
+    // Which kind of DorkOS this is, for agents' update advice (the server's
+    // lib/distribution/ reads it; the platform decides Mac or Windows). Set on
+    // every spawn so an inherited value can never stand in for it.
+    DORKOS_DISTRIBUTION: app.isPackaged ? 'desktop' : 'dev',
+    DORKOS_DESKTOP_VERSION: app.getVersion(),
     ...parentWatchEnv,
     ...(dorkHome ? { DORK_HOME: dorkHome } : {}),
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),

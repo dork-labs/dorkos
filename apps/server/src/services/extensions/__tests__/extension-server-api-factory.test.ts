@@ -240,17 +240,30 @@ describe('createDataProviderContext', () => {
       const { ctx } = buildCtx();
       ctx.emit('status-changed', { issueId: 'ISS-1', status: 'done' });
 
-      expect(mockBroadcast).toHaveBeenCalledWith(`ext:${extensionId}:status-changed`, {
-        issueId: 'ISS-1',
-        status: 'done',
-      });
+      expect(mockBroadcast).toHaveBeenCalledWith(
+        `ext:${extensionId}:status-changed`,
+        { issueId: 'ISS-1', status: 'done' },
+        expect.any(Function)
+      );
+    });
+
+    it('sends the event to every stream, as it always has', () => {
+      const { ctx } = buildCtx();
+      ctx.emit('status-changed', null);
+
+      const audience = mockBroadcast.mock.calls[0]![2] as (principal: unknown) => boolean;
+      expect(audience({ kind: 'anonymous' })).toBe(true);
     });
 
     it('uses the correct extension ID in the event namespace', () => {
       const { ctx } = buildCtx({ extensionId: 'my-plugin' });
       ctx.emit('refresh', null);
 
-      expect(mockBroadcast).toHaveBeenCalledWith('ext:my-plugin:refresh', null);
+      expect(mockBroadcast).toHaveBeenCalledWith(
+        'ext:my-plugin:refresh',
+        null,
+        expect.any(Function)
+      );
     });
   });
 

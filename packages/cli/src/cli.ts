@@ -20,6 +20,7 @@ import {
   flushCliError,
 } from './lib/error-reporter.js';
 import { defaultDorkHome } from './lib/dork-home.js';
+import { stampCliLaunch } from './lib/distribution.js';
 import { parseCliArgs } from './parse-cli-args.js';
 import { recordInstallRef } from '@dorkos/shared/install-ref';
 
@@ -841,8 +842,8 @@ uninstallCliErrorHandlers?.();
 // is the one specifier the CLI bundle leaves external, so what it exports is
 // live state from the process the server is running in (see below).
 // Only this bootstrap establishes the current distribution for agent CLI fallback.
-process.env.DORKOS_CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
-process.env.DORKOS_CLI_VERSION = __CLI_VERSION__;
+// It also says which kind of DorkOS this is, so agents' update steps fit it.
+stampCliLaunch(process.env, fileURLToPath(import.meta.url), __CLI_VERSION__);
 let server: typeof import('../server/index.js');
 try {
   server = await import('../server/index.js');

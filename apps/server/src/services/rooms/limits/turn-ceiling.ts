@@ -139,7 +139,15 @@ export function ceilingForEntry(
     );
     const carried = ceilingCarrying(marks);
     if (carried === undefined) return { permissionCeiling: level };
-    return { permissionCeiling: [level, ...(Array.isArray(carried) ? carried : [carried])] };
+    const bounds: TurnPermissionBound[] = [
+      level,
+      ...((Array.isArray(carried) ? carried : [carried]) as TurnPermissionBound[]),
+    ];
+    // Outside the own circle the reader may see the stranger's own line (a bridged room, a
+    // stranger's line in view), so an outsider's mark holds it, as a stranger's message does
+    // (DOR-3390, Security's M-B). Only the own circle passes the mark on without the hold.
+    if (marks.outsider === true) bounds.push('runtime-default');
+    return { permissionCeiling: bounds };
   }
   // The level is gone (a restart) or was never kept: the post's row still says what it carried.
   if (isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId || undefined)) {

@@ -138,6 +138,18 @@ export interface AgentMcpServerServiceDeps {
    * injected by tests to simulate a 401.
    */
   probeFetch?: typeof fetch;
+  /**
+   * The servers a person added for every agent in Connections → MCP servers
+   * (DOR-3213). Merged under each agent's own servers at injection, so a
+   * server of the same name on the agent's manifest wins. Omitted → none.
+   */
+  globalServers?: GlobalMcpServerSource;
+}
+
+/** Where the servers a person added for every agent come from. */
+export interface GlobalMcpServerSource {
+  /** The enabled global servers this agent gets, with secrets resolved. */
+  injectableFor(agentId: string): Record<string, McpAppServerConnection>;
 }
 
 /** Arguments for {@link AgentMcpServerService.add}. */
@@ -201,6 +213,7 @@ export class AgentMcpServerService {
   private readonly logger: Pick<Logger, 'warn'>;
   private readonly tokenProvider: McpOAuthTokenProvider | undefined;
   private readonly probeFetch: typeof fetch | undefined;
+  private readonly globalServers: GlobalMcpServerSource | undefined;
   /** cwd → last-seen manifest mtime + resolved enabled servers, for {@link injectableServersForCwd}. */
   private readonly injectionCache = new Map<string, InjectionCacheEntry>();
 
@@ -209,6 +222,7 @@ export class AgentMcpServerService {
     this.logger = deps.logger ?? console;
     this.tokenProvider = deps.tokenProvider;
     this.probeFetch = deps.probeFetch;
+    this.globalServers = deps.globalServers;
   }
 
   /**
@@ -605,9 +619,14 @@ export class AgentMcpServerService {
     // Every agent browser leaves here with its session file in place (an empty
     // one when it was deleted), scrubbed of Cloud sign-ins, and blocked from the
     // Cloud origin; one that cannot be guarded is left out (DOR-3196).
-    return guardAgentBrowsers(this.mergeOAuthHeaders(entry.agentId, entry.servers), {
-      logger: this.logger,
-    });
+    // The person's servers for every agent go in first, so an agent's own
+    // server of the same name replaces one (DOR-3213).
+    // With none, the agent's own map goes out as it was, so a caller comparing
+    // two reads by identity still sees an unchanged one.
+    const own = this.mergeOAuthHeaders(entry.agentId, entry.servers);
+    const globals = this.globalServers?.injectableFor(entry.agentId) ?? {};
+    const servers = Object.keys(globals).length > 0 ? { ...globals, ...own } : own;
+    return guardAgentBrowsers(servers, { logger: this.logger });
   }
 
   /**

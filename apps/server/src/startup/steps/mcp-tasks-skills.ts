@@ -49,6 +49,8 @@ import type { WireDocDeliveryResult } from './doc-delivery.js';
 import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapters.js';
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
+import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import { credentialStore } from '../../services/core/credential-provider.js';
 
 /** What {@link wireMcpTasksAndSkills} reads from the startup steps before it. */
 export interface WireMcpTasksAndSkillsInput {
@@ -95,6 +97,15 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     agentPauses,
     mountedRouters,
   } = built;
+  // The MCP servers a person added for every agent (DOR-3213). Loaded before
+  // any runtime asks for its servers; an unreadable file leaves the list empty
+  // and says so, rather than keeping the server from starting.
+  const globalMcpServers = new GlobalMcpStore(dorkHome, credentialStore);
+  await globalMcpServers.load().catch((err: unknown) => {
+    logger.warn('[mcp-servers] could not read the MCP servers for every agent', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
   // A plugin reload that threw a conversation's prompt cache away leaves a line
   // in the feed — with what it cost and whether it waited first. Free reloads
   // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
@@ -157,6 +168,9 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     refs.agentMcpServerService = new AgentMcpServerService({
       agents: refs.meshCore.agentRegistry,
       logger,
+      // The servers a person added for every agent (DOR-3213), merged under each
+      // agent's own at injection.
+      globalServers: globalMcpServers,
       // The injection path merges `Authorization: Bearer <token>` into http/sse
       // entries iff this returns a live token — withholds otherwise (needs-auth).
       tokenProvider: refs.agentMcpOAuthService,
@@ -343,6 +357,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   const localBrowserService = localBrowserHost.start(dorkHome);
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
+    mcpServers: globalMcpServers,
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
     docChannel: { ...docChannelHttp, metrics: docChannelMetrics, workReview: docWorkReview },

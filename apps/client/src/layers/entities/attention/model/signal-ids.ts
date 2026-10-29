@@ -128,3 +128,15 @@ export function interactionSignalKind(
 ): 'question' | 'permission-prompt' {
   return type === 'question' ? 'question' : 'permission-prompt';
 }
+
+/**
+ * The signal id of a connection paused until its owner confirms what it sends
+ * (DOR-3271). Keyed by the fingerprint too, so a connection that changed while
+ * paused is a new thing to look at, not the one already seen.
+ *
+ * @param adapterId - The paused connection's id.
+ * @param fingerprint - What it was listed with.
+ */
+export function pausedConnectionSignalId(adapterId: string, fingerprint: string): string {
+  return `connection:${adapterId}:${fingerprint}`;
+}
