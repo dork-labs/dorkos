@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): the owner's own messages from Wi-Fi run at the agent's level (DOR-3242)"
+  - 'fix(server): a Full chat keeps its 60-second window while Wi-Fi is open (DOR-3242)'
 ---
 
 ### Changed
