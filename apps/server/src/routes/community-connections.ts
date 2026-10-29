@@ -57,6 +57,7 @@ import {
   getRemotePairingService,
   getRemoteWakePolicy,
   getTeammateSpend,
+  getRemoteAdministerCredentials,
 } from '../services/communities/remote/state.js';
 import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
@@ -76,6 +77,7 @@ import {
   getSpaceSettingsReader,
   type SpaceSettingsReader,
 } from '../services/communities/remote/settings/index.js';
+import { addAdministerRoutes, type AdministerState } from './community-administer.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /**
@@ -290,7 +292,8 @@ export function createCommunityConnectionsRoutes(
   // Looked up per request when not injected, so building the routes reads nothing from disk.
   wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>,
   teammateSpend?: TeammateSpendPolicy,
-  spaceSettings?: SpaceSettingsReader
+  spaceSettings?: SpaceSettingsReader,
+  administer?: AdministerState
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   const caches: ActivityCaches = {
@@ -538,12 +541,11 @@ export function createCommunityConnectionsRoutes(
   addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
   // What teammates' turns in the space may cost the owner a month (DOR-2956), owner-only too.
   addTeammateSpendRoutes(router, resolveCommunityOwner, () => teammateSpend ?? getTeammateSpend());
+  const ownerOf = resolveCommunityOwner;
   // A space's settings, members and rules for its Settings tab (DOR-3005), person-only too.
-  addSpaceSettingsRoutes(
-    router,
-    resolveCommunityOwner,
-    () => spaceSettings ?? getSpaceSettingsReader()
-  );
+  addSpaceSettingsRoutes(router, ownerOf, () => spaceSettings ?? getSpaceSettingsReader());
+  // Whether the app can manage the space, and whether pairing again would let it (DOR-3005).
+  addAdministerRoutes(router, ownerOf, () => administer ?? getRemoteAdministerCredentials());
   router.delete(
     '/:ref',
     forConnection(async (c, owner, ref) => {

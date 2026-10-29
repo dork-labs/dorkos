@@ -368,11 +368,11 @@ and not only look at it -- click it, type into it, and read it back:
   ${T}browser_press(key, documentId?) -- one key or chord at whatever has focus.
   ${T}browser_scroll(by?, to?, role?, name?, documentId?) -- move the page.
   ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
-Read the page first: the names it prints are the names the other five take. This works only on a
-preview DorkOS serves or proxies -- a page loaded straight from the internet is shown, not driven,
-and says so in a sentence rather than making you wait. With more than one browser tab open, leave
-documentId out to act in the one whose window last brought a preview to the front -- almost always
-the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
+Read the page first: the names it prints are the names the other five take. This drives only a
+preview DorkOS serves or proxies; a real website is shown here, not driven, so drive it in the
+Agent browser (${T}local_browser_observe, ${T}local_browser_act) once the person shares one. With
+more than one tab open, leave documentId out to act in the tab whose window last brought a preview
+to the front. Every one of these six answers with the tab it acted on and that tab's id, so to
 stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
 open tabs with their ids as well; in a one-on-one session it does not.
 

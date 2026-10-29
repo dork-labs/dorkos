@@ -996,6 +996,9 @@ Each one shows a card with the change, and a line in Activity naming the files. 
     'harness.folderConfigPinned': {
       description:
         'Whether DorkOS has pinned the agents it already had. It does this once, so a new agent whose folder runs anything waits for your yes. Only a person can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
     'harness.approvedRepoConfig': {
       description:
         'The project and worktree settings you allowed to run: a local settings file, changed hooks, or a changed `.mcp.json`. Each entry is the content you approved, so the same change runs in every worktree. Only a person can change this list.',
