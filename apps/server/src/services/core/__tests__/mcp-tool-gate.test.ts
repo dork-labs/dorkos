@@ -564,6 +564,8 @@ describe('hand-registered MCP tools carry a permission tier', () => {
        * written up.
        */
       const AUTO_ALLOW_ACT_REASONS: Record<string, string> = {
+        accounts_probe:
+          "Reads one idle Claude account's usage numbers by starting Claude Code on an idle prompt: no turn runs, nothing is spent, no transcript is written, and nothing a person owns changes (DOR-3289). It keeps its own floor of one try a minute per account, single-flight, whoever calls it. It asks in any turn held to a ceiling (a stranger's, a teammate's, another agent's), and the tool itself refuses a turn MARKED by words from outside the team (a stranger's line in view, no ceiling), so an outsider's question cannot make our agents read our accounts.",
         post_to_room:
           "ONLY under a resolved agent identity (IDENTITY_SCOPED_TOOLS): with one, this is an agent speaking in a room it is a member of, which is what its room turn already does with no card at all — the turn's own answer is posted for it, so the tool is the same act through a different door and a card bounds nothing it does not already permit. Membership is resolved first, posting is channels and threads only, and what bounds it is mechanism rather than prompt — the cascade guard and the two-ceiling turn budget. WITHOUT an identity the caller resolves to the person who owns the install, so it would post as a human at cascade depth zero and trigger every agent in the channel; the gate raises the ordinary card there.",
         react_to_room_entry:

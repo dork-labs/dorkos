@@ -28,6 +28,12 @@ import { activitySearchSchema } from '@/app/route-search';
 
 // The week summary counts sessions off the session list; this file is about the
 // two lists below it, so the count stays unknown and draws nothing.
+// The held-back mini app line reads live extension state; these tests do not draw it.
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  WithheldExtensionsNotice: () => null,
+  useWithheldExtensions: () => [],
+}));
 vi.mock('../model/use-session-activity', () => ({ useSessionActivity: () => null }));
 
 import { ActivityPage } from '../ActivityPage';

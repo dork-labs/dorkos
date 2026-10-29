@@ -203,6 +203,7 @@ export const AGENT_CONTEXT_BLOCK_TAGS: readonly string[] = [
   'working_rules',
   'agent_memory',
   'dorkos_context',
+  'dorkos_areas',
   'user_profile',
   'env',
 ];

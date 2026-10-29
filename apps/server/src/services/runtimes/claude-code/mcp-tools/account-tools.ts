@@ -20,13 +20,37 @@ import {
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import type { TaskProvenanceResolver } from './task-tools.js';
+
+/**
+ * Refused in a turn that read words DorkOS cannot vouch for (a stranger's line
+ * in a room, a teammate's), ceiling or not (Security on #3201, DOR-3289): the
+ * answer carries account ids, plan, credits and spend, and the turn could post
+ * it where the stranger reads. Read from the turn's own marks (`marksOf`).
+ */
+const MARKED_TURN_REFUSAL = {
+  error: 'This turn read words from outside your team, so it can’t read account usage.',
+  code: 'MARKED_TURN',
+};
+
+/** Whether the calling turn is marked, when a session is known. */
+function callerIsMarked(resolveProvenance: TaskProvenanceResolver | undefined): boolean {
+  if (!resolveProvenance) return false;
+  const p = resolveProvenance();
+  return hasMarks(marksOf(p.sessionId, p.agentPath));
+}
 
 /**
  * Handler for `accounts_usage`: every account of every runtime, from the usage
  * store's memory. A window with no current reading is left out, and an account
  * with nothing to go on reads `unknown`, never zero.
+ *
+ * @param marked - Whether the calling turn is marked (refused when it is).
  */
-export async function handleAccountsUsage() {
+export async function handleAccountsUsage(marked = false) {
+  if (marked) return jsonContent(MARKED_TURN_REFUSAL, true);
   const store = getAccountUsageStore();
   if (!store) return jsonContent({ error: 'Account usage is not available yet.' }, true);
   return structuredJsonContent({ accounts: store.list() });
@@ -39,8 +63,10 @@ export async function handleAccountsUsage() {
  *
  * @param args - The tool input.
  * @param args.account - A registry id, or `default`.
+ * @param marked - Whether the calling turn is marked (refused when it is).
  */
-export async function handleAccountsProbe(args: { account: string }) {
+export async function handleAccountsProbe(args: { account: string }, marked = false) {
+  if (marked) return jsonContent(MARKED_TURN_REFUSAL, true);
   try {
     return jsonContent(await probeAccount(args.account));
   } catch (err) {
@@ -55,8 +81,10 @@ export async function handleAccountsProbe(args: { account: string }) {
  * The account tool definitions.
  *
  * @param _deps - Shared MCP tool dependencies (unused: the store is process-wide).
+ * @param resolveProvenance - The calling session and agent, in a session; absent
+ *   on the sessionless external server, which has no turn to be marked.
  */
-export function getAccountTools(_deps: McpToolDeps) {
+export function getAccountTools(_deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
   return [
     tool(
       'accounts_usage',
@@ -66,7 +94,7 @@ export function getAccountTools(_deps: McpToolDeps) {
         '(ok, warning, limited, unknown) and the window that limited it, if any. From memory, ' +
         'so it is cheap. Unknown is never reported as 0%.',
       {},
-      handleAccountsUsage
+      () => handleAccountsUsage(callerIsMarked(resolveProvenance))
     ),
     tool(
       'accounts_probe',
@@ -85,7 +113,7 @@ export function getAccountTools(_deps: McpToolDeps) {
             "The account's id, as the account usage tool lists it, or `default` for this computer's sign-in."
           ),
       },
-      handleAccountsProbe
+      (args) => handleAccountsProbe(args, callerIsMarked(resolveProvenance))
     ),
   ];
 }

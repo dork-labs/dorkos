@@ -12,7 +12,11 @@ import type {
 } from '@dorkos/extension-api';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
-import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
+import {
+  isScreenHalfWithheld,
+  mayRunExtensionCode,
+  type ExtensionApprovals,
+} from './extension-load-policy.js';
 import type { IsolatedExtensionHost } from './isolation/isolated-host.js';
 import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
 
@@ -169,13 +173,15 @@ export function toPublic(
     error: record.error,
     serverError: record.serverError,
     restartingAt: record.restartingAt ?? null,
-    bundleReady: record.bundleReady,
+    // A screen half waiting for a person (DOR-3068) is not offered to the app.
+    bundleReady: record.bundleReady && !isScreenHalfWithheld(record, approvals),
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
     approvedToRun: mayRunExtensionCode(record, approvals),
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
+    ...(record.currentDigest ? { digest: record.currentDigest } : {}),
     ...(tools ? { tools } : {}),
     isolation: record.isolation ?? null,
     ...(record.skillChecks ? { skills: record.skillChecks.map((skill) => ({ ...skill })) } : {}),

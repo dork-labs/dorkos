@@ -39,6 +39,11 @@
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
+import {
+  clampModeToCeiling,
+  levelOfMode,
+  type DeclaredModes,
+} from '@dorkos/shared/permission-semantics';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { resolveUnattendedPermissionMode } from '../session/resolution/resolve-session-defaults.js';
 
@@ -122,4 +127,26 @@ export function resolveScheduledRunPermissionMode(opts: {
   // the ids the shipped runtimes happen to use, while a mode id is whatever its
   // runtime declared. This one came from the runtime's own profile.
   return mode === undefined ? SCHEDULED_RUN_FALLBACK_MODE : (mode as PermissionMode);
+}
+
+/**
+ * The lower of two modes on one runtime: the mode a queued run was dispatched
+ * at and the mode its schedule says now. A lower level binds work that has not
+ * started yet; a raise never reaches it (DOR-3175). When the runtime's modes
+ * are unknown, or either id is not one it declares, the two cannot be
+ * compared, so the dispatched mode stands.
+ *
+ * @param declared - The runtime's declared modes, when known.
+ * @param dispatched - The mode the run was dispatched at.
+ * @param fresh - The mode the schedule carries now.
+ */
+export function lowerMode<M extends string>(
+  declared: DeclaredModes | undefined,
+  dispatched: M,
+  fresh: M | null | undefined
+): M {
+  if (!declared || !fresh || fresh === dispatched) return dispatched;
+  const dispatchedLevel = levelOfMode(declared, dispatched);
+  if (!dispatchedLevel || !levelOfMode(declared, fresh)) return dispatched;
+  return clampModeToCeiling(declared, fresh, dispatchedLevel) === fresh ? fresh : dispatched;
 }

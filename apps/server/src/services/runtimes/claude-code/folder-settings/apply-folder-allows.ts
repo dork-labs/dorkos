@@ -131,6 +131,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   const dorkHome = path.resolve(files.dorkHome);
   const targets: [string, 'folder' | 'file'][] = [
     [path.join(home, '.claude'), 'folder'],
+    [path.join(home, '.agents'), 'folder'],
     [path.join(home, '.mcp.json'), 'file'],
     [path.join(home, '.dork', 'agent.json'), 'file'],
     [path.resolve(files.accountRoot), 'folder'],
@@ -156,6 +157,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
     // one agent's approved rule can't rewrite another's list either.
     rules.push(
       `${tool}(${agentsRoot}/*/.claude/**)`,
+      `${tool}(${agentsRoot}/*/.agents/**)`,
       `${tool}(${agentsRoot}/*/.mcp.json)`,
       `${tool}(${agentsRoot}/*/.dork/agent.json)`
     );
@@ -251,6 +253,20 @@ export function folderAllowsFromSettings(settings: Options['settings']): string[
   if (typeof settings !== 'object' || settings === null) return [];
   const allow = (settings as { permissions?: AllowSettings }).permissions?.allow;
   return Array.isArray(allow) ? [...allow] : [];
+}
+
+/**
+ * The deny rules a launch's settings carry, sorted, for the launch
+ * fingerprint (DOR-3068). The CLI reads them only at launch, so a warm process
+ * must relaunch when they change: a turn that became marked, or an agent
+ * registered since, would otherwise keep the rules it started with.
+ *
+ * @param settings - A launch's `Options.settings`.
+ */
+export function denyRulesFromSettings(settings: Options['settings']): string[] {
+  if (typeof settings !== 'object' || settings === null) return [];
+  const deny = (settings as { permissions?: { deny?: unknown } }).permissions?.deny;
+  return Array.isArray(deny) ? deny.filter((r): r is string => typeof r === 'string').sort() : [];
 }
 
 /**

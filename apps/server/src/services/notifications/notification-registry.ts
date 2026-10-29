@@ -42,9 +42,12 @@ import {
   extensionDecisionHistoryBody,
   subjectIdForCopy,
 } from './extension-decision-copy.js';
-import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
-import { COMMUNITY_NOTIFICATION_KINDS } from './community-notifications.js';
-import { runCompletedBody, runCompletedRelay, runCompletedTitle } from './run-completed-copy.js';
+import {
+  DECLARED_ENTRIES,
+  DECLARED_WIRED_KINDS,
+  type DeclaredPayloads,
+} from './declared-entries.js';
+import { RUN_COMPLETED_COPY, type RunCompletedPayload } from './run-completed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -176,21 +179,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
     completedAt: string;
   };
   /** A scheduled task run reached a terminal status. */
-  'run.completed': {
-    runId: string;
-    taskId: string;
-    taskName: string;
-    agentId?: string;
-    status: RunCompletionStatus;
-    /** How much a `needs_attention` run got done (DOR-3123); absent otherwise. */
-    outcome?: 'partial' | 'nothing_done';
-    /** How long it took, already written, e.g. `2m 14s`. */
-    duration?: string;
-    /** The first line of output or error. */
-    detail?: string;
-    /** The sentence an out-of-app channel says. Preserves the wording DOR-240 shipped. */
-    channelMessage: string;
-  };
+  'run.completed': RunCompletedPayload;
   /** A direct message arrived. */
   'dm.received': {
     roomId: string;
@@ -817,11 +806,9 @@ const ENTRIES: NotificationRegistryMap = {
     storage: 'event',
     subjectType: 'run',
     locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
-    title: runCompletedTitle,
-    body: runCompletedBody,
+    // Its title, body, action and reach: see `run-completed-copy.ts`.
+    ...RUN_COMPLETED_COPY,
     dedupeKey: (p) => `run:${p.runId}`,
-    // Who it reaches out to: see `runCompletedRelay` (DOR-240, DOR-2101, DOR-3123).
-    relay: runCompletedRelay,
     // The chat message keeps the wording DOR-240 shipped rather than being
     // rebuilt from title and body: a phone message and an inbox row are not the
     // same sentence, and this one is already tuned.
@@ -1320,11 +1307,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'credits.refused',
   'extension.approval',
   'extension.decision',
-  ...COMMUNITY_NOTIFICATION_KINDS,
   'heartbeat.credits-offer',
-  'connector.destructive_pending',
-  'connector.destructive_executed',
-  'web.new_device',
+  ...DECLARED_WIRED_KINDS,
 ];
 
 /**

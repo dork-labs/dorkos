@@ -199,6 +199,46 @@ export const RoomMessageAuthorSchema = z
 /** One of {@link RoomMessageAuthorSchema}. */
 export type RoomMessageAuthor = z.infer<typeof RoomMessageAuthorSchema>;
 
+/** The longest item id a forward may name. */
+export const FORWARD_ITEM_ID_MAX = 200;
+
+/**
+ * What an item id may be made of: letters, digits and `. _ : / -`. An id is
+ * printed beside the person's words for the agent, so it may carry no
+ * brackets, spaces or punctuation that could read as more of their message.
+ */
+export const FORWARD_ITEM_ID_PATTERN = /^[A-Za-z0-9._:/-]+$/;
+
+/** The longest item title a forward may show. */
+export const FORWARD_ITEM_TITLE_MAX = 200;
+
+/**
+ * Where a person's forwarded comment came from (DOR-3325): the mini app they
+ * typed it in, and the item they typed it on. Shown as a muted "via {app} ·
+ * {item}" line ABOVE the message, never inside its text, because only the
+ * typed words are the person's.
+ *
+ * `appName` is the mini app's manifest name at the time of the forward.
+ * `itemTitle` is the app's own label for the item, written by whoever writes
+ * the app's items (often an agent), so it is data from the app: the app draws
+ * it as quoted text marked "from {app}", and an agent reads it the same way.
+ */
+export const ForwardViaSchema = z
+  .object({
+    /** The mini app's id. */
+    extensionId: z.string(),
+    /** The mini app's name, as the person saw it. */
+    appName: z.string(),
+    /** The item the comment was typed on, by the app's own id. */
+    itemId: z.string().max(FORWARD_ITEM_ID_MAX).regex(FORWARD_ITEM_ID_PATTERN),
+    /** The app's label for that item, when it sent one. Data from the app. */
+    itemTitle: z.string().max(FORWARD_ITEM_TITLE_MAX).optional(),
+  })
+  .openapi('ForwardVia');
+
+/** One of {@link ForwardViaSchema}. */
+export type ForwardVia = z.infer<typeof ForwardViaSchema>;
+
 /**
  * The room message a user message carried into a room-attached chat (DOR-2113).
  *
@@ -219,6 +259,12 @@ export const RoomMessageStampSchema = z
     roomLabel: z.string().optional(),
     /** Who posted it. Absent when the room no longer has the entry. */
     author: RoomMessageAuthorSchema.optional(),
+    /**
+     * The mini app the person typed this in, when it is a forwarded comment
+     * (DOR-3325). Filled from the room's own record of the entry, never from
+     * the text.
+     */
+    via: ForwardViaSchema.optional(),
   })
   .openapi('RoomMessageStamp');
 

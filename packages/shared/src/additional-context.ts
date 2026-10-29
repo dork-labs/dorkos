@@ -320,6 +320,13 @@ export interface RoomContextEntry {
    * can open.
    */
   attachments: { name: string; path: string }[];
+  /**
+   * The mini app and item a person's forwarded comment came from (DOR-3325).
+   * Present only on a comment the person typed in a mini app and DorkOS posted
+   * into their Direct chat for them. A label the server wrote from its own
+   * record; the item's title is left out because the app wrote it.
+   */
+  via?: { appName: string; itemId: string };
 }
 
 /**

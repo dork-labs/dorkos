@@ -25,6 +25,7 @@ import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
 import { recheckReturningName } from '../../moderation/display-names.js';
 import { requirePerson } from '../../moderation/person.js';
+import { browserOnly, requireAdministrator } from '../../moderation/administrator.js';
 import { projectMemberDirectory, readMemberDirectory } from '../../content/member-directory.js';
 
 async function live(
@@ -221,12 +222,15 @@ export function registerMemberRoutes(
     );
   });
 
+  // Browser only: the paired app's `administer` credential is told to do this in the browser.
   app.delete('/members/:id', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck, credential } = await requireAdministrator(c, auth, pool);
+    browserOnly(credential);
     await transaction(pool, async (client) => {
       const current = await live(client, actor.id, actor.community_id);
       if (!current || current.role === 'member')
         throw new ApiError(403, 'FORBIDDEN', 'Your current role cannot remove members.');
+      await recheck(client);
       const target = await live(client, c.req.param('id'), actor.community_id);
       if (!target) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
       if (target.role === 'owner' || (target.role === 'admin' && current.role !== 'owner'))

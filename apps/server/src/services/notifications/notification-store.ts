@@ -34,8 +34,8 @@ import type {
   NotificationSubjectType,
   NotificationTier,
 } from '@dorkos/shared/notification-schemas';
-import { notificationEntry, type NotificationPayload } from './notification-registry.js';
 import { logger } from '../../lib/logger.js';
+import { buildActions, buildPayloadFacts } from './stored-dto-parts.js';
 
 /**
  * Ids that keep increasing even inside one millisecond.
@@ -806,38 +806,8 @@ export class NotificationStore {
       ...(row.readAt ? { readAt: row.readAt } : {}),
       ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
       ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
-      ...(buildDecision(kind, row.dataJson) ?? {}),
+      ...buildPayloadFacts(kind, row.dataJson),
     };
-  }
-}
-
-/**
- * Who decided an `extension.decision` history row, read back from its payload
- * so the inbox can tell "you answered" from "decided while you were away"
- * (spec `flow-multiproject` §7.9). Nothing for any other kind, or a payload
- * it cannot read.
- */
-function buildDecision(
-  kind: NotificationKind,
-  dataJson: string | null
-): { decision: NonNullable<NotificationDTO['decision']> } | undefined {
-  if (kind !== 'extension.decision' || !dataJson) return undefined;
-  try {
-    const payload = JSON.parse(dataJson) as NotificationPayload<'extension.decision'>;
-    const r = payload.resolution;
-    if (!r) return undefined;
-    return {
-      decision: {
-        extensionId: payload.extensionId,
-        resolvedBy: r.resolvedBy,
-        resolvedByLabel: r.resolvedByLabel,
-        recorded: r.recorded,
-        watch: r.watch,
-      },
-    };
-  } catch (err) {
-    logger.debug('[Notifications] Could not read a decision row', { err });
-    return undefined;
   }
 }
 
@@ -855,27 +825,6 @@ function escalatedFlag(detailJson: string | null): boolean {
     return (JSON.parse(detailJson) as { escalated?: unknown }).escalated === true;
   } catch {
     return false;
-  }
-}
-
-/**
- * Rebuild a row's action buttons from the registry, or nothing at all.
- *
- * Returns a spreadable fragment rather than an array so the caller never puts an
- * `actions: undefined` key on a DTO that has none.
- */
-function buildActions(
-  kind: NotificationKind,
-  dataJson: string | null
-): { actions: NotificationDTO['actions'] } | undefined {
-  const build = notificationEntry(kind).actions;
-  if (!build || !dataJson) return undefined;
-  try {
-    const actions = build(JSON.parse(dataJson) as NotificationPayload<typeof kind>);
-    return actions.length > 0 ? { actions } : undefined;
-  } catch (err) {
-    logger.debug('[Notifications] Could not rebuild actions for a stored row', { err, kind });
-    return undefined;
   }
 }
 

@@ -585,6 +585,11 @@ describe('ConfigManager', () => {
       autoAdopt: false,
       approvedHooks: [],
       refusedHooks: [],
+      // Each agent's own folder settings, pinned on first use (DOR-3068).
+      approvedFolderConfig: [],
+      approvedFolderConfigParts: {},
+      refusedFolderConfig: [],
+      folderConfigPinned: false,
       // Nothing installed for all your projects is shared into a home directory
       // until somebody says which agent tools may see it, and `askedAt: null`
       // says the question has never been put (DOR-1924).
@@ -4428,7 +4433,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(60);
+    expect(Object.keys(bodies)).toHaveLength(61);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -4677,6 +4682,10 @@ describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
       autoAdopt: false,
       approvedHooks: [],
       refusedHooks: [],
+      approvedFolderConfig: [],
+      approvedFolderConfigParts: {},
+      refusedFolderConfig: [],
+      folderConfigPinned: false,
       global: { harnesses: [], askedAt: null },
     });
   });

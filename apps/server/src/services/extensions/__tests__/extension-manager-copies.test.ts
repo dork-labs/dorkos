@@ -163,7 +163,17 @@ describe('re-scans move the server half onto the new copy', () => {
 describe('"Stop trusting" pins only what is on, to that exact copy', () => {
   it('converts turned-on copies without their origin, and leaves turned-off ones to ask', async () => {
     vi.clearAllMocks();
-    const on = flowIn('a', '1.0.0');
+    // Held apart: the manager updates the record it is handed in place.
+    const digest = `sha256:${'c'.repeat(64)}`;
+    const on = { ...flowIn('a', '1.0.0'), currentDigest: digest };
+    // On too, but DorkOS could not read its files whole: there is nothing a
+    // yes could name, so it is not approved (DOR-3068).
+    const unreadable: ExtensionRecord = {
+      ...flowIn('b', '1.0.0'),
+      id: 'flow-unread',
+      manifest: { id: 'flow-unread', name: 'Unread', version: '1.0.0' },
+      path: '/work/b/.dork/plugins/flow/.dork/extensions/flow-unread',
+    };
     const off: ExtensionRecord = {
       ...flowIn('a', '1.0.0'),
       id: 'flow-extra',
@@ -171,13 +181,13 @@ describe('"Stop trusting" pins only what is on, to that exact copy', () => {
       path: '/work/a/.dork/plugins/flow/.dork/extensions/flow-extra',
     };
     stored.value = {
-      enabled: ['flow'],
+      enabled: ['flow', 'flow-unread'],
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
       trustedSources: [{ source: ORIGIN.source, trustedAt: '2026-09-29T00:00:00.000Z' }],
     };
-    mockDiscover.mockResolvedValue([on, { ...off, status: 'disabled' }]);
+    mockDiscover.mockResolvedValue([on, unreadable, { ...off, status: 'disabled' }]);
     const manager = new ExtensionManager('/fake/dork-home');
     await manager.initialize(null);
 
@@ -186,7 +196,51 @@ describe('"Stop trusting" pins only what is on, to that exact copy', () => {
 
     expect(stored.value.trustedSources).toEqual([]);
     expect(stored.value.approvedToRun).toEqual(['flow']);
-    // Pinned to the copy: a newer copy of the same origin does not ride on it.
-    expect(stored.value.approvedSources).toEqual({ flow: { path: on.path, plugin: 'flow' } });
+    // Pinned to the copy and its files: a newer copy of the same origin does not
+    // ride on it, and no later scan pins it to whatever is there then.
+    expect(stored.value.approvedSources).toEqual({
+      flow: { path: on.path, plugin: 'flow', digest },
+    });
+  });
+});
+
+describe('an approval handed to another copy of the same origin (DOR-3068)', () => {
+  /** Set up `flow` approved by origin at project a, with project b's copy shadowed. */
+  async function boot(heirDigest: string | undefined) {
+    vi.clearAllMocks();
+    const removed = { ...flowIn('a', '2.0.0'), currentDigest: `sha256:${'a'.repeat(64)}` };
+    const heir: ExtensionRecord = {
+      ...flowIn('b', '1.0.0'),
+      ...(heirDigest ? { currentDigest: heirDigest } : {}),
+      shadowedBy: removed.path,
+    };
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: removed.path, plugin: 'flow', origin: ORIGIN } },
+    };
+    mockDiscover.mockResolvedValue([removed, heir]);
+    const manager = new ExtensionManager('/fake/dork-home');
+    await manager.initialize(null);
+    return { manager, heir };
+  }
+
+  it('names the heir’s files, so no later scan pins it to whatever is there', async () => {
+    const digest = `sha256:${'b'.repeat(64)}`;
+    const { manager, heir } = await boot(digest);
+    await manager.forgetRunApproval('flow', '/work/a/.dork/plugins/flow');
+    expect(stored.value.approvedSources?.flow).toEqual({
+      path: heir.path,
+      plugin: 'flow',
+      origin: ORIGIN,
+      digest,
+    });
+  });
+
+  it('hands nothing to a copy whose files it cannot read, and forgets the approval', async () => {
+    const { manager } = await boot(undefined);
+    await manager.forgetRunApproval('flow', '/work/a/.dork/plugins/flow');
+    expect(stored.value.approvedSources?.flow).toBeUndefined();
   });
 });

@@ -19,6 +19,15 @@ describe('roomDocumentReading — what travelled with the row', () => {
       { type: 'mcp_app', serverName: 's', uri: 'ui://x' },
       { type: 'image', src: 'https://dorkos.ai/a.png' },
       { type: 'csv', src: 'data:text/csv,a,b' },
+      // A local file an agent put on the table, which the server copied into the room.
+      {
+        type: 'image',
+        src: '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+      },
+      {
+        type: 'pdf',
+        src: '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf',
+      },
     ];
     for (const content of shapes) {
       expect(roomDocumentReading(doc({ content }))).toEqual({ kind: 'inline' });

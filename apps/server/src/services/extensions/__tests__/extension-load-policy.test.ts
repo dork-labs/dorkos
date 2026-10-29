@@ -12,11 +12,12 @@
  *    Gating the tools would have left `POST /api/extensions/:id/init-server`
  *    walking straight around it, which is the shape DOR-467 already cost this
  *    repo once.
- * 2. **One approval is enough, forever.** The reason this feature is a policy on
- *    the artifact rather than a `destructive` tier is that a per-call card would
- *    fire once per compile error. So the loop is asserted end to end, including a
- *    compile error and the fix after it, with `configManager.set` watched to prove
- *    nothing re-asks.
+ * 2. **One approval is enough for the same files.** The reason this feature is a
+ *    policy on the artifact rather than a `destructive` tier is that a per-call
+ *    card would fire once per compile error. So the loop is asserted end to end,
+ *    with `configManager.set` watched to prove nothing re-asks while the files
+ *    are the approved ones, and that an edit to them waits for a person
+ *    (DOR-3068).
  *
  * @module services/extensions/__tests__/extension-load-policy
  */
@@ -90,14 +91,36 @@ vi.mock('../extension-compiler.js', () => ({
   }),
 }));
 
+/** The digest every folder reads as, unless a test changes it (an edit). */
+const D1 = `sha256:${'1'.repeat(64)}`;
+const D2 = `sha256:${'2'.repeat(64)}`;
+const folderDigest = vi.hoisted(() => ({ value: `sha256:${'1'.repeat(64)}` }));
+vi.mock('../../marketplace/lib/install-digest.js', () => ({
+  installFolderDigest: async () => ({ kind: 'digest', digest: folderDigest.value }),
+  forgetFolderDigest: () => {},
+}));
+// The snapshot a pinned yes runs from: named by its digest, never written here.
+vi.mock('../pin/extension-snapshots.js', () => ({
+  ensureSnapshot: async (_home: string, _root: string, digest: string) =>
+    `/fake/dork-home/extension-snapshots/${digest.slice(7, 15)}`,
+  collectSnapshots: async () => [],
+  snapshotRootOf: (_home: string, digest: string) =>
+    `/fake/dork-home/extension-snapshots/${digest.slice(7, 15)}`,
+}));
+
 /** The stored `extensions` config the gate reads, mutable per test. */
 /** The `extensions` config shape these tests store; `approvedSources` may predate DOR-2383. */
 interface StoredExtensions {
   enabled: string[];
   disabled: string[];
   approvedToRun: string[];
-  approvedSources?: Record<string, { path: string; plugin?: string }>;
+  legacyUnsourced?: string[];
+  approvedSources?: Record<
+    string,
+    { path: string; plugin?: string; digest?: string; grants?: string; pinnedOnFirstUse?: string }
+  >;
   roomAccess?: Record<string, string[]>;
+  forwardAgents?: Record<string, string[]>;
 }
 const stored = vi.hoisted(() => ({
   value: { enabled: [], disabled: [], approvedToRun: [] } as StoredExtensions,
@@ -133,6 +156,11 @@ vi.mock('fs/promises', () => ({
 
 import { ExtensionManager } from '../extension-manager.js';
 
+// Every folder reads as the approved files unless a test edits them.
+beforeEach(() => {
+  folderDigest.value = D1;
+});
+
 function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
   return {
     id,
@@ -146,6 +174,8 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
     bundleReady: false,
     hasServerEntry: false,
     hasDataProxy: false,
+    // What discovery reads from the folder (DOR-3068).
+    currentDigest: folderDigest.value,
     ...overrides,
   };
 }
@@ -161,10 +191,12 @@ describe('mayRunExtensionCode', () => {
     origin: 'user' as const,
     path: '/home/.dork/extensions/my-ext',
     manifest: { id: 'my-ext', name: 'My ext', version: '1.0.0' },
+    currentDigest: `sha256:${'a'.repeat(64)}`,
   };
+  const DIGEST = `sha256:${'a'.repeat(64)}`;
   const approvedDirect = {
     approvedToRun: ['my-ext'],
-    approvedSources: { 'my-ext': { path: '/home/.dork/extensions/my-ext' } },
+    approvedSources: { 'my-ext': { path: '/home/.dork/extensions/my-ext', digest: DIGEST } },
   };
 
   it('refuses a user extension that nobody approved', () => {
@@ -172,8 +204,22 @@ describe('mayRunExtensionCode', () => {
     expect(mayRunExtensionCode(direct, { approvedToRun: ['some-other-ext'] })).toBe(false);
   });
 
-  it('allows the copy of a user extension a person approved', () => {
+  it('allows the copy of a user extension a person approved, as its files were', () => {
     expect(mayRunExtensionCode(direct, approvedDirect)).toBe(true);
+  });
+
+  it('refuses the approved copy once its files changed (DOR-3068)', () => {
+    expect(
+      mayRunExtensionCode({ ...direct, currentDigest: `sha256:${'b'.repeat(64)}` }, approvedDirect)
+    ).toBe(false);
+  });
+
+  it('refuses a path-only approval, which names no files', () => {
+    const pathOnly = {
+      approvedToRun: ['my-ext'],
+      approvedSources: { 'my-ext': { path: '/home/.dork/extensions/my-ext' } },
+    };
+    expect(mayRunExtensionCode(direct, pathOnly)).toBe(false);
   });
 
   it('allows a core extension with no approval at all', () => {
@@ -239,9 +285,9 @@ describe('mayRunExtensionCode', () => {
       };
       const approvals = {
         approvedToRun: ['flow'],
-        approvedSources: { flow: approvedSourceOf(first) },
+        approvedSources: { flow: { ...approvedSourceOf(first), digest: DIGEST } },
       };
-      expect(mayRunExtensionCode(first, approvals)).toBe(true);
+      expect(mayRunExtensionCode({ ...first, currentDigest: DIGEST }, approvals)).toBe(true);
       expect(mayRunExtensionCode(second, approvals)).toBe(false);
     });
 
@@ -266,6 +312,12 @@ describe('describeExtensionLoadRefusal', () => {
     expect(text).toContain("'my-ext'");
     expect(text).toContain('Retrying will be refused');
     expect(text).toContain('Settings > Extensions');
+  });
+
+  it('no longer promises one approval forever, and asks for one batch (DOR-3068)', () => {
+    const text = describeExtensionLoadRefusal('my-ext');
+    expect(text).not.toContain('only ever do this once');
+    expect(text).toContain('Finish the whole batch of edits first');
   });
 });
 
@@ -377,9 +429,19 @@ describe('the load gate, at every path that runs extension code', () => {
   });
 });
 
-describe('the dev loop stays free after one approval', () => {
-  /** The copy of `my-ext` every approval below is for. */
-  const MY_EXT_SOURCE = { 'my-ext': { path: '/fake/dork-home/extensions/my-ext' } };
+describe('the dev loop stays free after one approval, for the approved files', () => {
+  /** The copy of `my-ext` every approval below is for, pinned to its files. */
+  const MY_EXT_SOURCE = {
+    'my-ext': { path: '/fake/dork-home/extensions/my-ext', grants: expect.any(String), digest: D1 },
+  };
+  /** The same approval, given before DOR-3068 and pinned on the first scan. */
+  const MIGRATED_SOURCE = {
+    'my-ext': {
+      path: '/fake/dork-home/extensions/my-ext',
+      digest: D1,
+      pinnedOnFirstUse: expect.any(String),
+    },
+  };
   let manager: ExtensionManager;
 
   beforeEach(() => {
@@ -397,7 +459,7 @@ describe('the dev loop stays free after one approval', () => {
     manager = new ExtensionManager('/fake/dork-home');
   });
 
-  it('asks once, then never again across test, reload, a compile error, and the fix', async () => {
+  it('asks once, then never again across test, reload, a compile error and the fix on the same files', async () => {
     await manager.initialize(null);
 
     // --- 1. FIRST TIME: the agent tries to run it, and DorkOS says no.
@@ -460,39 +522,81 @@ describe('the dev loop stays free after one approval', () => {
     expect(mockConfigSet).not.toHaveBeenCalled();
   });
 
+  it('refuses an edit to approved files at test, reload and the bundle, until a person approves again (DOR-3068)', async () => {
+    await manager.initialize(null);
+    await manager.approveToRun('my-ext');
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
+
+    // An agent edits the files after the yes.
+    folderDigest.value = D2;
+
+    const tested = await manager.testExtension('my-ext');
+    expect(tested.status).toBe('error');
+    expect(tested.phase).toBe('approval');
+    // The server half stopped the moment the change was seen.
+    expect(manager.getServerHandler('my-ext')).toBeNull();
+    expect(await manager.readBundle('my-ext')).toBeNull();
+    await manager.reloadExtension('my-ext');
+    expect(manager.getServerHandler('my-ext')).toBeNull();
+    expect(manager.listPublic()[0]?.approvedToRun).toBe(false);
+
+    // A person looks again and approves the new files.
+    await manager.approveToRun('my-ext');
+    expect(stored.value.approvedSources?.['my-ext']?.digest).toBe(D2);
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
+    expect(await manager.readBundle('my-ext')).toBe(OBSERVABLE_BUNDLE);
+  });
+
+  it('refuses a yes whose card showed other files (expectedDigest)', async () => {
+    await manager.initialize(null);
+    await expect(manager.approveToRun('my-ext', { expectedDigest: D2 })).rejects.toMatchObject({
+      reason: 'stale',
+    });
+    expect(stored.value.approvedToRun).toEqual([]);
+    expect(manager.getServerHandler('my-ext')).toBeNull();
+  });
+
   it('survives the user turning the extension off and on again', async () => {
-    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.1' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
     await manager.initialize(null);
 
     await manager.disable('my-ext');
     // `setEnabled` returns a whole-subtree replacement, so a version of it that
     // named only `enabled`/`disabled` would erase every approval on the install.
+    // The id-only approval was bound to the direct install, then pinned to the
+    // files found on the first scan (DOR-3068).
     expect(mockConfigSet).toHaveBeenLastCalledWith('extensions', {
       enabled: [],
       disabled: [],
       approvedToRun: ['my-ext'],
-      approvedSources: MY_EXT_SOURCE,
+      approvedSources: MIGRATED_SOURCE,
     });
 
-    stored.value = {
-      enabled: [],
-      disabled: [],
-      approvedToRun: ['my-ext'],
-      approvedSources: MY_EXT_SOURCE,
-    };
     await manager.enable('my-ext');
     expect(mockConfigSet).toHaveBeenLastCalledWith('extensions', {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
-      approvedSources: MY_EXT_SOURCE,
+      approvedSources: MIGRATED_SOURCE,
     });
     // Back on, still approved, running again with nothing asked of the person.
     expect(manager.getServerHandler('my-ext')).not.toBeNull();
   });
 
   it('stops the extension again when a person withdraws the approval', async () => {
-    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.1' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
     await manager.initialize(null);
     expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
@@ -507,6 +611,7 @@ describe('the dev loop stays free after one approval', () => {
       approvedSources: {},
       approvedPermissions: {},
       roomAccess: {},
+      forwardAgents: {},
       dismissedApprovals: {
         'my-ext': {
           path: '/fake/dork-home/extensions/my-ext',
@@ -547,7 +652,9 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
 
     const approved = await manager.approveToRun('flow');
 
-    expect(stored.value.approvedSources).toEqual({ flow: { path: PLUGIN_COPY, plugin: 'flow' } });
+    expect(stored.value.approvedSources).toEqual({
+      flow: { path: PLUGIN_COPY, plugin: 'flow', grants: expect.any(String), digest: D1 },
+    });
     expect(approved).toMatchObject({ approvedToRun: true, sourcePlugin: 'flow' });
     expect(manager.getServerHandler('flow')).not.toBeNull();
     expect(await manager.readBundle('flow')).toBe(OBSERVABLE_BUNDLE);
@@ -578,21 +685,48 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
 
     // Approving it moves the approval to this copy, and only then does it run.
     expect(stored.value.approvedSources).toEqual({
-      flow: { path: OTHER_PLUGIN_COPY, plugin: 'aaa-other' },
+      flow: {
+        path: OTHER_PLUGIN_COPY,
+        plugin: 'aaa-other',
+        grants: expect.any(String),
+        digest: D1,
+      },
     });
     expect(manager.getServerHandler('flow')).not.toBeNull();
   });
 
   it('keeps an approval given before copies were recorded working for the direct install', async () => {
+    stored.value = {
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      // Listed by the '0.126.1' migration as an approval that named no copy.
+      legacyUnsourced: ['my-ext'],
+    };
+    mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);
+
+    await manager.initialize(null);
+
+    // Bound to the direct install, then pinned once to its files (DOR-3068).
+    expect(stored.value.approvedSources).toEqual({
+      'my-ext': {
+        path: '/fake/dork-home/extensions/my-ext',
+        digest: D1,
+        pinnedOnFirstUse: expect.any(String),
+      },
+    });
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
+  });
+
+  it('never binds an id-only approval the migration did not list (DOR-3068)', async () => {
+    // A folder created later at an old approved name must not inherit it.
     stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
     mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);
 
     await manager.initialize(null);
 
-    expect(stored.value.approvedSources).toEqual({
-      'my-ext': { path: '/fake/dork-home/extensions/my-ext' },
-    });
-    expect(manager.getServerHandler('my-ext')).not.toBeNull();
+    expect(stored.value.approvedSources).toBeUndefined();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 
   it('leaves an earlier id-only approval unbound, and so unapproved, when only a plugin carries it', async () => {
@@ -628,10 +762,13 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
       approvedToRun: ['flow'],
       approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow' } },
       roomAccess: { flow: ['room-1'], other: ['room-2'] },
+      forwardAgents: { flow: ['agent-1'], other: ['agent-2'] },
     };
     await manager.forgetRunApproval('flow');
 
     expect(stored.value.roomAccess).toEqual({ other: ['room-2'] });
+    // The agents a person allowed for it go with the approval too (DOR-3325).
+    expect(stored.value.forwardAgents).toEqual({ other: ['agent-2'] });
   });
 
   it('keeps the approval when uninstalling a different plugin that carries the same id', async () => {

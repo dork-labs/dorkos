@@ -7,12 +7,14 @@
  * - A failing check on the agent's own branch, read with `gh pr checks` at most
  *   once per 30 minutes per checkout, cached between beats.
  *
- * An agent with no working directory skips it. Off unless `HEARTBEAT.md`'s
- * `watch:` names it.
+ * An agent with no working directory skips it, and so does one whose working
+ * directory is an agent folder: DorkOS never runs git or `gh` there (DOR-3343).
+ * Off unless `HEARTBEAT.md`'s `watch:` names it.
  *
  * @module services/heartbeats/gatherers/workspace
  */
 import { execFile } from 'node:child_process';
+import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
 /** How often `gh pr checks` may run per checkout. */
@@ -98,7 +100,7 @@ export function createWorkspaceGatherer(
   const checks = new Map<string, CachedChecks>();
   return async (ctx: GatherContext): Promise<Change[]> => {
     const cwd = ctx.agent.cwd;
-    if (!cwd) return [];
+    if (!cwd || !mayRunGitHere(cwd)) return [];
     const signal = ctx.signal;
     try {
       await run('git', ['rev-parse', '--is-inside-work-tree'], { cwd, signal });

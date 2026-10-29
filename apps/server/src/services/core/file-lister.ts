@@ -7,6 +7,7 @@ import type { FileEntry } from '@dorkos/shared/schemas';
 import { FILE_LIMITS, FILE_LISTING } from '../../config/constants.js';
 import { validateBoundary } from '../../lib/boundary.js';
 import { internalGitArgs } from '../../lib/git-safety.js';
+import { mayRunGitHere } from './agent-identity/index.js';
 
 /** Convert an OS-separated relative path to a POSIX (`/`) path for the wire. */
 function toPosix(rel: string): string {
@@ -53,6 +54,8 @@ class FileListService {
   }
 
   private async listViaGit(cwd: string): Promise<string[]> {
+    // Never git in an agent folder (DOR-3343): the caller lists by hand instead.
+    if (!mayRunGitHere(cwd)) throw new Error('git is not run in an agent folder');
     const { stdout } = await execFileAsync(
       'git',
       [...internalGitArgs(), 'ls-files', '--cached', '--others', '--exclude-standard'],
@@ -188,6 +191,7 @@ class FileListService {
   }
 
   private async gitIgnoredSet(cwd: string, relPaths: string[]): Promise<Set<string> | null> {
+    if (!mayRunGitHere(cwd)) return null;
     try {
       // `check-ignore` echoes the ignored inputs (one per line). `-z` is not used
       // because it requires `--stdin`; directory-entry names never contain

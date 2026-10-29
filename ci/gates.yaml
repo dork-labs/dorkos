@@ -14,6 +14,9 @@
 #
 # A purpose is one plain sentence saying what the gate catches or does.
 gates:
+  - id: wf.security-approve-tests.acl
+    source: .github/workflows/security-approve-tests.yml
+    purpose: Tests hardened helper policy and disposable Keychain ACL isolation on a CI macOS user.
   - id: wf.security-review-initialize.initialize
     source: .github/workflows/security-review-initialize.yml
     purpose: Writes PR-head review statuses and audit comments using trusted base code, including for fork contributions.
@@ -197,7 +200,7 @@ gates:
     purpose: Proves the packaged local-agent community journey with no public network, on every queue build and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh).
   - id: wf.test.test-shard
     source: .github/workflows/test.yml
-    purpose: Runs one quarter of the unit suites (affected-only on PRs, the full sweep in the merge queue).
+    purpose: Runs one sixth of the unit suites (affected-only on PRs, skipped on PRs that change only changelog, docs or version lines per scripts/no-code-scope.sh; the full sweep in the merge queue).
   - id: wf.test.test
     source: .github/workflows/test.yml
     purpose: The required test check; fails unless every shard and community job passed and the shards together covered every package.

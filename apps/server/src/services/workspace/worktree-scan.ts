@@ -15,6 +15,10 @@
  * 2. **It never throws for one bad checkout.** A locked, moved, or corrupt
  *    checkout yields a row with `readable: false` instead of failing the scan.
  *    The checkout you cannot read is the one most worth seeing.
+ * 3. **It never runs git in an agent folder** (DOR-3343). Checkouts under the
+ *    workspace root are agents' folders, so until git there goes through a
+ *    runner that checks the repository's settings first, they read as
+ *    `readable: false`.
  *
  * @module server/services/workspace/worktree-scan
  */
@@ -27,6 +31,7 @@ import type {
 } from '@dorkos/shared/workspace';
 import { readProjectRootUncached } from '../projects/resolve-project-root.js';
 import { runGit } from './providers/git.js';
+import { mayRunGitHere } from '../core/agent-identity/index.js';
 
 /**
  * Per-git-command ceiling. Short on purpose: the scan answers an HTTP request,
@@ -126,6 +131,7 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
     lastCommitAt: null,
     readable: false,
   };
+  if (!mayRunGitHere(checkoutPath)) return stub;
 
   try {
     // `--no-optional-locks` is the whole reason this is safe to run against

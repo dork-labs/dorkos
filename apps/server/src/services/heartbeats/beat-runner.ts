@@ -180,6 +180,8 @@ export interface BeatRunnerDeps {
   reports?: Omit<ReportBeatDeps, keyof BeatCycleDeps>;
   /** Triage on a decision model (spec §6.2); absent, the rules decide alone. */
   triage?: BeatCycleDeps['triage'];
+  /** Which account a beat turn runs on; absent, it runs where its chat is. */
+  seats?: BeatCycleDeps['seats'];
 }
 
 /** The beat runner. */
@@ -232,6 +234,7 @@ export class BeatRunner {
       ...(deps.mintId ? { mintId: deps.mintId } : {}),
       onFinished: (beat) => this.notify(beat),
       ...(deps.triage ? { triage: deps.triage } : {}),
+      ...(deps.seats ? { seats: deps.seats } : {}),
     };
   }
 

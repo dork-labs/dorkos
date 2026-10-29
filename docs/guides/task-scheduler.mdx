@@ -257,7 +257,7 @@ A task on a timer runs while you are somewhere else, so there is nobody to answe
 
 **A run that was turned down at any tool is marked Needs attention, never Completed.** Completed means the run was refused nothing. Its line in the run history says how many tools were refused and names them, for example "Refused: nobody to approve (2). Bash and gmail: search." Each one also lands in your activity feed on its own. Nothing broke, so there is nothing to debug; what it needs is the permission it was denied.
 
-Needs attention covers two cases. A run that lost a tool and got on with the rest of its work did part of its job. A run that was turned down at every tool got nothing done. Both reach your notifications. A run that got nothing done also messages your phone, because a schedule that quietly does nothing every night is the one thing you cannot spot for yourself.
+Needs attention covers two cases. A run that lost a tool and got on with the rest of its work did part of its job. A run that was turned down at every tool got nothing done. A schedule that starts failing sends you one notice, on your phone too. It says why, the same way the Schedules list does, and **Open schedule** takes you to its settings to fix it. You get no more notices while it keeps failing, because a schedule that runs every hour would otherwise send one every hour. Every run still shows what happened in its history. Once a run completes, the next failure sends a new notice.
 
 A schedule set to **Never ask** runs only what you allowed and turns down the rest without asking. Those refusals count the same way, and the run's summary says the schedule is set to Never ask.
 

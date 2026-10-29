@@ -8,7 +8,8 @@
  * or (b) the operator explicitly switches the header's "Compare against: Last
  * commit (HEAD)" toggle. It runs `git show HEAD:<relpath>` via `execFile` (no
  * shell — no injection surface), cwd-confined, with a timeout, and returns `null`
- * for a non-git cwd or an untracked file rather than throwing.
+ * for a non-git cwd or an untracked file rather than throwing. It never runs git
+ * in an agent folder (DOR-3343): there it has no HEAD baseline.
  *
  * @module services/diff/git-baseline
  */
@@ -17,6 +18,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { GIT, FILE_LIMITS } from '../../config/constants.js';
 import { internalGitArgs } from '../../lib/git-safety.js';
+import { mayRunGitHere } from '../core/agent-identity/index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +30,7 @@ const execFileAsync = promisify(execFile);
  * @param absPath - Absolute path to the file, inside `cwd`.
  */
 export async function gitShowHead(cwd: string, absPath: string): Promise<Buffer | null> {
+  if (!mayRunGitHere(cwd)) return null;
   // `git show HEAD:<path>` wants a repo-relative, forward-slashed path.
   const rel = path.relative(cwd, absPath).split(path.sep).join('/');
   // A path that escapes cwd (leading `..`) is never a tracked file here — refuse

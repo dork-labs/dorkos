@@ -29,6 +29,7 @@ export { StartedByLine, StartedPrompt } from './ui/StartedByLine';
 // author mark, the Sent card and the "Stopped by" line, and the reads behind them.
 export { ChatFromMark, ReceivedChatMessages } from './ui/messaging/ReceivedChatMessage';
 export { RoomPostMark } from './ui/messaging/RoomPostMark';
+export { ForwardViaLine } from './ui/messaging/ForwardViaLine';
 export { SentChatCard } from './ui/messaging/SentChatCard';
 export { ChatStopLine } from './ui/messaging/ChatStopLine';
 export { useChatActivity } from './model/messaging/use-chat-activity';

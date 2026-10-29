@@ -163,6 +163,13 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // already resolves on every call. A runtime card on top would be a second
     // ask for one question, raised on the turn with the least room to spare.
     'compact_my_session',
+    // How much of each Claude account is used, and one idle account's own
+    // reading (DOR-3289 slice 1). Usage numbers only: no turn runs, nothing is
+    // spent, and the probe keeps its own once-a-minute floor per account. In a
+    // turn held to a ceiling neither runs unasked: a stranger's question must
+    // not be able to read our accounts (see isAutoAllowedCall).
+    'accounts_usage',
+    'accounts_probe',
     // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
     // — most of its actions only move pixels, but not all of them, so its calls go
     // through `isAutoAllowedCall` below rather than riding this membership alone.
@@ -406,6 +413,11 @@ const CONTROL_UI_TOOL = inSessionToolName('control_ui');
 const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
 const CHAT_STOP_QUALIFIED = inSessionToolName(CHAT_STOP_TOOL);
 
+/** The account tools, which a turn held to a ceiling never runs unasked (DOR-3289). */
+const ACCOUNT_TOOLS_QUALIFIED: ReadonlySet<string> = new Set(
+  ['accounts_usage', 'accounts_probe'].map(inSessionToolName)
+);
+
 /**
  * Whether one CALL to a safe-listed tool may skip the approval card, given its
  * arguments (DOR-625).
@@ -425,8 +437,8 @@ const CHAT_STOP_QUALIFIED = inSessionToolName(CHAT_STOP_TOOL);
  * **A turn held to a ceiling cannot cut into another chat unasked.** A turn
  * another agent's message or an outside sender started carries a permission
  * ceiling, and trust never extends to strangers. So in such a turn `chat_stop`,
- * and `chat_send` with `delivery` `steer` or `interrupt` (or any value that is
- * not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
+ * the account tools, and `chat_send` with `delivery` `steer` or `interrupt` (or
+ * any value that is not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
  * the card: they only add a message to a chat a person can read.
  *
  * **A stranger's turn cannot read past its folder unasked** (spec `official-community-space`
@@ -446,6 +458,7 @@ function isAutoAllowedCall(
 ): boolean {
   if (ceiling !== 'none') {
     if (toolName === CHAT_STOP_QUALIFIED) return false;
+    if (ACCOUNT_TOOLS_QUALIFIED.has(toolName)) return false;
     if (toolName === CHAT_SEND_QUALIFIED) return (input.delivery ?? 'queue') === 'queue';
   }
   if (ceiling === 'stranger' && READ_ONLY_TOOLS.has(toolName)) return false;

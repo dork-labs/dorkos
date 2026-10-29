@@ -24,6 +24,7 @@ import {
 } from './community-moderation-wire.js';
 import { CommunityWireMemberAvailabilityFields } from './community-agent-wire.js';
 import { COMMUNITY_DM_ERROR_CODES, COMMUNITY_DM_ROUTES } from './community-dm-wire.js';
+import { CommunityWirePairingScopeSchema } from './community-features-wire.js';
 
 // Bans, mutes, slow mode, rules, display names and reports live in their own module.
 export * from './community-moderation-wire.js';
@@ -1007,7 +1008,7 @@ export const CommunityWireOpenAdmissionJoinResponseSchema = z.strictObject({ mem
 export const CommunityWirePairingStartRequestSchema = z.strictObject({
   installName: z.string().min(1).max(120),
   challenge: id,
-  scopes: z.array(z.enum(['read', 'post', 'enroll-agent'])).min(1),
+  scopes: z.array(CommunityWirePairingScopeSchema).min(1),
 });
 /** Start receipt used to open the same-origin human approval page. */
 export const CommunityWirePairingStartResponseSchema = z.strictObject({
@@ -1015,8 +1016,7 @@ export const CommunityWirePairingStartResponseSchema = z.strictObject({
   approvalUrl: z.url(),
   expiresAt: timestamp,
 });
-/** Human approval acts on a pending request through their authenticated session. */
-export const CommunityWirePairingApproveRequestSchema = z.strictObject({ pairingId: id });
+// Human approval of a pending request lives beside the pairing scopes it can consent to.
 /** Human approval receipt without a verifier, code or bearer. */
 export const CommunityWirePairingApproveResponseSchema = z.strictObject({
   approved: z.literal(true),
@@ -1039,7 +1039,8 @@ export const CommunityWirePairingStatusResponseSchema = z.strictObject({
   pairingId: id,
   status: z.enum(['pending', 'approved', 'expired', 'cancelled', 'redeemed']),
   installName: z.string().min(1),
-  scopes: z.array(z.enum(['read', 'post', 'enroll-agent'])),
+  /** What the request asks for; `administer` only when the person reading may grant it. */
+  scopes: z.array(CommunityWirePairingScopeSchema),
   expiresAt: timestamp,
 });
 /** Private exchange request is verifier-bound and accepted server-to-server only. */
