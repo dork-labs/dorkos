@@ -179,7 +179,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'PATCH /api/agents/current',
     'PUT /api/config/agents/defaultAgent',
   ],
-  'Starts a turn: from Wi-Fi it runs at the runtime’s default at most, Allow once only (DOR-3037)':
+  // `wifiTurnHeld` (`sessions/wifi-turn-ceiling.ts`) decides which requests are held.
+  'Starts a turn: the owner’s own sign-in runs it at the agent’s level (DOR-3242); anyone else from Wi-Fi at the runtime’s default at most, Allow once only (DOR-3037)':
     [
       'POST /api/sessions/:id/messages',
       'POST /api/sessions/:id/continue',

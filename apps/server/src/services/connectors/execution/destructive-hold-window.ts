@@ -26,13 +26,19 @@
  *    window everyone is told about is the mitigation chosen meanwhile.
  * 6. DorkOS can say what the action is, in the app's own words. A hold
  *    everyone is told about must be describable.
+ * 7. Wi-Fi access is closed (DOR-3242). The owner's own words from Wi-Fi run
+ *    a turn at the agent's level, and over plain `http` a copied sign-in
+ *    could be anyone, so no message shown as the owner's is proof enough for
+ *    an irreversible action: while Wi-Fi is open, every such call keeps its
+ *    card, which only this computer can answer. HTTPS on that path
+ *    (DOR-3173) lifts this.
  *
  * Anything else falls through to the tier gate, unchanged. So does an
  * eligible call whose waiting row could not be written: nothing runs that
  * nobody was told about.
  *
- * Conditions 1, 3 and 5 are checked again when the 60 seconds are up. If one
- * no longer holds, nothing is sent and the agent is told so.
+ * Conditions 1, 3, 5 and 7 are checked again when the 60 seconds are up. If
+ * one no longer holds, nothing is sent and the agent is told so.
  *
  * ## What the hold binds
  *
@@ -61,6 +67,7 @@ import {
 } from '../../core/agent-identity/agent-identity-service.js';
 import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
 import { marksOfLevel, startedByOutsider } from '../../core/turn-power/turn-marks.js';
+import { isLanAccessOpen } from '../../core/lan-access/lan-trust.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { DestructiveHoldService, HoldRequester } from './destructive-hold.js';
 
@@ -77,6 +84,8 @@ export interface HoldEligibilitySources {
   turnLevel: (sessionId: string) => TurnPermissionLevel | undefined;
   /** Whether a stranger started this chat's turn or the turn read a stranger's words. */
   strangerTurn: (sessionId: string, agentPath: string) => boolean;
+  /** Whether Wi-Fi access is open over plain `http`. */
+  plainWifiOpen: () => boolean;
 }
 
 /** The live server's answers. */
@@ -86,6 +95,7 @@ const LIVE_SOURCES: HoldEligibilitySources = {
   turnLevel: lastTurnLevelOf,
   strangerTurn: (sessionId, agentPath) =>
     startedByOutsider(sessionId) || marksOf(sessionId, agentPath).outsider === true,
+  plainWifiOpen: isLanAccessOpen,
 };
 
 /** Whether a level never asks and read no stranger's words. */
@@ -117,7 +127,7 @@ export async function holdRequesterFor(
   if (!principal || !isServerPrincipal(principal) || principal.claims.kind !== 'runtime') {
     return undefined;
   }
-  if (!sources.trusted()) return undefined;
+  if (!sources.trusted() || sources.plainWifiOpen()) return undefined;
   const { agentPath, agentId, canonicalSessionId } = principal.claims;
   const identity =
     (fresh ? undefined : context.identity) ?? (await sources.describeAgent(agentPath));
@@ -140,6 +150,23 @@ export async function holdRequesterFor(
     name: identity.displayName || path.basename(agentPath),
     sessionId: canonicalSessionId,
   };
+}
+
+/** What a call kept to its card only because Wi-Fi access is open says on the card. */
+export const WIFI_KEEPS_CARD = Object.freeze({ keptCardBecause: 'wifi-open' as const });
+
+/**
+ * Whether open Wi-Fi access is the one reason this call keeps its card: it is
+ * open, and with it closed the call would have waited out the window.
+ */
+async function keptOnlyForWifi(
+  context: CapabilityInvocationContext,
+  preflight: CapabilityPreflightResult,
+  sources: HoldEligibilitySources
+): Promise<boolean> {
+  if (!sources.plainWifiOpen()) return false;
+  const closed = { ...sources, plainWifiOpen: () => false };
+  return (await holdRequesterFor(context, preflight, closed)) !== undefined;
 }
 
 /**
@@ -173,18 +200,23 @@ async function stillEligible(
  * @param context - The invocation context the surface supplied.
  * @param preflight - The connector preflight's result for this call.
  * @param sources - What eligibility reads; the live server by default.
- * @returns The wait to run, or `undefined`.
+ * @returns The wait to run; {@link WIFI_KEEPS_CARD} when open Wi-Fi access is
+ *   the one reason it keeps the card, so the card can say so; or `undefined`.
  */
 export async function cancelWindowFor(
   holds: DestructiveHoldService | undefined,
   context: CapabilityInvocationContext,
   preflight: CapabilityPreflightResult,
-  sources?: HoldEligibilitySources
-): Promise<CancelWindowHold | undefined> {
+  sources: HoldEligibilitySources = LIVE_SOURCES
+): Promise<CancelWindowHold | typeof WIFI_KEEPS_CARD | undefined> {
   if (!holds) return undefined;
-  const requester = await holdRequesterFor(context, preflight, sources);
   const action = preflight.approvalServiceAction;
-  if (!requester || !action) return undefined;
+  const requester = await holdRequesterFor(context, preflight, sources);
+  if (!requester || !action) {
+    return action && (await keptOnlyForWifi(context, preflight, sources))
+      ? WIFI_KEEPS_CARD
+      : undefined;
+  }
   const started = await holds.start({
     requester,
     action: { actionName: action.actionName, serviceName: action.serviceName },

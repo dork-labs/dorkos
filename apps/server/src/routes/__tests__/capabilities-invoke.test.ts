@@ -50,6 +50,13 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
+// The person the Wi-Fi block signs in as is this install's owner, so what it
+// still may not do is pinned for the owner's own sign-in (DOR-3242).
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'owner' }),
+}));
+
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
@@ -411,8 +418,11 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     };
   }
 
-  /** The invoke and approvals routes, reached over Wi-Fi by a signed-in person. */
-  function wifiApp() {
+  /**
+   * The invoke and approvals routes, reached over Wi-Fi by a signed-in person:
+   * the owner unless `userId` names somebody else.
+   */
+  function wifiApp(userId = 'owner') {
     const registry = composeRegistry([tierDomain()], { logger: noopLogger });
     return honoGroupListener(
       [
@@ -425,7 +435,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
       {
         before: async (c, next) => {
           markIngress(c.env.incoming, 'wifi');
-          c.set('user', { userId: 'owner', credential: 'cookie', route: 'wifi' });
+          c.set('user', { userId, credential: 'cookie', route: 'wifi' });
           await next();
         },
       }
@@ -486,20 +496,28 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     expect(denied.status).toBe(200);
   });
 
-  it('refuses a Deny with a reason, and takes a bare Deny (DOR-3037)', async () => {
-    const card = approvals.request({
-      capabilityId: 'tiers.act',
-      inputHash: hashApprovalInput({}),
-      summary: 'x',
-    });
-    const server = fixtureTarget.mount(wifiApp());
-    const typed = await request(server)
-      .post(`/api/approvals/${card.approvalId}/deny`)
+  it('refuses a Deny with a reason from anyone but the owner, and takes a bare Deny (DOR-3037)', async () => {
+    const card = () =>
+      approvals.request({
+        capabilityId: 'tiers.act',
+        inputHash: hashApprovalInput({}),
+        summary: 'x',
+      });
+    const fromTeammate = card();
+    const teammate = fixtureTarget.mount(wifiApp('teammate'));
+    const typed = await request(teammate)
+      .post(`/api/approvals/${fromTeammate.approvalId}/deny`)
       .send({ reason: 'do the other thing instead' });
     expect(typed.status).toBe(403);
     expect(typed.body).toEqual({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI });
-    const bare = await request(server).post(`/api/approvals/${card.approvalId}/deny`);
+    const bare = await request(teammate).post(`/api/approvals/${fromTeammate.approvalId}/deny`);
     expect(bare.status).toBe(200);
+    // The owner's own reason is their words (DOR-3242).
+    const fromOwner = card();
+    const owner = await request(fixtureTarget.mount(wifiApp()))
+      .post(`/api/approvals/${fromOwner.approvalId}/deny`)
+      .send({ reason: 'do the other thing instead' });
+    expect(owner.status).toBe(200);
   });
 
   it('refuses even Allow once on an act card that could raise permissions (DOR-3037)', async () => {
