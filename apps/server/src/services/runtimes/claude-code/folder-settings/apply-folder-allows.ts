@@ -157,8 +157,8 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   if (rulePath(path.join(dorkHome, 'agents')) === undefined) return undefined;
   // Every agent home in the data folder keeps its own self-grant files, so one
   // agent's approved rule can't rewrite another's list either. Every launch
-  // carries these too (`applyPersonOnlyDataDeny`); named here as well, so the
-  // set beside a list stays whole whatever else the launch applied.
+  // below Full carries these too (`applyPersonOnlyDataDeny`); named here as
+  // well, so the set beside a list stays whole whatever else the launch applied.
   rules.push(...agentHomesSelfGrantRules(dorkHome, 'all'));
   for (const tool of WRITE_TOOL_NAMES) {
     // The home folder's own spellings, which Claude Code expands itself: the

@@ -40,6 +40,7 @@ import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -313,12 +314,26 @@ function namesOf(dorkHome: string, name: string): string[] {
  * the launch's settings beside any grant rules. Whatever the permission mode:
  * a deny rule holds under `bypassPermissions` too (see the module note).
  *
- * @param sdkOptions - The launch options, mutated in place.
+ * Every agent home's self-grant files ({@link agentHomesSelfGrantRules}) are
+ * denied below Full only. A launch at Full autonomy (`bypassPermissions` on
+ * `sdkOptions`, so set the mode first) has no limits (the owner's rule), so its
+ * file tools may change them, and the chat gets one Activity line for it. The
+ * rules are part of the launch fingerprint, so a chat that drops below Full
+ * relaunches with them.
+ *
+ * @param sdkOptions - The launch options, mutated in place; its mode is read.
  * @param dorkHome - The data directory.
+ * @param chat - The chat being launched and its agent, for the Activity line at Full.
  * @throws DirectoryGrantError when the data directory's path can't be named
  *   exactly in a rule — failing closed, as a `read` grant does.
  */
-export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): void {
+export function applyPersonOnlyDataDeny(
+  sdkOptions: Options,
+  dorkHome: string,
+  chat?: { sessionId: string; agentPath?: string | undefined }
+): void {
+  const full = sdkOptions.permissionMode === 'bypassPermissions';
+  if (full && chat) noteFullLaunch(chat);
   const folders = [...new Set(PERSON_ONLY_DATA_FOLDERS.flatMap((name) => namesOf(dorkHome, name)))];
   if (!folders.every(ruleCanName)) {
     throw new DirectoryGrantError(
@@ -342,11 +357,38 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
         ...personOnlyFileRules(dorkHome),
-        ...agentHomesSelfGrantRules(dorkHome, 'launch'),
+        ...(full ? [] : agentHomesSelfGrantRules(dorkHome, 'launch')),
         ...PROJECT_PLUGIN_DENY_RULES,
       ],
     },
   } as Options['settings'];
+}
+
+/** Chats whose launch at Full already wrote its Activity line this server run, newest last. */
+const fullLaunchesNoted = new Set<string>();
+/** How many chats {@link fullLaunchesNoted} remembers, oldest dropped first. */
+const FULL_LAUNCH_MEMORY = 10_000;
+
+/**
+ * Write the one Activity line a chat launched at Full autonomy gets for the agent-home files its
+ * file tools may change: once per chat per server run, not per write, since no hook sees a write
+ * the rules no longer refuse.
+ *
+ * @param chat - The chat being launched and its agent.
+ */
+function noteFullLaunch(chat: { sessionId: string; agentPath?: string | undefined }): void {
+  if (fullLaunchesNoted.has(chat.sessionId)) return;
+  fullLaunchesNoted.add(chat.sessionId);
+  if (fullLaunchesNoted.size > FULL_LAUNCH_MEMORY) {
+    fullLaunchesNoted.delete(fullLaunchesNoted.values().next().value!);
+  }
+  recordFullAction({
+    actionId: 'files.agent-homes',
+    did: "started a chat that may change other agents' settings, skills and agent files",
+    limit: "a chat's file tools can't change them",
+    ...(chat.agentPath ? { agentPath: chat.agentPath } : {}),
+    sessionId: chat.sessionId,
+  });
 }
 
 /**
@@ -376,7 +418,7 @@ export function personOnlyFileRules(dorkHome: string): string[] {
  * through every spelling of the data directory. The `*` matches one folder:
  * each agent home, never the folders below it.
  *
- * - `'launch'`, on every launch (DOR-3068 S1): the four files that grant
+ * - `'launch'`, on every launch below Full (DOR-3068 S1): the four files that grant
  *   power (`.claude/settings.json`, `.claude/settings.local.json`,
  *   `.mcp.json`, `.dork/agent.json`), and the home's skills, commands and
  *   subagents, whose frontmatter widens tools. That is `.claude/skills/**`,

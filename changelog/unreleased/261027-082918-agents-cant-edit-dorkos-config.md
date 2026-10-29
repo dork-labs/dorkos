@@ -16,4 +16,4 @@ covers:
 
 ### Fixed
 
-- An agent's file tools can no longer change DorkOS's own settings file, where your approvals are kept. They also can't change the files that give an agent in DorkOS's data folder its powers: its settings, its MCP servers, its agent file, and its skills, commands and subagents. This holds on every chat, at every permission level. Agents can still edit their own instructions, and skills in a project's own folders.
+- An agent's file tools can no longer change DorkOS's own settings file, where your approvals are kept. They also can't change the files that give an agent in DorkOS's data folder its powers: its settings, its MCP servers, its agent file, and its skills, commands and subagents. The settings file stays off-limits at every permission level. The other agents' files are off-limits below Full: a chat set to Full autonomy can change them, and the Activity page notes it. Agents can still edit their own instructions, and skills in a project's own folders.

@@ -4,9 +4,10 @@
  * DOR-3068 S1 against the real bundled Claude Code binary: with the rules
  * every launch carries (`applyPersonOnlyDataDeny`), the model's Write and Edit
  * can't change DorkOS's `config.json` (where every pin, approval and the
- * upgrade marker live) or another agent's authority files, at Ask first, Act
- * and Full. Each refusal leaves the file byte for byte as it was, and each
- * has a control showing the same call DOES change the file without the rules.
+ * upgrade marker live) at any level, nor another agent's authority files at
+ * Ask first or Act. Full has no limits (the owner's rule): at Full those files
+ * change. Each refusal leaves the file byte for byte as it was, and each has a
+ * control showing the same call DOES change the file without the rules.
  *
  * Stand-in files only, in a throwaway data folder; a fake HTTP server on
  * 127.0.0.1 plays the model, so nothing spends or reaches the internet. The
@@ -98,7 +99,11 @@ async function runCalls(calls: ToolCall[], mode: PermissionMode, deny: boolean):
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
   const { port } = server.address() as AddressInfo;
   const options: Options = {};
-  if (deny) applyPersonOnlyDataDeny(options, dorkHome);
+  if (deny) {
+    // The mode decides whether the agent-home rules apply (Full has none), so it is set first.
+    options.permissionMode = mode;
+    applyPersonOnlyDataDeny(options, dorkHome);
+  }
   const abort = new AbortController();
   let childClosed: Promise<void> | undefined;
   const stream = query({
@@ -183,8 +188,13 @@ const other = () => path.join(dorkHome, 'agents', 'other');
  * skill in `.agents/skills/x` and links `.claude/skills/x` to it, as Harness
  * Sync does, and edits through the link.
  */
-const TARGETS: [string, () => string][] = [
-  ['config.json', () => plant(path.join(dorkHome, 'config.json'))],
+const CONFIG: [string, () => string] = [
+  'config.json',
+  () => plant(path.join(dorkHome, 'config.json')),
+];
+
+/** Another agent's authority files: refused below Full, changed at Full. */
+const AGENT_FILES: [string, () => string][] = [
   ["another agent's settings", () => plant(path.join(other(), '.claude', 'settings.json'))],
   [
     "another agent's skill, where it really lives",
@@ -194,6 +204,9 @@ const TARGETS: [string, () => string][] = [
   ["another agent's command", () => plant(path.join(other(), '.claude', 'commands', 'x.md'))],
   ["another agent's subagent", () => plant(path.join(other(), '.claude', 'agents', 'x.md'))],
 ];
+
+/** Every target, for the controls. */
+const TARGETS: [string, () => string][] = [CONFIG, ...AGENT_FILES];
 
 /** Plant a target holding {@link ORIGINAL}. */
 function plant(file: string): string {
@@ -211,11 +224,11 @@ function plantLinked(home: string, name: string): string {
   return path.join(link, 'SKILL.md');
 }
 
-const LEVELS: [string, PermissionMode][] = [
+const BELOW_FULL: [string, PermissionMode][] = [
   ['Ask first', 'default'],
   ['Act', 'acceptEdits'],
-  ['Full', 'bypassPermissions'],
 ];
+const LEVELS: [string, PermissionMode][] = [...BELOW_FULL, ['Full', 'bypassPermissions']];
 
 describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-3068 S1)', () => {
   beforeEach(() => {
@@ -243,7 +256,15 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
     );
 
     for (const [level, mode] of LEVELS) {
-      it.each(TARGETS)(
+      it(`${tool} leaves config.json byte for byte at ${level}`, async () => {
+        const file = CONFIG[1]();
+        await runCalls(calls(file), mode, true);
+        expect(fs.readFileSync(file, 'utf8')).toBe(ORIGINAL);
+      }, 60_000);
+    }
+
+    for (const [level, mode] of BELOW_FULL) {
+      it.each(AGENT_FILES)(
         `${tool} leaves %s byte for byte at ${level}`,
         async (_label, where) => {
           const file = where();
@@ -253,11 +274,21 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
         60_000
       );
     }
+
+    it.each(AGENT_FILES)(
+      `${tool} changes %s at Full, which has no limits`,
+      async (_label, where) => {
+        const file = where();
+        await runCalls(calls(file), 'bypassPermissions', true);
+        expect(fs.readFileSync(file, 'utf8')).not.toBe(ORIGINAL);
+      },
+      60_000
+    );
   }
 
-  it("refuses the agent's own skill too: the rule names every home, and frontmatter widens tools (DOR-3349 frees the body)", async () => {
+  it("refuses the agent's own skill below Full too: the rule names every home, and frontmatter widens tools (DOR-3349 frees the body)", async () => {
     const file = plantLinked(folder, 'mine');
-    await runCalls(CHANGES[1][1](file), 'bypassPermissions', true);
+    await runCalls(CHANGES[1][1](file), 'acceptEdits', true);
     expect(fs.readFileSync(file, 'utf8')).toBe(ORIGINAL);
   }, 60_000);
 
