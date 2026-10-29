@@ -9,7 +9,6 @@ import type {
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
-import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { ceilingCarrying, hasMarks, marksOfLevel } from '../../core/turn-power/turn-marks.js';
 import { unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -42,21 +41,10 @@ export async function senderBound(
 ): Promise<TurnPermissionCeiling> {
   if (level === undefined) {
     const marks = unknownLevelMarks([caller.sessionId], caller.agentPath);
-    // A marked sender whose turn this process never recorded cannot show our own agent wrote
-    // the message, so it holds the receiving turn (DOR-3390): the strict answer.
-    if (marks.teammate !== undefined) return ceilingCarrying(marks)!;
-    if (hasMarks(marks) || !ownLevelOf) return 'runtime-default';
+    if (hasMarks(marks) || !ownLevelOf) return ceilingCarrying(marks) ?? 'runtime-default';
     return ownLevelOf(caller.agentPath, [caller.sessionId]);
   }
-  const marks = marksOfLevel(level);
-  const carried = ceilingCarrying(marks);
-  // An outsider's words carried on (DOR-3390, Security's Must 1): the mark rides with the level
-  // a person set the sender to, never the level the sender's turn was held to, so no hold
-  // spreads message to message. A teammate's chain keeps the sender's own level and its hold.
-  if (carried !== undefined && marks.teammate === undefined && ownLevelOf) {
-    const own = await ownLevelOf(caller.agentPath, [caller.sessionId]);
-    return [own, ...boundsOf(carried)];
-  }
+  const carried = ceilingCarrying(marksOfLevel(level));
   if (carried !== undefined) return [level, ...boundsOf(carried)];
   if (!ownLevelOf) return level;
   return ownLevelOf(caller.agentPath, [caller.sessionId]);
@@ -90,41 +78,7 @@ export async function senderCeilingJson(
     const marks = unknownLevelMarks([caller.sessionId], caller.agentPath);
     if (hasMarks(marks)) return JSON.stringify({ bound: 'runtime-default', marks });
   }
-  return JSON.stringify(
-    Array.isArray(bound)
-      ? (bound as readonly TurnPermissionBound[]).map(storedForm)
-      : storedForm(bound as TurnPermissionBound)
-  );
-}
-
-/** The `bound` a stored carried mark names (`{"bound":"carried","marks":{"outsider":true}}`). */
-const CARRIED_BOUND = 'carried';
-
-/**
- * One bound as a row keeps it. The carried outsider mark (DOR-3390) is stored by name, never as
- * the loosest level it is in memory: a reader that does not know the name (an older build after a
- * rollback) reads an object with no `asks` as the runtime's default, so it fails closed.
- */
-function storedForm(bound: TurnPermissionBound): unknown {
-  return isCarriedOutsiderBound(bound)
-    ? { bound: CARRIED_BOUND, marks: { outsider: true } }
-    : bound;
-}
-
-/**
- * Whether a bound is exactly {@link CARRIED_OUTSIDER_LEVEL}: the mark, and nothing else.
- *
- * @param bound - One bound.
- */
-export function isCarriedOutsiderBound(bound: TurnPermissionBound): boolean {
-  if (bound === 'runtime-default') return false;
-  return (
-    bound.outsider === true &&
-    bound.asks === CARRIED_OUTSIDER_LEVEL.asks &&
-    bound.reach === CARRIED_OUTSIDER_LEVEL.reach &&
-    bound.auto === undefined &&
-    bound.teammate === undefined
-  );
+  return JSON.stringify(bound);
 }
 
 /** A ceiling as the list of bounds that all hold. */
@@ -152,24 +106,6 @@ export function parseCeiling(json: string): TurnPermissionCeiling {
       return bounds.length === 0 ? 'runtime-default' : bounds.length === 1 ? bounds[0]! : bounds;
     }
     if (value === 'runtime-default') return value;
-    // The carried outsider mark, stored by name (`storedForm`). Only this exact shape: anything
-    // else that is not a level falls through to the runtime's default.
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      (value as { bound?: unknown }).bound === CARRIED_BOUND &&
-      (value as { marks?: { outsider?: unknown } }).marks?.outsider === true
-    ) {
-      return CARRIED_OUTSIDER_LEVEL;
-    }
-    // A carried mark is never stored as a bare level: one that looks like it is unknown.
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      isCarriedOutsiderBound(value as TurnPermissionLevel)
-    ) {
-      return 'runtime-default';
-    }
     if (
       value !== null &&
       typeof value === 'object' &&
@@ -191,13 +127,7 @@ export function parseCeiling(json: string): TurnPermissionCeiling {
  * @param bound - The sender's bound.
  */
 export function isMarkedBound(bound: TurnPermissionCeiling): boolean {
-  const bounds = boundsOf(bound);
-  // A sender that only carried an outsider's words on (DOR-3390) still opens a chat at the
-  // operator's stop: the mark rides the message's own bound, which gates the risky actions.
-  if (bounds.some(isCarriedOutsiderBound) && !bounds.includes('runtime-default')) {
-    return bounds.some((one) => one !== 'runtime-default' && one.teammate !== undefined);
-  }
-  return bounds.some((one) => one === 'runtime-default' || hasMarks(marksOfLevel(one)));
+  return boundsOf(bound).some((one) => one === 'runtime-default' || hasMarks(marksOfLevel(one)));
 }
 
 /**

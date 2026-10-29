@@ -83,11 +83,10 @@ export function shouldWakeForRefusal(
   const author = authors.getMany([entry.authorId]).get(entry.authorId);
   // An agent's post with no chat behind it is nobody's turn to answer for.
   if (author?.kind === 'agent' && !entry.sessionId) return false;
-  // A post a teammate's chain wrote never wakes a beat (DOR-3036). One that carried an outsider's
-  // words on does (DOR-3390, Security): the beat gathers the post with its marks, so it runs as
-  // a marked turn whose risky actions still ask.
+  // A post a stranger's words or a teammate's chain wrote never wakes a beat (DOR-3036): the beat
+  // would read it as the agent's own work, unmarked. Fails closed.
   const marks = entryMarksOf(entry.id, entry.roomId);
-  if (marks && hasMarks(marks) && marks.teammate !== undefined) return false;
+  if (marks && hasMarks(marks)) return false;
   return !isEntryAuthorExternal(authors, entry.authorId);
 }
 

@@ -17,12 +17,11 @@
  * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
  * stay refused.
  *
- * **Stricter than the gate in one place.** A turn held for a stranger gets no
- * `chat_send` at all, not even a queued one. A turn that only carries an
- * outsider's words on may send one: the message carries the mark, so the chat
- * it reaches is gated the same way (DOR-3390, Security's condition on #3201's
- * one-hop laundering point). A turn held to any ceiling, or marked without
- * one, gets no account tools.
+ * **Stricter than the gate in one place.** A turn held to a ceiling (a
+ * stranger's, a teammate's, another agent's), or MARKED without one (a room
+ * turn with a stranger's line in view), gets no `chat_send` at all, not even a
+ * queued one, so an unattended run can't pass a stranger's words on to another
+ * chat (Security's one-hop laundering point), and no account tools.
  *
  * **Never on a teammate's turn.** A teammate's fence is its own hook's deny,
  * and Claude Code ranks a deny above an allow; this hook does not lean on that
@@ -43,12 +42,7 @@ import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { CHAT_SEND_TOOL } from '@dorkos/shared/chat-messages';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
-import {
-  ceilingOn,
-  gatePermissionMode,
-  heldForOutsider,
-  type CeilingedMode,
-} from '../turn-permission.js';
+import { ceilingOn, gatePermissionMode, type CeilingedMode } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 import type { AgentSession } from '../agent-types.js';
@@ -59,13 +53,10 @@ export type NeverAskSession = CeilingedMode<PermissionModeId> & Pick<AgentSessio
 /** How long the decision may take before it counts as doubt. */
 export const NEVER_ASK_HOOK_TIMEOUT_MS = 5_000;
 
-/** Tools refused outright in a held or marked turn: the accounts. */
+/** Tools refused outright in a held or marked turn: passing words on, and the accounts. */
 const NEVER_IN_A_HELD_OR_MARKED_TURN: ReadonlySet<string> = new Set(
-  ['accounts_usage', 'accounts_probe'].map(inSessionToolName)
+  [CHAT_SEND_TOOL, 'accounts_usage', 'accounts_probe'].map(inSessionToolName)
 );
-
-/** `chat_send`, refused only in a turn held for a stranger (DOR-3390). */
-const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
 
 /** What the hook answers when it lets a call run. */
 const ALLOW = {
@@ -102,12 +93,7 @@ export async function neverAskAllows(
   if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
-  if (toolName === CHAT_SEND_QUALIFIED) {
-    // A stranger's own turn passes nothing on. A turn that only carries an outsider's words on
-    // may (DOR-3390): the message carries the mark, so the chat it reaches is marked in turn and
-    // its raises, destructive calls and shell still ask.
-    if (heldForOutsider(session)) return false;
-  } else if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
+  if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
     if (ceilingOn(session) !== 'none') return false;
     try {
       if (isMarked()) return false;

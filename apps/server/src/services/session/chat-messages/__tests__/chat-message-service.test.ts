@@ -622,11 +622,10 @@ describe('send — steer', () => {
 
     expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.status).toBe('queued');
-    // Its level, which keeps the mark, and the mark carried on as a bound that
-    // caps nothing (DOR-3107, DOR-3390).
+    // Its level, which keeps the mark, and the cap the mark carries (DOR-3107).
     expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual([
       { ...TIGHT, outsider: true },
-      { asks: 'never', reach: 'everything', outsider: true },
+      'runtime-default',
     ]);
   });
 

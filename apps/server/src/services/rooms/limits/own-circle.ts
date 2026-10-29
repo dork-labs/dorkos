@@ -29,7 +29,7 @@ import {
 } from '../../session/resolution/resolve-session-defaults.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { callerSessionOf } from './caller-sessions.js';
-import { firstHandOutsiderInView } from './turn-ceiling.js';
+import { outsiderInViewOf } from './turn-ceiling.js';
 
 /** What decides an own-circle turn, read where the turn is built. */
 export interface OwnCircle {
@@ -55,9 +55,7 @@ export function isOwnCircle(
   room: { inSpaceRoom: boolean; bridged: boolean }
 ): boolean {
   if (room.inSpaceRoom || room.bridged) return false;
-  // Only first-hand outside words (DOR-3390): our own agent's marked post marks the turn, and
-  // does not cap the others it answers.
-  return !firstHandOutsiderInView(context, roomId);
+  return !outsiderInViewOf(context, roomId).outsiderInView;
 }
 
 /** The stricter of two bounds; the runtime's default is the strictest name. */

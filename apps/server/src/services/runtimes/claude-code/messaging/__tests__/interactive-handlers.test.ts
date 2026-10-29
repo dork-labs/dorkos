@@ -192,38 +192,6 @@ describe('createCanUseTool — approval gate', () => {
     expect(freeEvent).toMatchObject({ data: { hasSuggestions: true } });
   });
 
-  // DOR-3390: a turn that carries an outsider's words on runs at its own level, Full here, and only
-  // its shell goes to a person, with no standing rule offered. Other tools run as at Full.
-  it('asks about Bash at Full in a turn that carries an outsider’s words on, and nothing else', async () => {
-    const CARRIED = { asks: 'never', reach: 'everything', outsider: true } as const;
-    const suggestions = [
-      {
-        type: 'addRules',
-        rules: [{ toolName: 'Bash', ruleContent: 'python3 *' }],
-        behavior: 'allow',
-        destination: 'localSettings',
-      },
-    ] as PermissionUpdate[];
-    const session = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
-    const canUseTool = createCanUseTool(session, noopLog);
-    expect(
-      await canUseTool('Edit', { file_path: '/agents/ana/a.ts' }, makeContext('tool-edit'))
-    ).toEqual({ behavior: 'allow', updatedInput: { file_path: '/agents/ana/a.ts' } });
-    void canUseTool(
-      NON_SAFE_TOOL,
-      { command: 'python3 -c 1' },
-      { ...makeContext('tool-shell'), suggestions }
-    );
-    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-shell')).toBe(true));
-    const pending = session.pendingInteractions.get('tool-shell');
-    expect(pending?.type === 'approval' && pending.suggestions).toEqual([]);
-    // The same session with no mark at all runs its shell unasked.
-    const free = makeSession('bypassPermissions');
-    expect(
-      await createCanUseTool(free, noopLog)(NON_SAFE_TOOL, { command: 'ls' }, makeContext('t2'))
-    ).toEqual({ behavior: 'allow', updatedInput: { command: 'ls' } });
-  });
-
   it('auto-allows read-only tools even in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);

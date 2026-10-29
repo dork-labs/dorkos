@@ -256,12 +256,7 @@ describe('teammate origins travel with the level', () => {
   });
 
   it('ride a ceiling built for words written under them, and read back from storage', () => {
-    // An outsider's words alone ride as a mark that caps nothing (DOR-3390).
-    expect(ceilingCarrying({ outsider: true })).toEqual({
-      asks: 'never',
-      reach: 'everything',
-      outsider: true,
-    });
+    expect(ceilingCarrying({ outsider: true })).toBe('runtime-default');
     expect(ceilingCarrying({ outsider: true, teammate: [PRIYA] })).toEqual([
       'runtime-default',
       { ...READ_ONLY_LEVEL, teammate: [PRIYA] },
