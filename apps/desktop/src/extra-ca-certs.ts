@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { closeSync, constants as fsConstants, fstatSync, openSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import tls from 'node:tls';
 import { configString, readUserConfig } from './main/user-config';
@@ -102,6 +102,32 @@ export function readCompanyCertificatesPath(dorkHome: string): string | null {
   return value && path.isAbsolute(value) ? value : null;
 }
 
+/** A certificate bundle is kilobytes; anything past this is not one. */
+const MAX_CERTIFICATE_FILE_BYTES = 1024 * 1024;
+
+/**
+ * Read the chosen file only if it is a regular file of sane size. This runs
+ * before the single-instance lock, so a FIFO or a device must fail fast rather
+ * than hang launch: the open never blocks, and fstat decides before any read.
+ *
+ * @param file - The absolute path a person set.
+ * @returns The file's text.
+ * @throws An error with `code` `ENOTREG` or `EFBIG`, or the open/read error.
+ */
+function readCertificateFile(file: string): string {
+  const fd = openSync(file, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw Object.assign(new Error('not a regular file'), { code: 'ENOTREG' });
+    if (stat.size > MAX_CERTIFICATE_FILE_BYTES) {
+      throw Object.assign(new Error('file too large'), { code: 'EFBIG' });
+    }
+    return readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /**
  * Add the certificates in the file a person set to the default trust store.
  *
@@ -124,7 +150,7 @@ export function applyExtraCaCerts(options: ExtraCaOptions = {}): ExtraCaResult {
   }
   let certificates: string[];
   try {
-    certificates = readFileSync(file, 'utf8').match(PEM_CERTIFICATE) ?? [];
+    certificates = readCertificateFile(file).match(PEM_CERTIFICATE) ?? [];
   } catch (err) {
     warn(`Ignoring extra certs from ${file}, load failed: ${(err as NodeJS.ErrnoException).code}`);
     return { outcome: 'unreadable', added: 0, path: file };

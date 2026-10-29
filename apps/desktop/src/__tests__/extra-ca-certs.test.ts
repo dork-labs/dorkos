@@ -125,6 +125,26 @@ describe('applyExtraCaCerts', () => {
     });
   });
 
+  // This runs before the single-instance lock, so a file that is not a
+  // certificate bundle must fail at once, never hang launch (Security S-2).
+  it('refuses a FIFO without blocking, and a file over 1 MB', () => {
+    const fifo = path.join(dir, 'ca.fifo');
+    execFileSync('mkfifo', [fifo]);
+    const big = path.join(dir, 'big.pem');
+    writeFileSync(big, Buffer.alloc(1024 * 1024 + 1, 'A'));
+    const warn = vi.fn();
+    expect(applyExtraCaCerts({ file: fifo, env: {}, electron: true, warn })).toEqual({
+      outcome: 'unreadable',
+      added: 0,
+      path: fifo,
+    });
+    expect(warn.mock.calls[0]![0]).toContain('ENOTREG');
+    expect(applyExtraCaCerts({ file: big, env: {}, electron: true, warn }).outcome).toBe(
+      'unreadable'
+    );
+    expect(warn.mock.calls[1]![0]).toContain('EFBIG');
+  });
+
   // The hole DOR-3361 closes: anything running as the user can export this
   // (`launchctl setenv`), so in the app it no longer decides what is trusted.
   it('ignores NODE_EXTRA_CA_CERTS in the app when no file was chosen, and says so', () => {
