@@ -235,7 +235,7 @@ export function recordFullAction(action: FullAction): void {
     ...(action.agentPath ? { actorId: action.agentPath } : {}),
     actorLabel: who,
     category: 'agent',
-    eventType: 'agent.marked_full_action',
+    eventType: 'agent.full_action',
     resourceType: 'action',
     resourceId: action.actionId,
     resourceLabel: action.did,

@@ -8,6 +8,7 @@ covers:
   - 'fix(server): git status through the runner stays fast on a fresh checkout (DOR-3343)'
   - "fix(server): a Full chat's workspace is made past the git audit, with one Activity line (DOR-3343)"
   - "fix(server): a Full chat's workspace runs none of the repo's filter programs (DOR-3343)"
+  - 'fix(server): Full overrides keep the agent.full_action Activity name (DOR-3343)'
 ---
 
 ### Fixed

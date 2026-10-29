@@ -275,7 +275,7 @@ describe.skipIf(process.platform === 'win32')('a source whose settings name a pr
       expect(emit).toHaveBeenCalledOnce();
       expect(emit).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventType: 'agent.marked_full_action',
+          eventType: 'agent.full_action',
           actorId: FULL_CHAT.agentPath,
           resourceId: 'workspace.create',
         })
