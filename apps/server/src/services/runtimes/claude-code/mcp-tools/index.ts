@@ -19,7 +19,7 @@ import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
-import { isPersonOnlyMode } from '../turn-permission.js';
+import { heldToACeiling, isPersonOnlyMode } from '../turn-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -229,7 +229,7 @@ export function handRegisteredInSessionToolSet(
 
   const raw: SdkMcpTool[] = [
     ...getCoreTools(deps),
-    ...getAccountTools(deps),
+    ...getAccountTools(deps, resolveTaskProvenance),
     // The caller is the session's identity anchor, so the Activity entry names
     // the agent that started the session, even from its room worktree. The
     // calling chat is what the new one says started it (spec
@@ -266,7 +266,15 @@ export function handRegisteredInSessionToolSet(
     ...getAgentTools(deps),
     // The same provenance the task tools read: present in a session, so a
     // Trusted install approves an extension our agent creates (ADR 261006-225605).
-    ...getExtensionTools(deps, resolveTaskProvenance),
+    // A turn under a ceiling records no author for it (DOR-3068).
+    ...getExtensionTools(
+      deps,
+      resolveTaskProvenance &&
+        (() => ({
+          ...resolveTaskProvenance(),
+          ...(session && heldToACeiling(session) ? { ceilinged: true } : {}),
+        }))
+    ),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

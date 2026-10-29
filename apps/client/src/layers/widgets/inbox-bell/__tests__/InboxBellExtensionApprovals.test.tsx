@@ -57,6 +57,9 @@ const FLOW: PendingExtensionApproval = {
   added: null,
   agentTools: [],
   agentSkills: [],
+  digest: null,
+  changedFiles: null,
+  updatedFrom: null,
 };
 
 /** What the fake server holds and what it was asked. */
@@ -78,6 +81,16 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         if (staleReplacement) waiting = [staleReplacement];
         return json(
           { error: 'This extension changed since you saw it.', code: 'stale_approval' },
+          409
+        );
+      }
+      if (approveStatus === 419) {
+        // A copy DorkOS cannot check (DOR-3068): plain words, its own code.
+        return json(
+          {
+            error: "Its folder links to files outside it, so DorkOS can't check what would run.",
+            code: 'extension_unpinnable',
+          },
           409
         );
       }
@@ -158,7 +171,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
 
     const bell = await screen.findByTestId('inbox-bell');
-    expect(bell).toHaveAccessibleName('1 extension is waiting to be turned on. Open to answer it.');
+    expect(bell).toHaveAccessibleName('1 mini app is waiting to be turned on. Open to answer it.');
     expect(bell).toHaveTextContent('1');
   });
 
@@ -174,8 +187,36 @@ describe('InboxBell — an extension waiting to be turned on', () => {
         .map((button) => button.getAttribute('aria-label'))
     ).toEqual(['More about this', 'Not now', 'Turn it on']);
     expect(
-      screen.getByText('1 extension is waiting to be turned on. None of it runs until you decide.')
+      screen.getByText("Flow is waiting to be turned on. It won't run until you decide.")
     ).toBeInTheDocument();
+  });
+
+  it('names a marketplace update by both versions (DOR-3068)', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        version: '1.3.0',
+        updatedFrom: '1.2.0',
+        changedFiles: ['index.ts'],
+        why: 'The flow plugin was updated from 1.2.0 to 1.3.0: index.ts. It runs as you.',
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('Update Flow from 1.2.0 to 1.3.0?')).toBeInTheDocument();
+    expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Flow has changed. Run the new code?')).not.toBeInTheDocument();
+  });
+
+  it('asks to run a changed copy that was not updated', async () => {
+    waiting = [{ ...FLOW, changedFiles: ['index.ts'] }];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('Flow has changed. Run the new code?')).toBeInTheDocument();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {
@@ -300,6 +341,25 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     );
     expect(await screen.findByText('Turn on Flow?')).toBeInTheDocument();
   });
+
+  it('says plainly, without “try again”, when DorkOS cannot check the copy (DOR-3068)', async () => {
+    approveStatus = 419; // the fake's stand-in for an unpinnable refusal
+    renderBell();
+    const { user, row } = await openRow();
+
+    await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Flow can’t be turned on yet.', {
+        description: "Its folder links to files outside it, so DorkOS can't check what would run.",
+      })
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('Try again'),
+      expect.anything()
+    );
+  });
+
   describe('what it can reach (DOR-2686)', () => {
     const MAIL: PendingExtensionApproval = {
       ...FLOW,

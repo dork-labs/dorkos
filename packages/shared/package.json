@@ -461,6 +461,10 @@
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"
     },
+    "./canvas-media-url": {
+      "types": "./src/canvas-media-url.ts",
+      "default": "./dist/canvas-media-url.js"
+    },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",
       "default": "./dist/canvas-view.js"

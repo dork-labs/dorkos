@@ -112,6 +112,8 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   memory_write: refuse('writes notes every later conversation reads, the owner’s included'),
   memory_read: refuse('reads the agent’s notes files, which a teammate’s turn is never shown'),
   compact_my_session: refuse('rewrites what this conversation remembers'),
+  accounts_usage: refuse('reads how much of the person’s accounts is used'),
+  accounts_probe: refuse('reads a person’s account usage'),
   // The owner's screen.
   control_ui: refuse('drives the owner’s app'),
   get_ui_state: refuse('reads what the owner has open'),

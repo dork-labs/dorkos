@@ -9,6 +9,7 @@
  *
  * @module features/canvas/lib/media-src
  */
+import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
 
 /** The media variant a source is being resolved for — gates which `data:` URIs are allowed. */
 export type CanvasMediaKind = 'image' | 'pdf';
@@ -61,6 +62,10 @@ export function resolveCanvasMediaSrc(
     const ok = trimmed.toLowerCase().startsWith(ALLOWED_DATA_PREFIX[kind]);
     return ok ? { url: trimmed, error: null } : { url: null, error: 'unsupported-data' };
   }
+
+  // A file an agent put on a room's canvas, which the server copied into the
+  // room: same-origin, membership-gated, and loaded as-is.
+  if (isRoomCanvasMediaUrl(trimmed)) return { url: trimmed, error: null };
 
   const scheme = schemeOf(trimmed);
   if (scheme !== null) {

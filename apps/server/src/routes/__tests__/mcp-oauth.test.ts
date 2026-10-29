@@ -91,18 +91,26 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
     const server = fixtureTarget.mount(
       appWith(stubOAuth({ connected: true, serverName: 'granola', flow: FLOW }, spy))
     );
-    const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
+    // Values long and odd enough that the random landing id can never contain
+    // them: the old `s1`/`c1` matched a random id a few percent of the time.
+    const state = 'state-sentinel-value';
+    const code = 'code-sentinel-value';
+    const res = await request(server).get(
+      `/api/agents/mcp-oauth/callback?state=${state}&code=${code}`
+    );
 
     expect(res.status).toBe(303);
     const location = res.headers.location as string;
     // Built from the configured app origin, never from the request.
     expect(location.startsWith(`${getLocalCockpitOrigin()}/signed-in?landing=`)).toBe(true);
-    expect(location).not.toMatch(/code=|state=|c1|s1/);
+    expect(location).not.toMatch(/[?&](code|state)=/);
+    expect(location).not.toContain(state);
+    expect(location).not.toContain(code);
     // The callback URL carries a one-time code: never cached, never sent on.
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['referrer-policy']).toBe('no-referrer');
     // The route forwarded exactly the query the browser carried back.
-    expect(spy).toHaveBeenCalledWith({ state: 's1', code: 'c1', error: undefined });
+    expect(spy).toHaveBeenCalledWith({ state, code, error: undefined });
   });
 
   it('records which server, which agent, and the conversation to go back to', async () => {

@@ -20,6 +20,12 @@ describe('resolveCanvasFetchUrl', () => {
     );
   });
 
+  it('loads a room’s own copy of a canvas file as-is', () => {
+    const src =
+      '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4';
+    expect(resolveCanvasFetchUrl(src, toLocal).url).toBe(src);
+  });
+
   it('routes a bare path through the cwd-confined media URL', () => {
     expect(resolveCanvasFetchUrl('clips/demo.mp4', toLocal).url).toBe(
       '/api/media?path=clips%2Fdemo.mp4'

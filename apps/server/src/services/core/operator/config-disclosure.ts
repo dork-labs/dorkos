@@ -367,6 +367,8 @@ export const CONFIG_DISCLOSURE = {
   // including the home directory. An agent needs none of it — the refusal it
   // reads already names the id to ask the person about — so it stays in.
   'extensions.approvedSources': 'withhold',
+  // The old approvals still waiting for a copy (DOR-3068). Nothing an agent needs.
+  'extensions.legacyUnsourced': 'withhold',
   // The permission set each approval covers (DOR-2686). Nothing an agent needs:
   // the extension's own manifest says what it declares.
   'extensions.approvedPermissions': 'withhold',
@@ -421,6 +423,13 @@ export const CONFIG_DISCLOSURE = {
   // The other half of the same record: which packages a person turned down.
   // Same contents, same reasoning — package names and digests, no secrets.
   'harness.refusedHooks': 'expose',
+  // Which state of each agent's own folder settings a person let run or turned
+  // down (DOR-3068): agent ids and digests, no secrets. The part digests behind
+  // each yes are nothing an agent needs.
+  'harness.approvedFolderConfig': 'expose',
+  'harness.refusedFolderConfig': 'expose',
+  'harness.folderConfigPinned': 'expose',
+  'harness.approvedFolderConfigParts': 'withhold',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that
   // can say "your all-projects packages are not shared with Codex" is more

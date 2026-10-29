@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   STALE_APPROVAL_CODE,
+  UNPINNABLE_APPROVAL_CODE,
   type ApproveExtensionRequest,
   type ExtensionTrustOffer,
   type PendingExtensionApproval,
@@ -45,6 +46,8 @@ export interface ExtensionAnswerInput {
 export interface ApproveExtensionInput extends ExtensionAnswerInput {
   /** The set the card showed. */
   permissions?: ApproveExtensionRequest['permissions'];
+  /** The digest of the files the card showed; files changed since are refused as stale. */
+  expectedDigest?: string;
 }
 
 /** Which copy to put off ("Not now"). */
@@ -124,11 +127,17 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
   const queryClient = useQueryClient();
 
   const approve = useMutation<void, Error, ApproveExtensionInput, () => void>({
-    mutationFn: async ({ id, path, version, plugin, permissions }) => {
+    mutationFn: async ({ id, path, version, plugin, permissions, expectedDigest }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, version, plugin, ...(permissions ? { permissions } : {}) }),
+        body: JSON.stringify({
+          path,
+          version,
+          plugin,
+          ...(permissions ? { permissions } : {}),
+          ...(expectedDigest ? { expectedDigest } : {}),
+        }),
       });
       if (!res.ok) throw await failureOf(res);
       useSeenBeforeStaleStore.getState().forget(id);
@@ -149,6 +158,11 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       if (isStale(err)) {
         if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
         toast.error(`${name} changed since you saw it. Check it again.`);
+        return;
+      }
+      // Trying again cannot help a copy DorkOS cannot check (DOR-3068).
+      if (err instanceof AnswerRefused && err.code === UNPINNABLE_APPROVAL_CODE) {
+        toast.error(`${name} can’t be turned on yet.`, { description: err.message });
         return;
       }
       toast.error(`Couldn’t turn on ${name}. Try again.`, { description: err.message });

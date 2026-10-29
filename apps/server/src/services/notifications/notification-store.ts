@@ -35,7 +35,7 @@ import type {
   NotificationTier,
 } from '@dorkos/shared/notification-schemas';
 import { logger } from '../../lib/logger.js';
-import { buildActions, buildDecision, buildRunMark } from './stored-dto-parts.js';
+import { buildActions, buildPayloadFacts } from './stored-dto-parts.js';
 
 /**
  * Ids that keep increasing even inside one millisecond.
@@ -806,8 +806,7 @@ export class NotificationStore {
       ...(row.readAt ? { readAt: row.readAt } : {}),
       ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
       ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
-      ...(buildDecision(kind, row.dataJson) ?? {}),
-      ...(buildRunMark(kind, row.dataJson) ?? {}),
+      ...buildPayloadFacts(kind, row.dataJson),
     };
   }
 }
