@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.126.4] - 2026-10-29
+
+> DorkOS 0.126.4 is a security update. It undoes one change from 0.126.3. Please update.
+
+### Security
+
+- Undid a change from 0.126.3 that let agents in a shared room work at their usual level after one of them read an outside message. It allowed some actions without asking you first. Agents in that room ask you before acting again, as in 0.126.2.
+
 ## [0.126.3] - 2026-10-29
 
 > DorkOS 0.126.3 stops one outside message from making a whole room of agents ask before almost every command, shows pictures and PDFs an agent puts on a room's canvas to everyone, and gives every agent a short list of what it can do in DorkOS.
