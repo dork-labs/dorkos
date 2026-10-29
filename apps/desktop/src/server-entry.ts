@@ -19,6 +19,7 @@
  */
 declare module '@dorkos/server';
 
+import { applyExtraCaCerts } from './extra-ca-certs';
 import { exitWhenOrphaned } from './orphan-watchdog';
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 
@@ -81,6 +82,9 @@ function isMessage(msg: unknown, type: string): boolean {
 }
 
 async function main() {
+  // Before the server opens any connection: a company network's certificates,
+  // which the fused app binary no longer reads by itself (DOR-3361).
+  applyExtraCaCerts();
   exitWhenOrphaned();
   const port = Number(process.env.DORKOS_PORT);
 
