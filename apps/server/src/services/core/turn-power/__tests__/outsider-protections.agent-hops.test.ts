@@ -260,28 +260,35 @@ describe("a stranger's words, one agent hop later", () => {
     const ana = fresh('ana');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     const bound = markedBoundOf(ana, '/agents/ana')!;
-    const session = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling: bound };
-    expect(ceilingOn(session)).toBe('stranger');
-    const hook = createHeldTurnHook(
-      session,
-      async () => ({}),
-      { debug() {}, info() {} },
-      { cwd: '/agents/bo', roots: ['/agents/bo'] }
-    );
-    const out = await hook(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: 's',
-        transcript_path: '/t',
-        cwd: '/agents/bo',
-        tool_name: 'Bash',
-        tool_input: { command: 'python3 -c 1' },
-        tool_use_id: 't',
-      } as never,
-      't',
-      { signal: new AbortController().signal }
-    );
-    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: 'ask' } });
+    const hookSays = (permissionMode: 'acceptEdits' | 'bypassPermissions') => {
+      const session = { permissionMode, turnPermissionCeiling: bound };
+      expect(ceilingOn(session)).toBe('stranger');
+      const hook = createHeldTurnHook(
+        session,
+        async () => ({}),
+        { debug() {}, info() {} },
+        { cwd: '/agents/bo', roots: ['/agents/bo'] }
+      );
+      return hook(
+        {
+          hook_event_name: 'PreToolUse',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/agents/bo',
+          tool_name: 'Bash',
+          tool_input: { command: 'python3 -c 1' },
+          tool_use_id: 't',
+        } as never,
+        't',
+        { signal: new AbortController().signal }
+      );
+    };
+    // A child set below Full: its folder's allow rules ask.
+    expect(await hookSays('acceptEdits')).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
+    });
+    // A child set to Full asks nobody anything (DOR-3394); it asked here until then.
+    expect(await hookSays('bypassPermissions')).toEqual({});
   });
 
   it('a post two of the author’s turns vouch for keeps the mark if either read an outsider', async () => {

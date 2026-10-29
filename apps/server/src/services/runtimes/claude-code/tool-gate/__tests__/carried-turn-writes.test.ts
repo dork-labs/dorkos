@@ -35,9 +35,12 @@ function call(toolName: string, toolInput: Record<string, unknown>): HookInput {
   } as HookInput;
 }
 
-function hookFor(ceiling?: TurnPermissionCeiling) {
+function hookFor(
+  ceiling?: TurnPermissionCeiling,
+  permissionMode: 'bypassPermissions' | 'acceptEdits' = 'bypassPermissions'
+) {
   const session = {
-    permissionMode: 'bypassPermissions' as const,
+    permissionMode,
     ...(ceiling !== undefined ? { turnPermissionCeiling: ceiling } : {}),
   };
   const hook = createHeldTurnHook(
@@ -54,7 +57,9 @@ function hookFor(ceiling?: TurnPermissionCeiling) {
   };
 }
 
-const carried = hookFor(CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling);
+// Below Full: a chat set to Full never asks, marked or not (DOR-3394, see the last block).
+const carried = hookFor(CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling, 'acceptEdits');
+const carriedAtFull = hookFor(CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling);
 const unmarked = hookFor();
 
 describe('a carried turn: git cannot be turned into a shell (M-A)', () => {
@@ -134,6 +139,18 @@ describe('an unmarked turn at Full is unchanged', () => {
       'runs'
     );
     expect(await unmarked(call('Bash', { command: 'git diff' }))).toBe('runs');
+  });
+});
+
+describe('a carried turn in a chat set to Full never asks (DOR-3394)', () => {
+  it('runs the edits and git commands a carried turn below Full asks about', async () => {
+    expect(await carriedAtFull(call('Write', { file_path: '.git/config', content: 'x' }))).toBe(
+      'runs'
+    );
+    expect(await carriedAtFull(call('Write', { file_path: '.dork/SOUL.md', content: 'x' }))).toBe(
+      'runs'
+    );
+    expect(await carriedAtFull(call('Bash', { command: 'git push' }))).toBe('runs');
   });
 });
 

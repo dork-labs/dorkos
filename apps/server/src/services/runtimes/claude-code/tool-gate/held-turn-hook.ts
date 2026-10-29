@@ -22,7 +22,12 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { carriesOutsiderMark, heldForOutsider, type CeilingedMode } from '../turn-permission.js';
+import {
+  carriesOutsiderMark,
+  chosenFullAutonomy,
+  heldForOutsider,
+  type CeilingedMode,
+} from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
 import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
 import { carriedWriteAsks, runsGit } from './carried-turn-writes.js';
@@ -81,14 +86,18 @@ export function createHeldTurnHook(
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
+    // A chat set to Full autonomy asks nobody anything (DOR-3394): no mark, carried ceiling or
+    // stranger's hold sends one of its calls to a person. Read from the chat's own setting, never
+    // from the mode a ceiling held the launch to; `canUseTool` answers the same way.
+    if (chosenFullAutonomy(session)) return {};
     const toolName = hookInput.tool_name;
     const input =
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
     // A turn that only carries an outsider's words on runs at its own level (DOR-3390). Until
-    // its shell runs sandboxed, Bash asks: `canUseTool` puts it to a person at any level
-    // (`asksForCarriedShell`). So does an edit to what git runs programs from or to who the
+    // its shell runs sandboxed, Bash asks: `canUseTool` puts it to a person at any level below
+    // Full (`asksForCarriedShell`). So does an edit to what git runs programs from or to who the
     // agent is (`carried-turn-writes.ts`); other edits still meet the folder's deny rules.
     if (!heldForOutsider(session)) {
       if (!carriesOutsiderMark(session)) return {};

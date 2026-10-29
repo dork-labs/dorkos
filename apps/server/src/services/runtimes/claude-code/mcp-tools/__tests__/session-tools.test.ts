@@ -1555,9 +1555,10 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
 // starter's turn opens is recorded as reading what that turn read, so a
 // stranger's words do not come out of the new session unmarked (spec
 // `trusted-by-default-flip` §4.7).
-// DOR-3147, Security's condition 2: a marked start from a chat at Full keeps
-// both its cap and its marks, and so does the next hop, from the spin-off.
-describe('a marked start from a chat at Full (DOR-3147)', () => {
+// DOR-3147, Security's condition 2: a marked start keeps both its cap and its marks, and so does
+// the next hop, from the spin-off. Since DOR-3394 that holds below Full; a chat set to Full
+// passes the marks on and no cap.
+describe('a marked start (DOR-3147, DOR-3394)', () => {
   /** Run one turn on `sessionId` through the real level-recording seam. */
   async function turnOn(sessionId: string, opts: MessageOpts, mode = 'bypassPermissions') {
     const recorded = recordTurnLevels(claude as unknown as AgentRuntime, () => mode);
@@ -1566,12 +1567,17 @@ describe('a marked start from a chat at Full (DOR-3147)', () => {
     }
   }
 
-  const fromChat = (sessionId: string, permissionMode: string) =>
+  /**
+   * The handler from a chat at `permissionMode`; `chosenFull` is what the in-session resolver
+   * says for a chat SET to Full (DOR-3394), whatever its turn was held to.
+   */
+  const fromChat = (sessionId: string, permissionMode: string, chosenFull = false) =>
     createSessionStartHandler(makeDeps(), () => ({
       agentPath: AGENT_HOME,
       sessionId,
       runtime: 'claude-code',
       permissionMode,
+      ...(chosenFull ? { chosenFull: true } : {}),
     }));
 
   const sent = (n: number) => vi.mocked(dispatchMessage).mock.calls[n]![0];
@@ -1580,9 +1586,10 @@ describe('a marked start from a chat at Full (DOR-3147)', () => {
 
   afterEach(() => resetLiveOutsiderTurns());
 
-  it('starts capped at the default, carrying the mark, and refuses Full named', async () => {
-    await turnOn('full-parent', { permissionCeiling: 'runtime-default' });
-    const result = await fromChat('full-parent', 'bypassPermissions')(BASE);
+  // Below Full: these two ran from a chat at Full until DOR-3394, which no longer caps it.
+  it('below Full: starts capped at the default, carrying the mark, and refuses its own level named', async () => {
+    await turnOn('act-parent', { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    const result = await fromChat('act-parent', 'acceptEdits')(BASE);
     expect(result.isError).toBeUndefined();
     expect(saved(0)).toBe(CLAUDE_CODE_CAPABILITIES.permissionModes.default);
     expect(sent(0).permissionCeiling).toEqual([
@@ -1591,18 +1598,37 @@ describe('a marked start from a chat at Full (DOR-3147)', () => {
     ]);
 
     const named = await fromChat(
-      'full-parent',
-      'bypassPermissions'
+      'act-parent',
+      'acceptEdits'
     )({
       ...BASE,
-      permissionMode: 'bypassPermissions',
+      permissionMode: 'acceptEdits',
     });
     expect(payloadOf(named)).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
   });
 
-  it('keeps cap and mark on the hop from the spin-off’s own turn', async () => {
-    await turnOn('full-parent-2', { permissionCeiling: 'runtime-default' });
-    await fromChat('full-parent-2', 'bypassPermissions')(BASE);
+  it('from a chat set to Full: starts at Full, carrying the mark and nothing else (DOR-3394)', async () => {
+    await turnOn('full-parent', { permissionCeiling: 'runtime-default' });
+    const result = await fromChat('full-parent', 'bypassPermissions', true)(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(saved(0)).toBe('bypassPermissions');
+    expect(sent(0).permissionCeiling).toEqual({
+      asks: 'never',
+      reach: 'everything',
+      outsider: true,
+    });
+    const named = await fromChat(
+      'full-parent',
+      'bypassPermissions',
+      true
+    )({ ...BASE, permissionMode: 'bypassPermissions' });
+    expect(named.isError).toBeUndefined();
+    expect(saved(1)).toBe('bypassPermissions');
+  });
+
+  it('below Full: keeps cap and mark on the hop from the spin-off’s own turn', async () => {
+    await turnOn('act-parent-2', { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    await fromChat('act-parent-2', 'acceptEdits')(BASE);
     const spinOff = sent(0).sessionId;
     const carried = sent(0).permissionCeiling;
     // The spin-off's own turn runs under what it was born with.

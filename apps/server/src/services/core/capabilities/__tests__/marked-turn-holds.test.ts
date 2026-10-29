@@ -44,7 +44,12 @@ const AGENT: AgentIdentity = {
 let counter = 0;
 const fresh = () => `marked-holds-${(counter += 1)}`;
 
-async function ran(sessionId: string, opts?: MessageOpts) {
+/**
+ * Run one turn in a chat set to `stored`. Accept edits by default: a chat set to Full asks
+ * nobody anything (DOR-3394), so the holds below are pinned below Full. These turns ran at Full
+ * until then.
+ */
+async function ran(sessionId: string, opts?: MessageOpts, stored = 'acceptEdits') {
   const runtime = recordTurnLevels(
     {
       type: 'claude-code',
@@ -53,7 +58,7 @@ async function ran(sessionId: string, opts?: MessageOpts) {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => stored
   );
   for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
     // drain
@@ -129,7 +134,7 @@ describe('a carried turn asks before what outlives it or acts outside', () => {
     const carried = fresh();
     const plain = fresh();
     await ran(carried, { permissionCeiling: CARRIED_OUTSIDER_LEVEL });
-    await ran(plain);
+    await ran(plain, undefined, 'bypassPermissions');
     expect(
       await resolveCallPermission({ action, identity: AGENT, sessionId: carried, input: {} })
     ).toMatchObject({ area: 'connections', state: 'ask' });
@@ -156,6 +161,20 @@ describe('a carried turn asks before what outlives it or acts outside', () => {
       await resolveCallPermission({ action, input: {}, ...principalTurnOf(principal) })
     ).toMatchObject({ state: 'ask' });
     expect(principalTurnOf(undefined)).toEqual({});
+  });
+
+  it('the mark holds nothing in a chat set to Full: each decides as unmarked (DOR-3394)', async () => {
+    const atFull = fresh();
+    const plain = fresh();
+    await ran(atFull, { permissionCeiling: CARRIED_OUTSIDER_LEVEL }, 'bypassPermissions');
+    await ran(plain, undefined, 'bypassPermissions');
+    for (const action of heldActions()) {
+      expect(await decide(action, atFull), action.id).toBe(await decide(action, plain));
+    }
+    for (const id of ['connectors.execute_write', 'binding_create', 'marketplace.install']) {
+      const action = heldActions().find((a) => a.id === id)!;
+      expect(await decide(action, atFull), id).toBe('allowed');
+    }
   });
 
   it('a standing change runs, recorded, in an unmarked turn under Trusted', async () => {
