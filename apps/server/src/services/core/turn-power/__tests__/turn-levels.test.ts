@@ -214,18 +214,19 @@ describe('the ceiling a room entry puts on the turn it starts', () => {
     });
   });
 
-  it('carries a stranger’s mark, not its hold, through an agent at Full autonomy to the next agent', async () => {
+  it('carries a stranger’s mark through an agent at Full autonomy, held outside the own circle', async () => {
     // Ana's conversation is at Full autonomy. A stranger's message wakes it:
-    // that turn runs at the default. Ana posts; Ben's turn carries the mark at
-    // Ana's own level, gated rather than held (DOR-3390).
+    // that turn runs at the default. Ana posts; outside the owner's own circle
+    // Ben may see the stranger's line himself, so he carries the mark at Ana's
+    // own level AND the hold (DOR-3390, Security's M-B). The own circle drops
+    // the hold: `outsider-protections.agent-hops.test.ts`.
     const session = fresh('ana');
     const entry = fresh('e-ana');
     const runtime = wrapped({ [session]: 'bypassPermissions' });
     await send(runtime, session, ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
     noteEntryLevel(entry, postLevelFor([session]));
-    // Ana's own level, and the mark her post carries on top of it (DOR-3141).
     expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
-      permissionCeiling: [FULL_OUTSIDER, FULL_OUTSIDER],
+      permissionCeiling: [FULL_OUTSIDER, FULL_OUTSIDER, 'runtime-default'],
     });
   });
 });

@@ -148,6 +148,9 @@ WORKDIR /home/node
 
 # Bind to all interfaces so Docker port forwarding works.
 ENV DORKOS_HOST=0.0.0.0
+# Tells agents this is the Docker image, so their update steps fit it. The CLI
+# keeps this one inherited value (packages/cli/src/lib/distribution.ts).
+ENV DORKOS_DISTRIBUTION=docker
 
 EXPOSE 4242
 

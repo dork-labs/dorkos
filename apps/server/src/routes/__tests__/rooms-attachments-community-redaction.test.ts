@@ -422,7 +422,8 @@ describe('a Community removal drops the local files of a delivered post', () => 
     await sync.sync({ ...target, ownerAuthorId: human.id }, {});
 
     const updates = fanOut.mock.calls.filter(([name]) => name === 'room_updated');
-    expect(updates).toEqual([['room_updated', { roomId }]]);
+    // The third argument is the room's audience (DOR-3243): members only.
+    expect(updates).toEqual([['room_updated', { roomId }, expect.any(Function)]]);
     expect(published.filter((event) => event.type === 'revision')).toHaveLength(3);
   });
 });

@@ -23,6 +23,7 @@ import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events'
 import type { Task } from '@dorkos/shared/types';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
+import type { AdapterConfirmation } from '@dorkos/shared/relay-schemas';
 import type { AttentionSignalKind } from './attention-signal';
 import {
   approvalSignalId,
@@ -30,8 +31,21 @@ import {
   extensionDecisionSignalId,
   interactionSignalId,
   interactionSignalKind,
+  pausedConnectionSignalId,
   scheduleSignalId,
 } from './signal-ids';
+
+/** A connection paused until its owner confirms what it sends (DOR-3271). */
+export interface PausedConnectionItem {
+  /** The connection's id. */
+  id: string;
+  /** Its name ("Deploy hooks"). */
+  name: string;
+  /** Its kind ("Webhook"). */
+  kind: string;
+  /** What it sends, where, and what it dropped. */
+  confirmation: AdapterConfirmation;
+}
 
 /**
  * One raw item occupying a slot in the waiting queue.
@@ -73,6 +87,8 @@ export interface WaitingQueueSources {
    * §7.5). Optional for the same reason as {@link extensionApprovals}.
    */
   extensionDecisions?: readonly ExtensionDecisionDTO[];
+  /** Connections paused until their owner confirms them. Optional, like the two above. */
+  pausedConnections?: readonly PausedConnectionItem[];
 }
 
 /**
@@ -104,6 +120,13 @@ export function deriveWaitingItems(sources: WaitingQueueSources): WaitingItem[] 
 
   for (const decision of sources.extensionDecisions ?? []) {
     items.push({ id: extensionDecisionSignalId(decision.id), kind: 'extension-decision' });
+  }
+
+  for (const paused of sources.pausedConnections ?? []) {
+    items.push({
+      id: pausedConnectionSignalId(paused.id, paused.confirmation.fingerprint),
+      kind: 'connection-confirmation',
+    });
   }
 
   return items;

@@ -13,9 +13,12 @@
  * **`git status`, `log`, `diff` and `show` stay on the list.** Each can run a program a repo's
  * config names (`core.fsmonitor`, `diff.external`, a `textconv` driver). That config lives in the
  * local `.git/config` (or the user's own), which a clone or fetch never brings and a held turn
- * cannot write unasked (an edit or any other command asks). The flags that name another repo or
- * config (`-C`, `-c`, `--git-dir`, `--exec-path`) are refused by the subcommand check, and
- * `--output` and `--ext-diff` by name.
+ * cannot write unasked (an edit or any other command asks). So the program it could run is one
+ * somebody on this computer set up. A turn that only carries outside words on (DOR-3390) is not
+ * held, so it could write that config; there every `git` command asks, and so does an edit to a
+ * `.git` folder or `.gitattributes` (`carried-turn-writes.ts`). The flags that name another repo or config (`-C`, `-c`,
+ * `--git-dir`, `--exec-path`) are refused by the subcommand check, and `--output` and `--ext-diff`
+ * by name.
  *
  * **The precondition, stated (DOR-3343):** this is safe only while the repo's config names no
  * program the agent chose. An earlier turn of the same agent that was NOT held could have written
@@ -79,8 +82,10 @@ const OPTION_WITH_PATH = /(=[/~])|^-[A-Za-z]+\//;
 /**
  * Where a path really is: the deepest part of it that exists, symlinks resolved, with the rest
  * appended. A path that does not exist yet resolves through the folders it would be in.
+ *
+ * @param target - An absolute path.
  */
-function realLocation(target: string): string {
+export function realLocation(target: string): string {
   let existing = target;
   const rest: string[] = [];
   for (;;) {
