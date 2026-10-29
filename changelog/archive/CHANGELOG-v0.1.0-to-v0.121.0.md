@@ -1,7 +1,32 @@
-# Changelog archive: v0.1.0 – v0.120.0
+# Changelog archive: v0.1.0 – v0.121.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.121.0] - 2026-10-17
+
+> DorkOS 0.121.0 makes connecting apps work again, lets agents keep longer notes, and draws diagrams in documents.
+
+### Added
+
+- Agents can now keep **notes files** for things too long for their main memory file, like a checklist or how a tricky part of a project works. Each new notes file gets a one-line description, and an agent opens one only when it needs it, so notes cost nothing until they are used. They live in `.dork/memory/` next to the main file, and are never committed to git.
+- Mermaid diagrams now draw in markdown documents on the canvas, in the app's own colors in light and dark. The diagram code loads only when a document has one.
+- An agent can see where its message stands: a queued message says how many messages are ahead of it, and reading a chat lists your recent messages to it as waiting, delivered, answered or not delivered, with the reason (DOR-2994)
+
+### Changed
+
+- When an agent runs in DorkOS, Claude Code's own memory is now switched off, so the agent keeps one memory instead of two. Before, its notes could end up split between the two. An agent that already has notes in Claude Code's memory keeps using them until they are copied over, so nothing goes missing.
+- In canvas documents, `[[Page name]]` now shows as a link, and a line that is only `::name` shows as a placeholder block. Both are kept exactly as written when you save. Write `\::name` to keep such a line as plain text.
+- Tables you add while editing a document are saved without column alignment marks (`| - |` instead of `| :- |`).
+- Undo no longer reverses a change that arrived from outside the editor, such as an agent rewriting the file. Your own edits still undo as before.
+
+### Fixed
+
+- Connecting any app through DorkOS, such as Vercel, Cloudflare, Gmail or Slack, failed at once with "isn't available right now". It now opens the sign-in again.
+- A message one agent sends another chat no longer shows as delivered when that chat could not start, for example because too many chats were open. It now shows as not delivered, with the reason, so the sender knows to send it again (DOR-2994)
+- An agent's scheduled beat that its chat could not start is now recorded as "could not start" instead of as a beat that ran (DOR-2994)
+- A message still waiting in line is no longer marked as answered just because the other chat sent something unrelated (DOR-2994)
+- When too many agent chats are already running, a message is refused with a plain note that nothing was kept and it should be sent again, instead of a note about spin-off chats (DOR-2994)
 
 ## [0.120.0] - 2026-10-17
 
@@ -7364,6 +7389,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
 [0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
 [0.118.0]: https://github.com/dork-labs/dorkos/compare/v0.117.0...v0.118.0
