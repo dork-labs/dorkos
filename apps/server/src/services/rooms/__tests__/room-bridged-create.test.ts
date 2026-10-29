@@ -503,7 +503,8 @@ describe('RoomService.createBridgedRoom', () => {
 
     expect(broadcast).toHaveBeenCalledWith(
       'room_created',
-      expect.objectContaining({ roomId: room.id, kind: 'dm', title: room.title })
+      expect.objectContaining({ roomId: room.id, kind: 'dm', title: room.title }),
+      expect.any(Function)
     );
     broadcast.mockRestore();
   });

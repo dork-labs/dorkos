@@ -78,6 +78,7 @@ export interface CreateBridgedRoomRequest {
 
 /** The room half of bridging a platform chat for the first time. */
 export class RoomBridgeCreation {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
   private readonly roster: RoomRoster;
@@ -89,6 +90,7 @@ export class RoomBridgeCreation {
     core: RoomCore,
     private readonly projection: RoomProjection
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.authors = core.authors;
     this.roster = core.roster;
@@ -318,7 +320,11 @@ export class RoomBridgeCreation {
       );
     });
 
-    eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
+    eventFanOut.broadcast(
+      'room_created',
+      { roomId: room.id, kind: room.kind, title: room.title },
+      this.roomAudience(room.id)
+    );
     return { ...this.projection.withRoster(room, operator.id), created: true };
   }
 

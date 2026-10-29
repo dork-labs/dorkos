@@ -16,9 +16,8 @@ import {
   listLiveProjectors,
   onProjectorStatusChange,
 } from '../../session/session-state-projector.js';
-import { eventFanOut, type BroadcastAudience } from '../../core/event-fan-out.js';
-import { readOwnerAccount } from '../../core/auth/index.js';
-import { resolveOperatorAuthor } from '../operator-author.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
+import { roomAudience } from '../service/room-audience.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
 
@@ -92,26 +91,4 @@ export function watchRoomAwaiting(
     else sent.set(roomId, awaiting);
     publish(roomId, awaiting);
   });
-}
-
-/** Address a count through the same membership gate as room reads. */
-function roomAudience(
-  roomId: string,
-  rooms: Pick<RoomService, 'authorRegistry' | 'requireMembership'>
-): BroadcastAudience {
-  return (principal) => {
-    // Agent streams carry no verified agent identity to resolve membership from.
-    if (principal.kind !== 'operator' && principal.kind !== 'program') return false;
-    try {
-      const registry = rooms.authorRegistry;
-      const author =
-        principal.kind === 'operator' || principal.userId === readOwnerAccount()?.id
-          ? resolveOperatorAuthor(registry)
-          : registry.human(principal.userId);
-      rooms.requireMembership(roomId, author.id);
-      return true;
-    } catch {
-      return false;
-    }
-  };
 }

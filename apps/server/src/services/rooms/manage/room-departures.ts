@@ -38,6 +38,7 @@ export interface DepartedAgentsDrop {
 
 /** Agents leaving the rooms they were in, and returning to them. */
 export class RoomDepartures {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
   /** Which agent occupies a directory right now — the liveness question. */
@@ -49,6 +50,7 @@ export class RoomDepartures {
     /** The join rules every door into a room shares. */
     private readonly membership: Pick<RoomMembership, 'requireJoinAllowed'>
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.authors = core.authors;
     this.agents = core.agents;
@@ -91,13 +93,17 @@ export class RoomDepartures {
     );
     for (const { roomId, authorId } of removed) {
       this.triggers.abandonHolds(roomId, authorId);
-      eventFanOut.broadcast('room_member_removed', { roomId, authorId });
+      eventFanOut.broadcast(
+        'room_member_removed',
+        { roomId, authorId },
+        this.roomAudience(roomId, authorId)
+      );
     }
     const departedIds = departed.map((author) => author.id);
     // A direct message's roster did not move, but what it SAYS about the member
     // did: an open window re-reads it and draws them as retired.
     for (const roomId of this.store.departedSeats.listDmIdsWith(departedIds)) {
-      eventFanOut.broadcast('room_updated', { roomId });
+      eventFanOut.broadcast('room_updated', { roomId }, this.roomAudience(roomId));
     }
     return { authorIds: departedIds, removed };
   }
@@ -138,7 +144,7 @@ export class RoomDepartures {
       }
     }
     for (const { roomId, authorId } of restored) {
-      eventFanOut.broadcast('room_member_added', { roomId, authorId });
+      eventFanOut.broadcast('room_member_added', { roomId, authorId }, this.roomAudience(roomId));
     }
     return restored;
   }
