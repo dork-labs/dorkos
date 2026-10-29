@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A paused connection's Inbox row says what to do in two lines (DOR-3271)
+- A paused connection in Needs you now says what to do in two short lines: how many messages it held back, and what it would send and where. The longer explanation sits behind the ⓘ button.
