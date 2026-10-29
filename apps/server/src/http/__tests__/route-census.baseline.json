@@ -266,6 +266,7 @@
     "GET /api/rooms/:id/canvas",
     "GET /api/rooms/:id/canvas/:documentId",
     "GET /api/rooms/:id/canvas/:documentId/diff",
+    "GET /api/rooms/:id/canvas/media/:file",
     "GET /api/rooms/:id/entries",
     "GET /api/rooms/:id/events",
     "GET /api/rooms/:id/export",

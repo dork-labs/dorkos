@@ -13,6 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.126.2] - 2026-10-28
+
+> DorkOS 0.126.2 cuts the extra approval prompts. When one of an agent's chats reads a message from outside your team, its other chats no longer fall back to asking you first. And when an agent can't start a chat at a higher level, it now tells you why.
+
+### Fixed
+
+- When an agent can't start a new chat at a higher level, it now says why: it read messages from others, a person set it lower, or DorkOS couldn't find its level. Before, it always said the chat "runs at Default", even when it didn't. (DOR-3386)
+- An agent's message to another chat is held back only when the chat it came from read something from outside your team. Before, when DorkOS had lost track of the sending chat's level (after a restart, say), any other chat of that agent reading a room post could hold it back, and the chat it woke then asked you to approve its commands. (DOR-3386)
+
+## [0.126.1] - 2026-10-27
+
+> DorkOS 0.126.1 makes changed extension code and a Claude Code agent's changed settings wait for your yes, tells you about secret files in an agent's folder, lets Never ask chats use DorkOS's safe tools again, and keeps heartbeats going when a Claude account runs out.
+
+### Changed
+
+- Agents on Claude Code can no longer edit their own skills or commands with their file tools. If an agent changes a skill another way, like with a shell command, and the change gives it more power, such as new hooks or tools, the change waits for your yes. To change a skill yourself, edit its file.
+
+### Fixed
+
+- When you turn on an extension, you now approve its files as they are. If they change later, the new code doesn't run until you approve it again. This covers extensions from the marketplace, including ones inside a plugin, and ones you turned on yourself, and an update to one of them asks again too. A folder you linked for development is the exception: edits to it keep running. Agents can still edit an extension's files; DorkOS just won't run the changed code until you approve it. The Activity inbox shows one "changed since you approved it" row per extension and names the files that changed. If the files change again while that row is open, approving it is refused and the row refreshes, so you never approve code you didn't see. On the Trusted setting, one kind keeps running while an agent edits it: one the agent made itself, in its own folder, set to run separately with limited access. If it changes what it's allowed to reach, it waits for you. Even then, only its behind-the-scenes code keeps running: if the agent changes what it shows on screen, that part waits for you, and the inbox row says so. An update from the marketplace says it's an update and names both versions, like "Update Flow from 1.2.0 to 1.3.0?". After you upgrade DorkOS, extensions you already turned on keep running as they are. The next change to their files asks you first.
+- A mini app a Claude Code agent makes now lives in that agent's own folder, and you still see it in the side panel and on the Activity page whichever agent or folder you have open. Every agent's mini apps now stay listed when you switch agents. Other Claude Code agents can't change its files with their file-editing tools. If an agent makes one after reading a message from someone outside your team, it waits for you before it first runs, and every change after that waits too.
+- A mini app is now built only from files inside its own folder. A plugin's mini app can also use files from its plugin. One that imports a file from outside, such as a shared folder next to it, no longer builds; move that file into the mini app's folder. Packages installed in its own folder still work.
+- In Claude Code, an agent can no longer give itself more power by editing the settings in its own folder. Its file tools can't change its `.claude` folder, `.agents` folder, `.mcp.json` or agent file. If it changes its hooks, MCP servers or account another way, like with a shell command, that change is switched off. The agent keeps working without it, and an approval card shows what changed. Allow it, and the change applies from the agent's next turn. Turn it down, and you aren't asked again until the agent changes something else. Changes you make yourself in DorkOS, like picking an agent's account or adding an MCP server on its approval card, apply right away. The first time DorkOS starts after this update, it takes each existing agent's settings as the ones you allowed. In Claude Code, an agent's file tools also can't change the plugins installed in any project, or the ones shared across them.
+- While a change to an agent's settings waits for your yes, the changed settings don't run, and neither does a switch to another runtime. New chats with the agent use the default runtime until you allow it. If the agent changed its hooks or other settings that run code, none of its folder's settings that run code take effect, and its own skills and commands don't load.
+- On Claude Code, a new agent whose folder already runs something, like hooks, MCP servers or its own account, waits for your yes before any of it runs. A folder that asks for another runtime waits for your yes too. The agent itself still works in the meantime. A new agent whose folder runs nothing starts right away.
+- DorkOS now tells you, in your inbox, when an agent's folder holds files that look like secrets, such as a dotenv file, a private key or a cloud credentials file. It checks when DorkOS starts and when an agent is added or changed. It looks at file names only and never opens the files. An agent can read any file in its own folder, whatever its rules say. Moving a secret out keeps it out of searches through the folder, but the agent may still be able to read it. The permission settings and docs now say this plainly, and the Never ask description no longer suggests it keeps the agent out of its own folder.
+- The notice about secret files in an agent's folder now names the files it found and says what moving them does. (DOR-3292)
+- A Claude Code chat set to **Never ask** can now read and post in its own rooms, and use DorkOS's other safe built-in tools. Before this, Claude Code refused them in Never ask, because no one was there to say yes. Claude Code agents can also check how much of each account is used without asking. In a turn started by a stranger's message, or one that saw a stranger's message in a room, the account tools don't run. A Never ask chat also can't send that turn's words to another chat.
+- An agent's heartbeat keeps working when its Claude account runs out or is nearly out. It moves to another of your accounts with usage left. If none has any, it skips its beats until an account resets, instead of failing again and again.
+
 ## [0.126.0] - 2026-10-27
 
 > DorkOS 0.126.0 applies an agent folder's own allow list once you approve it, keeps Claude Code agents out of secret files, says plainly when a schedule is failing, makes Stop end the commands a turn started, and lets you answer an agent from inside a mini app.
@@ -265,44 +295,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changing how DorkOS is reached now happens only in the app on the computer it runs on, by its owner: remote access, Wi-Fi access, the password setting, accounts and keys, and which code DorkOS runs. API keys and agents can't change these either. (DOR-2969)
 - An agent can't edit the file that holds the permission levels you set for agents, or the files that say which connections and keys this computer trusts for reaching it from anywhere. Its file editing tools are refused there at every permission level. (DOR-2969)
 
-## [0.123.0] - 2026-10-18
+Older releases (v0.1.0 – v0.123.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.123.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.123.0.md).
 
-> DorkOS 0.123.0 lets a busy agent wait its turn instead of failing, makes a sign-in work only the way you made it, and makes the tab you're on easier to see.
-
-### Fixed
-
-- When every agent on your computer is busy, a new message now waits for one to finish instead of failing. Before, naming several agents in one room post could make each of them say it "ran into a problem". The room and the chat now say the agent is waiting, and it answers as soon as another agent finishes.
-- How many agents can run at once now depends on your computer's memory: one per 2 GB, between 12 and 32. A 48 GB machine runs 24 instead of 12. You can set your own number with `runtimes.claudeCode.maxWarmProcesses`.
-- If an agent still can't start, the room says why in plain words instead of "ran into a problem".
-- Fixed a rare case where an agent that had just started could be shut down before its first reply.
-- In the desktop app, the tab you're on now stands out from the others in both light and dark mode. Before, it could look darker than the tabs beside it. With Increase Contrast turned on, it also gets an outline.
-
-### Security
-
-- A sign-in now works only the way you made it: on this computer, over Wi-Fi, or through remote access. Reach DorkOS another way and you sign in again there. Wi-Fi sign-ins last up to 7 days. After this update, your other devices ask you to sign in once more. (DOR-2969)
-- API keys can now only be made on the computer DorkOS runs on. (DOR-2969)
-
-## [0.122.0] - 2026-10-18
-
-> DorkOS 0.122.0 gives every agent one Direct chat with you, lets docs on the canvas link to each other, and stops agents waking up for nothing.
-
-### Added
-
-- Markdown docs on the canvas can now link to each other, behind the new **Docs** experiment in Settings → Advanced → Experiments. Type `[[` to pick another doc from your chat's folder, or write a doc's title or file name between double brackets. Clicking a link opens that doc in the canvas. A link to a doc that doesn't exist yet looks different. It starts working the next time DorkOS reads the folder's docs: after you create or rename a file in the Files panel, save a doc with a new title, or come back to the DorkOS window.
-
-### Changed
-
-- Every agent now has one standing Direct chat with you. Clicking the agent, opening its chat, or tapping a message it sent you all lead there. It always opens as a normal chat, never as a room.
-- Messages an agent sends you while it works elsewhere land in its Direct chat, with an unread dot on the agent. When you answer, the agent sees what it sent you, so "yes, go ahead" makes sense to it.
-- Your old one-on-one direct messages with an agent now open as the start of that agent's Direct chat. Nothing was deleted. A direct message with two or more agents, or with another person, is still a room.
-
-### Fixed
-
-- Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.
-
-Older releases (v0.1.0 – v0.121.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.121.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.121.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.2...HEAD
+[0.126.2]: https://github.com/dork-labs/dorkos/compare/v0.126.1...v0.126.2
+[0.126.1]: https://github.com/dork-labs/dorkos/compare/v0.126.0...v0.126.1
 [0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
@@ -311,5 +308,3 @@ Older releases (v0.1.0 – v0.121.0) are archived in [changelog/archive/CHANGELO
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
 [0.124.1]: https://github.com/dork-labs/dorkos/compare/v0.124.0...v0.124.1
 [0.124.0]: https://github.com/dork-labs/dorkos/compare/v0.123.0...v0.124.0
-[0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
-[0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0

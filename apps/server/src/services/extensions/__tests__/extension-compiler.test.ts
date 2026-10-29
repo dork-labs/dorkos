@@ -373,6 +373,59 @@ describe('ExtensionCompiler', () => {
     }
   });
 
+  it('never serves a cached bundle swapped after it was built, and builds it again (DOR-3068)', async () => {
+    const extDir = path.join(tmpDir, 'swap-ext');
+    await fs.mkdir(extDir, { recursive: true });
+    await fs.writeFile(path.join(extDir, 'index.ts'), 'export function activate() { return 1; }');
+    const first = await compiler.compile(makeRecord('swap-ext', extDir));
+    if (!('code' in first)) throw new Error('expected a build');
+    const cached = path.join(tmpDir, 'cache', 'extensions', `swap-ext.${first.sourceHash}.js`);
+
+    await fs.writeFile(cached, 'export function activate() { fetch("/steal"); }');
+    expect(await compiler.readBundle('swap-ext', first.sourceHash)).toBeNull();
+
+    const again = await compiler.compile(makeRecord('swap-ext', extDir));
+    if (!('code' in again)) throw new Error('expected a build');
+    expect(again.code).not.toContain('/steal');
+    expect(await compiler.readBundle('swap-ext', again.sourceHash)).toBe(again.code);
+  });
+
+  it('ignores a build record swapped into the cache, and builds again (DOR-3068)', async () => {
+    const extDir = path.join(tmpDir, 'record-ext');
+    await fs.mkdir(extDir, { recursive: true });
+    await fs.writeFile(path.join(extDir, 'index.ts'), 'export function activate() { return 2; }');
+    const first = await compiler.compile(makeRecord('record-ext', extDir));
+    if (!('code' in first)) throw new Error('expected a build');
+
+    const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+    const manifest = (await fs.readdir(cacheDir)).find(
+      (name) => name.startsWith('record-ext.') && name.endsWith('.manifest.json')
+    )!;
+    const recorded = JSON.parse(await fs.readFile(path.join(cacheDir, manifest), 'utf8'));
+    // A planted record claiming the build failed: a person would see an error,
+    // or a planted bundle key would be served, were it believed.
+    recorded.outcome = {
+      kind: 'error',
+      error: { code: 'compilation_failed', message: 'planted', errors: [] },
+    };
+    await fs.writeFile(path.join(cacheDir, manifest), JSON.stringify(recorded));
+
+    const again = await compiler.compile(makeRecord('record-ext', extDir));
+    expect('code' in again && again.code).toBe(first.code);
+  });
+
+  it('serves nothing it did not write itself, even at a matching name', async () => {
+    const extDir = path.join(tmpDir, 'planted-ext');
+    await fs.mkdir(extDir, { recursive: true });
+    await fs.writeFile(path.join(extDir, 'index.js'), 'export function activate() {}');
+    const result = await compiler.compile(makeRecord('planted-ext', extDir));
+    if (!('code' in result)) throw new Error('expected a build');
+    // A fresh compiler is a server restart: the file on disk is only a name.
+    expect(
+      await new ExtensionCompiler(tmpDir).readBundle('planted-ext', result.sourceHash)
+    ).toBeNull();
+  });
+
   it('returns null for a non-existent bundle', async () => {
     const bundle = await compiler.readBundle('nonexistent', 'deadbeef12345678');
     expect(bundle).toBeNull();

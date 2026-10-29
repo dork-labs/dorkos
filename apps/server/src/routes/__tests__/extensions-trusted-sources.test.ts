@@ -130,12 +130,14 @@ describe('trusted sources', () => {
   });
 
   it('offers to trust the source right after a person approves, and not once it is trusted', async () => {
-    const first = await request(fixtureServer).post('/api/extensions/flow/approve').send({});
+    // A yes names the files the card showed (DOR-3068).
+    const shown = { version: '1.0.0', expectedDigest: `sha256:${'a'.repeat(64)}` };
+    const first = await request(fixtureServer).post('/api/extensions/flow/approve').send(shown);
     expect(first.status).toBe(200);
     expect(first.body.trustOffer).toEqual({ source: SOURCE });
 
     await request(fixtureServer).post('/api/extensions/trusted-sources').send({ source: SOURCE });
-    const again = await request(fixtureServer).post('/api/extensions/flow/approve').send({});
+    const again = await request(fixtureServer).post('/api/extensions/flow/approve').send(shown);
     expect(again.body.trustOffer).toBeUndefined();
   });
 

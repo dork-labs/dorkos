@@ -71,12 +71,13 @@ import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constant
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
-import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
+import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
-import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
+import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,
@@ -97,24 +98,30 @@ import {
 } from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
-import type { MessageSenderOpts } from './message-sender-shared.js';
+import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import {
   applyFolderConfigToLaunch,
   resolveFolderConfigForLaunch,
 } from '../folder-settings/launch-folder-config.js';
-import {
-  applyRepoConfigToLaunch,
-  applyRepoMcpServers,
-  resolveRepoConfigForLaunch,
-} from '../repo-settings/launch-repo-config.js';
+import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launch-repo-config.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
+
+// Split out to keep this file under the line limit (see message-sender-shared.ts).
+export {
+  deliverStatusEvents,
+  resolveEffectiveCwd,
+  type ResolvedLaunch,
+} from './message-sender-shared.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -131,76 +138,6 @@ import { enrichContent } from '../enrich-content.js';
  * {@link isClassifierContextEnabled} for the spellings that turn it off.
  */
 const CLASSIFIER_CONTEXT_ON = isClassifierContextEnabled(env.DORKOS_CLASSIFIER_CONTEXT);
-
-/** What one launch resolution produced, for the caller to boot or compare with. */
-export interface ResolvedLaunch {
-  /** Exactly the options to hand `query({ options })`. */
-  sdkOptions: Options;
-  /**
-   * The user message with the additional-context bag prepended, or the bare
-   * trimmed command on a slash-command turn. Never the raw `content` field —
-   * ADR-0273 keeps the person's own words unmutated.
-   */
-  enrichedContent: string;
-  /**
-   * The mesh agent this launch acts as, for `last_seen` stamping — the agent a
-   * room worktree belongs to when the turn stands in one (DOR-2091).
-   */
-  meshAgentId: string | undefined;
-  /**
-   * Events the caller must yield BEFORE the turn's own, in this order. Only the
-   * auto-permission-mode downgrade notice lands here today.
-   */
-  statusEvents: StreamEvent[];
-  /**
-   * A credits swap this launch made (DOR-2636), owed a save once its notice is
-   * delivered: {@link deliverStatusEvents} runs `commit` after yielding the
-   * status events (the notice among them, unless this session was already told
-   * about this model). Absent when no model was swapped.
-   */
-  substitution?: { commit: () => Promise<void> };
-  /**
-   * What this launch is pinned to, in the shape `captureLaunchFingerprint`
-   * takes. Resolved even on the turn path, where nothing reads it: computing it
-   * conditionally would mean the pump's fingerprint came from a code path the
-   * turn path never exercises.
-   */
-  launch: LaunchParams;
-}
-
-/**
- * The working directory this turn runs in.
- *
- * The one resolution, for both the boundary gate and the launcher — hand the
- * SAME value to each. Resolved twice by two routes, the gate answers about one
- * directory while the process runs in another, which is a check that only looks
- * like one (`dispatch-boundary.ts`).
- *
- * Empty strings fall through rather than winning, because a stale relay binding
- * supplies one and it names no directory at all.
- *
- * @param opts - The runtime's own defaults (`sessionCwd` then `cwd`)
- * @param messageOpts - The caller's per-message override, if any
- */
-export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: MessageOpts): string {
-  return messageOpts?.cwd || opts.sessionCwd || opts.cwd;
-}
-
-/**
- * Yield a launch's status events, then take the save a credits swap owes
- * (DOR-2636): the swapped model becomes the session's own and the swap is
- * marked told only AFTER its `model_substituted` notice has gone out on the
- * stream, which records it durably. So no path can save a swap without
- * recording it: one that never delivers the events never saves either.
- *
- * @param resolved - What {@link resolveLaunch} answered.
- */
-export async function* deliverStatusEvents(
-  resolved: Pick<ResolvedLaunch, 'statusEvents' | 'substitution'>
-): AsyncGenerator<StreamEvent> {
-  for (const event of resolved.statusEvents) yield event;
-  await resolved.substitution?.commit();
-}
 
 /**
  * Resolve everything a launch in `effectiveCwd` is pinned to, and the SDK
@@ -798,16 +735,22 @@ export async function resolveLaunch(args: {
     accountRoot,
     otherAccountRoots: resolveClaudeRootSet(),
   });
+  // And every other agent's mini apps, whose server edits run on their author's
+  // trust (DOR-3068); a marked or ceilinged turn is kept out of its own too.
+  applyLaunchExtensionsDeny(sdkOptions, {
+    session,
+    sessionId,
+    agentHome: turnAgentPath ?? undefined,
+    registry: opts.meshCore,
+  });
   // Outside the home: a worktree's unreviewed local settings, and repo hooks or
   // MCP servers that differ from the default branch, wait for a person (DOR-3298).
-  const repoConfig = await resolveRepoConfigForLaunch({
+  const repoConfig = await applyRepoConfigStep(sdkOptions, {
     agentName: agentDisplayName ?? undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
     teammate,
-    dorkHome: resolveDorkHome(),
   });
-  applyRepoConfigToLaunch(sdkOptions, repoConfig);
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
@@ -890,6 +833,17 @@ export async function resolveLaunch(args: {
               ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
             ],
           }),
+        ],
+      },
+      // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
+      // DorkOS's own safe tools are let through here, with the gate's own
+      // per-call decision. Answers nothing in any other mode.
+      {
+        matcher: `^${IN_SESSION_TOOL_PREFIX}`,
+        hooks: [
+          createNeverAskHook(session, resolveIdentity, logger, () =>
+            hasMarks(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+          ),
         ],
       },
       {

@@ -10,7 +10,7 @@ import {
   type ExtensionsConfig,
   type CoreExtensionInfo,
 } from './extension-enable-resolution.js';
-import { isApprovedCopy, isFromTrustedSource } from './extension-load-policy.js';
+import { isApprovedCopy, isFromTrustedSource, namesThisCopy } from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
 import { checkDeclaredSkills } from './agent-skills/skill-checks.js';
 import {
@@ -21,6 +21,7 @@ import {
   type CopyOnDisk,
 } from './extension-trusted-origin.js';
 import { activeDevLinks, canonicalSlotPath } from '../marketplace/dev-links/registry.js';
+import { installFolderDigest } from '../marketplace/lib/install-digest.js';
 import { logger } from '../../lib/logger.js';
 import { isolationOf } from './isolation/isolation-view.js';
 import {
@@ -261,8 +262,9 @@ export class ExtensionDiscovery {
       else otherById.set(rec.id, [rec]);
     }
     for (const [id, copies] of otherById) {
+      // The copy a person's yes names, read before its files are digested.
       const chosen =
-        copies.find((c) => isApprovedCopy({ ...c, origin: 'user' }, config)) ?? copies[0];
+        copies.find((c) => namesThisCopy({ ...c, origin: 'user' }, config)) ?? copies[0];
       if (!chosen) continue;
       if (copies.length > 1) {
         logger.warn(
@@ -329,9 +331,26 @@ export class ExtensionDiscovery {
       (await this.isRealDirectory(rec.path))
         ? 'core'
         : 'user';
+    if (origin === 'user') await this.readContent(rec, config);
     if (rec.status === 'invalid') return { ...rec, origin };
     if (!this.checkCompatibility(rec.manifest)) return { ...rec, status: 'incompatible', origin };
     return { ...rec, status: isEnabled(rec.id, config, core) ? 'enabled' : 'disabled', origin };
+  }
+
+  /**
+   * Read what an approval of a user copy is compared with (DOR-3068): its
+   * real path, and for a copy installed directly (global or a project's own)
+   * the digest of its folder. A plugin-carried copy's digest covers its whole
+   * plugin and was read with its origin above. A yes pinned to exactly these
+   * files holds the compile, and the snapshot it runs from, to them.
+   */
+  private async readContent(rec: DiscoveredRecord, config: ExtensionsConfig): Promise<void> {
+    rec.realPath = await this.canonicalize(rec.path);
+    if (rec.sourcePlugin) return;
+    const found = await installFolderDigest(rec.path);
+    if (found.kind !== 'digest') return;
+    rec.currentDigest = found.digest;
+    if (config.approvedSources?.[rec.id]?.digest === found.digest) rec.pinnedDigest = found.digest;
   }
 
   /** Say, once per copy, why a project's own copy of an id is not used. */

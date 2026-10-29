@@ -157,6 +157,18 @@ async function installPlugin(
 }
 
 /** Ask the route what is waiting. */
+/**
+ * What a card for the copy on disk now would send: its version and the
+ * digest of its files, which every yes but a dev link's names (DOR-3068).
+ */
+function card(): { version: string; expectedDigest?: string } {
+  const record = manager.listPublic().find((ext) => ext.id === EXT_ID)!;
+  return {
+    version: record.manifest.version,
+    ...(record.digest ? { expectedDigest: record.digest } : {}),
+  };
+}
+
 async function pending() {
   const res = await request(server).get('/api/extensions/pending-approvals');
   expect(res.status).toBe(200);
@@ -229,7 +241,7 @@ describe('an extension waiting to run asks in the inbox', () => {
   it('2. allowing it from there lets it run, empties the queue, and records one answer', async () => {
     await installPlugin();
 
-    const res = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+    const res = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
     expect(res.status).toBe(200);
     await queue.sync();
 
@@ -262,24 +274,67 @@ describe('an extension waiting to run asks in the inbox', () => {
     ]);
   });
 
-  it('3. an update from the same approved source asks nothing new', async () => {
+  it('names an edited app and its files, and nothing about what it adds (DOR-3068)', async () => {
     await installPlugin();
-    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+    await queue.sync();
+
+    fs.writeFileSync(path.join(extensionDir('flow'), 'index.ts'), 'export const edited = 1;\n');
+    await manager.reload();
+    await queue.sync();
+
+    const approvals = await pending();
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.why).toBe('Flow changed since you approved it: index.ts. It runs as you.');
+  });
+
+  it('3. an update from the same approved source asks again, once, naming what changed (DOR-3068)', async () => {
+    await installPlugin();
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
     await queue.sync();
     const arrivalsBefore = approvalArrivals().length;
 
     writeManifest('flow', { version: '1.1.0' });
     await manager.reload();
+    // Repeated scans of the same changed files are one row, not one per scan.
+    await manager.reload();
     await queue.sync();
 
-    expect(manager.get(EXT_ID)?.manifest.version).toBe('1.1.0');
+    expect(manager.listPublic().find((ext) => ext.id === EXT_ID)?.approvedToRun).toBe(false);
+    const approvals = await pending();
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({
+      id: EXT_ID,
+      version: '1.1.0',
+      digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      changedFiles: [`.dork/extensions/${EXT_ID}/extension.json`],
+      // An update says so, naming both versions (the row reads "Update … from
+      // 1.0.0 to 1.1.0?").
+      updatedFrom: '1.0.0',
+    });
+    // The title names both versions, so the line says only what changed in the new one.
+    expect(approvals[0].why).toBe('Changed in 1.1.0: extension.json. It runs as you.');
+    expect(approvalArrivals()).toHaveLength(arrivalsBefore + 1);
+
+    // A yes to a card that showed other files is refused, and changes nothing.
+    const stale = await request(server)
+      .post(`/api/extensions/${EXT_ID}/approve`)
+      .send({ version: '1.1.0', expectedDigest: `sha256:${'0'.repeat(64)}` });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('stale_approval');
+
+    // A yes to exactly the files shown runs them.
+    const ok = await request(server)
+      .post(`/api/extensions/${EXT_ID}/approve`)
+      .send({ version: '1.1.0', expectedDigest: approvals[0].digest });
+    expect(ok.status).toBe(200);
+    await queue.sync();
     expect(await pending()).toEqual([]);
-    expect(approvalArrivals()).toHaveLength(arrivalsBefore);
   });
 
   it('4. the same extension arriving from another source asks again', async () => {
     await installPlugin();
-    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
     await queue.sync();
 
     fs.renameSync(path.join(dorkHome, 'plugins', 'flow'), path.join(dorkHome, 'plugins', 'fork'));
@@ -375,7 +430,7 @@ describe('an extension waiting to run asks in the inbox', () => {
         .send({ path: shown.path, version: shown.version });
       expect(Object.keys(state.extensions.dismissedApprovals)).toEqual([EXT_ID]);
 
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
       expect(state.extensions.dismissedApprovals).toEqual({});
     });
 
@@ -389,9 +444,12 @@ describe('an extension waiting to run asks in the inbox', () => {
       expect(historyRows().map((row) => row.outcome)).toEqual(['dismissed']);
 
       // The history row's "Turn it on", naming the copy it was about.
-      const res = await request(server)
-        .post(`/api/extensions/${EXT_ID}/approve`)
-        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+      const res = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({
+        path: shown.path,
+        version: shown.version,
+        plugin: shown.plugin,
+        expectedDigest: shown.digest,
+      });
       expect(res.status).toBe(200);
       await queue.sync();
 
@@ -404,7 +462,7 @@ describe('an extension waiting to run asks in the inbox', () => {
   describe('"Stop it"', () => {
     it('puts that copy off: the ask does not come back until the version changes', async () => {
       await installPlugin();
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
       await queue.sync();
       const arrivalsBefore = approvalArrivals().length;
 
@@ -424,12 +482,12 @@ describe('an extension waiting to run asks in the inbox', () => {
 
     it('writes "You turned on" when the stopped copy is turned on again', async () => {
       await installPlugin();
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
       await queue.sync();
       await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
       await queue.sync();
 
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
       await queue.sync();
 
       expect(historyRows().map((row) => row.outcome)).toEqual(['approved', 'approved']);
@@ -464,7 +522,7 @@ describe('an extension waiting to run asks in the inbox', () => {
 
     it('asks again after "Stop it", uninstall, and a reinstall at the same version', async () => {
       await installPlugin();
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
       await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
       await queue.sync();
       expect(await pending()).toEqual([]);
@@ -504,9 +562,12 @@ describe('an extension waiting to run asks in the inbox', () => {
       await manager.updateCwd(project);
       expect(manager.get(EXT_ID)?.path).toBe(agentCopy);
 
-      const res = await request(server)
-        .post(`/api/extensions/${EXT_ID}/approve`)
-        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+      const res = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({
+        path: shown.path,
+        version: shown.version,
+        plugin: shown.plugin,
+        expectedDigest: shown.digest,
+      });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('stale_approval');
@@ -526,7 +587,7 @@ describe('an extension waiting to run asks in the inbox', () => {
 
       const right = await request(server)
         .post(`/api/extensions/${EXT_ID}/approve`)
-        .send({ version: '1.0.0', plugin: 'flow' });
+        .send({ ...card(), plugin: 'flow' });
       expect(right.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual([EXT_ID]);
     });
@@ -545,9 +606,12 @@ describe('an extension waiting to run asks in the inbox', () => {
       expect(wrongVersion.status).toBe(409);
       expect(state.extensions.approvedToRun).toEqual([]);
 
-      const exact = await request(server)
-        .post(`/api/extensions/${EXT_ID}/approve`)
-        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+      const exact = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({
+        path: shown.path,
+        version: shown.version,
+        plugin: shown.plugin,
+        expectedDigest: shown.digest,
+      });
       expect(exact.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual([EXT_ID]);
     });
@@ -586,7 +650,7 @@ describe('an extension waiting to run asks in the inbox', () => {
 
     expect(approvalArrivals()).toHaveLength(1);
     // …and it still knows the copy, so answering it records the answer.
-    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
     await queue.sync();
     expect(historyRows().map((row) => row.outcome)).toEqual(['approved']);
   });

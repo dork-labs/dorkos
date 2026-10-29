@@ -36,7 +36,7 @@
 import { rcompare, valid } from 'semver';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionsConfig, CoreExtensionInfo } from './extension-enable-resolution.js';
-import { isApprovedByPath, isFromTrustedSource } from './extension-load-policy.js';
+import { isFromTrustedSource, namesThisCopy } from './extension-load-policy.js';
 import { sameOrigin } from './extension-trusted-origin.js';
 import { logger } from '../../lib/logger.js';
 
@@ -152,7 +152,9 @@ export function mergePluginRecords(
     const originFamily = approvedOrigin
       ? eligible.filter((c) => sameOrigin(c.trustedOrigin, approvedOrigin))
       : [];
-    const byPath = eligible.find((c) => isApprovedByPath(asCopy(c), config));
+    // The copy a person's yes names, even when its files changed since: it
+    // stays the one listed, and asks again (DOR-3068).
+    const byPath = eligible.find((c) => namesThisCopy(asCopy(c), config));
     const trustedFamily = eligible.filter((c) => isFromTrustedSource(asCopy(c), config));
 
     let chosen: DiscoveredRecord;

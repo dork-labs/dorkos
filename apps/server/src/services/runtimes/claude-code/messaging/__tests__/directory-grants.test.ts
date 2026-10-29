@@ -160,7 +160,43 @@ describe('the folders only a person may change', () => {
     }
   });
 
-  it('denies every project’s installed plugins and the shared ones, never its extensions', () => {
+  it('denies the approved extension snapshots and the bundle cache (DOR-3068)', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-snapshots/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/extensions/**)`);
+      // The installer's records and the trusted package sources (DOR-3068).
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplace/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplaces.json*)`);
+    }
+  });
+
+  it('denies every write tool the config and its backups, by every spelling (DOR-3068)', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/config.json*)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/config-*.json.bak)`);
+    }
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'person-only-config-')));
+    try {
+      const real = path.join(root, 'real-dork');
+      mkdirSync(real);
+      const link = path.join(root, 'link-dork');
+      symlinkSync(real, link);
+      const linked: Options = {};
+      applyPersonOnlyDataDeny(linked, link);
+      expect(deny(linked)).toContain(`Write(/${link}/config.json*)`);
+      expect(deny(linked)).toContain(`Write(/${real}/config.json*)`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('denies every project’s installed plugins and the shared ones, never a project’s extensions', () => {
     const options: Options = {};
     applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
     const rules = deny(options);
@@ -169,7 +205,7 @@ describe('the folders only a person may change', () => {
       expect(rules).toContain(`${tool}(//Users/ana/.dork/plugins/**)`);
     }
     // Agents build mini apps by editing these, so no rule names them.
-    expect(rules.some((rule) => rule.includes('extensions'))).toBe(false);
+    expect(rules.some((rule) => rule.includes('.dork/extensions'))).toBe(false);
   });
 
   it('writes a Windows data folder in the rule form', () => {

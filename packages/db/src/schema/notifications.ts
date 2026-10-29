@@ -68,6 +68,7 @@ export const notifications = sqliteTable(
         'connector.destructive_pending',
         'connector.destructive_executed',
         'web.new_device',
+        'agent.secret_files',
       ],
     }).notNull(),
 
