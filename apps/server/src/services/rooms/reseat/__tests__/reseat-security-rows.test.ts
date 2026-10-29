@@ -151,8 +151,9 @@ afterEach(async () => {
   resetOutsiderTurns();
 });
 
-describe('row 6 + hop: a moved marked seat still caps the agent it wakes', () => {
-  it('holds a Full autonomy agent to asking, so its write cards', async () => {
+// DOR-3390: the mark gates the woken agent's risky actions and shell; it no longer caps its level.
+describe('row 6 + hop: a moved marked seat still marks the agent it wakes', () => {
+  it('marks a Full autonomy agent, at its own level', async () => {
     const { ceilingForEntry } = await import('../../limits/turn-ceiling.js');
     const { noteEntryLevel, postLevelFor, lastTurnLevelOf } =
       await import('../../../core/turn-power/turn-levels.js');
@@ -170,7 +171,7 @@ describe('row 6 + hop: a moved marked seat still caps the agent it wakes', () =>
     noteEntryLevel('post-1', postLevelFor(['new-seat-1']));
     await run(runtime, 'bo', ceilingForEntry(AUTHORS, { id: 'post-1', authorId: 'ana' }));
 
-    expect(runsAt(sent.get('bo'))).toBe('default');
+    expect(runsAt(sent.get('bo'))).toBe('bypassPermissions');
     expect(lastTurnLevelOf('bo')?.outsider).toBe(true);
   });
 
@@ -191,7 +192,7 @@ describe('row 6 + hop: a moved marked seat still caps the agent it wakes', () =>
     noteEntryLevel('post-2', postLevelFor(['new-seat-1']));
     await run(runtime, 'bo', ceilingForEntry(AUTHORS, { id: 'post-2', authorId: 'ana' }));
 
-    expect(runsAt(sent.get('bo'))).toBe('default');
+    expect(runsAt(sent.get('bo'))).toBe('bypassPermissions');
     expect(lastTurnLevelOf('bo')?.outsider).toBe(true);
   });
 });
