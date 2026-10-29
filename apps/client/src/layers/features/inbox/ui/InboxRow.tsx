@@ -156,6 +156,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const opensSchedule =
     onOpen !== undefined &&
     notification.actions?.some((a) => a.id === OPEN_SCHEDULE_ACTION_ID) === true;
+  // The secret-files notice's body is what to do about it, so it gets the same
+  // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
+  const twoLineBody = opensSchedule || notification.kind === 'agent.secret_files';
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -214,10 +217,18 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           <span
             className={cn(
               'text-muted-foreground block text-xs',
-              opensSchedule ? 'line-clamp-2 sm:line-clamp-none sm:truncate' : 'truncate'
+              twoLineBody ? 'line-clamp-2 sm:line-clamp-none sm:truncate' : 'truncate'
             )}
           >
             {notification.body}
+          </span>
+        )}
+        {notification.meta !== undefined && (
+          <span
+            className="text-muted-foreground block truncate font-mono text-xs"
+            title={notification.meta}
+          >
+            {notification.meta}
           </span>
         )}
       </span>

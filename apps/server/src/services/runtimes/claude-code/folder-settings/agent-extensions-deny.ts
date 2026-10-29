@@ -33,6 +33,8 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { ExtensionsConfig } from '../../../extensions/extension-enable-resolution.js';
 import { logger } from '../../../../lib/logger.js';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { configManager } from '../../../core/config-manager.js';
 import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { heldToACeiling } from '../turn-permission.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
@@ -180,4 +182,31 @@ export function applyOtherAgentsExtensionsDeny(
     ...base,
     permissions: { ...permissions, deny: [...(permissions.deny ?? []), ...rules] },
   } as Options['settings'];
+}
+
+/**
+ * Keep one launch's file tools out of every other agent's mini apps, and out
+ * of its own when the turn may not write them ({@link ownExtensionsWritable}).
+ * Reads the stored approvals for author folders and DorkOS's data directory.
+ *
+ * @param sdkOptions - The launch options, mutated in place.
+ * @param turn - The session's ceilings, its id, the turn's agent home and the
+ *   agent registry the launch was given.
+ */
+export function applyLaunchExtensionsDeny(
+  sdkOptions: Options,
+  turn: {
+    session: Parameters<typeof heldToACeiling>[0];
+    sessionId: string;
+    agentHome: string | undefined;
+    registry: Parameters<typeof otherAgentHomesOf>[0];
+  }
+): void {
+  applyOtherAgentsExtensionsDeny(
+    sdkOptions,
+    ownExtensionsWritable(turn.session, turn.sessionId, turn.agentHome),
+    // Author folders an approval records count even when no longer registered.
+    otherAgentHomesOf(turn.registry, configManager.get('extensions')),
+    resolveDorkHome()
+  );
 }

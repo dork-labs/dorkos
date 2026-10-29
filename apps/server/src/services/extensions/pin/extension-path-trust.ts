@@ -157,7 +157,7 @@ export function clientPinHolds(
 /**
  * Whether a stored approval was written before approvals named content: no
  * digest, no author, no grants and no dev link, and marked so by the
- * `'0.126.0'` config migration (`legacyPathOnly`). Those are pinned once, to
+ * `'0.126.1'` config migration (`legacyPathOnly`). Those are pinned once, to
  * the files found on the first scan after the upgrade; a digest-less approval
  * written since is not, and does not run.
  *

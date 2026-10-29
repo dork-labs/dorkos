@@ -135,6 +135,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   const dorkHome = path.resolve(files.dorkHome);
   const targets: [string, 'folder' | 'file'][] = [
     [path.join(home, '.claude'), 'folder'],
+    [path.join(home, '.agents'), 'folder'],
     [path.join(home, '.mcp.json'), 'file'],
     [path.join(home, '.dork', 'agent.json'), 'file'],
     [path.resolve(files.accountRoot), 'folder'],

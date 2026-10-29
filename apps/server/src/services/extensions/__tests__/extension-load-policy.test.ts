@@ -561,7 +561,7 @@ describe('the dev loop stays free after one approval, for the approved files', (
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
-      // Listed by the '0.126.0' migration as an approval that named no copy.
+      // Listed by the '0.126.1' migration as an approval that named no copy.
       legacyUnsourced: ['my-ext'],
     };
     await manager.initialize(null);
@@ -594,7 +594,7 @@ describe('the dev loop stays free after one approval, for the approved files', (
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
-      // Listed by the '0.126.0' migration as an approval that named no copy.
+      // Listed by the '0.126.1' migration as an approval that named no copy.
       legacyUnsourced: ['my-ext'],
     };
     await manager.initialize(null);
@@ -700,7 +700,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
-      // Listed by the '0.126.0' migration as an approval that named no copy.
+      // Listed by the '0.126.1' migration as an approval that named no copy.
       legacyUnsourced: ['my-ext'],
     };
     mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);

@@ -648,6 +648,8 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       ...personOnlyFileRules(resolveDorkHome()),
       // And every agent home's self-grant files, on every launch (DOR-3068 S1).
       ...agentHomesSelfGrantRules(resolveDorkHome(), 'launch'),
+      // And every project's installed plugins (DOR-3068).
+      ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
     ];
     const settings = options.settings as {
       fastMode: boolean;

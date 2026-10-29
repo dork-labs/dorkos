@@ -141,6 +141,7 @@ describe('the pin list', () => {
       additionalDirectories: 'relaunch',
       folderAllows: 'relaunch',
       permissionsDeny: 'relaunch',
+      folderConfig: 'relaunch',
       toolSurface: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
@@ -338,6 +339,8 @@ describe('the relaunch pins', () => {
         }),
       },
     ],
+    // An agent folder's changed hooks held back (DOR-3068).
+    ['folderConfig', { options: options({ settings: { disableAllHooks: true } }) }],
   ];
 
   it('rides a deny list that only changed order (DOR-3068)', () => {
