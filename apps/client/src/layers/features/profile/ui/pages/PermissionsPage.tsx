@@ -6,7 +6,11 @@
  * @module features/profile/ui/pages/PermissionsPage
  */
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { PermissionHistory, PermissionList } from '@/layers/features/permissions';
+import {
+  PermissionHistory,
+  PermissionList,
+  RULES_DONT_HIDE_FOLDER_FILES,
+} from '@/layers/features/permissions';
 import type { ProfilePageContentProps } from './types';
 
 /** One agent's permissions, and the changes that touched it. */
@@ -24,6 +28,9 @@ export function PermissionsPage({ member }: ProfilePageContentProps) {
         </p>
       )}
       <PermissionList scope={{ kind: 'agent', agentId: member.id }} />
+      <p className="text-muted-foreground text-sm">
+        {RULES_DONT_HIDE_FOLDER_FILES[0]} {RULES_DONT_HIDE_FOLDER_FILES[1]}
+      </p>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">History</h3>
         <PermissionHistory agentId={member.id} />

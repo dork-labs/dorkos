@@ -25,9 +25,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined } }));
 vi.mock('../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
+// A store, so row 6 can record a person's yes for the home's folder settings.
+const configStore = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../core/config-manager.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../core/config-manager.js')>()),
-  configManager: { get: () => undefined, set: () => {} },
+  configManager: {
+    get: (key: string) => configStore.get(key),
+    set: (key: string, value: unknown) => configStore.set(key, value),
+  },
 }));
 vi.mock('../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
@@ -66,6 +71,8 @@ import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSubjectLabel } from '../relay/subject-resolver.js';
 import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { recordFolderConfigApproval } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+import { readFolderConfigParts } from '../runtimes/claude-code/folder-settings/folder-config-pin.js';
 
 /** One side of the fixture: what `.dork/` says. */
 interface Identity {
@@ -94,6 +101,9 @@ const HOME: Identity = {
   soul: 'HOME-SOUL-MARKER',
   nope: 'HOME-NOPE-MARKER',
 };
+
+/** The id both sides' agent files carry. */
+const HOME_AGENT_ID = '01JANAHOMEAGENT0000000000';
 
 let scratch: string;
 let home: string;
@@ -191,9 +201,20 @@ describe('a worktree of a home repo reads the HOME identity', () => {
   it('row 6: a new session in the worktree runs on the home runtime', async () => {
     const has = vi.spyOn(runtimeRegistry, 'has').mockReturnValue(true);
     try {
+      // The home names a runtime and an account, so until a person says yes
+      // to its folder settings the session runs on the default (DOR-3068 M3).
+      expect(await _resolveRuntimeTypeForNewSession({ cwd: tree })).toBe(
+        runtimeRegistry.getDefaultType()
+      );
+      recordFolderConfigApproval({
+        agentId: HOME_AGENT_ID,
+        home,
+        digests: readFolderConfigParts(home).digests,
+      });
       expect(await _resolveRuntimeTypeForNewSession({ cwd: tree })).toBe(HOME.runtime);
     } finally {
       has.mockRestore();
+      configStore.clear();
     }
   });
 
@@ -263,7 +284,7 @@ function git(cwd: string, ...args: string[]): void {
 /** Write one side of the fixture's `.dork/`: manifest, SOUL.md and NOPE.md. */
 async function writeIdentity(dir: string, identity: Identity): Promise<void> {
   const manifest: AgentManifest = {
-    id: '01JANAHOMEAGENT0000000000',
+    id: HOME_AGENT_ID,
     name: identity.name,
     description: '',
     runtime: identity.runtime,

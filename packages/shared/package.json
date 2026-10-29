@@ -249,6 +249,10 @@
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
     },
+    "./community-administer": {
+      "types": "./src/community-administer.ts",
+      "default": "./dist/community-administer.js"
+    },
     "./community-connections": {
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
@@ -460,6 +464,10 @@
     "./canvas-source-key": {
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"
+    },
+    "./canvas-media-url": {
+      "types": "./src/canvas-media-url.ts",
+      "default": "./dist/canvas-media-url.js"
     },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",

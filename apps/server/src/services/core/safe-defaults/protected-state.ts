@@ -213,6 +213,13 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The external /mcp tool endpoint defaults ON. Someone who closed it should not have it re-opened by a wipe.',
   },
   {
+    path: 'harness.folderConfigPinned',
+    direction: 'boolean',
+    protectiveValue: true,
+    reason:
+      'The first start pins the agents DorkOS already had, as they stand (DOR-3068). After a wipe, an agent with no record should wait for a person, never be pinned again unasked.',
+  },
+  {
     path: 'harness.autoSync',
     direction: 'boolean',
     protectiveValue: false,

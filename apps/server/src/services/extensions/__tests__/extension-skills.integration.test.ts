@@ -81,7 +81,7 @@ describe('extension skills through the extension manager', () => {
       enabled: ['mail'],
       disabled: [],
       approvedToRun: ['mail'],
-      approvedSources: { mail: { path: dir } },
+      approvedSources: { mail: { path: dir, legacyPathOnly: true } },
     };
     manager = new ExtensionManager(dorkHome, []);
     await manager.initialize(null);
@@ -113,7 +113,7 @@ describe('extension skills through the extension manager', () => {
       enabled: ['mail'],
       disabled: [],
       approvedToRun: ['mail'],
-      approvedSources: { mail: { path: dir } },
+      approvedSources: { mail: { path: dir, legacyPathOnly: true } },
     };
     manager = new ExtensionManager(dorkHome, []);
     const seen = recordingDelivery();

@@ -52,6 +52,7 @@ import {
   isFollowerCommand,
 } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { rejectionReason } from './managed-authority-rejection.js';
 import type {
   ConnectorManagedLifecyclePort,
   ConnectorManagedLifecycleSyncResult,
@@ -86,11 +87,6 @@ interface DeliveryFailure {
   /** The thrown error's class name, for a failure that happened on this computer. */
   readonly errorName?: string;
 }
-
-type ManagedAuthorityRejectionCode = Extract<
-  ManagedConnectorAuthorityCommandStatus,
-  { state: 'rejected' }
->['rejectionCode'];
 
 type ConnectorDbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -1586,10 +1582,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         status.state === 'applied' &&
         status.externalCleanup === 'pending';
       // Keep repeating the exact command until credential cleanup also settles.
-      const state = current ? (cleanupPending ? 'pending' : status.state) : 'superseded';
+      // Awaiting the owner's approval is "not applied yet": the last applied set stands.
+      const hosted = status.state === 'awaiting_approval' ? 'pending' : status.state;
+      const state = current ? (cleanupPending ? 'pending' : hosted) : 'superseded';
       const safeReason =
         state === 'rejected'
-          ? this.rejectionReason(status.state === 'rejected' ? status.rejectionCode : undefined)
+          ? rejectionReason(status.state === 'rejected' ? status.rejectionCode : undefined)
           : state === 'pending'
             ? cleanupPending
               ? CLEANUP_PENDING_REASON
@@ -2053,20 +2051,6 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         : Math.min(INITIAL_RETRY_MS * 2 ** row.attemptCount, MAX_RETRY_MS);
     const jitter = 0.8 + Math.max(0, Math.min(this.random(), 1)) * 0.4;
     return new Date(now + Math.round(base * jitter)).toISOString();
-  }
-
-  private rejectionReason(code?: ManagedAuthorityRejectionCode): string {
-    switch (code) {
-      case 'permission_upgrade_required':
-        return 'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.';
-      case 'revision_unavailable':
-        return 'One or more selected actions are no longer available.';
-      case 'scope_conflict':
-        return 'A newer change to this account replaced this one.';
-      case 'connection_unavailable':
-      default:
-        return 'Your DorkOS account no longer has this connection.';
-    }
   }
 
   private failureReason(failure: DeliveryFailure): string {
