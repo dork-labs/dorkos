@@ -137,20 +137,41 @@ describe('the Never ask hook', () => {
     ).toEqual({});
   });
 
-  it('in a turn a stranger’s line marked, with no ceiling: no chat_send, no accounts', async () => {
+  // DOR-3390 (Security's condition on item 6): a marked turn may pass its words on, because the
+  // message carries the mark and the chat it reaches is gated in turn (pinned in
+  // `outsider-mark-spread.agent-hops.test.ts`). The accounts stay refused.
+  it('in a turn a stranger’s line marked, with no ceiling: chat_send, no accounts', async () => {
     const marked = createNeverAskHook(
       NEVER_ASK,
       async () => IDENTITY,
       noopLog,
       () => true
     );
+    expect(
+      await marked(call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }), 'tool-1', signal)
+    ).toEqual(ALLOW);
     for (const [name, input] of [
-      ['mcp__dorkos__chat_send', { to: 'c', message: 'hi' }],
       ['mcp__dorkos__accounts_usage', {}],
       ['mcp__dorkos__accounts_probe', { account: 'a' }],
     ] as const) {
       expect(await marked(call(name, input), 'tool-1', signal)).toEqual({});
     }
+    // A turn that carries the mark on as its ceiling sends too; a stranger's own turn does not.
+    const carried = {
+      ...NEVER_ASK,
+      turnPermissionCeiling: {
+        asks: 'never',
+        reach: 'everything',
+        outsider: true,
+      } as unknown as TurnPermissionCeiling,
+    };
+    expect(
+      await decide(carried, call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }))
+    ).toEqual(ALLOW);
+    const stranger = { ...NEVER_ASK, turnPermissionCeiling: 'runtime-default' as const };
+    expect(
+      await decide(stranger, call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }))
+    ).toEqual({});
     // A room read still runs: the mark bounds what leaves the turn, not reading its room.
     expect(await marked(call('mcp__dorkos__read_room_history'), 'tool-1', signal)).toEqual(ALLOW);
     // And a mark lookup that throws counts as marked.
@@ -162,7 +183,7 @@ describe('the Never ask hook', () => {
         throw new Error('no record');
       }
     );
-    expect(await broken(call('mcp__dorkos__chat_send', { to: 'c' }), 'tool-1', signal)).toEqual({});
+    expect(await broken(call('mcp__dorkos__accounts_usage', {}), 'tool-1', signal)).toEqual({});
   });
 
   it('says nothing on a teammate’s turn, whatever the tool', async () => {

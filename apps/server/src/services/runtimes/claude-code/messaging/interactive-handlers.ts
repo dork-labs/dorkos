@@ -51,9 +51,11 @@ import {
   hasAgentIdentity,
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
+import { carriedWriteAsks } from '../tool-gate/carried-turn-writes.js';
 import {
+  carriesOutsiderMark,
+  chosenFullAutonomy,
   gatePermissionMode,
-  heldForOutsider,
   neverAsks,
   resolveModeDecision,
   type CeilingedMode,
@@ -484,10 +486,14 @@ export function createCanUseTool(
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
-    // The turn's mode, not the session's: a turn held to a ceiling must not be
+    // A chat SET to Full autonomy asks nobody anything (DOR-3394): a mark, a
+    // carried ceiling or a stranger's hold may have launched the turn lower, but
+    // what it asks about is decided by the level the person chose. Below Full,
+    // the turn's mode, not the session's: a turn held to a ceiling must not be
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
-    const decision = resolveModeDecision(gatePermissionMode(session));
+    const full = chosenFullAutonomy(session);
+    const decision = full ? 'allow' : resolveModeDecision(gatePermissionMode(session));
     // "Never ask": `neverAsks` also covers a chat set to it whose turn a
     // stricter ceiling holds to Plan, which would otherwise ask.
     const refusing = decision === 'refuse' || neverAsks(session);
@@ -558,9 +564,17 @@ export function createCanUseTool(
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
+    // A turn that carries an outsider's words on runs at its own level, but its
+    // shell asks at every level below Full until it runs sandboxed (DOR-3390):
+    // the held-turn hook sends such a Bash call here, and lets plain reads by. An
+    // edit to git's files or the agent's own asks the same way (`carried-turn-writes.ts`).
+    const carriedShell =
+      !full &&
+      carriesOutsiderMark(session) &&
+      (toolName === 'Bash' || carriedWriteAsks(toolName, input, session.cwd ?? process.cwd()));
     // Anything but an explicit `allow` asks, so a decision added later can
     // never fall through to the auto-allow below.
-    if (decision !== 'allow') {
+    if (decision !== 'allow' || carriedShell) {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover
@@ -586,9 +600,10 @@ export function createCanUseTool(
         toolUseID: context.toolUseID,
         ...(context.agentID !== undefined ? { agentID: context.agentID } : {}),
       });
-      // A turn DorkOS cannot vouch for offers no "Always allow" (DOR-3204): a
-      // stranger's turn must not write a standing rule into the folder.
-      const offered = heldForOutsider(session) ? { ...context, suggestions: [] } : context;
+      // A turn that read words DorkOS cannot vouch for offers no "Always allow"
+      // (DOR-3204, DOR-3390): it must not write a standing rule into the folder,
+      // whether a stranger started it or our own agent passed the words on.
+      const offered = carriesOutsiderMark(session) ? { ...context, suggestions: [] } : context;
       return handleToolApproval(session, context.toolUseID, toolName, input, offered);
     }
     log.debug('[canUseTool] auto-allow', {

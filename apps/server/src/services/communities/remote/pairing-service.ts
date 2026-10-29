@@ -12,12 +12,16 @@ import {
 } from '@dorkos/shared/community-connections';
 import { logger } from '../../../lib/logger.js';
 import { isCommunityDeleted, isCommunityTakenDown } from './remote-community-adapter.js';
+import { readHostOperator } from './host-operator.js';
+import {
+  CONNECTION_SCOPES as SCOPES,
+  type AdministerPairing,
+} from './administer/pairing-scopes.js';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_API_V1_ROUTES,
   CommunityWireConnectionAccessResponseSchema,
   CommunityWireCommunitySchema,
-  CommunityWireHostAccessResponseSchema,
   CommunityWirePairingStartResponseSchema,
   CommunityWireShortNameLookupSchema,
   type CommunityConnectionAccess,
@@ -125,35 +129,6 @@ export class RemoteCommunityUpgradeRequiredError extends Error {
   constructor() {
     super('The Community server does not support tenant-qualified connections');
     this.name = 'RemoteCommunityUpgradeRequiredError';
-  }
-}
-
-/**
- * Ask a Community whether the account behind this installation's grant runs
- * its host, which decides only whether the app offers "Create a community".
- *
- * Every failure reads as "no": a host built before this read answers 404, and
- * an offer the app cannot confirm is an offer it does not make. The answer
- * grants nothing either way: the host's creation page signs the person in and
- * checks host authority again.
- */
-async function readHostOperator(
-  origin: URL,
-  remoteCommunityId: string,
-  authorization: string
-): Promise<boolean> {
-  try {
-    return CommunityWireHostAccessResponseSchema.parse(
-      await pinnedJson(
-        origin,
-        communityApiPath(remoteCommunityId, COMMUNITY_API_V1_ROUTES.hostAccess),
-        undefined,
-        undefined,
-        { authorization }
-      )
-    ).hostOperator;
-  } catch {
-    return false;
   }
 }
 
@@ -275,6 +250,8 @@ export class RemoteCommunityPairingService {
    * @param noteDiscovery - Told what discovery found for the link a pairing starts from, before
    *   the pending connection is written, so the official space can be recognised by a short-name
    *   or origin-only link (spec `official-community-space` D4).
+   * @param administer - Asks a space that offers it for the `administer` scope, and keeps the
+   *   manage credential an owner's or admin's consent returns apart from the grant (DOR-3005).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -283,7 +260,8 @@ export class RemoteCommunityPairingService {
     timing: Partial<RemoteAccessTiming> = {},
     private readonly countUndelivered?: OwnerConnectionCallback<number>,
     private readonly installationAgents?: RemoteInstallationAgentsReader,
-    private readonly noteDiscovery?: (url: string, origin: string, id: string) => Promise<void>
+    private readonly noteDiscovery?: (url: string, origin: string, id: string) => Promise<void>,
+    private readonly administer?: AdministerPairing
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -653,7 +631,7 @@ export class RemoteCommunityPairingService {
         {
           installName,
           challenge,
-          scopes: ['read', 'post', 'enroll-agent'],
+          scopes: (await this.administer?.scopes(target.origin, community.id)) ?? [...SCOPES],
         }
       );
     } catch (error) {
@@ -772,11 +750,7 @@ export class RemoteCommunityPairingService {
         CommunityPairingExchangeSecretResponseSchema.safeParse(exchangePayload);
       if (!parsedExchange.success) throw new PinnedOriginError('REMOTE_RESPONSE');
       const exchanged = parsedExchange.data;
-      if (
-        !(['read', 'post', 'enroll-agent'] as const).every((scope) =>
-          exchanged.grant.scopes.includes(scope)
-        )
-      )
+      if (!SCOPES.every((scope) => exchanged.grant.scopes.includes(scope)))
         throw new PinnedOriginError('REMOTE_RESPONSE');
       const completed = await this.store.complete(
         ref,
@@ -793,6 +767,8 @@ export class RemoteCommunityPairingService {
           },
         }
       );
+      if (exchanged.administerToken)
+        await this.administer?.keep(ref, ownerKey, exchanged.administerToken);
       return { status: 'connected', connection: completed };
     } finally {
       this.busy.delete(ref);

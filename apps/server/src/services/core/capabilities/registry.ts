@@ -46,6 +46,7 @@ import {
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
+import { principalTurnOf } from './marked-turn-holds.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
@@ -880,6 +881,7 @@ export function composeRegistry(
               input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
               ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
+              ...principalTurnOf(supplied.serverPrincipal),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card

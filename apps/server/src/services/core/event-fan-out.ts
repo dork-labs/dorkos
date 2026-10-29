@@ -104,6 +104,20 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
  */
 type EventFanOutListener = (eventName: string, data: unknown) => void;
 
+/** Inspect each union member: open key sets and room names require an audience. */
+type ScopedEventName<Name extends string> = Name extends unknown
+  ? Record<never, never> extends Record<Name, unknown>
+    ? Name
+    : Name extends `room_${string}`
+      ? Name
+      : never
+  : never;
+
+/** Omission is safe only when every constituent is a finite non-room literal. */
+type UnscopedEventName<Name extends string> = [ScopedEventName<Name>] extends [never]
+  ? Name
+  : never;
+
 /**
  * In-process event fan-out broadcaster for the unified global event stream.
  *
@@ -230,11 +244,19 @@ class EventFanOut {
    * @param eventName - The event name, e.g. `session_status`.
    * @param data - The payload, serialized once per wire format.
    * @param audience - Which connections this frame is for. Omitted means every
-   *   one of them, which is what all but one event on this bus mean — see
+   *   one of them, except room events, which require an audience — see
    *   {@link BroadcastAudience}.
    */
+  broadcast(eventName: `room_${string}`, data: unknown, audience: BroadcastAudience): void;
+  broadcast<Name extends string>(
+    eventName: Name & UnscopedEventName<Name>,
+    data: unknown,
+    audience?: BroadcastAudience
+  ): void;
+  broadcast(eventName: string, data: unknown, audience: BroadcastAudience): void;
   broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
     this.notifyListeners(eventName, data);
+    if (eventName.startsWith('room_') && !audience) return;
     this.writeToClients(() => encodeBroadcast(eventName, data), audience);
   }
 
@@ -270,20 +292,43 @@ class EventFanOut {
    *   every one of them.
    */
   broadcastRedacted(
+    eventName: `room_${string}`,
+    full: unknown,
+    redacted: unknown,
+    entitled: BroadcastAudience,
+    audience: BroadcastAudience
+  ): void;
+  broadcastRedacted<Name extends string>(
+    eventName: Name & UnscopedEventName<Name>,
+    full: unknown,
+    redacted: unknown,
+    entitled: BroadcastAudience,
+    audience?: BroadcastAudience
+  ): void;
+  broadcastRedacted(
     eventName: string,
     full: unknown,
     redacted: unknown,
     entitled: BroadcastAudience,
-    audience: BroadcastAudience = () => true
+    audience: BroadcastAudience
+  ): void;
+  broadcastRedacted(
+    eventName: string,
+    full: unknown,
+    redacted: unknown,
+    entitled: BroadcastAudience,
+    audience?: BroadcastAudience
   ): void {
     this.notifyListeners(eventName, full);
+    if (eventName.startsWith('room_') && !audience) return;
+    const receives = audience ?? (() => true);
     this.writeToClients(
       () => encodeBroadcast(eventName, full),
-      (principal) => audience(principal) && entitled(principal)
+      (principal) => receives(principal) && entitled(principal)
     );
     this.writeToClients(
       () => encodeBroadcast(eventName, redacted),
-      (principal) => audience(principal) && !entitled(principal)
+      (principal) => receives(principal) && !entitled(principal)
     );
   }
 

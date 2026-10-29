@@ -2555,6 +2555,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /me/grants': "the caller's own installation grants",
   'DELETE /me/grants': "revokes the caller's own grants",
   'DELETE /me/grants/:id': "revokes one of the caller's own grants",
+  'DELETE /me/grants/:id/administer': "takes back the manage credential of the caller's own grant",
   'GET /me/connection-access': 'the calling grant only',
   'DELETE /me/connection': 'the calling grant revokes itself',
   'GET /me/host-access': "the calling grant's own account; takes no id",

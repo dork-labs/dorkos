@@ -715,7 +715,7 @@ describe('createExtensionAPI', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/extensions/my-ext/data', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': 'my-ext' },
       body: JSON.stringify(data),
     });
     vi.unstubAllGlobals();

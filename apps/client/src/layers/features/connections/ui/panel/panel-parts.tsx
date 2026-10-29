@@ -1,5 +1,5 @@
-import type { ComponentPropsWithRef, ReactNode } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { useId, type ComponentPropsWithRef, type ReactNode } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -59,11 +59,20 @@ export function PanelFix({
   pending = false,
   secondary,
   technicalDetail,
+  actionHint,
+  icon: Icon = AlertTriangle,
 }: {
   /** What is wrong, plainly ("Signed out. Agents can't use Notion."). */
   message: string;
-  /** One quieter line under the message: why, and what happens next. */
-  detail?: string;
+  /** Quieter lines under the message: why, and what happens next. */
+  detail?: ReactNode;
+  /**
+   * A quiet line under the button saying what pressing it does. The button
+   * names it as its description, so a screen reader hears it too.
+   */
+  actionHint?: string;
+  /** The mark beside the message: a warning by default, a pause for a paused app. */
+  icon?: LucideIcon;
   /** The fix's button label; absent when there is nothing to press. */
   action?: string;
   /** Run the fix. */
@@ -79,6 +88,7 @@ export function PanelFix({
    */
   technicalDetail?: string;
 }) {
+  const hintId = useId();
   return (
     <div
       role="status"
@@ -86,7 +96,7 @@ export function PanelFix({
       className="bg-status-warning-bg flex flex-col gap-3 rounded-xl p-3.5"
     >
       <p className="text-status-warning-fg flex items-start gap-2 text-sm">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
         <span>
           {message}
           {detail && <span className="mt-1 block">{detail}</span>}
@@ -99,7 +109,8 @@ export function PanelFix({
               size="sm"
               onClick={onAction}
               disabled={pending}
-              className="h-auto min-h-8 max-w-full whitespace-normal"
+              aria-describedby={actionHint ? hintId : undefined}
+              className="h-auto min-h-8 max-w-full whitespace-normal max-md:min-h-11"
             >
               {pending && <Spinner size="xs" />}
               {action}
@@ -107,6 +118,11 @@ export function PanelFix({
           )}
           {secondary}
         </div>
+      )}
+      {actionHint && (
+        <p id={hintId} className="text-status-warning-fg/80 text-xs">
+          {actionHint}
+        </p>
       )}
       {technicalDetail && (
         <Collapsible>

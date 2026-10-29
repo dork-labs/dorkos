@@ -111,6 +111,35 @@ describe('ChatAppPanel', () => {
     );
   });
 
+  it('shows what a paused bot sends and where, in ASCII, and confirms exactly that', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderPanel(
+      instance({
+        enabled: true,
+        status: { ...instance().status, state: 'disconnected' },
+        confirmation: {
+          references: [{ field: 'token', ref: 'env:DEPLOY_TOKEN' }],
+          host: 'xn--hks-ted.example.dev',
+          fingerprint: 'fp-1',
+          notSent: 3,
+        },
+      })
+    );
+
+    const fix = screen.getByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Paused · confirm the setting it sends.');
+    expect(fix).toHaveTextContent('Telegram · sends env:DEPLOY_TOKEN to xn--hks-ted.example.dev');
+    expect(fix).toHaveTextContent('3 messages not sent while paused');
+    const button = within(fix).getByRole('button', { name: 'Confirm this setting' });
+    expect(button).toHaveAccessibleDescription(
+      'Lets it send DEPLOY_TOKEN to xn--hks-ted.example.dev again. Not yours? Remove it below.'
+    );
+    await user.click(button);
+    await waitFor(() =>
+      expect(transport.confirmRelayAdapterReferences).toHaveBeenCalledWith('telegram-1', 'fp-1')
+    );
+  });
+
   it('shows a failed bot in plain words, its raw error only under Details, with its settings one click away', async () => {
     const user = userEvent.setup();
     renderPanel(

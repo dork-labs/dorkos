@@ -415,7 +415,7 @@ describe('what an installed app reads', () => {
     for (const path of ['/api/v1/features', `${tenant()}/features`]) {
       const response = await expectStatus(await h.call(path), 200, path);
       expect(await response.json()).toEqual({
-        features: { agentAvailability: true, agentDms: true },
+        features: { agentAvailability: true, agentDms: true, administer: true },
       });
     }
   });

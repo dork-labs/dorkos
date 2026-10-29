@@ -327,12 +327,13 @@ describe('buildAgentBlock conventions', () => {
     expect(result).toContain('<dorkos_context>');
   });
 
-  it('<dorkos_context> contains subsystem and doc links', async () => {
+  it('<dorkos_context> points at the area lines and carries the doc links', async () => {
     const result = await buildAgentBlockWithoutDocsOverride();
-    expect(result).toContain('Console (chat)');
-    expect(result).toContain('Tasks (scheduling)');
-    expect(result).toContain('Relay (messaging)');
-    expect(result).toContain('Mesh (discovery)');
+    // The four-subsystem line was the stale half of DOR-3219; the areas replace it.
+    expect(result).not.toContain('Console (chat)');
+    expect(result).toContain('What you can do here is listed area by area in the next block.');
+    expect(result).toContain('<dorkos_areas>');
+    expect(result).toContain('- Agent browser: drive a real website');
     expect(result).toContain('https://dorkos.ai/llms.txt');
     expect(result).toContain('https://dorkos.ai/docs');
   });
@@ -1349,6 +1350,7 @@ describe('what each block costs', () => {
         'agent_identity',
         'agent_memory',
         'dorkos_context',
+        'dorkos_areas',
         'env',
         'session_model',
         'working_rules',

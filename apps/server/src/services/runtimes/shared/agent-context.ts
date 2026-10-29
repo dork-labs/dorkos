@@ -53,8 +53,10 @@ import { fenceUntrustedBlock } from './untrusted-fence.js';
 import { renderMemoryNotesLine } from '../../memory/notes-line.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
+import { currentDistribution } from '../../../lib/distribution/index.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
+import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, how an agent works in it,
@@ -108,7 +110,7 @@ When you tell a person about a chat, agent, ticket or pull request, name it by i
 Never show a raw id. A chat link is [Chat title](/session?session=<full id>). Three tools return one
 ready to use: the one whose name ends in \`session_start\`, the one that ends in \`chat_send\` and the
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
-Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
+What you can do here is listed area by area in the next block.
 Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
 \`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.
 ${fallback}
@@ -460,12 +462,19 @@ function buildUserProfileBlockFromConfig(): string {
  * values (date, git status, UI state) are intentionally excluded to maximize
  * prompt-cache hit rates on runtimes that have a cacheable system prompt.
  *
+ * `App:` names the install kind, so an agent's update steps fit it (the Mac app
+ * updates itself; the npm CLI updates with npm). It and `Version:` are read on
+ * every build, never kept from an earlier one: a restart onto a new version
+ * changes this block, which relaunches a warm Claude Code process (the append is
+ * pinned) and re-anchors a Codex thread (its gate digests this half).
+ *
  * @param cwd - Working directory for the session.
  */
 async function buildEnvBlock(cwd: string): Promise<string> {
   const lines = [
     `Working directory: ${cwd}`,
     `Product: DorkOS`,
+    `App: ${currentDistribution().label}`,
     `Version: ${SERVER_VERSION}`,
     `Port: ${env.DORKOS_PORT}`,
     `Platform: ${os.platform()}`,
@@ -604,7 +613,8 @@ async function buildAgentBlock(
 
   // --- DorkOS knowledge block (default ON) ---
   if (conventions?.dorkosKnowledge !== false) {
-    tail.push(buildDorkosContextBlock());
+    // The areas ride with it: the same switch, because both say what DorkOS is (DOR-3219).
+    tail.push(buildDorkosContextBlock(), buildDorkosAreasBlock());
   }
 
   // --- Agent browser notice (only when its saved session is missing) ---
