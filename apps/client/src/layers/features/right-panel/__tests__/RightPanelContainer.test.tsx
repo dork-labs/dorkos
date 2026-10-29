@@ -5,6 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { useTerminalResourceChrome, type RightPanelContribution } from '@/layers/shared/model';
+// The held-back mini app line reads live extension state; these tests do not draw it.
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  WithheldExtensionsNotice: () => null,
+  useWithheldExtensions: () => [],
+}));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionId: () => [null, vi.fn()],

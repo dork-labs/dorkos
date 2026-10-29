@@ -14,6 +14,7 @@
  *
  * @module features/canvas/lib/fetch-src
  */
+import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
 
 /** Outcome of resolving a fetchable source: a URL to fetch, or null when unavailable. */
 export interface ResolvedCanvasFetch {
@@ -59,6 +60,9 @@ export function resolveCanvasFetchUrl(
   allowedDataPrefix?: string
 ): ResolvedCanvasFetch {
   const trimmed = src.trim();
+  // A file an agent put on a room's canvas, which the server copied into the
+  // room: same-origin, membership-gated, and loaded as-is.
+  if (isRoomCanvasMediaUrl(trimmed)) return { url: trimmed };
   const scheme = schemeOf(trimmed);
   if (scheme !== null) {
     if (!REMOTE_SCHEMES.has(scheme)) return { url: null };

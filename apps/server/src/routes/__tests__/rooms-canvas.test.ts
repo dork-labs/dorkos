@@ -15,6 +15,10 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * shared helper.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import request, { type Test } from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -210,6 +214,78 @@ describe('the room canvas routes', () => {
       .post(`/api/rooms/${roomId}/canvas/${created.body.id}/editing`)
       .send({ editing: false });
     expect(released.body).toEqual({ editingBy: null, expiresAt: null });
+  });
+
+  describe('a file an agent put on the canvas', () => {
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    const name = `${'c'.repeat(16)}-${createHash('sha256').update(PNG).digest('hex')}.png`;
+    let home: string;
+
+    beforeEach(async () => {
+      home = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-canvas-media-route-'));
+      vi.stubEnv('DORK_HOME', home);
+      await fs.mkdir(path.join(home, 'rooms', roomId, 'canvas-media'), { recursive: true });
+      await fs.writeFile(path.join(home, 'rooms', roomId, 'canvas-media', name), PNG);
+    });
+
+    afterEach(async () => {
+      vi.unstubAllEnvs();
+      await fs.rm(home, { recursive: true, force: true });
+    });
+
+    it('serves the room’s copy to a member, typed by its suffix', async () => {
+      const res = await request(testServer)
+        .get(`/api/rooms/${roomId}/canvas/media/${name}`)
+        .buffer(true)
+        .parse((response, done) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect((res.body as Buffer).equals(PNG)).toBe(true);
+    });
+
+    it('refuses a non-member exactly as a room that does not exist', async () => {
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: 'ULID_MALLORY',
+          name: 'mallory',
+          displayName: 'Mallory',
+          runtime: 'claude-code',
+          projectPath: '/agents/mallory',
+          behaviorJson: '{"responseMode":"silent"}',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const token = await initAgentIdentityService(db).mint({
+        agentPath: '/agents/mallory',
+        displayName: 'Mallory',
+      });
+      const res = await request(testServer)
+        .get(`/api/rooms/${roomId}/canvas/media/${name}`)
+        .set('X-DorkOS-Agent', token);
+      expect(res.status).toBe(404);
+      expect(res.headers['content-type']).toMatch(/json/);
+    });
+
+    it('answers 404 for a name no copy could have, and for a file that is not there', async () => {
+      const traversal = await request(testServer).get(
+        `/api/rooms/${roomId}/canvas/media/..%2F..%2Fsecret.png`
+      );
+      const missing = await request(testServer).get(
+        `/api/rooms/${roomId}/canvas/media/${'c'.repeat(16)}-${'0'.repeat(64)}.png`
+      );
+      expect(traversal.status).toBe(404);
+      expect(missing.status).toBe(404);
+    });
   });
 
   describe('the gate', () => {

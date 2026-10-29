@@ -50,10 +50,12 @@
  * table names the sanctioned alternative outright — a policy on the ARGUMENT,
  * `tasks/task-write-policy.ts` being the model.
  *
- * So the gate is on the ARTIFACT, not the action: **a person approves an extension
- * id once, and from then on that extension's code loads freely.** First load asks.
- * Every load after it, including a compile error and the fix that follows, is
- * silent. The approval is not spent by use and is not a time window.
+ * So the gate is on the ARTIFACT, not the action: **a person approves an extension's
+ * files, and from then on those files load freely.** First load asks. Every load
+ * of the same files after it is silent. The approval is not spent by use and is
+ * not a time window. Since DOR-3068 an EDIT to approved files waits for a person
+ * again (the one exception is below), so an agent finishes a batch of edits and
+ * asks once, rather than once per compile error.
  *
  * ## Where the record lives, and why it is user config
  *
@@ -120,7 +122,8 @@
  * (`extension-scaffolder.ts` refuses a name spoken for in either root).
  *
  * Everything else about the approval stays as narrow as a person's. It names
- * this folder and the permission set the manifest declares now, so a
+ * this folder, its files (unless it keeps path trust, see above) and the
+ * permission set the manifest declares now, so a
  * marketplace or hand-copied extension with the same id at another path, and a
  * later version that asks for more, still wait for a person. On Careful, or for
  * an id the person said "Not now" to, nothing is approved and the copy waits.
@@ -149,11 +152,23 @@
  *
  * It is attached to ONE COPY of the extension: its id plus where that copy lives
  * (`extensions.approvedSources`, DOR-2383) — the directory, and the installed
- * plugin that carries it when it came inside one. It is not attached to the
- * copy's contents, so the edit → test → reload loop is asked once and never
- * again. The consequence is stated plainly rather than hidden: approving `foo`
- * trusts whoever can write `foo`'s files from then on, and editing those files
- * never re-asks. That is the deliberate trade named above.
+ * plugin that carries it when it came inside one — AND, since DOR-3068, to that
+ * copy's contents: the `digest` of its folder (the whole plugin folder for a
+ * plugin-carried copy). Path alone used to be enough, which meant approving
+ * `foo` trusted whoever could write `foo`'s files from then on. Now discovery
+ * digests every copy, a mismatch refuses the code at every load (server start,
+ * reload, `test_extension`, the browser bundle), and approved files run from a
+ * verified snapshot (`extension-snapshots.ts`), so an edit cannot land between
+ * the check and the run. The approval queue raises one "changed since you
+ * approved" row per extension, naming the changed files.
+ *
+ * Path trust survives in one place (`extension-path-trust.ts`): an extension
+ * one of our agents created that runs separately, still declares what it did at
+ * the yes, and lives inside that agent's own folder by real path. Its edit →
+ * test → reload loop on its server half never asks. Its screen half is still
+ * pinned to the exact bundle approved ({@link mayLoadClientHalf}). Approvals given before DOR-3068 named no
+ * content; each is pinned once to the files found on the first scan after the
+ * upgrade (`extension-approval-upkeep.ts`).
  *
  * The copy half is what an id alone could not say. Extensions also arrive inside
  * installed marketplace plugins (`plugins/<name>/.dork/extensions/<id>`), an agent
@@ -174,12 +189,12 @@
  *
  * - **Replacement by the marketplace.** Uninstalling a package forgets the
  *   approval for every extension it bundled (`flows/uninstall/side-effects.ts`), so
- *   reinstalling asks again. An update from the SAME package is the exception
- *   (DOR-2383): it is the approved copy's own publisher shipping a new version to
- *   the same path, the same trade as editing an approved extension's files, so
- *   every extension the new version still carries keeps its approval. One the new
- *   version drops loses it, and asks again if it ever comes back. A different
- *   package arriving under a familiar id is a different copy, so it asks (above).
+ *   reinstalling asks again. An update from the SAME package keeps the approval
+ *   naming each extension the new version still carries (DOR-2383), but since
+ *   DOR-3068 its new files wait for a person, like any edit to approved files.
+ *   One the new version drops loses its approval, and asks again if it ever
+ *   comes back. A different package arriving under a familiar id is a different
+ *   copy, so it asks (above).
  * - **Shadowing from the project tree.** A `{cwd}/.dork/extensions/<id>` directory,
  *   or one inside a plugin installed into the project, is ignored when `<id>` is
  *   core or approved for some other copy (`extension-discovery.ts`), so a project
@@ -222,13 +237,26 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import { declaredSet, isCovered } from './isolation/permission-coverage.js';
+import { clientPinHolds, keepsPathTrust } from './pin/extension-path-trust.js';
 
 /**
  * The fields of an extension record that say which copy of the extension it is,
  * plus where it provably came from when this machine can say (§9.1).
  */
 export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'> &
-  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest' | 'devLink'>>;
+  Partial<
+    Pick<
+      ExtensionRecord,
+      | 'trustedOrigin'
+      | 'originProblem'
+      | 'currentDigest'
+      | 'devLink'
+      | 'realPath'
+      | 'manifest'
+      | 'scope'
+      | 'clientDigest'
+    >
+  >;
 
 /**
  * The stored halves of a person's approvals: the ids, the copy each is for,
@@ -300,29 +328,24 @@ export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
  * @param approvals - `config.extensions`, or the approval fields of it.
  */
 export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
-  if (!approvals.approvedToRun.includes(copy.id)) return false;
-  const source = approvals.approvedSources?.[copy.id];
-  if (!source) return false;
-  const samePath =
-    path.resolve(source.path) === path.resolve(copy.path) &&
-    (source.plugin ?? null) === (copy.sourcePlugin ?? null);
-  if (!samePath) return false;
-  // A dev link sits at its package's normal folder, so the path alone cannot
-  // tell it from the installed copy. An approval covers only the kind it was
-  // given to: an installed copy's never covers a dev link, a dev link's never
-  // covers the installed copy put back after unlink, and one dev link's never
-  // covers a link to another folder (DOR-2696).
-  if ((source.devLink ?? null) !== (copy.devLink?.path ?? null)) return false;
+  if (!namesThisCopy(copy, approvals)) return false;
+  const source = approvals.approvedSources![copy.id]!;
   // A project copy whose plugin changed after DorkOS installed it never keeps
   // running silently on a path approval: the yes must name its files as they
   // are now (security review of DOR-2527).
   if (copy.originProblem === 'changed') {
     return !!source.digest && source.digest === copy.currentDigest;
   }
-  // An approval pinned to a digest ("Stop trusting" keeping a copy that ran by
-  // its source) covers those files only: any change asks again.
+  // An approval pinned to a digest covers those files only: any change asks
+  // again (DOR-3068).
   if (source.digest) return source.digest === copy.currentDigest;
-  return true;
+  // A dev link is approved by path alone, so editing its folder never asks
+  // again (DOR-2696); the check above already matched it.
+  if (source.devLink) return true;
+  // Otherwise path trust holds only for an agent's own extension that runs
+  // separately, declares what it did at the yes, and stays in its author's
+  // folder (`extension-path-trust.ts`).
+  return !!copy.manifest && keepsPathTrust({ ...copy, manifest: copy.manifest }, source);
 }
 
 /**
@@ -337,9 +360,49 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
  */
 export function isApprovedByOrigin(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
   if (!approvals.approvedToRun.includes(copy.id)) return false;
-  const stored = approvals.approvedSources?.[copy.id]?.origin;
+  const source = approvals.approvedSources?.[copy.id];
+  // The very copy the person approved is held to the files they approved
+  // (DOR-3068), by {@link isApprovedByPath}; its origin does not let an edit
+  // or an update past that. Other copies from the same origin are held to
+  // what the installer staged (`extension-trusted-origin.ts`).
+  if (source && isSameStoredCopy(copy, source)) return false;
+  const stored = source?.origin;
   const own = copy.trustedOrigin;
   return !!stored && !!own && stored.plugin === own.plugin && stored.source === own.source;
+}
+
+/**
+ * Whether a stored approval names this copy's folder and carrying plugin.
+ *
+ * @param copy - The extension record in question.
+ * @param source - The approval stored for its id.
+ */
+export function isSameStoredCopy(copy: ExtensionCopy, source: ExtensionApprovedSource): boolean {
+  return (
+    path.resolve(source.path) === path.resolve(copy.path) &&
+    (source.plugin ?? null) === (copy.sourcePlugin ?? null)
+  );
+}
+
+/**
+ * Whether the stored approval for this id was given to THIS copy: the same
+ * folder, the same carrying plugin, and the same dev link or none. Says
+ * nothing about whether its files still match; {@link isApprovedByPath}
+ * does. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function namesThisCopy(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (!approvals.approvedToRun.includes(copy.id)) return false;
+  const source = approvals.approvedSources?.[copy.id];
+  if (!source || !isSameStoredCopy(copy, source)) return false;
+  // A dev link sits at its package's normal folder, so the path alone cannot
+  // tell it from the installed copy. An approval covers only the kind it was
+  // given to: an installed copy's never covers a dev link, a dev link's never
+  // covers the installed copy put back after unlink, and one dev link's never
+  // covers a link to another folder (DOR-2696).
+  return (source.devLink ?? null) === (copy.devLink?.path ?? null);
 }
 
 /**
@@ -438,10 +501,11 @@ export function isDismissedCopy(
  * stored approvals so the decision is testable without a config store.
  *
  * Note what is NOT consulted: whether the extension is enabled, whether it
- * compiled, whether it has a server entry, and what its files contain. Approval
- * is about one copy of the code, so it outlives every one of those. An extension
- * toggled off and on again is still approved, and one that fails to compile is
- * still approved once it builds.
+ * compiled, and whether it has a server entry. Approval is about one copy of
+ * the code and, unless it keeps path trust, its files (`copy.currentDigest`,
+ * DOR-3068), so it outlives every one of those. An extension toggled off and on
+ * again is still approved, and one that fails to compile is still approved once
+ * it builds from the same files.
  *
  * @param copy - The extension record. `origin` is `'core'` (staged by DorkOS
  *   itself, always allowed) or `'user'`, derived from the record's path in
@@ -468,6 +532,47 @@ export function mayRunExtensionCode(
 }
 
 /**
+ * Whether this extension's SCREEN half (the client bundle the app loads into
+ * its own page, and `test_extension` runs in this process) may load: it may
+ * run at all ({@link mayRunExtensionCode}), and, for a copy that keeps path
+ * trust, the bundle is exactly the one a person approved (DOR-3068). Path
+ * trust lets an agent's edits to its server half keep running; it never
+ * lets new screen code reach the person's page unseen. Pure.
+ *
+ * @param copy - The extension record.
+ * @param approvals - `config.extensions`.
+ * @param bundleDigest - The digest of the bundle about to load; defaults to
+ *   the one the last compile produced (`copy.clientDigest`).
+ */
+export function mayLoadClientHalf(
+  copy: ExtensionDeclaringCopy,
+  approvals: ExtensionApprovals,
+  bundleDigest: string | undefined = copy.clientDigest
+): boolean {
+  if (!mayRunExtensionCode(copy, approvals)) return false;
+  if (copy.origin === 'core' || isFromTrustedSource(copy, approvals)) return true;
+  const source = approvals.approvedSources?.[copy.id];
+  if (!source || !isSameStoredCopy(copy, source)) return true;
+  return clientPinHolds(bundleDigest, source);
+}
+
+/**
+ * Whether this copy may run but its screen half is held back: its server half
+ * keeps path trust while its client bundle is not the one approved
+ * (DOR-3068). A copy that may not run at all is not "withheld" here; that is
+ * the plain approval wait, reported by `approvedToRun`. Pure.
+ *
+ * @param copy - The extension record.
+ * @param approvals - `config.extensions`.
+ */
+export function isScreenHalfWithheld(
+  copy: ExtensionDeclaringCopy,
+  approvals: ExtensionApprovals
+): boolean {
+  return mayRunExtensionCode(copy, approvals) && !mayLoadClientHalf(copy, approvals);
+}
+
+/**
  * The refusal an agent reads.
  *
  * Names the extension, says in one plain sentence why DorkOS stopped, and gives
@@ -480,13 +585,15 @@ export function mayRunExtensionCode(
  */
 export function describeExtensionLoadRefusal(id: string): string {
   return (
-    `DorkOS did not run any of '${id}'. Extension code runs inside the DorkOS server ` +
-    `itself, with the server's own access to this machine, so a person has to approve ` +
-    `each extension once before that can happen. Retrying will be refused the same way. ` +
-    `Ask the person to open Settings > Extensions in DorkOS and approve '${id}'. They ` +
-    `only ever do this once for this extension — after that, editing, testing, and ` +
-    `reloading it all work with nothing further to click. Everything else about '${id}' ` +
-    `still works in the meantime: you can create and edit its files, and compiling it ` +
-    `reports real errors.`
+    `DorkOS did not run any of '${id}'. Extension code runs with access to this ` +
+    `machine, so a person approves the exact files that run, and an edit to an ` +
+    `approved extension waits for them again. Retrying will be refused the same way. ` +
+    `Finish the whole batch of edits first, then ask the person once to open the ` +
+    `Activity inbox or Settings > Extensions in DorkOS and approve '${id}'. Everything ` +
+    `else about '${id}' still works in the meantime: you can create and edit its ` +
+    `files, and compiling it reports real errors. An extension you create runs from ` +
+    `your own folder (.dork/extensions/<id>); if it runs separately ("runtime": ` +
+    `"subprocess"), edits to its server code keep running until its declared ` +
+    `permissions change, but edits to its screen code still wait for the person.`
   );
 }

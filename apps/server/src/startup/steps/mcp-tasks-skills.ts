@@ -259,6 +259,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
         // even when it stands in a room worktree (DOR-2091) — so a non-agent or
         // refused session has no manifest and contributes nothing.
         managed: (() => {
+          // None while the agent's own file waits for a person (DOR-3068).
+          if (launch?.withholdAgentServers) return {};
           const agentDir = launch?.identity
             ? homeOf(launch.identity)
             : homeOf(resolveAgentHome(session.cwd));

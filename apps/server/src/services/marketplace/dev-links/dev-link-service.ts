@@ -801,7 +801,6 @@ export class DevLinkService {
       roots.get(source.path) ?? path.resolve(source.path);
     const restore = record.restoreApprovals?.extensions ?? {};
     const runIds = new Set(record.restoreApprovals?.runIds ?? []);
-    const restorePermissions = record.restoreApprovals?.permissions ?? {};
     let approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
     const approvedPermissions = { ...(current.approvedPermissions ?? {}) };
@@ -816,10 +815,12 @@ export class DevLinkService {
       delete approvedPermissions[id];
       approvedToRun = approvedToRun.filter((approved) => approved !== id);
       if (!previous || !stillMeaningful(previous, record, installedBack, others, rootOf)) continue;
+      // Brought back as it was. One parked before approvals named content names
+      // no files, so it no longer runs: it waits for a person (DOR-3068).
       approvedSources[id] = previous;
       // The set the replaced approval had, or none (the full in-process set)
       // when it had none.
-      const previousSet = restorePermissions[id];
+      const previousSet = record.restoreApprovals?.permissions?.[id];
       if (previousSet) approvedPermissions[id] = previousSet;
       if (runIds.has(id)) approvedToRun.push(id);
     }

@@ -6,7 +6,7 @@
  * shallow defaults-merge never adds it: the upgrade-boot case reads the FILE,
  * because a manager-level read would pass with the body deleted (DOR-1496).
  * `DORKOS_VERSION_OVERRIDE` is set before `lib/version.ts` loads so a real
- * {@link ConfigManager} runs the key at all. Seeding it empty must leave every
+ * `ConfigManager` runs the key at all. Seeding it empty must leave every
  * existing approval running: an absent entry is the full in-process set.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -20,11 +20,13 @@ import os from 'os';
 import path from 'path';
 import {
   CONFIG_MIGRATIONS,
-  ConfigManager,
+  initConfigManager,
   seedExtensionsApprovedPermissions,
 } from '../config-manager.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { mayRunExtensionCode } from '../../extensions/extension-load-policy.js';
+import { pinPathOnlyApprovals } from '../../extensions/pin/extension-approval-upkeep.js';
+import type { ExtensionRecord } from '@dorkos/extension-api';
 
 /** A minimal conf-like store over one plain object. */
 function memoryStore(initial: Record<string, unknown>) {
@@ -109,7 +111,8 @@ describe('a real pre-0.98.0 config file through a real ConfigManager', () => {
           enabled: ['flow'],
           disabled: [],
           approvedToRun: ['flow'],
-          approvedSources: { flow: { path: flowPath, plugin: 'flow' } },
+          // As the '0.126.1' migration marks an approval that predates content pins.
+          approvedSources: { flow: { path: flowPath, plugin: 'flow', legacyPathOnly: true } },
           dismissedApprovals: {},
           trustedSources: [],
         },
@@ -118,22 +121,27 @@ describe('a real pre-0.98.0 config file through a real ConfigManager', () => {
       'utf-8'
     );
 
-    const manager = new ConfigManager(dir);
+    // The process-wide manager, so the first scan's upkeep below writes to it.
+    const manager = initConfigManager(dir);
 
     const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
       extensions: Record<string, unknown>;
     };
     expect(onDisk.extensions.approvedPermissions).toEqual({});
     expect(manager.validate()).toEqual({ valid: true });
-    const extensions = manager.get('extensions');
-    // The approved copy runs as before, in-process or moved to subprocess.
+    // The approved copy runs as before, in-process or moved to subprocess,
+    // from the first scan on: that scan pins the folder-only approval to the
+    // files it finds (DOR-3068), with nothing for anyone to click.
     const flow = {
       id: 'flow',
       origin: 'user' as const,
       path: flowPath,
       sourcePlugin: 'flow',
       manifest: { id: 'flow', name: 'Flow', version: '1.0.0' },
+      currentDigest: `sha256:${'f'.repeat(64)}`,
     };
+    expect(pinPathOnlyApprovals([flow as unknown as ExtensionRecord])).toEqual(['flow']);
+    const extensions = manager.get('extensions');
     expect(mayRunExtensionCode(flow, extensions)).toBe(true);
     expect(
       mayRunExtensionCode(

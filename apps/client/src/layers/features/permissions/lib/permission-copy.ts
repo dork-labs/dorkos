@@ -65,6 +65,16 @@ export const BLOCKED_IS_NOT_A_SANDBOX =
   'Blocked stops agents that follow the rules. It isn’t a sandbox.';
 
 /**
+ * What no rule does, said wherever rules are shown (DOR-3292): an agent can
+ * read any file in its own folder, whatever its rules say. Two blocks, each
+ * under the 15-word cap, together the ticket's line word for word.
+ */
+export const RULES_DONT_HIDE_FOLDER_FILES = [
+  'Rules limit tools, not what an agent can see in its own folder.',
+  'Keep secrets outside it.',
+] as const;
+
+/**
  * Where a Files & commands stop came from, in words.
  *
  * @param source - The resolved source.

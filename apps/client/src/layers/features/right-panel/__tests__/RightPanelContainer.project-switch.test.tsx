@@ -23,6 +23,12 @@ const { panelEvents } = vi.hoisted(() => ({ panelEvents: [] as string[] }));
 // Placement (spec `mini-app-placement`) reads config and two queries; this
 // suite is about built-in tabs, so "here" is the route's page and nothing is
 // saved. The placement behaviour has its own suite.
+// The held-back mini app line reads live extension state; these tests do not draw it.
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  WithheldExtensionsNotice: () => null,
+  useWithheldExtensions: () => [],
+}));
 vi.mock('../model/use-placement-here', () => ({
   usePlacementHere: (pathname: string) => ({
     status: 'ready',

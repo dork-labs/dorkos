@@ -19,7 +19,7 @@ import {
   mayRunExtensionCode,
 } from '../../extension-load-policy.js';
 import { isPendingApproval } from '../../extension-approval-queue.js';
-import { isExpectedCopy } from '../../extension-manager.js';
+import { isExpectedCopy } from '../../pin/extension-expected-copy.js';
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: () => ({}), set: () => undefined },
@@ -177,6 +177,8 @@ describe('declaredSet', () => {
 
 describe('the load gate and the approval queue', () => {
   const PATH = '/home/.dork/extensions/mail-app';
+  /** The files the approval names, and every record below holds (DOR-3068). */
+  const DIGEST = `sha256:${'d'.repeat(64)}`;
   /** A discovered record declaring this set. */
   function record(allow: object): ExtensionRecord {
     return {
@@ -194,11 +196,12 @@ describe('the load gate and the approval queue', () => {
       bundleReady: false,
       hasServerEntry: true,
       hasDataProxy: false,
+      currentDigest: DIGEST,
     };
   }
   const approvals = {
     approvedToRun: ['mail-app'],
-    approvedSources: { 'mail-app': { path: PATH } },
+    approvedSources: { 'mail-app': { path: PATH, digest: DIGEST } },
     approvedPermissions: { 'mail-app': sub(['imap.example.com:993']) },
   };
 

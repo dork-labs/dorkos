@@ -115,9 +115,15 @@ export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefi
  * The marks a sender carries when its level is NOT known (a restart, a turn
  * this process never recorded): the outsider mark if a stranger reached any of
  * these chats (`chatHeardOutsider`, which also reads a chat's stored launch
- * origin), plus the marks of the agent's marked turns running now. Under trust
- * first (DOR-3107, Dorian 2026-10-19) an unknown sender of the owner's own is
- * trusted, so this is what still tells a stranger's chat apart.
+ * origin). Under trust first (DOR-3107, Dorian 2026-10-19) an unknown sender of
+ * the owner's own is trusted, so this is what still tells a stranger's chat apart.
+ *
+ * A named chat answers for itself only (DOR-3386, Security's marked-lanes
+ * design): a sibling chat of the same agent running a marked turn in parallel
+ * proves nothing about this one, and counting it held every lane of an agent
+ * whenever any one of its room seats read a post. Words that cross between
+ * chats through shared state are stamped where they are kept (memory,
+ * commitments). Only a caller that names no chat is read through its agent.
  *
  * @param sessionIds - The sending chats.
  * @param agentPath - The sending agent, when known.
@@ -126,11 +132,11 @@ export function unknownLevelMarks(
   sessionIds: readonly (string | null | undefined)[],
   agentPath?: string
 ): TurnMarks {
-  const heard = sessionIds.some(
-    (id) => typeof id === 'string' && id !== '' && chatHeardOutsider(id)
-  );
-  const running = agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
-  return heard ? { ...running, outsider: true } : running;
+  const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
+  if (named.length === 0) {
+    return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  }
+  return named.some(chatHeardOutsider) ? { outsider: true } : NO_MARKS;
 }
 
 /**
@@ -180,7 +186,10 @@ export function postLevelFor(
  *
  * The caller's session answers when this process recorded a turn on it. A
  * caller with no session, or one with no record, is read through its agent:
- * the marks of any of that agent's marked turns running right now.
+ * the marks of any of that agent's marked turns running right now. Kept wider
+ * than a sender's bound ({@link unknownLevelMarks}) on purpose: these marks
+ * decide the destructive hold and memory stamps, where a chat known by a
+ * second, unrecorded id must not read as unmarked.
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.

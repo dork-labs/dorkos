@@ -16,5 +16,10 @@ export {
   type DefaultFilesAndCommandsRowProps,
 } from './ui/FilesAndCommandsRow';
 export { PermissionWhy } from './ui/PermissionWhy';
-export { BLOCKED_IS_NOT_A_SANDBOX, PRESET_LABEL, STATE_LABEL } from './lib/permission-copy';
+export {
+  BLOCKED_IS_NOT_A_SANDBOX,
+  PRESET_LABEL,
+  RULES_DONT_HIDE_FOLDER_FILES,
+  STATE_LABEL,
+} from './lib/permission-copy';
 export { filesWhy, stateWhy } from './lib/permission-why';
