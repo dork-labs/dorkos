@@ -12,13 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
-import type {
-  AdapterRegistry,
-  RelayAdapter,
-  AdapterConfig,
-  AdapterContext,
-  AdapterOwnershipReservation,
-} from '@dorkos/relay';
+import type { AdapterRegistry, RelayAdapter, AdapterConfig, AdapterContext } from '@dorkos/relay';
 import {
   TELEGRAM_MANIFEST,
   WEBHOOK_MANIFEST,
@@ -28,7 +22,6 @@ import {
   toIdList,
   describeError,
   TRACE_PRUNE_BATCH,
-  adapterPrefixesConflict,
 } from '@dorkos/relay';
 import type {
   AgentRuntimeLike,
@@ -49,11 +42,18 @@ import {
   ensureDefaultAdapterConfig,
   watchAdapterConfig,
   AdapterConfigWrites,
-  maskSensitiveFields,
-  mergeWithPasswordPreservation,
   parseAdapterConfigForPersist,
+  reserveWebhookOwnership,
 } from './adapter-config.js';
-import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
+import {
+  buildAdapterCatalog,
+  buildAdapterView,
+  pauseOrBuild,
+  PausedAdapter,
+  testConfigConnection,
+  type PausedConnection,
+  createAdapter,
+} from './adapter-factory.js';
 import {
   broadcastAdaptersChanged,
   broadcastBindingsChanged,
@@ -73,6 +73,14 @@ import {
   deleteAdapterSecrets,
   type MaterializeSecretsContext,
 } from './adapter-secrets.js';
+import * as approvals from './adapter-secrets.js';
+import {
+  assertSecretReferences,
+  mergeSecretUpdate,
+  readIncoming,
+  secretValueSet,
+  type SecretWriter,
+} from './adapter-secret-policy.js';
 import {
   credentialProvider as defaultCredentialProvider,
   credentialStore as defaultCredentialStore,
@@ -288,6 +296,8 @@ function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCap
 /** Server-side adapter lifecycle manager. */
 export class AdapterManager {
   private readonly registry: AdapterRegistry;
+  /** Connections paused until their owner confirms their env:/keychain: references. */
+  private readonly awaitingConfirmation = new Map<string, PausedConnection>();
   private configWatcher: FSWatcher | null = null;
   private readonly configPath: string;
   private configs: AdapterConfig[] = [];
@@ -581,6 +591,43 @@ export class AdapterManager {
   }
 
   /**
+   * The owner confirms a paused connection (DOR-3271): approve exactly what they
+   * were shown (`fingerprint`), clear its count, and let it send again if it is
+   * turned on. A turned-off connection stays off. With `undo`, take the
+   * approval back instead, which pauses it again. Only the person-only route
+   * calls this.
+   */
+  async confirmReferences(id: string, fingerprint: string | null, undo = false): Promise<void> {
+    const config = this.configs.find((c) => c.id === id);
+    if (!config) throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
+    if (undo) await approvals.deleteApprovedReferences(id, this.secretsCtx.store);
+    else await approvals.approveWhatWasShown(config, fingerprint ?? '', this.secretsCtx);
+    this.awaitingConfirmation.delete(id);
+    await this.enqueue(async () => {
+      // Re-read: a reload or a disable may have replaced or turned it off since.
+      const current = this.configs.find((c) => c.id === id);
+      if (this.stopped || !current?.enabled) return;
+      await this.registry.unregister(id);
+      try {
+        const adapter = await this.buildAdapter(current);
+        if (adapter) await this.registry.register(adapter);
+        if (adapter) await this.noteConnected(id, adapter);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+        throw err;
+      }
+    });
+  }
+
+  /** Record and announce a connection that came up. A paused stand-in did not (DOR-3271). */
+  private async noteConnected(id: string, adapter: RelayAdapter): Promise<void> {
+    if (adapter instanceof PausedAdapter) return;
+    this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.connected', 'Connected to relay');
+    await this.emitAdapterLifecycle(id, 'connected');
+  }
+
+  /**
    * Enable a specific adapter by ID and persist the change to disk.
    *
    * The config flip + persist happen immediately; the register itself is
@@ -608,8 +655,7 @@ export class AdapterManager {
       if (!adapter) return;
       try {
         await this.registry.register(adapter);
-        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.connected', 'Connected to relay');
-        await this.emitAdapterLifecycle(id, 'connected');
+        await this.noteConnected(id, adapter);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
@@ -640,6 +686,7 @@ export class AdapterManager {
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
     config.enabled = false;
+    this.awaitingConfirmation.delete(id);
     await this.persistConfigs();
 
     await this.enqueue(async () => {
@@ -704,19 +751,7 @@ export class AdapterManager {
     config: AdapterConfig;
     status: AdapterStatus;
   } {
-    const adapter = this.registry.get(config.id);
-    const manifest = this.manifests.get(config.type);
-    const status = {
-      id: config.id,
-      type: config.type,
-      displayName: manifest?.displayName ?? config.type,
-      ...(adapter?.getStatus() ?? defaultAdapterStatus()),
-    };
-    const maskedConfig = {
-      ...config,
-      config: maskSensitiveFields(config.config as Record<string, unknown>, manifest),
-    };
-    return { config: maskedConfig, status };
+    return buildAdapterView(config, this.manifests.get(config.type), this.registry);
   }
 
   /** Get the underlying AdapterRegistry. */
@@ -940,62 +975,25 @@ export class AdapterManager {
   /** Test connectivity for an adapter type and config without registering it. */
   async testConnection(
     type: string,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    writer: SecretWriter = 'agent'
   ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
-    const manifest = this.manifests.get(type);
-    if (!manifest) {
-      return { ok: false, error: `Unknown adapter type: ${type}` };
-    }
-
-    const tempConfig = {
-      id: `__test_${type}_${Date.now()}`,
-      type,
-      enabled: true,
-      builtin: false,
-      config,
-    } as AdapterConfig;
-
-    const adapter = await this.buildAdapter(tempConfig);
-    if (!adapter) {
-      return { ok: false, error: 'Failed to create adapter instance' };
-    }
-
-    return testAdapterConnection(adapter);
+    if (!this.manifests.has(type)) return { ok: false, error: `Unknown adapter type: ${type}` };
+    const approved = writer === 'person' ? 'any' : new Map<string, string>();
+    return testConfigConnection(type, config, (temp) => this.buildAdapter(temp, approved));
   }
 
-  /** Reserve prospective webhook ownership before any config or lifecycle mutation. */
-  private reserveWebhookOwnership(config: AdapterConfig): AdapterOwnershipReservation | undefined {
-    if (config.type !== 'webhook') return undefined;
-    const subject = (config.config as { inbound: { subject: string } }).inbound.subject;
-    for (const other of this.configs) {
-      if (other.id === config.id || other.type !== 'webhook') continue;
-      const claimed = (other.config as { inbound: { subject: string } }).inbound.subject;
-      if (adapterPrefixesConflict(subject, claimed)) {
-        throw new AdapterError(
-          `Address ownership conflicts with connection '${other.id}'. Choose a different webhook address.`,
-          'INVALID_CONFIG',
-          config.id
-        );
-      }
-    }
-    try {
-      return this.registry.reserveOwnership(config.id, subject);
-    } catch (error) {
-      throw new AdapterError(
-        error instanceof Error ? error.message : 'Address ownership could not be checked.',
-        'INVALID_CONFIG',
-        config.id
-      );
-    }
-  }
-
-  /** Add a new adapter instance, persist config, and start it if enabled. */
+  /**
+   * Add a new adapter instance, persist config, and start it if enabled.
+   * `writer` decides which credential references it may hold (DOR-3271).
+   */
   async addAdapter(
     type: string,
     id: string,
     config: Record<string, unknown>,
     enabled = true,
-    label?: string
+    label?: string,
+    writer: SecretWriter = 'agent'
   ): Promise<void> {
     logger.info('[AdapterManager] adding adapter', { type, id, enabled });
 
@@ -1029,10 +1027,13 @@ export class AdapterManager {
       },
       manifest
     );
-    const ownership = this.reserveWebhookOwnership(adapterConfig);
+    assertSecretReferences(id, adapterConfig.config, manifest, writer);
+    await approvals.assertNoStoredSecrets(adapterConfig, this.secretsCtx);
+    const ownership = reserveWebhookOwnership(adapterConfig, this.configs, this.registry);
     try {
       this.configs.push(adapterConfig);
       await this.persistConfigs();
+      await approvals.recordApprovals(adapterConfig, writer, adapterConfig.config, this.secretsCtx);
       logger.debug('[AdapterManager] config saved', { id });
 
       if (enabled) {
@@ -1050,12 +1051,7 @@ export class AdapterManager {
           logger.info('[AdapterManager] starting adapter', { id });
           try {
             await (ownership ? ownership.register(adapter) : this.registry.register(adapter));
-            this.deps.eventRecorder?.insertAdapterEvent(
-              id,
-              'adapter.connected',
-              'Connected to relay'
-            );
-            await this.emitAdapterLifecycle(id, 'connected');
+            await this.noteConnected(id, adapter);
             logger.info('[AdapterManager] adapter registered', { id });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -1155,6 +1151,8 @@ export class AdapterManager {
     // `config` is the current entry: it was dropped in the same tick it was
     // found, and every save before ours, which moves secrets into it, is done.
     await deleteAdapterSecrets(config, this.secretsCtx);
+    await approvals.deleteApprovedReferences(id, this.secretsCtx.store);
+    this.awaitingConfirmation.delete(id);
     if (options.forgetHistory) await this.deleteConnectionHistory(id);
 
     // Auto-delete bindings that belonged to the removed adapter
@@ -1277,19 +1275,23 @@ export class AdapterManager {
     return true;
   }
 
-  /** Update an adapter's config with password field preservation. */
-  async updateConfig(id: string, newConfig: Record<string, unknown>): Promise<void> {
+  /**
+   * Update an adapter's config with password field preservation, under the
+   * secret rules in `adapter-secret-policy.ts` (DOR-3271).
+   */
+  async updateConfig(
+    id: string,
+    newConfig: Record<string, unknown>,
+    writer: SecretWriter = 'agent'
+  ): Promise<void> {
     const existing = this.configs.find((c) => c.id === id);
     if (!existing) {
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
 
     const manifest = this.manifests.get(existing.type);
-    const mergedConfig = mergeWithPasswordPreservation(
-      existing.config as Record<string, unknown>,
-      newConfig,
-      manifest
-    );
+    const previous = structuredClone(existing);
+    const mergedConfig = mergeSecretUpdate(id, previous.config, newConfig, manifest, writer);
 
     // Re-parse the whole entry rather than assigning the merged record straight
     // in: the merge can drop a key the incoming config omitted, and an
@@ -1300,7 +1302,7 @@ export class AdapterManager {
       manifest
     );
 
-    const ownership = this.reserveWebhookOwnership(prospective);
+    const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
       existing.config = prospective.config;
 
@@ -1309,6 +1311,18 @@ export class AdapterManager {
         existing.label = mergedConfig.label;
       }
       await this.persistConfigs();
+      await approvals.recordApprovals(
+        existing,
+        writer,
+        readIncoming(newConfig, manifest),
+        this.secretsCtx
+      );
+      // Secrets a new address cleared, or a new value replaced, are deleted.
+      await deleteAdapterSecrets(
+        previous,
+        this.secretsCtx,
+        secretValueSet(existing.config, manifest)
+      );
 
       // Apply the settings to an enabled adapter. Serialized and re-checked inside the
       // queue — the enabled/registered snapshot taken outside the queue could
@@ -1378,12 +1392,7 @@ export class AdapterManager {
         if (!adapter) continue;
         if (this.stopped) return; // shutdown() ran while building — registry is dead
         await this.registry.register(adapter);
-        this.deps.eventRecorder?.insertAdapterEvent(
-          config.id,
-          'adapter.connected',
-          'Connected to relay'
-        );
-        await this.emitAdapterLifecycle(config.id, 'connected');
+        await this.noteConnected(config.id, adapter);
       } catch (err) {
         const described = describeError(err);
         this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', described.message);
@@ -1489,18 +1498,27 @@ export class AdapterManager {
     }
   }
 
-  /** Delegate adapter instantiation to the factory module. */
-  private async buildAdapter(config: AdapterConfig): Promise<RelayAdapter | null> {
-    // Resolve credential references to real secrets in memory only — the
-    // adapter receives the live token, but it is never written back to disk
-    // (DOR-280). A cleartext value (e.g. a transient test config) passes
-    // through unchanged.
-    const resolved = await resolveAdapterSecrets(config, {
-      provider: this.credentialProvider,
-      manifests: this.manifests,
-    });
+  private async buildAdapter(
+    config: AdapterConfig,
+    given?: approvals.ApprovedReferences | 'any'
+  ): Promise<RelayAdapter | null> {
+    if (given === undefined) {
+      const { store } = this.secretsCtx;
+      const manifest = this.manifests.get(config.type);
+      const build = (approved: approvals.ApprovedReferences) => this.buildAdapter(config, approved);
+      const probe = () => this.createFrom(config);
+      return pauseOrBuild(config, manifest, store, this.awaitingConfirmation, build, probe);
+    }
+    const { credentialProvider: provider, manifests } = this;
+    return this.createFrom(
+      await resolveAdapterSecrets(config, { provider, manifests, approved: given })
+    );
+  }
+
+  /** Construct an adapter from a config, through the factory. */
+  private createFrom(config: AdapterConfig): Promise<RelayAdapter | null> {
     return createAdapter(
-      resolved,
+      config,
       {
         agentRuntimes: this.agentRuntimes,
         traceStore: this.deps.traceStore,
@@ -1516,25 +1534,12 @@ export class AdapterManager {
 
   /** Return the full adapter catalog with manifests and configured instances. */
   getCatalog(): CatalogEntry[] {
-    const entries: CatalogEntry[] = [];
-    for (const [type, manifest] of this.manifests) {
-      const instances = this.configs
-        .filter((c) => c.type === type)
-        .map((c) => ({
-          id: c.id,
-          enabled: c.enabled,
-          ...(c.label ? { label: c.label } : {}),
-          status: {
-            id: c.id,
-            type: c.type,
-            displayName: manifest.displayName,
-            ...(this.registry.get(c.id)?.getStatus() ?? defaultAdapterStatus()),
-          },
-          config: maskSensitiveFields((c.config ?? {}) as Record<string, unknown>, manifest),
-        }));
-      entries.push({ manifest, instances });
-    }
-    return entries;
+    return buildAdapterCatalog(
+      this.manifests,
+      this.configs,
+      this.registry,
+      this.awaitingConfirmation
+    );
   }
 
   /** Get a manifest by adapter type. */

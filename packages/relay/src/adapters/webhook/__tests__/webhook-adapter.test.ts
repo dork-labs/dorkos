@@ -685,6 +685,9 @@ describe('WebhookAdapter', () => {
       ];
       expect(url).toBe(OUTBOUND_URL);
       expect(options.method).toBe('POST');
+      // Never followed: a redirect would carry the signed body and custom
+      // headers to an address nobody approved (DOR-3271).
+      expect(options.redirect).toBe('manual');
       expect(options.headers['Content-Type']).toBe('application/json');
       expect(options.headers['X-Signature']).toBeTruthy();
       expect(options.headers['X-Timestamp']).toBeTruthy();
