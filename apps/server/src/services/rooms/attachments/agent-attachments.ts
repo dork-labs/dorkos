@@ -168,14 +168,22 @@ async function resolveOwnPath(
 /**
  * Read one named file, refusing anything outside the agent's own folders.
  *
+ * Exported for the room canvas, which shares a local picture or PDF by the same
+ * rule (`room-canvas-media.ts`): one answer to "which files are this agent's".
+ *
  * @param roots - The agent's working directory, its own copies and the rooms directory.
  * @param named - The path the agent wrote, absolute or relative to the working directory.
- * @returns The bytes and the name to store them under.
+ * @param opts.doing - What the agent was trying to do, for the refusal: "attach it".
+ * @param opts.maxBytes - The biggest file accepted, checked BEFORE a byte is read, so
+ *   a huge recording is refused without being loaded into memory.
+ * @returns The bytes, the name to store them under, and the real path they came from.
  */
-async function readOwnFile(
+export async function readOwnFile(
   roots: { cwd: string; ownCopies: readonly string[]; roomsDir?: string },
-  named: string
-): Promise<{ bytes: Buffer; name: string }> {
+  named: string,
+  opts: { doing?: string; maxBytes?: number } = {}
+): Promise<{ bytes: Buffer; name: string; resolved: string }> {
+  const doing = opts.doing ?? 'attach it';
   const label = path.basename(named) || named;
   let resolved: string;
   try {
@@ -185,7 +193,7 @@ async function readOwnFile(
       throw new RoomError(
         'ATTACHMENT_PATH_REFUSED',
         `${label} is not in your own folder or your own copy of a room's files, so you cannot ` +
-          'attach it. Copy it into one of those first, then attach it from there.'
+          `${doing}. Copy it into one of those first, then ${doing} from there.`
       );
     }
     throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be opened.`);
@@ -210,12 +218,18 @@ async function readOwnFile(
     if (!stat.isFile()) {
       throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
     }
+    if (opts.maxBytes !== undefined && stat.size > opts.maxBytes) {
+      throw new RoomError(
+        'ATTACHMENT_TOO_LARGE',
+        `${label} is ${megabytes(stat.size)}, and the limit is ${megabytes(opts.maxBytes)}.`
+      );
+    }
     bytes = await handle.readFile().catch(() => null);
   } finally {
     await handle.close().catch(() => undefined);
   }
   if (!bytes) throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be read.`);
-  return { bytes, name: label };
+  return { bytes, name: label, resolved };
 }
 
 /**
@@ -290,7 +304,10 @@ export async function stageAgentAttachments(request: AgentAttachmentRequest): Pr
   try {
     const ids: string[] = [];
     for (const named of paths) {
-      const { bytes, name: original } = await readOwnFile(roots, named);
+      const { bytes, name: original } = await readOwnFile(roots, named, {
+        maxBytes: limits.maxFileSize,
+      });
+      // Checked again on the bytes: the file can grow between the stat and the read.
       if (bytes.byteLength > limits.maxFileSize) {
         throw new RoomError(
           'ATTACHMENT_TOO_LARGE',

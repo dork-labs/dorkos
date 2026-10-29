@@ -50,11 +50,7 @@ import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadata } from '../marketplace/installed-metadata.js';
 import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
 import { trustedSourceOfInstall } from '../marketplace/lib/trusted-source.js';
-import {
-  installFolderDigest,
-  installFolderLinks,
-  type InstallDigest,
-} from '../marketplace/lib/install-digest.js';
+import { installFolderDigest, type InstallDigest } from '../marketplace/lib/install-digest.js';
 import { logger } from '../../lib/logger.js';
 
 /** One install DorkOS's installer recorded, reduced to what proves an origin. */
@@ -70,9 +66,9 @@ export interface TrustedInstall {
 /** What a copy's plugin folder looks like on disk now, read by {@link inspectCopy}. */
 export interface CopyOnDisk {
   /**
-   * A project copy: the whole install folder's digest, or why there is none.
-   * A global plugin: only whether it holds a link (`clean` when it does not);
-   * `{dorkHome}` is DorkOS's own and is never digested.
+   * The whole install folder's digest, or why there is none. Global plugins
+   * are digested too since DOR-3068: a person's yes to one names its files.
+   * `clean` stands for a folder that was deliberately not read (a dev link).
    */
   folder: InstallDigest | { kind: 'clean' };
 }
@@ -191,17 +187,14 @@ export function trustedOriginOf(
 
 /**
  * Read what {@link proveOrigin} needs from disk: the digest of the whole
- * plugin folder that carries the copy, or that it holds a link.
+ * plugin folder that carries the copy, or that it holds a link. At either
+ * scope (DOR-3068): a global plugin's digest is what an approval of it is
+ * pinned to, though its origin does not depend on it.
  *
  * @param copy - A discovered plugin-carried copy.
  */
 export async function inspectCopy(copy: OriginCopy): Promise<CopyOnDisk> {
-  const root = installRootOf(copy.path);
-  if (copy.scope === 'global') {
-    const links = await installFolderLinks(root);
-    return { folder: { kind: links } };
-  }
-  return { folder: await installFolderDigest(root) };
+  return { folder: await installFolderDigest(installRootOf(copy.path)) };
 }
 
 /**

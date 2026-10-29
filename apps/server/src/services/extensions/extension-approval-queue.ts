@@ -17,7 +17,9 @@
  * An extension is waiting when ALL of these hold:
  *
  * - it is `origin: 'user'` (DorkOS's own extensions never ask),
- * - it may not run ({@link mayRunExtensionCode} says no),
+ * - it may not run ({@link mayRunExtensionCode} says no), or its screen half
+ *   may not load ({@link mayLoadClientHalf}: a copy that keeps path trust
+ *   whose client bundle changed since the yes, DOR-3068),
  * - it is not turned off, invalid or incompatible (someone who turned it off
  *   is not asked), and
  * - the person has not said "Not now" to this copy at this version
@@ -74,10 +76,13 @@ import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import {
   isApprovedCopy,
   isDismissedCopy,
+  mayLoadClientHalf,
   mayRunExtensionCode,
+  namesThisCopy,
   type ExtensionApprovals,
 } from './extension-load-policy.js';
 import { addedSince, declaredSet } from './isolation/permission-coverage.js';
+import { approvedVersionOf, changedFilesSince } from './pin/extension-content-pin.js';
 import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
 /** The longest the second line of an approval row may be. */
@@ -131,7 +136,7 @@ export function isPendingApproval(
 ): boolean {
   if (record.origin !== 'user') return false;
   if (NOT_ASKED_STATUSES.has(record.status)) return false;
-  if (mayRunExtensionCode(record, extensions)) return false;
+  if (mayLoadClientHalf(record, extensions)) return false;
   return !isDismissedCopy(record, extensions);
 }
 
@@ -145,7 +150,7 @@ function isPutOff(
 ): boolean {
   return (
     record.origin === 'user' &&
-    !mayRunExtensionCode(record, extensions) &&
+    !mayLoadClientHalf(record, extensions) &&
     isDismissedCopy(record, extensions)
   );
 }
@@ -261,18 +266,27 @@ async function provenanceOf(record: ExtensionRecord, dorkHome: string): Promise<
  * @param name - The extension's (capped) name.
  * @param nouns - What it adds, from {@link contributedNouns}.
  * @param provenance - How it got here.
+ * @param change - What changed since the person approved it, or null on a
+ *   first ask (DOR-3068). Leads the line when present.
  */
 function whyLine(
   record: ExtensionRecord,
   name: string,
   nouns: readonly string[],
-  provenance: Provenance
+  provenance: Provenance,
+  change: ApprovalChange | null = null
 ): string {
   const subject = record.sourcePlugin ? `the ${capped(record.sourcePlugin)} plugin` : name;
+  const Subject = `${subject.charAt(0).toUpperCase()}${subject.slice(1)}`;
+  // The screen-only row is one short block of its own (app copy: at most 15 words).
+  if (change?.screenOnly) return SCREEN_CHANGED;
+  // A changed copy says what changed and nothing else: the person already
+  // knows what it adds (DOR-3068).
+  if (change) return `${changeOpening(name, record, change)} ${RUNS_AS_YOU}`;
   const opening =
     provenance.kind === 'installer'
       ? `You installed ${subject} from ${provenance.from}.`
-      : `${subject.charAt(0).toUpperCase()}${subject.slice(1)} was added to ${provenance.place}.`;
+      : `${Subject} was added to ${provenance.place}.`;
 
   const { purpose, description } = record.manifest;
   let middle = '';
@@ -289,6 +303,88 @@ function whyLine(
   const room = APPROVAL_WHY_MAX_LENGTH - fixed - 1;
   if (middle.length > room) middle = room > 1 ? `${middle.slice(0, room - 1).trimEnd()}…` : '';
   return [opening, middle, RUNS_AS_YOU].filter(Boolean).join(' ');
+}
+
+/**
+ * The changed files as the why line names them: the first three, then how
+ * many more. Names only, each capped, never contents; a file inside the
+ * extension's own folder is named from there (`index.ts`, not the plugin path).
+ *
+ * @param files - The changed paths, sorted.
+ * @param id - The extension id, whose folder prefix is dropped.
+ */
+function changedList(files: readonly string[], id: string): string {
+  if (files.length === 0) return '';
+  const own = `.dork/extensions/${id}/`;
+  const shown = files
+    .slice(0, 3)
+    .map((file) => capped(file.startsWith(own) ? file.slice(own.length) : file, 40));
+  const more = files.length - shown.length;
+  return `: ${shown.join(', ')}${more > 0 ? `, and ${more} more` : ''}`;
+}
+
+/**
+ * The whole second line of a row whose screen code changed while its server
+ * half keeps path trust (DOR-3068): two sentences, each under 15 words.
+ */
+export const SCREEN_CHANGED =
+  'Its screen code changed since you approved it. The rest keeps running.';
+
+/** What changed in a copy since the person approved it (DOR-3068). */
+interface ApprovalChange {
+  /** The changed files, by path; empty when they cannot be named. */
+  files: string[];
+  /** The version approved, when an update moved it to another. */
+  updatedFrom: string | null;
+  /** Only the screen code changed; the server half keeps running. */
+  screenOnly: boolean;
+}
+
+/**
+ * The opening sentence of a changed copy's row: an update names both
+ * versions, any other change names the files. (A screen-code change has a
+ * line of its own, {@link SCREEN_CHANGED}.)
+ *
+ * @param name - The extension's (capped) name.
+ * @param record - The extension record.
+ * @param change - What changed.
+ */
+function changeOpening(name: string, record: ExtensionRecord, change: ApprovalChange): string {
+  // The row's title already names both versions.
+  if (change.updatedFrom) {
+    return `Changed in ${capped(record.manifest.version, 20)}${changedList(change.files, record.id)}.`;
+  }
+  return `${name} changed since you approved it${changedList(change.files, record.id)}.`;
+}
+
+/**
+ * What a copy changed since the person approved it, when the stored yes names
+ * this copy and is pinned to other files, or keeps path trust and its client
+ * bundle is not the one approved (DOR-3068); null otherwise.
+ *
+ * @param record - The extension record.
+ * @param dorkHome - DorkOS's data directory.
+ */
+async function changeSinceApproval(
+  record: ExtensionRecord,
+  dorkHome: string
+): Promise<ApprovalChange | null> {
+  const extensions = configManager.get('extensions');
+  if (!namesThisCopy(record, extensions)) return null;
+  if (mayRunExtensionCode(record, extensions)) {
+    // It runs; only its screen half can be waiting.
+    return mayLoadClientHalf(record, extensions)
+      ? null
+      : { files: [], updatedFrom: null, screenOnly: true };
+  }
+  const approved = extensions.approvedSources?.[record.id]?.digest;
+  if (!approved || approved === record.currentDigest) return null;
+  const version = await approvedVersionOf(dorkHome, record, approved);
+  return {
+    files: (await changedFilesSince(dorkHome, record, approved)) ?? [],
+    updatedFrom: version && version !== record.manifest.version ? capped(version, 20) : null,
+    screenOnly: false,
+  };
 }
 
 /**
@@ -346,6 +442,7 @@ async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<
   const name = capped(record.manifest.name);
   const nouns = contributedNouns(name, record);
   const provenance = await provenanceOf(record, dorkHome);
+  const change = await changeSinceApproval(record, dorkHome);
   const identity = {
     id: record.id,
     path: path.resolve(record.path),
@@ -366,10 +463,13 @@ async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<
     adds: nouns.length > 0 ? `It adds ${joinPlainly(nouns.map((noun) => `a ${noun}`))}` : null,
     addedNouns: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
     since,
-    why: whyLine(record, name, nouns, provenance),
+    why: whyLine(record, name, nouns, provenance, change),
     permissions: await permissionsOf(record),
     added: addedSinceApproval(record, configManager.get('extensions')),
     ...agentGiftsOf(record),
+    digest: record.currentDigest ?? null,
+    changedFiles: change?.files ?? null,
+    updatedFrom: change?.updatedFrom ?? null,
   };
 }
 
@@ -574,7 +674,7 @@ function isSameCopy(
 function endingOf(facts: ApprovalFacts, current: ExtensionRecord | undefined): Ending {
   if (!isSameCopy(facts, current)) return 'cancelled';
   const extensions = configManager.get('extensions');
-  if (mayRunExtensionCode(current, extensions)) return 'approved';
+  if (mayLoadClientHalf(current, extensions)) return 'approved';
   if (isDismissedCopy(current, extensions)) return 'dismissed';
   return 'cancelled';
 }

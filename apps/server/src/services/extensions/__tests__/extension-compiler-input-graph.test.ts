@@ -146,7 +146,7 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
     expect(second.sourceHash).not.toBe(first.sourceHash);
   });
 
-  it('reuses an unchanged build without calling esbuild, and records every input it read', async () => {
+  it('reuses an unchanged build without calling esbuild in one process, and records every input it read', async () => {
     const extDir = path.join(tmpDir, 'exts', 'steady-ext');
     await writeTree(extDir, {
       'index.ts':
@@ -161,9 +161,14 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
     expect(codeOf(first)).toContain('from node_modules');
     expect(buildSpy).toHaveBeenCalledTimes(1);
 
-    // A fresh compiler is what a server restart looks like.
-    const second = await new ExtensionCompiler(tmpDir).compile(record);
+    // The same compiler reuses its own build.
+    expect(await compiler.compile(record)).toEqual(first);
     expect(buildSpy).toHaveBeenCalledTimes(1);
+
+    // A fresh compiler (a server restart) cannot vouch for bytes it did not
+    // write, so it builds again from the sources (DOR-3068): same bundle.
+    const second = await new ExtensionCompiler(tmpDir).compile(record);
+    expect(buildSpy).toHaveBeenCalledTimes(2);
     expect(second).toEqual(first);
 
     const manifest = JSON.parse(await fs.readFile(await manifestPathIn(cacheDir), 'utf-8')) as {

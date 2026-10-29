@@ -58,6 +58,8 @@ export function ExtensionsSettingsTab() {
         version: shown.manifest.version,
         plugin: shown.sourcePlugin ?? null,
         ...(permissions ? { permissions } : {}),
+        // The files this card was drawn for (DOR-3068).
+        ...(approve && shown.digest ? { expectedDigest: shown.digest } : {}),
       },
       {
         onSuccess: (result) => {

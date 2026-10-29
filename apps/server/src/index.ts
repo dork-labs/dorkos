@@ -16,6 +16,8 @@ import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
+import { setGitGuardRoots } from './services/core/agent-identity/index.js';
+import { resolveAgentsDirectory } from './lib/agents-home.js';
 import { logger, logError } from './lib/logger.js';
 import {
   captureLiveStandingGrants,
@@ -62,6 +64,7 @@ import { claimDataDirectory } from './startup/steps/data-directory.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
 import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { recordKeptFromAutoMovesOnBoot } from './startup/steps/record-kept-from-auto-moves.js';
+import { startSecretFileScanOnBoot } from './startup/steps/secret-file-scan.js';
 import { wireCoreStores } from './startup/steps/core-stores.js';
 import { wireSessionServices } from './startup/steps/session-services.js';
 import { startTelemetryExtensionsAndRuntimes } from './startup/steps/telemetry-extensions-runtimes.js';
@@ -205,6 +208,12 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // DorkOS never runs git in an agent folder (DOR-3343). Config can move the
+  // agents and workspace directories out of the data dir, so read them per call.
+  setGitGuardRoots(() => [
+    resolveWorkspaceRoot({ dorkHome, config: configManager.get('workspace') }),
+    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
+  ]);
   if (workspaceConfig.enabled) {
     const {
       service: workspaceService,
@@ -247,6 +256,9 @@ async function start() {
   }
   const upToRooms = { ...upToRuntimes, ...(await wireRooms(refs, upToRuntimes)) };
   const upToMesh = { ...upToRooms, ...(await startSearchRelayAndMesh(refs, upToRooms)) };
+  // The first extension scan ran before the agent registry existed, so the
+  // mini apps agents keep in their own folders are found now (DOR-3068).
+  refs.extensionManager?.requestRefresh();
   const upToRelayAdapters = {
     ...upToMesh,
     ...(await wireTeamRoomAndRelayAdapters(refs, upToMesh)),
@@ -288,6 +300,8 @@ async function start() {
   });
   // The accounts the upgrade kept out of automatic moves, one history line (Re-seat P0).
   await recordKeptFromAutoMovesOnBoot(refs, { dorkHome, activity: upToCoreRoutes.activityService });
+  // Secret-looking files in agent folders, told to the person (DOR-3292). Background.
+  startSecretFileScanOnBoot(refs);
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
     upToCoreRoutes;
 

@@ -523,9 +523,28 @@ describe('DevLinkService.unlink', () => {
     ).toBe('0.9.2');
     expect(approvals).toEqual({
       approvedToRun: ['flow-dash'],
+      // Brought back as it was, never marked as older than the content pin: it
+      // names no files, so it waits for a person rather than adopting what a
+      // later scan finds (DOR-3068).
       approvedSources: { 'flow-dash': installedApproval },
       approvedPermissions: {},
     });
+  });
+
+  it('brings back an approval that names its files exactly as it was parked (DOR-3068)', async () => {
+    await writePackage(globalSlot(), { version: '0.9.2', extensions: ['flow-dash'] });
+    const installedApproval = {
+      path: path.join(globalSlot(), '.dork', 'extensions', 'flow-dash'),
+      plugin: 'flow',
+      digest: `sha256:${'d'.repeat(64)}`,
+    };
+    approvals = {
+      approvedToRun: ['flow-dash'],
+      approvedSources: { 'flow-dash': installedApproval },
+    };
+    await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
+    await service().unlink({ name: 'flow', scope: 'global' });
+    expect(approvals.approvedSources['flow-dash']).toEqual(installedApproval);
   });
 
   it('leaves an approval that has since moved to another copy alone', async () => {
@@ -642,9 +661,11 @@ describe('DevLinkService.unlink', () => {
     await service().unlink({ name: 'flow', scope: 'global' });
     expect(approvals).toEqual({
       approvedToRun: [],
+      // Not marked as an older approval either, so no scan pins and runs it (DOR-3068).
       approvedSources: { 'flow-dash': { path: '/elsewhere/flow-dash' } },
       approvedPermissions: {},
     });
+    expect(approvals.approvedSources['flow-dash']).not.toHaveProperty('legacyPathOnly');
   });
 
   it('forgets an approval given through a linked spelling of the project', async () => {

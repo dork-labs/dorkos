@@ -44,6 +44,7 @@ import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { extensionDeclarationDigest } from '../agent-tools/declaration-digest.js';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
+import { liveDigestOf } from '../pin/extension-content-pin.js';
 
 const FIXTURE = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -78,6 +79,18 @@ async function rewriteManifest(edit: (m: Record<string, unknown>) => void, space
   await fs.writeFile(file, JSON.stringify(manifest, null, spaces));
 }
 
+/**
+ * Record a person's yes to the files installed now (DOR-3068): an approval
+ * names a copy's files, so an edit runs only once it is approved again.
+ */
+async function approveInstalledFiles(): Promise<void> {
+  const digest = await liveDigestOf({ path: extDir });
+  stored.value = {
+    ...stored.value,
+    approvedSources: { [ID]: { path: extDir, ...(digest ? { digest } : {}) } },
+  };
+}
+
 /** Start the manager the way boot does: start extensions, then attach the registry. */
 async function boot(registerTimeoutMs = 15_000) {
   manager = new ExtensionManager(dorkHome, [], { registerTimeoutMs });
@@ -103,7 +116,9 @@ beforeEach(async () => {
     enabled: [ID],
     disabled: [],
     approvedToRun: [ID],
-    approvedSources: { [ID]: { path: extDir } },
+    // Written before approvals named content, so the first scan pins it to the
+    // files it finds (the '0.126.1' migration's mark, DOR-3068).
+    approvedSources: { [ID]: { path: extDir, legacyPathOnly: true } },
   };
   registry = composeRegistry([], { logger: noopLogger });
   forget = vi.fn<(id: string, name: string) => Promise<unknown>>(async () => []);
@@ -245,24 +260,30 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(forget).not.toHaveBeenCalled();
   }, 30_000);
 
-  it('restarts on a tools-only manifest edit and not on a whitespace-only one', async () => {
-    // Purpose: a manifest-only change to a tool reaches agents without a
-    // version bump or a server.ts edit; reformatting the file restarts nothing.
+  it('holds any manifest edit for a person, then serves the edited tools', async () => {
+    // Purpose: since DOR-3068 an approval names the files, so even a
+    // whitespace-only edit is new bytes and waits for a person: the server
+    // half stops and its tools leave. Once approved, the copy runs from a
+    // snapshot of the new files and a tools-only change reaches agents
+    // without a version bump or a server.ts edit. (That a reformat alone
+    // does not change the declarations is `extensionDeclarationDigest`'s own
+    // test.)
     await install();
     await boot();
-    const changes: number[] = [];
-    registry.onChange((v) => changes.push(v));
-
-    await rewriteManifest(() => undefined, 4);
-    await manager.reload();
-    expect(changes).toEqual([]);
+    expect(registered()).toHaveLength(3);
 
     await rewriteManifest((m) => {
       const tools = m.tools as Array<Record<string, unknown>>;
       tools[0]!.title = 'Echo it back';
-    });
+    }, 4);
     await manager.reload();
-    expect(changes.length).toBe(2); // removed, then contributed afresh
+    expect(mayRunExtensionCode(manager.get(ID)!, stored.value)).toBe(false);
+    expect(registered()).toEqual([]);
+
+    await approveInstalledFiles();
+    await manager.reload();
+    expect(mayRunExtensionCode(manager.get(ID)!, stored.value)).toBe(true);
+    expect(registered()).toHaveLength(3);
     expect(registry.get('ext_agent_tools_ext.echo')?.title).toBe('Echo it back');
   }, 30_000);
 
@@ -402,8 +423,12 @@ describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
     expect(result.autoApproved).toEqual(declared);
     expect(runs()).toBe(true);
     expect(stored.value.approvedToRun).toEqual([NEW_ID]);
+    // It names the folder AND the files as scaffolded (DOR-3068): an in-process
+    // extension never keeps path trust, so its first edit waits for a person.
     expect(stored.value.approvedSources?.[NEW_ID]).toEqual({
       path: path.join(dorkHome, 'extensions', NEW_ID),
+      digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      grants: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
     expect(stored.value.approvedPermissions?.[NEW_ID]).toEqual(declared);
   }, 30_000);
@@ -446,7 +471,11 @@ describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
       await created!.reload();
     };
 
+    // Its scaffold was pinned to its files, so editing them waits for a person
+    // (DOR-3068); once approved, adding a host waits again.
     await declare(['api.example.com']);
+    expect(runs()).toBe(false);
+    await created!.approveToRun(NEW_ID);
     expect(runs()).toBe(true);
     await declare(['api.example.com', 'other.example.com']);
     expect(runs()).toBe(false);

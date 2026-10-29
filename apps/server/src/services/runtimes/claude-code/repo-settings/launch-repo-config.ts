@@ -39,6 +39,7 @@
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
 import { folderAllowApprovalGateway } from '../folder-settings/folder-allow-approval.js';
 import { leaveOutFolderSettings } from '../folder-settings/launch-folder-config.js';
@@ -338,6 +339,24 @@ function rereadFor(turn: RepoConfigTurn, kind: RepoConfigKind): RepoConfigReread
       return 'unknown';
     }
   };
+}
+
+/**
+ * Resolve what a launch's repo settings pause, in DorkOS's data folder, and
+ * apply the pauses that are settings: {@link resolveRepoConfigForLaunch} then
+ * {@link applyRepoConfigToLaunch}. The answer goes on to
+ * {@link applyRepoMcpServers} once the MCP servers are set.
+ *
+ * @param sdkOptions - The launch options, mutated.
+ * @param turn - Who the turn is for and where it stands.
+ */
+export async function applyRepoConfigStep(
+  sdkOptions: Options,
+  turn: Omit<RepoConfigTurn, 'dorkHome'>
+): Promise<RepoConfigLaunch> {
+  const decision = await resolveRepoConfigForLaunch({ ...turn, dorkHome: resolveDorkHome() });
+  applyRepoConfigToLaunch(sdkOptions, decision);
+  return decision;
 }
 
 /**
