@@ -81,6 +81,7 @@ import {
 } from '@dorkos/shared/permissions';
 
 import { marksOf } from '../turn-power/turn-levels.js';
+import { choseFullAutonomy, recordMarkedFullAction } from '../turn-power/full-autonomy.js';
 import { HELD_IN_A_MARKED_TURN, markedTurnCardArea } from './marked-turn-holds.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
@@ -357,10 +358,36 @@ export async function resolveCallPermission(request: {
   const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn =
+  const marked =
     marksOf(request.sessionId, identity?.agentPath).outsider === true ||
     (principalTurn !== undefined &&
       marksOf(principalTurn.sessionId, principalTurn.agentPath).outsider === true);
+  // A chat set to Full autonomy asks nobody anything (DOR-3394): its mark holds nothing here.
+  // Only a named chat can say it is set to Full; a caller with none keeps the mark's holds.
+  const full =
+    choseFullAutonomy(request.sessionId) ||
+    (principalTurn !== undefined && choseFullAutonomy(principalTurn.sessionId));
+  const strangerTurn = marked && !full;
+  /**
+   * One Activity line when a marked turn in a Full chat runs what a marked turn below Full is
+   * asked about (a send or a standing change): no card was shown, so the line is the record.
+   * Written as the gate lets the call through, since the gate cannot see its outcome; the
+   * call's own audit line follows. A destructive call allowed unasked already gets its line
+   * from the tier gate (`enforceCapabilityTier`).
+   */
+  const noteIfUnasked = (state: CallPermission['state'] | null): void => {
+    if (!marked || !full || !HELD_IN_A_MARKED_TURN.has(action.id)) return;
+    if (state !== null && state !== 'allowed') return;
+    const chat = request.sessionId ?? principalTurn?.sessionId;
+    const title = (action as { title?: unknown }).title;
+    recordMarkedFullAction({
+      actionId: action.id,
+      title: typeof title === 'string' ? title : action.id,
+      ...(identity ? { agentPath: identity.agentPath } : {}),
+      ...(identity?.displayName ? { agentName: identity.displayName } : {}),
+      ...(chat ? { sessionId: chat } : {}),
+    });
+  };
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
@@ -369,9 +396,12 @@ export async function resolveCallPermission(request: {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
     // under the area it acts in, every time.
     const cardArea = strangerTurn ? markedTurnCardArea(action.id) : undefined;
-    return cardArea !== undefined
-      ? { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' }
-      : null;
+    if (cardArea !== undefined) {
+      return { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' };
+    }
+    // No area: the tier decides, and an `act` call runs unasked (`execute_write`).
+    if (action.tier === 'act') noteIfUnasked(null);
+    return null;
   }
   // The strictest area DorkOS knows about, for the two refusals below.
   const refusalArea = areas.find(isFloorArea) ?? areas[0]!;
@@ -443,7 +473,9 @@ export async function resolveCallPermission(request: {
       ...(identity?.inactive ? { inactive: true } : {}),
     })
   );
-  return reached.reduce(stricter, own!);
+  const resolved = reached.reduce(stricter, own!);
+  noteIfUnasked(resolved.state);
+  return resolved;
 }
 
 /**

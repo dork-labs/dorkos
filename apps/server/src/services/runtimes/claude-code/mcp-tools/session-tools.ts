@@ -140,6 +140,7 @@ export type SessionStartCallerResolver = () =>
       permissionMode?: string;
       runtime?: string;
       neverAsks?: boolean;
+      chosenFull?: boolean;
     }
   | undefined;
 
@@ -303,6 +304,7 @@ function callerOf(
           permissionMode: resolved.permissionMode ?? null,
           runtime: resolved.runtime ?? NO_CHAT_CEILING_RUNTIME,
           ...(resolved.neverAsks ? { neverAsks: true } : {}),
+          ...(resolved.chosenFull ? { chosenFull: true } : {}),
         }
       : null,
   };
@@ -491,6 +493,8 @@ export function createSessionStartHandler(
     // With no chat (the external `/mcp` server) it is the agent's own stop.
     // A starting turn held for a stranger opens a chat born capped (DOR-3107). One that only
     // carries an outsider's words on opens it at no more than its own level, marked (DOR-3390).
+    // A chat SET to Full carries the mark on and nothing else (DOR-3394): its spin-off starts
+    // at the level asked for, or its own, exactly as an unmarked Full chat's would.
     const markedCeiling = outsiderStartCeiling(caller);
     const level = await resolveStartPermission(
       args.permissionMode,

@@ -141,18 +141,32 @@ describe('createCanUseTool — approval gate', () => {
   });
 
   // Power flows downstream, never up (spec `trusted-by-default-flip` §4). Under
-  // a ceiling the turn runs at a mode that calls back for every tool, and the
-  // callback must answer from the TURN's mode: answering from the session's
-  // Full autonomy would allow every call the ceiling exists to stop.
-  it('routes a non-safe tool to approval in a bypass session held to the runtime default', async () => {
+  // a ceiling the turn runs at a mode that calls back for every tool, and below
+  // Full the callback answers from the TURN's mode.
+  it('routes a non-safe tool to approval in an Accept edits session held to the runtime default', async () => {
     const session = {
-      ...makeSession('bypassPermissions'),
+      ...makeSession('acceptEdits'),
       turnPermissionCeiling: 'runtime-default' as const,
     };
     const canUseTool = createCanUseTool(session, noopLog);
 
     void canUseTool(NON_SAFE_TOOL, { command: 'rm -rf build' }, makeContext('tool-ceiling'));
     await vi.waitFor(() => expect(session.pendingInteractions.has('tool-ceiling')).toBe(true));
+  });
+
+  // DOR-3394, the product owner's rule: a chat SET to Full autonomy asks nobody
+  // anything. Was: this same session raised a card (DOR-3204's held turn).
+  it('allows a non-safe tool in a bypass session held to the runtime default, with no card', async () => {
+    const session = {
+      ...makeSession('bypassPermissions'),
+      turnPermissionCeiling: 'runtime-default' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    expect(
+      await canUseTool(NON_SAFE_TOOL, { command: 'rm -rf build' }, makeContext('tool-ceiling'))
+    ).toEqual({ behavior: 'allow', updatedInput: { command: 'rm -rf build' } });
+    expect(session.eventQueue).toHaveLength(0);
   });
 
   // DOR-3204: a stranger's turn must not write a standing rule into the folder.
@@ -192,9 +206,10 @@ describe('createCanUseTool — approval gate', () => {
     expect(freeEvent).toMatchObject({ data: { hasSuggestions: true } });
   });
 
-  // DOR-3390: a turn that carries an outsider's words on runs at its own level, Full here, and only
-  // its shell goes to a person, with no standing rule offered. Other tools run as at Full.
-  it('asks about Bash at Full in a turn that carries an outsider’s words on, and nothing else', async () => {
+  // DOR-3390: a turn that carries an outsider's words on runs at its own level, and below Full
+  // only its shell goes to a person, with no standing rule offered. At Full nothing does
+  // (DOR-3394; this test asked at Full until then).
+  it('asks about Bash below Full in a turn that carries an outsider’s words on, never at Full', async () => {
     const CARRIED = { asks: 'never', reach: 'everything', outsider: true } as const;
     const suggestions = [
       {
@@ -204,11 +219,17 @@ describe('createCanUseTool — approval gate', () => {
         destination: 'localSettings',
       },
     ] as PermissionUpdate[];
-    const session = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
-    const canUseTool = createCanUseTool(session, noopLog);
+    const atFull = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
     expect(
-      await canUseTool('Edit', { file_path: '/agents/ana/a.ts' }, makeContext('tool-edit'))
-    ).toEqual({ behavior: 'allow', updatedInput: { file_path: '/agents/ana/a.ts' } });
+      await createCanUseTool(atFull, noopLog)(
+        NON_SAFE_TOOL,
+        { command: 'python3 -c 1' },
+        makeContext('tool-full')
+      )
+    ).toEqual({ behavior: 'allow', updatedInput: { command: 'python3 -c 1' } });
+    expect(atFull.eventQueue).toHaveLength(0);
+    const session = { ...makeSession('acceptEdits'), turnPermissionCeiling: CARRIED };
+    const canUseTool = createCanUseTool(session, noopLog);
     void canUseTool(
       NON_SAFE_TOOL,
       { command: 'python3 -c 1' },
@@ -225,15 +246,23 @@ describe('createCanUseTool — approval gate', () => {
   });
 
   // DOR-3390, Security's M-A and M-C: the hook sends an edit to git's files or the agent's own
-  // here, and Full must not auto-allow it, or the card the hook asked for never shows.
-  it('asks about an edit to .git or .dork at Full in a carried turn, and not without the mark', async () => {
+  // here below Full. At Full (DOR-3394) neither asks; this test asked at Full until then.
+  it('asks about an edit to .git or .dork below Full in a carried turn, and not at Full', async () => {
     const CARRIED = { asks: 'never', reach: 'everything', outsider: true } as const;
-    const session = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
+    const session = { ...makeSession('acceptEdits'), turnPermissionCeiling: CARRIED };
     const canUseTool = createCanUseTool(session, noopLog);
     void canUseTool('Edit', { file_path: '/agents/ana/.git/config' }, makeContext('tool-git'));
     void canUseTool('Write', { file_path: '/agents/ana/.dork/SOUL.md' }, makeContext('tool-soul'));
     await vi.waitFor(() => expect(session.pendingInteractions.has('tool-git')).toBe(true));
     await vi.waitFor(() => expect(session.pendingInteractions.has('tool-soul')).toBe(true));
+    const atFull = { ...makeSession('bypassPermissions'), turnPermissionCeiling: CARRIED };
+    expect(
+      await createCanUseTool(atFull, noopLog)(
+        'Write',
+        { file_path: '/agents/ana/.dork/SOUL.md' },
+        makeContext('t-full')
+      )
+    ).toEqual({ behavior: 'allow', updatedInput: { file_path: '/agents/ana/.dork/SOUL.md' } });
     const free = makeSession('bypassPermissions');
     expect(
       await createCanUseTool(free, noopLog)(
@@ -638,7 +667,8 @@ describe('read-only tools under a stranger’s ceiling', () => {
       backgroundPermissionCeiling?: 'runtime-default';
     }
   ): Promise<'allowed' | 'asked'> {
-    const session = { ...makeSession('bypassPermissions'), ...ceilings };
+    // Default, not Full: a chat set to Full never asks (DOR-3394), which this used until then.
+    const session = { ...makeSession('default'), ...ceilings };
     const canUseTool = createCanUseTool(session, noopLog);
     return Promise.race([
       canUseTool(

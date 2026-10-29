@@ -16,7 +16,6 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
-  CARRIED_SHELL_ASK_REASON,
   createHeldTurnHook,
   HELD_TURN_ASK_REASON,
 } from '../../../runtimes/claude-code/tool-gate/held-turn-hook.js';
@@ -135,7 +134,7 @@ describe('a reader that may see the stranger first-hand', () => {
     );
   });
 
-  it('inside the own circle, runs at its own level, marked, and only its shell asks', async () => {
+  it('inside the own circle, runs at its own level, marked, and at Full nothing asks', async () => {
     const { runtime, sent } = seam();
     const code = fresh('code');
     const post = await strangerHeldPost(runtime);
@@ -146,8 +145,8 @@ describe('a reader that may see the stranger first-hand', () => {
     await run(runtime, code, opts);
     expect(runsAt(sent.get(code))).toBe('bypassPermissions');
     expect(await hookSays(sent.get(code), 'Edit', { file_path: '/agents/code/a.md' })).toBe('runs');
-    expect(await hookSays(sent.get(code), 'Bash', { command: 'touch x' })).toBe(
-      CARRIED_SHELL_ASK_REASON
-    );
+    // A chat set to Full never asks (DOR-3394). Until then its shell asked here; below Full it
+    // still does (`held-turn-hook.test.ts`, `carried-turn-writes.test.ts`).
+    expect(await hookSays(sent.get(code), 'Bash', { command: 'touch x' })).toBe('runs');
   });
 });
