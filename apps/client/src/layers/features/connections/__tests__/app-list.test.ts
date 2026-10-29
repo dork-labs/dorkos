@@ -267,6 +267,23 @@ describe('chatAppRow', () => {
       })
     ).toMatchObject({ tone: 'off', action: 'resume' });
   });
+
+  // DOR-3288: a connection paused until its owner confirms a setting waits on
+  // the person. It never reads "Stopped working", even while its status is error.
+  it('reads a paused-for-confirmation connection as waiting on you, in amber, with Review', () => {
+    const paused = instance({
+      status: { ...instance().status, state: 'error' },
+      confirmation: { references: [], host: 'hooks.example.dev', fingerprint: 'fp', notSent: 2 },
+    });
+    expect(
+      chatAppRow(entry, paused, { bindings: [], agentNames: {}, waitingByChatApp: {} })
+    ).toMatchObject({
+      tone: 'attention',
+      action: 'review',
+      detailTone: 'warning',
+      detail: 'Paused · confirm the setting it sends',
+    });
+  });
 });
 
 describe('buildYourApps', () => {

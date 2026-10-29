@@ -68,6 +68,8 @@ export interface YourAppRow {
   waiting: number;
   /** A chat app DorkOS no longer offers; set-up ones keep working. */
   deprecated?: boolean;
+  /** Draw the detail amber: it waits on the person, though nothing broke. */
+  detailTone?: 'warning';
 }
 
 /** A sign-in that has started and not finished, shown as a "Connecting" row. */
@@ -253,6 +255,17 @@ export function chatAppRow(
 
   if (!instance.enabled) {
     return { ...base, tone: 'off', action: 'resume', detail: 'Paused · no messages in or out' };
+  }
+  // Paused until its owner confirms a setting it sends (DOR-3271). It waits on
+  // the person; nothing broke, so it never reads "Stopped working" (DOR-3288).
+  if (instance.confirmation) {
+    return {
+      ...base,
+      tone: 'attention',
+      action: 'review',
+      detailTone: 'warning',
+      detail: 'Paused · confirm the setting it sends',
+    };
   }
   if (instance.status.state === 'error' || instance.status.state === 'disconnected') {
     return {
