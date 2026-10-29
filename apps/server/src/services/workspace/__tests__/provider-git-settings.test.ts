@@ -264,15 +264,18 @@ describe.skipIf(process.platform === 'win32')('a source whose settings name a pr
       resetChosenTurns();
     });
 
-    it('makes the worktree anyway, and writes one Activity line', async () => {
+    it('makes the worktree anyway, runs none of its filters, and writes one Activity line', async () => {
       plantSmudge();
       const req = { ...request(source, 'wt'), fullChat: FULL_CHAT };
       await new WorktreeProvider(root).create(req);
       expect(existsSync(path.join(req.path, '.git'))).toBe(true);
+      // The planted smudge filter did not run on DorkOS's own checkout.
+      expect(existsSync(marker)).toBe(false);
+      expect(existsSync(path.join(req.path, 'a.txt'))).toBe(true);
       expect(emit).toHaveBeenCalledOnce();
       expect(emit).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventType: 'agent.full_action',
+          eventType: 'agent.marked_full_action',
           actorId: FULL_CHAT.agentPath,
           resourceId: 'workspace.create',
         })

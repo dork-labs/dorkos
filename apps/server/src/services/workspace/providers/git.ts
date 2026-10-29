@@ -131,14 +131,26 @@ export async function runGit(
     onUnsafe,
   }: RunGitOptions = {}
 ): Promise<string> {
+  const unsafe: GitRepoConfigUnsafeError[] = [];
   if (audit) {
-    for (const dir of audit) await auditRepoConfig(dir, onUnsafe);
+    const report = onUnsafe
+      ? (err: GitRepoConfigUnsafeError) => {
+          unsafe.push(err);
+          onUnsafe(err);
+        }
+      : undefined;
+    for (const dir of audit) await auditRepoConfig(dir, report);
   }
-  const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
+  // Let through at Full, git still reads no repo attributes and runs none of the named filters.
+  const filters = unsafe.length > 0 ? noRepoFilterArgs(unsafe) : [];
+  const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...filters, ...args], {
     cwd,
     timeout: timeoutMs,
     env: audit
-      ? minimalGitEnv()
+      ? {
+          ...minimalGitEnv(),
+          ...(unsafe.length > 0 ? { GIT_ATTR_SOURCE: EMPTY_TREE } : {}),
+        }
       : {
           // eslint-disable-next-line no-restricted-syntax -- a clone from an address needs PATH/HOME/credential vars; only the transport allowlist and prompt are added.
           ...process.env,
@@ -148,6 +160,25 @@ export async function runGit(
         },
   });
   return stdout;
+}
+
+/** git's empty tree: as `GIT_ATTR_SOURCE`, no in-tree `.gitattributes` is read. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/** A filter driver's program keys, which run a program on checkout or add. */
+const FILTER_PROGRAM_KEY = /^filter\..+\.(clean|smudge|process)$/i;
+
+/**
+ * The `-c` settings that keep a command a failed audit let through (a chat set to Full) from
+ * running a repo's filter drivers: no attributes file, and every filter program the audit named
+ * set empty, which git reads as no filter. With `GIT_ATTR_SOURCE` on the empty tree, no
+ * `.gitattributes` in the tree names one either.
+ *
+ * @param unsafe - The audit failures that were let through.
+ */
+function noRepoFilterArgs(unsafe: readonly GitRepoConfigUnsafeError[]): string[] {
+  const keys = new Set(unsafe.flatMap((err) => err.keys.filter((k) => FILTER_PROGRAM_KEY.test(k))));
+  return ['-c', 'core.attributesFile=/dev/null', ...[...keys].flatMap((key) => ['-c', `${key}=`])];
 }
 
 /**

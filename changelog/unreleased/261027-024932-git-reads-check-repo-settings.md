@@ -6,6 +6,8 @@ covers:
   - 'fix(server): a repository that names its own hooks folder can still be read (DOR-3343)'
   - "fix(server): the git audit reads a worktree's own settings only when git does (DOR-3343)"
   - 'fix(server): git status through the runner stays fast on a fresh checkout (DOR-3343)'
+  - "fix(server): a Full chat's workspace is made past the git audit, with one Activity line (DOR-3343)"
+  - "fix(server): a Full chat's workspace runs none of the repo's filter programs (DOR-3343)"
 ---
 
 ### Fixed
