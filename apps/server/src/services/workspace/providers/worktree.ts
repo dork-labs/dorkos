@@ -19,6 +19,7 @@ import { internalGitConfig } from '@dorkos/shared/git-hardening';
 import {
   assertSafeWorkspaceSource,
   computeDirtyState,
+  fullChatAuditReporter,
   isBareRepository,
   PERSON_REPO_GIT_CONFIG,
   runGit,
@@ -43,17 +44,23 @@ export class WorktreeProvider implements WorkspaceProvider {
     // with `--git-dir`, because safe.bareRepository=explicit refuses a bare
     // repository git only finds by where it runs (DOR-2326).
     // `--end-of-options` keeps the path a value, never a flag.
-    const gitDir = (await isBareRepository(req.source)) ? [`--git-dir=${req.source}`] : [];
+    // A chat set to Full autonomy has no limits: a failed audit is let through
+    // with one Activity line instead of refusing (`fullChatAuditReporter`).
+    const onUnsafe = fullChatAuditReporter(req, `made the workspace ${req.projectKey}/${req.key}`);
+    const gitDir = (await isBareRepository(req.source, onUnsafe))
+      ? [`--git-dir=${req.source}`]
+      : [];
     await runGit(
       [...gitDir, 'worktree', 'add', '-b', req.branch, '--end-of-options', req.path],
       req.source,
       // A person's own hooks run; for anyone else, git runs none of the
       // source's hooks or fsmonitor in DorkOS's process (DOR-2335). Either
       // way the source's settings are audited first (DOR-3343): every agent
-      // worktree of it can write them.
+      // worktree of it can write them. Below Full, a failed audit refuses.
       {
         config: req.personGit ? PERSON_REPO_GIT_CONFIG : internalGitConfig(),
         audit: [req.source],
+        ...(onUnsafe ? { onUnsafe } : {}),
       }
     );
     return { path: req.path, branch: req.branch };

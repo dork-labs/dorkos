@@ -10,4 +10,4 @@ covers:
 
 ### Fixed
 
-- When DorkOS reads a git repository for you, it now checks the repository's own settings first. If they ask git to run another program, DorkOS skips the read instead. The same check runs before DorkOS makes or removes a workspace from a repository. These reads never use the network or your saved git logins, and they don't use your own git settings. (DOR-3343)
+- When DorkOS reads a git repository for you, it now checks the repository's own settings first. If they ask git to run another program, DorkOS skips the read instead. The same check runs before DorkOS makes or removes a workspace from a repository. A chat set to Full autonomy is the exception: its workspace is made anyway, and the Activity page notes it. These reads never use the network or your saved git logins, and they don't use your own git settings. (DOR-3343)

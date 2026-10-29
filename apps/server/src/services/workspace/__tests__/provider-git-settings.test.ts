@@ -25,6 +25,12 @@ import { CloneProvider } from '../providers/clone.js';
 import { runGit, UnsafeWorkspaceSourceError } from '../providers/git.js';
 import { GitRepoConfigUnsafeError } from '@dorkos/shared/safe-git';
 import { WorktreeProvider } from '../providers/worktree.js';
+import { fullChatOf } from '../index.js';
+import {
+  noteChosenTurn,
+  resetChosenTurns,
+  setMarkedFullActivity,
+} from '../../core/turn-power/full-autonomy.js';
 
 /** Every git the code under test starts, counted by a pass-through mock. */
 const gitRuns = vi.hoisted(() => ({ count: 0 }));
@@ -243,5 +249,59 @@ describe.skipIf(process.platform === 'win32')('a source whose settings name a pr
       GitRepoConfigUnsafeError
     );
     expect(existsSync(marker)).toBe(false);
+  });
+
+  describe('asked for by a chat set to Full autonomy', () => {
+    const FULL_CHAT = { sessionId: 'chat-full', agentPath: '/agents/scout' };
+    const emit = vi.fn(async () => {});
+
+    beforeEach(() => {
+      emit.mockClear();
+      setMarkedFullActivity({ emit });
+    });
+    afterEach(() => {
+      setMarkedFullActivity(undefined);
+      resetChosenTurns();
+    });
+
+    it('makes the worktree anyway, and writes one Activity line', async () => {
+      plantSmudge();
+      const req = { ...request(source, 'wt'), fullChat: FULL_CHAT };
+      await new WorktreeProvider(root).create(req);
+      expect(existsSync(path.join(req.path, '.git'))).toBe(true);
+      expect(emit).toHaveBeenCalledOnce();
+      expect(emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'agent.full_action',
+          actorId: FULL_CHAT.agentPath,
+          resourceId: 'workspace.create',
+        })
+      );
+    });
+
+    it('makes the clone anyway, and writes one Activity line', async () => {
+      plantSmudge();
+      const req = { ...request(source, 'cl'), fullChat: FULL_CHAT };
+      await new CloneProvider(root).create(req);
+      expect(existsSync(path.join(req.path, '.git'))).toBe(true);
+      expect(emit).toHaveBeenCalledOnce();
+    });
+
+    it('writes nothing when the settings pass', async () => {
+      await new WorktreeProvider(root).create({ ...request(source, 'ok'), fullChat: FULL_CHAT });
+      expect(emit).not.toHaveBeenCalled();
+    });
+
+    it('names a Full chat only when its latest turn ran at Full', () => {
+      expect(fullChatOf('chat-a')).toBeUndefined();
+      noteChosenTurn('chat-a', { asks: 'never', reach: 'everything' }, false);
+      expect(fullChatOf('chat-a', '/agents/scout')).toEqual({
+        sessionId: 'chat-a',
+        agentPath: '/agents/scout',
+      });
+      noteChosenTurn('chat-a', { asks: 'never', reach: 'workspace' }, false);
+      expect(fullChatOf('chat-a')).toBeUndefined();
+      expect(fullChatOf(undefined)).toBeUndefined();
+    });
   });
 });

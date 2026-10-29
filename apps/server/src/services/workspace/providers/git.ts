@@ -10,8 +10,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
-import { assertRepoConfigSafe, minimalGitEnv, runSafeGit } from '@dorkos/shared/safe-git';
+import {
+  assertRepoConfigSafe,
+  GitRepoConfigUnsafeError,
+  minimalGitEnv,
+  runSafeGit,
+} from '@dorkos/shared/safe-git';
+import type { WorkspaceCreateRequest } from '@dorkos/shared/workspace';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
+import { recordFullAction } from '../../core/turn-power/full-autonomy.js';
 import {
   gitConfigArgs,
   internalGitConfig,
@@ -92,6 +99,11 @@ export interface RunGitOptions {
    * source shares its settings with every agent worktree made from it.
    */
   audit?: readonly string[];
+  /**
+   * Where a failed audit goes instead of refusing the command: given only for a chat set to Full
+   * autonomy, which has no limits ({@link fullChatAuditReporter}). Absent, a failed audit throws.
+   */
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void;
 }
 
 /**
@@ -111,10 +123,16 @@ export const PERSON_REPO_GIT_CONFIG: readonly GitConfigEntry[] = SESSION_GIT_CON
 export async function runGit(
   args: string[],
   cwd: string,
-  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig(), env, audit }: RunGitOptions = {}
+  {
+    timeoutMs = GIT_TIMEOUT_MS,
+    config = internalGitConfig(),
+    env,
+    audit,
+    onUnsafe,
+  }: RunGitOptions = {}
 ): Promise<string> {
   if (audit) {
-    for (const dir of audit) await assertRepoConfigSafe(dir);
+    for (const dir of audit) await auditRepoConfig(dir, onUnsafe);
   }
   const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
     cwd,
@@ -133,17 +151,69 @@ export async function runGit(
 }
 
 /**
+ * Audit one folder's repository settings (`assertRepoConfigSafe`, DOR-3343). A failed audit
+ * throws, unless `onUnsafe` is given: then it is reported there and the caller goes on.
+ *
+ * @param dir - The folder to audit.
+ * @param onUnsafe - Where a failed audit goes instead of throwing, for a chat set to Full.
+ */
+export async function auditRepoConfig(
+  dir: string,
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void
+): Promise<void> {
+  try {
+    await assertRepoConfigSafe(dir);
+  } catch (err) {
+    if (!onUnsafe || !(err instanceof GitRepoConfigUnsafeError)) throw err;
+    onUnsafe(err);
+  }
+}
+
+/**
+ * For a workspace a chat set to Full autonomy asked for, the reporter that lets a failed audit
+ * through and writes one Activity line for it, however many folders fail; `undefined` for
+ * anyone else, whose failed audit refuses the command.
+ *
+ * @param req - The provisioning request.
+ * @param did - What was done, after the agent's name ("made the workspace p/w1").
+ */
+export function fullChatAuditReporter(
+  req: Pick<WorkspaceCreateRequest, 'fullChat'>,
+  did: string
+): ((err: GitRepoConfigUnsafeError) => void) | undefined {
+  const chat = req.fullChat;
+  if (!chat) return undefined;
+  let recorded = false;
+  return () => {
+    if (recorded) return;
+    recorded = true;
+    recordFullAction({
+      actionId: 'workspace.create',
+      did,
+      limit: "a repository whose settings fail DorkOS's check is refused",
+      ...(chat.agentPath ? { agentPath: chat.agentPath } : {}),
+      sessionId: chat.sessionId,
+    });
+  };
+}
+
+/**
  * Whether `dir` is itself a bare repository. Asked with `--git-dir`, so git
  * answers about exactly that folder rather than one it finds above it; a
  * working checkout is not a git directory and answers no.
  *
  * @param dir - The folder to ask about.
+ * @param onUnsafe - For a chat set to Full: where a failed audit goes instead of answering no.
  * @returns `true` only for a bare repository.
  */
-export async function isBareRepository(dir: string): Promise<boolean> {
+export async function isBareRepository(
+  dir: string,
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void
+): Promise<boolean> {
   try {
     const out = await runGit([`--git-dir=${dir}`, 'rev-parse', '--is-bare-repository'], dir, {
       audit: [dir],
+      ...(onUnsafe ? { onUnsafe } : {}),
     });
     return out.trim() === 'true';
   } catch {

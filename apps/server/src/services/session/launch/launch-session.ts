@@ -36,7 +36,7 @@ import {
 import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
-import { getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
+import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
@@ -477,6 +477,8 @@ async function launchSessionMessage(
           ...(opts.workspaceCaller?.requestedBy && {
             requestedBy: opts.workspaceCaller.requestedBy,
           }),
+          // A chat set to Full autonomy has no limits (DOR-3343): see `fullChatOf`.
+          fullChat: fullChatOf(sessionId),
         })
       );
       effectiveCwd = workspace.path;
