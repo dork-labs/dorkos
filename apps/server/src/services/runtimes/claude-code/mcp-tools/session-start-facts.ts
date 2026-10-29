@@ -7,7 +7,13 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-start-facts
  */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  TurnPermissionCeiling,
+  TurnPermissionLevel,
+} from '@dorkos/shared/agent-runtime';
+import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
+import { marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { logError, logger } from '../../../../lib/logger.js';
 import { getAgentIdentityService } from '../../../core/agent-identity/index.js';
 import {
@@ -29,7 +35,7 @@ export interface StartCaller {
   /** Its display name, as Mesh lists it. */
   displayName?: string;
   /** The calling chat, or null with none. */
-  chat: Pick<CallingChat, 'sessionId'> | null;
+  chat: Pick<CallingChat, 'sessionId' | 'chosenFull'> | null;
 }
 
 /** The calling agent and the call. */
@@ -45,11 +51,30 @@ interface StartFactsInput {
  * The ceiling a started session's first turn carries when its starter's turn
  * read an outsider's words, as the spread a launch takes; empty otherwise.
  *
+ * From a chat SET to Full autonomy (DOR-3394) it carries the marks and caps
+ * nothing ({@link marksOnlyBound}): no `runtime-default`, no lower level, so
+ * the spin-off starts at the level asked for, or its own. Below Full the bound
+ * is unchanged.
+ *
  * @param caller - Who is starting it: the calling chat, or only the agent.
  */
 export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'chat'>) {
   const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
-  return bound !== undefined ? { permissionCeiling: bound } : {};
+  if (bound === undefined) return {};
+  return { permissionCeiling: caller.chat?.chosenFull ? marksOnlyBound(bound) : bound };
+}
+
+/**
+ * A bound's marks with none of its power: the loosest level, carrying the
+ * outsider mark and every teammate origin the bound holds. What a chat set to
+ * Full passes on, so what reads the marks (memory stamps, the marked-turn
+ * holds below Full, the teammate tier) still sees them.
+ *
+ * @param bound - The bound the starter's marks would otherwise carry.
+ */
+export function marksOnlyBound(bound: TurnPermissionCeiling): TurnPermissionLevel {
+  const { teammate } = marksOfCeiling(bound);
+  return { ...CARRIED_OUTSIDER_LEVEL, ...(teammate !== undefined ? { teammate } : {}) };
 }
 
 /**

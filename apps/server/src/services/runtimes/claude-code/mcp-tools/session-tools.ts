@@ -44,7 +44,6 @@
  * @module services/runtimes/claude-code/mcp-tools/session-tools
  */
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
@@ -63,7 +62,7 @@ import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { logError, logger } from '../../../../lib/logger.js';
-import { isInsideRoomsDir, resolveAgentHome } from '../../../core/agent-identity/index.js';
+import { isInsideRoomsDir } from '../../../core/agent-identity/index.js';
 import {
   creditsModelRefusal,
   sessionRunsOnCredits,
@@ -92,6 +91,7 @@ import {
   type SessionStartPermission,
 } from './session-start-permission.js';
 import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
+import { isOtherAgentsFolder } from './other-agents-folder.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
@@ -140,6 +140,7 @@ export type SessionStartCallerResolver = () =>
       permissionMode?: string;
       runtime?: string;
       neverAsks?: boolean;
+      chosenFull?: boolean;
     }
   | undefined;
 
@@ -303,6 +304,7 @@ function callerOf(
           permissionMode: resolved.permissionMode ?? null,
           runtime: resolved.runtime ?? NO_CHAT_CEILING_RUNTIME,
           ...(resolved.neverAsks ? { neverAsks: true } : {}),
+          ...(resolved.chosenFull ? { chosenFull: true } : {}),
         }
       : null,
   };
@@ -336,45 +338,6 @@ function reserveChatStart(
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
     : { ok: false, message: claimed.error.message };
-}
-
-/** Whether `dir` is `root` or inside it. */
-function isWithin(root: string, dir: string): boolean {
-  const rel = path.relative(root, dir);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
-/**
- * A folder's real path, or its resolved spelling when it cannot be read (a
- * folder that does not exist yet). Both sides of a containment check go through
- * this, because the boundary check hands back `cwd` real-pathed while Mesh keeps
- * each home as registered: a home under a symlink (macOS's `/tmp`) would
- * otherwise never contain a `cwd` that is inside it.
- */
-function realOr(dir: string): string {
-  const resolved = path.resolve(dir);
-  try {
-    return fs.realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-}
-
-/**
- * Whether `cwd` belongs to an agent other than `callerPath`: it resolves to
- * another agent's home (its home, a managed workspace or a linked worktree of
- * it), or it sits inside a registered agent's home that is not the caller's.
- */
-function isOtherAgentsFolder(deps: McpToolDeps, cwd: string, callerPath: string): boolean {
-  if (resolveAgentHome(cwd, callerPath).kind === 'refused') return true;
-  const target = realOr(cwd);
-  const owner = (deps.meshCore?.listWithPaths() ?? [])
-    .map((agent) => realOr(agent.projectPath))
-    .filter((home) => isWithin(home, target))
-    // The innermost home is the folder's owner: an agent may keep another's
-    // home inside its own, and the one closer to `cwd` is the one standing there.
-    .sort((a, b) => b.length - a.length)[0];
-  return owner !== undefined && owner !== realOr(callerPath);
 }
 
 /**
@@ -491,6 +454,8 @@ export function createSessionStartHandler(
     // With no chat (the external `/mcp` server) it is the agent's own stop.
     // A starting turn held for a stranger opens a chat born capped (DOR-3107). One that only
     // carries an outsider's words on opens it at no more than its own level, marked (DOR-3390).
+    // A chat SET to Full carries the mark on and nothing else (DOR-3394): its spin-off starts
+    // at the level asked for, or its own, exactly as an unmarked Full chat's would.
     const markedCeiling = outsiderStartCeiling(caller);
     const level = await resolveStartPermission(
       args.permissionMode,
