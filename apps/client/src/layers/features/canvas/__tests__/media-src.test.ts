@@ -17,6 +17,16 @@ describe('resolveCanvasMediaSrc', () => {
     );
   });
 
+  it('loads a room’s own copy of a canvas file as-is, never through the local route', () => {
+    const src =
+      '/api/rooms/01ROOM/canvas/media/cccccccccccccccc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png';
+    expect(resolveCanvasMediaSrc(src, 'image', served)).toEqual({ url: src, error: null });
+    // Only that exact shape: any other server path is still a local path.
+    expect(resolveCanvasMediaSrc('/api/rooms/01ROOM/attachments/x', 'image', served).url).toBe(
+      served('/api/rooms/01ROOM/attachments/x')
+    );
+  });
+
   it('allows an image data URI for the image kind', () => {
     const src = 'data:image/png;base64,AAAA';
     expect(resolveCanvasMediaSrc(src, 'image', served)).toEqual({ url: src, error: null });
