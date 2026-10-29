@@ -12,6 +12,8 @@ covers:
   - "fix(server): close the second review's gaps in the extension pin (DOR-3068)"
   - 'refactor(server): move the create_extension handler into its own module (DOR-3068)'
   - 'fix(server): an edited extension waits for a person before its new code runs (DOR-3068)'
+  - "fix(server): other agents' files are off-limits below Full only (DOR-3068)"
+  - "test(server): a stranger's turn relaunches a Full process rather than moving it down live (DOR-3068)"
 ---
 
 ### Fixed
