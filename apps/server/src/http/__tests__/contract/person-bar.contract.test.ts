@@ -56,12 +56,6 @@ const PERSON_WRITES: readonly PersonWrite[] = [
     path: `/api/connectors/agent-requests/${ID}/decision`,
     body: { decision: 'approve' },
   },
-  // Which agents may talk to which.
-  {
-    method: 'PUT',
-    path: '/api/mesh/topology/access',
-    body: { sourceNamespace: '*', targetNamespace: '*', action: 'allow' },
-  },
 ];
 
 describe('contract: the person-only routes at this computer, with an owner', () => {

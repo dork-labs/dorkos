@@ -6,6 +6,7 @@ covers:
   - 'fix(server): person bars on tasks, chat mode, sources and the local token; final step-up copy (DOR-3330)'
   - 'fix(server): wrong owner passwords slow the next try instead of locking it (DOR-3330)'
   - "fix(server): parallel wrong owner passwords can't skip the wait (DOR-3330)"
+  - 'fix(server): drop the person-only bar on the mesh access route (DOR-3330)'
 ---
 
 ### Security
