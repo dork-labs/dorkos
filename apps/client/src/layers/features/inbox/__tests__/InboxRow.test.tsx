@@ -4,11 +4,18 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AgentVisualSource } from '@/layers/entities/agent';
+const navigate = vi.hoisted(() => vi.fn());
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSafeNavigate: () => navigate,
+}));
+
 import { InboxRow, INBOX_STAGGER_LIMIT, staggerItem, staggerVariantsFor } from '../ui/InboxRow';
 
 /** Build a notification, overriding only what a test cares about. */
@@ -30,6 +37,34 @@ const AGENT: AgentVisualSource = { id: 'alpha', color: '#6366f1', icon: '🐙' }
 
 afterEach(() => {
   cleanup();
+});
+
+describe('InboxRow meta line', () => {
+  it('names the files a secret-files notice lists, in full on hover', () => {
+    const meta = '.env · apps/web/.env.local · +2 more';
+    render(
+      <InboxRow
+        notification={build({ kind: 'agent.secret_files', meta, body: 'Move them yourself.' })}
+        onOpen={() => {}}
+      />
+    );
+    expect(screen.getByText(meta)).toHaveAttribute('title', meta);
+  });
+
+  it('gives a secret-files notice’s body two lines on a phone and one above', () => {
+    render(
+      <InboxRow
+        notification={build({ kind: 'agent.secret_files', body: 'Move them yourself.' })}
+        onOpen={() => {}}
+      />
+    );
+    expect(screen.getByText('Move them yourself.')).toHaveClass('line-clamp-2', 'sm:truncate');
+  });
+
+  it('draws no meta line when the notice has none', () => {
+    render(<InboxRow notification={build()} onOpen={() => {}} />);
+    expect(document.querySelector('.font-mono')).not.toBeInTheDocument();
+  });
 });
 
 describe('InboxRow faces', () => {
@@ -145,5 +180,79 @@ describe('staggerVariantsFor', () => {
 
   it('keeps the entrance where there is no list position — a group member, a showcase', () => {
     expect(staggerVariantsFor(undefined)).toBe(staggerItem);
+  });
+});
+
+describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
+  const failing = build({
+    kind: 'run.completed',
+    tier: 'notable',
+    subject: { type: 'run', id: 'run-1' },
+    title: 'Nightly backup needs attention',
+    actions: [{ id: 'open-schedule', label: 'Open schedule', style: 'primary' }],
+  });
+
+  it('draws Open schedule beside a row that offers it, and never a raise', () => {
+    render(<InboxRow notification={failing} onOpen={() => {}} />);
+
+    expect(screen.getByRole('button', { name: 'Open schedule' })).toBeInTheDocument();
+    expect(screen.queryByText(/Full autonomy|Allow|Raise/)).toBeNull();
+  });
+
+  it('opens the Schedules page filtered to the failing ones', () => {
+    navigate.mockClear();
+    render(<InboxRow notification={failing} onOpen={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { health: 'failing' } })
+    );
+  });
+
+  it('gives the reason two lines and the action its own full-width line on a phone', () => {
+    render(<InboxRow notification={{ ...failing, body: 'Bash was refused.' }} onOpen={() => {}} />);
+
+    expect(screen.getByText('Bash was refused.')).toHaveClass('line-clamp-2', 'sm:truncate');
+    expect(screen.getByRole('button', { name: 'Open schedule' })).toHaveClass(
+      'h-11',
+      'w-full',
+      'sm:w-auto'
+    );
+  });
+
+  it('draws the Schedules row’s marks, never a red tick', () => {
+    const { container } = render(
+      <InboxRow notification={{ ...failing, mark: 'refused' }} onOpen={() => {}} />
+    );
+    expect(container.querySelector('[data-slot="inbox-row-glyph"] .lucide-lock')).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="inbox-row-glyph"] .lucide-circle-check')
+    ).toBeNull();
+    cleanup();
+
+    const crossed = render(
+      <InboxRow notification={{ ...failing, mark: 'failed' }} onOpen={() => {}} />
+    );
+    expect(
+      crossed.container.querySelector(
+        '[data-slot="inbox-row-glyph"] [class*="lucide-circle-x"], [data-slot="inbox-row-glyph"] .lucide-x-circle'
+      )
+    ).not.toBeNull();
+  });
+
+  it('leaves every other row on one line', () => {
+    render(<InboxRow notification={build({ body: 'alpha said hi' })} onOpen={() => {}} />);
+
+    expect(screen.getByText('alpha said hi')).toHaveClass('truncate');
+    expect(screen.getByText('alpha said hi')).not.toHaveClass('line-clamp-2');
+  });
+
+  it('draws nothing extra on a row that only pictures the notice, or offers no action', () => {
+    render(<InboxRow notification={failing} />);
+    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
+    cleanup();
+
+    render(<InboxRow notification={build({ kind: 'run.completed' })} onOpen={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
   });
 });

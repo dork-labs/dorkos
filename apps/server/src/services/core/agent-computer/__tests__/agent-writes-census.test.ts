@@ -198,6 +198,12 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/read-cursors/:kind/:id',
       'POST /api/sessions/:id/stream-health',
       'POST /api/workbench/bridge',
+      // A comment the person typed in a mini app, forwarded as their words,
+      // and the choice of who may receive it (DOR-3325): signed-in person only.
+      'POST /api/extensions/:id/forward',
+      'POST /api/extensions/:id/forward/pending/:pendingId/allow',
+      'POST /api/extensions/:id/forward/pending/:pendingId/decline',
+      'PUT /api/extensions/:id/forward-agents',
     ],
   ],
   [

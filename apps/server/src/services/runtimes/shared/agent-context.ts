@@ -55,6 +55,7 @@ import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
+import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, how an agent works in it,
@@ -108,7 +109,7 @@ When you tell a person about a chat, agent, ticket or pull request, name it by i
 Never show a raw id. A chat link is [Chat title](/session?session=<full id>). Three tools return one
 ready to use: the one whose name ends in \`session_start\`, the one that ends in \`chat_send\` and the
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
-Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
+What you can do here is listed area by area in the next block.
 Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
 \`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.
 ${fallback}
@@ -167,6 +168,9 @@ If a connection or a DorkOS package would clearly make this task go better and t
 say so once, in your reply: what it is, why, and that they decide on the Connections or Marketplace
 page. Never twice, never when nothing changes for the task, and in a room only if asked (a blocker
 still follows the rule above).
+Commands you add to your folder's allow list don't apply until a person approves them, and then only
+from your next turn. Don't add one to get past a refusal; tell the person what you need. If you do add
+one, tell them it's waiting on their approval, never that it's done.
 A no, a "stop", a denied request or a "not allowed" holds until lifted: never work around it, dig for
 credentials or ask for a password or key. Your persona never shortens these rules.
 </working_rules>`;
@@ -601,7 +605,8 @@ async function buildAgentBlock(
 
   // --- DorkOS knowledge block (default ON) ---
   if (conventions?.dorkosKnowledge !== false) {
-    tail.push(buildDorkosContextBlock());
+    // The areas ride with it: the same switch, because both say what DorkOS is (DOR-3219).
+    tail.push(buildDorkosContextBlock(), buildDorkosAreasBlock());
   }
 
   // --- Agent browser notice (only when its saved session is missing) ---

@@ -337,6 +337,24 @@ describe('ManagedCloudConnectorProvider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  // DOR-3265: an execution held for the owner's approval has not run. It is
+  // never read as success, whatever the client knows about approvals.
+  it('never reads an execution held for approval as success', async () => {
+    vi.mocked(cloud.executeManagedConnectorOperation).mockResolvedValueOnce({
+      state: 'held',
+      attemptId: 'attempt-1',
+      approval: 'awaiting',
+      requestHash: 'a'.repeat(64),
+      approvalId: '4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
+      approveUrl: 'https://cloud.example.com/approvals/4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(await provider(cloud).execute(command())).toMatchObject({
+      status: 'outcome_unknown',
+      code: 'MANAGED_RESULT_UNAVAILABLE',
+    });
+  });
+
   it('distinguishes known receipt-only outcomes from pending and unknown outcomes', async () => {
     vi.mocked(cloud.executeManagedConnectorOperation)
       .mockResolvedValueOnce({ state: 'receipt_only', receipt })

@@ -29,6 +29,7 @@ import { outranks } from '../../../moderation/bans.js';
 import { lockOwnMembership } from '../../../moderation/locks.js';
 import { comparableName, isRefusedDisplayName } from '../../../moderation/display-names.js';
 import { requirePerson } from '../../../moderation/person.js';
+import { requireAdministrator } from '../../../moderation/administrator.js';
 
 /**
  * Register a space's standards of conduct: mutes, the caller's own standing, rules and their
@@ -39,12 +40,15 @@ export function registerConductRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ): void {
+  // Mutes and the rules are managed by the person's browser, or by the `administer` credential
+  // they gave their paired app (DOR-3005), under the same live role checks.
   app.post('/members/:id/mute', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const targetId = z.uuid().parse(c.req.param('id'));
     const body = await readJson(c, CommunityWireMuteRequestSchema);
     const until = await transaction(pool, async (client) => {
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
+      await recheck(client);
       return muteMember(client, {
         actor: { id: actor.id, communityId: actor.community_id, role },
         targetId,
@@ -58,10 +62,11 @@ export function registerConductRoutes(
   });
 
   app.delete('/members/:id/mute', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const targetId = z.uuid().parse(c.req.param('id'));
     await transaction(pool, async (client) => {
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
+      await recheck(client);
       const target = await client.query<{ role: Member['role'] }>(
         "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR UPDATE",
         [targetId, actor.community_id]
@@ -85,9 +90,10 @@ export function registerConductRoutes(
   });
 
   app.get('/mutes', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const rows = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
+      await recheck(client);
       return client.query<{
         id: string;
         display_name: string;
@@ -151,7 +157,7 @@ export function registerConductRoutes(
   });
 
   app.put('/rules', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const body = await readJson(c, CommunityWireRulesUpdateRequestSchema);
     const result = await transaction(pool, async (client) => {
       const current = await client.query<{ rules_version: number }>(
@@ -159,6 +165,7 @@ export function registerConductRoutes(
         [actor.community_id]
       );
       await requireLiveRole(client, actor, ['owner', 'admin']);
+      await recheck(client);
       if (current.rows[0]?.rules_version !== body.expectedVersion)
         throw new ApiError(409, 'STATE_CONFLICT', 'The rules changed. Reload them, then edit.');
       // Every change, removal included, is a new version, so an old acceptance never covers it.

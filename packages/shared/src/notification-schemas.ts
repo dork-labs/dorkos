@@ -147,6 +147,12 @@ export const NOTIFICATION_KINDS = [
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */
   'web.new_device',
+  /**
+   * An agent's folder holds files whose names say they are secrets, which no
+   * rule keeps that agent from reading (DOR-3292). Names only, never contents;
+   * once per set of files.
+   */
+  'agent.secret_files',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */
@@ -343,6 +349,19 @@ export const NotificationDTOSchema = z
     outcome: NotificationOutcomeSchema.optional(),
     /** Who decided, on an `extension.decision` history row only. */
     decision: NotificationDecisionSchema.optional(),
+    /**
+     * Which mark a failing scheduled run's notice draws (DOR-3123), the same
+     * marks the Schedules row uses: `refused` for a run that was refused a tool
+     * (a padlock), `failed` for one that did not finish (a cross). Absent on
+     * every other notice, which draws its kind's own icon.
+     */
+    mark: z.enum(['refused', 'failed']).optional(),
+    /**
+     * A short mono line under the body, rebuilt from the payload on read: the
+     * files an `agent.secret_files` notice names, e.g. `.env · apps/web/.env.local
+     * · +2 more` (DOR-3292). Paths only, never contents. Absent on every other kind.
+     */
+    meta: z.string().optional(),
   })
   .openapi('Notification');
 

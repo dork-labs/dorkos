@@ -124,12 +124,15 @@ describe('a plugin-carried extension approval across the plugin lifecycle', () =
     return record !== undefined && mayRunExtensionCode(record, stored.value);
   }
 
-  it('keeps the approval, and the extension running, when the same plugin updates', async () => {
+  it('keeps the approval when the same plugin updates, and runs the new files once a person approves them', async () => {
     const { installer, installRoot } = await installAndApprove(['flow']);
     const approvedSource = stored.value.approvedSources?.flow;
+    // The yes names the copy AND its plugin's files (DOR-3068).
     expect(approvedSource).toEqual({
       path: path.join(installRoot, '.dork', 'extensions', 'flow'),
       plugin: PLUGIN,
+      digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      grants: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
 
     const result = await installer.update({ name: await writeVersion('2.0.0', ['flow']) });
@@ -138,6 +141,9 @@ describe('a plugin-carried extension approval across the plugin lifecycle', () =
     expect(stored.value.approvedToRun).toContain('flow');
     expect(stored.value.approvedSources?.flow).toEqual(approvedSource);
     expect(stored.value.enabled).toContain('flow');
+    // New files from the same plugin wait for a person, like any edit.
+    expect(runs('flow')).toBe(false);
+    await manager.approveToRun('flow');
     expect(runs('flow')).toBe(true);
   });
 
@@ -165,8 +171,10 @@ describe('a plugin-carried extension approval across the plugin lifecycle', () =
     expect(stored.value.enabled).not.toContain('flow-old');
     expect(stored.value.approvedToRun).not.toContain('flow-old');
     expect(stored.value.approvedSources?.['flow-old']).toBeUndefined();
-    // The one it still carries is untouched.
-    expect(runs('flow')).toBe(true);
+    // The one it still carries keeps its approval; its new files wait for a
+    // person (DOR-3068), like any update.
+    expect(stored.value.approvedToRun).toContain('flow');
+    expect(runs('flow')).toBe(false);
 
     // v3 carries `flow-old` again, at the same folder: code that left and came
     // back is new to the person, so it is refused until approved.
@@ -189,6 +197,10 @@ describe('a plugin-carried extension approval across the plugin lifecycle', () =
     expect(stored.value.enabled).not.toContain('flow-old');
     expect(stored.value.approvedToRun).not.toContain('flow-old');
     expect(stored.value.approvedSources?.['flow-old']).toBeUndefined();
+    // The one it still carries keeps its approval; its new files wait.
+    expect(stored.value.approvedToRun).toContain('flow');
+    expect(runs('flow')).toBe(false);
+    await manager.approveToRun('flow');
     expect(runs('flow')).toBe(true);
   });
 });

@@ -47,24 +47,23 @@ import {
 } from './deletion-status.js';
 import {
   assertReadableLifecycle,
+  lockSettings,
+  parseIfMatch,
   projectSettings,
+  settingsEtag,
   type SettingsRow,
 } from '../../content/settings-projection.js';
+import { browserOnly, requireAdministrator } from '../../moderation/administrator.js';
 
-function parseIfMatch(value: string | undefined): number | null {
-  const match = value?.match(/^(?:W\/)?"?(\d+)"?$/);
-  if (!match) return null;
-  return Number(match[1]);
-}
-
-function settingsEtag(version: number): string {
-  return `"${version}"`;
-}
-
+/**
+ * Lock the acting member and check their role live, then `recheck` the credential they came with:
+ * a browser session, or the `administer` credential of their paired app (DOR-3005).
+ */
 async function lockMember(
   client: PoolClient,
   actor: Member,
-  roles: readonly Member['role'][]
+  roles: readonly Member['role'][],
+  recheck: (client: PoolClient) => Promise<void> = async () => {}
 ): Promise<Member> {
   const current = await client.query<Member>(
     // member-kind: by-grant
@@ -75,19 +74,8 @@ async function lockMember(
   if (!current.rows[0] || !roles.includes(current.rows[0].role)) {
     throw new ApiError(403, 'FORBIDDEN', 'Your current role cannot perform this action.');
   }
+  await recheck(client);
   return current.rows[0];
-}
-
-/** Lock the Community before its acting member to match lifecycle and pairing transitions. */
-async function lockSettings(client: PoolClient, communityId: string): Promise<SettingsRow> {
-  const result = await client.query<SettingsRow>(
-    `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
-            icon_content_type,lifecycle,lifecycle_version
-     FROM communities WHERE id=$1 FOR UPDATE`,
-    [communityId]
-  );
-  if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
-  return result.rows[0];
 }
 
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
@@ -125,13 +113,17 @@ export function registerAdministrationRoutes(
     return json(c, CommunityAdminSettingsSchema, projectSettings(row));
   });
 
+  // The settings and icon are changed in the person's browser, or by the `administer` credential
+  // they gave their paired app (DOR-3005), under the same live role checks. Who may join is
+  // browser only.
   app.patch('/settings', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck, credential } = await requireAdministrator(c, auth, pool);
     const expectedVersion = parseIfMatch(c.req.header('if-match'));
     const body = await readJson(c, CommunityAdminSettingsUpdateRequestSchema);
+    if (body.admissionPolicy !== undefined) browserOnly(credential);
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
-      const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+      const currentActor = await lockMember(client, actor, ['owner', 'admin'], recheck);
       if (current.lifecycle !== 'active') {
         if (current.lifecycle === 'archived') {
           throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This space is archived.');
@@ -194,12 +186,12 @@ export function registerAdministrationRoutes(
   });
 
   app.put('/settings/icon', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const expectedVersion = parseIfMatch(c.req.header('if-match'));
     if (!c.req.raw.body) throw new ApiError(400, 'STATE_CONFLICT', 'Icon bytes are required.');
     const reservation = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
-      await lockMember(client, actor, ['owner', 'admin']);
+      await lockMember(client, actor, ['owner', 'admin'], recheck);
       if (current.lifecycle !== 'active') {
         if (current.lifecycle === 'archived')
           throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This space is archived.');
@@ -234,7 +226,7 @@ export function registerAdministrationRoutes(
     try {
       const row = await transaction(pool, async (client) => {
         const current = await lockSettings(client, actor.community_id);
-        const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+        const currentActor = await lockMember(client, actor, ['owner', 'admin'], recheck);
         if (current.lifecycle === 'held') throw communityHeld();
         if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
           throw new AdminSettingsConflict(projectSettings(current));
@@ -271,11 +263,11 @@ export function registerAdministrationRoutes(
   });
 
   app.delete('/settings/icon', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const expectedVersion = parseIfMatch(c.req.header('if-match'));
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
-      const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+      const currentActor = await lockMember(client, actor, ['owner', 'admin'], recheck);
       if (current.lifecycle === 'held') throw communityHeld();
       if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
         throw new AdminSettingsConflict(projectSettings(current));

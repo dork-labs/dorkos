@@ -327,12 +327,13 @@ describe('buildAgentBlock conventions', () => {
     expect(result).toContain('<dorkos_context>');
   });
 
-  it('<dorkos_context> contains subsystem and doc links', async () => {
+  it('<dorkos_context> points at the area lines and carries the doc links', async () => {
     const result = await buildAgentBlockWithoutDocsOverride();
-    expect(result).toContain('Console (chat)');
-    expect(result).toContain('Tasks (scheduling)');
-    expect(result).toContain('Relay (messaging)');
-    expect(result).toContain('Mesh (discovery)');
+    // The four-subsystem line was the stale half of DOR-3219; the areas replace it.
+    expect(result).not.toContain('Console (chat)');
+    expect(result).toContain('What you can do here is listed area by area in the next block.');
+    expect(result).toContain('<dorkos_areas>');
+    expect(result).toContain('- Agent browser: drive a real website');
     expect(result).toContain('https://dorkos.ai/llms.txt');
     expect(result).toContain('https://dorkos.ai/docs');
   });
@@ -876,6 +877,26 @@ describe('<working_rules>', () => {
     expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
   });
 
+  // Red when: the allow-list rule (DOR-3039) is dropped, loses one of its three
+  // points, or moves outside the block. A folder's own allow rules wait for a
+  // person's approval and apply from the next turn, so an agent that adds one
+  // must not call it done, nor add one to get past a refusal.
+  it('carries the allow-list rule exactly once, inside the block', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+
+    const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    const rule =
+      "Commands you add to your folder's allow list don't apply until a person approves them, and then only\n" +
+      "from your next turn. Don't add one to get past a refusal; tell the person what you need. If you do add\n" +
+      "one, tell them it's waiting on their approval, never that it's done.";
+    expect(text.split(rule)).toHaveLength(2);
+    const rules = rulesIn(text);
+    expect(rules).toContain(rule);
+    expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
+  });
+
   // Red when: anything per-session is interpolated. It sits in claude-code's
   // cached prefix and codex's stable half.
   it('is byte-identical between two different sessions', async () => {
@@ -1329,6 +1350,7 @@ describe('what each block costs', () => {
         'agent_identity',
         'agent_memory',
         'dorkos_context',
+        'dorkos_areas',
         'env',
         'session_model',
         'working_rules',

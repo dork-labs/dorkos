@@ -517,6 +517,13 @@ export const TaskDispatchPayloadSchema = z
      */
     account: z.string().min(1).optional(),
     /**
+     * The task's time limit as a person reads it ("30m"), so a run the
+     * receiver stops at its deadline can say how long it had (DOR-3033). The
+     * envelope's TTL is an absolute instant and names no span. Absent leaves
+     * the sentence without a number, as every envelope before this field did.
+     */
+    timeLimit: z.string().min(1).max(40).optional(),
+    /**
      * The home of the task's agent, when it has one (spec `agent-home-desk`
      * §3.2 row 12). The receiver hands it to the runtime as
      * `MessageOpts.forAgent`, so identity is read from that home and a `cwd`

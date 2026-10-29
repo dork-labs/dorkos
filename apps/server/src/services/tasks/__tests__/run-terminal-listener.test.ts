@@ -112,3 +112,50 @@ describe('run-terminal listener → activity feed (DOR-1573)', () => {
     );
   });
 });
+
+describe('run-terminal listener → one notice per failing streak (DOR-3123)', () => {
+  it('hands the notifier how long the schedule has been failing', async () => {
+    const { notifyRunCompleted } = await import('../../notifications/emitters/run-completed.js');
+    vi.mocked(notifyRunCompleted).mockClear();
+    const store = new TaskStore(createTestDb());
+    const streakOf = vi.fn(() => 2);
+    store.setOnRunTerminal(createRunTerminalListener(null, undefined, streakOf));
+    const task = store.createTask(taskInput('health'));
+    const run = store.createRun(task.id, 'scheduled');
+
+    store.updateRun(run.id, { status: 'needs_attention', refusedTools: ['Bash'] });
+    await flush();
+
+    expect(streakOf).toHaveBeenCalledWith(task.id);
+    expect(notifyRunCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: run.id }),
+      expect.anything(),
+      2
+    );
+  });
+
+  it('still records the activity and sends the notice when the streak lookup throws', async () => {
+    const { notifyRunCompleted } = await import('../../notifications/emitters/run-completed.js');
+    vi.mocked(notifyRunCompleted).mockClear();
+    const store = new TaskStore(createTestDb());
+    const activity = { emit: vi.fn() };
+    store.setOnRunTerminal(
+      createRunTerminalListener(activity as unknown as ActivityService, undefined, () => {
+        throw new Error('db locked');
+      })
+    );
+    const task = store.createTask(taskInput('health'));
+    const run = store.createRun(task.id, 'scheduled');
+
+    store.updateRun(run.id, { status: 'needs_attention', refusedTools: ['Bash'] });
+    await flush();
+
+    // No streak known, so the notice goes out, as it did before streaks.
+    expect(notifyRunCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: run.id }),
+      expect.anything(),
+      undefined
+    );
+    expect(activity.emit).toHaveBeenCalledTimes(1);
+  });
+});

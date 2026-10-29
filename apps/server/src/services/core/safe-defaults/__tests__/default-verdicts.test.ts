@@ -168,7 +168,12 @@ describe('config default verdicts cover the whole schema', () => {
     // (DOR-2739). Each `null` re-arms a step that loosens a default (opens the
     // mesh, shares apps with every agent), so neither is bookkeeping a wipe
     // may drop; both carry a reason and a carryover rule.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(20);
+    //
+    // Raised 20 -> 21 for one more once-per-install stamp of the same shape,
+    // `harness.folderConfigPinned` (DOR-3068). `false` re-arms pinning every
+    // agent home as it stands, which Security asked for once at the upgrade and
+    // never again, so it carries a reason and a carryover rule like the two above.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(21);
   });
 });
 

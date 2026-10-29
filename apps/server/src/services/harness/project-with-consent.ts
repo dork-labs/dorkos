@@ -113,6 +113,7 @@ import {
   type HookProjectionRequest,
 } from './hook-consent.js';
 import { readGlobalSharingFromDisk } from './global-scope.js';
+import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
 /**
  * Seam for the Harness Sync engine calls, injectable so route/service tests can
@@ -509,10 +510,13 @@ export function projectWithConsent(
     );
   }
   const { plan, withheld } = planWithConsent(projectPath, opts);
-  const { applied, conflicts, swept, removals, leftAlone, warnings } = _internal.applyPlan(
+  // Every hook this writes is one a person approved, so an agent home's pin
+  // moves with it, when the hooks matched the pin just before (DOR-3068).
+  const { applied, conflicts, swept, removals, leftAlone, warnings } = withPersonRepinAtHome(
     projectPath,
-    plan,
-    { sweepOrphans: opts.sweepOrphans }
+    'hooks',
+    'projecting hooks a person allowed',
+    () => _internal.applyPlan(projectPath, plan, { sweepOrphans: opts.sweepOrphans })
   );
   return { plan, withheld, applied, conflicts, swept, removals, leftAlone, warnings };
 }

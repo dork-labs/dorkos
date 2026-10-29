@@ -17,6 +17,7 @@ import {
   reserveOutsiderOutput,
 } from '../../core/turn-power/outsider-output.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
+import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -74,6 +75,12 @@ export interface RoomPostInput {
    * an id is never a way to reach somebody outside it.
    */
   mentions?: readonly string[];
+  /**
+   * The mini app and item a person's forwarded comment came from (DOR-3325).
+   * Set only by the forward route, which wrote `text` from the person's own
+   * POST body; no other door carries one.
+   */
+  via?: ForwardVia;
 }
 
 /** The two doors a message comes through, and the files it may bring. */

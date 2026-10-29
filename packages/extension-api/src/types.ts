@@ -165,24 +165,45 @@ export interface ExtensionRecord {
    */
   devLink?: { path: string };
   /**
-   * The whole plugin folder's digest now, for a `changed` copy: what a
-   * person's approval of it is pinned to.
+   * The digest of this copy's files as the server read them (DOR-3068). A
+   * "Turn it on" sends it back as `expectedDigest`, so files that change after
+   * the card was drawn are never approved. Absent for a core extension, a dev
+   * link, or a folder DorkOS cannot read.
+   */
+  digest?: string;
+  /**
+   * The digest of this copy's files now (DOR-3068): the whole plugin folder
+   * for a plugin-carried copy, the extension's own folder otherwise. What a
+   * person's approval of it is pinned to. Absent for a dev link, a core
+   * extension, or a folder that holds a symbolic link or cannot be read.
    */
   currentDigest?: string;
   /**
+   * The copy's folder with every symbolic link resolved, read at discovery
+   * (DOR-3068). An agent's own extension keeps its path trust only while
+   * this lies inside that agent's folder.
+   */
+  realPath?: string;
+  /**
    * Where this copy RUNS from, when that is not {@link ExtensionRecord.path}:
-   * the extension's folder inside a verified snapshot of its plugin under
-   * `{dorkHome}/extension-snapshots/`, for a project copy that runs by its
-   * trusted origin rather than a person's approval of this folder. Compiling,
-   * the server half and `ctx.extensionDir` all use it.
+   * the extension's folder inside a verified snapshot of its files under
+   * `{dorkHome}/extension-snapshots/`, for a copy that runs by its trusted
+   * origin or by a yes pinned to its digest. Compiling, the server half and
+   * `ctx.extensionDir` all use it.
    */
   runPath?: string;
   /**
-   * The plugin folder digest this copy was judged against. Every compile
-   * checks the folder still has it, before and after bundling, so files
-   * swapped after the scan never run (`extension-compiler.ts`).
+   * The folder digest this copy was judged against. Every compile checks the
+   * folder still has it, before and after bundling, so files swapped after
+   * the scan never run (`extension-compiler.ts`).
    */
   pinnedDigest?: string;
+  /**
+   * The digest of the client bundle the last compile produced: the exact
+   * bytes the app would load (DOR-3068). A copy that keeps path trust loads
+   * its screen half only while this matches the approval's `clientDigest`.
+   */
+  clientDigest?: string;
   /**
    * The path of the copy that runs instead of this one, when both came from
    * the same trusted origin and that copy is newer (spec `flow-multiproject`
@@ -262,6 +283,12 @@ export interface ExtensionRecordPublic {
    */
   restartingAt?: string | null;
   bundleReady: boolean;
+  /**
+   * The digest of this copy's files now (DOR-3068). An approve button sends it
+   * back as `expectedDigest`, so a yes covers only the files the person saw.
+   * Absent before the first scan reads the files, and from an older server.
+   */
+  digest?: string;
   hasServerEntry: boolean;
   hasDataProxy: boolean;
   /**

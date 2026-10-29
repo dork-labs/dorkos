@@ -1,0 +1,19 @@
+name: security-approve-tests
+on:
+  pull_request:
+    paths:
+      - 'tools/security-approve/**'
+      - '.github/workflows/security-approve-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acl:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Canned policy and disposable ACL tests (CI user only)
+        run: tools/security-approve/tests/run.sh

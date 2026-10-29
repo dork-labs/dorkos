@@ -53,6 +53,16 @@ const ROUTES: GuardedRoute[] = [
       h.call(`${tenant()}/me/grants`, { method: 'DELETE', cookie, body: { password } }),
   },
   {
+    // Only when consenting to `administer`; the password is checked before the request is read.
+    route: 'POST /pairings/approve',
+    actor: 'person',
+    call: (cookie, password) =>
+      h.call(`${tenant()}/pairings/approve`, {
+        cookie,
+        body: { pairingId: 'checked-after-the-password', administer: true, password },
+      }),
+  },
+  {
     route: 'POST /account/erasures',
     actor: 'person',
     call: (cookie, password) =>

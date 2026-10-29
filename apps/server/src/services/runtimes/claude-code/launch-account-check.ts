@@ -15,6 +15,10 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { resolveLaunchAccountRoot, type LaunchAccountResolution } from './claude-config-dir.js';
+import { accountUnlessHeld } from './folder-settings/folder-config-consent.js';
+
+/** Re-exported for `ClaudeCodeRuntime.accountRootForSession`, which predicts the same account. */
+export { accountUnlessHeld };
 
 /**
  * Where a new Claude Code session in `cwd` would run and bill, or why it may not.
@@ -34,7 +38,8 @@ export async function checkClaudeLaunchAccount(opts: {
   const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
   return resolveLaunchAccountRoot({
     hintId: opts.hintId,
-    agentAccountId: manifest?.account,
+    // Not an account the agent wrote into its own file while that waits for a person (DOR-3068).
+    agentAccountId: accountUnlessHeld(manifest, home),
     agentId: manifest?.id,
     project: opts.project !== undefined ? opts.project : await projectOfFolder(opts.cwd),
   });

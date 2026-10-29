@@ -51,6 +51,7 @@ import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
 import { applyPageBadge } from './page-badge';
 import { createExtensionRoomsApi } from './extension-rooms-api';
+import { createExtensionForwardApi } from './extension-forward-api';
 import { requestError } from './request-error';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
@@ -395,7 +396,9 @@ export function createExtensionAPI(
     async saveData<T>(data: T): Promise<void> {
       const res = await fetch(extensionApiUrl(`/extensions/${extId}/data`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        // Says which extension is writing, so the server refuses a write to
+        // any other extension's data (DOR-3066).
+        headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': extId },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error(`saveData failed: ${res.status}`);
@@ -495,6 +498,7 @@ export function createExtensionAPI(
     },
 
     rooms: createExtensionRoomsApi(extId, cleanups),
+    forward: createExtensionForwardApi(extId),
   };
 
   return { api, cleanups };
