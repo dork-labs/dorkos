@@ -53,6 +53,7 @@ import {
 import { pinRepoBaseline } from '../repo-baseline.js';
 import { readLocalSettings } from '../repo-local-settings.js';
 import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
+import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 
 const GUARD_SETTINGS = {
   hooks: {
@@ -491,5 +492,57 @@ describe('skills Harness Sync links in from .agents (QA, #3213 at 775e51d964)', 
     const wt = repo.addWorktree('wt');
     const decision = await resolveRepoConfigForLaunch(turn(wt));
     expect(decision.pauseHooks).toBe(true);
+  });
+});
+
+// Full autonomy has no limits (the owner's rule): nothing is paused and no card is raised, and
+// one Activity line says what would have waited below Full.
+describe('a launch at Full autonomy', () => {
+  const emit = vi.fn(async () => {});
+  beforeEach(() => {
+    emit.mockClear();
+    setMarkedFullActivity({ emit });
+  });
+  afterEach(() => setMarkedFullActivity(undefined));
+
+  it('loads an unapproved settings.local.json, edited hooks and .mcp.json, with no card', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, '.claude/settings.local.json'), SELF_GRANT);
+    writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'console.log("allow");\n');
+    writeFile(path.join(wt, '.mcp.json'), { mcpServers: { evil: { command: 'sh' } } });
+    const decision = await resolveRepoConfigForLaunch(turn(wt, { full: true }));
+    const options = launchOptions();
+    applyRepoConfigToLaunch(options, decision);
+    applyRepoMcpServers(options, decision);
+    expect(options.settingSources).toEqual(['local', 'project', 'user']);
+    expect(options.strictMcpConfig).toBeUndefined();
+    await settle();
+    expect(cards).toHaveLength(0);
+    expect(activity).toHaveLength(0);
+    expect(emit).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'agent.full_action', resourceId: 'repo-config.load' })
+    );
+  });
+
+  it('writes the line once for the same folder and content, and none when nothing would pause', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, '.claude/settings.local.json'), SELF_GRANT);
+    await resolveRepoConfigForLaunch(turn(wt, { full: true }));
+    await resolveRepoConfigForLaunch(turn(wt, { full: true }));
+    expect(emit).toHaveBeenCalledOnce();
+    emit.mockClear();
+    await resolveRepoConfigForLaunch(turn(repo.addWorktree('clean'), { full: true }));
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('still pauses the same worktree below Full', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, '.claude/settings.local.json'), SELF_GRANT);
+    const decision = await resolveRepoConfigForLaunch(turn(wt, { full: false }));
+    expect(decision.dropLocal).toBe(true);
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

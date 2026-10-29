@@ -28,6 +28,11 @@
  * line (`repo-config-activity.ts`), and logs a warning. Approval is by content
  * only, so the same change is approved once for every worktree.
  *
+ * A launch at Full autonomy (`bypassPermissions`) has no limits (the owner's
+ * rule): nothing is paused and no card is raised. When something would have
+ * paused below Full, one Activity line says so (`agent.full_action`), once per
+ * folder and content per server run.
+ *
  * Skipped for a turn that stands in its agent's registered home itself (not a
  * folder below it, which can hold settings of its own), which the agent-home
  * pin covers (`launch-folder-config.ts`), and for a teammate's turn,
@@ -41,6 +46,7 @@ import path from 'node:path';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
+import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { folderAllowApprovalGateway } from '../folder-settings/folder-allow-approval.js';
 import { leaveOutFolderSettings } from '../folder-settings/launch-folder-config.js';
 import { notePaused, noteRunning } from './repo-config-activity.js';
@@ -74,6 +80,8 @@ export interface RepoConfigTurn {
   teammate: boolean;
   /** DorkOS's data folder. */
   dorkHome: string;
+  /** The launch runs at Full autonomy, which has no limits: nothing is paused. */
+  full?: boolean;
 }
 
 /** What a launch pauses. */
@@ -124,6 +132,7 @@ async function isHomeItself(cwd: string, home: string): Promise<boolean> {
 export async function resolveRepoConfigForLaunch(turn: RepoConfigTurn): Promise<RepoConfigLaunch> {
   if (turn.teammate) return NOTHING_PAUSED;
   if (turn.home && (await isHomeItself(turn.cwd, turn.home))) return NOTHING_PAUSED;
+  if (turn.full) return loadAtFull(turn);
   try {
     return await checkRepoConfig(turn);
   } catch (err) {
@@ -146,8 +155,61 @@ interface Pause {
   what: string;
 }
 
-/** The check itself; throws on a failure the caller turns into a full pause. */
-async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> {
+/** Folders and content a Full launch already wrote its Activity line for, newest last. */
+const fullLoadsNoted = new Set<string>();
+/** How many {@link fullLoadsNoted} remembers, oldest dropped first. */
+const FULL_LOAD_MEMORY = 10_000;
+
+/**
+ * A launch at Full: load everything, and when the check says something would pause below Full
+ * (or cannot say), write one Activity line, once per folder and content per server run.
+ */
+async function loadAtFull(turn: RepoConfigTurn): Promise<RepoConfigLaunch> {
+  let would: { decision: RepoConfigLaunch; key: string };
+  try {
+    would = await checkRepoConfig(turn, { quiet: true }).then((decision) => ({
+      decision,
+      key: JSON.stringify(decision),
+    }));
+  } catch {
+    would = { decision: ALL_PAUSED, key: 'unchecked' };
+  }
+  const parts = pausedParts(would.decision);
+  const key = `${turn.cwd}\0${would.key}`;
+  if (parts.length > 0 && !fullLoadsNoted.has(key)) {
+    fullLoadsNoted.add(key);
+    if (fullLoadsNoted.size > FULL_LOAD_MEMORY) {
+      fullLoadsNoted.delete(fullLoadsNoted.values().next().value!);
+    }
+    recordFullAction({
+      actionId: 'repo-config.load',
+      did: `loaded ${parts.join(', ')} nobody approved in ${worktreeName(turn.cwd)}`,
+      limit: 'they wait for a person',
+      ...(turn.home ? { agentPath: turn.home } : {}),
+      ...(turn.agentName ? { agentName: turn.agentName } : {}),
+    });
+  }
+  return NOTHING_PAUSED;
+}
+
+/** What a decision would pause, in a person's words. */
+function pausedParts(decision: RepoConfigLaunch): string[] {
+  return [
+    ...(decision.dropLocal ? ['its settings.local.json'] : []),
+    ...(decision.pauseHooks ? ["the repo's hooks and settings"] : []),
+    ...(decision.mcpServers ? ['its MCP servers'] : []),
+    ...(decision.askRules.length > 0 ? ['new allow rules'] : []),
+  ];
+}
+
+/**
+ * The check itself; throws on a failure the caller turns into a full pause. `quiet` decides
+ * without telling anyone (no card, no Activity line), for a launch at Full.
+ */
+async function checkRepoConfig(
+  turn: RepoConfigTurn,
+  { quiet = false }: { quiet?: boolean } = {}
+): Promise<RepoConfigLaunch> {
   const { cwd, dorkHome } = turn;
   const wt = worktreeName(cwd);
   const decision: RepoConfigLaunch = { ...NOTHING_PAUSED, askRules: [] };
@@ -165,7 +227,7 @@ async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> 
       what: `settings.local.json sets ${local.keys.join(', ')}`,
     });
   } else {
-    noteRunning('local', cwd, wt);
+    if (!quiet) noteRunning('local', cwd, wt);
   }
 
   const baseline = await resolveRepoBaseline(cwd, turn.dorkHome);
@@ -192,7 +254,7 @@ async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> 
             : `${hooks.files.length} hook files changed`,
       });
     } else {
-      noteRunning('hooks', cwd, wt);
+      if (!quiet) noteRunning('hooks', cwd, wt);
     }
     const mcp = reading.mcpJson;
     if (mcp && !(mcp.approvable && isRepoConfigApproved('mcpJson', mcp.digest))) {
@@ -203,7 +265,7 @@ async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> 
         names: mcp.files,
         what: `${mcp.files.join(', ')} changed`,
       });
-    } else if (!decision.mcpServers) {
+    } else if (!decision.mcpServers && !quiet) {
       noteRunning('mcpJson', cwd, wt);
     }
   }
@@ -211,6 +273,7 @@ async function checkRepoConfig(turn: RepoConfigTurn): Promise<RepoConfigLaunch> 
   // A repo DorkOS can't trust yet gets one card for its default branch, built
   // from that commit; the worktree's own changes are asked about once it is
   // trusted, against it.
+  if (quiet) return decision;
   const trustable = isTrustable(baseline);
   for (const pause of pauses) raise(turn, pause, { ask: !trustable || pause.kind === 'local' });
   if (trustable && pauses.some((pause) => pause.kind !== 'local')) {
@@ -347,14 +410,20 @@ function rereadFor(turn: RepoConfigTurn, kind: RepoConfigKind): RepoConfigReread
  * {@link applyRepoConfigToLaunch}. The answer goes on to
  * {@link applyRepoMcpServers} once the MCP servers are set.
  *
- * @param sdkOptions - The launch options, mutated.
+ * A launch at Full autonomy pauses nothing, so set the launch's mode first.
+ *
+ * @param sdkOptions - The launch options, mutated; its mode is read.
  * @param turn - Who the turn is for and where it stands.
  */
 export async function applyRepoConfigStep(
   sdkOptions: Options,
-  turn: Omit<RepoConfigTurn, 'dorkHome'>
+  turn: Omit<RepoConfigTurn, 'dorkHome' | 'full'>
 ): Promise<RepoConfigLaunch> {
-  const decision = await resolveRepoConfigForLaunch({ ...turn, dorkHome: resolveDorkHome() });
+  const decision = await resolveRepoConfigForLaunch({
+    ...turn,
+    dorkHome: resolveDorkHome(),
+    full: sdkOptions.permissionMode === 'bypassPermissions',
+  });
   applyRepoConfigToLaunch(sdkOptions, decision);
   return decision;
 }
