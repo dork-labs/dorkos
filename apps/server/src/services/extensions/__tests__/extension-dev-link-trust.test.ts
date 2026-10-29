@@ -133,12 +133,14 @@ describe('path approvals', () => {
   it("does not let an installed copy's approval cover a dev link at the same path", () => {
     // Purpose: without this, linking any folder into an approved plugin's slot
     // would run it on the installed copy's yes.
+    // A real approval names the installed copy's files too (DOR-3068).
+    const digest = `sha256:${'a'.repeat(64)}`;
     const approvals = {
       approvedToRun: ['flow-dash'],
-      approvedSources: { 'flow-dash': approvedSourceOf(installed) },
+      approvedSources: { 'flow-dash': { ...approvedSourceOf(installed), digest } },
     };
-    expect(isApprovedByPath(installed, approvals)).toBe(true);
-    expect(isApprovedByPath(linked, approvals)).toBe(false);
+    expect(isApprovedByPath({ ...installed, currentDigest: digest }, approvals)).toBe(true);
+    expect(isApprovedByPath({ ...linked, currentDigest: digest }, approvals)).toBe(false);
   });
 
   it("does not let a dev link's approval cover the installed copy put back after unlink", () => {

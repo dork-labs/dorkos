@@ -77,7 +77,7 @@ const pairs = [
     'packages/shared/src/extension-approval-schemasx.ts',
   ],
   ['packages/shared/src/cloud-origin.ts', 'packages/shared/src/cloud-originx.ts'],
-  ['apps/desktop/src/preload/index.ts', 'apps/desktop/src/preloader/x.ts'],
+  ['apps/desktop/src/preload/index.ts', 'apps/desktopx/src/preload/index.ts'],
   ['apps/server/src/services/core/approvals/x.ts', 'apps/server/src/services/core/approvalsx/x.ts'],
   [
     'apps/server/src/services/core/mcp-tool-gate.ts',

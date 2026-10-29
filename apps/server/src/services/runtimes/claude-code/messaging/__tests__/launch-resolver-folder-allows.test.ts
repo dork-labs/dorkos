@@ -186,8 +186,16 @@ describe('an agent folder allow list at launch', () => {
   });
 
   it('denies the self-grant files beside an applied list, and only then (M1)', async () => {
+    // The home's own three are denied on every launch (DOR-3068); the rest of
+    // the self-grant set rides only beside an applied list.
     const before = denyOf((await launch(home)).sdkOptions.settings);
-    expect(before.some((rule) => rule.includes(`${home}/.claude`))).toBe(false);
+    expect(before).toContain(`Edit(/${home}/.claude/**)`);
+    // Where `.claude/skills/<x>` really points, so the skill itself.
+    expect(before).toContain(`Edit(/${home}/.agents/**)`);
+    // Write rules only: every launch now also carries read denies on the account files (DOR-3299).
+    expect(before.some((rule) => rule.startsWith('Edit(') && rule.includes('~/.claude.json'))).toBe(
+      false
+    );
 
     recordFolderAllowApproval({ agentId: AGENT.id, home, rules: [RULE] });
     const deny = denyOf((await launch(home)).sdkOptions.settings);
@@ -195,6 +203,10 @@ describe('an agent folder allow list at launch', () => {
       expect(deny).toContain(`${tool}(/${home}/.claude/**)`);
       expect(deny).toContain(`${tool}(/${home}/.mcp.json)`);
       expect(deny).toContain(`${tool}(/${home}/.dork/agent.json)`);
+      // Every other agent home's skills too, not only this one's.
+      expect(
+        deny.some((rule) => rule.startsWith(`${tool}(`) && rule.endsWith('/agents/*/.agents/**)'))
+      ).toBe(true);
       expect(deny).toContain(`${tool}(~/.claude.json)`);
       expect(deny).toContain(`${tool}(~/.dork/config.json)`);
     }

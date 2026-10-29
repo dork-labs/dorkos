@@ -1102,6 +1102,43 @@ describe('ManagedAuthoritySyncService', () => {
       });
     });
 
+    // DOR-3265: a change waiting for the owner's approval is not applied yet,
+    // so it stays pending and the last applied set stands.
+    it('keeps a change awaiting the owner’s approval pending, never applied or refused', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => ({
+        version: 1 as const,
+        commandId: command.commandId,
+        managedConnectionId: command.managedConnectionId,
+        scopeVersion: command.scopeVersion,
+        state: 'awaiting_approval' as const,
+        approvalId: '4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
+        approveUrl: 'https://cloud.example.com/approvals/4b0f6f3e-9a2c-4d71-8c1e-2f5a6b7c8d9e',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }));
+      await expect(replace()).resolves.toMatchObject({ applied: false });
+      expect(db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
+        state: 'pending',
+        rejectionCode: null,
+      });
+    });
+
+    it('says plainly when an approval ran out', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => ({
+        version: 1 as const,
+        commandId: command.commandId,
+        managedConnectionId: command.managedConnectionId,
+        scopeVersion: command.scopeVersion,
+        state: 'rejected' as const,
+        rejectionCode: 'approval_expired' as const,
+      }));
+      await replace();
+      expect(db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
+        state: 'rejected',
+        rejectionCode: 'approval_expired',
+        safeReason: 'Nobody approved this change in time, so it wasn’t applied.',
+      });
+    });
+
     it('tries a refused change again when the link kept its key (DOR-2620)', async () => {
       cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
         throw cloudError('unauthorized');

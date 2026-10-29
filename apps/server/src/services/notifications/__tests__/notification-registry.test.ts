@@ -183,6 +183,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     outcome: 'success',
   },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
+  'agent.secret_files': {
+    agentId: 'agent-1',
+    agentName: 'Scout',
+    files: ['/agents/scout/id_rsa'],
+    total: 1,
+    fingerprint: 'fp-1',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -228,6 +235,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // News: it ran (spec trusted-by-default-flip §5.6).
   'connector.destructive_executed': 'quiet',
   'web.new_device': 'notable',
+  'agent.secret_files': 'notable',
 };
 
 /**
@@ -306,6 +314,7 @@ describe('notification registry', () => {
       'account.limited',
       'account.reset',
       'agent.note',
+      'agent.secret_files',
       'agent.unreachable',
       'approval.pending',
       'ask.pending',

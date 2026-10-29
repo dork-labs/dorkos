@@ -46,7 +46,12 @@ function copyOf(approval: PendingExtensionApproval): ExtensionAnswerInput {
  */
 function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
   const permissions = approvedSetOf(permissionViewFromApproval(approval));
-  return { ...copyOf(approval), ...(permissions ? { permissions } : {}) };
+  return {
+    ...copyOf(approval),
+    ...(permissions ? { permissions } : {}),
+    // The files the row showed: an edit after it was drawn is refused as stale.
+    ...(approval.digest ? { expectedDigest: approval.digest } : {}),
+  };
 }
 
 /**
@@ -77,6 +82,21 @@ export interface ExtensionApprovalListProps {
 }
 
 /**
+ * The row's question: an update names both versions, any other change to an
+ * approved copy says it changed, and a first ask offers to turn it on.
+ *
+ * @param approval - The waiting copy.
+ */
+function titleOf(approval: PendingExtensionApproval): string {
+  if (approval.updatedFrom) {
+    return `Update ${approval.name} from ${approval.updatedFrom} to ${approval.version}?`;
+  }
+  return approval.changedFiles
+    ? `${approval.name} has changed. Run the new code?`
+    : `Turn on ${approval.name}?`;
+}
+
+/**
  * One row per extension waiting to be turned on: "Turn on Flow?", the line
  * that says why, where it came from, and ⓘ 👎 👍.
  *
@@ -101,7 +121,7 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
           <InboxDecisionRow
             key={`${approval.id}:${approval.path}:${approval.version}`}
             icon={Puzzle}
-            title={`Turn on ${approval.name}?`}
+            title={titleOf(approval)}
             why={approval.why}
             // What it gives agents, on the row itself, so it is read before the
             // yes; each tool and its tier is in the ⓘ panel (DOR-2685).

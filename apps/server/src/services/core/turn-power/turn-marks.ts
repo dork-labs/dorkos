@@ -46,6 +46,8 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
+  CARRIED_OUTSIDER_LEVEL,
+  ceilingHoldsForOutsider,
   isNoLooserThan,
   mergeTeammateOrigins,
   READ_ONLY_LEVEL,
@@ -272,16 +274,20 @@ export function agentMarksRunning(agentPath: string): TurnMarks {
 
 /**
  * A ceiling that carries these marks to a turn that reads words written under them (a beat that
- * reads a promise made in a marked turn): the runtime default for the outsider mark, and a
- * read-only level holding every teammate origin. `undefined` for no marks.
+ * reads a promise made in a marked turn, a turn our own agent's marked post starts). The outsider
+ * mark rides as {@link CARRIED_OUTSIDER_LEVEL}, which caps nothing (DOR-3390): the mark gates the
+ * actions that matter, not the turn's level. A teammate's chain is still held to the runtime
+ * default and a read-only level holding every teammate origin. `undefined` for no marks.
  *
  * @param marks - The marks the words were written under.
  */
 export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undefined {
   if (!hasMarks(marks)) return undefined;
-  const bounds: TurnPermissionBound[] = ['runtime-default'];
-  if (marks.teammate !== undefined) bounds.push({ ...READ_ONLY_LEVEL, teammate: marks.teammate });
-  return bounds.length === 1 ? bounds[0]! : bounds;
+  // A teammate's hold is the runtime default, which carries the outsider mark already.
+  if (marks.teammate !== undefined) {
+    return ['runtime-default', { ...READ_ONLY_LEVEL, teammate: marks.teammate }];
+  }
+  return CARRIED_OUTSIDER_LEVEL;
 }
 
 /**
@@ -321,6 +327,34 @@ export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
  */
 export function startedByOutsider(sessionId: string): boolean {
   return turnStartedByOutsider(sessionId);
+}
+
+/**
+ * Runtimes whose own gate holds the shell of a turn that carries an outsider's words on
+ * (DOR-3390): Claude Code's held-turn hook asks before Bash in such a turn. Any other runtime has
+ * no such gate yet, so a carried mark still holds its whole turn to the runtime's default there.
+ */
+const GATES_CARRIED_SHELL: ReadonlySet<string> = new Set(['claude-code']);
+
+/**
+ * The send's options with a carried outsider mark held to the runtime's default on a runtime that
+ * cannot gate the shell alone; untouched otherwise, and when the turn is already held.
+ */
+function withCarriedHold(
+  runtimeType: string,
+  opts: MessageOpts | undefined
+): MessageOpts | undefined {
+  // Only a mark the ceiling carries: a stranger's line merely in view is fenced, not held.
+  const ceiling = opts?.permissionCeiling;
+  if (ceiling === undefined || GATES_CARRIED_SHELL.has(runtimeType)) return opts;
+  if (ceilingHoldsForOutsider(ceiling) || marksOfCeiling(ceiling).outsider !== true) return opts;
+  const bounds: TurnPermissionBound[] = Array.isArray(ceiling)
+    ? [...(ceiling as readonly TurnPermissionBound[])]
+    : [ceiling as TurnPermissionBound];
+  bounds.push('runtime-default');
+  // A continuation's hold names only its own bound; this one is a real hold, so it is dropped.
+  const { continuationHold: _dropped, ...rest } = opts ?? {};
+  return { ...rest, permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
 /** A turn start: `sendMessage`'s and `executeCommandIntent`'s shape, with the middle argument. */
@@ -379,7 +413,7 @@ export function applyTurnMarks(
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
     if (marks.outsider === true) noteChatHeardOutsider(sessionId);
-    let sent = opts;
+    let sent = withCarriedHold(target.type, opts);
     if (marks.teammate !== undefined) {
       sent = teammateTurnOpts(opts);
       const refusal = teammateTurnRefusal(target.type, marks.teammate);

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Context, Hono } from 'hono';
-import type { Pool, PoolClient } from 'pg';
+import type { Pool } from 'pg';
 import { z } from 'zod';
 import {
   CommunityWireConnectionAccessResponseSchema,
@@ -17,6 +17,7 @@ import {
   CommunityWirePairingStartRequestSchema,
   CommunityWirePairingStartResponseSchema,
   CommunityWirePairingStatusResponseSchema,
+  type CommunityWirePairingScope,
 } from '@dorkos/shared/community-wire';
 import {
   CommunityPairingExchangeSecretResponseSchema,
@@ -24,13 +25,21 @@ import {
 } from '@dorkos/shared/community-private-wire';
 import type { CommunityAuth } from '../../auth.js';
 import type { CommunityConfig } from '../../config.js';
+import { requireConnectionGrant, requireMember, transaction } from '../../data.js';
 import {
-  requireConnectionGrant,
-  requireLiveRole,
-  refuseIfClearedSinceStart,
-  requireMember,
-  transaction,
-} from '../../data.js';
+  exactArchivedRead,
+  grantCapabilities,
+  lockPairingCommunity,
+  pairingScopes,
+  requirePairingMember,
+} from './pairing-access.js';
+import {
+  assertAdministerScopes,
+  issueAdministerCredential,
+  registerAdministerGrantRoutes,
+  settleAdministerOnApproval,
+  visibleScopes,
+} from './administer-pairing.js';
 import { lockRevocationMember, revokeCallingConnectionGrant } from './grant-revocation.js';
 import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
@@ -47,81 +56,6 @@ function challenge(verifier: string) {
 function privateCaller(origin: string | undefined) {
   if (origin)
     throw new ApiError(403, 'FORBIDDEN', 'A local install must make this request directly.');
-}
-
-/**
- * What a grant can do right now, from its scopes and the lifecycle an installation is told.
- *
- * A held community is reported as `archived`, and read-only either way: a grant kept through a
- * hold reads, and posts, enrolls agents, and streams again only after release. A history-only
- * grant never gains write access, whatever the lifecycle.
- */
-function grantCapabilities(
-  scopes: readonly string[],
-  historyOnly: boolean,
-  lifecycle: 'active' | 'archived'
-) {
-  const live = lifecycle === 'active' && !historyOnly;
-  return {
-    read: scopes.includes('read'),
-    post: live && scopes.includes('post'),
-    enrollAgent: live && scopes.includes('enroll-agent'),
-    stream: live && scopes.includes('read'),
-  };
-}
-
-function exactArchivedRead(scopes: readonly string[]): boolean {
-  return scopes.length === 1 && scopes[0] === 'read';
-}
-
-async function pairingScopes(pool: Pool, id: string, communityId: string): Promise<string[]> {
-  const result = await pool.query<{ scopes: string[] }>(
-    'SELECT scopes FROM connection_pairings WHERE id=$1 AND community_id=$2',
-    [id, communityId]
-  );
-  return result.rows[0]?.scopes ?? [];
-}
-
-async function lockPairingCommunity(
-  client: PoolClient,
-  communityId: string,
-  allowArchivedRead: boolean
-): Promise<'active' | 'archived'> {
-  const result = await client.query<{ lifecycle: string }>(
-    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
-    [communityId]
-  );
-  const lifecycle = result.rows[0]?.lifecycle;
-  if (lifecycle === 'active') return lifecycle;
-  // A held community pairs exactly as an archived one: read-only, history only.
-  if (isReadOnlyLifecycle(lifecycle) && allowArchivedRead) return 'archived';
-  if (lifecycle === 'archived')
-    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived spaces accept read-only pairing.');
-  if (lifecycle === 'held')
-    throw new ApiError(423, 'COMMUNITY_HELD', 'Held spaces accept read-only pairing.');
-  if (lifecycle === 'suspended')
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
-  if (lifecycle === 'deletion_pending')
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
-  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
-}
-
-async function requirePairingMember(
-  client: PoolClient,
-  actor: Awaited<ReturnType<typeof requireMember>>,
-  lifecycle: 'active' | 'archived'
-): Promise<void> {
-  if (lifecycle === 'active') {
-    await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
-    return;
-  }
-  await refuseIfClearedSinceStart(client, actor.user_id);
-  const member = await client.query(
-    // member-kind: by-grant
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
-    [actor.id, actor.community_id]
-  );
-  if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
 }
 
 /**
@@ -212,6 +146,7 @@ export function registerPairingRoutes(
     const body = await readJson(c, CommunityWirePairingStartRequestSchema);
     if (!/^[A-Za-z0-9_-]{43}$/.test(body.challenge))
       throw new ApiError(400, 'STATE_CONFLICT', 'The pairing challenge is invalid.');
+    assertAdministerScopes(body.scopes);
     const id = randomUUID();
     const expiry = new Date(Date.now() + 600_000);
     const community = await resolveCommunityContext(c, pool);
@@ -252,14 +187,14 @@ export function registerPairingRoutes(
     const id = uuid.parse(c.req.param('id'));
     const community = await resolveCommunityContext(c, pool);
     const scopes = await pairingScopes(pool, id, actor.community_id);
-    const result = await transaction(pool, async (client) => {
+    const { result, role } = await transaction(pool, async (client) => {
       const lifecycle = await lockPairingCommunity(
         client,
         actor.community_id,
         community.qualified && exactArchivedRead(scopes)
       );
-      await requirePairingMember(client, actor, lifecycle);
-      return client.query<{
+      const role = await requirePairingMember(client, actor, lifecycle);
+      const result = await client.query<{
         id: string;
         install_name: string;
         scopes: string[];
@@ -271,6 +206,7 @@ export function registerPairingRoutes(
         'SELECT id,install_name,scopes,expires_at,approved_at,cancelled_at,consumed_at FROM connection_pairings WHERE id=$1 AND community_id=$2',
         [id, actor.community_id]
       );
+      return { result, role };
     });
     const row = result.rows[0];
     if (!row) throw new ApiError(404, 'NOT_FOUND', 'Pairing request not found.');
@@ -287,7 +223,7 @@ export function registerPairingRoutes(
       pairingId: row.id,
       status,
       installName: row.install_name,
-      scopes: row.scopes as ('read' | 'post' | 'enroll-agent')[],
+      scopes: visibleScopes(row.scopes as CommunityWirePairingScope[], role),
       expiresAt: row.expires_at.toISOString(),
     });
   });
@@ -295,8 +231,12 @@ export function registerPairingRoutes(
   app.post('/pairings/approve', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const community = await resolveCommunityContext(c, pool);
-    const { pairingId } = await readJson(c, CommunityWirePairingApproveRequestSchema);
-    const id = uuid.parse(pairingId);
+    const consent = await readJson(c, CommunityWirePairingApproveRequestSchema);
+    // Giving the app manage power takes the password, so an agent driving a signed-in browser
+    // cannot tick the box for the person (#3155 review, M3).
+    if (consent.administer === true)
+      await confirmPassword(c, actor.user_id, consent.password ?? '');
+    const id = uuid.parse(consent.pairingId);
     const scopes = await pairingScopes(pool, id, actor.community_id);
     await transaction(pool, async (client) => {
       const lifecycle = await lockPairingCommunity(
@@ -310,7 +250,7 @@ export function registerPairingRoutes(
       );
       if (!pair.rows[0])
         throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request is no longer available.');
-      await requirePairingMember(client, actor, lifecycle);
+      const role = await requirePairingMember(client, actor, lifecycle);
       if (pair.rows[0].approved_at) {
         if (pair.rows[0].member_id !== actor.id)
           throw new ApiError(409, 'STATE_CONFLICT', 'This request was approved by another member.');
@@ -319,9 +259,17 @@ export function registerPairingRoutes(
           'UPDATE connection_pairings SET member_id=$2,community_id=$3,approved_at=now() WHERE id=$1 AND community_id=$3',
           [id, actor.id, actor.community_id]
         );
+        const administer = await settleAdministerOnApproval(
+          client,
+          id,
+          actor.community_id,
+          role,
+          consent.administer === true
+        );
+        // The audit row names the consent: changed_fields holds `administer` when it was given.
         await client.query(
-          'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-          [actor.community_id, actor.id, 'pairing.approve', id]
+          'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,changed_fields) VALUES($1,$2,$3,$4,$5)',
+          [actor.community_id, actor.id, 'pairing.approve', id, administer ? ['administer'] : []]
         );
       }
     });
@@ -476,7 +424,7 @@ export function registerPairingRoutes(
       }>(
         `INSERT INTO connection_grants(
            community_id,member_id,token_hash,scopes,install_name,history_only
-         ) SELECT community_id,$1,$2,$3,$4,$7 FROM connection_pairings
+         ) SELECT community_id,$1,$2,array_remove($3::text[],'administer'),$4,$7 FROM connection_pairings
            WHERE id=$5 AND community_id=$6
          RETURNING id,member_id,scopes,history_only,created_at`,
         [
@@ -493,8 +441,15 @@ export function registerPairingRoutes(
         'UPDATE connection_pairings SET consumed_at=now() WHERE id=$1 AND community_id=$2',
         [id, community.communityId]
       );
+      const administerToken = await issueAdministerCredential(client, {
+        communityId: community.communityId,
+        memberId: row.member_id,
+        grantId: grant.rows[0].id,
+        scopes: row.scopes,
+      });
       return {
         token,
+        ...(administerToken ? { administerToken } : {}),
         grant: {
           id: grant.rows[0].id,
           memberId: grant.rows[0].member_id,
@@ -620,4 +575,5 @@ export function registerPairingRoutes(
     });
     return c.body(null, 204);
   });
+  registerAdministerGrantRoutes(app, { pool, auth });
 }

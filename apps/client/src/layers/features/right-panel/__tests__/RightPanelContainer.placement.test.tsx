@@ -25,6 +25,12 @@ let mockHereState: HereState = { status: 'ready', here: { page: 'channels', room
 let mockSaved: SavedPlacement[] = [];
 const mockSetPlacement = vi.fn();
 
+// The held-back mini app line reads live extension state; these tests do not draw it.
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  WithheldExtensionsNotice: () => null,
+  useWithheldExtensions: () => [],
+}));
 vi.mock('../model/use-placement-here', () => ({
   usePlacementHere: () => mockHereState,
 }));

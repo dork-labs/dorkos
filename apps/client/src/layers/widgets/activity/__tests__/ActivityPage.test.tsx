@@ -4,6 +4,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+// The held-back mini app line reads live extension state; these tests do not draw it.
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  WithheldExtensionsNotice: () => null,
+  useWithheldExtensions: () => [],
+}));
 vi.mock('@/layers/features/activity-feed-page', () => ({
   useFullActivityFeed: () => ({
     data: { pages: [{ items: [], nextCursor: null }] },

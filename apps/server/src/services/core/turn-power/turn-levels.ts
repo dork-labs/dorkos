@@ -33,6 +33,7 @@
 import type {
   AgentRuntime,
   MessageOpts,
+  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
@@ -51,6 +52,7 @@ import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { noteTurnHold } from './continuation-hold.js';
 import {
+  ceilingHoldsForOutsider,
   levelOfMode,
   READ_ONLY_LEVEL,
   resolveCeilingLevel,
@@ -66,6 +68,14 @@ const AUTO_MODE_ID = 'auto';
 const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
+/**
+ * Each conversation's latest turn's level WITHOUT a stranger's hold, kept only when the hold
+ * changed it (DOR-3390): the level its hand-offs carry. A stranger's hold binds the turn it
+ * started; our agent's post or message from that turn is its own words, gated by the mark.
+ */
+const handOffLevels = new Map<string, TurnPermissionLevel>();
+/** Conversations whose latest turn a stranger's hold bound (`ceilingHoldsForOutsider`). */
+const strangerHeld = new Set<string>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
 /** Marks kept for posts whose level is unknown (`noteEntryMarks`). */
 const entryMarks = new Map<string, TurnMarks>();
@@ -106,7 +116,9 @@ export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefi
  * @param sessionId - The id the turn was sent under.
  */
 export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
-  const level = turnLevels.get(sessionId);
+  // The turn's own power without a stranger's hold (DOR-3390): what our agent hands on is its
+  // own words, so the turn it starts is gated by the mark, not capped by the stranger's hold.
+  const level = handOffLevels.get(sessionId) ?? turnLevels.get(sessionId);
   if (level === undefined) return undefined;
   return chatHeardOutsider(sessionId) ? { ...level, outsider: true } : level;
 }
@@ -115,9 +127,15 @@ export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefi
  * The marks a sender carries when its level is NOT known (a restart, a turn
  * this process never recorded): the outsider mark if a stranger reached any of
  * these chats (`chatHeardOutsider`, which also reads a chat's stored launch
- * origin), plus the marks of the agent's marked turns running now. Under trust
- * first (DOR-3107, Dorian 2026-10-19) an unknown sender of the owner's own is
- * trusted, so this is what still tells a stranger's chat apart.
+ * origin). Under trust first (DOR-3107, Dorian 2026-10-19) an unknown sender of
+ * the owner's own is trusted, so this is what still tells a stranger's chat apart.
+ *
+ * A named chat answers for itself only (DOR-3386, Security's marked-lanes
+ * design): a sibling chat of the same agent running a marked turn in parallel
+ * proves nothing about this one, and counting it held every lane of an agent
+ * whenever any one of its room seats read a post. Words that cross between
+ * chats through shared state are stamped where they are kept (memory,
+ * commitments). Only a caller that names no chat is read through its agent.
  *
  * @param sessionIds - The sending chats.
  * @param agentPath - The sending agent, when known.
@@ -126,11 +144,11 @@ export function unknownLevelMarks(
   sessionIds: readonly (string | null | undefined)[],
   agentPath?: string
 ): TurnMarks {
-  const heard = sessionIds.some(
-    (id) => typeof id === 'string' && id !== '' && chatHeardOutsider(id)
-  );
-  const running = agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
-  return heard ? { ...running, outsider: true } : running;
+  const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
+  if (named.length === 0) {
+    return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  }
+  return named.some(chatHeardOutsider) ? { outsider: true } : NO_MARKS;
 }
 
 /**
@@ -180,7 +198,10 @@ export function postLevelFor(
  *
  * The caller's session answers when this process recorded a turn on it. A
  * caller with no session, or one with no record, is read through its agent:
- * the marks of any of that agent's marked turns running right now.
+ * the marks of any of that agent's marked turns running right now. Kept wider
+ * than a sender's bound ({@link unknownLevelMarks}) on purpose: these marks
+ * decide the destructive hold and memory stamps, where a chat known by a
+ * second, unrecorded id must not read as unmarked.
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -221,9 +242,20 @@ export function markedBoundOf(
     : marksOf(sessionId, agentPath);
   const carried = ceilingCarrying(marks);
   if (carried === undefined) return undefined;
-  const level = sessionId ? passedOnLevelOf(sessionId) : undefined;
-  if (level === undefined) return carried;
   type BoundList = Extract<TurnPermissionCeiling, readonly unknown[]>;
+  // A spin-off a stranger's own turn starts is held like that turn (DOR-3204 M1): it is the
+  // stranger's act, not our agent's words passed on. Anything else carries the mark at the
+  // caller's own level (DOR-3390).
+  // A caller that names no chat (Codex or OpenCode over the external server), or one this process
+  // recorded no turn for, cannot show whose turn it is: held, the strict answer.
+  const level = sessionId ? passedOnLevelOf(sessionId) : undefined;
+  if (!sessionId || level === undefined || strangerHeld.has(sessionId)) {
+    const held = sessionId ? turnLevels.get(sessionId) : undefined;
+    // The hold carries the outsider mark itself; a teammate's chain already holds one.
+    const withHold = (Array.isArray(carried) ? carried : ['runtime-default']) as BoundList;
+    if (held === undefined) return withHold.length === 1 ? withHold[0]! : withHold;
+    return [held, ...withHold] as BoundList;
+  }
   const bounds = (Array.isArray(carried) ? carried : [carried]) as BoundList;
   return [level, ...bounds];
 }
@@ -379,6 +411,9 @@ export function entryHeldToDefault(entryId: string, roomId?: string): boolean {
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  const handOff = handOffLevels.get(from);
+  if (handOff !== undefined && from !== to) remember(handOffLevels, to, handOff);
+  if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
 }
@@ -397,6 +432,12 @@ export function carryTurnLevel(from: string, to: string): void {
   if (level === undefined || from === to) return;
   const existing = turnLevels.get(to);
   remember(turnLevels, to, existing === undefined ? level : stricterLevel(existing, level));
+  if (handOffLevels.has(from) || handOffLevels.has(to)) {
+    const theirs = handOffLevels.get(from) ?? level;
+    const ours = handOffLevels.get(to) ?? existing;
+    remember(handOffLevels, to, ours === undefined ? theirs : stricterLevel(ours, theirs));
+  }
+  if (strangerHeld.has(from)) strangerHeld.add(to);
 }
 
 /**
@@ -423,6 +464,47 @@ function levelForTurn(
   opts: MessageOpts | undefined
 ): TurnPermissionLevel {
   return withMarks(powerForTurn(runtime, stored, opts), marksForTurn(opts));
+}
+
+/**
+ * Record the level one turn runs at, and the level its hand-offs carry when a stranger's hold
+ * bound it (DOR-3390): the same turn's power with only that hold taken out.
+ */
+function recordTurn(
+  runtime: AgentRuntime,
+  sessionId: string,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): TurnPermissionLevel {
+  const level = levelForTurn(runtime, stored, opts);
+  remember(turnLevels, sessionId, level);
+  const ceiling = opts?.continuationHold === true ? undefined : opts?.permissionCeiling;
+  if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) {
+    strangerHeld.add(sessionId);
+    const own = withoutStrangerHold(ceiling);
+    const { permissionCeiling: _held, ...rest } = opts ?? {};
+    const handOff = withMarks(
+      powerForTurn(runtime, stored, own === undefined ? rest : { ...rest, permissionCeiling: own }),
+      marksOfLevel(level)
+    );
+    remember(handOffLevels, sessionId, handOff);
+  } else {
+    strangerHeld.delete(sessionId);
+    handOffLevels.delete(sessionId);
+  }
+  if (strangerHeld.size > TURN_LEVEL_MEMORY) {
+    strangerHeld.delete(strangerHeld.values().next().value!);
+  }
+  return level;
+}
+
+/** A ceiling with every stranger's hold (`'runtime-default'`, an empty list) taken out. */
+function withoutStrangerHold(ceiling: TurnPermissionCeiling): TurnPermissionCeiling | undefined {
+  if (!Array.isArray(ceiling)) return ceiling === 'runtime-default' ? undefined : ceiling;
+  const kept = (ceiling as readonly TurnPermissionBound[]).filter(
+    (bound) => bound !== 'runtime-default'
+  );
+  return kept.length === 0 ? undefined : kept.length === 1 ? kept[0]! : kept;
 }
 
 /**
@@ -493,7 +575,7 @@ export function recordTurnLevels(
       } catch {
         stored = undefined;
       }
-      remember(turnLevels, sessionId, levelForTurn(runtime, stored, opts));
+      recordTurn(runtime, sessionId, stored, opts);
     }
   );
 }
@@ -528,12 +610,17 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
-          const level = levelForTurn(target, stored, opts);
-          remember(turnLevels, sessionId, level);
+          const level = recordTurn(target, sessionId, stored, opts);
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer
           // the last real turn gave (DOR-3203).
-          if (opts?.continuationHold !== true) noteTurnHold(sessionId, level.outsider === true);
+          if (opts?.continuationHold !== true) {
+            const held = level.outsider === true;
+            // Only carried on, held for no stranger (DOR-3390): a later pick-up stays marked, not held.
+            const ceiling = opts?.permissionCeiling;
+            const carried = held && !(ceiling !== undefined && ceilingHoldsForOutsider(ceiling));
+            noteTurnHold(sessionId, held, carried);
+          }
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;
