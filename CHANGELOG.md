@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.126.4] - 2026-10-29
+
+> DorkOS 0.126.4 stops agents set to Full from asking you anything, tells agents which DorkOS app they run in, and lets you add a tool server once for every agent.
+
+### Added
+
+- Agents know which DorkOS app they're running in: the Mac app, the Windows app, npm, Docker or a copy of the code. The update steps they give you now match your setup.
+- Add an MCP server (a tool add-on for agents) once, and every agent gets it, on Claude Code, Codex and OpenCode. Codex and OpenCode skip servers that only use an older connection type (SSE). You can leave an agent out, and an agent's own server with the same name wins for that agent. Tokens and keys you enter are encrypted and never shown again, to you or to agents. Only you can change the list, and only from this computer.
+
+### Fixed
+
+- An agent set to Full never stops to ask you anything, including on schedules and heartbeats. Careful still asks before destructive connector actions at Full. Activity records each message a Full agent sends, and each setting it changes, after it has read words from outside your team.
+- Below Full, a run with nobody there to answer stops and says why, instead of waiting for an answer that never comes.
+- Below Full, after reading words from outside your team, an agent asks before it sends email, changes calendar events, edits its own instructions or git settings, installs a package or MCP server, links a chat to an agent, or changes a setting.
+- Room updates reach only that room's members.
+- A paused connection's row in Needs you says in two lines what was held back and where it was going. The ⓘ button explains the rest.
+
+### Security
+
+- A connection can use only the secrets saved for it. Changing a webhook's address asks for its secrets again, and removing a connection removes only its own secrets.
+- After this update, connections that read a secret from an environment variable or the Keychain are paused until you confirm them, on the connection or in Needs you. Nothing is sent while a connection is paused.
+
 ## [0.126.3] - 2026-10-29
 
 > DorkOS 0.126.3 stops one outside message from making a whole room of agents ask before almost every command, shows pictures and PDFs an agent puts on a room's canvas to everyone, and gives every agent a short list of what it can do in DorkOS.
@@ -235,44 +257,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sonnet 5.5 and Haiku 5.5 always think a little before they answer, even when thinking is set to None.
 - If a chat or room kept asking for approval after 0.124.1, choose **Don't allow** on its waiting card, then send it a message yourself. It goes back to normal. You don't need to approve anything you didn't expect.
 
-## [0.124.1] - 2026-10-20
+Older releases (v0.1.0 – v0.124.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.124.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.124.1.md).
 
-> DorkOS 0.124.1 lets chats your agents start work at their agent's level, keeps room agents answering when a Claude account runs out, and makes chats from your Wi-Fi ask before every step.
-
-### Added
-
-- An agent in a channel or DM whose Claude account runs out now moves to the account with the most usage left and answers the same message, on its own. The room gets one short line saying so. If no account has usage left, the room says when the soonest one is back.
-- An agent whose account is almost out (95% of its 5-hour or weekly limit) moves before it starts, so its answer isn't cut off.
-- An agent whose earlier chat in a room has expired starts a fresh one there and says so, instead of quietly forgetting.
-- Keep an account out of these automatic moves: turn off **Move agents here automatically** on it in Settings → Runtimes. If you had an account named `claude-ab1`, kept for other projects, the update turns this off for it. The change shows in your permission history, with an Undo.
-- Move an agent in a channel or DM to another Claude account yourself: open its menu in the room's member list and choose **Continue on another account…**. Pick an account and its next answer starts there, with a summary of where it was. If no account has usage left, the picker says so. You can also do it through the DorkOS MCP server or the app's API.
-- Agents now know what it means when their room seat moves to another account, so they finish what they started instead of answering twice.
-- When a canvas document can send events to an agent, a Routes button now appears above it. Open it to see where each kind of event would go, whether it is on, when it ends and how often it may start work. Review the exact details, then allow a route for an hour, a day or a week, or turn one off. A route does nothing until it is allowed: the agent that opened a document can allow its own routes, and a route to another agent or to the room always needs a person. (DOR-2665)
-- You can add a passkey for approving from the web. In Settings, under Chat from the web, a linked computer now lists its approval passkeys, adds one, and removes one. Adding or removing one needs your password, and works only in the app on the computer DorkOS runs on, never from Wi-Fi or another device. Each passkey is made for this one computer, separate from the passkey you sign in to DorkOS with. This sits behind the same switch as the rest of using DorkOS from anywhere, which is off by default, and approving from the web itself isn't turned on yet.
-
-### Fixed
-
-- A chat at Full autonomy now starts its own chats at Full too, unless it asks for less. Before, those chats started lower, so they kept asking you to approve routine work. A new chat never goes above the level you set for its agent. Chats your agents already started below their level move up once, on the next start, with an Undo in Activity. Chats that read outside content stay where they are. (DOR-3147)
-- If `dorkos auth enable` can't end the sign-in it made while setting up, the password still turns on, and DorkOS ends that sign-in the next time it starts. A leftover one from an earlier setup is ended the same way, not hidden from Signed-in devices. (DOR-3097)
-- Security updates for bundled dependencies.
-
-### Security
-
-- A chat you start or message from a phone or laptop on your Wi-Fi now runs at Default at most, even for an agent set to Full autonomy. The agent asks before every file change or command, and from Wi-Fi the answer is Allow once or Deny. The same limit follows anything that chat sets off: other agents it mentions or messages, chats it starts, a message waiting in line, and every turn that picks the chat up on its own: an approval's answer, a resume after a usage limit, a nudge after a sign-in. That holds even after DorkOS restarts. A schedule an agent makes during that chat waits for your approval, and the agent can't change its instructions or make a promise from it. An agent's check-ins skip messages written from Wi-Fi. (DOR-3037)
-- From Wi-Fi you can lower permissions but not raise them. Picking Careful, blocking something, or setting a chat or schedule to ask more all work there. Loosening any of them, undoing a permission change, approving an agent's request that could change permissions, safety limits, packages, agents or tool servers, editing an agent's instructions (SOUL.md, NOPE.md, MEMORY.md, HEARTBEAT.md, persona, personality), recording an agent's promise, or running a schedule set above Default happens on the computer DorkOS runs on, and the app says so calmly. (DOR-3037)
-- From Wi-Fi, answering a chat that runs above Default means picking one of the answers it offers. Typed answers, and a reason with any Deny, work only on the computer DorkOS runs on. (DOR-3037)
-- On Wi-Fi the chat's status line says "On Wi-Fi · agents ask or only read", and the permissions chip shows "Default (Wi-Fi)". (DOR-3037)
-- A chat that an extension starts always asks before acting, whatever limit the request that started it carried. Before, a looser limit passed along with the request could replace that one. (DOR-3037)
-- When one of your agents posts in a room after reading something from outside (a stranger's message, a Wi-Fi sign-in, a teammate), the agent it mentions now asks before acting, even if the first agent runs at Full autonomy. Before, that limit only held after DorkOS restarted. (DOR-3141)
-- The guard that stops agents from editing your permission settings now holds when your DorkOS data folder is reached through a shortcut (a symlink) or set with a relative path. (DOR-2969)
-
-### Note for people upgrading
-
-- Rooms have one new kind of notice line, for an agent that moved to another account. An older app reading a newer server will not understand it, so update both together.
-
-Older releases (v0.1.0 – v0.124.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.124.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.124.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.3...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.126.4...HEAD
+[0.126.4]: https://github.com/dork-labs/dorkos/compare/v0.126.3...v0.126.4
 [0.126.3]: https://github.com/dork-labs/dorkos/compare/v0.126.2...v0.126.3
 [0.126.2]: https://github.com/dork-labs/dorkos/compare/v0.126.1...v0.126.2
 [0.126.1]: https://github.com/dork-labs/dorkos/compare/v0.126.0...v0.126.1
@@ -282,4 +270,3 @@ Older releases (v0.1.0 – v0.124.0) are archived in [changelog/archive/CHANGELO
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
 [0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
-[0.124.1]: https://github.com/dork-labs/dorkos/compare/v0.124.0...v0.124.1
