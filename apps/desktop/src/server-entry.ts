@@ -22,6 +22,7 @@ declare module '@dorkos/server';
 import path from 'node:path';
 import {
   applyExtraCaCerts,
+  shareCompanyCertificatesWithAgents,
   COMPANY_CERTIFICATES_STATUS,
   readCompanyCertificatesPath,
 } from './extra-ca-certs';
@@ -106,9 +107,11 @@ async function main() {
   // Before the server opens any connection: a company network's certificates,
   // which the fused app binary no longer reads by itself (DOR-3361), and only
   // from the file a person set. The server reports the result in Settings.
-  (globalThis as Record<symbol, unknown>)[COMPANY_CERTIFICATES_STATUS] = applyExtraCaCerts({
+  const companyCertificates = applyExtraCaCerts({
     file: readCompanyCertificatesPath(serverDataDirectory()),
   });
+  (globalThis as Record<symbol, unknown>)[COMPANY_CERTIFICATES_STATUS] = companyCertificates;
+  shareCompanyCertificatesWithAgents(companyCertificates);
   exitWhenOrphaned();
   const port = Number(process.env.DORKOS_PORT);
 

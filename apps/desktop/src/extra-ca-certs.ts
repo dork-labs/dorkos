@@ -102,6 +102,24 @@ export function readCompanyCertificatesPath(dorkHome: string): string | null {
   return value && path.isAbsolute(value) ? value : null;
 }
 
+/**
+ * Hand the chosen file to agent processes. Agents run as plain Node and read
+ * `NODE_EXTRA_CA_CERTS` themselves; the shell deleted any exported value
+ * (`server-spawn.ts`), so they see only the file a person chose, and only once
+ * it loaded as a small regular file.
+ *
+ * @param result - What {@link applyExtraCaCerts} did in this process.
+ * @param env - The environment agent processes inherit from. Defaults to this process's.
+ */
+export function shareCompanyCertificatesWithAgents(
+  result: ExtraCaResult,
+  // eslint-disable-next-line no-restricted-syntax -- the runtime baseline env passes this name on to agent processes
+  env: NodeJS.ProcessEnv = process.env
+): void {
+  if (result.outcome === 'added' && result.path) env.NODE_EXTRA_CA_CERTS = result.path;
+  else delete env.NODE_EXTRA_CA_CERTS;
+}
+
 /** A certificate bundle is kilobytes; anything past this is not one. */
 const MAX_CERTIFICATE_FILE_BYTES = 1024 * 1024;
 

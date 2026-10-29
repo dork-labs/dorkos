@@ -14,7 +14,11 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { applyExtraCaCerts, readCompanyCertificatesPath } from '../extra-ca-certs';
+import {
+  applyExtraCaCerts,
+  readCompanyCertificatesPath,
+  shareCompanyCertificatesWithAgents,
+} from '../extra-ca-certs';
 
 let dir: string;
 let server: Server;
@@ -123,6 +127,18 @@ describe('applyExtraCaCerts', () => {
       added: 0,
       path: null,
     });
+  });
+
+  // Agents read the variable themselves, so they get the chosen file once it
+  // loaded, and never anything else (Security, #3245).
+  it('hands agents only a file that loaded', () => {
+    const env: NodeJS.ProcessEnv = { NODE_EXTRA_CA_CERTS: '/tmp/planted.pem' };
+    shareCompanyCertificatesWithAgents({ outcome: 'unreadable', added: 0, path: '/x.pem' }, env);
+    expect(env.NODE_EXTRA_CA_CERTS).toBeUndefined();
+    shareCompanyCertificatesWithAgents({ outcome: 'added', added: 2, path: '/etc/ca.pem' }, env);
+    expect(env.NODE_EXTRA_CA_CERTS).toBe('/etc/ca.pem');
+    shareCompanyCertificatesWithAgents({ outcome: 'not-set', added: 0, path: null }, env);
+    expect(env.NODE_EXTRA_CA_CERTS).toBeUndefined();
   });
 
   // This runs before the single-instance lock, so a file that is not a
