@@ -8,7 +8,7 @@ tags: [email, phone, google-workspace, twilio, 10dlc, provider-adapter, vision-2
 
 # Email addresses and phone numbers as first-class account features
 
-> **Mail provider under review (2026-10-19).** Using one provider for both inbound and outbound is proposed, pending a spike due Oct 23. Don't build against its email recommendations until a decision is logged.
+> **Decided (2026-10-24).** Agent email on DorkOS Cloud runs on Resend, for inbound and outbound, on one shared receiving domain. Each address carries its space in the local part, the part before the `@`. Where this report suggests Cloudflare inbound or per-space subdomains for DorkOS Cloud (§5, §8), the decision wins. The rest stands as research.
 
 Research date: 2026-10-06. Web research only; nothing here is decided. Prices are US list prices as found on the date above and change often. Items marked **UNVERIFIED** come from secondary sources only or are my inference.
 

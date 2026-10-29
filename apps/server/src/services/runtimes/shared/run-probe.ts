@@ -18,6 +18,25 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { logger } from '../../../lib/logger.js';
 
+/** A probe that did not answer before its hard bound; never evidence of signing out. */
+export class ProbeTimeoutError extends Error {
+  constructor(binary: string, timeoutMs: number) {
+    super(`probe timed out after ${timeoutMs}ms: ${binary}`);
+    this.name = 'ProbeTimeoutError';
+  }
+}
+/** Recognize both the independent timer and execFile's timeout result. */
+export function isProbeTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof ProbeTimeoutError ||
+    (error instanceof Error &&
+      'killed' in error &&
+      error.killed === true &&
+      'signal' in error &&
+      error.signal === 'SIGKILL')
+  );
+}
+
 /**
  * Run `binary args`, bounded by `timeoutMs`, resolving trimmed stdout.
  *
@@ -54,7 +73,7 @@ export function runBinaryProbe(
     };
 
     const timer = setTimeout(
-      () => finish(() => reject(new Error(`probe timed out after ${timeoutMs}ms: ${binary}`))),
+      () => finish(() => reject(new ProbeTimeoutError(binary, timeoutMs))),
       timeoutMs
     );
     timer.unref?.();

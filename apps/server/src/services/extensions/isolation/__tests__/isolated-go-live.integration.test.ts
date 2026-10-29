@@ -45,6 +45,7 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 }));
 
 import { ExtensionManager } from '../../extension-manager.js';
+import { grantsDigestOf } from '../../pin/extension-path-trust.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
@@ -84,6 +85,7 @@ export default function register(router: any, ctx: any) {
 
 let dorkHome: string;
 let extDir: string;
+let agentHome: string;
 let manager: ExtensionManager;
 let server: http.Server;
 let base: string;
@@ -154,7 +156,7 @@ async function boot(
     isolatedTimings: watchdog,
   });
   manager.followProjects(
-    { roots: async () => [], onChange: () => () => undefined },
+    { roots: async () => [agentHome], onChange: () => () => undefined },
     {
       announce: (ids) => {
         announced.push(...ids);
@@ -224,7 +226,10 @@ async function post(route: string, body: unknown = {}) {
 
 beforeEach(async () => {
   dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dor-2686-live-')));
-  extDir = path.join(dorkHome, 'extensions', ID);
+  // The agent's own extension, in its own folder, running separately: the one
+  // kind whose server edits keep running without a person (path trust, DOR-3068).
+  agentHome = path.join(dorkHome, 'agents', 'live-agent');
+  extDir = path.join(agentHome, '.dork', 'extensions', ID);
   announced = [];
   shownAtBroadcast = [];
   sends.held = [];
@@ -236,7 +241,22 @@ beforeEach(async () => {
     enabled: [ID],
     disabled: [],
     approvedToRun: [ID],
-    approvedSources: { [ID]: { path: extDir } },
+    approvedSources: {
+      [ID]: {
+        path: extDir,
+        authorHome: agentHome,
+        grants: grantsDigestOf({
+          id: ID,
+          name: NAME,
+          version: '1.0.0',
+          serverCapabilities: {
+            serverEntry: './server.ts',
+            runtime: 'subprocess',
+            allow: { net: [], run: [], agents: true },
+          },
+        }),
+      },
+    },
     approvedPermissions: { [ID]: { runtime: 'subprocess', net: [], run: [], agents: true } },
   };
   // A held message fails when its extension stops, as the real service does;

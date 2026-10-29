@@ -17,7 +17,7 @@
  *        └─ SessionCrashRecovery.dispatch
  *                 └─ SessionTurnWindows.dispatch   ← boundary asked again; the ingress
  *                          └─ SessionPump.dispatch
- *                                   └─ createPumpLauncher → query()
+ *                                   └─ createPumpLaunchOptions → query()
  * ```
  *
  * ## The opt-in is asymmetric, and P5's comparison runs depend on knowing it
@@ -178,7 +178,7 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { createPumpLauncher, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { createPumpLaunchOptions, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
 import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
@@ -304,7 +304,8 @@ function resetPerTurnState(session: AgentSession): void {
   // data, and a stop stamped in a PREVIOUS turn must not blind this turn's
   // phantom detector (DOR-1087).
   session.contextBreakdown = undefined;
-  session.interruptRequestedAt = undefined;
+  // The turn's own background work starts empty too, for a Stop to end (DOR-3285).
+  Object.assign(session, { interruptRequestedAt: undefined, turnTaskIds: new Map() });
   // A usage limit is reported once per turn (spec claude-account-fleet D4).
   session.limitReportedThisTurn = false;
   session.rejectedLimitThisTurn = undefined;
@@ -1316,7 +1317,7 @@ export class PersistentDispatch {
           since: Date.now(),
         });
       },
-      launch: createPumpLauncher(
+      ...createPumpLaunchOptions(
         session,
         opts,
         () => {

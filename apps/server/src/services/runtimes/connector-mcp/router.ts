@@ -1,4 +1,5 @@
 /** Stateless Streamable HTTP routes for authenticated connector runtime calls. */
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../../core/capabilities/mcp-input/limits.js';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -40,7 +41,10 @@ export function createConnectorRuntimeMcpRoutes(
       );
     }
     const { incoming, outgoing } = c.env;
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES,
+    });
     outgoing.once('close', () => {
       void transport.close().catch(() => undefined);
       void server.close().catch(() => undefined);

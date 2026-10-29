@@ -77,6 +77,7 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
+- Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
@@ -94,7 +95,13 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 ### Security approval per commit
 
 `security-gate` verifies `security-review=success` on every exact PR head in a
-queue group. Labels grant no approval. A new sensitive head needs Security's
+queue group. Sensitive diffs require the newest success creator to be the
+workflow-pinned numeric Security bot user ID; a later user success invalidates an older App
+success. The numeric ID remains zero until Dorian creates the App.
+Use the compiled `tools/security-approve` helper with its exact cdhash-pinned
+Keychain item; setup is in [Security gate promotion](../ci/security-gate-promotion.md).
+Complete nonsensitive diffs keep the trusted initializer's automatic success.
+Labels grant no approval. A new sensitive head needs Security's
 status; automatic "no security paths" success cannot approve a sensitive diff
 against a different base. Missing or stale membership fails closed.
 
@@ -104,15 +111,22 @@ initializer in `security-review-initialize.yml` can write, from trusted base cod
 SHA/state transition, recording that observation's status author and ID. Replacing
 a status with the same state adds no comment. It never renders `target_url`.
 After Security approves, rerun the PR verifier. A fully classified nonsensitive
-PR can pass read-only while initialization finishes; the queue requires the
-written status. The initial bootstrap PR fails closed while base lacks the code.
+PR with no security-review status can pass read-only as "no security paths
+(computed)". The queue can do the same using `base...queuedHead`, never the current
+PR's files. An explicit pending/failure cannot use computed clearance. Incomplete
+file lists, the PR endpoint's 3,000-file cap and the compare endpoint's 300-file
+cap fail closed. Both sides of renames are checked. The initial bootstrap PR fails closed while base lacks the code.
 
 Enforcement requires **Require workflows to pass**, sourced from
 `dork-labs/dorkos` at `refs/heads/main`, path
 `.github/workflows/security-gate.yml`. A named `security-gate` context alone lets
-a PR replace its own workflow. `ci/required-checks.json` lists only named status
-checks, so it deliberately excludes this workflow. The census cannot yet model
-or compare required workflow sources; promotion is blocked on that support.
+a PR replace its own workflow. `ci/required-checks.json` keeps main-sourced
+workflows separately from named contexts. Offline census validates their source
+and every job/trigger. `pnpm ci:census --live` also compares the organization rule,
+source repository identity, active enforcement, exact repository/main scope and
+visible empty bypass list. Missing rules or unreadable evidence fail. The daily
+collector uses the same live comparison; it correctly reports missing enforcement
+until the coordinator promotes the rule. No admin credential is added to Actions.
 The coordinator's rollout, source pin, local malicious-branch fixture and live
 proof requirements are in [Security gate promotion](../ci/security-gate-promotion.md).
 

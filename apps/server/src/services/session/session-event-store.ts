@@ -103,6 +103,18 @@ export interface RecordedModelSubstitution {
 }
 
 /**
+ * One recorded `work_left_running` or `work_left_ended` row (DOR-3285), with
+ * the wall-clock it was written at. Both are written the instant they are
+ * ingested, after the stopped turn they belong to.
+ */
+export interface RecordedWorkLeft {
+  /** The event as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'work_left_running' | 'work_left_ended' }>;
+  /** ISO-8601 wall-clock the row was written at. */
+  createdAt: string;
+}
+
+/**
  * One recorded `turn_start`: the words that opened the turn, and the room post
  * they were when a room opened it (DOR-2113).
  */
@@ -342,6 +354,35 @@ export class SessionEventStore {
       }
     }
     return substitutions;
+  }
+
+  /**
+   * A session's `work_left_running` and `work_left_ended` rows only (DOR-3285),
+   * filtered in SQLite like {@link SessionEventStore.readModelSubstitutions},
+   * because it too runs on every history read.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readWorkLeft(sessionId: string): RecordedWorkLeft[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"work_left_%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const recorded: RecordedWorkLeft[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'work_left_running' || event?.type === 'work_left_ended') {
+        recorded.push({ event, createdAt: row.createdAt });
+      }
+    }
+    return recorded;
   }
 
   /**

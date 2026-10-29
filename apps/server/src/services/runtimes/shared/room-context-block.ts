@@ -102,6 +102,9 @@ const FENCE_LABEL = 'UNTRUSTED ROOM MESSAGES';
  */
 const TOPIC_MAX_LENGTH = 200;
 
+/** Longest app name or item id a forwarded comment's `[via …]` label shows (DOR-3325). */
+const VIA_LABEL_MAX_LENGTH = 200;
+
 /**
  * The projected half of an attachment path, at its longest.
  *
@@ -928,11 +931,19 @@ function entryLine(
   // The path arrives ABSOLUTE (DOR-1266), so `Read` on it works from wherever
   // the model happens to think it is standing; {@link ATTACHMENT_PATH_MAX_LENGTH}
   // is sized for that and still cannot truncate one.
+  // A forwarded comment's app and item (DOR-3325): labels DorkOS recorded, so
+  // outside the fence, through `label()` like every other one. The app name
+  // is its author's choice, so brackets and colons go too: it must not close
+  // this label and open words that read as the person's. The item id is held
+  // to a charset with no brackets at the route, so it cannot close it either.
+  const via = entry.via
+    ? ` [via the ${label(entry.via.appName.replace(/[[\]:]/g, ' '), VIA_LABEL_MAX_LENGTH)} app, item ${label(entry.via.itemId, VIA_LABEL_MAX_LENGTH)}]`
+    : '';
   const attached =
     entry.attachments.length > 0
       ? ` [attached: ${entry.attachments.map(attachmentPath).join(', ')}]`
       : '';
-  return `[${clock(entry.at)}] ${who}${what}${id}${topic}${mention}${steered}${attached}: ${body(entry.text)}`;
+  return `[${clock(entry.at)}] ${who}${what}${id}${topic}${mention}${steered}${via}${attached}: ${body(entry.text)}`;
 }
 
 /**

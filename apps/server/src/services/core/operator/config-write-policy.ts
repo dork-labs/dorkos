@@ -630,6 +630,10 @@ export const CONFIG_WRITE_POLICY = {
   // the same record: a caller that could point an approved id at another copy
   // would move a person's decision onto code they never saw.
   'extensions.approvedSources': 'operator-only',
+  // The pre-DOR-2383 approvals still waiting to be bound to a copy (DOR-3068).
+  // A caller that could add an id here would have the next scan bind an old
+  // approval to whatever folder sits at that name.
+  'extensions.legacyUnsourced': 'operator-only',
   // The permission set each of those approvals covers (DOR-2686). The third
   // half of the record: a caller that could widen an entry would let an
   // extension reach hosts, programs or agents a person never saw on its card.
@@ -648,6 +652,10 @@ export const CONFIG_WRITE_POLICY = {
   // caller that could add a room here would let a mini app post in the
   // person's name somewhere they never chose.
   'extensions.roomAccess': 'operator-only',
+  // The agent each mini app may forward the person's comments to (DOR-3325). A
+  // caller that could set it would let a mini app make the person say
+  // something to an agent they never chose.
+  'extensions.forwardAgents': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -699,6 +707,13 @@ export const CONFIG_WRITE_POLICY = {
   // record of somebody turning its package down, and the next sync would ask
   // again instead of obeying the answer already given.
   'harness.refusedHooks': 'operator-only',
+  // Which state of each agent's own hooks, MCP servers file and agent file a
+  // person let run (DOR-3068). An agent that could write the yes would approve
+  // the hooks it just wrote itself; one that could clear a no would be asked again.
+  'harness.approvedFolderConfig': 'operator-only',
+  'harness.approvedFolderConfigParts': 'operator-only',
+  'harness.refusedFolderConfig': 'operator-only',
+  'harness.folderConfigPinned': 'operator-only',
   // Which agent tools DorkOS shares your globally installed packages with
   // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
   // home directory, which is the "how far DorkOS reaches on disk" line this
@@ -869,6 +884,11 @@ export const CONFIG_WRITE_POLICY = {
   // Machine-managed like the stamp above: an agent that cleared it would share
   // every app nobody holds on the next boot.
   'permissions.sharedAppsAppliedAt': 'operator-only',
+  // A person's yes or no to an agent's folder allow list (DOR-3039). An agent
+  // that could write the yes would approve its own permissions.
+  'permissions.approvedFolderAllows': 'operator-only',
+  'permissions.refusedFolderAllows': 'operator-only',
+  'permissions.approvedFolderAllowRules': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',

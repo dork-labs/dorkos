@@ -164,7 +164,7 @@ React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-S
 
 ### Site, Shared, CLI
 
-`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (137 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (151 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 
@@ -227,5 +227,5 @@ Emit only fields you actually know (omitted is a fact; invented is a lie); the v
 - **Identifiers**: new ADRs and specs use timestamp ids `YYMMDD-HHMMSS` from `.claude/scripts/id.ts` (coordination-free; ADR-0312). Legacy 4-digit numbers are frozen and sort first. There is no `nextNumber`.
 - **ADRs**: `decisions/<id>-<slug>.md` + `manifest.json`. `/adr:create`, `/adr:from-spec` (applies the significance rubric at extraction — no draft state), `/adr:review`, `/adr:list`.
 - **Specs**: `specs/<slug>/` with `manifest.json` (`01-ideation.md`, `02-specification.md`, optional `03-tasks.json`). **Plans**: `plans/` at repo root.
-- **Audits**: one committed charter per domain in `audits/<domain>.md` (shared preamble in `audits/README.md`), with run logs and per-lens diff stamps under `audits/runs/<domain>/`; the UI domain is driven by `/ui-audit:init|run|execute|pulse` and the `auditing-ui` skill.
+- **Audits**: one committed charter per domain in `audits/<domain>.md` (shared preamble in `audits/README.md`), with run logs and per-lens diff stamps under `audits/runs/<domain>/`; the UI domain is driven by `/ui-audit:init|run|execute|pulse|measure` and the `auditing-ui` skill, and judged against `contributing/design-review.md`.
 - **Changelog**: per-change fragments in `changelog/unreleased/` (`<id>-<slug>.md`, timestamp-id + slug), compiled into `CHANGELOG.md` at release; never edit `CHANGELOG.md` directly (ADR 260707-231641, `changelog/README.md`).

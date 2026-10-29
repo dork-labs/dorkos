@@ -20,7 +20,8 @@ import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
 import { taskDispatchSubject, TASK_DISPATCH_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from '../task-append.js';
-import { isTerminalRunStatus, TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
@@ -768,10 +769,87 @@ describe('TaskSchedulerService', () => {
         'Skipped Bash — nobody was there to approve it on a scheduled run.'
       );
       expect(finished.outputSummary).toContain('Checked what I could.');
-      // Being refused a tool is not the run failing: it carried on without it.
-      expect(finished.status).toBe('completed');
-      // The tool it lost is kept on the row either way, so history can name it
-      // without anybody cross-referencing the activity feed (DOR-2101).
+      // Being refused a tool is not the run failing — it carried on without it
+      // — but it is not a clean success either (DOR-3123, FB-67).
+      expect(finished.status).toBe('needs_attention');
+      expect(finished.outcome).toBe('partial');
+      // The tool it lost is kept on the row, so history can name it without
+      // anybody cross-referencing the activity feed (DOR-2101).
+      expect(finished.refusedTools).toEqual(['Bash']);
+
+      await service.stop();
+    });
+
+    it('never records an Accept edits schedule that lost Bash as completed (DOR-3123)', async () => {
+      // QA's census, 2026-10-25: 23 refusals in a day, every one on an Accept
+      // edits schedule, and every run row said `completed`.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield toolWorked('Read', 't1');
+        yield nobodyThere('Bash', 't2');
+        yield { type: 'text_delta', data: { text: 'Posted the summary.' } } as StreamEvent;
+      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Health check',
+          prompt: 'test',
+          cron: '0 * * * *',
+          permissionMode: 'acceptEdits',
+        })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      // A timer fire, the trigger that has nobody watching.
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
+      const [run] = store.listRuns({ taskId: task.id });
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const finished = store.getRun(run!.id)!;
+      expect(finished.trigger).toBe('scheduled');
+      expect(finished.status).toBe('needs_attention');
+      expect(finished.refusedTools).toEqual(['Bash']);
+      expect(finished.error).toBe(
+        'Skipped Bash — nobody was there to approve it on a scheduled run.'
+      );
+      // And the schedule reads as failing until a run comes back clean.
+      expect(store.runHistory()(task.id).health).toMatchObject({
+        state: 'failing',
+        reason: { kind: 'tool_refused', tools: ['Bash'], nothingDone: false },
+        streak: 1,
+      });
+
+      await service.stop();
+    });
+
+    it('records a tool the Never ask mode refused (DOR-3132)', async () => {
+      // A Never ask schedule's refusals carry the mode's own discriminator,
+      // not DorkOS's unattended stamp, and were never written down.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield {
+          type: 'permission_denied',
+          data: {
+            toolCallId: 't1',
+            toolName: 'Bash',
+            reasonType: 'mode',
+            message: 'This chat is set to never ask.',
+          },
+        } as StreamEvent;
+        yield toolWorked('Read', 't2');
+      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Publisher',
+          prompt: 'test',
+          cron: '0 * * * *',
+          permissionMode: 'dontAsk',
+        })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const run = (await service.triggerManualRun(task.id))!;
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run.id)!.status)).toBe(true));
+
+      const finished = store.getRun(run.id)!;
+      expect(finished.status).toBe('needs_attention');
       expect(finished.refusedTools).toEqual(['Bash']);
 
       await service.stop();
@@ -823,7 +901,7 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
-    it('records a run refused every tool as blocked, not as a success', async () => {
+    it('records a run refused every tool as needing attention with nothing done', async () => {
       // The defect (DOR-2101): a mailbox schedule fired twice, was refused four
       // tools, read nothing, said so in prose — and left two green rows and two
       // `tasks.run_success` entries behind it.
@@ -844,7 +922,8 @@ describe('TaskSchedulerService', () => {
       await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const finished = store.getRun(run!.id)!;
-      expect(finished.status).toBe('blocked');
+      expect(finished.status).toBe('needs_attention');
+      expect(finished.outcome).toBe('nothing_done');
       // The row's own explanation line, so the history says why without the
       // reader having to open anything. The terminal activity event for it
       // rides the TaskStore run-terminal hook, which the composition root wires
@@ -2213,6 +2292,228 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** Run one scheduled dispatch of a fresh task through the relay path. */
+    /**
+     * Walk the fake clock until `pending` settles. Each step first yields a real
+     * turn, so dispatch work still on real I/O (a slow runner) has set its retry
+     * timer before the clock moves; a fixed count of steps could run out first
+     * and leave the 30 s wait unwalked, hanging the test (DOR-3368).
+     */
+    async function settleUnderFakeClock<T>(pending: Promise<T>): Promise<T> {
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      while (!settled) {
+        await new Promise((resolve) => setImmediate(resolve));
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      return pending;
+    }
+
+    async function dispatchOnce(
+      name: string,
+      extra: Partial<CreateTaskStoreInput> = {}
+    ): Promise<ReturnType<TaskStore['getRun']>> {
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...extra }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      await service.stop();
+      return store.getRun(run.id);
+    }
+
+    // DOR-3033: "never started" is only true when nothing answered. A run the
+    // adapter turned away says why.
+    it('says every slot was busy when the adapter had no room', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, code: 'at_capacity', error: 'Adapter at capacity' },
+      });
+      const run = await dispatchOnce('Busy Slots');
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(run?.status).toBe('failed');
+      expect(run?.error).toBe('Every agent slot stayed busy, so this run didn’t start.');
+    });
+
+    it('names the hourly turn limit when the bus refused the run for it', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        rejected: [{ endpointHash: 'h', reason: 'turn_ceiling' }],
+      });
+      const run = await dispatchOnce('Turn Ceiling');
+      expect(run?.error).toBe(
+        'The hourly limit on agent turns was reached, so this run didn’t start.'
+      );
+    });
+
+    // DOR-3033: a run whose delivery found nobody tries once more, and a
+    // receiver that came back in the meantime runs it.
+    it('tries once more when nothing answered, and runs when something does', async () => {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValueOnce({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const run = await settleUnderFakeClock(dispatchOnce('Retry Works'));
+      vi.useRealTimers();
+      // Two dispatches; the cancel the test's own `stop()` sends is not one.
+      const dispatches = mockRelay.publish.mock.calls.filter(
+        (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+      );
+      expect(dispatches).toHaveLength(2);
+      expect(run?.status).toBe('running');
+    });
+
+    // DOR-3033 review: the retry waits 30 s, and a run that ended in the
+    // meantime (a Stop, a shutdown) must not be started anyway.
+    it('does not retry a run that ended while it waited', async () => {
+      mockRelay.publish.mockResolvedValue({ messageId: 'm', deliveredTo: 0 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(
+        taskInput({ name: 'Ended Meanwhile', prompt: 'p', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      store.updateRun(run.id, { status: 'cancelled', error: 'Run cancelled' });
+      await settleUnderFakeClock(pending);
+      vi.useRealTimers();
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(store.getRun(run.id)?.status).toBe('cancelled');
+      await service.stop();
+    });
+
+    /** The default runtime, declaring three modes, so a level can be compared. */
+    function runtimeWithModes(): SchedulerRuntimes {
+      const base = singleRuntimeSource(mockAgent);
+      const mode = (id: string, asks: string, reach: string) => ({ id, label: id, asks, reach });
+      const permissionModes = {
+        supported: true,
+        default: 'acceptEdits',
+        values: [
+          mode('plan', 'always', 'read'),
+          mode('acceptEdits', 'when-risky', 'edit'),
+          mode('bypassPermissions', 'never', 'everything'),
+        ],
+      };
+      return {
+        ...base,
+        getAllCapabilities: () =>
+          ({ [base.getDefaultType()]: { permissionModes } }) as unknown as ReturnType<
+            SchedulerRuntimes['getAllCapabilities']
+          >,
+      };
+    }
+
+    /** Dispatch a task whose first delivery finds nobody, and hand back the run and the wait. */
+    async function waitingForRetry(name: string, over: Record<string, unknown> = {}) {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValue({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...over }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimeWithModes(),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      const finish = async () => {
+        await settleUnderFakeClock(pending);
+        vi.useRealTimers();
+        await service.stop();
+      };
+      const dispatches = () =>
+        mockRelay.publish.mock.calls.filter(
+          (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+        );
+      return { task, run, service, finish, dispatches };
+    }
+
+    // DOR-3033 review (Security Must): Stop on a run nothing received yet ends
+    // it, and the retry does not start it.
+    it('pressing Stop during the wait ends the run, and it never starts', async () => {
+      const { run, service, finish, dispatches } = await waitingForRetry('Stopped Meanwhile');
+      await expect(service.cancelRun(run.id)).resolves.toEqual({ state: 'stopping' });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)).toMatchObject({
+        status: 'cancelled',
+        error: 'Stopped before it started.',
+      });
+    });
+
+    it('lowering the level during the wait runs the retry at the new level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Lowered Meanwhile', {
+        permissionMode: 'bypassPermissions',
+      });
+      store.updateTask(task.id, { permissionMode: 'acceptEdits' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    // DOR-3033 review (Security Must): a lower level binds queued work; a
+    // raise never reaches it (DOR-3175).
+    it('raising the level during the wait keeps the retry at the original level', async () => {
+      const { task, finish, dispatches } = await waitingForRetry('Raised Meanwhile', {
+        permissionMode: 'acceptEdits',
+      });
+      store.updateTask(task.id, { permissionMode: 'bypassPermissions' });
+      await finish();
+      expect(dispatches()).toHaveLength(2);
+      expect((dispatches()[1]![1] as { permissionMode?: string }).permissionMode).toBe(
+        'acceptEdits'
+      );
+    });
+
+    it('turning the schedule off during the wait means no run', async () => {
+      const { task, run, finish, dispatches } = await waitingForRetry('Disabled Meanwhile');
+      store.updateTask(task.id, { enabled: false });
+      await finish();
+      expect(dispatches()).toHaveLength(1);
+      expect(store.getRun(run.id)?.status).toBe('skipped');
+    });
+
+    it('words a run that never reported its ending as that, not as never started', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, error: 'adapter delivery timeout (3660s)' },
+      });
+      const run = await dispatchOnce('Never Reported');
+      expect(run?.error).toBe('This run went past its time limit without reporting how it ended.');
+    });
+
+    // DOR-3033: a run stopped at its deadline says how long it had.
+    it('carries the task’s time limit for the receiver to name', async () => {
+      await dispatchOnce('Time Limit', { maxRuntime: 30 * 60_000 });
+      const payload = mockRelay.publish.mock.calls[0]![1] as { timeLimit?: string };
+      expect(payload.timeLimit).toBe('30m');
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
@@ -2231,10 +2532,17 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      // Nothing answering gets one retry 30 s later before the run is called
+      // failed (DOR-3033); the fake clock walks that wait.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      await settleUnderFakeClock(
+        (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000))
+      );
+      vi.useRealTimers();
       const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
+      expect(mockRelay.publish).toHaveBeenCalledTimes(2);
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
       expect(updatedRun?.error).toBe(
@@ -3698,6 +4006,7 @@ describe('buildTaskAppend', () => {
       resolvedRuntime: null,
       resolvedModel: null,
       refusedTools: null,
+      outcome: null,
       scheduledFor: null,
       missedTicks: null,
       createdAt: '2026-01-01T02:00:00Z',
@@ -3788,6 +4097,7 @@ describe('buildTaskAppend', () => {
       resolvedRuntime: null,
       resolvedModel: null,
       refusedTools: null,
+      outcome: null,
       scheduledFor: null,
       missedTicks: null,
       createdAt: '2026-01-01T02:00:00Z',

@@ -1,3 +1,4 @@
+import { credentialReadCoolingDown, noteCredentialsUnreadable } from './credential-read-health.js';
 /**
  * Reads WHEN the host's Claude sign-in stops working — the one thing the
  * readiness probe next door cannot see.
@@ -38,18 +39,19 @@
  * host store read-only for status is permitted; extracting the token to drive
  * the SDK is the excluded pattern).
  *
- * Every failure answers "unknown" (`null`), never a guess. Unknown must stay
- * indistinguishable from healthy at every call site: an env credential, an older
+ * Every missing deadline answers "unknown" (`null`), never an expiry guess.
+ * Missing deadlines alone do not demote a working sign-in: an env credential, an older
  * CLI that stores no renewal deadline, a locked Keychain, or a platform whose
  * store this does not know all land here, and none of them is evidence that
- * anything is wrong.
+ * anything is wrong. A timed-out store read separately records unreadable
+ * credentials for readiness and the stall watchdog, with a retry cooldown.
  *
  * @module services/runtimes/claude-code/tooling/claude-sign-in-expiry
  */
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { runBinaryProbe } from '../../shared/run-probe.js';
+import { isProbeTimeoutError, runBinaryProbe } from '../../shared/run-probe.js';
 import { logger } from '../../../../lib/logger.js';
 import { claudeConfigDirEnv } from '../claude-config-dir.js';
 
@@ -199,9 +201,11 @@ async function readCredentialStore(root: string): Promise<string> {
 export async function readClaudeSignInDeadlines(
   root: string
 ): Promise<ClaudeSignInDeadlines | null> {
+  if (credentialReadCoolingDown(root)) return null;
   try {
     return parseClaudeSignInDeadlines(await readCredentialStore(root));
   } catch (err) {
+    if (isProbeTimeoutError(err)) noteCredentialsUnreadable(root);
     // Expected and uninteresting on any machine that signs in another way (an
     // API key, a locked Keychain, a store this platform does not have), so this
     // is `debug`: it explains an absent warning, it does not report a fault.

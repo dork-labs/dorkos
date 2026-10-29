@@ -10,7 +10,9 @@
  *
  * The secrets and settings routes are NOT behind that bar — they hold an
  * extension's own per-extension data rather than a leaf of `extensions` in
- * `~/.dork/config.json` — so an agent may legitimately write them. Every route
+ * `~/.dork/config.json` — so an agent may legitimately write them. They, and
+ * the data route, are bound to the caller instead (DOR-3066,
+ * {@link module:routes/extension-write-binding}). Every route
  * here that records an Activity event therefore reads WHO asked
  * (`readActivityActor`) instead of asserting it was the person; they all claimed
  * `user` / `'You'` before DOR-1801, so an agent setting an API key showed up in
@@ -27,6 +29,7 @@ import fs from 'fs/promises';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { refusedExtensionWrite } from './extension-write-binding.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { eventFanOut } from '../services/core/event-fan-out.js';
@@ -44,6 +47,8 @@ import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
+import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
+import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
@@ -137,6 +142,8 @@ export interface ExtensionsRouterDeps {
   getCwd: () => string | null;
   /** The Activity feed changes are recorded in, when the server has one. */
   activity?: Pick<ActivityService, 'emit'>;
+  /** Mesh, when it is running: the agent a mini app forwards to (DOR-3325). */
+  mesh?: PersonForwardDeps['mesh'];
 }
 
 /** The answer for an id outside {@link SAFE_EXT_ID}. */
@@ -377,6 +384,10 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
 
   // PUT /api/extensions/:id/data -- Write extension's persistent data
   //
+  // Bound to the caller (DOR-3066): an extension may write its own blob only,
+  // and a write with no extension stamp needs a person or an agent
+  // (`extension-write-binding.ts`).
+  //
   // **Deliberately writes no Activity, unlike every other write on this router**
   // (DOR-1829 considered it and declined). The secrets and settings routes each
   // record one line per deliberate act by a person or an agent. This one is the
@@ -384,14 +395,16 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   // code likes: the shipped `hello-world` extension writes its visit counter on
   // every single activation, so an unconditional emit here would put a row in the
   // operator's feed each time they open a page. A feed nobody can read is worth
-  // less than a quieter one, and the write itself is bounded — an extension can
-  // only ever overwrite its OWN blob, under its own scope-resolved directory.
+  // less than a quieter one, and the write itself is bounded — the data lands
+  // under the extension's own scope-resolved directory.
   // If this ever needs recording, it needs collapsing (one line per extension per
   // window) rather than one line per call, and that is its own piece of work.
   router.put('/:id/data', async (c) => {
     const id = c.req.param('id');
     try {
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const refused = refusedExtensionWrite(c, id);
+      if (refused) return refused;
       const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
       if (!dataPath) return c.json({ error: `Extension '${id}' not found` }, 404);
 
@@ -434,6 +447,8 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     const { id, key } = c.req.param();
     try {
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const refused = refusedExtensionWrite(c, id);
+      if (refused) return refused;
       const parsed = SetSecretBodySchema.safeParse(readJsonBody(c));
       if (!parsed.success) return validationFailed(c, parsed.error);
 
@@ -474,6 +489,8 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     const { id, key } = c.req.param();
     try {
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const refused = refusedExtensionWrite(c, id);
+      if (refused) return refused;
       const record = extensionManager.get(id);
       if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
@@ -546,6 +563,8 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     const { id, key } = c.req.param();
     try {
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const refused = refusedExtensionWrite(c, id);
+      if (refused) return refused;
       const parsed = SetSettingBodySchema.safeParse(readJsonBody(c));
       if (!parsed.success) return validationFailed(c, parsed.error);
 
@@ -584,6 +603,8 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     const { id, key } = c.req.param();
     try {
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const refused = refusedExtensionWrite(c, id);
+      if (refused) return refused;
       const record = extensionManager.get(id);
       if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
@@ -619,6 +640,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
   registerExtensionRoomRoutes(router, extensionManager, SAFE_EXT_ID);
+  registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
 
   return router;
 }

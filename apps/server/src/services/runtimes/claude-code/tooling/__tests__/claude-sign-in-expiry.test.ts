@@ -1,3 +1,4 @@
+import { resetCredentialReadHealth } from '../credential-read-health.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runBinaryProbe } from '../../../shared/run-probe.js';
 import { claudeConfigDirEnv } from '../../claude-config-dir.js';
@@ -188,6 +189,7 @@ describe('readClaudeSignInDeadlines', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCredentialReadHealth();
     // The real function returns `undefined` for the default root and the path
     // itself otherwise — that is the rule deciding which Keychain branch is read.
     mockedConfigDirEnv.mockImplementation((root: string) => ({

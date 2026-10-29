@@ -88,9 +88,11 @@ describe('PendingExtensionApproval.permissions and .added', () => {
         },
       }
     );
+    // The approval names these very files (DOR-3068); only the set widened.
+    mail.currentDigest = `sha256:${'d'.repeat(64)}`;
     state.extensions = {
       approvedToRun: ['mail'],
-      approvedSources: { mail: { path: mail.path } },
+      approvedSources: { mail: { path: mail.path, digest: mail.currentDigest } },
       approvedPermissions: {
         mail: {
           runtime: 'subprocess',

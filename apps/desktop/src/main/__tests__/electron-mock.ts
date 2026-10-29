@@ -297,6 +297,20 @@ export type MockBrowserWindow = MockBrowserWindowImpl;
 
 const appBus = createEventBus();
 
+/** A stand-in for `app.commandLine`, reading from its own `switches` map. */
+function makeMockCommandLine() {
+  const switches: Record<string, string> = {};
+  return {
+    switches,
+    hasSwitch: vi.fn((name: string): boolean => name in switches),
+    getSwitchValue: vi.fn((name: string): string => switches[name] ?? ''),
+    appendSwitch: vi.fn<(name: string, value?: string) => void>(),
+    removeSwitch: vi.fn((name: string): void => {
+      delete switches[name];
+    }),
+  };
+}
+
 export const app = {
   isPackaged: false,
   name: 'DorkOS',
@@ -308,6 +322,14 @@ export const app = {
    */
   releaseSingleInstanceLock: vi.fn<() => void>(),
   quit: vi.fn<() => void>(),
+  /** Modelled because a refused launch exits with a code instead of quitting. */
+  exit: vi.fn<(exitCode?: number) => void>(),
+  /**
+   * The switches this launch was started with. Empty by default; a test sets
+   * `switches` to model a launch with some. `appendSwitch` is a recorder, so a
+   * test can prove nothing added one.
+   */
+  commandLine: makeMockCommandLine(),
   /**
    * Arms a relaunch for whenever this process next exits — which is why tests
    * assert on the ORDER of `relaunch` against `quit` and against the agent
@@ -631,6 +653,8 @@ export function resetElectronMock(): void {
   app.requestSingleInstanceLock = vi.fn(() => true);
   app.releaseSingleInstanceLock = vi.fn();
   app.quit = vi.fn();
+  app.exit = vi.fn();
+  app.commandLine = makeMockCommandLine();
   app.relaunch = vi.fn();
   app.disableHardwareAcceleration = vi.fn();
   userDataPath = freshUserDataPath();

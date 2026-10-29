@@ -14,7 +14,7 @@ import {
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
-import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
+import { NEVER_ASK_REASON_TYPE, NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
 import {
   armInteractionWait,
@@ -47,16 +47,20 @@ import {
 import { randomUUID } from 'node:crypto';
 import {
   autoAllowedByCall,
+  DORKOS_AGENT_TOOLS,
   hasAgentIdentity,
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
 import {
+  carriesOutsiderMark,
   gatePermissionMode,
-  heldForOutsider,
   neverAsks,
   resolveModeDecision,
   type CeilingedMode,
 } from '../turn-permission.js';
+
+/** Why the Never ask mode refused a call, in a person's words (the denial chip). */
+const NEVER_ASK_REASON = 'Never ask refuses anything not already allowed.';
 
 /** The SDK's own ask-the-person tool, which is routed rather than approved. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
@@ -86,15 +90,15 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * ## The record
  *
  * A `permission_denied` StreamEvent stamped {@link NO_APPROVAL_SURFACE} — the
- * one `reasonType` DorkOS writes itself, and the reason a run summary may say
- * "nobody was there to approve it" without qualifying it. It carries `askKind`
+ * `reasonType` DorkOS writes for an absent person, and the reason a run summary
+ * may say "nobody was there to approve it" without qualifying it. It carries `askKind`
  * beside the reason, because this one function refuses three different asks
  * and only a TOOL is one the run lost the ability to act with (DOR-2101); a
  * run that did its work and closed by asking a question must not be recorded
- * as one that could not use its tools. The SDK's own
- * denials (`classifier`, `rule`, `asyncAgent`) describe decisions that would
- * have gone the same way with a person present, so they carry other
- * discriminators and `@dorkos/shared/run-refusals` ignores them. The event rides
+ * as one that could not use its tools. The SDK's `classifier` and `rule`
+ * denials describe decisions that would have gone the same way with a person
+ * present, so `@dorkos/shared/run-refusals` ignores them; its `asyncAgent` and
+ * `mode` denials are counted there too, each with words of its own. The event rides
  * the session's own queue, so it reaches the live client, the transcript, and
  * the scheduler consuming the run's stream, with no new plumbing.
  *
@@ -484,27 +488,14 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const decision = resolveModeDecision(gatePermissionMode(session));
-    // "Never ask" refuses ahead of everything below, the question and the safe
-    // lists included: whatever reaches this callback is a call the CLI would
-    // have asked about, and in this mode nobody is asked and nothing extra runs.
-    // `neverAsks` also covers a chat set to it whose turn a stricter ceiling
-    // holds to Plan, which would otherwise ask.
-    if (decision === 'refuse' || neverAsks(session)) {
-      log.info('[canUseTool] refused: the chat is set to never ask', {
-        toolName,
-        toolUseID: context.toolUseID,
-      });
-      return { behavior: 'deny', message: NEVER_ASK_DENIAL };
-    }
-    if (toolName === ASK_USER_QUESTION_TOOL) {
-      log.debug('[canUseTool] routing to question handler', {
-        toolName,
-        toolUseID: context.toolUseID,
-      });
-      return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
-    }
-
+    // "Never ask": `neverAsks` also covers a chat set to it whose turn a
+    // stricter ceiling holds to Plan, which would otherwise ask.
+    const refusing = decision === 'refuse' || neverAsks(session);
     if (
+      // Under Never ask only DorkOS's own tools pass here (DOR-3042). The
+      // CLI's read-only tools are still refused: `WebFetch` among them would
+      // let an unattended run reach a page nobody chose.
+      (!refusing || DORKOS_AGENT_TOOLS.has(toolName)) &&
       autoAllowedByCall(session, toolName, input, context.mcpServer) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER (see
@@ -515,9 +506,65 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
+    // "Never ask" refuses what any other mode would ask about, the question
+    // included: in this mode nobody is asked and nothing extra runs. DorkOS's
+    // own safe-listed calls above are not among them: they run without asking
+    // in every mode, so refusing them here would refuse what never asks, and a
+    // Never ask run could not read or post to its own room (DOR-3042).
+    if (refusing) {
+      log.info('[canUseTool] refused: the chat is set to never ask', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      // The deny is decided before the record is written, so it never depends
+      // on the record: a push that throws still refuses the call.
+      const denied: PermissionResult = { behavior: 'deny', message: NEVER_ASK_DENIAL };
+      // The record, with the CLI's own discriminator for a mode's refusal, so
+      // a scheduled run's row can name the tool it lost (DOR-3132). The CLI
+      // refuses most such calls itself and writes the same frame; this is the
+      // one that reaches DorkOS's gate. A question is the run wanting to talk,
+      // not to act, so it is left out of a record that names lost tools.
+      if (toolName !== ASK_USER_QUESTION_TOOL) {
+        try {
+          session.eventQueue.push({
+            type: 'permission_denied',
+            data: {
+              toolCallId: context.toolUseID,
+              toolName,
+              reasonType: NEVER_ASK_REASON_TYPE,
+              // The person's words, which the denial chip shows; `message` is
+              // what the model was told, and is not for a person to read.
+              reason: NEVER_ASK_REASON,
+              message: NEVER_ASK_DENIAL,
+              ...(context.agentID !== undefined ? { agentId: context.agentID } : {}),
+            },
+          });
+          session.eventQueueNotify?.();
+        } catch (err) {
+          log.info('[canUseTool] could not record a never-ask refusal', {
+            toolName,
+            toolUseID: context.toolUseID,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return denied;
+    }
+    if (toolName === ASK_USER_QUESTION_TOOL) {
+      log.debug('[canUseTool] routing to question handler', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
+    }
+
+    // A turn that carries an outsider's words on runs at its own level, but its
+    // shell asks at every level until it runs sandboxed (DOR-3390): the held-turn
+    // hook sends such a Bash call here even at Full, and lets plain reads by.
+    const carriedShell = toolName === 'Bash' && carriesOutsiderMark(session);
     // Anything but an explicit `allow` asks, so a decision added later can
     // never fall through to the auto-allow below.
-    if (decision !== 'allow') {
+    if (decision !== 'allow' || carriedShell) {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover
@@ -543,9 +590,10 @@ export function createCanUseTool(
         toolUseID: context.toolUseID,
         ...(context.agentID !== undefined ? { agentID: context.agentID } : {}),
       });
-      // A turn DorkOS cannot vouch for offers no "Always allow" (DOR-3204): a
-      // stranger's turn must not write a standing rule into the folder.
-      const offered = heldForOutsider(session) ? { ...context, suggestions: [] } : context;
+      // A turn that read words DorkOS cannot vouch for offers no "Always allow"
+      // (DOR-3204, DOR-3390): it must not write a standing rule into the folder,
+      // whether a stranger started it or our own agent passed the words on.
+      const offered = carriesOutsiderMark(session) ? { ...context, suggestions: [] } : context;
       return handleToolApproval(session, context.toolUseID, toolName, input, offered);
     }
     log.debug('[canUseTool] auto-allow', {

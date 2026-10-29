@@ -139,6 +139,9 @@ describe('the pin list', () => {
       fastMode: 'relaunch',
       settingsEnv: 'relaunch',
       additionalDirectories: 'relaunch',
+      folderAllows: 'relaunch',
+      permissionsDeny: 'relaunch',
+      folderConfig: 'relaunch',
       toolSurface: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
@@ -321,7 +324,33 @@ describe('the relaunch pins', () => {
       'additionalDirectories',
       { options: grantedOptions([{ path: '/rooms/r1/worktrees/ana', access: 'write' }]) },
     ],
+    // An agent folder allow list a person approved (DOR-3039).
+    [
+      'folderAllows',
+      { options: options({ settings: { permissions: { allow: ['Bash(scripts/x:*)'] } } }) },
+    ],
+    // A turn that became marked loses write access to its own mini apps
+    // (DOR-3068): the same chat, one more deny rule.
+    [
+      'permissionsDeny',
+      {
+        options: options({
+          settings: { permissions: { deny: ['Edit(//agents/a/.dork/extensions/**)'] } },
+        }),
+      },
+    ],
+    // An agent folder's changed hooks held back (DOR-3068).
+    ['folderConfig', { options: options({ settings: { disableAllHooks: true } }) }],
   ];
+
+  it('rides a deny list that only changed order (DOR-3068)', () => {
+    const rules = ['Edit(//a/**)', 'Write(//b/**)'];
+    const before = capture({ options: options({ settings: { permissions: { deny: rules } } }) });
+    const after = capture({
+      options: options({ settings: { permissions: { deny: [...rules].reverse() } } }),
+    });
+    expect(after.pins.permissionsDeny).toBe(before.pins.permissionsDeny);
+  });
 
   it.each(cases)('relaunches when %s changes', (pin, overrides) => {
     const decision = compareLaunchFingerprints(capture(), capture(overrides));
@@ -675,7 +704,8 @@ describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
       capture({ options: grantedOptions([worktree, repo]) }),
       capture({ options: grantedOptions([worktree]) })
     );
-    expect(decision.action === 'relaunch' && decision.changed).toEqual(['additionalDirectories']);
+    // A read-only grant is also a deny rule, so the deny pin moves with it.
+    expect(decision.action === 'relaunch' && decision.changed).toContain('additionalDirectories');
   });
 
   it('relaunches when only a grant’s access changes', () => {
@@ -683,7 +713,8 @@ describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
       capture({ options: grantedOptions([worktree, repo]) }),
       capture({ options: grantedOptions([worktree, { ...repo, access: 'write' }]) })
     );
-    expect(decision.action === 'relaunch' && decision.changed).toEqual(['additionalDirectories']);
+    // A read-only grant is also a deny rule, so the deny pin moves with it.
+    expect(decision.action === 'relaunch' && decision.changed).toContain('additionalDirectories');
   });
 
   it('does not move with fastMode, which shares the settings object', () => {

@@ -113,7 +113,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
-import { checkClaudeLaunchAccount } from './launch-account-check.js';
+import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import {
   getOrCreateProjector,
@@ -121,6 +121,7 @@ import {
   overlayModelSubstitutions,
   overlayAgentCompactions,
   overlayPermissionDenials,
+  overlayWorkLeftRunning,
   peekProjector,
   streamGenerationOf,
 } from '../../session/index.js';
@@ -1119,7 +1120,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // that would be refused predicts no account at all (spec
     // `flow-multiproject` §8.4).
     const launch = resolveLaunchAccountRoot({
-      agentAccountId: manifest?.account,
+      agentAccountId: accountUnlessHeld(manifest, home),
       agentId: manifest?.id,
       project: await projectOfFolder(projectDir),
     });
@@ -1637,13 +1638,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // names the model that ran and never the one it replaced.
     // And the fifth, for summaries the agent asked for itself (DOR-2732): the
     // transcript records that the conversation was summarized, never who asked.
-    return overlayAgentCompactions(
-      sessionId,
-      overlayModelSubstitutions(
-        sessionId,
-        overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages))
-      )
-    );
+    // And the sixth, for background commands a Stop could not end (DOR-3285):
+    // the transcript records neither the line nor how each command later ended.
+    const base = overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages));
+    const stopped = overlayWorkLeftRunning(sessionId, base);
+    return overlayAgentCompactions(sessionId, overlayModelSubstitutions(sessionId, stopped));
   }
 
   /**

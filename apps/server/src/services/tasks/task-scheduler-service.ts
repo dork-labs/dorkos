@@ -3,7 +3,8 @@ import { outsideAuditScope } from '../audit/audit-context.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun, TaskRunTrigger, PermissionMode } from '@dorkos/shared/types';
-import { isTerminalRunStatus, type TaskStore } from './task-store.js';
+import type { TaskStore } from './task-store.js';
+import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import {
@@ -13,7 +14,7 @@ import {
 } from '../relay/task-dispatch/readiness.js';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import { createRunOutcomeTracker, settledRunFields } from '@dorkos/shared/run-outcome';
 import {
   createRefusedAskLog,
   refusedToolNames,
@@ -685,11 +686,10 @@ export class TaskSchedulerService {
     // run's own ending — is a plain no-op rather than a message on the bus.
     if (isTerminalRunStatus(run.status)) return { state: 'already_finished' };
 
-    const controller = this.runs.directController(runId);
-    if (controller) {
-      controller.abort(OPERATOR_CANCEL);
-      return { state: 'stopping' };
-    }
+    // A run this process drives, or one nothing has received yet: either way
+    // this process can end it without asking the bus (`RunAccounting.stopHere`).
+    const stoppedHere = this.runs.stopHere(runId, this.store, OPERATOR_CANCEL);
+    if (stoppedHere) return stoppedHere;
 
     if (!this.relay) {
       return {
@@ -1611,29 +1611,17 @@ export class TaskSchedulerService {
         // succeeded: a turn can stream a typed `error` and then end normally,
         // and every such run used to be filed as a success (DOR-1658). Ask the
         // tracker how the turn actually settled instead. It answers a third way
-        // since DOR-2101 — `blocked`, the run that was refused every tool it
-        // reached for and got none of them — and the relay-dispatched twin in
-        // `packages/relay/src/adapters/claude-code/task-handler.ts` maps the
-        // same three answers the same way, because a run must not be recorded
-        // differently for having taken the other path.
-        const settlement = outcome.settle();
-        // The line a person reads on the row. A failure names what broke; a
-        // blocked run names the tools it was denied — the same sentence that
-        // leads its summary, repeated here because the row's explanation line
-        // is where the reader's eye goes, and because a blocked run's summary
-        // may be nothing but that sentence.
-        const rowError =
-          settlement.outcome === 'failed'
-            ? settlement.error
-            : settlement.outcome === 'blocked'
-              ? refusalLine
-              : null;
+        // — `needs_attention`, the run that was refused a tool it reached for,
+        // whether or not it carried on (DOR-3123) — and `settledRunFields` maps
+        // the answer to the row's status, outcome and line. The relay-dispatched
+        // twin in `packages/relay/src/adapters/claude-code/task-handler.ts`
+        // writes its row through the same function, because a run must not be
+        // recorded differently for having taken the other path.
         this.store.updateRun(run.id, {
-          status: settlement.outcome,
+          ...settledRunFields(outcome.settle(), refusalLine),
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: summaryForRow(),
-          ...(rowError !== null ? { error: rowError } : {}),
           refusedTools: refusedToolNames(refusals.all()),
           sessionId: persistedSessionId(),
         });

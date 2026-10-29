@@ -16,8 +16,14 @@
  *
  * @module services/runtimes/claude-code/turn-permission
  */
+import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { ceilingCarriesOutsider, clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import type { PermissionMode } from '@dorkos/shared/types';
+import {
+  ceilingCarriesOutsider,
+  ceilingHoldsForOutsider,
+  clampModeToCeiling,
+} from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
@@ -193,13 +199,29 @@ export function ceilingOn(session: {
 
 /**
  * Whether the gate is held for words DorkOS cannot vouch for (DOR-3204): this turn's ceiling, or
- * the one background work carries, holds the `runtime-default` bound or a level marked as having
- * read an outsider's words. Wider than `ceilingOn(…) === 'stranger'` on purpose: a marked level
- * that reached a ceiling without the bound beside it is still a stranger's turn.
+ * the one background work carries, holds the `runtime-default` bound a stranger's turn carries.
+ * A marked level alone is our own agent passing an outsider's words on (DOR-3390): it holds only
+ * the shell ({@link carriesOutsiderMark}), never the whole turn.
  *
  * @param session - This turn's ceiling and the one background work carries.
  */
 export function heldForOutsider(session: {
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): boolean {
+  return [session.turnPermissionCeiling, session.backgroundPermissionCeiling].some(
+    (ceiling) => ceiling !== undefined && ceilingHoldsForOutsider(ceiling)
+  );
+}
+
+/**
+ * Whether this turn, or background work an earlier turn left, carries an outsider's words at all:
+ * held for them ({@link heldForOutsider}) or passed them on by one of our own agents (DOR-3390).
+ * Such a turn saves no "Always allow", and its shell asks a person until the shell runs sandboxed.
+ *
+ * @param session - This turn's ceiling and the one background work carries.
+ */
+export function carriesOutsiderMark(session: {
   turnPermissionCeiling?: TurnPermissionCeiling;
   backgroundPermissionCeiling?: TurnPermissionCeiling;
 }): boolean {
@@ -320,4 +342,31 @@ export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
       return 'ask';
     }
   }
+}
+
+/**
+ * The one permission-update scope DorkOS mirrors into its own session state.
+ *
+ * The SDK's other destinations name settings FILES — the operator's, the
+ * project's, the machine-local override — and a mode written there outlives the
+ * conversation the card was answered in. `'session'` is the only one whose
+ * lifetime matches the row DorkOS keeps per session.
+ */
+const SESSION_SCOPED: PermissionUpdateDestination = 'session';
+
+/**
+ * The mode a batch of accepted permission suggestions leaves the session in, or
+ * `undefined` when none of them touches the mode.
+ *
+ * Last one wins, for the same reason the SDK applies them in order: a batch that
+ * names the mode twice ends at the second value, not the first.
+ *
+ * @param suggestions - The SDK permission updates being forwarded verbatim.
+ */
+export function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
+  let mode: PermissionMode | undefined;
+  for (const update of suggestions) {
+    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
+  }
+  return mode;
 }

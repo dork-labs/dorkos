@@ -101,6 +101,13 @@ export interface AgentHomeRegistry {
   managedWorkspaceOwner(dir: string): string | null;
   /** `<dorkHome>/rooms`: no repo under it is ever an agent's home repo. */
   roomsDir: string | null;
+  /**
+   * Whether the home list can be trusted yet. `false` while the agent registry
+   * has not started (or failed to): the git kill switch then refuses every
+   * folder rather than treat "no homes known" as "no homes" (DOR-3343).
+   * Absent means always.
+   */
+  homesKnown?(): boolean;
 }
 
 let registry: AgentHomeRegistry | undefined;
@@ -361,14 +368,77 @@ export function isInsideRoomsDir(target: string): boolean {
 
 function insideRoomsDir(target: string): boolean {
   const roomsDir = registry?.roomsDir;
-  if (!roomsDir) return false;
+  return roomsDir ? isWithin(roomsDir, target) : false;
+}
+
+/**
+ * Whether the wired registry can say which folders are agent homes. `true`
+ * when nothing is wired (a unit test), since boot always wires it.
+ */
+export function agentHomesKnown(): boolean {
+  if (!registry?.homesKnown) return true;
+  try {
+    return registry.homesKnown();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether `target` is a registered agent's home or anywhere inside one, as
+ * spelled or through a symlink. A prefix question, unlike {@link
+ * resolveAgentHome}: a subfolder of a home is still the agent's ground, and
+ * the git kill switch (DOR-3343) must not run git there. `false` when no
+ * registry is wired.
+ *
+ * @param target - An absolute folder.
+ */
+export function isInsideAgentHome(target: string): boolean {
+  if (!registry) return false;
+  const resolved = path.resolve(target);
+  return registry.listRegisteredHomes().some((home) => isWithin(home, resolved));
+}
+
+/**
+ * Whether `target` is `root` or inside it, compared as spelled, as real paths,
+ * and as the file system's own spelling. The last one matters on macOS and
+ * Windows, where `/A/b` and `/a/B` are the same folder: there the comparison
+ * also ignores case, which can only make it answer `true` more often.
+ *
+ * @param root - The containing folder.
+ * @param target - An absolute folder.
+ */
+export function isWithin(root: string, target: string): boolean {
   return [
-    [roomsDir, target],
-    [realPathOr(roomsDir), realPathOr(target)],
-  ].some(([root, p]) => {
-    const rel = path.relative(root!, p!);
+    [root, target],
+    [realPathOr(root), realPathOr(target)],
+    [systemPath(root), systemPath(target)],
+  ].some(([r, p]) => {
+    const rel = path.relative(r!, p!);
     return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
   });
+}
+
+const CASE_BLIND = process.platform === 'darwin' || process.platform === 'win32';
+
+/**
+ * The file system's own spelling of `p`: the native real path of its nearest
+ * existing folder plus the rest, lower-cased where case does not matter.
+ */
+function systemPath(p: string): string {
+  let head = path.resolve(p);
+  let rest = '';
+  for (;;) {
+    try {
+      const joined = path.join(fs.realpathSync.native(head), rest);
+      return CASE_BLIND ? joined.toLowerCase() : joined;
+    } catch {
+      const parent = path.dirname(head);
+      if (parent === head) return CASE_BLIND ? p.toLowerCase() : p;
+      rest = path.join(path.basename(head), rest);
+      head = parent;
+    }
+  }
 }
 
 function sameRealPath(a: string, b: string): boolean {

@@ -75,6 +75,12 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * transcript names the model that ran and never the one it replaced, so the row
  * is what `model-substitution-overlay` puts back as a lasting notice. Eager for
  * the same reason a denial is: the turn it opens may never reach `turn_end`.
+ *
+ * `work_left_running` and `work_left_ended` are the fourth and fifth (DOR-3285):
+ * background commands a Stop could not end, and each one's later end. The
+ * transcript records neither, so the rows are what `work-left-overlay` puts
+ * back as the line under the stopped turn. Eager because both arrive AFTER the
+ * turn they belong to, when no `turn_end` flush is coming.
  */
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
@@ -86,6 +92,8 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'interaction_resolved',
   'permission_denied',
   'model_substituted',
+  'work_left_running',
+  'work_left_ended',
 ]);
 
 /**
@@ -141,6 +149,10 @@ export function isRecordedEvent(event: { type: string; requestedBy?: unknown }):
  *
  * The overlay pays for this by excluding the OPEN turn's denials (they are
  * already on the live stream), so an eager row is never drawn twice.
+ *
+ * The two `work_left_*` events are eager for a plainer reason: they happen
+ * after the stopped turn has ended, so a turn-granular flush would never see
+ * them (DOR-3285).
  */
 export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'approval_required',
@@ -149,6 +161,8 @@ export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'interaction_resolved',
   'permission_denied',
   'model_substituted',
+  'work_left_running',
+  'work_left_ended',
 ]);
 
 /**

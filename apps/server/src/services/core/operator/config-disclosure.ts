@@ -367,6 +367,8 @@ export const CONFIG_DISCLOSURE = {
   // including the home directory. An agent needs none of it — the refusal it
   // reads already names the id to ask the person about — so it stays in.
   'extensions.approvedSources': 'withhold',
+  // The old approvals still waiting for a copy (DOR-3068). Nothing an agent needs.
+  'extensions.legacyUnsourced': 'withhold',
   // The permission set each approval covers (DOR-2686). Nothing an agent needs:
   // the extension's own manifest says what it declares.
   'extensions.approvedPermissions': 'withhold',
@@ -382,6 +384,10 @@ export const CONFIG_DISCLOSURE = {
   // person's own decision no agent task reads: a mini app refused a room says
   // so in a sentence, which is all an agent can act on.
   'extensions.roomAccess': 'withhold',
+  // The agent each mini app forwards the person's comments to (DOR-3325). A
+  // person's own decision no agent task reads: a forward refused for want of
+  // one says so in a sentence.
+  'extensions.forwardAgents': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -417,6 +423,13 @@ export const CONFIG_DISCLOSURE = {
   // The other half of the same record: which packages a person turned down.
   // Same contents, same reasoning — package names and digests, no secrets.
   'harness.refusedHooks': 'expose',
+  // Which state of each agent's own folder settings a person let run or turned
+  // down (DOR-3068): agent ids and digests, no secrets. The part digests behind
+  // each yes are nothing an agent needs.
+  'harness.approvedFolderConfig': 'expose',
+  'harness.refusedFolderConfig': 'expose',
+  'harness.folderConfigPinned': 'expose',
+  'harness.approvedFolderConfigParts': 'withhold',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that
   // can say "your all-projects packages are not shared with Codex" is more
@@ -538,6 +551,13 @@ export const CONFIG_DISCLOSURE = {
   'permissions.sharedAtUpgrade': 'expose',
   // Machine bookkeeping: when that step ran, once per install.
   'permissions.sharedAppsAppliedAt': 'expose',
+  // Which agents' folder allow lists a person let apply, or turned down
+  // (DOR-3039). Agent ids and digests, no secrets; the rules themselves are in
+  // files the agent can already read.
+  'permissions.approvedFolderAllows': 'expose',
+  'permissions.refusedFolderAllows': 'expose',
+  // The rules behind each yes. Not secret, but nothing an agent needs to read.
+  'permissions.approvedFolderAllowRules': 'withhold',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

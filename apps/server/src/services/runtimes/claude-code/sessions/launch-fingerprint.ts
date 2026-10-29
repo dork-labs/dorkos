@@ -100,6 +100,10 @@ import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
+import {
+  denyRulesFromSettings,
+  folderAllowsFromSettings,
+} from '../folder-settings/apply-folder-allows.js';
 import { toSdkEffort } from '../messaging/thinking-config.js';
 import { dorkosToolSurfaceOf } from '../mcp-tools/tool-surface.js';
 
@@ -184,6 +188,26 @@ export const PIN_DISPOSITIONS = {
    * steady state costs nothing.
    */
   additionalDirectories: 'relaunch',
+  /**
+   * The agent folder allow list the launch carries (`settings.permissions.allow`,
+   * DOR-3039), digested in order. The CLI reads allow rules at launch, so a list
+   * a person just approved, or one that stopped applying, has to relaunch.
+   */
+  folderAllows: 'relaunch',
+  /**
+   * Every deny rule the launch carries (`settings.permissions.deny`), sorted
+   * and digested (DOR-3068). The CLI reads them only at launch, so a turn that
+   * became marked (which loses write access to its own mini apps) or an agent
+   * registered since (whose mini apps others may not edit) has to relaunch.
+   */
+  permissionsDeny: 'relaunch',
+  /**
+   * Whether the launch held back an agent folder's own hooks and MCP servers
+   * file (`settings.disableAllHooks`, `strictMcpConfig`, DOR-3068). Both are
+   * read at launch, so a change a person just allowed, or one that started
+   * waiting, has to relaunch.
+   */
+  folderConfig: 'relaunch',
   /**
    * The tool list each in-process (`sdk`) MCP server would give a fresh
    * launch: a digest of its tools' names and input JSON Schemas, recorded by
@@ -607,6 +631,14 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           : false
       ),
       additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      folderAllows: digest(JSON.stringify(folderAllowsFromSettings(options.settings))),
+      permissionsDeny: digest(JSON.stringify(denyRulesFromSettings(options.settings))),
+      folderConfig: [
+        typeof options.settings === 'object' &&
+          options.settings !== null &&
+          (options.settings as { disableAllHooks?: boolean }).disableAllHooks === true,
+        options.strictMcpConfig === true,
+      ].join(FIELD_SEP),
       toolSurface: describeToolSurfaces(options.mcpServers),
       settingsEnv: digest(
         serializeEnv(

@@ -18,6 +18,8 @@ import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-sc
 
 /** Where the answered copy lived. */
 const FLOW_PATH = '/home/me/.dork/plugins/flow/.dork/extensions/flow';
+/** The digest of Flow's files as the list reports them (DOR-3068). */
+const FLOW_DIGEST = `sha256:${'a'.repeat(64)}`;
 
 const navigate = vi.fn();
 
@@ -73,6 +75,7 @@ function flowRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     hasDataProxy: false,
     approvedToRun: false,
     shadowedBy: null,
+    digest: FLOW_DIGEST,
     ...overrides,
   };
 }
@@ -166,7 +169,8 @@ describe('an answered extension approval in the Activity list', () => {
       expect(posts).toEqual([
         {
           url: '/api/extensions/flow/approve',
-          body: { path: FLOW_PATH, version: '1.2.0', plugin: 'flow' },
+          // And the files it was drawn for (DOR-3068).
+          body: { path: FLOW_PATH, version: '1.2.0', plugin: 'flow', expectedDigest: FLOW_DIGEST },
         },
       ])
     );
@@ -224,6 +228,7 @@ describe('an answered extension approval in the Activity list', () => {
       version: '1.2.0',
       plugin: 'flow',
       permissions: { runtime: 'subprocess', net: ['api.linear.app'], run: [], agents: true },
+      expectedDigest: FLOW_DIGEST,
     });
   });
 });

@@ -13,10 +13,15 @@ export const CommunityPairingPollPrivateResponseSchema = z.strictObject({
   status: z.enum(['pending', 'approved', 'expired', 'cancelled', 'redeemed']),
   code: z.string().min(1).optional(),
 });
-/** One-time personal bearer delivered directly to the local credential store. */
+/**
+ * One-time personal bearer delivered directly to the local credential store. `administerToken`
+ * comes only when the request asked for `administer` and an owner or admin consented (DOR-3005):
+ * a second, separate credential that manages the space, which the app stores apart from `token`.
+ */
 export const CommunityPairingExchangeSecretResponseSchema = z.strictObject({
   token: z.string().min(1),
   grant: CommunityWireGrantSchema,
+  administerToken: z.string().min(1).optional(),
 });
 /** One-time agent bearer delivered directly to the local credential store. */
 export const CommunityAgentEnrollmentSecretResponseSchema = z.strictObject({

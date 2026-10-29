@@ -46,6 +46,12 @@ import {
 } from './navigation';
 import { GET_FULLSCREEN_STATE_CHANNEL } from './fullscreen';
 import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
+import { findRefusedLaunchSwitch, REFUSED_LAUNCH_SWITCHES } from './launch-switches';
+import { applyExtraCaCerts } from '../extra-ca-certs';
+
+// A company network's certificates, which the fused app binary no longer reads
+// by itself (DOR-3361), before anything in the main process opens a connection.
+applyExtraCaCerts({ warn: (message) => log.warn(`[tls] ${message}`) });
 
 /** The custom URL scheme `dorkos://` deep links arrive on. */
 const DEEP_LINK_PROTOCOL = 'dorkos';
@@ -192,12 +198,25 @@ function handleDeepLinkUrl(url: string): void {
   }
 }
 
+// A packaged build never starts with a debugger attached (launch-switches/).
+// Checked first, so a refused launch opens no window, session or server.
+const refusedSwitch = app.isPackaged
+  ? findRefusedLaunchSwitch(process.argv, app.commandLine, process.platform)
+  : null;
+
 // Only one instance of the app may run at a time — two copies would each
 // spawn their own server process against the same ~/.dork SQLite store.
 // This must run before any ready-work (IPC handlers, window creation).
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = refusedSwitch === null && app.requestSingleInstanceLock();
 
-if (!gotTheLock) {
+if (refusedSwitch !== null) {
+  log.error(`[launch] Refusing to start: --${refusedSwitch} is not allowed in a packaged build.`);
+  // Dropped before exiting, so no later start-up step can act on one while
+  // the exit lands.
+  for (const name of REFUSED_LAUNCH_SWITCHES) app.commandLine.removeSwitch(name);
+  app.commandLine.removeSwitch('js-flags');
+  app.exit(1);
+} else if (!gotTheLock) {
   app.quit();
 } else {
   // Before anything else, because it cannot be done later: Electron ignores

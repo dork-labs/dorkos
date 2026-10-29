@@ -249,6 +249,10 @@
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
     },
+    "./community-administer": {
+      "types": "./src/community-administer.ts",
+      "default": "./dist/community-administer.js"
+    },
     "./community-connections": {
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
@@ -461,6 +465,10 @@
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"
     },
+    "./canvas-media-url": {
+      "types": "./src/canvas-media-url.ts",
+      "default": "./dist/canvas-media-url.js"
+    },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",
       "default": "./dist/canvas-view.js"
@@ -619,7 +627,7 @@
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
     "ulidx": "^2.4.1",
-    "zod": "^4.6.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

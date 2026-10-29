@@ -94,6 +94,7 @@ const TENANT_TABLES = [
   'community_limits',
   'community_short_names',
   'community_takedowns',
+  'connection_administer_grants',
   'connection_grants',
   'connection_pairings',
   'entries',
@@ -1155,6 +1156,10 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       }),
     },
     { route: 'DELETE /me/grants/:id', call: (x) => ({ path: `/me/grants/${x.grant}`, body: {} }) },
+    {
+      route: 'DELETE /me/grants/:id/administer',
+      call: (x) => ({ path: `/me/grants/${x.grant}/administer`, body: {} }),
+    },
     {
       route: 'POST /agents/:id/rotate',
       caller: 'grant',

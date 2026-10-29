@@ -22,6 +22,11 @@ interface StopConfirmDialogProps {
    * was actually asked.
    */
   queuedCount: number;
+  /**
+   * How many waiting messages other chats sent. Stop cancels them, and they do
+   * not come back to the composer: they are not the person's words (DOR-3060).
+   */
+  fromChatCount?: number;
   /** Called when the user confirms — interrupts the turn and empties the queue. */
   onConfirm: () => void;
 }
@@ -42,18 +47,27 @@ export function StopConfirmDialog({
   open,
   onOpenChange,
   queuedCount,
+  fromChatCount = 0,
   onConfirm,
 }: StopConfirmDialogProps) {
   const noun = queuedCount === 1 ? 'message' : 'messages';
+  const theirs = fromChatCount === 1 ? 'message' : 'messages';
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Stop, and put {queuedCount} queued {noun} back?
+            {queuedCount > 0
+              ? `Stop, and put ${queuedCount} queued ${noun} back?`
+              : `Stop, and cancel ${fromChatCount} ${theirs} from other chats?`}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            The agent stops. Your {noun} {queuedCount === 1 ? 'goes' : 'go'} back to the composer.
+            {queuedCount > 0
+              ? `The agent stops. Your ${noun} ${queuedCount === 1 ? 'goes' : 'go'} back to the composer.`
+              : 'The agent stops. Those messages are not delivered.'}
+            {queuedCount > 0 && fromChatCount > 0 ? (
+              <span className="block">{`${fromChatCount} from other chats ${fromChatCount === 1 ? 'is' : 'are'} cancelled.`}</span>
+            ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

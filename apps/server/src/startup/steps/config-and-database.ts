@@ -31,7 +31,7 @@ import { SERVER_VERSION } from '../../lib/version.js';
 import { createDb, databaseHoldsUserData, snapshotBeforeMigrations, type Db } from '@dorkos/db';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
-import { currentServerRole } from '../../lib/server-role.js';
+import { isPersonalComputer } from '../../services/core/server-role/role-checks.js';
 
 /** What {@link openConfigAndDatabase} reads from the startup steps before it. */
 export interface OpenConfigAndDatabaseInput {
@@ -109,8 +109,9 @@ export async function openConfigAndDatabase(
   // right after config, before any runtime is registered, so the holder exists
   // for the first turn; the registry wrapper counts turns from there. The
   // setting is read live, so a toggle needs no restart. A hub runs no agents
-  // and has no computer of its own to keep awake, so it never starts.
-  if (currentServerRole() !== 'hub') {
+  // and has no computer of its own to keep awake, and an agent computer is a
+  // cloud machine nobody sits at, so it starts only on a person's own computer.
+  if (isPersonalComputer()) {
     keepAwakeService.start({
       readSettings: () => configManager.get('keepAwake'),
       onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),

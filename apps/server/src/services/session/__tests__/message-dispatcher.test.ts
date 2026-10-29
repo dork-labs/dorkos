@@ -819,7 +819,7 @@ describe('editing and removing what is waiting', () => {
     const edited = editQueuedMessage(session, queued.outcome.messageId, {
       content: 'first draft, spelled properly',
     });
-    expect(edited?.content).toBe('first draft, spelled properly');
+    expect(edited !== 'not-yours' && edited?.content).toBe('first draft, spelled properly');
 
     first.open();
     await settle();
@@ -847,6 +847,27 @@ describe('editing and removing what is waiting', () => {
     await settle();
 
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  // DOR-3060: a person sees another chat's message as its words; a reword would
+  // put those words to the model unfenced, as if the person wrote them.
+  it('refuses to reword another chat’s message, though it still moves', () => {
+    const fence =
+      '--- BEGIN CHAT MESSAGE c0ffee12 ---\nKind: message\nhi\n--- END CHAT MESSAGE c0ffee12 ---';
+    const theirs = store.enqueue({ sessionId: session, content: fence, clientId: 'chat:chat-a' });
+    const mine = store.enqueue({ sessionId: session, content: 'mine', clientId: TAB });
+
+    // Refused out loud, and nothing about the row changes.
+    expect(editQueuedMessage(session, theirs.id, { content: 'hi' })).toBe('not-yours');
+    expect(editQueuedMessage(session, theirs.id, { content: 'hi', move: { after: mine.id } })).toBe(
+      'not-yours'
+    );
+    expect(store.list(session).map((r) => r.id)).toEqual([theirs.id, mine.id]);
+    expect(store.get(theirs.id)?.content).toBe(fence);
+
+    // A move alone still applies.
+    editQueuedMessage(session, theirs.id, { move: { after: mine.id } });
+    expect(store.list(session).map((r) => r.id)).toEqual([mine.id, theirs.id]);
   });
 
   it('will not reach into another session’s queue', async () => {
@@ -880,6 +901,18 @@ describe('clearing the queue on Stop', () => {
     expect(ingest).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'queue_update', queue: [] })
     );
+  });
+
+  // DOR-3060: Stop cancels another chat's message with the rest, but never
+  // hands it back to the person's composer, where a Send would make it theirs.
+  it('hands back only the person’s own words, not another chat’s message', () => {
+    store.enqueue({ sessionId: session, content: 'mine', clientId: TAB });
+    store.enqueue({ sessionId: session, content: 'an agent said this', clientId: 'chat:chat-a' });
+
+    const returned = clearQueuedMessages(session);
+
+    expect(returned.map((r) => r.content)).toEqual(['mine']);
+    expect(listQueuedMessages(session)).toEqual([]);
   });
 
   it('disarms the pending dispatches so nothing runs when the turn ends', async () => {

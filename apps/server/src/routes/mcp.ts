@@ -19,6 +19,7 @@
  *
  * @module routes/mcp
  */
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../services/core/capabilities/mcp-input/limits.js';
 import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
@@ -151,6 +152,7 @@ export function createMcpEndpoint(serverFactory: McpServerFactory): Hono<ApiEnv>
       });
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
+        maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES,
       });
       // Clean up the per-request server and transport when the response
       // closes, which for a streamed answer is after its last event. Removes

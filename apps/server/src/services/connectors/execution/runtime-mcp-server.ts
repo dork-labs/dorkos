@@ -1,4 +1,5 @@
 /** Exact authenticated MCP projection for connector execution capabilities. */
+import { MCP_SERVER_OPTIONS } from '../../core/capabilities/mcp-input/limits.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '../../core/capabilities/index.js';
@@ -33,7 +34,10 @@ export function createConnectorRuntimeMcpServer(
   registry: CapabilityRegistry,
   principal: ServerPrincipalProof
 ): McpServer {
-  const server = new McpServer({ name: 'dorkos-connections', version: SERVER_VERSION });
+  const server = new McpServer(
+    { name: 'dorkos-connections', version: SERVER_VERSION },
+    MCP_SERVER_OPTIONS
+  );
   for (const capabilityId of CONNECTOR_RUNTIME_CAPABILITY_IDS) {
     const capability = registry.get(capabilityId);
     if (!capability) {

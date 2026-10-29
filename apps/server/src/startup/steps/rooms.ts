@@ -438,6 +438,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       return owned?.owner?.ref ?? null;
     },
     roomsDir: path.join(dorkHome, 'rooms'),
+    // Until the mesh registry is up, nobody can say which folders are homes,
+    // so the git kill switch refuses every folder (DOR-3343).
+    homesKnown: () => refs.meshCore !== undefined,
   });
   // Where else an agent's conversations are: session storage is derived per
   // working directory (ADR-0310), and room turns stood in their agent's copy of

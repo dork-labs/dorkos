@@ -172,7 +172,10 @@ jobs:
     # fan-in below answers instantly. See the header for why the PR still gets
     # a `browser-test` context at all.
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    # Pinned, every job in this file: `ubuntu-latest` moved to 26.04 on
+    # 2026-10-27, and the same tree that passed on 24.04 timed out on six specs
+    # there. Lift the pin once the suite is green on 26.04 (ledger 261027-053504).
+    runs-on: ubuntu-24.04
     # SIX SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED SIX (2026-09-27,
     # ledger ci/ledger/260919-175503-browser-suite-six-shards.md).
     #
@@ -412,7 +415,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -717,7 +720,7 @@ jobs:
   first-run:
     name: first-run
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       NODE_ENV: development
@@ -743,7 +746,7 @@ jobs:
           echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -829,7 +832,7 @@ jobs:
   browser-test:
     needs: [browser-shard, first-run]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nothing here waits on anything slow. Ten minutes is a backstop against a
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
@@ -1034,7 +1037,7 @@ jobs:
   # rather than picked — its module doc has the numbers, and the pin suite
   # `scripts/__tests__/check-copy-spec-drift.test.ts` holds them still.
   copy-spec-drift:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # NOT part of the main canary. This job diffs a change against its base, and
     # a scheduled run against `main` HEAD carries neither
     # `pull_request.base.sha` nor `merge_group.base_sha` — the step below fails
@@ -1061,7 +1064,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm

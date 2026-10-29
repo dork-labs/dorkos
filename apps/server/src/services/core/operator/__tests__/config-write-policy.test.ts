@@ -103,14 +103,21 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.forwardAgents',
+      'extensions.legacyUnsourced',
       'extensions.roomAccess',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
+      // A person's yes or no to an agent's own folder settings (DOR-3068).
+      'harness.approvedFolderConfig',
+      'harness.approvedFolderConfigParts',
       'harness.approvedHooks',
       'harness.autoAdopt',
       'harness.autoSync',
+      'harness.folderConfigPinned',
       'harness.global.askedAt',
       'harness.global.harnesses',
+      'harness.refusedFolderConfig',
       'harness.refusedHooks',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
@@ -152,9 +159,13 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'onboarding.welcomeEntryId',
       // What agents may do. The generic writers refuse these outright; this is
       // the second line (spec `agent-permissions` D10).
+      // A person's yes or no to an agent's own folder allow list (DOR-3039).
+      'permissions.approvedFolderAllowRules',
+      'permissions.approvedFolderAllows',
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.refusedFolderAllows',
       'permissions.sharedAppsAppliedAt',
       'permissions.sharedAtUpgrade',
       'permissions.trustedStoresAppliedAt',

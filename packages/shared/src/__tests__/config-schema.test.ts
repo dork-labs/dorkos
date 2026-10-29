@@ -216,6 +216,10 @@ describe('UserConfigSchema', () => {
         autoAdopt: false,
         approvedHooks: [],
         refusedHooks: [],
+        approvedFolderConfig: [],
+        approvedFolderConfigParts: {},
+        refusedFolderConfig: [],
+        folderConfigPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -267,6 +271,9 @@ describe('UserConfigSchema', () => {
         trustedStoresAppliedAt: null,
         sharedAppsAppliedAt: null,
         sharedAtUpgrade: [],
+        approvedFolderAllows: [],
+        refusedFolderAllows: [],
+        approvedFolderAllowRules: {},
       },
       cloud: {
         instanceToken: null,
@@ -639,6 +646,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
         autoAdopt: false,
         approvedHooks: [],
         refusedHooks: [],
+        approvedFolderConfig: [],
+        approvedFolderConfigParts: {},
+        refusedFolderConfig: [],
+        folderConfigPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -690,6 +701,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         trustedStoresAppliedAt: null,
         sharedAppsAppliedAt: null,
         sharedAtUpgrade: [],
+        approvedFolderAllows: [],
+        refusedFolderAllows: [],
+        approvedFolderAllowRules: {},
       },
       cloud: {
         instanceToken: null,
@@ -2244,6 +2258,9 @@ describe('permissions section (spec agent-permissions D4)', () => {
     trustedStoresAppliedAt: null,
     sharedAppsAppliedAt: null,
     sharedAtUpgrade: [],
+    approvedFolderAllows: [],
+    refusedFolderAllows: [],
+    approvedFolderAllowRules: {},
   };
 
   it('defaults the whole section from the object-literal default', () => {

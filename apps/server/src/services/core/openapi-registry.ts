@@ -1227,7 +1227,8 @@ registry.registerPath({
     'another message to land before or after rather than an index, because an index ' +
     'means something different to every window the moment anybody else edits the ' +
     'queue. The queue belongs to the SESSION: any client may edit any message on it, ' +
-    'whichever client enqueued it.',
+    'whichever client enqueued it — except that a message another chat sent may be ' +
+    'moved but never reworded (409).',
   request: {
     params: z.object({ id: z.string().uuid(), messageId: z.string() }),
     body: {
@@ -1245,6 +1246,10 @@ registry.registerPath({
     },
     404: {
       description: 'No such message on this queue (dispatched, removed, or never here)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The edit tried to reword a message another chat sent',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -7181,6 +7186,39 @@ registry.registerPath({
     },
     401: roomAgentUnverified,
     404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/media/{file}',
+  tags: ['Rooms'],
+  summary: 'Read a file an agent put on a room’s canvas',
+  description:
+    "When an agent puts a picture, PDF, sound, video, 3D model or CSV from its own folder on a room's canvas, the server copies it into the room and the document's `src` becomes this address, so every member can see it. Only a file in the agent's own folder or its own copy of the room's files is copied; anything else is refused when the agent asks. Readable by any member, the same gate every canvas read uses; a room you are not in answers as one that does not exist. The name carries the SHA-256 of the bytes, so it never changes what it holds. Served with `X-Content-Type-Options: nosniff`, a script-neutering sandbox on SVG, and a single byte `Range` so sound and video can seek.",
+  request: {
+    params: RoomIdParams.extend({
+      file: z.string().regex(/^[0-9a-f]{16}-[0-9a-f]{64}(\.[a-z0-9]{1,10})?$/),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'The file',
+      content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
+    },
+    206: {
+      description: 'The requested byte range',
+      content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
+    },
+    401: roomAgentUnverified,
+    404: {
+      description: 'No such room, the caller may not see it, or no such file on its canvas',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    416: {
+      description: 'The requested range is outside the file',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

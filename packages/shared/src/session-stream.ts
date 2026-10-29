@@ -42,6 +42,8 @@ import {
   CompactBoundaryEventSchema,
   PermissionDeniedEventSchema,
   ModelSubstitutedEventSchema,
+  WorkLeftRunningEventSchema,
+  WorkLeftEndedEventSchema,
   SessionImageEventSchema,
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
@@ -607,6 +609,20 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('model_substituted'),
       ...ModelSubstitutedEventSchema.shape,
+    }),
+    // Background commands a Stop could not end, and each one's later end
+    // (DOR-3285). NOT fidelity members: both happen after the turn they belong
+    // to, and the transcript records neither, so they are recorded eagerly
+    // (`EAGERLY_RECORDED_EVENT_TYPES`) and overlaid back as one lasting line.
+    z.object({
+      ...seqShape,
+      type: z.literal('work_left_running'),
+      ...WorkLeftRunningEventSchema.shape,
+    }),
+    z.object({
+      ...seqShape,
+      type: z.literal('work_left_ended'),
+      ...WorkLeftEndedEventSchema.shape,
     }),
     // A transient operational status (SDK status messages — hook progress, a raw
     // `status` token). Drives the client's transient status strip — NOT the

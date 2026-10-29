@@ -34,6 +34,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
 import { sweepStrandedChildren } from './turn-stream/stranded-children.js';
+import { toNoticeEvent } from './turn-stream/notice-events.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -309,20 +310,14 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return denied;
     }
 
-    // A turn that ran on another model than its session names (DOR-2636).
-    // Forwarded whole: the runtime's transcript never says a model was swapped,
-    // so this event is the only lasting record that it was.
-    case 'model_substituted': {
-      const substituted: RawOf<'model_substituted'> = {
-        type: 'model_substituted',
-        from: String(data.from ?? ''),
-        fromName: String(data.fromName ?? data.from ?? ''),
-        to: String(data.to ?? ''),
-        toName: String(data.toName ?? data.to ?? ''),
-        reason: 'credits-not-covered',
-      };
-      return substituted;
-    }
+    // A turn that ran on another model than its session names (DOR-2636), and
+    // background commands a Stop could not end (DOR-3285). Forwarded whole: the
+    // runtime's transcript records none of them, so each event is the only
+    // lasting record (`turn-stream/notice-events.ts`).
+    case 'model_substituted':
+    case 'work_left_running':
+    case 'work_left_ended':
+      return toNoticeEvent(event);
 
     // A transient operational status (hook progress, a raw SDK `status` token).
     // Drives the client status strip; forward only the fields present. Operation
