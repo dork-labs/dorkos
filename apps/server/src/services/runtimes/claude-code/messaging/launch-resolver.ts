@@ -1,4 +1,3 @@
-import { requireConfirmedAccountLogin } from '../accounts/account-login-metadata.js';
 /**
  * Everything a claude-code launch is resolved from, in one place, so the two
  * dispatch paths cannot drift (spec `persistent-session-runtime` §P3, task
@@ -59,8 +58,11 @@ import {
 } from '../../../core/agent-identity/index.js';
 import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
-import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
+// The error event a refused credits launch ends its turn with, or `null` when
+// the error is not that refusal; re-exported so both dispatch paths import it here.
+export { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
+import { requireConfirmedAccountLogin } from '../accounts/account-login-metadata.js';
 import {
   claudeConfigDirEnv,
   resolveClaudeRootSet,
@@ -1050,15 +1052,4 @@ function forCredits(
   return creditsEnv === undefined
     ? env
     : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
-}
-
-/**
- * The error event a refused credits launch ends its turn with, or `null` when
- * `err` is not that refusal. `code` is what the chat keys its Retry and
- * Use-your-own-sign-in actions on; the message is the plain sentence.
- *
- * @param err - Whatever `resolveLaunch` threw.
- */
-export function creditsRefusalEvent(err: unknown): StreamEvent | null {
-  return creditsRefusalEventFor(err);
 }
