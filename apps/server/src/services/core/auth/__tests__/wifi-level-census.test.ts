@@ -278,6 +278,8 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/feedback/*': 'Group middleware for feedback.',
   'ALL /api/hub/computers/*': 'Hub only: a hub has no Wi-Fi route.',
   'ALL /api/local-browser/*': 'Group middleware; every route is this computer only.',
+  'ALL /api/runtimes/claude-code/signins/*':
+    'Group middleware; the signed-in owner only, and its writes are refused under /api/runtimes.',
   'ALL /api/session-locations/*': 'Group middleware for where chats live.',
   'ALL /api/session-relay/*': 'Group middleware; its writes are refused by path.',
   'ALL /api/sessions/:id/*': 'Group middleware for a chat.',
