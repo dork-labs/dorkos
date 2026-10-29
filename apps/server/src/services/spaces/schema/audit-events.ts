@@ -37,6 +37,8 @@ export const auditEvents = pgTable(
     origin: text('origin').notNull().default('native'),
     /** One rung of a watch-only check (`CommunityDecisionRecordSchema`); `decision.*` rows only. */
     decision: jsonb('decision'),
+    /** `administer` when the person's paired app wrote it (0047); NULL for their browser. */
+    via: text('via').default(sql`nullif(current_setting('dorkos.audit_via', true), '')`),
   },
   (table) => [
     check('audit_events_origin', sql`${table.origin} IN ('native','imported')`),
@@ -51,6 +53,7 @@ export const auditEvents = pgTable(
     }),
     check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system','host')`),
     check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+    check('audit_events_via', sql`${table.via} IS NULL OR ${table.via} = 'administer'`),
     check(
       'audit_events_decision_shape',
       sql`${table.decision} IS NULL OR (${table.action} LIKE 'decision.%' AND jsonb_typeof(${table.decision}) = 'object' AND octet_length(${table.decision}::text) <= 4096)`

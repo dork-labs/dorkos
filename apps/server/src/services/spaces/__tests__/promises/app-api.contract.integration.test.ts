@@ -220,9 +220,12 @@ const posting: Case[] = [
 /** Agent availability (DOR-2877): the capability flag, and the report a paired app sends. */
 const availability: Case[] = [
   {
-    name: 'GET /features says the space understands availability reports and DMs, to anyone',
+    name: 'GET /features says the space understands reports, DMs and administration, to anyone',
     path: (f) => `${base(f)}/features`,
-    expect: { status: 200, body: { features: { agentAvailability: true, agentDms: true } } },
+    expect: {
+      status: 200,
+      body: { features: { agentAvailability: true, agentDms: true, administer: true } },
+    },
   },
   {
     name: 'POST /agents enrolls an agent to report for',
