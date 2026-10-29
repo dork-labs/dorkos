@@ -154,7 +154,8 @@ describe('RoomService', () => {
       );
       expect(broadcast).toHaveBeenCalledWith(
         'room_created',
-        expect.objectContaining({ roomId: room.id, kind: 'dm' })
+        expect.objectContaining({ roomId: room.id, kind: 'dm' }),
+        expect.any(Function)
       );
       broadcast.mockRestore();
     });
@@ -1603,7 +1604,8 @@ describe('RoomService — a DM is idempotent on its member set', () => {
     openDm(['/agents/ana'], 'Ana');
     expect(broadcast).toHaveBeenCalledWith(
       'room_updated',
-      expect.objectContaining({ roomId: first, archived: false })
+      expect.objectContaining({ roomId: first, archived: false }),
+      expect.any(Function)
     );
     broadcast.mockRestore();
   });

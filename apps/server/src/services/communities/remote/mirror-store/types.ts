@@ -52,6 +52,8 @@ export interface CachedRemoteEntry {
 
 /** What a revocation removed from this machine, for the stores beside the room log. */
 export interface MirrorPurge {
+  /** Former members receive only their own removal notice after deletion. */
+  removedMembers?: readonly { roomId: string; authorId: string }[];
   /** Local rooms whose entries were deleted. */
   localRoomIds: readonly string[];
   /** Files that belonged to those entries; their bytes are the caller's to delete. */

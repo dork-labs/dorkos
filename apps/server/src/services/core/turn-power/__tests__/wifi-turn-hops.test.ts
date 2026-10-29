@@ -129,7 +129,12 @@ describe('a turn started from Wi-Fi', () => {
     // shell asks, it saves no standing rule, a schedule it makes parks, and it passes the mark on.
     const mention = fresh('post');
     noteEntryLevel(mention, postLevelFor([ana]));
-    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: mention, authorId: 'ana' }));
+    // In the owner's own circle: outside it Bo would be held (Security's M-B).
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: mention, authorId: 'ana' }, false, '', { ownCircle: true })
+    );
     expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
     const session = {

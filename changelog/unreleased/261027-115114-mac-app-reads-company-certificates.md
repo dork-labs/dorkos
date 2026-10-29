@@ -6,4 +6,4 @@ covers:
 
 ### Changed
 
-- If your company's network needs its own certificates, choose the certificate file in **Settings → Server → Network**. The Mac app trusts that file only, and shows how many certificates it trusts from it. It does not use `NODE_EXTRA_CA_CERTS`, because any program on your computer could set it. Agents can't change this setting.
+- If your company's network needs its own certificates, choose the certificate file in **Settings → Server → Network**. The Mac app trusts that file only, and shows how many certificates it trusts from it. It does not use `NODE_EXTRA_CA_CERTS`, because any program on your computer could set it.

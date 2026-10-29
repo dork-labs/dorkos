@@ -61,8 +61,8 @@ describe('the held turn hook', () => {
   it('asks about a command the folder allows, on a held turn', async () => {
     const python = call('Bash', { command: 'python3 -c 1' });
     expect(await decide({ permissionMode: 'default', ...HELD }, python)).toEqual(ASK);
-    // A chat set to Full, held by a stranger's message, runs at Default and asks too.
-    expect(await decide({ permissionMode: 'bypassPermissions', ...HELD }, python)).toEqual(ASK);
+    // A chat set to Full never asks (DOR-3394): a stranger's hold does not lower it for asking.
+    expect(await decide({ permissionMode: 'bypassPermissions', ...HELD }, python)).toEqual({});
     expect(
       await decide(
         { permissionMode: 'default', backgroundPermissionCeiling: 'runtime-default' },
@@ -88,7 +88,10 @@ describe('the held turn hook', () => {
     };
     const python = call('Bash', { command: 'python3 -c 1' });
     for (const turnPermissionCeiling of [marked, carried as unknown as TurnPermissionCeiling]) {
-      for (const permissionMode of ['default', 'bypassPermissions'] as const) {
+      // A chat set to Full never asks, marked or not (DOR-3394).
+      const full = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling };
+      expect(await decide(full, python)).toEqual({});
+      for (const permissionMode of ['default', 'acceptEdits'] as const) {
         const session = { permissionMode, turnPermissionCeiling };
         expect(await decide(session, python)).toEqual(CARRIED_ASK);
         expect(await decide(session, call('Edit', { file_path: '/agents/ana/a.ts' }))).toEqual({});

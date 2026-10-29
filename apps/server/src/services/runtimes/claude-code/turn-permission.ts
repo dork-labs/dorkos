@@ -23,9 +23,11 @@ import {
   ceilingCarriesOutsider,
   ceilingHoldsForOutsider,
   clampModeToCeiling,
+  isAutonomyStop,
 } from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
+import { ownLevelBounds } from '../../core/turn-power/full-autonomy.js';
 
 /**
  * The mode this turn runs at: the session's own mode (or, for a chat that
@@ -105,6 +107,39 @@ export function neverAsks(session: CeilingedMode<string | undefined>): boolean {
   return (
     isPersonOnlyMode(session.permissionMode) || gatePermissionMode(session) === NEVER_ASK_MODE_ID
   );
+}
+
+/**
+ * Whether the chat is SET to Full autonomy: the mode a person chose for it, or the agent's level
+ * this turn starts from (DOR-3175), sits at the dial's autonomy stop, and still does under every
+ * bound that says what the chat may be. The agent's own level rides in the turn's ceiling as a
+ * plain level (`agent-level-bound.ts`), so an agent a person set to Ask is never Full here,
+ * whatever its chat or schedule stores.
+ *
+ * What is set aside, on purpose (DOR-3394, the product owner's rule): an outsider's or a
+ * teammate's mark and a stranger's hold (`ownLevelBounds`). They may cap what the launch runs at,
+ * but in a chat set to Full they never put a card in front of a person. Below Full every ask stays
+ * as it was.
+ *
+ * @param session - The session's chosen mode, the agent's level when it follows its agent, and
+ *   both ceilings.
+ */
+export function chosenFullAutonomy(session: {
+  permissionMode?: string;
+  turnLevelMode?: string;
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): boolean {
+  const isFull = (id: string | undefined) => {
+    const declared = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((m) => m.id === id);
+    return declared !== undefined && isAutonomyStop(declared);
+  };
+  const mode = session.turnLevelMode ?? session.permissionMode;
+  if (mode === undefined || !isFull(mode)) return false;
+  return [session.turnPermissionCeiling, session.backgroundPermissionCeiling].every((ceiling) => {
+    const own = ownLevelBounds(ceiling);
+    return own === undefined || isFull(clampClaudeMode(mode, own));
+  });
 }
 
 /** A session's chosen mode with both ceilings the tool gate reads. */

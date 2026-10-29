@@ -574,6 +574,16 @@ describe('the environment handed to the server child', () => {
     expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
   });
 
+  it('tells a dev child it is a checkout, whatever the shell inherited', async () => {
+    vi.stubEnv('DORKOS_DISTRIBUTION', 'npm');
+    const { startServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+
+    expect(child.env.DORKOS_DISTRIBUTION).toBe('dev');
+    expect(child.env.DORKOS_DESKTOP_VERSION).toBe('0.1.0');
+  });
+
   it('leaves DORK_HOME alone in dev, so the child picks its own dev data dir (M3)', async () => {
     const { startServer } = await import('../server-process');
 
@@ -619,6 +629,9 @@ describe('the environment handed to the server child', () => {
       expect(child.env.DORK_HOME).toBe(join(app.getPath('home'), '.dork'));
       expect(child.env.NODE_ENV).toBe('production');
       expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
+      // The server turns this into the Mac or Windows app for agents.
+      expect(child.env.DORKOS_DISTRIBUTION).toBe('desktop');
+      expect(child.env.DORKOS_DESKTOP_VERSION).toBe('0.1.0');
       // Electron tears a UtilityProcess down with the app; no watchdog needed.
       expect(child.env.DORKOS_PARENT_PID).toBeUndefined();
       expect(child.env.DORKOS_PARENT_STARTED_AT).toBeUndefined();

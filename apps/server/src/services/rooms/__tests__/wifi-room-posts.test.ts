@@ -88,7 +88,7 @@ describe('a room post from Wi-Fi', () => {
     expect(turnsOf('/agents/ana')[0]!.permissionCeiling).toBeUndefined();
   });
 
-  it('carries the mark, not the hold, to the agent the answering turn mentions', async () => {
+  it('holds the agent the answering turn mentions while the Wi-Fi line is in its view', async () => {
     // Ana's first turn binds her conversation, from this computer.
     service.post(channel.id, { authorId: human, text: '@ana hello' });
     await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
@@ -101,11 +101,13 @@ describe('a room post from Wi-Fi', () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
 
     expect(turnsOf('/agents/ana')[1]!.permissionCeiling).toBe('runtime-default');
-    // Ana's own level without the Wi-Fi hold, then the mark her post carries
-    // on, which caps nothing (DOR-3390): Bo is marked and gated, not held.
+    // Ana's own level without the Wi-Fi hold and the mark her post carries on;
+    // but Bo is shown the Wi-Fi line itself, first-hand, so the room is not the
+    // owner's own circle and he is held as well (DOR-3390, Security's M-B).
     expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual([
       { asks: 'never', reach: 'everything', outsider: true },
       { asks: 'never', reach: 'everything', outsider: true },
+      'runtime-default',
     ]);
   });
 });

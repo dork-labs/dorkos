@@ -51,6 +51,7 @@ import {
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { noteTurnHold } from './continuation-hold.js';
+import { aliasChosenTurn, isFullLevel, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
 import {
   ceilingHoldsForOutsider,
   levelOfMode,
@@ -416,6 +417,7 @@ export function aliasTurnLevel(from: string, to: string): void {
   if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
+  aliasChosenTurn(from, to);
 }
 
 /**
@@ -478,6 +480,13 @@ function recordTurn(
 ): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
   remember(turnLevels, sessionId, level);
+  // What the chat is set to, with no ceiling, and whether anybody can be asked in it (DOR-3394):
+  // a chat set to Full asks nobody, whatever the ceiling holds the turn's power to.
+  noteChosenTurn(
+    sessionId,
+    chosenLevelOf(runtime, stored, opts),
+    opts?.unattended === true || opts?.unattendedApprovals === true
+  );
   const ceiling = opts?.continuationHold === true ? undefined : opts?.permissionCeiling;
   if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) {
     strangerHeld.add(sessionId);
@@ -496,6 +505,23 @@ function recordTurn(
     strangerHeld.delete(strangerHeld.values().next().value!);
   }
   return level;
+}
+
+/**
+ * The level the chat a turn runs in is SET to (DOR-3394): its power under every bound that says
+ * what it may be (its agent's own level, DOR-3175, and another of the owner's agents' unmarked
+ * level), with the marks and a stranger's hold set aside (`ownLevelBounds`). So a schedule stored
+ * at Full on an agent a person set to Ask is not Full.
+ */
+function chosenLevelOf(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): TurnPermissionLevel {
+  const { permissionCeiling, ...unbounded } = opts ?? {};
+  const own = ownLevelBounds(permissionCeiling);
+  const kept = own === undefined ? unbounded : { ...unbounded, permissionCeiling: own };
+  return powerForTurn(runtime, stored, kept);
 }
 
 /** A ceiling with every stranger's hold (`'runtime-default'`, an empty list) taken out. */
@@ -565,18 +591,21 @@ export function recordTurnLevels(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
+  const storedOf = (sessionId: string): string | null | undefined => {
+    try {
+      return storedModeOf(sessionId);
+    } catch {
+      return undefined;
+    }
+  };
   return applyTurnMarks(
     recordLevels(runtime, storedModeOf),
     (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
     (sessionId, opts) => {
-      let stored: string | null | undefined;
-      try {
-        stored = storedModeOf(sessionId);
-      } catch {
-        stored = undefined;
-      }
-      recordTurn(runtime, sessionId, stored, opts);
-    }
+      recordTurn(runtime, sessionId, storedOf(sessionId), opts);
+    },
+    // A chat set to Full is never held for a mark it carries (DOR-3394).
+    (sessionId, opts) => isFullLevel(chosenLevelOf(runtime, storedOf(sessionId), opts))
   );
 }
 
