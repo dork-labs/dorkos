@@ -4,7 +4,8 @@
  *
  * - The settings, the person's own membership, the member directory and the rules answer a
  *   person's browser session and that person's `read` grant alike, under the same role checks.
- * - Invitations and mutes stay browser-only: a grant is refused.
+ * - Invitations and mutes are not a `read` grant's: it is refused. Only the browser, or the separate
+ *   `administer` credential (administer-grants.integration.test.ts), reads them.
  * - An agent's credential, a grant without `read`, and a grant from another space are refused.
  * - Every member sees the directory: names, handles and roles. Only an owner or admin sees when
  *   someone joined, and only in their own browser who is muted.
