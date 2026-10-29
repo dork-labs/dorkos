@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an agent set to Full never asks you anything (DOR-3394)'
+  - 'refactor(server): move the other-agent folder check out of session-tools (line cap)'
 ---
 
 ### Fixed
