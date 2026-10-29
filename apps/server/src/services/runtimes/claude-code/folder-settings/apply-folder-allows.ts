@@ -131,6 +131,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   const dorkHome = path.resolve(files.dorkHome);
   const targets: [string, 'folder' | 'file'][] = [
     [path.join(home, '.claude'), 'folder'],
+    [path.join(home, '.agents'), 'folder'],
     [path.join(home, '.mcp.json'), 'file'],
     [path.join(home, '.dork', 'agent.json'), 'file'],
     [path.resolve(files.accountRoot), 'folder'],
@@ -156,6 +157,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
     // one agent's approved rule can't rewrite another's list either.
     rules.push(
       `${tool}(${agentsRoot}/*/.claude/**)`,
+      `${tool}(${agentsRoot}/*/.agents/**)`,
       `${tool}(${agentsRoot}/*/.mcp.json)`,
       `${tool}(${agentsRoot}/*/.dork/agent.json)`
     );

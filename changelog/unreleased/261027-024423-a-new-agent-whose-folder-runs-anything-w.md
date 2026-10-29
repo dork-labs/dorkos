@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A new agent whose folder runs anything waits for a person (DOR-3068)
+- A new agent whose folder already runs something, like hooks, MCP servers, its own account or another runtime, waits for your yes before any of it runs. A new agent whose folder runs nothing starts right away.
