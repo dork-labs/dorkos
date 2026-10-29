@@ -19,11 +19,7 @@
 import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode } from '@dorkos/shared/types';
-import {
-  ceilingCarriesOutsider,
-  ceilingHoldsForOutsider,
-  clampModeToCeiling,
-} from '@dorkos/shared/permission-semantics';
+import { ceilingCarriesOutsider, clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
@@ -199,29 +195,13 @@ export function ceilingOn(session: {
 
 /**
  * Whether the gate is held for words DorkOS cannot vouch for (DOR-3204): this turn's ceiling, or
- * the one background work carries, holds the `runtime-default` bound a stranger's turn carries.
- * A marked level alone is our own agent passing an outsider's words on (DOR-3390): it holds only
- * the shell ({@link carriesOutsiderMark}), never the whole turn.
+ * the one background work carries, holds the `runtime-default` bound or a level marked as having
+ * read an outsider's words. Wider than `ceilingOn(…) === 'stranger'` on purpose: a marked level
+ * that reached a ceiling without the bound beside it is still a stranger's turn.
  *
  * @param session - This turn's ceiling and the one background work carries.
  */
 export function heldForOutsider(session: {
-  turnPermissionCeiling?: TurnPermissionCeiling;
-  backgroundPermissionCeiling?: TurnPermissionCeiling;
-}): boolean {
-  return [session.turnPermissionCeiling, session.backgroundPermissionCeiling].some(
-    (ceiling) => ceiling !== undefined && ceilingHoldsForOutsider(ceiling)
-  );
-}
-
-/**
- * Whether this turn, or background work an earlier turn left, carries an outsider's words at all:
- * held for them ({@link heldForOutsider}) or passed them on by one of our own agents (DOR-3390).
- * Such a turn saves no "Always allow", and its shell asks a person until the shell runs sandboxed.
- *
- * @param session - This turn's ceiling and the one background work carries.
- */
-export function carriesOutsiderMark(session: {
   turnPermissionCeiling?: TurnPermissionCeiling;
   backgroundPermissionCeiling?: TurnPermissionCeiling;
 }): boolean {

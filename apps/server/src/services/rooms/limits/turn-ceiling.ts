@@ -113,19 +113,9 @@ export function ceilingForEntry(
   // post from a caller DorkOS could not verify is kept marked at write time.
   if (circle?.ownCircle) {
     const marks = entryMarksOf(entry.id, roomId || undefined);
-    const cap = circle.posterCap?.(entry.authorId);
     if (!marks || !hasMarks(marks)) {
+      const cap = circle.posterCap?.(entry.authorId);
       return cap !== undefined ? { permissionCeiling: cap } : {};
-    }
-    // A marked post whose author's turn this process recorded (DOR-3390, Security's Must 1):
-    // the mark rides on, and the level is only the cap a person set on its poster, never the
-    // level the poster's turn was held to, so no hold spreads post to post. A teammate's chain
-    // and marks known only from the row fall through to the rules below.
-    if (entryLevelOf(entry.id) !== undefined && marks.teammate === undefined) {
-      const carried = ceilingCarrying(marks)!;
-      return {
-        permissionCeiling: cap !== undefined ? [cap, carried as TurnPermissionBound] : carried,
-      };
     }
   }
   const level = entryLevelOf(entry.id);
@@ -146,12 +136,8 @@ export function ceilingForEntry(
     const origin = { roomId, authorId: entry.authorId };
     return { permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [origin] }] };
   }
-  // Marks with no level behind them (a caller nobody verified, or a row read after a restart)
-  // cannot say whether our own agent wrote them, so they hold the turn: the strict answer. Only
-  // a post whose author's turn this process recorded carries the mark without the hold (DOR-3390).
   const kept = entryMarksOf(entry.id, roomId || undefined);
-  if (kept?.teammate !== undefined) return { permissionCeiling: ceilingCarrying(kept)! };
-  return { permissionCeiling: 'runtime-default' };
+  return { permissionCeiling: (kept && ceilingCarrying(kept)) || 'runtime-default' };
 }
 
 /**
@@ -223,26 +209,4 @@ export function outsiderInViewOf(
     return entryMarksOf(entry.id, roomId)?.outsider === true;
   });
   return outsider ? { outsiderInView: true } : {};
-}
-
-/**
- * Whether a room turn is shown words that came from outside FIRST-HAND (DOR-3390): a stranger's
- * line, a post held to the runtime's default, or a person's line a mini app posted. Unlike
- * {@link outsiderInViewOf}, our own agent's marked post does not count: it marks the turn that
- * reads it, and the mark gates the risky actions, but it does not take the room out of the
- * owner's own circle, which would cap every other post the turn answers.
- *
- * @param context - The room context the turn is about to be shown.
- * @param roomId - The room, to read a post's kept marks once its level is gone.
- */
-export function firstHandOutsiderInView(
-  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>,
-  roomId?: string
-): boolean {
-  const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
-  return shown.some((entry) => {
-    if (entry.authorOrigin === 'external' || entryHeldToDefault(entry.id, roomId)) return true;
-    if (entry.kind !== 'post' || entry.authorIsPerson !== true) return false;
-    return entryMarksOf(entry.id, roomId)?.outsider === true;
-  });
 }

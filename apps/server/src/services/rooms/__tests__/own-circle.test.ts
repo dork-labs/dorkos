@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { ceilingCarriesOutsider, resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
+import { resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
 import { noteEntryLevel, setEntryMarksStore } from '../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { createEntryMarksStore } from '../limits/entry-marks-store.js';
@@ -179,17 +179,14 @@ describe('own-circle room turns', () => {
         ceiling.permissionCeiling as Parameters<typeof resolveCeilingLevel>[1]
       ).asks !== 'never';
 
-    // DOR-3390: the mark rides on and gates the risky actions; the write itself runs at Full.
-    it('marks the agent it wakes without capping it, in the circle and outside it', () => {
+    it('makes the agent it wakes ask before a write, in the circle and outside it', () => {
       const entry = harness.service.post(channel.id, { authorId: bo, text: '@hop write it' });
       noteEntryLevel(entry.id, { ...FULL, outsider: true }, channel.id);
-      for (const ceiling of [
-        ceilingForEntry(harness.authors, entry, false, channel.id, OWN),
-        ceilingForEntry(harness.authors, entry, false, channel.id),
-      ]) {
-        expect(asksBeforeWriting(ceiling)).toBe(false);
-        expect(ceilingCarriesOutsider(ceiling.permissionCeiling as never)).toBe(true);
-      }
+      const inCircle = ceilingForEntry(harness.authors, entry, false, channel.id, OWN);
+      expect(asksBeforeWriting(inCircle)).toBe(true);
+      expect(asksBeforeWriting(ceilingForEntry(harness.authors, entry, false, channel.id))).toBe(
+        true
+      );
     });
 
     it('still makes it ask after a restart, from the marks kept on the row', () => {

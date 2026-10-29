@@ -31,7 +31,7 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { configManager } from '../../core/config-manager.js';
 import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { heldBoundFor } from '../../core/turn-power/continuation-hold.js';
+import { lastTurnHeld } from '../../core/turn-power/continuation-hold.js';
 import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
@@ -461,11 +461,10 @@ async function launchCarriedSession(
     // carries that turn's words on. A person's own continue here runs as asked.
     // A plain hold, never a continuation's: this turn READS those words in its
     // seed, so it is marked and recorded as held like the turn that read them.
-    // A chat that only carried outside words on moves marked, at its own level (DOR-3390).
     ...(launch.permissionCeiling !== undefined
       ? { permissionCeiling: launch.permissionCeiling }
-      : automatic && heldBoundFor(source.sessionId) !== undefined
-        ? { permissionCeiling: heldBoundFor(source.sessionId)! }
+      : automatic && lastTurnHeld(source.sessionId)
+        ? { permissionCeiling: 'runtime-default' as const }
         : {}),
   });
   if (isSessionLaunchRefusal(result)) {

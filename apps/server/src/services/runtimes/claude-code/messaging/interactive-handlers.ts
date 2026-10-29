@@ -52,8 +52,8 @@ import {
   IDENTITY_SCOPED_TOOLS,
 } from '../tool-gate/auto-allow.js';
 import {
-  carriesOutsiderMark,
   gatePermissionMode,
+  heldForOutsider,
   neverAsks,
   resolveModeDecision,
   type CeilingedMode,
@@ -558,13 +558,9 @@ export function createCanUseTool(
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
-    // A turn that carries an outsider's words on runs at its own level, but its
-    // shell asks at every level until it runs sandboxed (DOR-3390): the held-turn
-    // hook sends such a Bash call here even at Full, and lets plain reads by.
-    const carriedShell = toolName === 'Bash' && carriesOutsiderMark(session);
     // Anything but an explicit `allow` asks, so a decision added later can
     // never fall through to the auto-allow below.
-    if (decision !== 'allow' || carriedShell) {
+    if (decision !== 'allow') {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover
@@ -590,10 +586,9 @@ export function createCanUseTool(
         toolUseID: context.toolUseID,
         ...(context.agentID !== undefined ? { agentID: context.agentID } : {}),
       });
-      // A turn that read words DorkOS cannot vouch for offers no "Always allow"
-      // (DOR-3204, DOR-3390): it must not write a standing rule into the folder,
-      // whether a stranger started it or our own agent passed the words on.
-      const offered = carriesOutsiderMark(session) ? { ...context, suggestions: [] } : context;
+      // A turn DorkOS cannot vouch for offers no "Always allow" (DOR-3204): a
+      // stranger's turn must not write a standing rule into the folder.
+      const offered = heldForOutsider(session) ? { ...context, suggestions: [] } : context;
       return handleToolApproval(session, context.toolUseID, toolName, input, offered);
     }
     log.debug('[canUseTool] auto-allow', {

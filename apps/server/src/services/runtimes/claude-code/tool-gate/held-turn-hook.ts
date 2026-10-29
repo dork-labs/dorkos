@@ -22,7 +22,7 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { carriesOutsiderMark, heldForOutsider, type CeilingedMode } from '../turn-permission.js';
+import { heldForOutsider, type CeilingedMode } from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
 import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
@@ -80,22 +80,15 @@ export function createHeldTurnHook(
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
+    // Such a turn runs at Default or stricter, a mode that asks. Were a marked level ever to leave
+    // it at Full, the `ask` would reach `canUseTool`, which allows at Full: no card, nothing lost.
+    if (!heldForOutsider(session)) return {};
     const toolName = hookInput.tool_name;
+    if (PASS_THROUGH_TOOLS.has(toolName)) return {};
     const input =
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    // A turn that only carries an outsider's words on runs at its own level (DOR-3390). Until
-    // its shell runs sandboxed, only Bash asks: `canUseTool` puts it to a person at any level
-    // (`asksForCarriedShell`). Edit and Write still meet the folder's deny rules.
-    if (!heldForOutsider(session)) {
-      if (!carriesOutsiderMark(session) || !asksForCarriedShell(toolName, input, folders)) {
-        return {};
-      }
-      return CARRIED_ASK;
-    }
-    // A stranger's turn runs at Default or stricter, a mode that asks.
-    if (PASS_THROUGH_TOOLS.has(toolName)) return {};
     if (fileReadStaysInside(toolName, input, folders.cwd, folders.roots)) return {};
     if (
       toolName === 'Bash' &&
@@ -109,42 +102,12 @@ export function createHeldTurnHook(
     ) {
       return {};
     }
-    return ASK;
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'ask',
+        permissionDecisionReason: HELD_TURN_ASK_REASON,
+      },
+    };
   };
-}
-
-/** What the model is told when a shell command in a turn that carries outsider words is asked. */
-export const CARRIED_SHELL_ASK_REASON =
-  'This turn read words DorkOS can’t vouch for, so its shell commands need a person’s OK.';
-
-/** The hook's answer when a person must decide. */
-const ask = (reason: string) => ({
-  hookSpecificOutput: {
-    hookEventName: 'PreToolUse' as const,
-    permissionDecision: 'ask' as const,
-    permissionDecisionReason: reason,
-  },
-});
-const ASK = ask(HELD_TURN_ASK_REASON);
-const CARRIED_ASK = ask(CARRIED_SHELL_ASK_REASON);
-
-/**
- * Whether a call in a turn that carries an outsider's words on goes to a person (DOR-3390,
- * Security's interim until the shell is sandboxed): a Bash command, unless it only reads inside
- * the agent's folders. Everything else runs at the turn's own level.
- *
- * @param toolName - The tool the model called.
- * @param input - Its arguments.
- * @param folders - The agent's folders, for the reads let through.
- */
-export function asksForCarriedShell(
-  toolName: string,
-  input: Record<string, unknown>,
-  folders: HeldTurnFolders
-): boolean {
-  if (toolName !== 'Bash') return false;
-  return !(
-    typeof input.command === 'string' &&
-    isPlainReadCommand(input.command, folders.cwd, folders.roots)
-  );
 }

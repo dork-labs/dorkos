@@ -121,9 +121,8 @@ describe('a turn another agent’s post starts', () => {
   });
 
   // Security's test: LifeOS read an email (a marked turn) and posted. The agent
-  // its post wakes carries the mark on (DOR-3390: it gates the risky actions,
-  // and no longer caps the level).
-  it('still marks a turn when the post came from a marked turn', async () => {
+  // its post wakes still asks: a mark caps, whatever the poster is set to.
+  it('still holds a turn to the default when the post came from a marked turn', async () => {
     service.post(channel.id, { authorId: human, text: '@ana hello' });
     await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
     await ranAt(turnsOf('/agents/ana')[0]!.sessionId!, 'bypassPermissions');
@@ -131,13 +130,11 @@ describe('a turn another agent’s post starts', () => {
 
     service.post(channel.id, { authorId: human, text: '@ana ask bo, from elsewhere' });
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    // The level a person set Ana to comes first, never the level her held turn
-    // ran at, then the mark her post carries, as a bound that caps nothing
-    // (DOR-3390, Security's Must 1).
+    // Capped, and carrying the mark on: it asks before acting. Ana's level comes
+    // first, then the cap her post's mark carries (DOR-3141).
     const ceiling = turnsOf('/agents/bo')[0]!.permissionCeiling as unknown[];
-    expect(ceiling[0]).toEqual(ANA_SET_TO);
-    expect(ceiling).toContainEqual({ asks: 'never', reach: 'everything', outsider: true });
-    expect(ceiling).not.toContain('runtime-default');
+    expect(ceiling[0]).toMatchObject({ asks: 'always', outsider: true });
+    expect(ceiling).toContain('runtime-default');
   });
 
   it('is held to the runtime default when nobody verified the calling session', async () => {

@@ -74,7 +74,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import {
-  ceilingHoldsForOutsider,
+  ceilingCarriesOutsider,
   clampModeToCeiling,
   levelOfMode,
   stricterLevel,
@@ -89,7 +89,7 @@ import {
 } from '../../session/resolution/agent-launch-level.js';
 import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
 import { chatRiseFacts } from './chat-rise-facts.js';
-import { marksForTurn } from './turn-marks.js';
+import { hasMarks, marksForTurn } from './turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Chats on another computer, which this one cannot vouch for. */
@@ -234,18 +234,12 @@ async function agentOfTurn(
   return resolveLevelAgent(cwd, opts, recorded);
 }
 
-/**
- * Whether the turn is held or reads outside words in a room: a stranger's (the runtime's
- * default), a teammate's chain, or a room line in view. A turn our own agent's marked post or
- * message started still rises (DOR-3390): its mark gates the risky actions, not its level.
- */
+/** Whether the turn carries a mark or is held: an outsider's, a teammate's, or the runtime's default. */
 function turnIsMarked(opts: MessageOpts | undefined): boolean {
   const ceiling = opts?.permissionCeiling;
-  if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) return true;
+  if (ceiling !== undefined && ceilingCarriesOutsider(ceiling)) return true;
   if (opts?.teammate === true || opts?.roomTurn?.teammate === true) return true;
-  // A stranger's line in view keeps the chat where it is, as before: it is read first-hand.
-  if (opts?.roomTurn?.outsiderInView === true) return true;
-  return marksForTurn(opts).teammate !== undefined;
+  return hasMarks(marksForTurn(opts));
 }
 
 /**
