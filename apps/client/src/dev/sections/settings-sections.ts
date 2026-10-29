@@ -280,6 +280,14 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     category: 'Control Center',
     keywords: ['keep awake', 'sleep', 'caffeinate', 'cup', 'coffee', 'beacon', 'battery'],
   },
+  // Company certificates — the Network card the desktop app reads at start-up (DOR-3361).
+  {
+    id: 'company-certificates',
+    title: 'Company Certificates',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: ['network', 'certificates', 'tls', 'proxy', 'company', 'ca', 'NODE_EXTRA_CA_CERTS'],
+  },
   // Control Center
   {
     id: 'control-center',

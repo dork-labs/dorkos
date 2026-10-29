@@ -188,6 +188,23 @@ How long the Activity feed keeps its history. The record behind it keeps every a
   }}
 />
 
+### Company certificates
+
+Some company networks check all web traffic, and the Mac app can only reach the internet there if it trusts the company's own certificates. Pick the certificate file in **Settings → Server → Network**. The app then shows how many certificates it trusts from that file. A change applies the next time the app starts.
+
+The Mac app ignores the `NODE_EXTRA_CA_CERTS` environment variable on purpose, because any program on your computer could set it. Only a person can choose this file; agents can't change it.
+
+<TypeTable
+  type={{
+    'network.extraCaCertsPath': {
+      description:
+        'The full path of a certificate file (PEM) the Mac app trusts. Used only by the Mac app.',
+      type: 'string | null',
+      default: 'null',
+    },
+  }}
+/>
+
 ### A2A Gateway
 
 The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.

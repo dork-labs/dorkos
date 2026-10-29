@@ -36,6 +36,7 @@ import {
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
+import { describeCompanyCertificates } from '../services/core/config/company-certificates.js';
 import { officialSpaceUrl } from '../services/communities/spaces-config.js';
 import { usableOfficialLink } from '../services/communities/official-space.js';
 import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
@@ -414,6 +415,9 @@ router.get('/', async (c) => {
     // nothing above listed it. Anything registered as an experiment is listed
     // here automatically, so the next flag cannot go missing the same way.
     experiments: describeExperiments(),
+    // Company certificates (DOR-3361): the setting, and what the desktop app
+    // actually loaded at start-up, so Settings can say how many it trusts.
+    network: describeCompanyCertificates(),
     // The official space's link, already resolved against its env override and
     // checked, so the app offers it only when it can be joined (spec
     // `official-community-space` D4). `null` keeps every prompt hidden.

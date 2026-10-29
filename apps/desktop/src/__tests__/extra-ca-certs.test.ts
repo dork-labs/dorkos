@@ -2,7 +2,8 @@
  * A company network's certificates reach `fetch` and `https` in the desktop app
  * (DOR-3361), against a real TLS server whose certificate a throwaway CA
  * signed. The control comes first: before the bundle is added, both refuse the
- * server; after, both reach it.
+ * server; after, both reach it. Only a file a person chose in Settings counts:
+ * an exported `NODE_EXTRA_CA_CERTS` is ignored inside the app.
  *
  * @vitest-environment node
  */
@@ -13,7 +14,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { applyExtraCaCerts } from '../extra-ca-certs';
+import { applyExtraCaCerts, readCompanyCertificatesPath } from '../extra-ca-certs';
 
 let dir: string;
 let server: Server;
@@ -95,34 +96,78 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+describe('readCompanyCertificatesPath', () => {
+  it('reads the setting a person saved, and nothing else', () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'dorkos-extra-ca-home-'));
+    try {
+      expect(readCompanyCertificatesPath(home)).toBeNull();
+      const write = (network: unknown) =>
+        writeFileSync(path.join(home, 'config.json'), JSON.stringify({ network }));
+      write({ extraCaCertsPath: '/etc/company-ca.pem' });
+      expect(readCompanyCertificatesPath(home)).toBe('/etc/company-ca.pem');
+      // A relative path has no folder anyone could have meant it against.
+      write({ extraCaCertsPath: 'company-ca.pem' });
+      expect(readCompanyCertificatesPath(home)).toBeNull();
+      write({ extraCaCertsPath: null });
+      expect(readCompanyCertificatesPath(home)).toBeNull();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('applyExtraCaCerts', () => {
-  it('does nothing when the variable is not set', () => {
+  it('does nothing when neither the setting nor the variable is set', () => {
     expect(applyExtraCaCerts({ env: {}, electron: true })).toEqual({
       outcome: 'not-set',
       added: 0,
+      path: null,
     });
   });
 
-  // Plain Node read the file itself, so adding it again would only duplicate it.
-  it('leaves plain Node to read the file itself', () => {
+  // The hole DOR-3361 closes: anything running as the user can export this
+  // (`launchctl setenv`), so in the app it no longer decides what is trusted.
+  it('ignores NODE_EXTRA_CA_CERTS in the app when no file was chosen, and says so', () => {
+    const warn = vi.fn();
     const env = { NODE_EXTRA_CA_CERTS: path.join(dir, 'company-ca.pem') };
-    expect(applyExtraCaCerts({ env, electron: false })).toEqual({ outcome: 'native', added: 0 });
+    expect(applyExtraCaCerts({ env, electron: true, warn })).toEqual({
+      outcome: 'ignored-env',
+      added: 0,
+      path: null,
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('Ignoring NODE_EXTRA_CA_CERTS');
   });
 
-  it('skips, and says so, a file it cannot read or that holds no certificate', () => {
+  // Plain Node read the file itself, so adding it again would only duplicate it.
+  it('leaves plain Node to read the variable itself', () => {
+    const env = { NODE_EXTRA_CA_CERTS: path.join(dir, 'company-ca.pem') };
+    expect(applyExtraCaCerts({ env, electron: false })).toEqual({
+      outcome: 'native',
+      added: 0,
+      path: null,
+    });
+  });
+
+  it('skips, and says so, a chosen file it cannot read or that holds no certificate', () => {
     const warn = vi.fn();
-    const missing = { NODE_EXTRA_CA_CERTS: path.join(dir, 'missing.pem') };
-    expect(applyExtraCaCerts({ env: missing, electron: true, warn }).outcome).toBe('unreadable');
-    writeFileSync(path.join(dir, 'empty.pem'), 'not a certificate\n');
-    const empty = { NODE_EXTRA_CA_CERTS: path.join(dir, 'empty.pem') };
-    expect(applyExtraCaCerts({ env: empty, electron: true, warn }).outcome).toBe('empty');
+    const missing = path.join(dir, 'missing.pem');
+    expect(applyExtraCaCerts({ file: missing, env: {}, electron: true, warn })).toEqual({
+      outcome: 'unreadable',
+      added: 0,
+      path: missing,
+    });
+    const empty = path.join(dir, 'empty.pem');
+    writeFileSync(empty, 'not a certificate\n');
+    expect(applyExtraCaCerts({ file: empty, env: {}, electron: true, warn }).outcome).toBe('empty');
     expect(warn).toHaveBeenCalledTimes(2);
     expect(warn.mock.calls[0]![0]).toContain('missing.pem');
   });
 
   // One case, in order, because the trust store is the process's own: the
-  // control has to run before the bundle is added.
-  it('lets fetch and https reach a server the company CA signed, and only after', async () => {
+  // control has to run before the bundle is added. The variable points at a
+  // CA that signed nothing here, to show the chosen file is what counts.
+  it('lets fetch and https reach a server the chosen CA signed, and only after', async () => {
     expect(await reach()).toEqual({
       fetch: 'refused: UNABLE_TO_VERIFY_LEAF_SIGNATURE',
       https: 'refused: UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -133,8 +178,9 @@ describe('applyExtraCaCerts', () => {
       bundle,
       `${readFileSync(path.join(dir, 'other-ca.pem'), 'utf8')}\n${readFileSync(path.join(dir, 'company-ca.pem'), 'utf8')}`
     );
-    const result = applyExtraCaCerts({ env: { NODE_EXTRA_CA_CERTS: bundle }, electron: true });
-    expect(result).toEqual({ outcome: 'added', added: 2 });
+    const env = { NODE_EXTRA_CA_CERTS: path.join(dir, 'other-ca.pem') };
+    const result = applyExtraCaCerts({ file: bundle, env, electron: true });
+    expect(result).toEqual({ outcome: 'added', added: 2, path: bundle });
     expect(await reach()).toEqual({ fetch: 'reached', https: 'reached' });
   });
 });

@@ -196,6 +196,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.defaultAccountOnlyProjects',
       'runtimes.claudeCode.projectAccounts',
+      // Company certificates the desktop app trusts (DOR-3361): key material
+      // that decides which servers every connection believes, so a front-door
+      // setting changed only at this computer.
+      'network.extraCaCertsPath',
     ],
   },
   {

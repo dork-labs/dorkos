@@ -119,6 +119,7 @@ describe('UserConfigSchema', () => {
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
+      network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -549,6 +550,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
+      network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -887,6 +889,7 @@ describe('per-field and section-literal defaults agree', () => {
     keepAwake: {},
     heartbeats: {},
     activity: {},
+    network: {},
     runtimes: { claudeCode: {} },
   });
 
@@ -926,6 +929,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('activity keeps a year either way', () => {
     expect(fromFactory.activity).toEqual({ retentionDays: 365 });
     expect(fromFields.activity).toEqual({ retentionDays: 365 });
+  });
+
+  it('network trusts no company certificates either way (DOR-3361)', () => {
+    expect(fromFactory.network).toEqual({ extraCaCertsPath: null });
+    expect(fromFields.network).toEqual({ extraCaCertsPath: null });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {

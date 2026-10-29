@@ -13,6 +13,8 @@ export { PreferencesTab } from './ui/tabs/PreferencesTab';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 // Shown on its own in the Dev Playground's Keep Awake showcase.
 export { SleepSettings } from './ui/tools/SleepSettings';
+// Shown on its own in the Dev Playground: it draws only inside the desktop app.
+export { NetworkSection } from './ui/network/NetworkSection';
 
 // The Runtimes tab, in the pieces the dev playground renders. Every one of them
 // is props-only or owns its own read, which is what the redesign bought: the
