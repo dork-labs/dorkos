@@ -29,12 +29,14 @@
  * 7. Wi-Fi access is closed (DOR-3242). The owner's own words from Wi-Fi run
  *    a turn at the agent's level, and over plain `http` a copied sign-in
  *    could be anyone, so no message shown as the owner's is proof enough for
- *    an irreversible action: while Wi-Fi is open, every such call keeps its
- *    card, which only this computer can answer. HTTPS on that path
+ *    an irreversible action: while Wi-Fi is open, every such call below Full
+ *    keeps its card, which only this computer can answer. HTTPS on that path
  *    (DOR-3173) lifts this.
  *
- * A chat SET to Full autonomy skips 4 and 5 (DOR-3394): it asks nobody
- * anything, so a mark or a stranger's hold does not send its call to a card.
+ * A chat SET to Full autonomy skips 4, 5 and 7 (DOR-3394, and the owner's
+ * rule that Full has no limits): it asks nobody anything, so neither a mark,
+ * a stranger's hold nor open Wi-Fi sends its call to a card. It still waits
+ * out the 60 seconds, which anyone but the agent can cancel.
  *
  * Anything else falls through to the tier gate, unchanged. So does an
  * eligible call whose waiting row could not be written: nothing runs that
@@ -133,21 +135,23 @@ export async function holdRequesterFor(
   if (!principal || !isServerPrincipal(principal) || principal.claims.kind !== 'runtime') {
     return undefined;
   }
-  if (!sources.trusted() || sources.plainWifiOpen()) return undefined;
+  if (!sources.trusted()) return undefined;
   const { agentPath, agentId, canonicalSessionId } = principal.claims;
-  const identity =
-    (fresh ? undefined : context.identity) ?? (await sources.describeAgent(agentPath));
-  // An agent DorkOS cannot name counts as switched off.
-  if (!identity || identity.inactive) return undefined;
   // Both names the chat goes by on this call: the principal's canonical id,
   // and the session id the surface resolved, when it resolved one.
   const sessionIds = [...new Set([canonicalSessionId, context.sessionId])].filter(
     (id): id is string => typeof id === 'string' && id !== ''
   );
-  // A chat set to Full autonomy asks nobody anything (DOR-3394): a mark or a stranger's hold does
-  // not send its call to a card, so it waits out the same window as any Full chat's.
+  // A chat set to Full autonomy asks nobody anything (DOR-3394): a mark, a stranger's hold or open
+  // Wi-Fi does not send its call to a card, so it waits out the same window as any Full chat's.
   const chosenFull = sources.chosenFull ?? choseFullAutonomy;
-  if (!sessionIds.some((sessionId) => chosenFull(sessionId))) {
+  const full = sessionIds.some((sessionId) => chosenFull(sessionId));
+  if (!full && sources.plainWifiOpen()) return undefined;
+  const identity =
+    (fresh ? undefined : context.identity) ?? (await sources.describeAgent(agentPath));
+  // An agent DorkOS cannot name counts as switched off.
+  if (!identity || identity.inactive) return undefined;
+  if (!full) {
     if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) {
       return undefined;
     }
