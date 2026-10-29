@@ -179,17 +179,18 @@ describe('own-circle room turns', () => {
         ceiling.permissionCeiling as Parameters<typeof resolveCeilingLevel>[1]
       ).asks !== 'never';
 
-    // DOR-3390: the mark rides on and gates the risky actions; the write itself runs at Full.
-    it('marks the agent it wakes without capping it, in the circle and outside it', () => {
+    // DOR-3390: in the circle the mark rides on and gates the risky actions; the write itself
+    // runs at Full. Outside it the reader may see the stranger's own line, so it is held
+    // (Security's M-B).
+    it('marks the agent it wakes without capping it in the circle, and holds it outside', () => {
       const entry = harness.service.post(channel.id, { authorId: bo, text: '@hop write it' });
       noteEntryLevel(entry.id, { ...FULL, outsider: true }, channel.id);
-      for (const ceiling of [
-        ceilingForEntry(harness.authors, entry, false, channel.id, OWN),
-        ceilingForEntry(harness.authors, entry, false, channel.id),
-      ]) {
-        expect(asksBeforeWriting(ceiling)).toBe(false);
-        expect(ceilingCarriesOutsider(ceiling.permissionCeiling as never)).toBe(true);
-      }
+      const inside = ceilingForEntry(harness.authors, entry, false, channel.id, OWN);
+      expect(asksBeforeWriting(inside)).toBe(false);
+      expect(ceilingCarriesOutsider(inside.permissionCeiling as never)).toBe(true);
+      const outside = ceilingForEntry(harness.authors, entry, false, channel.id);
+      expect(asksBeforeWriting(outside)).toBe(true);
+      expect(ceilingCarriesOutsider(outside.permissionCeiling as never)).toBe(true);
     });
 
     it('still makes it ask after a restart, from the marks kept on the row', () => {

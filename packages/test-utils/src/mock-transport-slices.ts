@@ -7,8 +7,9 @@
  * document's route controls, where no document declares a route or has work
  * to review, a space's docs, where there are none, signed-in devices, where
  * there are none, an account's automatic moves, where every change succeeds,
- * a framed page's script decision, which is never known, and an agent's
- * level, where every agent runs at Full autonomy.
+ * a framed page's script decision, which is never known, an agent's
+ * level, where every agent runs at Full autonomy, and confirming a paused
+ * connection's settings, which succeeds.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -38,6 +39,7 @@ type SliceMethods =
   | 'revokeCanvasDocRoute'
   | 'getCanvasDocWork'
   | 'replayCanvasDocWork'
+  | 'confirmRelayAdapterReferences'
   | 'clearCanvasDocWork'
   | 'getDocIndex'
   | 'resolveDocLink'
@@ -100,6 +102,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
     // DorkOS has served no page into a frame, so the canvas says nothing.
     getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
+    confirmRelayAdapterReferences: vi.fn().mockResolvedValue({ ok: true }),
     getAgentLevel: vi.fn().mockResolvedValue({
       effective: 'autonomy',
       effectiveMode: 'bypassPermissions',

@@ -27,6 +27,9 @@
  * 6. DorkOS can say what the action is, in the app's own words. A hold
  *    everyone is told about must be describable.
  *
+ * A chat SET to Full autonomy skips 4 and 5 (DOR-3394): it asks nobody
+ * anything, so a mark or a stranger's hold does not send its call to a card.
+ *
  * Anything else falls through to the tier gate, unchanged. So does an
  * eligible call whose waiting row could not be written: nothing runs that
  * nobody was told about.
@@ -60,6 +63,7 @@ import {
   type AgentIdentity,
 } from '../../core/agent-identity/agent-identity-service.js';
 import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
+import { choseFullAutonomy } from '../../core/turn-power/full-autonomy.js';
 import { marksOfLevel, startedByOutsider } from '../../core/turn-power/turn-marks.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { DestructiveHoldService, HoldRequester } from './destructive-hold.js';
@@ -77,6 +81,8 @@ export interface HoldEligibilitySources {
   turnLevel: (sessionId: string) => TurnPermissionLevel | undefined;
   /** Whether a stranger started this chat's turn or the turn read a stranger's words. */
   strangerTurn: (sessionId: string, agentPath: string) => boolean;
+  /** Whether the chat is set to Full autonomy (DOR-3394); the live record when absent. */
+  chosenFull?: (sessionId: string) => boolean;
 }
 
 /** The live server's answers. */
@@ -128,12 +134,19 @@ export async function holdRequesterFor(
   const sessionIds = [...new Set([canonicalSessionId, context.sessionId])].filter(
     (id): id is string => typeof id === 'string' && id !== ''
   );
-  if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) return undefined;
-  // The stricter of the levels known under either id; none known keeps the card.
-  const levels = sessionIds
-    .map((sessionId) => sources.turnLevel(sessionId))
-    .filter((level): level is TurnPermissionLevel => level !== undefined);
-  if (levels.length === 0 || !neverAsks(levels.reduce(stricterLevel))) return undefined;
+  // A chat set to Full autonomy asks nobody anything (DOR-3394): a mark or a stranger's hold does
+  // not send its call to a card, so it waits out the same window as any Full chat's.
+  const chosenFull = sources.chosenFull ?? choseFullAutonomy;
+  if (!sessionIds.some((sessionId) => chosenFull(sessionId))) {
+    if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) {
+      return undefined;
+    }
+    // The stricter of the levels known under either id; none known keeps the card.
+    const levels = sessionIds
+      .map((sessionId) => sources.turnLevel(sessionId))
+      .filter((level): level is TurnPermissionLevel => level !== undefined);
+    if (levels.length === 0 || !neverAsks(levels.reduce(stricterLevel))) return undefined;
+  }
   return {
     agentPath,
     agentId,

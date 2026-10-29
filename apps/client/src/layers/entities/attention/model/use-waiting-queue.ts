@@ -31,7 +31,12 @@ import {
   usePendingExtensionApprovals,
 } from '@/layers/entities/extension';
 import { TASKS_KEY } from '@/layers/entities/tasks';
-import { deriveWaitingItems, type WaitingItem } from './derive-waiting-items';
+import { useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
+import {
+  deriveWaitingItems,
+  type PausedConnectionItem,
+  type WaitingItem,
+} from './derive-waiting-items';
 import { PENDING_APPROVALS_QUERY_KEY, usePendingApprovals } from './use-pending-approvals';
 import { PENDING_INTERACTIONS_QUERY_KEY, usePendingInteractions } from './use-pending-interactions';
 import { usePendingScheduleApprovals } from './use-pending-schedule-approvals';
@@ -66,6 +71,11 @@ export interface WaitingQueueState {
    * Not waiting items: they are drawn under the answered row in Activity.
    */
   decisionOffers: readonly PendingDecisionOffer[];
+  /**
+   * Connections paused until their owner confirms the `env:`/`keychain:`
+   * settings they send (DOR-3271). Only the owner can answer one.
+   */
+  pausedConnections: readonly PausedConnectionItem[];
   /**
    * The same four queues, flattened to one id/kind per item — what an
    * agreement check against {@link deriveAttentionSignals} compares against.
@@ -153,6 +163,29 @@ export function useWaitingQueue(): WaitingQueueState {
 
   // Only the reads that failed, and only enabled ones: a disabled query (Tasks
   // switched off) is never refetched by `refetchQueries`.
+  // Paused connections ride the adapter catalog the Connections page already
+  // polls. Its read failing is not a failed approvals read, so it never makes
+  // the queue say it could not check.
+  const { data: catalog } = useAdapterCatalog(useRelayEnabled());
+  const pausedConnections = useMemo(
+    () =>
+      (catalog ?? []).flatMap((entry) =>
+        entry.instances.flatMap((instance) =>
+          instance.confirmation
+            ? [
+                {
+                  id: instance.id,
+                  name: instance.label ?? entry.manifest.displayName,
+                  kind: entry.manifest.displayName,
+                  confirmation: instance.confirmation,
+                },
+              ]
+            : []
+        )
+      ),
+    [catalog]
+  );
+
   const retryFailed = useCallback(() => {
     for (const queryKey of waitingQueryKeys()) {
       void queryClient.refetchQueries({
@@ -167,8 +200,15 @@ export function useWaitingQueue(): WaitingQueueState {
 
   const items = useMemo(
     () =>
-      deriveWaitingItems({ approvals, asks, schedules, extensionApprovals, extensionDecisions }),
-    [approvals, asks, schedules, extensionApprovals, extensionDecisions]
+      deriveWaitingItems({
+        approvals,
+        asks,
+        schedules,
+        extensionApprovals,
+        extensionDecisions,
+        pausedConnections,
+      }),
+    [approvals, asks, schedules, extensionApprovals, extensionDecisions, pausedConnections]
   );
 
   return {
@@ -178,6 +218,7 @@ export function useWaitingQueue(): WaitingQueueState {
     extensionApprovals,
     extensionDecisions,
     decisionOffers,
+    pausedConnections,
     items,
     isLoading:
       approvalsLoading ||

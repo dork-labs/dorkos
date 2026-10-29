@@ -144,6 +144,12 @@ export interface CallingChat {
    * ask still starts only chats that cannot ask.
    */
   neverAsks?: boolean;
+  /**
+   * Whether the chat is SET to Full autonomy (DOR-3394), whatever a mark or a stranger's hold
+   * launched its turn at. `permissionMode` is then the Full mode itself, and a start from it is
+   * not capped by the mark: it carries the mark on, never a lower level.
+   */
+  chosenFull?: boolean;
 }
 
 /**
