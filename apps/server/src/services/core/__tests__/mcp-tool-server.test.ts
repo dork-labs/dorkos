@@ -246,6 +246,18 @@ describe('MCP Tool Handlers', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.version).toBe('1.0.0');
     });
+
+    it('says which kind of DorkOS this is, with its version and architecture', async () => {
+      const result = await handleGetServerInfo({});
+      const parsed = JSON.parse(result.content[0].text);
+      // Tests run from source, so this server is a checkout.
+      expect(parsed.distribution).toEqual({
+        kind: 'dev',
+        version: '1.0.0',
+        arch: process.arch,
+        label: `DorkOS dev checkout 1.0.0 (${process.arch})`,
+      });
+    });
   });
 
   describe('createGetSessionCountHandler', () => {

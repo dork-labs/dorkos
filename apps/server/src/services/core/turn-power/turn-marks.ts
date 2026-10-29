@@ -342,11 +342,14 @@ const GATES_CARRIED_SHELL: ReadonlySet<string> = new Set(['claude-code']);
  */
 function withCarriedHold(
   runtimeType: string,
-  opts: MessageOpts | undefined
+  opts: MessageOpts | undefined,
+  setToFull = false
 ): MessageOpts | undefined {
-  // Only a mark the ceiling carries: a stranger's line merely in view is fenced, not held.
+  // Only a mark the ceiling carries: a stranger's line merely in view is fenced, not held. A chat
+  // SET to Full autonomy is never held for a mark (DOR-3394): it asks nobody anything, and on a
+  // runtime that asks below Full the hold would put its calls in front of a person.
   const ceiling = opts?.permissionCeiling;
-  if (ceiling === undefined || GATES_CARRIED_SHELL.has(runtimeType)) return opts;
+  if (ceiling === undefined || setToFull || GATES_CARRIED_SHELL.has(runtimeType)) return opts;
   if (ceilingHoldsForOutsider(ceiling) || marksOfCeiling(ceiling).outsider !== true) return opts;
   const bounds: TurnPermissionBound[] = Array.isArray(ceiling)
     ? [...(ceiling as readonly TurnPermissionBound[])]
@@ -392,11 +395,14 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
  * @param marksOfSession - The marks of a session's latest recorded turn, for a turn the runtime
  *   starts on its own (a Codex wake after background work), which runs under it.
  * @param recordRefused - Records the level of a turn refused before it reached the runtime.
+ * @param setToFull - Whether the chat a turn runs in is SET to Full autonomy, with no ceiling
+ *   applied (DOR-3394); such a chat's carried mark is never turned into a hold.
  */
 export function applyTurnMarks(
   runtime: AgentRuntime,
   marksOfSession: (sessionId: string) => TurnMarks,
-  recordRefused?: (sessionId: string, opts: MessageOpts) => void
+  recordRefused?: (sessionId: string, opts: MessageOpts) => void,
+  setToFull?: (sessionId: string, opts: MessageOpts | undefined) => boolean
 ): AgentRuntime {
   // Where each marked turn stood, so a turn its agent starts later counts against the same one.
   // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
@@ -413,7 +419,7 @@ export function applyTurnMarks(
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
     if (marks.outsider === true) noteChatHeardOutsider(sessionId);
-    let sent = withCarriedHold(target.type, opts);
+    let sent = withCarriedHold(target.type, opts, setToFull?.(sessionId, opts) === true);
     if (marks.teammate !== undefined) {
       sent = teammateTurnOpts(opts);
       const refusal = teammateTurnRefusal(target.type, marks.teammate);

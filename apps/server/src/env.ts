@@ -299,6 +299,15 @@ export const serverEnvSchema = z.object({
   // so the admin restart/reset endpoints refuse (409) rather than exit into a
   // process nothing will bring back. See routes/admin.ts.
   DORKOS_MANAGED_BY: z.enum(['desktop']).optional(),
+  // Which kind of DorkOS this is, set by whatever launched the server: `desktop`
+  // (the Electron shell), `npm` or `homebrew` (the CLI, from its own install
+  // path), `docker` (the image), `dev` (a repo checkout). Free text on purpose:
+  // a value this build does not know reads as `unknown` rather than refusing to
+  // boot. See lib/distribution/, which is the only reader.
+  DORKOS_DISTRIBUTION: z.string().optional(),
+  // The desktop app's own version, set by the Electron shell beside the above,
+  // so a server bundle that drifted from the app it ships in says so.
+  DORKOS_DESKTOP_VERSION: z.string().optional(),
   // Single-instance lock escape hatch (DOR-532) — when 'true', skip the
   // per-data-directory lock that stops two servers from sharing one `~/.dork`.
   // The lock is already inert under NODE_ENV=test.

@@ -102,7 +102,10 @@ export function createRoomCollaborators(
   deps: RoomServiceDeps,
   writeBack: RoomWriteBack
 ): RoomCollaborators {
-  const core = createRoomCore(deps, writeBack);
+  // Audiences run only after construction, against the live visibility gate below.
+  const core = createRoomCore(deps, writeBack, (roomId, authorId) =>
+    visibility.requireMembership(roomId, authorId)
+  );
   const visibility = new RoomVisibility(core);
   const authority = new RoomAuthority(core);
   const projection = new RoomProjection(core);

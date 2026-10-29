@@ -53,6 +53,7 @@ import { fenceUntrustedBlock } from './untrusted-fence.js';
 import { renderMemoryNotesLine } from '../../memory/notes-line.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
+import { currentDistribution } from '../../../lib/distribution/index.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
@@ -461,12 +462,19 @@ function buildUserProfileBlockFromConfig(): string {
  * values (date, git status, UI state) are intentionally excluded to maximize
  * prompt-cache hit rates on runtimes that have a cacheable system prompt.
  *
+ * `App:` names the install kind, so an agent's update steps fit it (the Mac app
+ * updates itself; the npm CLI updates with npm). It and `Version:` are read on
+ * every build, never kept from an earlier one: a restart onto a new version
+ * changes this block, which relaunches a warm Claude Code process (the append is
+ * pinned) and re-anchors a Codex thread (its gate digests this half).
+ *
  * @param cwd - Working directory for the session.
  */
 async function buildEnvBlock(cwd: string): Promise<string> {
   const lines = [
     `Working directory: ${cwd}`,
     `Product: DorkOS`,
+    `App: ${currentDistribution().label}`,
     `Version: ${SERVER_VERSION}`,
     `Port: ${env.DORKOS_PORT}`,
     `Platform: ${os.platform()}`,

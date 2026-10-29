@@ -38,6 +38,7 @@ export type RoomSignalListener = (
 
 /** Everything a room says to its readers once a write is already durable. */
 export class RoomPublisher {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly broadcaster: RoomBroadcaster;
   private readonly reactions: ReactionStore;
   /** Entries out, the moment they are committed. The message index's port. */
@@ -62,6 +63,7 @@ export class RoomPublisher {
   private onSignalPublished?: RoomSignalListener;
 
   constructor(core: RoomCore) {
+    this.roomAudience = core.roomAudience;
     this.broadcaster = core.broadcaster;
     this.reactions = core.reactions;
     this.indexEntry = core.indexEntry;
@@ -122,11 +124,15 @@ export class RoomPublisher {
       seq: entry.seq,
       entry: { ...entry, reactions: [], attachments },
     });
-    eventFanOut.broadcast('room_activity', {
-      roomId: entry.roomId,
-      seq: entry.seq,
-      lastActivityAt: entry.createdAt,
-    });
+    eventFanOut.broadcast(
+      'room_activity',
+      {
+        roomId: entry.roomId,
+        seq: entry.seq,
+        lastActivityAt: entry.createdAt,
+      },
+      this.roomAudience(entry.roomId)
+    );
     // The bridge's inline fast path (chats-as-channels §6.1). Deliberately AFTER
     // the broadcast and fan-out, and guarded, so a bridge delivery can never
     // fail a commit or stall the room's own readers. The listener itself is

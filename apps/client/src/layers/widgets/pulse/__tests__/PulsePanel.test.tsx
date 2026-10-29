@@ -67,6 +67,7 @@ function emptyWaiting() {
     schedules: [],
     extensionApprovals: [],
     extensionDecisions: [],
+    pausedConnections: [],
     isLoading: false,
     isAnyError: false,
   };

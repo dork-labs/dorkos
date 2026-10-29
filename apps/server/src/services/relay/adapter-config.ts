@@ -10,12 +10,12 @@ import { readFile, chmod, stat } from 'node:fs/promises';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
-import type { AdapterConfig } from '@dorkos/relay';
+import type { AdapterConfig, AdapterOwnershipReservation, AdapterRegistry } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
 import { carryForwardAdapterDefaults, warnOnOpenDmPolicy } from './safe-defaults.js';
 import { AdapterError } from './adapter-error.js';
-import { toIdList } from '@dorkos/relay';
+import { adapterPrefixesConflict, toIdList } from '@dorkos/relay';
 import {
   AdapterConfigSchema,
   SlackAdapterConfigSchema,
@@ -96,7 +96,7 @@ function valueShapesOf(manifest?: AdapterManifest): Map<string, 'id-list' | 'jso
  * @returns The same config with form shapes resolved.
  * @throws AdapterError `INVALID_CONFIG` when a `json-object` field holds unparseable text.
  */
-function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unknown {
+export function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unknown {
   if (typeof config !== 'object' || config === null || Array.isArray(config)) return config;
 
   const shapes = valueShapesOf(manifest);
@@ -844,5 +844,45 @@ export class AdapterConfigWrites {
           `going on without it. If it finishes later it may overwrite newer settings.`
       );
     }
+  }
+}
+
+/**
+ * Reserve a webhook connection's inbound address before any config or
+ * lifecycle change, refusing one that overlaps another webhook's address.
+ * Every other adapter type reserves nothing.
+ *
+ * @param config - The connection being added or edited.
+ * @param configs - Every saved connection.
+ * @param registry - The live registry that holds address reservations.
+ * @returns The reservation to register through and release, or `undefined`.
+ * @throws AdapterError `INVALID_CONFIG` when the address is taken.
+ */
+export function reserveWebhookOwnership(
+  config: AdapterConfig,
+  configs: readonly AdapterConfig[],
+  registry: Pick<AdapterRegistry, 'reserveOwnership'>
+): AdapterOwnershipReservation | undefined {
+  if (config.type !== 'webhook') return undefined;
+  const subject = (config.config as { inbound: { subject: string } }).inbound.subject;
+  for (const other of configs) {
+    if (other.id === config.id || other.type !== 'webhook') continue;
+    const claimed = (other.config as { inbound: { subject: string } }).inbound.subject;
+    if (adapterPrefixesConflict(subject, claimed)) {
+      throw new AdapterError(
+        `Address ownership conflicts with connection '${other.id}'. Choose a different webhook address.`,
+        'INVALID_CONFIG',
+        config.id
+      );
+    }
+  }
+  try {
+    return registry.reserveOwnership(config.id, subject);
+  } catch (error) {
+    throw new AdapterError(
+      error instanceof Error ? error.message : 'Address ownership could not be checked.',
+      'INVALID_CONFIG',
+      config.id
+    );
   }
 }
