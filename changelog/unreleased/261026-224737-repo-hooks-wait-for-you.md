@@ -16,6 +16,8 @@ covers:
   - "fix(server): an agent can't change its own hooks, MCP servers or account without a person (DOR-3068)"
   - "fix(server): an agent's file tools can't rewrite an installed plugin (DOR-3068)"
   - 'fix(docs): close the folderConfigPinned row a merge split, and fold the seeded DOR-3298 fragments into one (DOR-3298)'
+  - 'fix(server): repo settings wait for a person below Full only (DOR-3298)'
+  - 'docs(changelog): fold the seeded below-Full fragment into the DOR-3298 note (DOR-3298)'
 ---
 
 ### Fixed
