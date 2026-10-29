@@ -93,8 +93,8 @@ export function waitingLabel(
   }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
     return extensions === 1
-      ? '1 extension is waiting to be turned on. Open to answer it.'
-      : `${extensions} extensions are waiting to be turned on. Open to answer them.`;
+      ? '1 mini app is waiting to be turned on. Open to answer it.'
+      : `${extensions} mini apps are waiting to be turned on. Open to answer them.`;
   }
   if (extensions > 0) {
     return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Open to answer them.`;

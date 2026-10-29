@@ -3,7 +3,7 @@
  * the kind DOR-2517 added, `extension.approval`.
  */
 import { describe, it, expect } from 'vitest';
-import { Puzzle } from 'lucide-react';
+import { Puzzle, ShieldAlert } from 'lucide-react';
 import { NOTIFICATION_KINDS, type NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { NOTIFICATION_ICONS, notificationLink } from '../lib/notification-presentation';
 
@@ -16,6 +16,25 @@ describe('notification presentation', () => {
 
   it('draws an extension waiting to be turned on with the extensions mark', () => {
     expect(NOTIFICATION_ICONS['extension.approval']).toBe(Puzzle);
+  });
+
+  // DOR-3292: secret files in an agent's folder are a safety notice, and it
+  // opens that agent's Permissions page rather than the whole Team.
+  it("draws secret files with the shield and opens the agent's Permissions page", () => {
+    expect(NOTIFICATION_ICONS['agent.secret_files']).toBe(ShieldAlert);
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000012',
+      kind: 'agent.secret_files',
+      tier: 'notable',
+      subject: { type: 'agent', id: 'scout' },
+      agentId: 'scout',
+      title: 'Scout can read 3 secret files in its folder',
+      createdAt: '2026-10-27T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({
+      to: '/team',
+      search: { profile: 'scout', profilePage: 'permissions' },
+    });
   });
 
   // Spec trusted-by-default-flip §5.6: the waiting row opens where Cancel is;

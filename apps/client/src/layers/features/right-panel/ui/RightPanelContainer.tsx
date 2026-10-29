@@ -21,6 +21,8 @@ import {
 import { cn, WORK_PANEL_ID } from '@/layers/shared/lib';
 import { effectivePlacement, placementShows } from '@dorkos/shared/mini-app-placement';
 import { useConfig, usePanelTabPlacements } from '@/layers/entities/config';
+import { WithheldExtensionsNotice } from '@/layers/entities/extension';
+import { requestInbox } from '@/layers/entities/notifications';
 import { GroupDmMemberPicker, useDirectMessagePanel } from '@/layers/features/direct-message';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { usePanelViews } from '../model/use-panel-views';
@@ -307,6 +309,12 @@ export function RightPanelContainer({
       {dmPanel?.kind === 'group' && rightPanelOpen && (
         <GroupDmMemberPicker members={dmPanel.members} />
       )}
+      {/* A mini app tab held back because its code changed says so (DOR-3068). */}
+      <WithheldExtensionsNotice
+        slot="right-panel"
+        onReview={() => requestInbox()}
+        className="border-b px-2 py-1.5"
+      />
       <div
         className="min-h-0 flex-1 overflow-hidden outline-none"
         // The Work tab's body takes focus when Show work or Watch opens it.

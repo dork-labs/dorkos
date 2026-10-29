@@ -597,6 +597,47 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
   });
 
+  // DOR-3292's standing canary for Codex: what a secret file inside the
+  // agent's folder is worth today. At Ask first, Codex's most careful level
+  // (it offers no Never ask), a folder-wide search is a read-only command its
+  // sandbox runs without asking, so it prints the secret. Expected, and the
+  // point: it documents the limit the warning and the copy describe.
+  it('prints a secret in the folder from a folder-wide search at Ask first (today’s limit)', async (ctx) => {
+    const env = path.join(project, ['', 'env'].join('.'));
+    const canary = 'CANARY-dor3292-codex';
+    fs.writeFileSync(env, `X_API_KEY=${canary}\n`);
+    let result = '';
+    scripted.push(
+      (res) => res.end(sseCall({ cmd: 'grep -r CANARY-dor3292 .', login: false })),
+      (res, body) => {
+        result = body;
+        res.end(sse('done'));
+      }
+    );
+    try {
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('canary-1', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        })
+      )) {
+        events.push(event);
+      }
+      expect(
+        events.some((e) => e.type === 'approval_required'),
+        'a read-only search asked nobody'
+      ).toBe(false);
+      // A Linux CI runner can't start Codex's sandbox at all (bubblewrap is
+      // refused a network namespace), so no command runs there and this
+      // records nothing either way. Skipped, never passed, in that case.
+      if (/bwrap: /.test(result)) ctx.skip();
+      expect(result).toContain(canary);
+    } finally {
+      fs.rmSync(env, { force: true });
+    }
+  }, 90_000);
+
   describe('approvals and steer (spec §10, §11)', () => {
     const made = () => path.join(project, 'approved.txt');
     const askToWrite = () => {

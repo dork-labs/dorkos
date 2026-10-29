@@ -226,6 +226,121 @@ describe('single-instance lock (A1)', () => {
   });
 });
 
+describe('debugging switches at launch', () => {
+  const originalArgv = process.argv;
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  /** Import `../index` as a launch with `argv`, and report what it started. */
+  async function launch(
+    argv: string[],
+    win?: InstanceType<typeof import('./electron-mock').BrowserWindow>
+  ) {
+    const electron = await getElectronMock();
+    const serverProcess = await import('../server-process');
+    const windowManager = await import('../window-manager');
+    const window = win ?? new electron.BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(serverProcess.startServer).mockClear();
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(window as unknown as Electron.BrowserWindow);
+    vi.mocked(electron.app.on).mockClear();
+    process.argv = argv;
+    await import('../index');
+    await electron.app.emit('ready');
+    return { ...electron, serverProcess, windowManager };
+  }
+
+  it('a packaged app exits non-zero on a debugging switch, before anything starts', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+
+    const { serverProcess, windowManager } = await launch([
+      '/Applications/DorkOS.app/Contents/MacOS/DorkOS',
+      '--remote-debugging-port=0',
+    ]);
+
+    expect(app.exit).toHaveBeenCalledWith(1);
+    expect(app.commandLine.removeSwitch).toHaveBeenCalledWith('remote-debugging-port');
+    expect(app.commandLine.removeSwitch.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      app.exit.mock.invocationCallOrder[0]!
+    );
+    expect(app.requestSingleInstanceLock).not.toHaveBeenCalled();
+    expect(vi.mocked(app.on).mock.calls).toEqual([]);
+    expect(serverProcess.startServer).not.toHaveBeenCalled();
+    expect(windowManager.createWindow).not.toHaveBeenCalled();
+  });
+
+  it('a packaged app exits on a switch only the parsed command line carries', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    app.commandLine.switches['inspect'] = '';
+
+    const { serverProcess } = await launch(['/Applications/DorkOS.app/Contents/MacOS/DorkOS']);
+
+    expect(app.exit).toHaveBeenCalledWith(1);
+    expect(serverProcess.startServer).not.toHaveBeenCalled();
+  });
+
+  it('a packaged app with no debugging switch starts as usual', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+
+    const { serverProcess } = await launch([
+      '/Applications/DorkOS.app/Contents/MacOS/DorkOS',
+      '--enable-logging',
+    ]);
+
+    expect(app.exit).not.toHaveBeenCalled();
+    expect(app.requestSingleInstanceLock).toHaveBeenCalledTimes(1);
+    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('a dev build still takes debugging switches', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const { serverProcess } = await launch(['electron', '.', '--inspect=9229']);
+
+    expect(app.exit).not.toHaveBeenCalled();
+    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second instance carrying debugging switches only brings the window forward', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+
+    const { serverProcess } = await launch(['/Applications/DorkOS.app/Contents/MacOS/DorkOS'], win);
+    vi.mocked(serverProcess.startServer).mockClear();
+
+    await app.emit('second-instance', {}, [
+      '/Applications/DorkOS.app/Contents/MacOS/DorkOS',
+      '--remote-debugging-port=0',
+      '--inspect',
+      '--js-flags=--inspect',
+    ]);
+
+    expect(win.focus).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
+    expect(app.exit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(app.relaunch).not.toHaveBeenCalled();
+    expect(serverProcess.startServer).not.toHaveBeenCalled();
+  });
+});
+
 describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', () => {
   // `../index` only registers the `open-url` listener when
   // `process.platform === 'darwin'` (it is a macOS-only Electron event), and it

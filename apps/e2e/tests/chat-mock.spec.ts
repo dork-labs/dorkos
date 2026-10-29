@@ -555,11 +555,14 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
 //   pnpm --filter @dorkos/e2e exec playwright test --project=chromium-mock -g "live remount"
 //
 // Two agents are registered via the mesh (so they appear in the command palette) at
-// derived sibling dirs of the seed-agent boundary path. Test B additionally drops a
-// minimal cwd-scoped extension into project A only — a valid manifest is enough: server
-// discovery counts it in the cwd diff even though it never compiles or activates, which
-// is exactly what flips `useCwdExtensionSync` into its remount branch (the branch that
-// used to reload). No extension build pipeline is needed.
+// derived sibling dirs of the seed-agent boundary path. Test B drops a minimal
+// cwd-scoped extension into a third sibling, project C, which is NOT an agent's folder —
+// a valid manifest is enough: server discovery counts it in the cwd diff even though it
+// never compiles or activates, which is exactly what flips `useCwdExtensionSync` into
+// its remount branch (the branch that used to reload). No extension build pipeline is
+// needed. It cannot sit in an agent's folder: every registered agent's folder is scanned
+// whatever the working directory is (DOR-3068), so an agent's mini apps are in the set
+// on both sides of a switch and the set never changes.
 test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () => {
   /** cwd-scoped extension id dropped into project A for Test B. */
   const EXT_ID = 'e2e-remount-probe';
@@ -567,6 +570,8 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
   let dirA: string;
   /** Project B — the agent the page loads on; never carries a cwd-scoped extension. */
   let dirB: string;
+  /** Project C — a plain folder, no agent's; carries the cwd-scoped extension in Test B. */
+  let dirC: string;
 
   /** `.dork/extensions` root for a project dir. */
   const extRoot = (dir: string) => path.join(dir, '.dork', 'extensions');
@@ -579,8 +584,10 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
     const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
     dirA = `${baseDir}-remount-a`;
     dirB = `${baseDir}-remount-b`;
+    dirC = `${baseDir}-remount-c`;
     await fs.mkdir(dirA, { recursive: true });
     await fs.mkdir(dirB, { recursive: true });
+    await fs.mkdir(dirC, { recursive: true });
     // Register both with the mesh so the command palette lists them as switchable
     // agents. `registerByPath` writes each agent's manifest and returns 201.
     for (const [dir, name] of [
@@ -598,6 +605,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
   test.afterAll(async () => {
     await fs.rm(extRoot(dirA), { recursive: true, force: true }).catch(() => {});
     await fs.rm(extRoot(dirB), { recursive: true, force: true }).catch(() => {});
+    await fs.rm(extRoot(dirC), { recursive: true, force: true }).catch(() => {});
   });
 
   /**
@@ -621,6 +629,22 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
       .click();
     // The sub-menu clears the search and auto-selects "Open Here".
     await page.getByRole('option', { name: /open here/i }).click();
+  }
+
+  /**
+   * Open the global command palette, pick "Browse filesystem", and choose `dir` from
+   * the folder picker's recent folders — the user path that moves the working
+   * directory to a folder no agent lives in, without a full document load.
+   */
+  async function switchFolderViaPicker(page: Page, dir: string): Promise<void> {
+    await page.keyboard.press('Meta+k');
+    const search = page.getByTestId('command-palette-input');
+    await search.waitFor({ state: 'visible', timeout: 10_000 });
+    await search.fill('Browse filesystem');
+    await page.getByRole('option', { name: 'Browse filesystem', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: /select working folder/i });
+    const folder = path.basename(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await picker.getByRole('button', { name: new RegExp(folder) }).click();
   }
 
   /**
@@ -695,16 +719,16 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
     await expectNoReload(page);
   });
 
-  // Test B — the regression guard. Project A carries a cwd-scoped extension and B does
-  // not, so switching B → A flips the discovered set (`changed: true`). That fires the
+  // Test B — the regression guard. Project C carries a cwd-scoped extension and B does
+  // not, so switching B → C flips the discovered set (`changed: true`). That fires the
   // exact branch the old code reloaded from — here it must instead show the quiet
   // "Project extensions updated" toast and live-remount, with NO page reload.
   test('an extension-set change on switch live-remounts (toast), never reloads', async ({
     page,
     request,
   }) => {
-    // Drop a minimal valid manifest into project A only; ensure B has none.
-    const extDir = path.join(extRoot(dirA), EXT_ID);
+    // Drop a minimal valid manifest into project C only; ensure the agents' have none.
+    const extDir = path.join(extRoot(dirC), EXT_ID);
     await fs.mkdir(extDir, { recursive: true });
     await fs.writeFile(
       path.join(extDir, 'extension.json'),
@@ -712,20 +736,27 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
         id: EXT_ID,
         name: 'E2E Remount Probe',
         version: '0.0.0',
-        description: 'Cwd-scoped extension present only in project A (e2e fixture).',
+        description: 'Cwd-scoped extension present only in project C (e2e fixture).',
       })
     );
+    await fs.rm(extRoot(dirA), { recursive: true, force: true });
     await fs.rm(extRoot(dirB), { recursive: true, force: true });
 
-    // Prime the server's cwd to B so the measured switch into A yields a deterministic
-    // `added` diff regardless of any prior cwd left by an earlier test.
+    // Visit C once, as a person would, so the folder picker lists it as recent.
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: dirC });
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('dorkos-recent-cwds') ?? ''))
+      .toContain(path.basename(dirC));
+
+    // Prime the server's cwd to B so the measured switch into C yields a deterministic
+    // `added` diff regardless of any prior cwd left by an earlier step.
     await request.post(`${API_URL}/api/extensions/cwd-changed`, { data: { cwd: dirB } });
 
-    const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: dirB });
     await primeComposerAndMarker(chatPage, page);
 
-    await switchAgentViaPalette(page, 'Alpha Remount Agent');
+    await switchFolderViaPicker(page, dirC);
 
     // The scoped set changed → the remount branch runs: a quiet toast, no reload.
     await expect(page.getByText('Project extensions updated')).toBeVisible({ timeout: 15_000 });
@@ -746,9 +777,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
         },
         { timeout: 10_000 }
       )
-      .toBe(dirA);
-    expect(new URL(page.url()).searchParams.has('dir')).toBe(false);
-    expect(new URL(page.url()).searchParams.has('agentPath')).toBe(false);
+      .toBe(dirC);
 
     await expectNoReload(page);
   });

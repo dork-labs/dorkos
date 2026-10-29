@@ -40,6 +40,11 @@ export interface BeatLaunchRequest {
   runtime: string;
   /** The beat prompt. */
   content: string;
+  /**
+   * The account a NEW beat chat starts on, when its own is out of usage
+   * (`beat-seat.ts`). Honoured only by the send that creates the chat.
+   */
+  account?: string;
   /** The ceiling the beat carries when it reads words written under a turn mark (DOR-3036). */
   permissionCeiling?: TurnPermissionCeiling;
   /** Called once when the turn ends; `refusal` when it never reached the agent. */
@@ -81,6 +86,7 @@ export function createBeatTurnLauncher(meshCore: () => MeshCore | undefined): Be
           content: request.content,
           agentPath: request.agentPath,
           runtime: request.runtime,
+          ...(request.account !== undefined ? { account: request.account } : {}),
         },
         clientId: 'heartbeat',
         meshCore: meshCore(),

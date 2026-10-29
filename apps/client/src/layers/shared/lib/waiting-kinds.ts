@@ -71,7 +71,7 @@ export function listWaitingKinds(
     requests > 0 ? countNoun(requests, 'request') : null,
     schedules > 0 ? countNoun(schedules, 'schedule') : null,
     decisions > 0 ? countNoun(decisions, 'decision') : null,
-    extensions > 0 ? countNoun(extensions, 'extension') : null,
+    extensions > 0 ? countNoun(extensions, 'mini app') : null,
     connections > 0 ? countNoun(connections, 'paused connection') : null,
   ].filter((part): part is string => part !== null);
 

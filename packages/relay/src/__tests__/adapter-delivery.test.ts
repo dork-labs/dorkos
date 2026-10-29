@@ -1,6 +1,10 @@
 import { dispatchTurnAccounting, RelayTurnCeiling } from '../turn-ceiling.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { AdapterDelivery, type AdapterDeliveryDeps } from '../adapter-delivery.js';
+import {
+  AdapterDelivery,
+  deliveryTimeoutMs,
+  type AdapterDeliveryDeps,
+} from '../adapter-delivery.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterContext, AdapterRegistryLike, DeliveryResult } from '../types.js';
 import type { SqliteIndex } from '../sqlite-index.js';
@@ -181,6 +185,55 @@ describe('AdapterDelivery', () => {
       expect(result!.error).toContain('timeout');
 
       vi.useRealTimers();
+    });
+
+    // DOR-3033: a scheduled run's turn runs inside its delivery, so the two-
+    // minute race failed every run longer than that as "never started".
+    it('awaits a task dispatch past two minutes, up to its own deadline', async () => {
+      vi.useFakeTimers();
+      let finish!: (result: DeliveryResult) => void;
+      vi.mocked(deps.adapterRegistry!.deliver).mockReturnValue(
+        new Promise<DeliveryResult>((resolve) => (finish = resolve))
+      );
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({
+        subject: 'relay.system.tasks.01TASK',
+        budget: { ...createEnvelope().budget, ttl: Date.now() + 10 * 60_000 },
+      });
+
+      const promise = delivery.deliver('relay.system.tasks.01TASK', envelope);
+      vi.advanceTimersByTime(3 * 60_000);
+      finish({ success: true, durationMs: 3 * 60_000 });
+
+      const result = await promise;
+      expect(result!.success).toBe(true);
+      vi.useRealTimers();
+    });
+
+    it('times a task dispatch out a grace period after its deadline', () => {
+      const now = 1_000_000;
+      const envelope = createEnvelope({
+        budget: { ...createEnvelope().budget, ttl: now + 10 * 60_000 },
+      });
+      expect(deliveryTimeoutMs('relay.system.tasks.01TASK', envelope, now)).toBe(
+        10 * 60_000 + AdapterDelivery.TASK_SETTLE_GRACE_MS
+      );
+      // Never shorter than everything else gets, and nothing else changes.
+      const expired = createEnvelope({ budget: { ...createEnvelope().budget, ttl: now - 1 } });
+      expect(deliveryTimeoutMs('relay.system.tasks.01TASK', expired, now)).toBe(
+        AdapterDelivery.TIMEOUT_MS
+      );
+      expect(deliveryTimeoutMs(CHANNEL_SUBJECT, envelope, now)).toBe(AdapterDelivery.TIMEOUT_MS);
+      // A very long time limit is clamped to the longest timer Node honours,
+      // rather than overflowing into one that fires at once.
+      const forever = createEnvelope({
+        budget: { ...createEnvelope().budget, ttl: now + 1000 * 3_600_000 },
+      });
+      expect(deliveryTimeoutMs('relay.system.tasks.01TASK', forever, now)).toBe(2 ** 31 - 1);
+      // Only the dispatch subject itself, not a subject beneath it.
+      expect(deliveryTimeoutMs('relay.system.tasks.01TASK.response', envelope, now)).toBe(
+        AdapterDelivery.TIMEOUT_MS
+      );
     });
 
     it('handles synchronous throw before timer initialization', async () => {

@@ -25,6 +25,7 @@
  */
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
 
 /** What a viewer gets when they open one document on a room's table. */
 export type RoomDocumentReading =
@@ -52,9 +53,12 @@ export type RoomDocumentReading =
 /** Media shapes whose `src` may be a local path instead of a URL. */
 const MEDIA_TYPES = ['image', 'pdf', 'audio', 'video', 'csv', 'model3d'] as const;
 
-/** Whether a media `src` is something a browser can fetch on its own. */
+/**
+ * Whether a media `src` is something a browser can fetch on its own: a URL,
+ * inline data, or the room's own copy of a file an agent put on the table.
+ */
 function isRemote(src: string): boolean {
-  return /^(https?:|data:)/.test(src);
+  return /^(https?:|data:)/.test(src) || isRoomCanvasMediaUrl(src);
 }
 
 /**

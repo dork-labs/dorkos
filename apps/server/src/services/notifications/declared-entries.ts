@@ -18,17 +18,36 @@ import {
 } from './connector-hold-notifications.js';
 import {
   COMMUNITY_NOTIFICATION_ENTRIES,
+  COMMUNITY_NOTIFICATION_KINDS,
   type CommunityNotificationPayloads,
 } from './community-notifications.js';
 import { WEB_DEVICE_ENTRIES, type WebDevicePayloads } from './web-device-notifications.js';
+import { SECRET_FILE_ENTRIES, type SecretFilePayloads } from './secret-file-notifications.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
-  extends ConnectorHoldPayloads, WebDevicePayloads, CommunityNotificationPayloads {}
+  extends
+    ConnectorHoldPayloads,
+    WebDevicePayloads,
+    CommunityNotificationPayloads,
+    SecretFilePayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
   ...CONNECTOR_HOLD_ENTRIES,
   ...WEB_DEVICE_ENTRIES,
   ...COMMUNITY_NOTIFICATION_ENTRIES,
+  ...SECRET_FILE_ENTRIES,
 };
+
+/**
+ * The declared kinds that something raises today, joined into the registry's
+ * `WIRED_NOTIFICATION_KINDS`.
+ */
+export const DECLARED_WIRED_KINDS = [
+  ...COMMUNITY_NOTIFICATION_KINDS,
+  'connector.destructive_pending',
+  'connector.destructive_executed',
+  'web.new_device',
+  'agent.secret_files',
+] as const;

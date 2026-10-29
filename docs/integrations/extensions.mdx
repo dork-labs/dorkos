@@ -126,7 +126,11 @@ An extension can say where its tab belongs by default, with `showIn` on `registe
 
 ## Testing locally
 
-The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file in one of those two directories, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+
+A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code and it keeps running. A change to what it shows on screen waits for you to approve it again.
+
+An extension that saves files into its own folder changes the files you approved, so it stops and waits for you. Save data with `loadData`/`saveData` instead.
 
 A newly installed extension also shows up in the **Activity inbox** (the bell at the top right) with one short row: "Turn on My Extension?", a line saying what it adds, and three buttons. **Turn it on** starts it straight away, with no reload. **Not now** turns nothing off and removes nothing; the inbox just stops asking until the extension changes version or moves. The line under the question comes from your manifest: list what you add in `contributions` (for example `"right-panel": true`) and say what it is for in `purpose`, a short phrase that finishes the sentence "This adds a My Extension tab that …".
 
