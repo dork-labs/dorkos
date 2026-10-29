@@ -604,6 +604,12 @@ jobs:
       - name: Packaged Community scope-list fixtures
         run: bash scripts/test-community-packaged-scope.sh
 
+      # no-code-scope.sh decides whether a pull request's test shards run, so a
+      # rule that lets a code path through silently moves every catch it
+      # should make to the merge queue, as ejections. Hermetic, no pnpm.
+      - name: No-code scope fixtures
+        run: bash scripts/test-no-code-scope.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
