@@ -92,6 +92,7 @@ import {
   type SessionStartPermission,
 } from './session-start-permission.js';
 import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
+import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -488,14 +489,16 @@ export function createSessionStartHandler(
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
     // With no chat (the external `/mcp` server) it is the agent's own stop.
-    // A marked starting turn opens a chat born capped (DOR-3107).
+    // A starting turn held for a stranger opens a chat born capped (DOR-3107). One that only
+    // carries an outsider's words on opens it at no more than its own level, marked (DOR-3390).
     const markedCeiling = outsiderStartCeiling(caller);
     const level = await resolveStartPermission(
       args.permissionMode,
       caller.chat,
       runtimeType,
       await chatlessCallerStop(caller.chat, runtime, agentPath),
-      'permissionCeiling' in markedCeiling,
+      markedCeiling.permissionCeiling !== undefined &&
+        ceilingHoldsForOutsider(markedCeiling.permissionCeiling),
       await startLevelFacts(caller, runtime, args)
     );
     if (!level.ok) return refuse(level.error, level.code);
