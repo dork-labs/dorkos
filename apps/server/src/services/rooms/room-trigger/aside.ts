@@ -17,34 +17,90 @@ import { agentKey, type ClaimOutcome } from '../room-claims.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+
+/**
+ * What a room hand-off's turn carries from the chat that wrote the draft (DOR-3397): the marks
+ * that chat's turn held, so words a stranger reached are held the same way in the seat.
+ */
+export interface AsideCarry {
+  /** Whether a stranger's words reached the chat the draft came from. */
+  externalAuthor: boolean;
+  /** The loosest level the seat's turn may run at, carrying the drafting chat's marks. */
+  permissionCeiling?: TurnPermissionCeiling;
+  /** Set when a teammate's words reached that chat. */
+  teammate?: true;
+}
+
+/** One aside: the agent, the room, the entry it is about, and what it is asked. */
+export interface AsideInput {
+  /** The room the turn runs in. */
+  room: Room;
+  /** The entry the turn is about; it frames the context and the working indicator. */
+  entry: RoomEntry;
+  /** The agent being asked. */
+  authorId: string;
+  /** The question, as the model will see it. */
+  prompt: string;
+  /** Set on a room hand-off: what the drafting chat's turn carried. */
+  carried?: AsideCarry;
+  /** Told the turn's dispatch id once its claim is held, so its posts can be told apart. */
+  onClaimed?: (dispatchId: string) => void;
+}
+
+/** An aside, once its claim is held. */
+export interface AsideRun extends AsideInput {
+  /** The agent's home. */
+  agentPath: string;
+  /** The room's session for this agent. */
+  sessionId: string;
+  /** The claim key. */
+  key: string;
+  /** The turn's dispatch id. */
+  dispatchId: string;
+}
+
+/**
+ * How an aside ended: the claim outcome and what the turn wrote back to its own session.
+ * `busy` and `refused` ran no turn at all; `refused` says which bound stopped it.
+ */
+export interface AsideResult {
+  /** How it ended. */
+  outcome: ClaimOutcome | 'busy' | 'refused';
+  /** Which bound refused it, on `refused`. */
+  why?: 'gone' | 'budget' | 'session';
+  /** What the turn wrote back to its own session, or `null`. */
+  text: string | null;
+}
+
+/** An aside that ran no turn. */
+function refusedAside(why: NonNullable<AsideResult['why']>): AsideResult {
+  return { outcome: 'refused', why, text: null };
+}
 
 /**
  * The body of {@link RoomTriggerDispatcher.askAside}, which documents it.
  *
  * @param self - The dispatcher whose state this reads and writes.
+ * @param input - The aside.
  */
 export async function askAside(
   self: RoomTriggerDispatcher,
-  input: {
-    room: Room;
-    entry: RoomEntry;
-    authorId: string;
-    prompt: string;
-  }
-): Promise<void> {
+  input: AsideInput
+): Promise<AsideResult> {
   const { room, entry, authorId } = input;
   const record = self.deps.authors.getMany([authorId]).get(authorId);
   // Only an agent takes a turn, and only a live one: a directory that no
   // longer holds this agent has nothing to offer and no session to offer it
   // on (ADR 260801-003051).
-  if (!record || record.kind !== 'agent') return;
-  if (!isLiveAuthor(record, self.deps.agents)) return;
+  if (!record || record.kind !== 'agent') return refusedAside('gone');
+  if (!isLiveAuthor(record, self.deps.agents)) return refusedAside('gone');
   // It posted its status line a moment ago, so this is all but guaranteed —
   // and it costs one indexed read to not spend a model turn on the case where
   // it left the room in between.
-  if (!self.deps.store.getMember(room.id, authorId)) return;
+  if (!self.deps.store.getMember(room.id, authorId)) return refusedAside('gone');
   const agentPath = record.naturalKey;
 
   const busyWith = self.busyWith(room.id, authorId, agentPath);
@@ -56,7 +112,7 @@ export async function askAside(
       // `agentPath`, and a filesystem path does not belong in a log context.
       busyWith: busyWith.where,
     });
-    return;
+    return { outcome: 'busy', text: null };
   }
   // Charged through the same seam `claimCollected` uses, which is what keeps
   // an offer from being the one path that spends without counting: with every
@@ -68,7 +124,7 @@ export async function askAside(
       roomId: room.id,
       authorId,
     });
-    return;
+    return refusedAside('budget');
   }
   // **The re-arm, exactly as `claimCollected` does it, and it is not optional
   // here.** Spending again means the hourly window moved, so the next
@@ -96,7 +152,7 @@ export async function askAside(
       authorId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return;
+    return refusedAside('session');
   }
 
   const dispatchId = newDispatchId();
@@ -126,38 +182,22 @@ export async function askAside(
     // for up to one throttle window.
     activityPublishedAt: 0,
   });
+  input.onClaimed?.(dispatchId);
   return runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
-    self.runAsideInDispatch({
-      room,
-      entry,
-      authorId,
-      agentPath,
-      sessionId,
-      key,
-      dispatchId,
-      prompt: input.prompt,
-    })
+    self.runAsideInDispatch({ ...input, agentPath, sessionId, key, dispatchId })
   );
 }
 
 /** The body of {@link RoomTriggerDispatcher.askAside}, already inside its scope. */
 export async function runAsideInDispatch(
   self: RoomTriggerDispatcher,
-  input: {
-    room: Room;
-    entry: RoomEntry;
-    authorId: string;
-    agentPath: string;
-    sessionId: string;
-    key: string;
-    dispatchId: string;
-    prompt: string;
-  }
-): Promise<void> {
+  input: AsideRun
+): Promise<AsideResult> {
   const { room, entry, authorId, key } = input;
   const displayName =
     self.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
   let outcome: ClaimOutcome = 'quiet';
+  let text: string | null = null;
   recordDispatchStart({
     dispatchId: input.dispatchId,
     origin: 'room',
@@ -211,9 +251,13 @@ export async function runAsideInDispatch(
       // A moved seat's launch, when its first turn back is this aside.
       ...pendingSeatLaunch(self, room.id, authorId, input.sessionId),
       entry,
-      // Never external: `entry` here is the greeter's own status post, written
-      // by this machine, and nobody off it can ask for an aside turn.
-      externalAuthor: false,
+      // Never external for an offer: `entry` here is the greeter's own status post, written
+      // by this machine. A hand-off carries the drafting chat's marks instead.
+      externalAuthor: input.carried?.externalAuthor ?? false,
+      ...(input.carried?.permissionCeiling !== undefined
+        ? { permissionCeiling: input.carried.permissionCeiling }
+        : {}),
+      ...(input.carried?.teammate ? { teammate: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,
@@ -240,7 +284,7 @@ export async function runAsideInDispatch(
       // Resolve-or-reject is the runner's contract; the room has simply
       // stopped listening. Same treatment as `runOne`'s halted branch.
       result.late?.catch(() => undefined);
-      return;
+      return { outcome, text: result.text };
     }
     // **A slow turn is late, never lost** (`.claude/rules/room-conduct.md`).
     // The room's wait bounds the WAIT; the turn keeps running, and
@@ -251,6 +295,7 @@ export async function runAsideInDispatch(
     // still working in its own checkout, and released by the `finally` below
     // once this has an answer to hand back.
     const settled = result.late === undefined ? result : await self.awaitLate(result.late, key);
+    text = settled.text;
     // Asked AGAIN, over the other window. The check above cannot see a Stop
     // pressed DURING the wait, which is the longest window this method has —
     // and the triggered path answers that same window from inside `deliver`,
@@ -258,11 +303,11 @@ export async function runAsideInDispatch(
     // rather than into the room.
     if (self.wasHalted(input.dispatchId)) {
       outcome = 'halted';
-      return;
+      return { outcome, text };
     }
     if (settled.unanswered) {
       outcome = settled.unanswered;
-      return;
+      return { outcome, text };
     }
     // **The same three terminals `deliver` reads, minus the notice.** An offer
     // that posted or reacted has put something in front of the person and
@@ -274,6 +319,7 @@ export async function runAsideInDispatch(
     const spoke = self.takeSpokeViaTool(room.id, authorId);
     const reacted = self.takeReactedViaTool(room.id, authorId);
     outcome = spoke || reacted ? 'answered' : 'quiet';
+    return { outcome, text };
   } catch (err) {
     outcome = 'failed';
     logger.warn('[rooms] a welcome-back offer turn failed', {
@@ -281,6 +327,7 @@ export async function runAsideInDispatch(
       authorId,
       error: err instanceof Error ? err.message : String(err),
     });
+    return { outcome, text };
   } finally {
     // Always, and last. An aside turn releases into the offer the agent
     // posted while it ran, or into the named exception every turn has — an

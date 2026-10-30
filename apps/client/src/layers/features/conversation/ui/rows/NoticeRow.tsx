@@ -17,6 +17,7 @@
 import {
   Archive,
   ArrowLeftRight,
+  ArrowUpRight,
   AtSign,
   CircleSlash,
   CircleStop,
@@ -141,6 +142,12 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // A person gave the room a shared working set. Cool: this is an audit line,
   // not a warning and not something anybody must answer.
   files_set_up: { Icon: FolderGit2 },
+  // An agent's seat in another room shared what its chat here drafted. Cool:
+  // the request was carried out, and the line says where it went.
+  handoff_shared: { Icon: ArrowUpRight },
+  // The seat there chose not to post it and said why. Cool for the reason
+  // `agent_declined` is: an agent using judgment is the room working.
+  handoff_declined: { Icon: MessageSquareOff },
   // The conversation is pinned to a program that is not running here, so no
   // answer comes until somebody turns it back on or re-adds the agent. Warm,
   // and a plug rather than `agent_gone`'s missing-person mark: the agent is

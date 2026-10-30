@@ -180,6 +180,10 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     copy.buildHandleChangedNotice('the operator', 'Ana', 'author-ana', null, 'ana'),
     copy.buildHandleChangedNotice('Dorian', 'Ana', 'author-ana', 'ana', null),
   ],
+  buildHandoffNotice: () => [
+    copy.buildHandoffNotice('Ana', 'author-ana', '#dorkos', null),
+    copy.buildHandoffNotice('Ana', 'author-ana', '#dorkos', 'It already merged.'),
+  ],
 };
 
 function everyNotice(): RoomEntryBody[] {
