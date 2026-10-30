@@ -767,11 +767,11 @@ describe('RoomRow unread', () => {
     expect(screen.getByLabelText('2 mentions')).toHaveTextContent('2');
   });
 
-  it('draws the pill in neutral ink, never the brand colour', () => {
+  it('draws the pill in the orange ink, because it is aimed at you', () => {
     renderRow(channel({ unreadCount: 3, mentionCount: 1 }));
     const pill = screen.getByLabelText('1 mention');
-    expect(pill.className).toContain('text-foreground');
-    expect(pill.className).not.toMatch(/brand|warning/);
+    expect(pill.className).toContain('text-brand-text');
+    expect(pill.className).not.toMatch(/warning/);
   });
 
   it('opens one tooltip, not two: the name drops its own when the row has a last line', () => {

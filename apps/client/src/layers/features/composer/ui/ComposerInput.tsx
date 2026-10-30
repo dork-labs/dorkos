@@ -292,6 +292,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     const fieldRef = useRef<ComposerFieldHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
+    const [tabbedIn, setTabbedIn] = useState(false);
     // The field reports its editing surface once it has one; until then the
     // ladder talks to the inert one, which answers exactly as it did when there
     // was no textarea in the ref yet.
@@ -390,6 +391,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     const handleFocus = useCallback(() => setIsFocused(true), []);
     const handleBlur = useCallback(() => {
       setIsFocused(false);
+      setTabbedIn(false);
       if (isPaletteOpen) onEscape?.();
     }, [isPaletteOpen, onEscape]);
 
@@ -443,10 +445,13 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
               : 'Editing message'}
           </div>
         )}
+        {/* Tab, not :focus-visible: a text field matches that on every click and
+          on mount, which is the orange this ring must not paint. */}
         <div
+          onKeyUp={(e) => e.key === 'Tab' && setTabbedIn(true)}
           className={cn(
             'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
-            isFocused && 'border-ring ring-ring ring-[1px]',
+            isFocused && (tabbedIn ? 'border-ring ring-ring ring-[1px]' : 'border-foreground/20'),
             editingQueueItem && 'border-primary/40',
             !onAttach && 'pl-3'
           )}

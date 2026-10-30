@@ -85,11 +85,11 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     sampleResponse:
       'Done. Pushed the fix, tests pass, already moved on. Used a completely new approach btw, way cleaner.',
     colors: {
-      nebula: '#ea580c',
-      wisp: '#f97316',
+      nebula: 'hsl(var(--brand))',
+      wisp: 'hsl(var(--brand))',
       stroke: '#fb923c',
       strokeEnd: '#fbbf24',
-      fill: '#ea580c',
+      fill: 'hsl(var(--brand))',
       fillEnd: '#f59e0b',
       glow: '#fb923c',
       dot: '#fbbf24',

@@ -78,6 +78,15 @@ export interface PresetPillProps
   gradientText?: boolean;
 }
 
+/**
+ * A colour at a two-digit hex alpha. `color-mix`, because a preset's colour may
+ * be a theme variable, which cannot take a hex alpha on its end.
+ */
+function tint(color: string, hexAlpha: string): string {
+  const percent = Math.round((parseInt(hexAlpha, 16) / 255) * 100);
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
 /** Nebula-themed pill for displaying a personality preset. */
 export function PresetPill({
   emoji,
@@ -102,9 +111,9 @@ export function PresetPill({
         ...(selected
           ? {
               borderColor: isDark ? colors.stroke + na.pillBorder : colors.stroke + 'AA',
-              background: `linear-gradient(135deg, ${colors.nebula}${na.pillBgStart}, ${colors.wisp}${na.pillBgEnd})`,
+              background: `linear-gradient(135deg, ${tint(colors.nebula, na.pillBgStart)}, ${tint(colors.wisp, na.pillBgEnd)})`,
               ...(state === 'glowing'
-                ? { boxShadow: `0 0 12px ${colors.nebula}${na.pillGlow}` }
+                ? { boxShadow: `0 0 12px ${tint(colors.nebula, na.pillGlow)}` }
                 : {}),
             }
           : {}),

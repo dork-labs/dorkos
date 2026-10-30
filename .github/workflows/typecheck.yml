@@ -338,6 +338,18 @@ jobs:
           base="$(git rev-parse HEAD^1)"
           pnpm run check:max-lines -- --base "$base"
 
+      # The design-token gate (UI overhaul Phase 1). Black scrims and literal
+      # z-indexes in the shared package may not exist; raw palette classes, pure
+      # white and black, and stray focus rings are held to
+      # scripts/design-tokens/baseline.json, where a count may only fall. Rides
+      # THIS job and takes `--base` for the file-size ratchet's reasons above.
+      - name: Design-token gate
+        if: ${{ !cancelled() }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          pnpm run check:design-tokens -- --base "$base"
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a

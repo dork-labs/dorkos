@@ -3,9 +3,9 @@
 .light {
   --dui-background: 0 0% 98%;
   --dui-foreground: 0 0% 9%;
-  --dui-card: 0 0% 100%;
+  --dui-card: 0 0% 99.5%;
   --dui-card-foreground: 0 0% 9%;
-  --dui-popover: 0 0% 100%;
+  --dui-popover: 0 0% 99.5%;
   --dui-popover-foreground: 0 0% 9%;
   --dui-primary: 0 0% 9%;
   --dui-primary-foreground: 0 0% 98%;
@@ -19,11 +19,14 @@
   --dui-destructive-foreground: 0 0% 98%;
   --dui-border: 0 0% 83%;
   --dui-input: 0 0% 83%;
-  --dui-ring: 24 90% 44%;
-  --dui-brand: 24 90% 44%;
-  --dui-brand-foreground: 0 0% 100%;
-  /* Orange for small text: the brand fill reads 3.7:1 as text; this clears 4.5:1. */
-  --dui-brand-text: 24 90% 29%;
+  --dui-ring: 23 97% 46%;
+  --dui-brand: 23 97% 46%;
+  /* Near-black: white on this orange reads 3.50:1, this reads 5.12:1. */
+  --dui-brand-foreground: 0 0% 9%;
+  /* Orange for small text: the brand fill misses 4.5:1 as text; this clears it. */
+  --dui-brand-text: 23 97% 29%;
+  --dui-destructive-fill: hsl(var(--dui-destructive));
+  --dui-scrim: hsl(0 0% 9% / 0.5);
   --dui-success: 152 69% 24%;
   --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
@@ -61,9 +64,11 @@
     --dui-border: 0 0% 25%;
     --dui-input: 0 0% 25%;
     --dui-ring: 24 88% 55%;
-    --dui-brand: 24 88% 55%;
-    --dui-brand-foreground: 0 0% 100%;
-    --dui-brand-text: 24 88% 60%;
+    --dui-brand: 23 97% 46%;
+    --dui-brand-foreground: 0 0% 9%;
+    --dui-brand-text: 24 90% 60%;
+    --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
+    --dui-scrim: hsl(0 0% 2% / 0.6);
     --dui-success: 152 69% 55%;
   }
 }
@@ -88,8 +93,24 @@
   --dui-border: 0 0% 25%;
   --dui-input: 0 0% 25%;
   --dui-ring: 24 88% 55%;
-  --dui-brand: 24 88% 55%;
-  --dui-brand-foreground: 0 0% 100%;
-  --dui-brand-text: 24 88% 60%;
+  --dui-brand: 23 97% 46%;
+  --dui-brand-foreground: 0 0% 9%;
+  --dui-brand-text: 24 90% 60%;
+  --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
+  --dui-scrim: hsl(0 0% 2% / 0.6);
   --dui-success: 152 69% 55%;
+}
+
+/* The stacking ladder. Portaled menus, popovers and selects sit on `overlay`, not
+   `floating`: one opened inside a dialog portals to the body, so at 40 it would
+   paint under the dialog that owns it. On one layer, the later one wins. */
+:root {
+  --z-base: 0;
+  --z-raised: 10;
+  --z-chrome: 20;
+  --z-floating: 40;
+  --z-overlay: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
+  --z-takeover: 100;
 }

@@ -100,8 +100,9 @@ describe('NamespaceGroupNode', () => {
     it('applies namespace color to border with transparency', () => {
       const { container } = render(<NamespaceGroupNode {...makeMockProps({ color: '#3b82f6' })} />);
       const wrapper = container.firstChild as HTMLElement;
-      // jsdom converts hex+alpha to rgba format
-      expect(wrapper.style.borderColor).toBe('rgba(59, 130, 246, 0.25)');
+      expect(wrapper.style.borderColor).toBe(
+        'color-mix(in srgb, rgb(59, 130, 246) 25%, transparent)'
+      );
     });
 
     it('uses rounded-xl border-2 styling on the wrapper', () => {
