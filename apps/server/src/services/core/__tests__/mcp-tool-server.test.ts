@@ -354,6 +354,21 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.schedules[0].id).toBe('s1');
     });
 
+    it('fills nextRun from the scheduler, not the stored row`s null (DOR-3125)', async () => {
+      const schedules = [
+        { id: 's1', name: 'Daily', enabled: true, nextRun: null },
+        { id: 's2', name: 'Paused', enabled: false, nextRun: null },
+      ];
+      const next = new Date('2026-01-16T09:00:00.000Z');
+      const handler = createListSchedulesHandler({
+        ...makeTasksDeps({ getTasks: vi.fn().mockReturnValue(schedules) }),
+        nextRunOf: (id: string) => (id === 's1' ? next : null),
+      });
+      const parsed = JSON.parse((await handler({})).content[0].text);
+      expect(parsed.schedules[0].nextRun).toBe('2026-01-16T09:00:00.000Z');
+      expect(parsed.schedules[1].nextRun).toBeNull();
+    });
+
     it('returns error when taskStore undefined', async () => {
       const handler = createListSchedulesHandler(makeMockDeps());
       const result = await handler({});
