@@ -70,6 +70,8 @@ interface LockRecord {
 export interface SchedulerLockOptions {
   /** The data directory whose `tasks/scheduler.lock` keys this lock. */
   dorkHome: string;
+  /** The lock file under `tasks/`, for another single-leader loop. Defaults to `scheduler.lock`. */
+  fileName?: string;
   /** Clock, injectable for deterministic tests. Defaults to `Date.now`. */
   now?: () => number;
   /** This process's id, injectable so a test can simulate multiple processes. */
@@ -104,7 +106,7 @@ export class SchedulerLock implements LeaderLock {
   private reportedWriteFailure = false;
 
   constructor(opts: SchedulerLockOptions) {
-    this.lockPath = join(opts.dorkHome, 'tasks', 'scheduler.lock');
+    this.lockPath = join(opts.dorkHome, 'tasks', opts.fileName ?? 'scheduler.lock');
     this.now = opts.now ?? Date.now;
     this.pid = opts.pid ?? process.pid;
     this.hostname = opts.hostname ?? osHostname();

@@ -613,6 +613,10 @@
       "types": "./src/commitment-schemas.ts",
       "default": "./dist/commitment-schemas.js"
     },
+    "./work-queue-schemas": {
+      "types": "./src/work-queue-schemas.ts",
+      "default": "./dist/work-queue-schemas.js"
+    },
     "./heartbeat-schemas": {
       "types": "./src/heartbeat-schemas.ts",
       "default": "./dist/heartbeat-schemas.js"

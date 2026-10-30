@@ -54,5 +54,6 @@ export * from './session/session-native-bindings.js';
 export * from './session/session-touches.js';
 export * from './session/chat-messages.js';
 export * from './commitments/commitments.js';
+export * from './work-queue/work-queue.js';
 export * from './heartbeats/heartbeats.js';
 export * from './remote/remote-commands.js';

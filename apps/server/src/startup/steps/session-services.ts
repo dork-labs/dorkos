@@ -25,6 +25,7 @@ import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
 import { wireCommitments } from '../../services/commitments/commitment-wiring.js';
+import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
 import {
   setOnEveryAgentEnded,
   createEveryAgentEndedRecorder,
@@ -137,6 +138,13 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // from the table here, so a restart loses no wake and no missed mark.
   const commitments = (refs.commitmentWiring = wireCommitments({
     db,
+    meshCore: () => refs.meshCore,
+  }));
+  // An agent's next queued item starts on its own when a slot frees (DOR-3462).
+  const workQueue = (refs.workQueueWiring = wireWorkQueue({
+    db,
+    dorkHome,
+    activityService,
     meshCore: () => refs.meshCore,
   }));
   // Sharing with every agent that ends as a side effect (a disconnect, a move
@@ -308,6 +316,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   return {
     chatMessaging,
     commitments,
+    workQueue,
     arrivalRecord,
     personSetPermissions,
     permissionObserver,

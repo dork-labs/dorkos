@@ -547,6 +547,45 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
+    name: 'GET /api/agents/:id/work-queue refuses an agent',
+    path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
+    headers: AGENT,
+    expect: {
+      status: 403,
+      body: { error: 'Agents use their own work queue tools.', code: 'NOT_A_PERSON' },
+    },
+  },
+  {
+    name: 'PATCH /api/agents/:id/work-queue refuses an agent turning a queue on',
+    method: 'PATCH',
+    path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
+    headers: AGENT,
+    body: { enabled: true },
+    expect: {
+      status: 403,
+      body: { error: 'Agents use their own work queue tools.', code: 'NOT_A_PERSON' },
+    },
+  },
+  {
+    name: 'GET /api/agents/:id/work-queue answers 404 for an unknown agent',
+    path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
+    expect: {
+      status: 404,
+      body: { error: 'No agent on the team has that id.', code: 'NOT_FOUND' },
+    },
+  },
+  {
+    name: 'PUT /api/work-queues/stop refuses an agent',
+    method: 'PUT',
+    path: '/api/work-queues/stop',
+    headers: AGENT,
+    body: { stopped: false },
+    expect: {
+      status: 403,
+      body: { error: 'Only the owner can stop every queue.', code: 'NOT_YOURS' },
+    },
+  },
+  {
     name: 'GET /api/agents/:id/commitments is the /api 404',
     path: `/api/agents/${UNKNOWN_ULID}/commitments`,
     expect: { status: 404, body: NOT_FOUND },
