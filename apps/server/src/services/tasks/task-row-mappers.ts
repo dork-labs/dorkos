@@ -18,6 +18,7 @@ import type {
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import { effectiveTiming, effectiveWork } from './timing/effective-timing.js';
 import {
+  isQuietHold,
   parseContentKey,
   parseFollowedAgentChanges,
   type IncomingTaskContent,
@@ -142,6 +143,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     origin: row.origin ?? null,
     reasonSource: row.reasonSource ?? null,
     originMarks: parseOriginMarks(row.originMarks),
+    quietHold: isQuietHold(row),
     nextRun: null,
     nextRuns: [],
   } as Task;

@@ -23,10 +23,12 @@ import { parseDuration } from '@dorkos/skills/duration';
 import {
   AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
   CHANGED_REASON,
+  FILE_ASKS_FOR_MORE_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
   scheduleContentKey,
   scheduleSettingsOf,
+  type FileAgentLevel,
   type FileArmVerdict,
   type IncomingTaskContent,
   type ScheduleSettings,
@@ -50,6 +52,7 @@ import {
  */
 const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
   CHANGED_REASON,
+  FILE_ASKS_FOR_MORE_REASON,
   AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
   AGENT_TIMING_CHANGE_REASON,
   AGENT_CONTENT_CHANGE_REASON,
@@ -82,6 +85,12 @@ export interface FileSyncSource {
    * shared file cannot hold a different answer for every project.
    */
   projectOnly?: boolean;
+  /**
+   * The level of the agent the file belongs to (DOR-3425), asked by whoever found
+   * it for the reason `packageOwned` is: it takes a file read and this gate is
+   * synchronous. Absent means the fixed cap.
+   */
+  agentLevel?: FileAgentLevel | null;
 }
 
 /** What the gates decided about one incoming file. */
@@ -185,6 +194,8 @@ export class FileSyncGates {
     const approved = existing && {
       ...scheduleSettingsOf(existing),
       permissionMode: existing.permissionMode as PermissionMode,
+      // Read as present, not parsed: a value a newer DorkOS wrote still holds.
+      marked: existing.originMarks !== null,
       status: existing.status,
       prompt: existing.prompt,
       ...effectiveTiming(existing),
@@ -194,7 +205,8 @@ export class FileSyncGates {
     const { mode: permissionMode, clamped } = resolveFilePermissionMode(
       def.meta.schedule.permissions,
       approved,
-      incoming
+      incoming,
+      options?.agentLevel
     );
     // The refusal is about the FILE asking for more than it got, so its log key
     // is the file's own content.
@@ -204,7 +216,11 @@ export class FileSyncGates {
     // decision to run, while a route write is a person's (ADR `260823-200726`).
     const verdict =
       options?.source === 'discovery'
-        ? resolveFileArmStatus(approved, incoming, options.problem)
+        ? resolveFileArmStatus(approved, incoming, options.problem, {
+            next: permissionMode,
+            asked: def.meta.schedule.permissions,
+            agent: options.agentLevel,
+          })
         : null;
     const arm =
       verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
@@ -247,6 +263,8 @@ export class FileSyncGates {
       existing.reasonSource === 'dorkos' &&
       existing.reason !== null &&
       KEPT_PARK_REASONS.has(existing.reason) &&
+      // The quiet sentence is true only while the agent is at Full (DOR-3425).
+      (existing.reason !== FILE_ASKS_FOR_MORE_REASON || options.agentLevel?.full === true) &&
       effectiveContentKey(existing) === scheduleContentKey(incoming)
     );
   }
