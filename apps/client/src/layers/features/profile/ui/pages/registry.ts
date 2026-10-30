@@ -67,6 +67,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
       import('./CommitmentsPage').then((m) => ({ default: m.CommitmentsPage }))
     ),
   },
+  'work-queue': {
+    title: 'Work queue',
+    component: lazy(() => import('./WorkQueuePage').then((m) => ({ default: m.WorkQueuePage }))),
+  },
   heartbeat: {
     title: 'Heartbeat',
     component: lazy(() => import('./HeartbeatPage').then((m) => ({ default: m.HeartbeatPage }))),

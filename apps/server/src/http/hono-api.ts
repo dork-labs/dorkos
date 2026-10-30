@@ -58,6 +58,11 @@ import {
   createCommitmentsRoutes,
   type CommitmentRouterDeps,
 } from '../routes/commitments.js';
+import {
+  createWorkQueueRoutes,
+  createWorkQueuesStopRoutes,
+  type WorkQueueRouterDeps,
+} from '../routes/work-queue.js';
 import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
@@ -225,6 +230,8 @@ export interface ComposedGroupDeps {
   mcpOAuth?: AgentMcpOAuthService;
   /** What agents promised (`/api/commitments`, `/api/agents/:id/commitments`). */
   commitments?: CommitmentRouterDeps;
+  /** An agent's work queue, for a person (`/api/agents/:id/work-queue`). */
+  workQueue?: WorkQueueRouterDeps;
   /**
    * Scheduled tasks and their runs (`/api/tasks`). Only handed over when Tasks
    * started (`startup/tasks.ts`).
@@ -488,6 +495,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.commitments) {
     app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
     app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
+  }
+  if (deps.workQueue) {
+    app.route('/api/agents/:id/work-queue', createWorkQueueRoutes(deps.workQueue));
+    app.route('/api/work-queues', createWorkQueuesStopRoutes(deps.workQueue));
   }
   if (deps.heartbeat) {
     app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));

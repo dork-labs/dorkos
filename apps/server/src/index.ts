@@ -539,6 +539,7 @@ async function shutdownServices() {
   }
   refs.searchIndexer?.stop();
   refs.commitmentWiring?.stop();
+  refs.workQueueWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();

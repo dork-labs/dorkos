@@ -36,6 +36,7 @@ import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
 import { createCommitmentMethods } from './commitment-methods';
+import { createWorkQueueMethods } from './work-queue-methods';
 import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
@@ -91,6 +92,7 @@ export interface HttpTransport
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
     ReturnType<typeof createCommitmentMethods>,
+    ReturnType<typeof createWorkQueueMethods>,
     ReturnType<typeof createHeartbeatMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
@@ -149,6 +151,7 @@ export class HttpTransport implements Transport {
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
       createCommitmentMethods(baseUrl),
+      createWorkQueueMethods(baseUrl),
       createHeartbeatMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),

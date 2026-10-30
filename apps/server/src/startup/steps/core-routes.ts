@@ -99,6 +99,7 @@ export interface MountCoreRoutesInput {
   roomAuthors: WireRoomsResult['roomAuthors'];
   notifyDm: WireTeamRoomAndRelayAdaptersResult['notifyDm'];
   commitments: WireSessionServicesResult['commitments'];
+  workQueue: WireSessionServicesResult['workQueue'];
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
   roomWorktrees: WireRoomsResult['roomWorktrees'];
@@ -146,6 +147,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomAuthors,
     notifyDm,
     commitments,
+    workQueue,
     auditAccounts,
     dorkHome,
     roomWorktrees,
@@ -657,6 +659,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // app: the list at `/api/commitments`, a person's new one per agent at
   // `/api/agents/:id/commitments`.
   deps.commitments = commitments.routeDeps;
+  // An agent's work queue, for a person (DOR-3462).
+  deps.workQueue = workQueue.routeDeps;
   // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
   // the Hono app, beside the agents group under `/api/agents`; the registry is
   // read lazily because it is composed after the routes are handed over.
