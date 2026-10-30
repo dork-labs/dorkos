@@ -59,7 +59,7 @@ import { logger } from '../../lib/logger.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
-import { getWorkspaceManager, workspaceGateFor } from './index.js';
+import { fullChatOf, getWorkspaceManager, workspaceGateFor } from './index.js';
 
 export type { SessionCwdRung, ResolvedCwd } from './session-cwd-rung.js';
 
@@ -80,8 +80,11 @@ export interface ResolveSessionCwdRequest {
 export interface ResolveSessionCwdDeps {
   /** Read an agent's manifest from its directory. */
   readManifest(agentPath: string): Promise<AgentManifest | null>;
-  /** Provision-or-reuse the workspace a `managed` binding asks for. */
-  ensureWorkspace(req: EnsureWorkspaceRequest): Promise<Workspace>;
+  /**
+   * Provision-or-reuse the workspace a `managed` binding asks for; `sessionId` is the turn's
+   * chat, so a chat set to Full autonomy is made without limits (DOR-3343).
+   */
+  ensureWorkspace(req: EnsureWorkspaceRequest, sessionId?: string): Promise<Workspace>;
   /** The `agent_path` a session was bound with, or `null`. */
   sessionAgentPath(sessionId: string): Promise<string | null>;
   /** Actual directory of an existing session; absent for a new draft. */
@@ -140,7 +143,7 @@ export function sessionCwdDeps(
     // agent's card (DOR-2335). A turn cannot carry the token back; the pending
     // card is remembered, and until a person approves, the turn runs in the
     // agent's own folder.
-    ensureWorkspace: (req) =>
+    ensureWorkspace: (req, sessionId) =>
       getWorkspaceManager().ensure(
         req,
         workspaceGateFor({
@@ -148,6 +151,7 @@ export function sessionCwdDeps(
           name: `${req.projectKey}/${req.key}`,
           carriesToken: false,
           ...(req.owner && { requestedBy: req.owner.ref }),
+          fullChat: fullChatOf(sessionId, req.owner?.ref),
         })
       ),
     sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
@@ -240,7 +244,7 @@ async function resolve(
   const agentPath = req.agentPath ?? (req.sessionId ? await agentPathOf(req, deps) : null);
 
   if (agentPath) {
-    const binding = await resolveAgentBinding(agentPath, deps);
+    const binding = await resolveAgentBinding(agentPath, deps, req.sessionId);
     if (binding) return binding;
   }
 
@@ -286,7 +290,8 @@ async function agentPathOf(
  */
 async function resolveAgentBinding(
   agentPath: string,
-  deps: ResolveSessionCwdDeps
+  deps: ResolveSessionCwdDeps,
+  sessionId?: string
 ): Promise<ResolvedCwd | null> {
   let manifest: AgentManifest | null;
   try {
@@ -309,13 +314,16 @@ async function resolveAgentBinding(
     // {@link canonicalAgentPath}.
     const canonical = await deps.canonicalize(agentPath);
     const { projectKey, key } = agentWorkspaceKey(manifest.name, canonical, binding.source);
-    const workspace = await deps.ensureWorkspace({
-      projectKey,
-      key,
-      source: binding.source,
-      ...(binding.provider ? { provider: binding.provider } : {}),
-      owner: { kind: 'agent', ref: canonical },
-    });
+    const workspace = await deps.ensureWorkspace(
+      {
+        projectKey,
+        key,
+        source: binding.source,
+        ...(binding.provider ? { provider: binding.provider } : {}),
+        owner: { kind: 'agent', ref: canonical },
+      },
+      sessionId
+    );
     return {
       cwd: await deps.validateManagedCheckout(workspace.path),
       rung: 'agent-managed',

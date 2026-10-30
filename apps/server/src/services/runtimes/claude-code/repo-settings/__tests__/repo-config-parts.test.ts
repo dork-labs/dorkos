@@ -27,7 +27,7 @@ vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi
 import { pinRepoBaseline, resolveRepoBaseline } from '../repo-baseline.js';
 import { readRepoConfig } from '../repo-config-parts.js';
 import { readLocalSettings } from '../repo-local-settings.js';
-import { gitBlobId } from '../repo-git.js';
+import { gitBlobId, RepoLocationError } from '../repo-git.js';
 import { fileDiff } from '../text-diff.js';
 import { recordedBaseline } from '../repo-config-consent.js';
 import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
@@ -394,11 +394,13 @@ describe('a default branch that moved forward', () => {
 });
 
 describe("Security's #3213 Musts", () => {
-  it('M1: still sees an edited hook when the repo moves its own work tree', async () => {
+  it('M1: refuses a repo that moves its own work tree, before git runs', async () => {
     fs.mkdirSync(path.join(repo.root, 'elsewhere'));
     git(repo.main, ['config', 'core.worktree', path.join(repo.root, 'elsewhere')]);
     writeFile(path.join(repo.main, '.claude/hooks/guard.mjs'), 'evil();\n');
-    expect((await read(repo.main)).hooks?.files).toEqual(['.claude/hooks/guard.mjs']);
+    // The shared runner's audit refuses `core.worktree` (DOR-3343), so the
+    // check never reads a moved tree; the launch pauses on any refusal.
+    await expect(read(repo.main)).rejects.toBeInstanceOf(RepoLocationError);
   });
 
   it('M2: refuses a silent move when a commit in between touched a hook', async () => {

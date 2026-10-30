@@ -25,6 +25,7 @@ import {
   type WorktreeHookMemory,
 } from './workspace-gate.js';
 import { recordApprovedEntry, storedHookDecisions } from '../harness/hook-consent.js';
+import { choseFullAutonomy } from '../core/turn-power/full-autonomy.js';
 import { WorkspaceStore } from './workspace-store.js';
 import { PortAllocator } from './port-allocator.js';
 import { WorktreeProvider } from './providers/worktree.js';
@@ -159,6 +160,8 @@ export interface WorkspaceCaller {
   confirmationToken?: string;
   /** Whether this caller can carry a token back; `false` remembers it here. */
   carriesToken: boolean;
+  /** The chat set to Full autonomy that asked, when one did (see {@link WorkspaceGate}). */
+  fullChat?: { sessionId: string; agentPath?: string } | undefined;
 }
 
 /**
@@ -174,12 +177,28 @@ export function workspaceGateFor(caller: WorkspaceCaller): WorkspaceGate {
     name: caller.name,
     ...(caller.requestedBy && { requestedBy: caller.requestedBy }),
   };
-  return caller.carriesToken
+  const gate = caller.carriesToken
     ? cardWorkspaceGate({
         ...card,
         ...(caller.confirmationToken && { confirmationToken: caller.confirmationToken }),
       })
     : rememberedCards.gateFor(card);
+  return caller.fullChat ? Object.assign(gate, { fullChat: caller.fullChat }) : gate;
+}
+
+/**
+ * The chat set to Full autonomy a turn runs in, as a workspace caller names it, or `undefined`
+ * below Full.
+ *
+ * @param sessionId - The turn's chat, when known.
+ * @param agentPath - The turn's agent, when known.
+ */
+export function fullChatOf(
+  sessionId: string | undefined,
+  agentPath?: string
+): WorkspaceCaller['fullChat'] {
+  if (!sessionId || !choseFullAutonomy(sessionId)) return undefined;
+  return { sessionId, ...(agentPath ? { agentPath } : {}) };
 }
 
 let scanRoot: string | null = null;

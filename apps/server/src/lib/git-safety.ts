@@ -72,8 +72,31 @@ export function internalGitArgs(): string[] {
   return gitConfigArgs(internalGitConfig());
 }
 
-/** The installed git's protection line, read once per process. */
-let installedGitCheck: Promise<CheckResult> | undefined;
+/** The installed git's `--version` output, read once per process. */
+let installedGitVersion: Promise<string | undefined> | undefined;
+
+/**
+ * `git --version`'s output, from one run per process: `undefined` when git is
+ * not installed, `''` when it ran but said nothing readable (a timeout, a
+ * mocked or broken child_process).
+ */
+function gitVersionOutput(): Promise<string | undefined> {
+  // Bound here, not at load: many modules import this one only for its env,
+  // under tests that mock `node:child_process` without `execFile`.
+  installedGitVersion ??= (async () => {
+    try {
+      const { stdout } = await promisify(execFile)('git', ['--version'], {
+        timeout: GIT_VERSION_TIMEOUT_MS,
+        env: hardenedGitEnv(),
+      });
+      return stdout;
+    } catch (err) {
+      const { code, stdout } = (err ?? {}) as NodeJS.ErrnoException & { stdout?: unknown };
+      return code === 'ENOENT' ? undefined : typeof stdout === 'string' ? stdout : '';
+    }
+  })();
+  return installedGitVersion;
+}
 
 /**
  * How much of the DOR-2326 protection the installed git gives, from one
@@ -83,26 +106,18 @@ let installedGitCheck: Promise<CheckResult> | undefined;
  *
  * @returns The check line; never rejects.
  */
-export function installedGitProtection(): Promise<CheckResult> {
-  // Bound here, not at load: many modules import this one only for its env,
-  // under tests that mock `node:child_process` without `execFile`.
-  installedGitCheck ??= (async () => {
-    try {
-      const { stdout } = await promisify(execFile)('git', ['--version'], {
-        timeout: GIT_VERSION_TIMEOUT_MS,
-        env: hardenedGitEnv(),
-      });
-      return gitProtectionCheck(stdout);
-    } catch (err) {
-      const { code, stdout } = (err ?? {}) as NodeJS.ErrnoException & { stdout?: unknown };
-      // Missing git is its own line; anything else (a timeout, a mocked or
-      // broken child_process) is an unknown version.
-      return gitProtectionCheck(
-        code === 'ENOENT' ? undefined : typeof stdout === 'string' ? stdout : ''
-      );
-    }
-  })();
-  return installedGitCheck;
+export async function installedGitProtection(): Promise<CheckResult> {
+  return gitProtectionCheck(await gitVersionOutput());
+}
+
+/**
+ * Whether git is installed, from the same one `git --version` per process.
+ * A git that ran but said nothing readable counts as installed.
+ *
+ * @returns `false` only when git could not be found; never rejects.
+ */
+export async function isGitInstalled(): Promise<boolean> {
+  return (await gitVersionOutput()) !== undefined;
 }
 
 /**

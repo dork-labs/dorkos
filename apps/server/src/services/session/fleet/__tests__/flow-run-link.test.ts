@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@dorkos/shared/types';
 
 import { createProjectRootResolver } from '../../../projects/resolve-project-root.js';
-import { runGit } from '../../../workspace/providers/git.js';
+import { runSafeGit as runGit } from '@dorkos/shared/safe-git';
 import { createFlowRunLink, parseFlowRunState, type FlowRunLinkDeps } from '../flow-run-link.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
