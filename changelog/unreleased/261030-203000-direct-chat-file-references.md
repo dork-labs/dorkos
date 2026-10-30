@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(relay): a stranger on a linked chat can no longer open a file by naming it (DOR-2980)'
+  - 'refactor(relay): move the sender checks out of two over-limit files (DOR-2980)'
 ---
 
 ### Security
