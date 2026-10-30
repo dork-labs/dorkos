@@ -34,7 +34,7 @@ import type {
   SubscriberVerdict,
   Unsubscribe,
 } from '@dorkos/relay';
-import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
+import { mayApprove, runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { currentDispatchId, runInDispatch } from '../../lib/dispatch-context.js';
@@ -175,6 +175,12 @@ export interface BindingRouterDeps {
    * server it is always wired once the rooms subsystem exists.
    */
   bridgeIngest?: ChatBridgeIngest;
+  /**
+   * The people a connection says may authorize tool calls from their chat
+   * (`approver-allowlist.ts`), read here to vouch for whose words a direct message
+   * holds (DOR-2980). Left out, nobody is vouched for.
+   */
+  approverAllowlistFor?: (adapterId: string) => unknown;
   /**
    * Optional callback fired once per delivered inbound message (`deliveredTo
    * > 0`), used solely to animate the topology pulse. Injected rather than
@@ -779,6 +785,20 @@ export class BindingRouter {
                   // configured `workspace.mode: 'none'` (spec `agent-home-desk`
                   // §3.2 row 12).
                   forAgent: projectPath,
+                  // Claude Code reads a file named with an `@` before any tool
+                  // gate sees it, at every level (DOR-2980), so the words go as
+                  // words unless they are the owner's. A person named as an
+                  // approver, in a direct message: a group's title and other
+                  // people's names ride in the same prompt, so a group is never
+                  // vouched for (as `ask-audience.ts`). Always written, so a
+                  // value a publisher put in the payload never survives here.
+                  __untrustedWords: !(
+                    channelType !== 'group' &&
+                    mayApprove(
+                      this.deps.approverAllowlistFor?.(binding.adapterId),
+                      extractPlatformUserId(envelope.payload)
+                    )
+                  ),
                   __bindingPermissions: {
                     canReply: binding.canReply,
                     canInitiate: binding.canInitiate,

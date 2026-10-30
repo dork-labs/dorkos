@@ -5,15 +5,12 @@
  * into a running one) and both must defuse the same way. Every context block is defused: other
  * people's words and names ride in them, nobody types into one, and Claude Code reads an `@`
  * anywhere in the message. The words themselves are defused only when somebody other than the
- * person here wrote them (`core/turn-power/prompt-defuse.ts`).
+ * person here wrote them (`@dorkos/shared/untrusted-text`).
  *
  * @module services/runtimes/claude-code/enrich-content
  */
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
-import {
-  defuseFileReferences,
-  defuseUntrustedPrompt,
-} from '../../core/turn-power/prompt-defuse.js';
+import { defuseFileReferences, defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
 import { renderContextEntry } from './messaging/context-builder.js';
 
 /**
