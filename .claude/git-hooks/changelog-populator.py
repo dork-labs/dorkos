@@ -467,7 +467,9 @@ def find_branch_fragment(unreleased_dir: Path, base: str) -> Optional[Path]:
     )
     for name in reversed(names):
         path = unreleased_dir / name
-        if not path.is_file():
+        # `is_file()` follows a link, so refuse links first: the hook writes
+        # into this file, and must never write through one.
+        if path.is_symlink() or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
         if SEED_MARKER_TOKEN not in text and covers_insert_index(text.split("\n")) is not None:
