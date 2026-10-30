@@ -536,6 +536,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
         const askOpts = {
           projectPath: resolved,
           approvals: gateway,
+          dorkHome: deps.dorkHome,
           // Proven again: pass two can come hours after pass one. It answers
           // what it still held back, so a stale yes on a passive row leaves the
           // row for today's files (DOR-3433).

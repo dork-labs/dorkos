@@ -377,14 +377,8 @@ export async function runAutoProjection(
       raisePassiveHookRows(withheld, {
         projectPath,
         approvals: opts.approvals,
-        // Answers what it still held back, so a stale yes leaves the row for
-        // today's files (DOR-3433).
-        reproject: async () => {
-          const again = await withProjectLock(projectPath, () =>
-            projectAndLog({ ...ctx, projectPath }, opts.dorkHome)
-          );
-          return again.withheld;
-        },
+        dorkHome: opts.dorkHome,
+        reproject: () => projectAgainAfterYes({ ...ctx, projectPath }, opts.dorkHome),
       });
     }
   } catch (err) {
@@ -395,4 +389,24 @@ export async function runAutoProjection(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * Project a repository again after a person's yes on a passive row, taking the
+ * project lock for that pass alone (DOR-3427).
+ *
+ * Answers what it still held back, so a stale yes leaves the row for today's
+ * files (DOR-3433). Exported for the startup resume (`resumePassiveHookRows`),
+ * which has no install to hang the pass on.
+ *
+ * @param ctx - The package whose row was answered, and its project.
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @returns The packages this pass still held back.
+ */
+export async function projectAgainAfterYes(
+  ctx: PluginChangeContext & { projectPath: string },
+  dorkHome: string
+): Promise<readonly WithheldHooks[]> {
+  const again = await withProjectLock(ctx.projectPath, () => projectAndLog(ctx, dorkHome));
+  return again.withheld;
 }

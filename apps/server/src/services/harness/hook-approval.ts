@@ -293,6 +293,12 @@ export interface HookCardOptions {
    * reused rather than raised twice, and the wait for it has no deadline.
    */
   notInstalledByDorkos?: boolean;
+  /**
+   * Pick up an open passive ticket after a restart and never raise a new one
+   * (`resumePassiveHookRows`). With no open ticket for exactly this request,
+   * the answer is no at once and nothing is put in front of anybody.
+   */
+  resumeOnly?: boolean;
 }
 
 /**
@@ -393,6 +399,10 @@ export async function askForHookProjection(
   // restart, is picked up again rather than raised twice.
   if (family !== undefined) gateway.retireSuperseded?.(binding, family);
   const reused = passive ? gateway.reissue?.(binding) : undefined;
+  if (options.resumeOnly === true && reused === undefined) {
+    askingNow.delete(entry);
+    return false;
+  }
   const ticket = reused
     ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }
     : gateway.request({

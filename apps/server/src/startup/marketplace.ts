@@ -65,7 +65,8 @@ import {
 import { createMeshAgentRegistry } from '../services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from '../services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
-import { runAutoProjection } from '../services/harness/auto-project.js';
+import { projectAgainAfterYes, runAutoProjection } from '../services/harness/auto-project.js';
+import { resumePassiveHookRows } from '../services/harness/ask-withheld-hooks.js';
 import { globalConsentRecorder } from '../services/marketplace/consent/global-plugin-consent.js';
 import { askAboutWithheldGlobalPlugins } from '../services/marketplace/consent/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from '../services/marketplace-mcp/personal-marketplace.js';
@@ -360,6 +361,18 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
         logger.warn('[Marketplace] Post-change notification failed', { err });
       }
     };
+
+    // A quiet Needs-you row left open by the last run is waited on again, so a
+    // yes given after the restart records and projects (DOR-3427).
+    resumePassiveHookRows({
+      dorkHome,
+      approvals: approvalService,
+      reproject: (request) =>
+        projectAgainAfterYes(
+          { projectPath: request.projectPath, packageName: request.packageName, action: 'install' },
+          dorkHome
+        ),
+    });
 
     // Running extensions' skills (DOR-2685): when the set of extension skills
     // agents should see changes, project each affected project again (the same

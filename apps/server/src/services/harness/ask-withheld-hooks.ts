@@ -42,7 +42,16 @@ import {
   mayAskAboutHooks,
   type HookApprovalGateway,
 } from './hook-approval.js';
-import { recordHookApproval, type HookProjectionRequest } from './hook-consent.js';
+import {
+  isHookProjectionRefused,
+  recordHookApproval,
+  type HookProjectionRequest,
+} from './hook-consent.js';
+import {
+  forgetPassiveHookRow,
+  readPassiveHookRows,
+  rememberPassiveHookRow,
+} from './passive-hook-rows.js';
 import { logger } from '../../lib/logger.js';
 import type { WithheldHooks } from './project-with-consent.js';
 
@@ -66,6 +75,11 @@ export interface AskAboutWithheldHooksOptions {
    * files, so the row for today's files is the one left (DOR-3433).
    */
   reproject: () => void | Reprojected | Promise<void | Reprojected>;
+  /**
+   * The DorkOS data directory. When given, each passive row's request is saved
+   * there so a yes given after a restart still lands (`passive-hook-rows.ts`).
+   */
+  dorkHome?: string;
 }
 
 /** What a re-projection may answer: the packages it still held back. */
@@ -185,21 +199,87 @@ export function raisePassiveHookRows(
 ): string[] {
   const passive = passiveRequests(withheld);
   const rows = hookPackagesToAskAbout(withheld).filter((request) => passive.has(request));
-  for (const request of rows) {
-    void askForHookProjection(opts.approvals, request, { notInstalledByDorkos: true })
-      .then(async (granted) => {
-        if (!granted) return;
-        recordHookApproval(request);
-        const still = await opts.reproject();
-        if (still) raisePassiveHookRows(still, opts);
-      })
-      .catch((err: unknown) => {
-        logger.warn('[HarnessSync] A held-back package’s row could not be followed up', {
-          projectPath: opts.projectPath,
-          packageName: request.packageName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-  }
+  for (const request of rows) followPassiveRow(request, opts, false);
   return rows.map(({ packageName }) => packageName);
+}
+
+/**
+ * Pick up, after a restart, the passive rows whose tickets are still open, so a
+ * yes given then records and projects instead of being lost until the next sync.
+ *
+ * Each row is rebuilt from the request it was raised for and waits on that
+ * ticket only (`resumeOnly`): it never raises a new one, and a row whose ticket
+ * is gone is dropped. A yes the person gave while nobody was waiting is found on
+ * the first check and spent once, like any other. A package turned down since is
+ * not picked up.
+ *
+ * @param opts - The data directory, the approval primitive, and a lock-taking
+ *   re-projection for the row's project.
+ * @returns The package names picked up.
+ */
+export function resumePassiveHookRows(opts: {
+  dorkHome: string;
+  approvals: HookApprovalGateway;
+  reproject: (request: HookProjectionRequest) => Promise<void | Reprojected>;
+}): string[] {
+  const picked: string[] = [];
+  for (const request of readPassiveHookRows(opts.dorkHome)) {
+    if (!mayAskAboutHooks(request)) {
+      if (isHookProjectionRefused(request)) forgetPassiveHookRow(opts.dorkHome, request);
+      continue;
+    }
+    followPassiveRow(
+      request,
+      {
+        projectPath: request.projectPath,
+        approvals: opts.approvals,
+        dorkHome: opts.dorkHome,
+        reproject: () => opts.reproject(request),
+      },
+      true
+    );
+    picked.push(request.packageName);
+  }
+  return picked;
+}
+
+/** Wait on one passive row, and act on a yes for exactly what it was raised for. */
+function followPassiveRow(
+  request: HookProjectionRequest,
+  opts: AskAboutWithheldHooksOptions,
+  resumeOnly: boolean
+): void {
+  const { dorkHome } = opts;
+  // A failed save never stops the row: only a yes given after a restart would
+  // then wait for the next sync, as it did before rows were saved.
+  const saved = (write: (home: string, row: HookProjectionRequest) => void): void => {
+    if (dorkHome === undefined) return;
+    try {
+      write(dorkHome, request);
+    } catch (err) {
+      logger.warn('[HarnessSync] A held-back package’s saved row could not be updated', {
+        projectPath: opts.projectPath,
+        packageName: request.packageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+  if (!resumeOnly) saved(rememberPassiveHookRow);
+  void askForHookProjection(opts.approvals, request, { notInstalledByDorkos: true, resumeOnly })
+    .then(async (granted) => {
+      // The wait is over whatever the answer, so the saved row goes.
+      saved(forgetPassiveHookRow);
+      // A no on record for these commands wins over a yes on an old ticket.
+      if (!granted || isHookProjectionRefused(request)) return;
+      recordHookApproval(request);
+      const still = await opts.reproject();
+      if (still) raisePassiveHookRows(still, opts);
+    })
+    .catch((err: unknown) => {
+      logger.warn('[HarnessSync] A held-back package’s row could not be followed up', {
+        projectPath: opts.projectPath,
+        packageName: request.packageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 }
