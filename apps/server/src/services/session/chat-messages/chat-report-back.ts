@@ -260,7 +260,10 @@ export class ChatReportBack {
     await this.delay(REPORT_SETTLE_MS);
     const text = lastTurnText(await this.deps.history(sessionId).catch(() => []), window);
     if (reason === 'finished' && text === '') return null;
-    await this.report(sessionId, target, reason, text);
+    // A refused turn says nothing, so its words alone would report only "failed"
+    // (DOR-3167). The runtime's reason goes with it.
+    const why = reason === 'failed' ? ended?.lastError?.message : undefined;
+    await this.report(sessionId, target, reason, text, why);
     return reason;
   }
 
