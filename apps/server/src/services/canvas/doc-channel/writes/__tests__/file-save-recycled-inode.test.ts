@@ -21,6 +21,17 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
 
+/** Run `fn` as if on `platform`: the exemption is Linux-only, and CI and laptops differ. */
+function onPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...original, value: platform });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', original);
+  }
+}
+
 /** One real in-doubt original save: its row keeps the replaced original's device+inode. */
 async function inDoubtSave(aliasName?: string) {
   const h = await fixture();
@@ -64,13 +75,33 @@ it('a new file that reuses the freed original inode is not fenced; unknown or ea
     device: row.beforeDevice,
     inode: row.beforeInode,
   };
-  expect(() =>
-    assertFileSaveAdmission(h.db, reused, undefined, () => created + 60_000)
-  ).not.toThrow();
+  onPlatform('linux', () =>
+    expect(() =>
+      assertFileSaveAdmission(h.db, reused, undefined, () => created + 60_000)
+    ).not.toThrow()
+  );
   // Fail closed: no birth time, a birth inside the clock margin, or a birth before the row.
   for (const born of [undefined, created + 1_000, created - 1_000])
-    expect(() => assertFileSaveAdmission(h.db, reused, undefined, () => born)).toThrow(
-      FileSaveWriteFencedError
+    onPlatform('linux', () =>
+      expect(() => assertFileSaveAdmission(h.db, reused, undefined, () => born)).toThrow(
+        FileSaveWriteFencedError
+      )
+    );
+});
+
+it('off Linux, the original-inode match still fences even a file born later (owners can set APFS creation dates)', async () => {
+  const { h, row } = await inDoubtSave();
+  const reused: CanonicalFileIdentity = {
+    canonicalPath: join(h.dir, 'unrelated-new-file.txt'),
+    device: row.beforeDevice,
+    inode: row.beforeInode,
+  };
+  const late = () => Date.parse(row.createdAt) + 60_000;
+  for (const platform of ['darwin', 'win32'] as const)
+    onPlatform(platform, () =>
+      expect(() => assertFileSaveAdmission(h.db, reused, undefined, late)).toThrow(
+        FileSaveWriteFencedError
+      )
     );
 });
 

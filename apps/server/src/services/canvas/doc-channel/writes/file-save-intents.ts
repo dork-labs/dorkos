@@ -175,12 +175,16 @@ const RECYCLED_INODE_MARGIN_MS = 2_000;
  * the original existed before the row was written, so a file born clearly after `createdAt` is
  * not it. A replaced original's surviving hard link was born before, and stays fenced. Unknown
  * birth (no btime, moved, stat error) stays fenced too.
+ *
+ * Linux only. That is where freed inodes come back quickly; elsewhere (APFS) a file's owner can
+ * set its creation date (SetFile -d), which would let a hard link to the original pass as new.
  */
 function recycledOriginalInode(
   row: FileSaveIntentRow,
   identity: CanonicalFileIdentity,
   birthOf: (identity: CanonicalFileIdentity) => number | undefined
 ): boolean {
+  if (process.platform !== 'linux') return false;
   const born = birthOf(identity);
   return born !== undefined && born >= Date.parse(row.createdAt) + RECYCLED_INODE_MARGIN_MS;
 }
