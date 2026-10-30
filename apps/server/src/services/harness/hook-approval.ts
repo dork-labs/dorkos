@@ -72,6 +72,7 @@ import {
   quoteSummaryValue,
   redactSecretsInText,
 } from '../core/approvals/index.js';
+import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   hookApprovalEntry,
@@ -127,6 +128,11 @@ export interface HookApprovalGateway {
   request(input: ApprovalRequestInput): ApprovalTicket;
   /** Present the token for the action it was granted for. */
   consume(token: string, binding: ApprovalBinding): ApprovalConsumeResult;
+  /**
+   * A fresh token for the open approval of exactly this action, when there is
+   * one, so a passive card left open across a restart is reused, not raised again.
+   */
+  reissue?(binding: ApprovalBinding): { approvalId: string; token: string } | undefined;
 }
 
 /**
@@ -257,7 +263,9 @@ export function summariseHookProjection(
 export interface HookCardOptions {
   /**
    * The package is in the project but DorkOS did not install it (or its files
-   * changed since); on Full this is the only package hook that asks.
+   * changed since); on Full this is the only package hook that asks. Its card
+   * is passive (DOR-3427): it never expires and never escalates, an open one is
+   * reused rather than raised twice, and the wait for it has no deadline.
    */
   notInstalledByDorkos?: boolean;
 }
@@ -349,10 +357,17 @@ export async function askForHookProjection(
 
   const entry = hookApprovalEntry(request);
   askingNow.add(entry);
-  const ticket = gateway.request({
-    ...binding,
-    summary: summariseHookProjection(request, options),
-  });
+  // A passive card (DOR-3427) is one ticket per package for good: an open one,
+  // even from before a restart, is picked up again rather than raised twice.
+  const passive = options.notInstalledByDorkos === true;
+  const reused = passive ? gateway.reissue?.(binding) : undefined;
+  const ticket = reused
+    ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }
+    : gateway.request({
+        ...binding,
+        summary: summariseHookProjection(request, options),
+        ...(passive ? { passive: true, requestedBy: 'DorkOS' } : {}),
+      });
   logger.info('[HarnessSync] Waiting on a person to allow a package to install hooks', {
     packageName: request.packageName,
     projectPath: request.projectPath,
@@ -377,8 +392,10 @@ export async function askForHookProjection(
         return false;
       }
       // A finite deadline as well as the primitive's own expiry check: a clock the
-      // store disagrees with must not turn this into a loop that never ends.
-      if (Number.isFinite(deadline) && Date.now() > deadline) return false;
+      // store disagrees with must not turn this into a loop that never ends. A
+      // passive card has none: it waits as long as the person does, and its
+      // callers run it outside any project lock (`ask-withheld-hooks.ts`).
+      if (!passive && Number.isFinite(deadline) && Date.now() > deadline) return false;
       await _internal.sleep(_internal.pollIntervalMs);
     }
   } finally {

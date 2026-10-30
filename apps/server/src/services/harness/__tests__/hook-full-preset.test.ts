@@ -47,8 +47,16 @@ import {
   resetAllowedAtFullReports,
   scanHookRequests,
 } from '../project-with-consent.js';
-import { askAboutWithheldHooks, hookPackagesToAskAbout } from '../ask-withheld-hooks.js';
-import { HOOK_PROJECTION_CAPABILITY_ID, type HookApprovalGateway } from '../hook-approval.js';
+import {
+  askAboutWithheldHooks,
+  hookPackagesToAskAbout,
+  raisePassiveHookRows,
+} from '../ask-withheld-hooks.js';
+import {
+  HOOK_PROJECTION_CAPABILITY_ID,
+  _internal as approvalInternal,
+  type HookApprovalGateway,
+} from '../hook-approval.js';
 import {
   readHookDecisionsFromDisk,
   recordHookRefusal,
@@ -151,6 +159,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // A passive row's wait has no end, so its open-card memory must not carry over.
+  approvalInternal.forgetDecisions();
   setMarkedFullActivity(undefined);
   for (const dir of [repo, home]) rmSync(dir, { recursive: true, force: true });
 });
@@ -266,14 +276,24 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
       consume: () => ({ outcome: 'pending' }) as ReturnType<HookApprovalGateway['consume']>,
     };
 
-    // The asking runs on its own promise; the projection above already returned.
-    const asking = askAboutWithheldHooks(withheld, {
+    // Raised on its own promise and returned at once; the projection above
+    // already returned, and nothing awaits the row (DOR-3427).
+    const raised = raisePassiveHookRows(withheld, {
       projectPath: repo,
       approvals: gateway,
       reproject: () => undefined,
     });
-    void asking.catch(() => undefined);
-    await Promise.resolve();
+    expect(raised).toEqual(['acme']);
+    // The ordinary asking path leaves it alone.
+    expect(
+      (
+        await askAboutWithheldHooks(withheld, {
+          projectPath: repo,
+          approvals: gateway,
+          reproject: () => undefined,
+        })
+      ).askedAbout
+    ).toEqual([]);
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.capabilityId).toBe(HOOK_PROJECTION_CAPABILITY_ID);

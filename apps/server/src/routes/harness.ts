@@ -190,6 +190,7 @@ import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
   askAboutWithheldHooks,
   hookPackagesToAskAbout,
+  raisePassiveHookRows,
 } from '../services/harness/ask-withheld-hooks.js';
 import type { HookApprovalGateway } from '../services/harness/hook-approval.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
@@ -532,7 +533,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
           ? []
           : hookPackagesToAskAbout(result.withheld).map(({ packageName }) => packageName);
       if (gateway !== undefined && askedAbout.length > 0) {
-        void askAboutWithheldHooks(result.withheld, {
+        const askOpts = {
           projectPath: resolved,
           approvals: gateway,
           reproject: () => {
@@ -557,12 +558,16 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
                 });
               });
           },
-        }).catch((err: unknown) => {
+        };
+        void askAboutWithheldHooks(result.withheld, askOpts).catch((err: unknown) => {
           logger.warn('[harness] POST /sync could not ask about a package’s hooks', {
             err,
             projectPath: resolved,
           });
         });
+        // The passive rows for packages Full held back (DOR-3427): out here,
+        // outside the lock, because nothing waits on them and their wait has no end.
+        raisePassiveHookRows(result.withheld, askOpts);
       }
 
       return c.json({

@@ -5,7 +5,7 @@
  * @module services/notifications/notification-copy
  */
 import { windowLabel } from '@dorkos/shared/account-usage';
-import type { NotificationPayload } from './notification-registry.js';
+import type { NotificationPayload, NotificationRegistryEntry } from './notification-registry.js';
 
 /** A date as an owner-replacement notice says it, in UTC. */
 const OWNER_REPLACEMENT_DATE = new Intl.DateTimeFormat('en-US', {
@@ -54,3 +54,32 @@ export function limitWindowPhrase(window: string): string {
   const label = windowLabel(window);
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
+
+/**
+ * How loud a pending approval is, and what it says (spread into the registry's
+ * `approval.pending` entry).
+ *
+ * An ordinary approval is `blocking`: something irreversible is held until a
+ * person decides, so the phone is pinged after a while. A passive one (DOR-3427,
+ * `core/approvals/passive-approval.ts`) is `notable`: a package Full held back,
+ * waiting under Needs you with nothing stopped behind it, so it never escalates,
+ * and its words say so rather than "cannot be undone".
+ */
+export const APPROVAL_PENDING_COPY: Pick<
+  NotificationRegistryEntry<'approval.pending'>,
+  'tier' | 'title' | 'body'
+> = {
+  tier: (p) => (p.passive ? 'notable' : 'blocking'),
+  title: (p) =>
+    p.passive
+      ? 'A package in a project is waiting for your OK'
+      : `${p.requestedBy} needs your approval`,
+  // The capability's TITLE and nothing else. The approval's own summary
+  // carries the argument values an agent asked to run something with, and
+  // this body reaches a lock screen and a Telegram thread — the card in the
+  // app is where those belong.
+  body: (p) =>
+    p.passive
+      ? `${p.capabilityTitle}? DorkOS did not install it. Nothing waits on your answer.`
+      : `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
+};

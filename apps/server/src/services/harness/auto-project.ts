@@ -62,7 +62,7 @@ import { join } from 'node:path';
 import { configManager } from '../core/config-manager.js';
 import { dorkosHarness } from './dorkos-harness.js';
 import { logger } from '../../lib/logger.js';
-import { askAboutWithheldHooks } from './ask-withheld-hooks.js';
+import { askAboutWithheldHooks, raisePassiveHookRows } from './ask-withheld-hooks.js';
 import { type HookApprovalGateway } from './hook-approval.js';
 import { storedPresetIsFull } from './hook-consent.js';
 import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
@@ -70,6 +70,7 @@ import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,
   type ProjectWithConsentResult,
+  type WithheldHooks,
 } from './project-with-consent.js';
 
 /** The install action that triggered auto-projection. */
@@ -233,11 +234,13 @@ async function projectAndLog(
  *
  * @param ctx - the plugin change that occurred, with a project root.
  * @param opts - resolved dork home and the approval service.
+ * @returns What the first pass withheld, for the passive rows the caller raises
+ *   once the lock is released (DOR-3427).
  */
 async function projectAndAsk(
   ctx: PluginChangeContext & { projectPath: string },
   opts: RunAutoProjectionOptions
-): Promise<void> {
+): Promise<readonly WithheldHooks[]> {
   const { projectPath, packageName, action } = ctx;
   // GAP-5: a project with no harness manifest gets a scaffolded default so the
   // engine has something to project instead of no-opping. Write-if-absent, so
@@ -273,7 +276,7 @@ async function projectAndAsk(
         packageName,
         action,
       });
-      return;
+      return [];
     }
   }
 
@@ -282,14 +285,14 @@ async function projectAndAsk(
   // whatever the answer is.
   const { withheld } = await projectAndLog(ctx, opts.dorkHome);
 
-  if (withheld.length === 0) return;
+  if (withheld.length === 0) return [];
   if (!opts.approvals) {
     logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
       packageName,
       projectPath,
       packages: withheld.map(({ request }) => request.packageName),
     });
-    return;
+    return [];
   }
 
   // The asking itself is `ask-withheld-hooks.ts`, shared with the sync route.
@@ -303,6 +306,7 @@ async function projectAndAsk(
       await projectAndLog(ctx, opts.dorkHome);
     },
   });
+  return withheld;
 }
 
 /**
@@ -364,7 +368,22 @@ export async function runAutoProjection(
     // nobody answers cannot hold a repository for ever. Different repositories
     // never wait on each other, and what happens between PROCESSES is stated in
     // `project-with-consent.ts`.
-    await withProjectLock(projectPath, () => projectAndAsk({ ...ctx, projectPath }, opts));
+    const withheld = await withProjectLock(projectPath, () =>
+      projectAndAsk({ ...ctx, projectPath }, opts)
+    );
+    // After the lock, never inside it: a passive row's wait has no end, and its
+    // yes takes the lock itself to project again (DOR-3427).
+    if (opts.approvals) {
+      raisePassiveHookRows(withheld, {
+        projectPath,
+        approvals: opts.approvals,
+        reproject: async () => {
+          await withProjectLock(projectPath, () =>
+            projectAndLog({ ...ctx, projectPath }, opts.dorkHome)
+          );
+        },
+      });
+    }
   } catch (err) {
     logger.warn('[HarnessSync] Auto-projection failed (non-fatal)', {
       packageName,

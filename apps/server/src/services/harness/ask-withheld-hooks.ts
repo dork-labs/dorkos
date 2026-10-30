@@ -117,21 +117,18 @@ export async function askAboutWithheldHooks(
   // Synchronous, and deliberately before the first `await`: a caller that read
   // `hookPackagesToAskAbout` itself and then fired this without awaiting must
   // get the same list, and an `await` here is all it would take to break that.
-  const askable = hookPackagesToAskAbout(withheld);
+  // A package Full held back is not asked about here: its passive row is
+  // raised by `raisePassiveHookRows`, which nothing waits on (DOR-3427).
+  const passive = passiveRequests(withheld);
+  const askable = hookPackagesToAskAbout(withheld).filter((request) => !passive.has(request));
   const askedAbout = askable.map(({ packageName }) => packageName);
   if (askable.length === 0) return { askedAbout, granted: [] };
 
-  // On Full, a package DorkOS did not install says so on its card (DOR-3422).
-  const notInstalled = new Set(
-    withheld.filter((w) => w.notInstalledByDorkos).map(({ request }) => request)
-  );
   const gateway = opts.approvals;
   const decisions = await Promise.all(
     askable.map(async (request) => ({
       request,
-      granted: await askForHookProjection(gateway, request, {
-        notInstalledByDorkos: notInstalled.has(request),
-      }),
+      granted: await askForHookProjection(gateway, request),
     }))
   );
   const allowed = decisions.filter((decision) => decision.granted).map((d) => d.request);
@@ -148,4 +145,50 @@ export async function askAboutWithheldHooks(
   await opts.reproject();
 
   return { askedAbout, granted: allowed.map(({ packageName }) => packageName) };
+}
+
+/** The withheld requests that are passive rows: packages Full held back (DOR-3427). */
+function passiveRequests(withheld: readonly WithheldHooks[]): Set<HookProjectionRequest> {
+  return new Set(withheld.filter((w) => w.notInstalledByDorkos).map(({ request }) => request));
+}
+
+/**
+ * Raise the passive row under Needs you for each package Full held back because
+ * DorkOS did not install it (DOR-3427), and act on the answer whenever it comes.
+ *
+ * Nothing waits on these, and that is the whole difference from
+ * {@link askAboutWithheldHooks}: this returns at once, each row's wait has no
+ * deadline (the row never expires), and a yes records the decision and calls
+ * `reproject` on its own. So a caller must call it OUTSIDE any project lock and
+ * hand it a `reproject` that takes the lock itself: a wait that never ends must
+ * not hold a repository. One row per package: a row already open in this process
+ * is not raised again (`mayAskAboutHooks`), and one left open across a restart is
+ * picked up again (`reissue`).
+ *
+ * @param withheld - Every package the projection left hooks out for.
+ * @param opts - The project, the approval primitive, and a lock-taking re-projection.
+ * @returns The package names a row was raised or picked up for.
+ */
+export function raisePassiveHookRows(
+  withheld: readonly WithheldHooks[],
+  opts: AskAboutWithheldHooksOptions
+): string[] {
+  const passive = passiveRequests(withheld);
+  const rows = hookPackagesToAskAbout(withheld).filter((request) => passive.has(request));
+  for (const request of rows) {
+    void askForHookProjection(opts.approvals, request, { notInstalledByDorkos: true })
+      .then(async (granted) => {
+        if (!granted) return;
+        recordHookApproval(request);
+        await opts.reproject();
+      })
+      .catch((err: unknown) => {
+        logger.warn('[HarnessSync] A held-back package’s row could not be followed up', {
+          projectPath: opts.projectPath,
+          packageName: request.packageName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
+  return rows.map(({ packageName }) => packageName);
 }

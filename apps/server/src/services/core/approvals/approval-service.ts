@@ -86,6 +86,7 @@ import {
   resolveCapabilityApproval,
 } from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
+import { approvalExpiresAt } from './passive-approval.js';
 import { toDecisionOutcome, type ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 export type { ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 import { logger } from '../../../lib/logger.js';
@@ -98,11 +99,7 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import {
-  extensionSourcePhrase,
-  redactSecretsInText,
-  renderRequesterLabel,
-} from './approval-summary.js';
+import { extensionSourcePhrase, renderRequesterLabel } from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -264,6 +261,12 @@ export interface ApprovalRequestInput {
    * not.
    */
   requestingSession?: ApprovalRequestingSession;
+  /**
+   * A row under Needs you that nothing waits on (DOR-3427, `passive-approval.ts`):
+   * it never expires and its notification never escalates. Only the harness
+   * raises one, for a package Full held back.
+   */
+  passive?: boolean;
 }
 
 /** Where a verdict for one approval would be delivered, when there is anywhere. */
@@ -741,7 +744,7 @@ export class ApprovalService {
       state: 'pending' as const,
       denyReason: null,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + this.ttlMs).toISOString(),
+      expiresAt: approvalExpiresAt(input.passive === true, now + this.ttlMs),
       decidedAt: null,
       decidedByUserId: null,
       consumedAt: null,
