@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A reused inode no longer blocks editing an unrelated new file (DOR-3409)
+- On Linux and in Docker, a file you open in the canvas no longer shows editing turned off just because an earlier save of a different file was left unconfirmed. Edits to the same file, or to another name for it, still wait until that save is resolved.
