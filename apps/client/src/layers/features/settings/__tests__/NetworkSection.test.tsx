@@ -80,9 +80,22 @@ describe('NetworkSection', () => {
       extraCaCertsPath: BUNDLE,
       companyCertificates: { outcome: 'unreadable', added: 0, path: BUNDLE },
     });
-    expect(screen.getByTestId('company-certificates-status')).toHaveTextContent(
-      'Couldn’t read this file'
+    const status = screen.getByTestId('company-certificates-status');
+    expect(status).toHaveTextContent('Couldn’t read this file');
+    // Red lines carry the alert icon too, so colour is never the only signal.
+    expect(status.querySelector('svg')).not.toBeNull();
+  });
+
+  it('says to choose another file when this one holds no certificate', () => {
+    renderSection({
+      extraCaCertsPath: BUNDLE,
+      companyCertificates: { outcome: 'empty', added: 0, path: BUNDLE },
+    });
+    const status = screen.getByTestId('company-certificates-status');
+    expect(status).toHaveTextContent(
+      'No certificates found in this file. Choose a different file.'
     );
+    expect(status.querySelector('svg')).not.toBeNull();
   });
 
   it('says what is still in use, from where, until a restart', () => {
@@ -96,6 +109,8 @@ describe('NetworkSection', () => {
     );
     // Not by colour alone: the line carries an icon too.
     expect(status.querySelector('svg')).not.toBeNull();
+    // The file a restart will load, under the line, in mono.
+    expect(screen.getByTitle('/Users/kai/new-ca.pem')).toHaveClass('font-mono');
     // No Restart in a browser: the page can't restart the app.
     expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull();
   });
@@ -106,8 +121,9 @@ describe('NetworkSection', () => {
       companyCertificates: { outcome: 'not-set', added: 0, path: null },
     });
     expect(screen.getByTestId('company-certificates-status')).toHaveTextContent(
-      /^Restart DorkOS to use this file\.$/
+      /^Restart DorkOS to use this file\./
     );
+    expect(screen.getByTitle(BUNDLE)).toHaveClass('font-mono');
   });
 
   it('shows NODE_EXTRA_CA_CERTS in mono', () => {
@@ -167,6 +183,8 @@ describe('NetworkSection', () => {
       expect(screen.getByTestId('company-certificates-status')).toHaveTextContent(
         `Still using 3 certificates from ${BUNDLE}. Restart DorkOS to stop using it.`
       );
+      // Nothing is chosen after a stop, so no path line.
+      expect(screen.queryByTitle(BUNDLE)).toBeNull();
       await user.click(screen.getByRole('button', { name: 'Restart' }));
       expect(window.electronAPI?.restartServer).toHaveBeenCalledTimes(1);
       expect(restartServer).not.toHaveBeenCalled();

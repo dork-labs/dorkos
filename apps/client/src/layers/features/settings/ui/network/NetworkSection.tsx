@@ -33,7 +33,6 @@ import {
   type CertificateFilePicker,
   getDesktopAdmin,
   restartDorkOS,
-  truncateMiddle,
 } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import {
@@ -218,11 +217,7 @@ function RowStatus({
             Trusting {row.count} extra {row.count === 1 ? 'certificate' : 'certificates'} from this
             file.
           </p>
-          {/* Cut in the middle so the file's name stays: shorter on a phone. */}
-          <p className="text-muted-foreground truncate font-mono text-xs" title={row.path}>
-            <span className="max-sm:hidden">{truncateMiddle(row.path, 48)}</span>
-            <span className="sm:hidden">{truncateMiddle(row.path, 26)}</span>
-          </p>
+          <PathLine path={row.path} />
         </div>
       );
     case 'restart': {
@@ -234,10 +229,11 @@ function RowStatus({
           className="flex flex-wrap items-center gap-2 max-sm:flex-col max-sm:items-stretch"
           data-testid="company-certificates-status"
         >
-          <p className="text-status-warning-fg flex min-w-0 flex-1 items-start gap-1.5 text-xs">
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <span className="min-w-0 break-words">{restartLine(shown)}</span>
-          </p>
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <AlertLine className="text-status-warning-fg">{restartLine(shown)}</AlertLine>
+            {/* The file a restart will load; nothing to show after a stop. */}
+            {saved !== null && <PathLine path={saved} />}
+          </div>
           {restart && (
             <Button
               type="button"
@@ -255,9 +251,9 @@ function RowStatus({
     }
     case 'problem':
       return (
-        <p className="text-destructive text-xs" data-testid="company-certificates-status">
-          {row.text}
-        </p>
+        <div data-testid="company-certificates-status">
+          <AlertLine className="text-destructive">{row.text}</AlertLine>
+        </div>
       );
     case 'ignored-env':
       return (
@@ -269,4 +265,33 @@ function RowStatus({
     case 'none':
       return null;
   }
+}
+
+/** A line with a leading alert icon, so its colour is never the only signal. */
+function AlertLine({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <p className={cn('flex min-w-0 items-start gap-1.5 text-xs', className)}>
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">{children}</span>
+    </p>
+  );
+}
+
+/**
+ * A certificate file's path in mono, cut in the middle so the file's name
+ * stays: the folder part shrinks with an ellipsis and the name never does, at
+ * any width. The full path is in `title`.
+ */
+function PathLine({ path }: { path: string }) {
+  // The separator stays with the name, so a cut reads `/Users/…/name.pem`.
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'), 0);
+  return (
+    <p
+      className="text-muted-foreground flex min-w-0 overflow-hidden font-mono text-xs"
+      title={path}
+    >
+      <span className="min-w-0 truncate">{path.slice(0, cut)}</span>
+      <span className="shrink-0">{path.slice(cut)}</span>
+    </p>
+  );
 }

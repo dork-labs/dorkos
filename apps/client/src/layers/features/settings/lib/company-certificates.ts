@@ -65,7 +65,10 @@ export function companyCertificatesRow(
     case 'unreadable':
       return { kind: 'problem', text: 'Couldn’t read this file. Check it, then restart DorkOS.' };
     case 'empty':
-      return { kind: 'problem', text: 'No certificates found in this file.' };
+      return {
+        kind: 'problem',
+        text: 'No certificates found in this file. Choose a different file.',
+      };
     case 'ignored-env':
       return { kind: 'ignored-env' };
     default:
