@@ -41,7 +41,7 @@ import {
   isPackageOwnedTaskFile,
   removeScheduledTaskFile,
 } from '../lifecycle/delete-task.js';
-import { createDeleteScheduleHandler } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
+import { createDeleteScheduleHandler } from '../../runtimes/claude-code/mcp-tools/tasks/task-delete-tool.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
 /** The id the project's agent is registered under. */

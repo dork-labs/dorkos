@@ -58,7 +58,7 @@ vi.mock('../../../tasks/lifecycle/create-task.js', () => ({
   }),
 }));
 
-import { createCreateScheduleHandler } from '../../../runtimes/claude-code/mcp-tools/task-tools.js';
+import { createCreateScheduleHandler } from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes;
 const WIFI: MessageOpts = { permissionCeiling: WIFI_TURN_CEILING };

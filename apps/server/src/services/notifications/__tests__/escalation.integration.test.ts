@@ -33,7 +33,7 @@ import type { WebPushChannel } from '../channels/web-push.js';
 import type { RelayChannelDeps, RelayChannelPublisher } from '../channels/relay.js';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { TaskStore } from '../../tasks/task-store.js';
-import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
+import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import {
   clearTestHomes,

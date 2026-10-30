@@ -147,7 +147,7 @@ export const TASK_WRITE_POLICY = {
   enabled: 'agent-writable',
   // A CAP on how long a run may take. Raising it makes a run longer, not more
   // permitted, so it is not an escalation. See the module TSDoc in
-  // `mcp-tools/task-tools.ts` for the separate fact that `tasks_create` accepts
+  // `mcp-tools/tasks/task-tools.ts` for the separate fact that `tasks_create` accepts
   // this argument and ignores it.
   maxRuntime: 'agent-writable',
   // Whether runs resume one session or start fresh each time (DOR-1571). A

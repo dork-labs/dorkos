@@ -768,7 +768,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
-      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':
         'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
       'services/tasks/task-store.ts': 'the definition itself',
     },

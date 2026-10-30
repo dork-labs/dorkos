@@ -235,6 +235,19 @@ export function jsonContent(data: unknown, isError = false) {
 }
 
 /**
+ * Guard that returns an error response when Tasks is disabled, or `null` when
+ * the `tasks_*` handler may proceed.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function requireTasks(deps: McpToolDeps) {
+  if (!deps.taskStore) {
+    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
+  }
+  return null;
+}
+
+/**
  * Helper for the subset of tools that also declare an `outputSchema` on the
  * external MCP server (`services/core/mcp-server.ts`). Mirrors `data` into
  * `structuredContent` alongside the usual JSON text block — the MCP SDK

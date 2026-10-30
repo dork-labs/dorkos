@@ -20,7 +20,7 @@ import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
 import { chosenFullAutonomy, heldToACeiling, isPersonOnlyMode } from '../turn-permission.js';
-import { getTasksTools } from './task-tools.js';
+import { getTasksTools } from './tasks/task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
 import { getAdapterTools } from './adapter-tools.js';
@@ -76,9 +76,9 @@ export {
   createListSchedulesHandler,
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
-  createDeleteScheduleHandler,
   createGetRunHistoryHandler,
-} from './task-tools.js';
+} from './tasks/task-tools.js';
+export { createDeleteScheduleHandler } from './tasks/task-delete-tool.js';
 export { createRelayListEndpointsHandler } from './relay-tools.js';
 export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
