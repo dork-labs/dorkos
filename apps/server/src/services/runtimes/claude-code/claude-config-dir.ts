@@ -1,4 +1,3 @@
-import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
 /**
  * Resolves the Claude Agent SDK's config roots — the directories holding
  * `projects/` (JSONL transcripts), `todos/`, and other SDK-managed state.
@@ -69,6 +68,8 @@ import {
   refusalFor,
 } from '../../core/usage/account-eligibility.js';
 import { launchFallbackOrder } from '../../core/usage/account-ranking.js';
+import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
+import { mayAutoPickClaudeRoot } from './accounts/account-login-metadata.js';
 import {
   accountForPath,
   canonicalAccountPath,
@@ -482,9 +483,10 @@ export function resolveLaunchAccountRoot(opts: {
   }
   const root = resolveActiveClaudeRoot(config);
   const accountId = accountIdForRoot(root, config);
-  if (accountEligibility(config, 'claude-code', accountId, project).eligible) {
-    return { ok: true, root, accountId };
-  }
+  const allowedHere = accountEligibility(config, 'claude-code', accountId, project).eligible;
+  // An automatic rung keeps to sign-ins DorkOS may pick on its own: confirmed,
+  // or known before the upgrade (DOR-3245). A new or changed one is skipped.
+  if (allowedHere && mayAutoPickClaudeRoot(root)) return { ok: true, root, accountId };
   // The automatic choice may not work here: the next eligible account runs it.
   // Never credits: an automatic step may not start spending (ADR 261001-000811).
   const candidates = [
@@ -494,17 +496,19 @@ export function resolveLaunchAccountRoot(opts: {
       .map((account) => account.id),
     IMPLICIT_ACCOUNT_ID,
   ].filter((id) => id !== CREDITS_ACCOUNT_ID);
-  const [next] = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project);
-  if (next !== undefined) {
-    // `default` is always the machine root itself, as rungs 1-2 spell it, never
-    // a row the `'0.87.0'` rename left carrying the old name.
-    const row = next === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, next);
-    return {
-      ok: true,
-      root: row ? row.path : machineDefaultClaudeRoot(config),
-      accountId: next,
-    };
-  }
+  // `default` is always the machine root itself, as rungs 1-2 spell it, never
+  // a row the `'0.87.0'` rename left carrying the old name.
+  const rootOf = (id: string): string => {
+    const row = id === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, id);
+    return row ? row.path : machineDefaultClaudeRoot(config);
+  };
+  const next = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project).find(
+    (id) => mayAutoPickClaudeRoot(rootOf(id))
+  );
+  if (next !== undefined) return { ok: true, root: rootOf(next), accountId: next };
+  // No sign-in DorkOS may pick on its own: the folder's own default still runs.
+  // A sign-in waiting for a look never stops a turn.
+  if (allowedHere) return { ok: true, root, accountId };
   return {
     ok: false,
     error: new AccountNotAllowedError(project, null, { reason: 'none-eligible' }),

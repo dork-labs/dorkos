@@ -18,6 +18,12 @@ const policy: ClaudeSigninPolicyView = {
       identity: { state: 'changed', email: 'b…@example.com', previousEmail: 'd…@example.net' },
     },
     {
+      accountId: 'six',
+      name: 'Claude6',
+      path: '/Users/dev/.claude6',
+      identity: { state: 'unconfirmed', email: 'e…@example.com' },
+    },
+    {
       accountId: 'four',
       name: 'Claude4',
       path: '/Users/dev/.claude4',
@@ -34,14 +40,17 @@ function FakeOwnerTransport({ children }: { children: React.ReactNode }) {
           if (property === 'getClaudeSigninPolicy') return async () => policy;
           if (property === 'changeClaudeSigninPolicy') return async () => ({ ok: true });
           if (property === 'delegateRuntimeLogin')
-            return async () => ({ ok: false, identity: { state: 'changed' } });
+            return async () => ({
+              ok: true,
+              identity: { state: 'confirmed', email: 'b…@example.com' },
+            });
           return Reflect.get(target, property, receiver);
         },
       })
   );
   return <TransportProvider transport={transport}>{children}</TransportProvider>;
 }
-/** Owner-only identity review and exclusions, backed entirely by fake metadata. */
+/** The person's sign-in review and Never use lists, backed entirely by fake metadata. */
 export function SigninIdentityShowcases() {
   return (
     <PlaygroundSection

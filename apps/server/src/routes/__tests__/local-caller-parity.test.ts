@@ -1,4 +1,3 @@
-// Codex keeps the locality bar. Claude uses owner identity on every device, tested separately.
 /**
  * `GET /api/config` reports `isLocalCaller` (answered by `isAtThisComputer`
  * since DOR-2967) so the app can offer honest guidance
@@ -157,7 +156,7 @@ describe('what GET /api/config reports and what the connect routes do (DOR-1655)
 
     currentPeer = caller.peer;
     const login = await request(server)
-      .post('/api/runtimes/codex/login')
+      .post('/api/runtimes/claude-code/login')
       .set('Host', caller.host)
       .set('Cookie', PERSON_SESSION)
       .set(caller.headers ?? {})

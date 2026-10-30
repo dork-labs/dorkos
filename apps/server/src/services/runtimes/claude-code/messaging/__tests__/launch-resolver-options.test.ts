@@ -1,6 +1,3 @@
-vi.mock('../../accounts/account-login-metadata.js', () => ({
-  requireConfirmedAccountLogin: () => undefined,
-}));
 /**
  * The launch options DorkOS hands every Claude Code turn.
  *

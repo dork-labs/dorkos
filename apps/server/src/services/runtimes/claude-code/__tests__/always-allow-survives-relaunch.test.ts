@@ -295,9 +295,3 @@ describe('a mode the SDK never heard of never reaches it (DOR-885)', () => {
     expect(turn.preLaunchEvents).toEqual([]);
   });
 });
-
-// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
-vi.mock('../accounts/account-login-metadata.js', async (original) => ({
-  ...(await original<typeof import('../accounts/account-login-metadata.js')>()),
-  requireConfirmedAccountLogin: vi.fn(),
-}));

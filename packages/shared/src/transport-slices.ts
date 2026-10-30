@@ -1,5 +1,3 @@
-import type { ClaudeSigninPolicyTransport } from './runtime-connect.js';
-import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.js';
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
  * community connections, remote communities, commitments, heartbeats, the first
@@ -11,6 +9,8 @@ import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.j
  *
  * @module shared/transport-slices
  */
+import type { ClaudeSigninPolicyTransport } from './runtime-connect.js';
+import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';

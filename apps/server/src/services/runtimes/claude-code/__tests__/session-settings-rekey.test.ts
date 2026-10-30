@@ -448,9 +448,3 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     expect(rows[0]?.permissionMode).toBe('acceptEdits');
   });
 });
-
-// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
-vi.mock('../accounts/account-login-metadata.js', async (original) => ({
-  ...(await original<typeof import('../accounts/account-login-metadata.js')>()),
-  requireConfirmedAccountLogin: vi.fn(),
-}));

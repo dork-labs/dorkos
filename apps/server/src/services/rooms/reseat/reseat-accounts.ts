@@ -1,4 +1,3 @@
-import { accountLoginIdentity } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 /**
  * Which account a room seat moves to when its own runs out (Security Must 4).
  *
@@ -18,6 +17,7 @@ import { accountLoginIdentity } from '../../runtimes/claude-code/accounts/accoun
  */
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { RankedAccount } from '../../core/usage/account-ranking.js';
+import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 
 /** The share of the 5-hour or weekly window at which an account counts as nearly out. */
 export const NEARLY_OUT_PCT = 95;
@@ -69,8 +69,7 @@ export function reseatCandidates(
       row.id !== CREDITS_ACCOUNT_ID &&
       (runtime !== 'claude-code' ||
         (row.usage.path !== null &&
-          (opts.signinHealthy?.(row.usage.path) ??
-            accountLoginIdentity(row.usage.path).state === 'confirmed'))) &&
+          (opts.signinHealthy?.(row.usage.path) ?? mayAutoPickClaudeRoot(row.usage.path)))) &&
       !row.notAllowed &&
       (opts.keptOut === true || !row.noAutoMove)
   );

@@ -1,4 +1,3 @@
-import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * The Claude CLI auth probe: the ONE place that answers "does the `claude`
  * binary on this machine resolve, and is it signed in?".
@@ -23,6 +22,7 @@ import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js
  *
  * @module services/runtimes/claude-code/tooling/claude-cli-auth
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import { resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
 import {
   findBinaryOnPath,

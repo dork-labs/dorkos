@@ -20,9 +20,7 @@ export function SigninPolicySection() {
   if (policy.isPending) return null;
   if (!policy.data)
     return (
-      <p className="text-muted-foreground text-xs">
-        Sign in as this computer’s owner to manage sign-ins.
-      </p>
+      <p className="text-muted-foreground text-xs">Only you can manage sign-ins, in the app.</p>
     );
   const { deniedOrganizations, folders, accounts } = policy.data;
   return (
@@ -39,7 +37,8 @@ export function SigninPolicySection() {
           </span>
           <OwnerSigninAction
             label="Remove folder"
-            title="Confirm it’s you to remove this folder"
+            title="Remove this folder from Never use?"
+            description="DorkOS can open and use it again."
             change={{ action: 'allow-folder', accountId: folder.accountId }}
           />
         </div>
@@ -51,7 +50,8 @@ export function SigninPolicySection() {
           </span>
           <OwnerSigninAction
             label="Remove sign-in"
-            title="Confirm it’s you to remove this sign-in"
+            title="Remove this organization from Never use?"
+            description="Its sign-ins can run agents again."
             change={{ action: 'remove-org', orgId: org.id }}
           />
         </div>
@@ -79,7 +79,8 @@ export function SigninPolicySection() {
           </Select>
           <OwnerSigninAction
             label="Add a folder"
-            title="Confirm it’s you to exclude this folder"
+            title="Never use this folder?"
+            description="DorkOS won’t open it or run agents on it, even at Full."
             change={{ action: 'exclude-folder', accountId }}
             disabled={!accountId}
           />
@@ -104,7 +105,8 @@ export function SigninPolicySection() {
           </p>
           <OwnerSigninAction
             label="Add a sign-in"
-            title="Confirm it’s you to exclude this sign-in"
+            title="Never use this organization?"
+            description="Sign-ins in it won’t run agents, even at Full."
             change={{ action: 'add-org', orgId, label }}
             disabled={!label.trim() || !orgId.trim()}
           />

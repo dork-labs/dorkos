@@ -9,17 +9,23 @@ import {
 import { resolveAccountRootForSession } from '../services/runtimes/connect/resolve-session-account.js';
 import { signinAccounts } from '../services/runtimes/connect/signin-accounts.js';
 import { isNeverUseClaudeFolder } from '../services/health/account-signin-policy.js';
-import { refuseSigninPolicyChange } from './account-signin.js';
 import { refuseCredentialChange } from './runtimes-http.js';
 
 const LoginSchema = z
   .object({ accountId: z.string().min(1).optional(), sessionId: z.string().min(1).optional() })
   .strict();
 
-/** Resolve every Claude target from server records; no request ever supplies a path. */
+/**
+ * `POST /api/runtimes/:type/login`: run the vendor's own sign-in, which opens a
+ * browser on this computer, so only the owner at this computer may start it.
+ * Every Claude target is resolved from server records; no request supplies a
+ * path. A Claude sign-in finished here is confirmed in the same step.
+ *
+ * @param c - The request's context.
+ */
 export async function runtimeLogin(c: Context<ApiEnv>): Promise<Response> {
   const type = c.req.param('type') ?? '';
-  const refusal = type === 'claude-code' ? refuseSigninPolicyChange(c) : refuseCredentialChange(c);
+  const refusal = refuseCredentialChange(c);
   if (refusal) return refusal;
   if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type))
     return c.json({ ok: false, error: 'This app does not support sign-in.' }, 400);

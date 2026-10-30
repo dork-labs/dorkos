@@ -1,4 +1,3 @@
-import { initAccountSigninPolicy } from '../health/account-signin-policy.js';
 /**
  * Persistent user configuration — canonical entry point.
  *
@@ -95,6 +94,7 @@ import { initAccountSigninPolicy } from '../health/account-signin-policy.js';
  *
  * @module services/core/config-manager
  */
+import { initAccountSigninPolicy } from '../health/account-signin-policy.js';
 import Conf from 'conf';
 import { type Schema } from 'conf';
 import { z } from 'zod';

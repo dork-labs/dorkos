@@ -1,6 +1,7 @@
-import { accountLoginIdentity } from '../../claude-code/accounts/account-login-metadata.js';
+import { readAccountLoginMetadata } from '../../claude-code/accounts/account-login-metadata.js';
+// No sign-in identity by default (an API-key folder): a login just works.
 vi.mock('../../claude-code/accounts/account-login-metadata.js', () => ({
-  accountLoginIdentity: vi.fn(() => ({ state: 'confirmed' })),
+  readAccountLoginMetadata: vi.fn(() => null),
 }));
 vi.mock('../signin-accounts.js', () => ({
   signinAccounts: () =>
@@ -8,6 +9,14 @@ vi.mock('../signin-accounts.js', () => ({
 }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  accountSigninPolicy,
+  initAccountSigninPolicy,
+  mayAutoPick,
+} from '../../../health/account-signin-policy.js';
 
 vi.mock('../../claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: vi.fn(),
@@ -238,8 +247,6 @@ describe('delegateRuntimeLogin', () => {
   });
 
   it('spawns the resolved command and detects completion', async () => {
-    vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/confirmed');
-    vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
     // resolveCommand is async, so the spawn (and its listeners) attach a tick
     // later — schedule the exit from the spawn itself so it never races ahead.
     const child = new FakeChild();
@@ -437,8 +444,6 @@ describe('delegateRuntimeLogin', () => {
     }
 
     it('joins a second request for the same account to the attempt already running', async () => {
-      vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/confirmed');
-      vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
       // Purpose: there is one vendor CLI and one browser flow. The inline card
       // put a Sign in button on every hydrated auth-error row, times every open
       // tab, so concurrent presses are now ordinary rather than exotic — and two
@@ -482,8 +487,6 @@ describe('delegateRuntimeLogin', () => {
     });
 
     it('releases the latch once a login settles, so the next one can run', async () => {
-      vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/confirmed');
-      vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
       // Purpose: a latch that leaks wedges the runtime forever — including
       // after the bounded timeout, which is the case most likely to strand
       // someone who then cannot retry at all.
@@ -503,8 +506,6 @@ describe('delegateRuntimeLogin', () => {
     });
 
     it('does not latch one runtime behind another', async () => {
-      vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/confirmed');
-      vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
       // Purpose: the constraint is per-CLI. Signing Claude in must not block
       // signing Codex in — they are different binaries and different browsers.
       const claude = heldLogin();
@@ -552,15 +553,25 @@ describe('resolved login environment boundary', () => {
   });
 });
 
-describe('login identity review', () => {
-  it('does not clear sign-in or report healthy when a completed login changes identity', async () => {
-    vi.mocked(accountLoginIdentity).mockReturnValueOnce({
-      state: 'changed',
-      email: 'b…@example.com',
-      previousEmail: 'a…@example.com',
-    });
+describe('a Claude sign-in finished here is confirmed in the same step (DOR-3245)', () => {
+  const ACCOUNT = '11111111-1111-4111-8111-111111111111';
+  const ORG = '22222222-2222-4222-8222-222222222222';
+  const DENIED = '33333333-3333-4333-8333-333333333333';
+  let home: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-login-confirm-'));
+    initAccountSigninPolicy(home);
+    accountSigninPolicy()!.seed([], new Date('2026-10-30T00:00:00Z'));
     vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/main');
     vi.mocked(noteSigninRepaired).mockClear();
+  });
+  afterEach(() => {
+    vi.mocked(readAccountLoginMetadata).mockReturnValue(null);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  async function completeLogin() {
     const child = new FakeChild();
     const { spawn } = fakeSpawn(child);
     const run = delegateRuntimeLogin('claude-code', {
@@ -569,23 +580,41 @@ describe('login identity review', () => {
     });
     await Promise.resolve();
     child.emit('exit', 0);
-    expect(await run).toMatchObject({ ok: false, identity: { state: 'changed' } });
+    return run;
+  }
+
+  it('binds the new sign-in and returns its masked identity: no review follows', async () => {
+    vi.mocked(readAccountLoginMetadata).mockReturnValue({
+      accountUuid: ACCOUNT,
+      organizationUuid: ORG,
+      maskedEmail: 'd…@example.com',
+    });
+    expect(await completeLogin()).toEqual({
+      ok: true,
+      identity: { state: 'confirmed', email: 'd…@example.com' },
+    });
+    // Confirmed, so the launch check has nothing to say about it and pickers may use it.
+    const after = accountSigninPolicy()!.assess('/fake/main', {
+      accountUuid: ACCOUNT,
+      organizationUuid: ORG,
+      maskedEmail: 'd…@example.com',
+    });
+    expect(after.state).toBe('confirmed');
+    expect(mayAutoPick(after.state)).toBe(true);
+    expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/fake/main');
+  });
+
+  it('never binds a sign-in in an organization the person ruled out', async () => {
+    accountSigninPolicy()!.addOrganization(DENIED, 'Ruled out');
+    const denied = { accountUuid: ACCOUNT, organizationUuid: DENIED, maskedEmail: 'd…@x.com' };
+    vi.mocked(readAccountLoginMetadata).mockReturnValue(denied);
+    expect(await completeLogin()).toMatchObject({ ok: false, identity: { state: 'blocked' } });
+    expect(accountSigninPolicy()!.assess('/fake/main', denied).state).toBe('blocked');
     expect(noteSigninRepaired).not.toHaveBeenCalled();
   });
-});
 
-it('refuses an unresolved login root even when the identity reader would confirm', async () => {
-  vi.mocked(resolveActiveClaudeRoot).mockReturnValue(undefined as unknown as string);
-  vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
-  vi.mocked(noteSigninRepaired).mockClear();
-  const child = new FakeChild();
-  const { spawn } = fakeSpawn(child);
-  const run = delegateRuntimeLogin('claude-code', {
-    spawn,
-    resolveCommand: async () => ({ binary: '/fake/claude', args: ['auth', 'login'] }),
+  it('a sign-in with no readable identity still works, and binds nothing', async () => {
+    expect(await completeLogin()).toEqual({ ok: true });
+    expect(noteSigninRepaired).toHaveBeenCalledTimes(1);
   });
-  await Promise.resolve();
-  child.emit('exit', 0);
-  expect(await run).toMatchObject({ ok: false, identity: { state: 'unreadable' } });
-  expect(noteSigninRepaired).not.toHaveBeenCalled();
 });

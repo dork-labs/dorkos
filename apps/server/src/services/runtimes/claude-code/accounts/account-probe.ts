@@ -1,4 +1,3 @@
-import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * Read an idle Claude account's usage without running a turn (spec
  * `claude-account-fleet` D3).
@@ -20,6 +19,7 @@ import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js
  *
  * @module services/runtimes/claude-code/accounts/account-probe
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';

@@ -1,4 +1,3 @@
-import { SigninPolicySection } from './SigninPolicySection';
 /**
  * Settings → Runtimes: one card per runtime, then the two things that are true
  * of the whole fleet.
@@ -19,6 +18,7 @@ import { SigninPolicySection } from './SigninPolicySection';
  *
  * @module features/settings/ui/runtimes/RuntimesTab
  */
+import { SigninPolicySection } from './SigninPolicySection';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, RefreshCw } from 'lucide-react';

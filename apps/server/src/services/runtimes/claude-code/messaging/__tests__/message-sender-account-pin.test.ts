@@ -212,9 +212,3 @@ describe('executeSdkQuery — Claude account pin', () => {
     expect(vi.mocked(query).mock.calls[1]![0].options?.resumeSessionAt).toBeUndefined();
   });
 });
-
-// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
-vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
-  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
-  requireConfirmedAccountLogin: vi.fn(),
-}));

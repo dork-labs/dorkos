@@ -1,6 +1,3 @@
-import { accountLoginIdentity } from '../claude-code/accounts/account-login-metadata.js';
-import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
-import { signinAccounts } from './signin-accounts.js';
 /**
  * Delegated vendor login — spawns a runtime's own CLI login flow terminal-free
  * and detects completion, so a user connects Claude or Codex without opening a
@@ -34,6 +31,9 @@ import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
 import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-code/claude-config-dir.js';
 import { isCreditsClaudeRoot } from '../claude-code/credits-root.js';
+import { readAccountLoginMetadata } from '../claude-code/accounts/account-login-metadata.js';
+import { accountSigninPolicy, isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
+import { signinAccounts } from './signin-accounts.js';
 
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
 export type SpawnFn = typeof nodeSpawn;
@@ -286,8 +286,9 @@ export function pipeSecretToChild(
  *
  * The HTTP route resolves a Claude account by registry ID before entering here.
  * This internal pin is checked against the same server registry before a spawn.
- * Successful CLI completion is not proof of health: UUID identity must still
- * match the owner's confirmed binding and the exclusion policy.
+ * A Claude sign-in a person just completed here is confirmed in the same step
+ * (DOR-3245): the result carries the masked identity it bound, so no separate
+ * review follows. One in an organization the person ruled out is not bound.
  *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
  * @param deps - Injectable timeout + spawn seam + command resolver (for tests),
@@ -346,14 +347,13 @@ export async function delegateRuntimeLogin(
     // credential for the account we pinned it to — the one moment an operator can
     // end a standing "sign-in stopped working" condition on purpose, instead of
     // waiting for a turn to happen to run on that same account (DOR-1910).
-    if (result.ok && type === 'claude-code') {
-      const root = signedInAccount(type, deps.accountRoot);
-      const identity = root ? accountLoginIdentity(root) : { state: 'unreadable' as const };
-      if (identity.state !== 'confirmed')
-        return { ok: false, identity, error: 'Review this sign-in in Runtimes.' };
-    }
+    const confirmed =
+      result.ok && type === 'claude-code'
+        ? confirmInFlow(signedInAccount(type, deps.accountRoot))
+        : undefined;
+    if (confirmed && !confirmed.ok) return confirmed;
     if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot));
-    return result;
+    return confirmed ?? result;
   })();
 
   inFlightLogins.set(type, { target, promise: attempt });
@@ -390,6 +390,30 @@ function signedInAccount(type: string, accountRoot: string | undefined): string 
   if (type !== 'claude-code') return undefined;
   const root = accountRoot ?? resolveActiveClaudeRoot();
   return root ? path.resolve(root) : undefined;
+}
+
+/**
+ * Bind the sign-in a person just completed to its folder, and say which it is.
+ * `undefined` when its identity cannot be read (an API-key folder): the login
+ * still worked, and nothing is bound. One in an organization the person ruled
+ * out is never bound.
+ *
+ * @param root - The folder the login wrote a credential for.
+ */
+function confirmInFlow(root: string | undefined): DelegatedLoginResult | undefined {
+  const policy = accountSigninPolicy();
+  if (!root || !policy) return undefined;
+  const identity = readAccountLoginMetadata(root);
+  if (!identity) return undefined;
+  if (policy.deniesOrganization(identity.organizationUuid)) {
+    return {
+      ok: false,
+      identity: { state: 'blocked' },
+      error: 'This sign-in is in an organization you ruled out.',
+    };
+  }
+  policy.accept(root, identity);
+  return { ok: true, identity: policy.assess(root, identity) };
 }
 
 /**

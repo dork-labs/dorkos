@@ -190,6 +190,15 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     total: 1,
     fingerprint: 'fp-1',
   },
+  'account.signin_review': {
+    accountRoot: '/home/me/.claude2',
+    accountName: 'Work',
+    change: 'changed',
+    email: 'b…@example.com',
+    previousEmail: 'a…@example.com',
+    orgChanged: true,
+    fingerprint: 'fp-2',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -236,6 +245,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_executed': 'quiet',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
+  // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
+  'account.signin_review': 'notable',
 };
 
 /**
@@ -313,6 +324,7 @@ describe('notification registry', () => {
     expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
       'account.limited',
       'account.reset',
+      'account.signin_review',
       'agent.note',
       'agent.secret_files',
       'agent.unreachable',

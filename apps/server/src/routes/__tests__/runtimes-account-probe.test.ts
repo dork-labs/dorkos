@@ -1,4 +1,3 @@
-import { seedSigninPolicyFixture } from '../../services/health/__tests__/policy-fixture.js';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -46,7 +45,6 @@ describe('POST /api/runtimes/claude-code/accounts/:id/probe (spec claude-account
     // The route asks the config whether login is on before anything else.
     const dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-probe-route-'));
     fs.writeFileSync(path.join(dorkHome, 'config.json'), JSON.stringify({}), 'utf-8');
-    seedSigninPolicyFixture(dorkHome);
     initConfigManager(dorkHome);
   });
 

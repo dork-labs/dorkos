@@ -53,7 +53,7 @@ function AccountRowStatus({
     case 'blocked':
       return (
         <p className="text-status-warning-fg mt-1 text-xs" role="status">
-          Paused · on your Never use list
+          Not used · on your Never use list
         </p>
       );
     case 'signed-out':
@@ -62,45 +62,59 @@ function AccountRowStatus({
       return (
         <div className="mt-1 space-y-2 text-xs">
           <p className="text-status-warning-fg" role="status">
-            {name} is now signed in as {state.email}, not {state.previousEmail}. Its agents stay
-            paused.
+            Now signed in as {state.email}, not {state.previousEmail}.
           </p>
-          {accountId && <UseThisAccount accountId={accountId} name={name} email={state.email} />}
+          <p className="text-muted-foreground">
+            DorkOS won’t pick it on its own until you keep it.
+          </p>
+          {accountId && (
+            <ConfirmSignin
+              accountId={accountId}
+              name={name}
+              email={state.email}
+              label="Keep this sign-in"
+            />
+          )}
         </div>
       );
-    case 'paused':
+    case 'unconfirmed':
       return (
         <div className="mt-1 space-y-2 text-xs">
           <p className="text-status-warning-fg" role="status">
-            {state.reason === 'unreadable'
-              ? 'DorkOS couldn’t read this sign-in. Its agents stay paused.'
-              : 'Paused · new login not confirmed'}
+            New sign-in{state.email ? ` ${state.email}` : ''}. Not confirmed yet.
           </p>
-          {state.reason === 'unconfirmed' && accountId ? (
-            <UseThisAccount accountId={accountId} name={name} email={state.email} />
+          <p className="text-muted-foreground">DorkOS won’t pick it on its own until you do.</p>
+          {accountId ? (
+            <ConfirmSignin
+              accountId={accountId}
+              name={name}
+              email={state.email}
+              label="Use this account"
+            />
           ) : (
-            <SignInAgain accountId={accountId} accountRoot={accountRoot} name={name} />
+            <SignInAgain accountRoot={accountRoot} name={name} />
           )}
         </div>
       );
   }
 }
 
-function UseThisAccount({
+function ConfirmSignin({
   accountId,
   name,
   email,
+  label,
 }: {
   accountId: string;
   name: string;
   email?: string;
+  label: string;
 }) {
   return (
     <OwnerSigninAction
-      label="Use this account"
-      title={
-        email ? `Confirm it’s you to use ${email} for ${name}` : `Confirm it’s you for ${name}`
-      }
+      label={label}
+      title={email ? `Use ${email} for ${name}?` : `Use this sign-in for ${name}?`}
+      description="DorkOS can then pick this account on its own."
       change={{ action: 'accept', accountId }}
     />
   );

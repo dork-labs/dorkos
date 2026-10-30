@@ -1,4 +1,3 @@
-import { useClaudeAccounts } from '@/layers/shared/model';
 /**
  * Native paste-key + delegated-login connect hooks (ADR-0318, T1 tasks 2.4/2.5).
  *
@@ -19,6 +18,7 @@ import { useClaudeAccounts } from '@/layers/shared/model';
  *
  * @module entities/runtime/model/use-credential-connect
  */
+import { useClaudeAccounts } from '@/layers/shared/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useMutation,

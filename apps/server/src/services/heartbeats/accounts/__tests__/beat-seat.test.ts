@@ -3,13 +3,7 @@
  * has room, on another account when it is out or nearly out, and nowhere (the
  * beat waits) when no account it may use can take it.
  */
-import { describe, expect, it, vi } from 'vitest';
-
-// Every account here has a confirmed sign-in; the sign-in check (DOR-3245) has
-// its own tests in reseat-accounts.test.ts.
-vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
-  accountLoginIdentity: () => ({ state: 'confirmed' }),
-}));
+import { describe, expect, it } from 'vitest';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { RankedAccount } from '../../../core/usage/account-ranking.js';
 import { decideBeatSeat } from '../beat-seat.js';

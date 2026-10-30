@@ -1,4 +1,3 @@
-import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 /**
  * Finds the Claude account folders on this computer that DorkOS does not know
  * about yet, for Settings' "Found on this computer" list (spec
@@ -28,6 +27,7 @@ import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js
  *
  * @module services/runtimes/claude-code/accounts/found-claude-folders
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FoundClaudeFolder } from '@dorkos/shared/account-usage';

@@ -1,12 +1,8 @@
-vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
-  accountLoginIdentity: () => ({ state: 'confirmed' }),
-  requireConfirmedAccountLogin: () => undefined,
-}));
 /**
  * The seat mover on its own: what one move writes and carries (Security Musts
  * 1, 2 and 4), and the rules that keep it to once per message and one launch.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/schemas';

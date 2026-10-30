@@ -1,5 +1,3 @@
-import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
-import { credentialReadCoolingDown, noteCredentialsUnreadable } from './credential-read-health.js';
 /**
  * Reads WHEN the host's Claude sign-in stops working — the one thing the
  * readiness probe next door cannot see.
@@ -49,6 +47,8 @@ import { credentialReadCoolingDown, noteCredentialsUnreadable } from './credenti
  *
  * @module services/runtimes/claude-code/tooling/claude-sign-in-expiry
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
+import { credentialReadCoolingDown, noteCredentialsUnreadable } from './credential-read-health.js';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';

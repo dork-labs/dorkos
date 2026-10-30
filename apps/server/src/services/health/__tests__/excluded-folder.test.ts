@@ -1,3 +1,8 @@
+/**
+ * A folder the person excluded is zero-touch (DOR-3245): no read, spawn or
+ * probe reaches it through health, readiness, failover, usage refresh or the
+ * launch check, and a symlink to it is excluded too.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
@@ -6,7 +11,7 @@ import path from 'node:path';
 import { initAccountSigninPolicy, accountSigninPolicy } from '../account-signin-policy.js';
 import {
   accountLoginIdentity,
-  requireConfirmedAccountLogin,
+  noteAccountLogin,
 } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { resolveClaudeRootSet } from '../../runtimes/claude-code/claude-config-dir.js';
 import { checkClaudeDependencies } from '../../runtimes/claude-code/tooling/check-dependency.js';
@@ -81,13 +86,14 @@ describe('zero-touch excluded folder', () => {
       }),
     };
     expect(accountLoginIdentity(root)).toEqual({ state: 'never-use' });
-    expect(() => requireConfirmedAccountLogin(root)).toThrow();
+    // A person-set rule: the one launch refusal besides a denied organization.
+    expect(() => noteAccountLogin(root)).toThrow('excluded');
     expect(resolveClaudeRootSet(config as never)).not.toContain(root);
     expect((await checkClaudeDependencies({ config: config as never }))[1].status).toBe('missing');
     expect(await readClaudeSignInDeadlines(root)).toBeNull();
     expect(await readClaudeAuthStatus('/fake/claude', { CLAUDE_CONFIG_DIR: root })).toBeNull();
-    expect(accountLoginIdentity(alias).state).toBe('unreadable');
-    expect(() => requireConfirmedAccountLogin(alias)).toThrow();
+    expect(accountLoginIdentity(alias).state).toBe('never-use');
+    expect(() => noteAccountLogin(alias)).toThrow('excluded');
     expect(await readClaudeSignInDeadlines(alias)).toBeNull();
     expect(await readClaudeAuthStatus('/fake/claude', { CLAUDE_CONFIG_DIR: alias })).toBeNull();
     expect((await delegateRuntimeLogin('claude-code', { accountRoot: alias })).ok).toBe(false);

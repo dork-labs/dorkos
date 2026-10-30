@@ -1,4 +1,3 @@
-import { createAccountSigninRoutes } from './account-signin.js';
 /**
  * Runtime connect + provisioning routes, mounted at `/api/runtimes`.
  *
@@ -11,6 +10,7 @@ import { createAccountSigninRoutes } from './account-signin.js';
  *
  * @module routes/runtimes
  */
+import { createAccountSigninRoutes } from './account-signin.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
@@ -35,7 +35,6 @@ import {
   storeOpenRouterKeyReference,
   OpenRouterError,
 } from '../services/runtimes/opencode/providers/openrouter.js';
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/providers/ollama.js';
 import {

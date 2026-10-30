@@ -179,9 +179,3 @@ describe('executeSdkQuery — activeQuery ownership (DOR-1088)', () => {
     expect(session.lastQuery).toBe(queries[0]);
   });
 });
-
-// The fake SDK turn represents an owner-confirmed fixture; health policy has its own tests.
-vi.mock('../../accounts/account-login-metadata.js', async (original) => ({
-  ...(await original<typeof import('../../accounts/account-login-metadata.js')>()),
-  requireConfirmedAccountLogin: vi.fn(),
-}));

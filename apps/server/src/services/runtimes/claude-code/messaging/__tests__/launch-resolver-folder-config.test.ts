@@ -21,10 +21,6 @@ import {
 import { _internal as configCards } from '../../folder-settings/folder-config-approval.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
-// The sign-in check (DOR-3245) has its own tests; these are about folder settings.
-vi.mock('../../accounts/account-login-metadata.js', () => ({
-  requireConfirmedAccountLogin: () => undefined,
-}));
 vi.mock('../context-builder.js', () => ({
   buildSystemPromptAppend: vi
     .fn()

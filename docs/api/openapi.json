@@ -18247,7 +18247,8 @@
           "connector.destructive_pending",
           "connector.destructive_executed",
           "web.new_device",
-          "agent.secret_files"
+          "agent.secret_files",
+          "account.signin_review"
         ]
       },
       "NotificationTier": {
@@ -34948,7 +34949,7 @@
           "Runtimes"
         ],
         "summary": "Read Claude sign-in identity and exclusions",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned.",
         "responses": {
           "200": {
             "description": "Owner policy and masked account identities",
@@ -35023,6 +35024,7 @@
                                   "changed",
                                   "blocked",
                                   "confirmed",
+                                  "grandfathered",
                                   "never-use"
                                 ]
                               },
@@ -35031,6 +35033,9 @@
                               },
                               "previousEmail": {
                                 "type": "string"
+                              },
+                              "orgChanged": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -35071,17 +35076,13 @@
           "Runtimes"
         ],
         "summary": "Exclude an organization",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
                   "orgId": {
                     "type": "string",
                     "format": "uuid"
@@ -35126,6 +35127,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35134,6 +35136,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -35160,9 +35165,6 @@
           "409": {
             "description": "The request is refused"
           },
-          "429": {
-            "description": "The request is refused"
-          },
           "503": {
             "description": "The request is refused"
           }
@@ -35175,7 +35177,7 @@
           "Runtimes"
         ],
         "summary": "Remove an organization exclusion",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
         "parameters": [
           {
             "schema": {
@@ -35192,12 +35194,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
-                },
+                "properties": {},
                 "additionalProperties": false
               }
             }
@@ -35228,6 +35225,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35236,6 +35234,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -35262,9 +35263,6 @@
           "409": {
             "description": "The request is refused"
           },
-          "429": {
-            "description": "The request is refused"
-          },
           "503": {
             "description": "The request is refused"
           }
@@ -35277,17 +35275,13 @@
           "Runtimes"
         ],
         "summary": "Exclude a registered folder",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
                   "accountId": {
                     "type": "string",
                     "minLength": 1
@@ -35326,6 +35320,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35334,6 +35329,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -35358,9 +35356,6 @@
             "description": "The request is refused"
           },
           "409": {
-            "description": "The request is refused"
-          },
-          "429": {
             "description": "The request is refused"
           },
           "503": {
@@ -35375,7 +35370,7 @@
           "Runtimes"
         ],
         "summary": "Remove a folder exclusion",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
         "parameters": [
           {
             "schema": {
@@ -35391,12 +35386,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
-                },
+                "properties": {},
                 "additionalProperties": false
               }
             }
@@ -35427,6 +35417,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35435,6 +35426,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -35459,9 +35453,6 @@
             "description": "The request is refused"
           },
           "409": {
-            "description": "The request is refused"
-          },
-          "429": {
             "description": "The request is refused"
           },
           "503": {
@@ -35476,7 +35467,7 @@
           "Runtimes"
         ],
         "summary": "Confirm a folder’s current identity",
-        "description": "Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned. Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
         "parameters": [
           {
             "schema": {
@@ -35492,12 +35483,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
-                },
+                "properties": {},
                 "additionalProperties": false
               }
             }
@@ -35528,6 +35514,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35536,6 +35523,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -35562,9 +35552,6 @@
           "409": {
             "description": "The request is refused"
           },
-          "429": {
-            "description": "The request is refused"
-          },
           "503": {
             "description": "The request is refused"
           }
@@ -35577,7 +35564,7 @@
           "Runtimes"
         ],
         "summary": "Start a vendor sign-in",
-        "description": "Claude requires an owner cookie and a registered accountId or a sessionId bound to a registered account. Paths and unknown accounts are refused; the default is never substituted. A completed login remains paused until its UUID identity is confirmed. Codex uses the existing person credential-change gate and accepts no accountId.",
+        "description": "The owner at this computer only: the vendor sign-in opens a browser here. Claude takes a registered accountId or a sessionId bound to a registered account; paths and unknown accounts are refused, and the default is never substituted. A Claude sign-in completed here is confirmed in the same step and returned as a masked identity. Codex accepts no accountId.",
         "parameters": [
           {
             "schema": {
@@ -35635,6 +35622,7 @@
                             "changed",
                             "blocked",
                             "confirmed",
+                            "grandfathered",
                             "never-use"
                           ]
                         },
@@ -35643,6 +35631,9 @@
                         },
                         "previousEmail": {
                           "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

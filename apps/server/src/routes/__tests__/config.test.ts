@@ -1,4 +1,3 @@
-import { seedSigninPolicyFixture } from '../../services/health/__tests__/policy-fixture.js';
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { Hono } from 'hono';
@@ -198,7 +197,6 @@ describe('PATCH /api/config', () => {
 
     // Initialize config manager before importing routes
     const { initConfigManager } = await import('../../services/core/config-manager.js');
-    seedSigninPolicyFixture(tmpDir);
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
@@ -1322,7 +1320,6 @@ describe('GET /api/config', () => {
     process.env.DORK_HOME = tmpDir;
 
     const { initConfigManager } = await import('../../services/core/config-manager.js');
-    seedSigninPolicyFixture(tmpDir);
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
@@ -1463,7 +1460,6 @@ describe('GET /api/config', () => {
       process.env.DORK_HOME = legacyDir;
 
       const { initConfigManager } = await import('../../services/core/config-manager.js');
-      seedSigninPolicyFixture(legacyDir);
       initConfigManager(legacyDir);
       const legacyRouter = (await import('../config.js')).default;
       const res = await request(target.mount(await configApp(legacyRouter)))
@@ -1733,7 +1729,6 @@ describe('GET /api/config', () => {
       vi.resetModules();
 
       const { initConfigManager } = await import('../../services/core/config-manager.js');
-      seedSigninPolicyFixture(tmpDir);
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
@@ -1751,7 +1746,6 @@ describe('GET /api/config', () => {
       vi.resetModules();
 
       const { initConfigManager } = await import('../../services/core/config-manager.js');
-      seedSigninPolicyFixture(tmpDir);
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
@@ -1779,7 +1773,6 @@ describe('GET /api/config', () => {
       vi.resetModules();
 
       const { initConfigManager } = await import('../../services/core/config-manager.js');
-      seedSigninPolicyFixture(tmpDir);
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
@@ -2216,7 +2209,6 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     process.env.DORK_HOME = tmpDir;
 
     const { initConfigManager } = await import('../../services/core/config-manager.js');
-    seedSigninPolicyFixture(tmpDir);
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
@@ -2289,7 +2281,6 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     tmpDir = createTempDir();
     process.env.DORK_HOME = tmpDir;
     const { initConfigManager } = await import('../../services/core/config-manager.js');
-    seedSigninPolicyFixture(tmpDir);
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
@@ -2357,7 +2348,6 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
     tmpDir = createTempDir();
     process.env.DORK_HOME = tmpDir;
     const { initConfigManager } = await import('../../services/core/config-manager.js');
-    seedSigninPolicyFixture(tmpDir);
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));

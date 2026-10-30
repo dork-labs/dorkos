@@ -10,25 +10,27 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 export type AccountRowState =
   /** On the Never use list (an excluded folder or organization). No action. */
   | { kind: 'blocked' }
-  /** Signed in as someone other than the confirmed account. Action: Use this account. */
+  /**
+   * Signed in as someone other than the confirmed account. It still runs;
+   * DorkOS just won't pick it on its own. Action: Keep this sign-in.
+   */
   | { kind: 'changed'; email?: string; previousEmail?: string }
   /**
-   * Paused until the owner acts. `unconfirmed` is a new login the owner has
-   * not accepted yet, so its action is Use this account (signing in again
-   * would not bind it); `unreadable` is a sign-in DorkOS could not read, so its
-   * action is Sign in again.
+   * A sign-in DorkOS has not confirmed for this folder. It still runs when
+   * named; DorkOS won't pick it on its own. Action: Use this account.
    */
-  | { kind: 'paused'; reason: 'unconfirmed' | 'unreadable'; email?: string }
+  | { kind: 'unconfirmed'; email?: string }
   /** The sign-in ran out. Action: Sign in. */
   | { kind: 'signed-out' }
   /** Nothing to say: the row stays quiet. */
   | { kind: 'healthy' };
 
 /**
- * Pick a row's sign-in state, most urgent first: blocked, changed, paused,
- * signed out, healthy.
+ * Pick a row's sign-in state, most urgent first: blocked, changed,
+ * unconfirmed, signed out, healthy. A sign-in DorkOS could not read says
+ * nothing new: it runs as before.
  *
- * @param input.identity - The owner-only identity review, when this viewer can see it.
+ * @param input.identity - The person-only identity review, when this viewer can see it.
  * @param input.signInState - The usage probe's signed-in reading.
  */
 export function accountRowState(input: {
@@ -43,8 +45,7 @@ export function accountRowState(input: {
     case 'changed':
       return { kind: 'changed', email: identity.email, previousEmail: identity.previousEmail };
     case 'unconfirmed':
-    case 'unreadable':
-      return { kind: 'paused', reason: identity.state, email: identity.email };
+      return { kind: 'unconfirmed', email: identity.email };
     default:
       return signInState === 'signed-out' ? { kind: 'signed-out' } : { kind: 'healthy' };
   }

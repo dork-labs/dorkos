@@ -51,20 +51,18 @@ describe('accountRowState', () => {
     ).toEqual({ kind: 'blocked' });
     expect(accountRowState({ identity: { state: 'blocked' } })).toEqual({ kind: 'blocked' });
   });
-  it('ranks a changed login over a paused one', () => {
+  it('ranks a changed login over everything but blocked', () => {
     expect(
       accountRowState({ identity: { state: 'changed', email: 'a', previousEmail: 'b' } }).kind
     ).toBe('changed');
   });
-  it('pauses unconfirmed and unreadable sign-ins', () => {
-    expect(accountRowState({ identity: { state: 'unconfirmed' } })).toMatchObject({
-      kind: 'paused',
-      reason: 'unconfirmed',
+  it('an unconfirmed sign-in asks to be confirmed; an unreadable one says nothing new', () => {
+    expect(accountRowState({ identity: { state: 'unconfirmed', email: 'x' } })).toEqual({
+      kind: 'unconfirmed',
+      email: 'x',
     });
-    expect(accountRowState({ identity: { state: 'unreadable' } })).toMatchObject({
-      kind: 'paused',
-      reason: 'unreadable',
-    });
+    expect(accountRowState({ identity: { state: 'unreadable' } })).toEqual({ kind: 'healthy' });
+    expect(accountRowState({ identity: { state: 'grandfathered' } })).toEqual({ kind: 'healthy' });
   });
   it('falls back to the signed-out reading, then to quiet', () => {
     expect(
@@ -78,59 +76,48 @@ describe('accountRowState', () => {
 describe('account row sign-in status', () => {
   it('1. blocked: says it is on the Never use list, offers nothing, discloses no identity', async () => {
     mount({ state: 'blocked', email: 'should-never-render@example.com' }, 'signed-out');
-    expect(await screen.findByText('Paused · on your Never use list')).toBeVisible();
+    expect(await screen.findByText('Not used · on your Never use list')).toBeVisible();
     expect(screen.queryByText(/should-never-render/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('2. changed: names both masked logins and accepts only after a fresh step-up', async () => {
+  it('2. changed: names both masked logins, never says paused, and keeps it with no password', async () => {
     const { transport } = mount({
       state: 'changed',
       email: 'b…@example.com',
       previousEmail: 'd…@example.net',
     });
     expect(
-      await screen.findByText(
-        'Claude5 is now signed in as b…@example.com, not d…@example.net. Its agents stay paused.'
-      )
+      await screen.findByText('Now signed in as b…@example.com, not d…@example.net.')
     ).toBeVisible();
+    expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
     expectOneAction();
-    fireEvent.click(screen.getByRole('button', { name: 'Use this account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep this sign-in' }));
     expect(transport.changeClaudeSigninPolicy).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Owner password'), {
-      target: { value: 'fake-owner-step-up' },
-    });
-    fireEvent.submit(screen.getByLabelText('Owner password').closest('form')!);
+    expect(await screen.findByText('Use b…@example.com for Claude5?')).toBeVisible();
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Keep this sign-in' }).at(-1)!);
     await waitFor(() =>
       expect(transport.changeClaudeSigninPolicy).toHaveBeenCalledWith({
         action: 'accept',
         accountId: 'five',
-        password: 'fake-owner-step-up',
       })
     );
   });
 
-  it('3. paused: an unconfirmed login is amber and is confirmed with Use this account', async () => {
+  it('3. unconfirmed: amber, says it still runs when named, confirmed with Use this account', async () => {
     mount({ state: 'unconfirmed', email: 'b…@example.com' });
-    const line = await screen.findByText('Paused · new login not confirmed');
+    const line = await screen.findByText('New sign-in b…@example.com. Not confirmed yet.');
     expect(line).toHaveClass('text-status-warning-fg');
+    expect(screen.getByText('DorkOS won’t pick it on its own until you do.')).toBeVisible();
     expectOneAction();
     expect(screen.getByRole('button', { name: 'Use this account' })).toBeVisible();
   });
 
-  it('3. paused: an unreadable sign-in offers Sign in again, never acceptance', async () => {
-    const { transport } = mount({ state: 'unreadable' });
-    const line = await screen.findByText(
-      'DorkOS couldn’t read this sign-in. Its agents stay paused.'
-    );
-    expect(line).toHaveClass('text-status-warning-fg');
-    expectOneAction();
-    expect(screen.queryByRole('button', { name: 'Use this account' })).not.toBeInTheDocument();
-    vi.mocked(transport.delegateRuntimeLogin).mockRejectedValueOnce(new Error('nope'));
-    const signIn = screen.getByRole('button', { name: 'Sign in to Claude5' });
-    expect(signIn).toHaveTextContent('Sign in again');
-    fireEvent.click(signIn);
-    expect(await screen.findByText('Couldn’t sign in to Claude5. Try again.')).toBeVisible();
+  it('3. unreadable: nothing new, the row stays quiet', async () => {
+    const { transport, view } = mount({ state: 'unreadable' }, 'signed-in');
+    await waitFor(() => expect(transport.getClaudeSigninPolicy).toHaveBeenCalled());
+    expect(view.container).toBeEmptyDOMElement();
   });
 
   it('4. signed out: shows the recovery status and one Sign in button', async () => {

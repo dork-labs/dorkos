@@ -497,23 +497,28 @@ describe('runtime connect endpoints', () => {
       expect(res.status).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
-    it('refuses a caller without an owner sign-in', async () => {
+    it('refuses an agent: only the person at this computer starts a sign-in', async () => {
       expect(
-        (await request(server).post('/api/runtimes/claude-code/login').send({ accountId: 'two' }))
-          .status
+        (
+          await request(server)
+            .post('/api/runtimes/claude-code/login')
+            .set('X-DorkOS-Agent', 'agent-1')
+            .send({ accountId: 'two' })
+        ).status
       ).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
-    it('preserves an honest service refusal', async () => {
+    it('passes on the confirmed identity, or an honest refusal for a ruled-out organization', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({
         ok: false,
-        identity: { state: 'changed' },
+        identity: { state: 'blocked' },
+        error: 'This sign-in is in an organization you ruled out.',
       });
       const res = await request(server)
         .post('/api/runtimes/claude-code/login')
         .set('Cookie', PERSON_SESSION)
         .send({ accountId: 'two' });
-      expect(res.body).toMatchObject({ ok: false, identity: { state: 'changed' } });
+      expect(res.body).toMatchObject({ ok: false, identity: { state: 'blocked' } });
     });
   });
 

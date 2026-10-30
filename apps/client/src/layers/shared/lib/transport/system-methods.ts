@@ -1,12 +1,12 @@
-import { createAccountSigninMethods } from './account-signin-methods';
-import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
-import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
  * discovery, activity, templates, uploads, and agent config.
  *
  * @module shared/lib/transport/system-methods
  */
+import { createAccountSigninMethods } from './account-signin-methods';
+import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
+import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type {
   BrowseDirectoryResponse,
   CommandRegistry,

@@ -1,18 +1,33 @@
+/**
+ * OpenAPI for the person's Claude sign-in list (`routes/account-signin.ts`)
+ * and the vendor login route (DOR-3245).
+ *
+ * @module services/health/account-signin-openapi
+ */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-const password = z.object({ password: z.string().max(128).optional() }).strict();
+const empty = z.object({}).strict();
 const identity = z.object({
-  state: z.enum(['unreadable', 'unconfirmed', 'changed', 'blocked', 'confirmed', 'never-use']),
+  state: z.enum([
+    'unreadable',
+    'unconfirmed',
+    'changed',
+    'blocked',
+    'confirmed',
+    'grandfathered',
+    'never-use',
+  ]),
   email: z.string().optional(),
   previousEmail: z.string().optional(),
+  orgChanged: z.boolean().optional(),
 });
 const folder = z.object({ accountId: z.string(), path: z.string(), label: z.string() });
 const organization = z.object({ id: z.uuid(), label: z.string() });
 const account = z.object({ accountId: z.string(), path: z.string(), name: z.string(), identity });
 const error = { description: 'The request is refused' };
 const owner =
-  'Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned.';
+  'The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned.';
 
 /** The owner-only account identity and exclusion policy, separate from agent tools. */
 export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
@@ -44,31 +59,31 @@ export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
       method: 'post' as const,
       suffix: '/organizations',
       summary: 'Exclude an organization',
-      body: password.extend({ orgId: z.uuid(), label: z.string().trim().min(1).max(80) }),
+      body: z.object({ orgId: z.uuid(), label: z.string().trim().min(1).max(80) }).strict(),
     },
     {
       method: 'delete' as const,
       suffix: '/organizations/{id}',
       summary: 'Remove an organization exclusion',
-      body: password,
+      body: empty,
     },
     {
       method: 'post' as const,
       suffix: '/folders',
       summary: 'Exclude a registered folder',
-      body: password.extend({ accountId: z.string().min(1) }),
+      body: z.object({ accountId: z.string().min(1) }).strict(),
     },
     {
       method: 'delete' as const,
       suffix: '/folders/{id}',
       summary: 'Remove a folder exclusion',
-      body: password,
+      body: empty,
     },
     {
       method: 'post' as const,
       suffix: '/{id}/accept',
       summary: 'Confirm a folder’s current identity',
-      body: password,
+      body: empty,
     },
   ];
   for (const mutation of mutations)
@@ -79,7 +94,7 @@ export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
       summary: mutation.summary,
       description:
         owner +
-        ' Folder targets resolve by registry ID on the server. An excluded organization can never be accepted. Folder exclusions prevent all account reads and launches.',
+        ' Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.',
       request: {
         ...(mutation.suffix.includes('{id}')
           ? {
@@ -103,7 +118,6 @@ export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
         403: error,
         404: error,
         409: error,
-        429: error,
         503: error,
       },
     });
@@ -113,7 +127,7 @@ export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Runtimes'],
     summary: 'Start a vendor sign-in',
     description:
-      'Claude requires an owner cookie and a registered accountId or a sessionId bound to a registered account. Paths and unknown accounts are refused; the default is never substituted. A completed login remains paused until its UUID identity is confirmed. Codex uses the existing person credential-change gate and accepts no accountId.',
+      'The owner at this computer only: the vendor sign-in opens a browser here. Claude takes a registered accountId or a sessionId bound to a registered account; paths and unknown accounts are refused, and the default is never substituted. A Claude sign-in completed here is confirmed in the same step and returned as a masked identity. Codex accepts no accountId.',
     request: {
       params: z.object({ type: z.enum(['claude-code', 'codex']) }),
       body: {

@@ -1,7 +1,3 @@
-import {
-  isNeverUseClaudeFolder,
-  isExplicitlyNeverUseClaudeFolder,
-} from '../../health/account-signin-policy.js';
 /**
  * Which accounts each runtime has, and which one `default` names: DorkOS's
  * implementation of the shared account rules (marketplace `specs/flow-cli-core`
@@ -46,6 +42,10 @@ import {
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
+import {
+  isNeverUseClaudeFolder,
+  isExplicitlyNeverUseClaudeFolder,
+} from '../../health/account-signin-policy.js';
 
 /** The label a standalone `default` account shows (contract §1.1a rev 6d, rule 4). */
 export const DEFAULT_ACCOUNT_LABEL = "Main (this computer's sign-in)";
