@@ -38,6 +38,13 @@ export interface SessionSurface {
    * a session like any other.
    */
   directMessage: DirectMessageSurface | null;
+  /**
+   * What the person is called on their own messages in any chat, DM or not
+   * (FB-38/55). `null` when they have not given a name, and the row says "You".
+   */
+  humanName: string | null;
+  /** The two above, as the transcript takes them: `<SessionTranscript {...transcriptNames} />`. */
+  transcriptNames: Pick<SessionSurface, 'directMessage' | 'humanName'>;
   /** What the empty composer says. */
   placeholder: string;
   /**
@@ -94,6 +101,8 @@ export function useSessionSurface(
   if (directMessage === null) {
     return {
       directMessage: null,
+      humanName,
+      transcriptNames: { directMessage: null, humanName },
       placeholder: composerName ? `Message ${composerName}…` : 'Send a message…',
       quietTurnNumbers: false,
     };
@@ -101,6 +110,8 @@ export function useSessionSurface(
   const dmName = name ?? composerName;
   return {
     directMessage,
+    humanName,
+    transcriptNames: { directMessage, humanName },
     // A room's box names who it reaches, with no trailing ellipsis.
     placeholder: dmName ? `Message ${dmName}` : 'Send a message',
     quietTurnNumbers: !showSessions,

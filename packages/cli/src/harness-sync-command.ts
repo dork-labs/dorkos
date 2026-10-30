@@ -1020,7 +1020,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // makes them visible, so the report can say what each holds, who can see it,
     // and when one of them is also installed in this project (DOR-1922).
     const dorkHome = resolveDorkHome();
-    const { planWithConsent, projectWithConsent, scanHookRequests } =
+    const { planWithConsent, projectWithConsent, scanHookRequests, withProvenInstalls } =
       await import('../server/services/harness/project-with-consent.js');
 
     // The manifest itself, for the things the run needs from it directly rather
@@ -1057,12 +1057,14 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // Orphan sweep only runs on a full (unfiltered) plan: a filtered one omits
     // every other harness's live projections, and the sweep would read them as
     // orphans. The seam refuses the combination outright.
-    const consentOpts = {
+    // On Full it also carries the packages DorkOS installed here, proven off
+    // disk the same way the server's triggers prove them (DOR-3422).
+    const consentOpts = await withProvenInstalls(repoRoot, {
       dorkHome,
       decisions,
       ...(harnessFilter === undefined ? {} : { harness: harnessFilter }),
       ...(ourHarness === undefined ? {} : { dorkosHarness: ourHarness }),
-    };
+    });
 
     // What Claude Code alone has (SRC-08, J-07, HK-14's user half). The FOURTH
     // dynamic server import in this file, by relative path like the three above

@@ -298,3 +298,16 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     expect(card.queryByRole('button', { name: 'View profile' })).not.toBeInTheDocument();
   });
 });
+
+describe('the reader’s own message', () => {
+  it('shows their name with a muted "(you)" after it (FB-38/55)', async () => {
+    renderMention('morning all', []);
+    const line = await waitFor(() => {
+      const found = document.querySelector('[data-slot="message-author"]');
+      if (!found) throw new Error('no author line');
+      return found as HTMLElement;
+    });
+    expect(line.firstElementChild?.textContent).toBe('Ana');
+    expect(line.querySelector('[data-slot="message-author-self"]')?.textContent).toBe('(you)');
+  });
+});

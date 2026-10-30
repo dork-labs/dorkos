@@ -80,6 +80,22 @@ const testServer = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000abc';
 
+/**
+ * Upper bound for `awaitTurnSettled`, which resolves the moment the turn ends and
+ * only falls back to this when it never does. Under the test's own timeout, so a
+ * turn that never settles fails on the assertion after it, not as a hang.
+ */
+const TURN_SETTLE_CEILING_MS = 4_000;
+
+/** A one-shot event a scenario fires and the test awaits, instead of polling. */
+function signal(): { fire: () => void; fired: Promise<void> } {
+  let fire!: () => void;
+  const fired = new Promise<void>((resolve) => {
+    fire = resolve;
+  });
+  return { fire, fired };
+}
+
 beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
   vi.clearAllMocks();
@@ -173,17 +189,29 @@ describe('POST /api/sessions/:id/ui-action', () => {
     // is on screen. Clicking one of those buttons answered 409 over a session
     // nothing was using. On test-mode the window is a microtask wide, so this
     // case builds it explicitly.
+    //
+    // Every wait below is on the event itself, not on `vi.waitFor`'s one-second
+    // poll. The deferred click only runs after the first turn's stream closes
+    // and the dispatcher launches the parked plan, which on a slow merge-queue
+    // runner took longer than a second and failed builds that had nothing wrong
+    // with them (DOR-2128). The dispatcher holds a parked click for the lock TTL,
+    // so the test's own timeout is the only clock that should end this case.
     let closeStream!: () => void;
     const streamOpen = new Promise<void>((resolve) => {
       closeStream = resolve;
     });
+    const firstTurnDone = signal();
+    const clickRan = signal();
     fakeRuntime.withScenarios([
       async function* () {
         yield { type: 'text_delta', data: { text: 'here is a widget' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
+        // Resumed only once the consumer has taken `done`.
+        firstTurnDone.fire();
         await streamOpen;
       },
       async function* () {
+        clickRan.fire();
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
@@ -193,12 +221,13 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .set('X-Client-Id', 'tab-1')
       .send({ actionId: 'render' });
     expect(rendered.status).toBe(202);
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1));
+    await firstTurnDone.fired;
     // The turn has ended on the stream every window reads; the runtime has not
     // finished closing behind it.
-    await vi.waitFor(() =>
-      expect(getOrCreateProjector(SESSION_ID).peekInProgressTurn()).toBeNull()
-    );
+    const projector = getOrCreateProjector(SESSION_ID);
+    await projector.awaitTurnSettled(TURN_SETTLE_CEILING_MS);
+    expect(projector.peekInProgressTurn()).toBeNull();
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
 
     const clicked = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
@@ -207,7 +236,8 @@ describe('POST /api/sessions/:id/ui-action', () => {
 
     expect(clicked.status).toBe(202);
     closeStream();
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
+    await clickRan.fired;
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     expect(fakeRuntime.sendMessage.mock.calls[1]![1] as string).toContain('Action: refresh');
   });
 

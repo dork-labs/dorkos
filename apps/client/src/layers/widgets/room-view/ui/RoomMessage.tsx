@@ -359,6 +359,7 @@ export function RoomMessage({
   // hangs beneath it. Derived from `grouping.position` inside the row family,
   // for the same reason it always was — two sources for one fact can only drift.
   const showAuthorHeader = grouping.position === 'first' || grouping.position === 'only';
+  const isSelf = entry.authorId === viewerAuthorId;
 
   return (
     <Message.Root
@@ -401,7 +402,7 @@ export function RoomMessage({
         author={author}
         at={entry.createdAt}
         onViewProfile={agentCard ? undefined : viewAuthorProfile}
-        isSelf={entry.authorId === viewerAuthorId}
+        isSelf={isSelf}
         renderAvatar={agentCard?.wrapAvatar}
       />
       <Message.Body>
@@ -410,6 +411,7 @@ export function RoomMessage({
           author={author}
           at={entry.createdAt}
           origin={authorRef?.origin}
+          isSelf={isSelf}
           renderName={agentCard?.wrapName}
         />
         {orphanedReply === true && (

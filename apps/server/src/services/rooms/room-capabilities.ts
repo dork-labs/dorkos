@@ -209,6 +209,7 @@ import { RoomError } from './room-errors.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import { projectDetail } from './service/room-detail-projection.js';
+import { POST_REPLY_TO_INPUT } from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -361,10 +362,7 @@ export const roomsDomain: CapabilityDomain = {
               'context names it. You must be a member of it.'
           ),
         text: z.string().min(1).max(8000).describe('What to say. @x wakes x; cc @x only copies.'),
-        replyTo: z
-          .string()
-          .optional()
-          .describe('Reply inside a thread: the entryId the thread hangs off.'),
+        replyTo: POST_REPLY_TO_INPUT,
         attachments: z
           .array(z.string())
           .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)

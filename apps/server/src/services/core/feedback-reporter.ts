@@ -370,6 +370,35 @@ function renderBudgetedSections(candidates: BudgetedSection[], available: number
 }
 
 /**
+ * Render the breadcrumb trail one line per crumb, folding a run of identical
+ * neighbours (same kind and message) into its first line with a count and the
+ * run's last time (DOR-2234). A retry loop logs the same crumb dozens of times,
+ * and printed one per line it buried the crumbs around it and spent the shared
+ * budget. Only ADJACENT repeats fold: a crumb that comes back later keeps its
+ * own place in time, because the order is what a reader reconstructs.
+ *
+ * @param breadcrumbs - The trail, oldest first.
+ */
+function renderBreadcrumbs(breadcrumbs: NonNullable<FeedbackDiagnostics['breadcrumbs']>): string {
+  const runs: { first: (typeof breadcrumbs)[number]; lastAt: string; count: number }[] = [];
+  for (const crumb of breadcrumbs) {
+    const run = runs.at(-1);
+    if (run && run.first.kind === crumb.kind && run.first.message === crumb.message) {
+      run.count += 1;
+      run.lastAt = crumb.at;
+    } else {
+      runs.push({ first: crumb, lastAt: crumb.at, count: 1 });
+    }
+  }
+  return runs
+    .map(({ first, lastAt, count }) => {
+      const line = `[${first.at}] ${first.kind}: ${first.message}`;
+      return count > 1 ? `${line} (x${count}, last ${lastAt})` : line;
+    })
+    .join('\n');
+}
+
+/**
  * Render the bounded {@link FeedbackDiagnostics} bundle into the opaque
  * text block the durable route's `diagnostics` field expects — that route
  * folds it verbatim into the Linear issue description and never re-parses it
@@ -455,10 +484,7 @@ function renderDiagnostics(
   const budgeted: BudgetedSection[] = [
     {
       label: 'Breadcrumbs',
-      text:
-        breadcrumbs && breadcrumbs.length > 0
-          ? breadcrumbs.map((b) => `[${b.at}] ${b.kind}: ${b.message}`).join('\n')
-          : undefined,
+      text: breadcrumbs && breadcrumbs.length > 0 ? renderBreadcrumbs(breadcrumbs) : undefined,
     },
     { label: 'Server log excerpt', text: serverLogExcerpt },
     // The desktop shell's own log (DOR-2045), named apart from the server's so

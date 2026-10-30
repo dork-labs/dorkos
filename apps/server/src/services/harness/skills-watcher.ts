@@ -166,6 +166,8 @@ import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import type { TurnBoundaryKind } from '../session/session-state-projector.js';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
+import { storedPresetIsFull } from './hook-consent.js';
+import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,
@@ -672,10 +674,22 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
       // never planned by anything: the plan that ran never saw it, and the next
       // comparison thinks it did.
       const planned = skillsShape(absRoot);
+      // On Full, only packages DorkOS installed run without a person (DOR-3422);
+      // the install trigger and this one must agree, or one would remove what
+      // the other just wrote.
+      const dorkosInstalled = await provenDorkosInstallsIfFull(
+        absRoot,
+        opts.dorkHome,
+        storedPresetIsFull()
+      );
       const result = await withProjectLock(absRoot, () =>
         // `sweepOrphans: false` is the third hazard, and the seam has no default
         // for it precisely so this line has to be written on purpose.
-        _internal.projectWithConsent(absRoot, { dorkHome: opts.dorkHome, sweepOrphans: false })
+        _internal.projectWithConsent(absRoot, {
+          dorkHome: opts.dorkHome,
+          sweepOrphans: false,
+          ...(dorkosInstalled === undefined ? {} : { dorkosInstalled }),
+        })
       );
       shapes.set(absRoot, planned);
       const { applied, conflicts, withheld, leftAlone } = result;
