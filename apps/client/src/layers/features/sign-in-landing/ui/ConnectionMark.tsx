@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, Minus, Plug, X } from 'lucide-react';
 import { DorkMark } from '@dorkos/icons/marks';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 
 /** How the join reads: joined, set aside (cancelled or expired), or broken. */
 export type ConnectionTone = 'connected' | 'neutral' | 'error';
@@ -56,9 +56,7 @@ export function ConnectionMark({ serviceName, tone }: ConnectionMarkProps) {
           )}
           initial={still ? false : { scale: 0.4, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={
-            still ? { duration: 0 } : { delay: 0.35, type: 'spring', stiffness: 420, damping: 22 }
-          }
+          transition={still ? { duration: 0 } : { delay: 0.35, ...SPRING.snap }}
         >
           {tone === 'connected' && <Check className="size-3.5" strokeWidth={3} />}
           {tone === 'neutral' && <Minus className="size-3.5" strokeWidth={3} />}

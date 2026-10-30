@@ -84,6 +84,32 @@ describe('the card and row rules', () => {
   });
 });
 
+describe('the motion rules', () => {
+  const MOTION = 'apps/client/src/layers/shared/lib/motion.ts';
+  const CSS = 'apps/client/src/index.css';
+
+  it('counts a spring literal, but never in the motion module', () => {
+    const text = "{ type: 'spring', stiffness: 400 } // { stiffness: 1 }";
+    expect(countIn(CLIENT, text)).toEqual({ 'spring-literal': 2 });
+    expect(countIn(MOTION, text)).toEqual({});
+  });
+
+  it.each([
+    ['a y above 1', 'animation: x 1s cubic-bezier(0.2, 1.4, 0.4, 1);', 1],
+    ['a y below 0', 'animation: x 1s cubic-bezier(0.2, -0.4, 0.4, 1);', 1],
+    ['a curve that stays in range', 'animation: x 1s cubic-bezier(0.4, 0, 0.2, 1);', 0],
+    ['the reaction pop', 'animation: reaction-pop 1s cubic-bezier(0.2, 1.8, 0.35, 1);', 0],
+    ['a comment', '/* cubic-bezier(0.2, 1.4, 0.4, 1) */', 0],
+  ])('overshoot rule on %s', (_name, text, expected) => {
+    expect(countIn(CSS, text)['overshoot-bezier'] ?? 0).toBe(expected);
+  });
+
+  it('reads the overshoot rule only in index.css, and no colour rule reads CSS', () => {
+    expect(countIn('apps/client/src/other.css', 'x: cubic-bezier(0.2, 1.4, 0.4, 1)')).toEqual({});
+    expect(countIn(CSS, 'color: #fff; bg-black/50')).toEqual({});
+  });
+});
+
 describe('compare', () => {
   it('fails a hard rule even when the baseline names it', () => {
     const counts = { 'black-scrim': { [CLIENT]: 1 } };
@@ -112,6 +138,10 @@ describe('the baseline only goes down', () => {
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 2 } }, base)).toEqual([]);
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 3 } }, base)[0]?.kind).toBe('raised');
     expect(raisedAgainst({ 'raw-palette': { [UI]: 1 } }, base)[0]?.kind).toBe('raised');
+  });
+
+  it('lets a new rule arrive with its own baseline', () => {
+    expect(raisedAgainst({ 'spring-literal': { [CLIENT]: 3 } }, {})).toEqual([]);
   });
 
   it('update lowers and removes, and never raises or adds', () => {

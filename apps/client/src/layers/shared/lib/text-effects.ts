@@ -11,9 +11,9 @@ export interface TextEffectConfig {
   sep?: 'word' | 'char';
 }
 
-/** Default text effect: Perplexity-style blur-in at word level. */
+/** Default text effect: a plain per-word fade, with no blur. */
 export const DEFAULT_TEXT_EFFECT: TextEffectConfig = {
-  mode: 'blur-in',
+  mode: 'fade',
   duration: 150,
   easing: 'ease-out',
   sep: 'word',

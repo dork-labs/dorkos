@@ -10,7 +10,7 @@
 import type { ComponentProps } from 'react';
 import { motion } from 'motion/react';
 import { Bell, TriangleAlert } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 import { CORNER_COUNT_CAP, CountPill, formatPillCount } from '@/layers/shared/ui';
 
 /**
@@ -89,7 +89,7 @@ export function InboxBellPill({
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+      transition={SPRING.snap}
       className={cn(
         // **A 44px square below `md`, whatever the number.** On a phone the
         // pill is the same touch target as the header's other controls,

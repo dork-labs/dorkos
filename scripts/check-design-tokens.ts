@@ -57,8 +57,23 @@ export interface Rule {
   only?: RegExp;
   /** Skips paths this matches: the one file allowed to spell the pattern. */
   except?: RegExp;
+  /** The file types the rule reads. Defaults to TypeScript and TSX. */
+  files?: RegExp;
+  /** Counts matches in a file's text when a regex alone cannot. Replaces `pattern`. */
+  count?: (text: string) => number;
   /** What to write instead. */
   fix: string;
+}
+
+/** Remove CSS comments, so a comment that names a curve is not that curve. */
+function stripCssComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** Whether a `cubic-bezier(x1, y1, x2, y2)` leaves 0..1 on the y axis, so overshoots. */
+function overshoots(args: string): boolean {
+  const [, y1, , y2] = args.split(',').map(Number);
+  return y1 < 0 || y1 > 1 || y2 < 0 || y2 > 1;
 }
 
 /** Every rule. A later phase adds its own patterns here. */
@@ -149,6 +164,30 @@ export const RULES: Rule[] = [
     except: /^apps\/client\/src\/layers\/features\/mesh\/ui\//,
     fix: 'use rowStateVariants: bg-row-selected, and the inset outline for focus',
   },
+  // Phase 1 motion. One set of springs and curves, none of which overshoots.
+  {
+    id: 'spring-literal',
+    kind: 'ratchet',
+    pattern: /\bstiffness:/g,
+    files: /\.(tsx?|css)$/,
+    except: /^apps\/client\/src\/layers\/shared\/lib\/motion\.ts$/,
+    fix: 'use SPRING from shared/lib/motion.ts',
+  },
+  {
+    id: 'overshoot-bezier',
+    kind: 'hard',
+    pattern: /(?!)/g,
+    only: /^apps\/client\/src\/index\.css$/,
+    files: /\.css$/,
+    // `reaction-pop` is the one overshoot a reaction gets (spec D6).
+    count: (text) =>
+      stripCssComments(text)
+        .split('\n')
+        .filter((line) => !line.includes('reaction-pop'))
+        .flatMap((line) => [...line.matchAll(/cubic-bezier\(([^)]+)\)/g)])
+        .filter((match) => overshoots(match[1])).length,
+    fix: 'use var(--ease-out), var(--ease-in) or var(--ease-standard)',
+  },
 ];
 
 /** The baseline: rule id to repo-relative path to count. */
@@ -184,7 +223,8 @@ export function countIn(file: string, text: string, rules: Rule[] = RULES): Reco
   for (const rule of rules) {
     if (rule.only && !rule.only.test(file)) continue;
     if (rule.except?.test(file)) continue;
-    const n = text.match(rule.pattern)?.length ?? 0;
+    if (!(rule.files ?? /\.tsx?$/).test(file)) continue;
+    const n = rule.count ? rule.count(text) : (text.match(rule.pattern)?.length ?? 0);
     if (n > 0) out[rule.id] = n;
   }
   return out;
@@ -203,7 +243,7 @@ export function measure(root: string): Counts {
     { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .split('\0')
-    .filter((f, i, all) => /\.tsx?$/.test(f) && !EXEMPT.test(f) && all.indexOf(f) === i);
+    .filter((f, i, all) => /\.(tsx?|css)$/.test(f) && !EXEMPT.test(f) && all.indexOf(f) === i);
 
   const counts: Counts = {};
   for (const file of files) {
@@ -260,8 +300,10 @@ export function compare(counts: Counts, baseline: Counts, rules: Rule[] = RULES)
 export function raisedAgainst(current: Counts, base: Counts): Finding[] {
   const findings: Finding[] = [];
   for (const [rule, files] of Object.entries(current)) {
+    // A rule the base has never heard of is being introduced, not raised.
+    if (!(rule in base)) continue;
     for (const [file, count] of Object.entries(files)) {
-      const before = base[rule]?.[file] ?? 0;
+      const before = base[rule][file] ?? 0;
       if (count > before) findings.push({ kind: 'raised', rule, file, count, baseline: before });
     }
   }

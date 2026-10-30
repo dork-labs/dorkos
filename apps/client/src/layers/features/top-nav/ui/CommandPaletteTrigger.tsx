@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/layers/shared/model';
-import { isMac } from '@/layers/shared/lib';
+import { isMac, SPRING } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
 
@@ -24,7 +24,7 @@ export function CommandPaletteTrigger() {
           // rest of the app's icon buttons answer the cursor the same way.
           // The press stays — that is feedback, not decoration.
           whileTap={{ scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 600, damping: 35 }}
+          transition={SPRING.snap}
           aria-label="Open command palette"
         >
           <Search className="size-(--size-icon-sm)" />
