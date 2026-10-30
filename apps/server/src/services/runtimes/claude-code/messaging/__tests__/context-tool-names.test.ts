@@ -614,7 +614,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 71 -> 73 for the canvas browser line (DOR-3219): `<ui_tools>` now names
     // `local_browser_observe` and `local_browser_act` as where a real website is
     // driven, since the canvas tab only shows one.
-    expect(prefixed.length).toBe(73);
+    //
+    // 73 -> 74 for the room working agreement (DOR-3400): `<room_tools>` names
+    // `read_room_history` once more, as the tool to re-read the room before posting.
+    expect(prefixed.length).toBe(74);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
