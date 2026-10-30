@@ -111,7 +111,7 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     for (let asks = 0; asks < MAX_STEP_UP_ASKS; asks++) {
       const heldActionId = await heldActionOf(res);
       if (heldActionId === null) break;
-      const outcome = await requestActionStepUp(heldActionId);
+      const outcome = await requestActionStepUp(heldActionId, { afterExpiry: asks > 0 });
       if (outcome.kind === 'confirmed') return confirmedResponse(outcome.status, outcome.result);
       if (outcome.kind === 'not-confirmed') return res;
       res = await base(...build());

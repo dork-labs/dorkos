@@ -69,7 +69,7 @@ async function confirmWith(password: string): Promise<void> {
   // The field stays disabled until the server's held action has loaded.
   await screen.findByText(VIEW.reason);
   await userEvent.type(await screen.findByLabelText('DorkOS password'), password);
-  await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await userEvent.click(screen.getByRole('button', { name: /^Confirm( setting)?$/ }));
 }
 
 describe('ActionStepUpHost', () => {
@@ -120,7 +120,7 @@ describe('ActionStepUpHost', () => {
     render(<ActionStepUpHost />);
     void ask();
     await confirmWith('nope');
-    expect(await screen.findByText('That’s not your DorkOS password. 4 tries left.')).toBeTruthy();
+    expect(await screen.findByText('That password isn’t right.')).toBeTruthy();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
   });
 
@@ -133,14 +133,31 @@ describe('ActionStepUpHost', () => {
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
   });
 
-  it('offers to ask again once it expired', async () => {
+  it('asks for the action again once it expired, with no extra step', async () => {
     heldWith(VIEW, [404, { code: 'expired', error: 'x' }]);
     render(<ActionStepUpHost />);
     const outcome = ask();
     await confirmWith('the-password');
-    expect(await screen.findByText('That took too long. Nothing changed.')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await expect(outcome).resolves.toEqual({ kind: 'ask-again' });
+  });
+
+  it('says it took too long on the sheet that follows an expired one', async () => {
+    heldWith(VIEW, [200, { ok: true, status: 200, result: {} }]);
+    render(<ActionStepUpHost />);
+    act(() => {
+      void requestActionStepUp('held-2', { afterExpiry: true });
+    });
+    expect(await screen.findByText('This took too long. Confirm it’s you again.')).toBeTruthy();
+  });
+
+  it('names the button for Confirm this setting', async () => {
+    heldWith({ ...VIEW, kind: 'connection.confirm-setting', notes: [] }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByRole('button', { name: 'Confirm setting' })).toBeTruthy();
   });
 
   it('never offers a password field over plain http from another device', async () => {

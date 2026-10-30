@@ -30,6 +30,8 @@ interface Ask {
   resolve: (outcome: ActionStepUpOutcome) => void;
   /** What had focus when it opened, to give it back when it closes. */
   openedFrom: HTMLElement | null;
+  /** Whether the last ask for this same call expired, so the sheet says so. */
+  afterExpiry: boolean;
 }
 
 /** The asks waiting, the first one showing. */
@@ -44,15 +46,19 @@ function notify(): void {
  * Ask the person to confirm one held action.
  *
  * @param heldActionId - The id the guarded route answered with.
+ * @param options - `afterExpiry`: the last ask for this same call expired.
  * @returns How the sheet ended.
  */
-export function requestActionStepUp(heldActionId: string): Promise<ActionStepUpOutcome> {
+export function requestActionStepUp(
+  heldActionId: string,
+  options: { afterExpiry?: boolean } = {}
+): Promise<ActionStepUpOutcome> {
   return new Promise((resolve) => {
     const openedFrom =
       typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    queue.push({ heldActionId, resolve, openedFrom });
+    queue.push({ heldActionId, resolve, openedFrom, afterExpiry: options.afterExpiry ?? false });
     if (queue.length === 1) notify();
   });
 }
@@ -76,6 +82,11 @@ export function finishActionStepUp(outcome: ActionStepUpOutcome): void {
 /** The held action whose sheet is showing, or `null`. */
 export function getActionStepUpShowing(): string | null {
   return queue[0]?.heldActionId ?? null;
+}
+
+/** Whether the sheet that is showing follows one that expired. */
+export function getActionStepUpAfterExpiry(): boolean {
+  return queue[0]?.afterExpiry ?? false;
 }
 
 /** Subscribe to the sheet opening, changing and closing; returns an unsubscribe function. */

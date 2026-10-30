@@ -54,6 +54,7 @@ export { readPersonProof, writePersonProof } from './person-proof-store';
 export { installPersonAwareFetch, personAwareFetch } from './person-aware-fetch';
 export {
   finishActionStepUp,
+  getActionStepUpAfterExpiry,
   getActionStepUpShowing,
   requestActionStepUp,
   subscribeActionStepUp,

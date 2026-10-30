@@ -27,7 +27,20 @@ function app() {
     if (c.req.method === 'POST') c.set('body', await c.req.json());
     await next();
   });
-  registerConfirmReferencesRoute(router, { confirmReferences } as unknown as AdapterManager);
+  const getCatalog = () => [
+    {
+      manifest: { displayName: 'Webhook' },
+      instances: [{ id: 'wh', label: 'Deploy hooks', confirmation: { references: [] } }],
+    },
+  ];
+  registerConfirmReferencesRoute(
+    router,
+    {
+      confirmReferences,
+      getCatalog,
+    } as unknown as AdapterManager,
+    () => true
+  );
   router.get('/writer', (c) => c.json({ writer: secretWriter(c) }));
   return { router, confirmReferences };
 }
@@ -73,12 +86,16 @@ describe('the owner bar on a connection’s secrets', () => {
     expect((await res.json()).code).toBe('person_only');
   });
 
-  it('lets the owner confirm and undo', async () => {
+  // DOR-3234: the owner's Confirm waits for "Confirm it's you" (its own test is
+  // `relay-confirm-step-up.test.ts`); Undo only narrows, so it runs at once.
+  it('holds the owner’s confirm for the step-up, and lets the owner undo at once', async () => {
     const { router, confirmReferences } = app();
-    expect((await confirm(router, 'POST')).status).toBe(200);
+    const held = await confirm(router, 'POST');
+    expect(held.status).toBe(428);
+    expect((await held.json()).code).toBe('step_up_required');
+    expect(confirmReferences).not.toHaveBeenCalled();
     expect((await confirm(router, 'DELETE')).status).toBe(200);
-    expect(confirmReferences).toHaveBeenNthCalledWith(1, 'wh', 'fp', false);
-    expect(confirmReferences).toHaveBeenNthCalledWith(2, 'wh', null, true);
+    expect(confirmReferences).toHaveBeenCalledExactlyOnceWith('wh', null, true);
   });
 
   it('writes a signed-in non-owner’s secret fields as anyone else’s, never as the owner', async () => {
