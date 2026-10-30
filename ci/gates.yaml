@@ -46,6 +46,11 @@ gates:
     source: .github/workflows/browser-test.yml
     purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
 
+  # --- ui-smoke.yml ---
+  - id: wf.ui-smoke.ui-smoke
+    source: .github/workflows/ui-smoke.yml
+    purpose: Runs the @smoke browser specs on a pull request whose diff touches apps/client or packages/ui, so a UI break is red before the queue; passes at once otherwise and on merge_group.
+
   # --- changelog-fragment-check.yml ---
   - id: wf.changelog-fragment-check.fragment-present
     source: .github/workflows/changelog-fragment-check.yml
