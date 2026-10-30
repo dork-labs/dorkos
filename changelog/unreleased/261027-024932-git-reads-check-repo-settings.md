@@ -12,6 +12,7 @@ covers:
   - "test(server): the session route's workspace mock carries fullChatOf (DOR-3343)"
   - 'ci(browser-test): the browser shards check out without a saved credential (DOR-3343)'
   - 'test(server): a plain folder agent home is in no project, stays eligible and starts its turn (DOR-3343)'
+  - "fix(server): a folder's project lookup keeps a refused repository apart from no repository (DOR-3343)"
 ---
 
 ### Fixed

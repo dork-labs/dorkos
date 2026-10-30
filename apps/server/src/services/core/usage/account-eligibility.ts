@@ -36,6 +36,7 @@ import { readProjectRootList } from '@dorkos/shared/config-schema';
 import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/project-schemas';
 
 import { projectRegistry } from '../../projects/project-registry.js';
+import { lookupProjectRoot } from '../../projects/resolve-project-root.js';
 
 /** The runtimes that have account rules. */
 export type EligibilityRuntime = 'claude-code';
@@ -277,6 +278,11 @@ export function onlyProjectsOf(
 export async function projectOfFolder(cwd: string | null | undefined): Promise<ProjectRef | null> {
   if (!cwd || !path.isAbsolute(cwd)) return null;
   try {
+    // A repository git will not be run in (a dotfiles `$HOME` whose settings
+    // name a program, DOR-3343) is no project here, and only here and at chat
+    // start: the chat runs in its folder and no git runs. Git reads in it stay
+    // refused by the runner. The lookup is cached, so the registry asks no git.
+    if ((await lookupProjectRoot(cwd)).kind === 'refused') return null;
     return await projectRegistry.resolve(cwd);
   } catch {
     return null;

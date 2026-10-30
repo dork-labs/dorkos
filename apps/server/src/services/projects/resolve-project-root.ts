@@ -50,7 +50,7 @@ import path from 'node:path';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 
 import { Slots } from '../../lib/concurrency/slots.js';
-import { runSafeGit } from '@dorkos/shared/safe-git';
+import { GitRepoConfigUnsafeError, runSafeGit } from '@dorkos/shared/safe-git';
 
 /** How long a folder in no repository first stays "no project" before git is asked again. */
 export const NEGATIVE_ROOT_TTL_MS = 60_000;
@@ -108,6 +108,13 @@ export interface ProjectRootResolver {
    */
   resolve(cwd: string): Promise<string | null>;
   /**
+   * The same cached answer as {@link resolve}, keeping a repository git would
+   * not be run in apart from "in no repository" ({@link ProjectRootLookup}).
+   *
+   * @param cwd - Any absolute folder.
+   */
+  lookup(cwd: string): Promise<ProjectRootLookup>;
+  /**
    * The cached answer for `cwd` without running git: the root, `null` for a
    * cached "no project", or `undefined` when nothing is cached (or a cached
    * "no project" has expired).
@@ -143,9 +150,26 @@ export function isNotARepository(err: unknown): boolean {
   return code === 128 && killed !== true;
 }
 
+/**
+ * What a folder's lookup found (DOR-3343): its project's main checkout, no
+ * repository at all, or a repository the audited git runner refused to read
+ * because a settings file there names a program (`GitRepoConfigUnsafeError`).
+ *
+ * `refused` is never "no repository". Only chat start and account eligibility
+ * read it as "no project" (`projectOfFolder`), so the chat runs in its folder
+ * and no git runs; every git read in such a folder is refused by the runner.
+ */
+export type ProjectRootLookup =
+  { kind: 'project'; root: string } | { kind: 'none' } | { kind: 'refused' };
+
+/** The root a lookup found, or null for no project and for a refused repository. */
+function rootOf(found: ProjectRootLookup): string | null {
+  return found.kind === 'project' ? found.root : null;
+}
+
 /** One cached lookup. See {@link createProjectRootResolver}. */
 interface RootLookup {
-  root: Promise<string | null>;
+  found: Promise<ProjectRootLookup>;
   settled?: { root: string | null };
   retryAt?: number;
   misses: number;
@@ -186,12 +210,12 @@ export function createProjectRootResolver(
    */
   const byCwd = new Map<string, RootLookup>();
 
-  /** The root, and whether git actually answered (so a miss may back off). */
-  async function lookUp(cwd: string): Promise<{ root: string | null; answered: boolean }> {
+  /** What the folder is in, and whether git or the audit actually answered (so a miss may back off). */
+  async function lookUp(cwd: string): Promise<{ found: ProjectRootLookup; answered: boolean }> {
     const dir = deps.canonical(cwd);
     // A relative folder would be read against the server's own working
     // directory, which is not the folder anybody meant.
-    if (!path.isAbsolute(dir)) return { root: null, answered: true };
+    if (!path.isAbsolute(dir)) return { found: { kind: 'none' }, answered: true };
     try {
       const commonDir = await deps.runGit(
         ['rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -199,14 +223,19 @@ export function createProjectRootResolver(
         { timeoutMs: GIT_TIMEOUT_MS, env: ROOT_LOOKUP_GIT_ENV }
       );
       const root = projectRootFromCommonDir(commonDir);
-      return { root: root === null ? null : deps.canonical(root), answered: true };
+      return {
+        found: root === null ? { kind: 'none' } : { kind: 'project', root: deps.canonical(root) },
+        answered: true,
+      };
     } catch (err) {
-      return { root: null, answered: isNotARepository(err) };
+      if (err instanceof GitRepoConfigUnsafeError)
+        return { found: { kind: 'refused' }, answered: true };
+      return { found: { kind: 'none' }, answered: isNotARepository(err) };
     }
   }
 
   async function readUncached(cwd: string): Promise<string | null> {
-    return (await lookUp(cwd)).root;
+    return rootOf((await lookUp(cwd)).found);
   }
 
   function live(cwd: string) {
@@ -216,35 +245,41 @@ export function createProjectRootResolver(
     return entry;
   }
 
-  function resolve(cwd: string): Promise<string | null> {
+  function lookup(cwd: string): Promise<ProjectRootLookup> {
     const key = deps.canonical(cwd);
     const cached = live(key);
-    if (cached) return cached.root;
+    if (cached) return cached.found;
     const previousMisses = byCwd.get(key)?.misses ?? 0;
     const entry: RootLookup = {
       misses: previousMisses,
-      root: lookups
+      found: lookups
         .run(() => lookUp(key))
-        .then(({ root, answered }) => {
+        .then(({ found, answered }) => {
+          const root = rootOf(found);
           entry.settled = { root };
           // A found root is kept for the process, so only a miss needs a retry.
+          // A refused repository is retried too: its settings may be fixed.
           if (root === null) {
             if (answered) entry.misses = previousMisses + 1;
             entry.retryAt =
               deps.now() + (answered ? negativeTtl(entry.misses) : NEGATIVE_ROOT_TTL_MS);
           }
-          return root;
+          return found;
         }),
     };
     byCwd.set(key, entry);
-    return entry.root;
+    return entry.found;
+  }
+
+  function resolve(cwd: string): Promise<string | null> {
+    return lookup(cwd).then(rootOf);
   }
 
   function peek(cwd: string): string | null | undefined {
     return live(deps.canonical(cwd))?.settled?.root;
   }
 
-  return { resolve, peek, readUncached };
+  return { resolve, lookup, peek, readUncached };
 }
 
 const defaultResolver = createProjectRootResolver();
@@ -257,6 +292,16 @@ const defaultResolver = createProjectRootResolver();
  */
 export function resolveProjectRoot(cwd: string): Promise<string | null> {
   return defaultResolver.resolve(cwd);
+}
+
+/**
+ * A folder's lookup, keeping a refused repository apart from no repository.
+ * See {@link ProjectRootResolver.lookup}.
+ *
+ * @param cwd - Any absolute folder.
+ */
+export function lookupProjectRoot(cwd: string): Promise<ProjectRootLookup> {
+  return defaultResolver.lookup(cwd);
 }
 
 /**
