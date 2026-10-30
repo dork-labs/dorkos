@@ -23,6 +23,12 @@
  *   that was run on the real CLI (`folder-config-switches.binary.test.ts`).
  * - **A person is asked**, once per changed state, without holding the turn.
  *
+ * A launch at Full autonomy has no limits (the owner's rule, DOR-3432): nothing
+ * is held and nobody is asked, and one Activity line says what loaded that would
+ * have waited below Full. **That is not a person's allow:** no approval is
+ * recorded, so the same files are held and asked about the moment the agent is
+ * below Full. The deny rules on the self-grant files still apply.
+ *
  * @module services/runtimes/claude-code/folder-settings/launch-folder-config
  */
 import { realpathSync } from 'node:fs';
@@ -30,6 +36,7 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
+import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 import { folderAllowApprovalGateway } from './folder-allow-approval.js';
 import { folderInstructions } from './folder-instructions.js';
@@ -60,6 +67,8 @@ export interface FolderConfigTurn {
   home: string | undefined;
   /** The folder the turn launches in. */
   cwd: string;
+  /** The turn runs at Full autonomy, which has no limits: nothing is held. */
+  full?: boolean;
 }
 
 /** What a launch holds back of the agent's own folder settings. */
@@ -72,6 +81,48 @@ export interface FolderConfigLaunch {
 
 /** Nothing held back. */
 const NOTHING_HELD: FolderConfigLaunch = { held: [], inHome: false };
+
+/** Homes and content a Full launch already wrote its Activity line for, newest last. */
+const fullLoadsNoted = new Set<string>();
+/** How many {@link fullLoadsNoted} remembers, oldest dropped first. */
+const FULL_LOAD_MEMORY = 10_000;
+
+/** Each part of an agent's folder settings, in a person's words. */
+const PART_NAMES: Record<FolderConfigPart, string> = {
+  hooks: 'its hooks and settings',
+  mcpJson: 'its MCP servers file',
+  manifest: 'its agent file',
+};
+
+/**
+ * Write the one Activity line for a Full launch loading what would wait below
+ * Full, once per home and content per server run.
+ *
+ * @param agent - The agent the turn runs as.
+ * @param home - The registered agent home.
+ * @param held - What a launch below Full would hold back.
+ * @param digests - The content loaded, so a later change gets its own line.
+ */
+function noteLoadAtFull(
+  agent: { name: string },
+  home: string,
+  held: readonly FolderConfigPart[],
+  digests: unknown
+): void {
+  const key = JSON.stringify([home, held, digests]);
+  if (fullLoadsNoted.has(key)) return;
+  fullLoadsNoted.add(key);
+  if (fullLoadsNoted.size > FULL_LOAD_MEMORY) {
+    fullLoadsNoted.delete(fullLoadsNoted.values().next().value!);
+  }
+  recordFullAction({
+    actionId: 'folder-config.load',
+    did: `loaded ${held.map((part) => PART_NAMES[part]).join(', ')}, which nobody approved`,
+    limit: 'they wait for a person',
+    agentPath: home,
+    agentName: agent.name,
+  });
+}
 
 /**
  * Decide what this launch holds back, pin an agent seen for the first time,
@@ -104,6 +155,7 @@ export async function resolveFolderConfigForLaunch(
         agentId: agent.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (turn.full) return NOTHING_HELD;
       return { held: [...FOLDER_CONFIG_PARTS], inHome: await isInsideHome(turn.cwd, home) };
     }
   }
@@ -122,6 +174,12 @@ export async function resolveFolderConfigForLaunch(
     (part) => changed.includes(part) || now.unverifiable.includes(part)
   );
   if (held.length === 0) return NOTHING_HELD;
+  // Loaded, logged, and deliberately NOT recorded as approved: lowering the agent
+  // below Full brings the check and the card straight back.
+  if (turn.full) {
+    noteLoadAtFull(agent, home, held, now.digests);
+    return NOTHING_HELD;
+  }
   logger.warn("[FolderConfig] Holding back an agent's changed folder settings", {
     agentId: agent.id,
     changed: held,
