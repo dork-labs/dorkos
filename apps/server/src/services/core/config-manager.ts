@@ -94,6 +94,7 @@
  *
  * @module services/core/config-manager
  */
+import { initAccountSigninPolicy } from '../health/account-signin-policy.js';
 import Conf from 'conf';
 import { type Schema } from 'conf';
 import { z } from 'zod';
@@ -990,5 +991,6 @@ export let configManager: ConfigManager;
 /** Initialize the config manager. Called once at startup. */
 export function initConfigManager(dorkHome: string): ConfigManager {
   configManager = new ConfigManager(dorkHome);
+  initAccountSigninPolicy(dorkHome);
   return configManager;
 }

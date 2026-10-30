@@ -109,6 +109,7 @@ const RUNTIMES_DEFAULTS = {
   // Trusted by default (ADR 261006-225605): the global stop ships at Full
   // autonomy, and each runtime's own stop ships `null` so it follows it.
   defaultTrustStop: 'autonomy',
+  maxAgentChats: 8,
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -369,6 +370,29 @@ describe('ConfigManager', () => {
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { heartbeats?: unknown };
     expect(onDisk.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
     expect(configManager.get('heartbeats').enabled).toBe(true);
+  });
+
+  it('lands network.extraCaCertsPath on disk for a config written before it existed, with no migration', () => {
+    // DOR-3361: a whole new TOP-LEVEL section, like `keepAwake`, so there is
+    // no CONFIG_MIGRATIONS entry — conf writes the default section before any
+    // key runs. Pinned so that decision breaks loudly if conf ever stops doing
+    // it. The desktop app reads this leaf straight off disk, so on-disk is the
+    // claim that matters.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.125.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { network?: unknown };
+    expect(onDisk.network).toEqual({ extraCaCertsPath: null });
+    expect(configManager.get('network').extraCaCertsPath).toBeNull();
   });
 
   it('reads a stored heartbeats section without triageOnCredits as not chosen', () => {
@@ -4438,7 +4462,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(61);
+    expect(Object.keys(bodies)).toHaveLength(62);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

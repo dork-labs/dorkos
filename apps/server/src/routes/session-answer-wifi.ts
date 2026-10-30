@@ -7,7 +7,9 @@
  * such a turn may only pick among what it offered: a question's option labels,
  * an elicitation's offered values (`enum`, `const`, `oneOf`, `anyOf`), yes or no. Typed words, and the reason a
  * Deny may carry, are refused there with {@link WIFI_FREE_TEXT_REFUSAL}. A turn
- * already held to the default takes any answer, as it would a message.
+ * already held to the default takes any answer, as it would a message, and so
+ * does every turn from the owner's own sign-in, whose words are not held
+ * (DOR-3242, `wifiTurnHeld`).
  *
  * @module routes/session-answer-wifi
  */
@@ -15,7 +17,8 @@ import type { PendingInteractionDTO } from '@dorkos/shared/schemas';
 import type { AgentRuntime, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { isNoLooserThan, resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
 import type { RequestFacts } from '../http/request-facts.js';
-import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { lastTurnLevelOf } from '../services/core/turn-power/turn-levels.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
 
@@ -48,9 +51,12 @@ function turnAboveDefault(runtime: AgentRuntime, sessionId: string): boolean {
   return level.auto === true && held.auto !== true && held.asks !== 'never';
 }
 
-/** Whether the gate applies: a Wi-Fi request into a turn above Default. */
+/**
+ * Whether the gate applies: a Wi-Fi request whose own message would be held
+ * (not the owner's own, DOR-3242) into a turn above Default.
+ */
 function gated(facts: RequestFacts, runtime: AgentRuntime, sessionId: string): boolean {
-  return isFromWifi(facts) && turnAboveDefault(runtime, sessionId);
+  return wifiTurnHeld(facts) && turnAboveDefault(runtime, sessionId);
 }
 
 /** The pending interaction with this id, when the session's projector has one. */

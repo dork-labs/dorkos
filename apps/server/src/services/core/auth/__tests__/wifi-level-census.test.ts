@@ -179,7 +179,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'PATCH /api/agents/current',
     'PUT /api/config/agents/defaultAgent',
   ],
-  'Starts a turn: from Wi-Fi it runs at the runtime’s default at most, Allow once only (DOR-3037)':
+  // `wifiTurnHeld` (`sessions/wifi-turn-ceiling.ts`) decides which requests are held.
+  'Starts a turn: the owner’s own sign-in runs it at the agent’s level (DOR-3242); anyone else from Wi-Fi at the runtime’s default at most, Allow once only (DOR-3037)':
     [
       'POST /api/sessions/:id/messages',
       'POST /api/sessions/:id/continue',
@@ -278,6 +279,8 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/feedback/*': 'Group middleware for feedback.',
   'ALL /api/hub/computers/*': 'Hub only: a hub has no Wi-Fi route.',
   'ALL /api/local-browser/*': 'Group middleware; every route is this computer only.',
+  'ALL /api/runtimes/claude-code/signins/*':
+    'Group middleware; the person only, and its writes are refused under /api/runtimes.',
   'ALL /api/session-locations/*': 'Group middleware for where chats live.',
   'ALL /api/session-relay/*': 'Group middleware; its writes are refused by path.',
   'ALL /api/sessions/:id/*': 'Group middleware for a chat.',

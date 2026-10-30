@@ -2,8 +2,9 @@
  * A chat turn started from Wi-Fi runs at the runtime's default at most
  * (DOR-3037): a message, a widget's action, a queued message after a restart
  * or after somebody on Wi-Fi rewords it, and a chat's mode only goes down.
- * Over an encrypted connection it runs as at the desk, and signing the
- * sending device out stops it (DOR-3172).
+ * The owner's own sign-in on Wi-Fi runs as at the desk (DOR-3242), as does
+ * an encrypted connection, and signing the sending device out stops it
+ * (DOR-3172).
  *
  * Driven over the real chat routes, the real dispatcher and a real SQLite
  * queue, against a runtime double whose `sendMessage` options are what the
@@ -56,6 +57,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
+// The install's owner is the account the requests below sign in as.
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'owner' }),
+}));
 
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -102,9 +108,17 @@ function app() {
           if (via === 'wifi' || via === 'own-tunnel' || via === 'managed') {
             markIngress(c.env.incoming, via);
           }
-          // The desk with no password asked: no sign-in at all.
+          // The desk with no password asked: no sign-in at all. `x-test-signed-in`
+          // names whose sign-in the gate verified on the Wi-Fi route; without it,
+          // the sign-in carries no route, so the gate vouched for nothing here.
+          const signedIn = c.req.header('x-test-signed-in');
           if (c.req.header('x-test-desk') !== '1') {
-            c.set('user', { userId: 'owner', credential: 'cookie', sessionId: SIGN_IN });
+            c.set('user', {
+              userId: signedIn ?? 'owner',
+              credential: 'cookie',
+              sessionId: SIGN_IN,
+              ...(signedIn ? { route: 'wifi' as const } : {}),
+            });
           }
           await next();
         },
@@ -164,15 +178,15 @@ describe('a message sent from Wi-Fi', () => {
     expect(resolveModeDecision(mode as 'default')).toBe('ask');
   });
 
-  // The cookie is the owner's own, and anyone on that network could have
-  // copied it: a copied Wi-Fi cookie still cannot start a turn at Full.
-  it('holds it there whoever sent the cookie: a copied one gets no more', async () => {
+  // Only a sign-in the gate verified on the Wi-Fi route can be the owner's own
+  // (DOR-3242); anything less vouches for nobody, so it gets no more than Default.
+  it('holds it there when the gate verified no Wi-Fi sign-in', async () => {
     fakeRuntime.withScenarios([doneTurn]);
     await request(app())
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('x-test-via', 'wifi')
-      .send({ content: 'replayed from a copied cookie' });
-    const ceiling = optsFor('replayed from a copied cookie')?.permissionCeiling;
+      .send({ content: 'sent with no Wi-Fi sign-in' });
+    const ceiling = optsFor('sent with no Wi-Fi sign-in')?.permissionCeiling;
     expect(clampClaudeMode('bypassPermissions', ceiling!)).toBe('default');
   });
 
@@ -194,6 +208,62 @@ describe('a message sent from Wi-Fi', () => {
     expect(res.status).toBe(202);
     const call = fakeRuntime.sendMessage.mock.calls.at(-1);
     expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
+  });
+});
+
+describe("the owner's own sign-in on Wi-Fi (DOR-3242)", () => {
+  /** A request from the owner's phone page on Wi-Fi. */
+  const fromOwner = (req: ReturnType<ReturnType<typeof request>['post']>) =>
+    req.set('x-test-via', 'wifi').set('x-test-signed-in', 'owner');
+
+  it('runs a message at the agent’s own level, as at the desk: Full asks nothing', async () => {
+    fakeRuntime.withScenarios([doneTurn]);
+    const res = await fromOwner(request(app()).post(`/api/sessions/${SESSION_ID}/messages`))
+      .set('sec-fetch-site', 'same-origin')
+      .send({ content: 'clean up the build folder' });
+    expect(res.status).toBe(202);
+    expect(optsFor('clean up the build folder')?.permissionCeiling).toBeUndefined();
+  });
+
+  it('runs a widget action at the agent’s own level', async () => {
+    fakeRuntime.withScenarios([doneTurn]);
+    const res = await fromOwner(request(app()).post(`/api/sessions/${SESSION_ID}/ui-action`)).send({
+      actionId: 'approve',
+      label: 'Approve',
+    });
+    expect(res.status).toBe(202);
+    expect(fakeRuntime.sendMessage.mock.calls.at(-1)?.[2]?.permissionCeiling).toBeUndefined();
+  });
+
+  it('holds a teammate signed in on Wi-Fi, as before', async () => {
+    fakeRuntime.withScenarios([doneTurn]);
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('x-test-via', 'wifi')
+      .set('x-test-signed-in', 'teammate')
+      .send({ content: 'from a teammate' });
+    expect(optsFor('from a teammate')?.permissionCeiling).toBe('runtime-default');
+  });
+
+  // A foreign `Origin` is refused before the route by CORS; a page that sends
+  // none is still named by `Sec-Fetch-Site`, and held.
+  it('holds a page on another site riding the owner’s cookie', async () => {
+    fakeRuntime.withScenarios([doneTurn]);
+    await fromOwner(request(app()).post(`/api/sessions/${SESSION_ID}/messages`))
+      .set('sec-fetch-site', 'cross-site')
+      .send({ content: 'from another page' });
+    expect(optsFor('from another page')?.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('still refuses a raise of the chat’s mode', async () => {
+    storedMode.value = 'default';
+    const res = await request(app())
+      .patch(`/api/sessions/${SESSION_ID}`)
+      .set('x-test-via', 'wifi')
+      .set('x-test-signed-in', 'owner')
+      .send({ permissionMode: 'bypassPermissions' });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI });
   });
 });
 
@@ -346,6 +416,35 @@ describe('a queued message', () => {
     release();
     await vi.waitFor(() => expect(optsFor('reworded from the phone')).toBeDefined());
     expect(optsFor('reworded from the phone')?.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('is not held when the owner rewords it from Wi-Fi (DOR-3242)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await gate;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      doneTurn,
+    ]);
+    await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'the turn ahead' });
+    const queued = await request(app())
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'typed at this computer' });
+    const edited = await request(app())
+      .patch(`/api/sessions/${SESSION_ID}/queue/${queued.body.messageId}`)
+      .set('x-test-via', 'wifi')
+      .set('x-test-signed-in', 'owner')
+      .send({ content: 'reworded by the owner' });
+    expect(edited.status).toBe(200);
+    expect(store.get(queued.body.messageId)?.heldToDefault).not.toBe(true);
+    release();
+    await vi.waitFor(() => expect(optsFor('reworded by the owner')).toBeDefined());
+    expect(optsFor('reworded by the owner')?.permissionCeiling).toBeUndefined();
   });
 });
 

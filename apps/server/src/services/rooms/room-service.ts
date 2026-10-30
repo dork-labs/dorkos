@@ -211,19 +211,20 @@ export class RoomService {
     return this.triggers.idle();
   }
   /**
-   * Whether this agent is mid-turn in this room right now.
+   * This agent's live turn in this room, or `undefined` when it is not mid-turn here.
    *
-   * The claim map, asked as a yes-or-no. It is what makes a mechanical presence
+   * The claim map, asked directly. It is what makes a mechanical presence
    * signal honest: a face only goes on a canvas tab because a turn that is
    * really running read that document, never because an agent with no work in
-   * hand called a tool.
+   * hand called a tool. It also names the session the turn runs on, once the
+   * runtime has, which the stale-post check marks (DOR-3398).
    *
    * @param roomId - The room.
    * @param authorId - The agent.
-   * @returns True while a claim is held here.
+   * @returns The live turn, while a claim is held here.
    */
-  isWorkingHere(roomId: string, authorId: string): boolean {
-    return this.triggers.activeTurnHere(roomId, authorId) !== undefined;
+  activeTurn(roomId: string, authorId: string): { sessionId: string | undefined } | undefined {
+    return this.triggers.activeTurnHere(roomId, authorId);
   }
   /** Stop everything running in one room. See {@link RoomTurnControl.haltRoom}. */
   haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {

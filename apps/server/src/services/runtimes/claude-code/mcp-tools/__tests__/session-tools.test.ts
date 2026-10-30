@@ -27,6 +27,7 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { markedBoundOf, recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../../../core/turn-power/live-outsider-turns.js';
+import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 /** The folders the mocked boundary lets through. */
@@ -126,7 +127,7 @@ import {
   NO_ADVISOR_REASON,
 } from '../../../../core/usage/account-ranking.js';
 import {
-  AGENT_LAUNCH_CAP_MESSAGE,
+  agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
 } from '../../../../session/launch/launch-session.js';
 import {
@@ -682,7 +683,7 @@ describe('session_start', () => {
     vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
     const refused = await handler({ ...BASE, model: 'claude-opus' });
     expect(payloadOf(refused)).toMatchObject({
-      error: AGENT_LAUNCH_CAP_MESSAGE,
+      error: agentLaunchCapMessage(),
       code: 'LAUNCH_CAP_FULL',
     });
     expect(dispatchMessage).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE);
@@ -1584,7 +1585,21 @@ describe('a marked start (DOR-3147, DOR-3394)', () => {
   const saved = (n: number) =>
     vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[n]![1].permissionMode;
 
-  afterEach(() => resetLiveOutsiderTurns());
+  const markedLines = vi.fn(async () => undefined);
+  beforeEach(() => {
+    markedLines.mockClear();
+    setMarkedFullActivity({ emit: markedLines } as never);
+  });
+  afterEach(() => {
+    resetLiveOutsiderTurns();
+    setMarkedFullActivity(undefined);
+  });
+  /** The marked-Full Activity lines written, by the action each names. */
+  const linesFor = () =>
+    markedLines.mock.calls
+      .map((call) => (call as unknown as [{ eventType: string; resourceId: string }])[0])
+      .filter((line) => line.eventType === 'agent.marked_full_action')
+      .map((line) => line.resourceId);
 
   // Below Full: these two ran from a chat at Full until DOR-3394, which no longer caps it.
   it('below Full: starts capped at the default, carrying the mark, and refuses its own level named', async () => {
@@ -1605,6 +1620,27 @@ describe('a marked start (DOR-3147, DOR-3394)', () => {
       permissionMode: 'acceptEdits',
     });
     expect(payloadOf(named)).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    expect(linesFor()).toEqual([]);
+  });
+
+  it('from a marked room turn in a chat set to Full: starts at Full, with one Activity line (DOR-3412)', async () => {
+    // A room turn with an outsider's line in view: marked, with no ceiling at all.
+    await turnOn('room-full-parent', { roomTurn: { outsiderInView: true } } as MessageOpts);
+    expect(markedBoundOf('room-full-parent', AGENT_HOME)).toBeDefined();
+    const result = await fromChat('room-full-parent', 'bypassPermissions', true)(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(saved(0)).toBe('bypassPermissions');
+    expect(linesFor()).toEqual(['session_start']);
+    expect((markedLines.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
+      actorId: AGENT_HOME,
+      metadata: { sessionId: 'room-full-parent' },
+    });
+  });
+
+  it('from an unmarked chat set to Full: no Activity line', async () => {
+    const result = await fromChat('clean-full-parent', 'bypassPermissions', true)(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(linesFor()).toEqual([]);
   });
 
   it('from a chat set to Full: starts at Full, carrying the mark and nothing else (DOR-3394)', async () => {
@@ -1624,6 +1660,7 @@ describe('a marked start (DOR-3147, DOR-3394)', () => {
     )({ ...BASE, permissionMode: 'bypassPermissions' });
     expect(named.isError).toBeUndefined();
     expect(saved(1)).toBe('bypassPermissions');
+    expect(linesFor()).toEqual(['session_start', 'session_start']);
   });
 
   it('below Full: keeps cap and mark on the hop from the spin-off’s own turn', async () => {

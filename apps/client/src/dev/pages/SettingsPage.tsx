@@ -3,6 +3,7 @@ import { SETTINGS_SECTIONS } from '../playground-registry';
 import { SettingsShowcases } from '../showcases/SettingsShowcases';
 import { RemoteAccessShowcases } from '../showcases/RemoteAccessShowcases';
 import { KeepAwakeShowcases } from '../showcases/KeepAwakeShowcases';
+import { CompanyCertificatesShowcases } from '../showcases/CompanyCertificatesShowcases';
 import { RuntimeCardShowcases } from '../showcases/RuntimeCardShowcases';
 import { CloudUsageShowcases } from '../showcases/CloudUsageShowcases';
 import { CreditsOfferShowcases } from '../showcases/CreditsOfferShowcases';
@@ -20,6 +21,7 @@ export function SettingsPage() {
       <SettingsShowcases />
       <RemoteAccessShowcases />
       <KeepAwakeShowcases />
+      <CompanyCertificatesShowcases />
       <CloudUsageShowcases />
     </PlaygroundPageLayout>
   );

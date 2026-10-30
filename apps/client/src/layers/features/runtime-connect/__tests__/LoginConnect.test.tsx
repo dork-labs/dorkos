@@ -262,7 +262,10 @@ describe('LoginConnect — Fix sign-in from Ready (DOR-438)', () => {
     // No account pin from the settings surface: it reconnects the runtime, not
     // one session's account, so it signs into whichever account DorkOS runs new
     // sessions on. The session-scoped pin belongs to the chat card (DOR-1651).
-    expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', undefined);
+    expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+      accountId: 'default',
+      sessionId: undefined,
+    });
   });
 });
 

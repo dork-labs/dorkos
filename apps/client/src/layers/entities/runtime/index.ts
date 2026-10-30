@@ -75,4 +75,7 @@ export type {
   RuntimeConnectSuccess,
 } from './ui/RuntimeSetupDialog';
 
+export { useSigninPolicy } from './model/use-signin-policy';
+export { OwnerSigninAction } from './ui/OwnerSigninAction';
+export { AccountSigninIdentity } from './ui/AccountSigninIdentity';
 export { AccountSignin } from './ui/AccountSignin';

@@ -867,11 +867,13 @@ function memberLine(member: RoomContextMember): string {
  * @param opts.actionable - Whether this line is one the agent might act ON, and
  *   therefore whether it carries its id label. Default true. False for the
  *   channel tail, which the block itself introduces as "background only".
+ * @param opts.ccdIn - Ids of messages that only copied the agent in
+ *   (DOR-3401); a line among them is tagged `[cc: you]`.
  */
 function entryLine(
   entry: RoomContextEntry,
   nonce: string,
-  opts: { actionable?: boolean } = {}
+  opts: { actionable?: boolean; ccdIn?: readonly string[] } = {}
 ): string {
   const author = { handle: entry.authorHandle, displayName: entry.authorDisplayName };
   const who = entry.kind === 'notice' ? 'the room' : named(author);
@@ -905,7 +907,11 @@ function entryLine(
   const actionable = (opts.actionable ?? true) && entry.kind !== 'notice';
   const id = actionable ? ` ${idLabel(entry.id, nonce)}` : '';
   const topic = entry.topicLabel ? ` [topic: ${label(entry.topicLabel, TOPIC_MAX_LENGTH)}]` : '';
-  const mention = entry.mentionsMe ? ' [mentions you]' : '';
+  const mention = entry.mentionsMe
+    ? ' [mentions you]'
+    : opts.ccdIn?.includes(entry.id)
+      ? ' [cc: you]'
+      : '';
   // **A label, and one only the server can write** (RP8). It is the room-side
   // twin of `queue_note`'s `<queue_note>composed while the agent was responding
   // to the previous message</queue_note>`, and it renders the same way that one
@@ -1135,6 +1141,18 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
     );
   }
 
+  // A cc started no turn, so this line is the only place the agent hears of
+  // one (DOR-3401). Ids only, in the labels region: the messages themselves
+  // are quoted below, marked `[cc: you]`, when they fit.
+  if (data.ccdIn && data.ccdIn.length > 0) {
+    const count = data.ccdIn.length;
+    lines.push(
+      `You were cc'd in ${count === 1 ? '1 message' : `${count} messages`} since you last ` +
+        `read this room: ${data.ccdIn.map((id) => idLabel(id, nonce)).join(', ')}. ` +
+        `A cc is a copy, not a question. Answer only if you have something new.`
+    );
+  }
+
   if (data.addressing.engagedUntil) {
     // BOTH halves, with the real number in the second one. A time alone reads as
     // the whole rule and is half of one; "enough messages" is a rule an agent
@@ -1320,7 +1338,7 @@ function fenced(data: RoomContextData, nonce: string): string | null {
         `${body(data.thread.rootExcerpt)}`
     );
   }
-  for (const entry of data.pending) quoted.push(entryLine(entry, nonce));
+  for (const entry of data.pending) quoted.push(entryLine(entry, nonce, { ccdIn: data.ccdIn }));
   // The rest of what this turn is ANSWERING, under its own nonced heading and
   // after the background it must not be confused with (RP8, DOR-1231).
   //
@@ -1341,7 +1359,7 @@ function fenced(data: RoomContextData, nonce: string): string | null {
       GATHERED_NOTE,
       ...gathered.map(
         (entry, index) =>
-          `(${index + 1} of ${gathered.length} · ${nonce}) ${entryLine(entry, nonce)}`
+          `(${index + 1} of ${gathered.length} · ${nonce}) ${entryLine(entry, nonce, { ccdIn: data.ccdIn })}`
       )
     );
   }

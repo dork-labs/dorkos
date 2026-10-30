@@ -639,6 +639,28 @@ describe('the environment handed to the server child', () => {
       restorePaths();
     }
   });
+
+  it('never hands an exported CA variable to the packaged server, so no agent inherits it (DOR-3361)', async () => {
+    const restorePaths = stubPackagedPaths();
+    vi.stubEnv('NODE_EXTRA_CA_CERTS', '/tmp/planted-ca.pem');
+    vi.stubEnv('SSL_CERT_FILE', '/tmp/planted-ca.pem');
+    try {
+      const { app } = await getElectronMock();
+      app.isPackaged = true;
+      const { startServer } = await import('../server-process');
+
+      const started = startServer();
+      const child = await utilityChildAt(0);
+      child.emitReady();
+      await started;
+
+      expect(child.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
+      expect(child.env.SSL_CERT_FILE).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+      restorePaths();
+    }
+  });
 });
 
 describe('what a packaged server child is told about the machine it runs on', () => {

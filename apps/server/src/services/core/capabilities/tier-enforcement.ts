@@ -117,6 +117,7 @@ import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
   callRaisesPermissions,
+  approvableBlock,
   resolveCallPermission,
   type CallPermission,
 } from './permission-enforcement.js';
@@ -837,8 +838,8 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // by an agent DorkOS can name: the rate limits and any later Always allow key
   // on its path. A revoked or expired identity, or settings nobody could read,
   // are never approvable, so they get no card whichever way they arrive.
-  const askable =
-    permission?.state === 'blocked' && !permission.unreadable && permission.source !== 'inactive';
+  // A Full chat's keeper refusal is not approvable either (DOR-3417, `approvableBlock`).
+  const askable = approvableBlock(permission);
   const blockedAsk =
     askable && blockedRequest !== undefined && identity !== undefined && !identity.inactive;
 

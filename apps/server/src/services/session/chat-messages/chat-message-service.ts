@@ -390,7 +390,7 @@ export class ChatMessageService {
     if (isSessionLaunchRefusal(result)) {
       throw new ChatMessageError(
         result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
-        result.refused === 'LAUNCH_CAP_FULL' ? standing.CHAT_LAUNCH_CAP_MESSAGE : result.message
+        result.refused === 'LAUNCH_CAP_FULL' ? standing.chatLaunchCapMessage() : result.message
       );
     }
     if (!result.accepted) {

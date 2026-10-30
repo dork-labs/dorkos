@@ -67,6 +67,7 @@ import {
 import { probeForReset } from '../../services/runtimes/claude-code/accounts/account-probe.js';
 import { watchAskResolution } from '../../services/notifications/emitters/ask-resolution.js';
 import { watchRuntimeSigninFailures } from '../../services/notifications/emitters/runtime-signin.js';
+import { watchAccountSigninReviews } from '../../services/notifications/emitters/account-signin-review.js';
 import { watchCreditsRefusals } from '../../services/notifications/emitters/credits-refused.js';
 import { announceInstalledVersion } from '../../services/notifications/emitters/update-installed.js';
 import { warnAboutGitProtection } from '../../lib/git-safety.js';
@@ -292,6 +293,8 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
   // over it first — including the 3am ones nobody is watching (DOR-1654).
   watchRuntimeSigninFailures();
+  // A new or changed Claude sign-in, said once as a notice; it never holds a turn (DOR-3245).
+  watchAccountSigninReviews(activityService);
   // A turn DorkOS credits refused, told whoever started it, so a refused
   // scheduled task or room turn is never silent (ADR 261001-000811).
   watchCreditsRefusals();

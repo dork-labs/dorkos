@@ -11,7 +11,10 @@
  *
  * When a marked turn in a Full chat does something a marked turn below Full is asked about (a
  * send, a destructive action, a standing change), one Activity line says so: no card was shown,
- * so the record is how a person finds it afterwards.
+ * so the record is how a person finds it afterwards. The same holds for what a marked turn below
+ * Full is refused (DOR-3412): at Full the mark refuses nothing and writes the line instead, except
+ * the three refusals every level keeps (an agent changing its own level or standing grants,
+ * revealing a secret DorkOS holds, and a limit a person set), which never read this module.
  *
  * Kept in memory, like the turn levels it is written beside, and bounded the same way. A chat this
  * process ran no turn on reads as not Full and as attended: the strict answer for asking, and the
@@ -172,6 +175,8 @@ export interface MarkedFullAction {
   agentName?: string;
   /** The chat it ran in, when known. */
   sessionId?: string;
+  /** Set when the action was refused, as a keeper is at every level (DOR-3417), not run. */
+  refused?: true;
 }
 
 /**
@@ -192,16 +197,39 @@ export function recordMarkedFullAction(action: MarkedFullAction): void {
     resourceType: 'capability',
     resourceId: action.actionId,
     resourceLabel: action.title,
-    summary:
-      `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
-      'turn read words from outside',
+    summary: action.refused
+      ? `${who} was refused "${action.title}": this turn read words from outside, and an agent ` +
+        'never changes its own level or grants that way'
+      : `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
+        'turn read words from outside',
     ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
     metadata: {
       actionId: action.actionId,
+      ...(action.refused ? { refused: true } : {}),
       ...(action.agentPath ? { agentPath: action.agentPath } : {}),
       ...(action.sessionId ? { sessionId: action.sessionId } : {}),
     },
   });
+}
+
+/**
+ * Whether a marked turn may do what a marked turn below Full is refused: only in a chat set to Full
+ * (DOR-3412), and then the Activity line is written here. Call it only once the turn is known to be
+ * marked, and never for one of the three refusals every level keeps. A teammate's mark is one of
+ * them (the limits the space's owner set), so it is refused at every level.
+ *
+ * @param action - What the turn is about to run, and who runs it; `sessionId` names the chat.
+ * @param marks - The turn's marks, read from its own record.
+ * @returns `true` when the call goes on (Full, line written), `false` when it is refused.
+ */
+export function markedTurnRunsAtFull(
+  action: MarkedFullAction,
+  marks: { teammate?: unknown }
+): boolean {
+  if (marks.teammate !== undefined) return false;
+  if (!choseFullAutonomy(action.sessionId)) return false;
+  recordMarkedFullAction(action);
+  return true;
 }
 
 /** One thing a chat at Full autonomy did that a chat below Full is held or refused for. */

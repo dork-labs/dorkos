@@ -442,6 +442,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
+  // Spin-off chats running at once: the fixed number it was before it became a
+  // setting (DOR-3413), a real bound at its default.
+  'runtimes.maxAgentChats': 8,
   // The three ceilings a merge into a room's own files is refused against (spec
   // `project-rooms` §3.6). Real bounds at their defaults, on the same footing as
   // the upload caps above: what they hold back is content member agents wrote,
@@ -554,6 +557,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
+  // No company certificates: the desktop app trusts only the system's own
+  // authorities until a person names a file (DOR-3361).
+  'network.extraCaCertsPath': null,
 };
 
 /**

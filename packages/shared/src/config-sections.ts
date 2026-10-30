@@ -1,10 +1,11 @@
 /**
  * Top-level sections of `UserConfigSchema`, split out of `config-schema.ts` to
- * keep that file inside its line budget; plain Zod, no OpenAPI. Three are whole
+ * keep that file inside its line budget; plain Zod, no OpenAPI. Four are whole
  * sections on purpose so conf writes each into every stored config by itself and
  * none needs a migration: whether this computer may sleep while agents work
- * (`keepAwake`), whether agents wake on their own (`heartbeats`), and how long
- * the Activity feed keeps its history (`activity`). The fourth, `server`, is
+ * (`keepAwake`), whether agents wake on their own (`heartbeats`), how long
+ * the Activity feed keeps its history (`activity`), and which company
+ * certificates the desktop app trusts (`network`). The fifth, `server`, is
  * as old as the file, so a field added to it needs a migration.
  *
  * @module shared/config-sections
@@ -73,6 +74,26 @@ export const ActivityConfigSchema = z
     retentionDays: z.number().int().min(1).max(3650).default(365),
   })
   .default(() => ({ retentionDays: 365 }));
+
+/**
+ * How the desktop app reaches the network (DOR-3361). A whole top-level section
+ * on purpose, like `keepAwake`: conf writes a new section into every stored
+ * config on its own, so the field needs no migration. The default is declared
+ * twice, here and in the section literal below, and the two must agree.
+ */
+export const NetworkConfigSchema = z
+  .object({
+    /**
+     * Company certificates: the absolute path of a PEM bundle the desktop app
+     * adds to what it trusts, for a company network that inspects TLS traffic.
+     * The ONLY way in: the packaged app ignores `NODE_EXTRA_CA_CERTS`, because
+     * anything running as the user could set it. Read at start-up by the
+     * desktop main process and its server process, so a change applies after a
+     * restart. Operator-only: it decides whom every connection trusts.
+     */
+    extraCaCertsPath: z.string().min(1).nullable().default(null),
+  })
+  .default(() => ({ extraCaCertsPath: null }));
 
 /**
  * Where the server listens and what it opens on start (`server`). Every stored

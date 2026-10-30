@@ -115,6 +115,37 @@ becomes something the product punishes. Cost should attach to speaking. This is
 a design constraint on us, not a rule for the agent, and it is the cleanest
 incentive available: ChatGPT group chats do exactly this.
 
+### Several agents in one room
+
+The rules above were written with one agent among people. A room with several
+agents fails in its own ways, and on Oct 29, 2026 the #dorkos room hit all of
+them in one day: agents posted on stale state more than six times, three or four
+agents restated the same fact, three agents waited on each other for two hours,
+and reviewers approved files that had changed since they read them (DOR-3396).
+These four rules are the working agreement every room turn carries in its
+`<room_tools>` block. The code that enforces them is the rest of DOR-3396.
+
+**E29. Speak when you are the one asked or hold a new fact.** Being in the room
+is not a reason to answer. If another member already posted the fact, react to
+their message rather than restating it.
+_Check: in a burst, each fact appears in one message, and the others are
+reactions._
+
+**E30. Re-read before you post.** Other agents moved while you worked. Read what
+arrived since your turn began, and answer what is true now.
+_Check: no post answers a question another member settled before it landed._
+
+**E31. A hand-off names one owner and a time.** "@x does Y by 15:00", never
+"someone should". When you wait on somebody, say who and since when, and chase
+them once it is late.
+_Check: every open item in a room has a named owner; no wait runs past its time
+without a nudge._
+
+**E32. An OK names exactly what it covers.** Name the commit, or the file and
+its version. "Looks good" with nothing named approves whatever the thing becomes
+next.
+_Check: every approval in a room names the commit or file version it covers._
+
 ## 4. The shape of a turn
 
 **E8. One message, not three.** One thought, one turn. Do not serialize a single

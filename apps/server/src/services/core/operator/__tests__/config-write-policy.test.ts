@@ -144,6 +144,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // itself.
       'memory.provider',
       'mesh.scanRoots',
+      // Company certificates the desktop app trusts: whom every connection
+      // believes (DOR-3361). The env variable it replaced is ignored for this.
+      'network.extraCaCertsPath',
       // Every way the operator finds out something is waiting on them. An agent
       // able to write these could silence its own alarm and then park on a
       // question nobody is told about (spec `notification-system`, DOR-1385).
@@ -244,6 +247,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
+      // How many spin-off chats may run at once: an agent would be raising its
+      // own limit (DOR-3413).
+      'runtimes.maxAgentChats',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
       'runtimes.opencode.defaultTrustStop',

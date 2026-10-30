@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.126.4",
+  "version": "0.127.0",
   "description": "You, multiplied. Build and run your business with an agent team. Your agents join your team chat, take on real work, and build the tools your company runs on.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -83,8 +83,8 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.7.6",
-    "@better-auth/core": "1.7.6",
+    "@better-auth/api-key": "1.7.7",
+    "@better-auth/core": "1.7.7",
     "@better-fetch/fetch": "1.3.2",
     "@dorkos/browser": "workspace:*",
     "@dorkos/client": "workspace:*",
@@ -97,7 +97,7 @@
     "@dorkos/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/qrcode-terminal": "^0.12.2",
-    "better-auth": "1.7.6",
+    "better-auth": "1.7.7",
     "conf": "^15.1.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

@@ -110,6 +110,7 @@ import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
 import { restoreContextWarning, takeContextWarning } from './agent-compaction/context-warning.js';
+import { restoreTurnCutoff, takeTurnCutoff } from './turn-cutoff/turn-cutoff.js';
 import { agentPathOfTurn, isCompactionBlocked } from './agent-compaction/compaction-permission.js';
 import { turnAgentOf } from '../core/agent-identity/index.js';
 import { holdStagedContext, takeStagedContext } from './staged-context-store.js';
@@ -841,6 +842,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // wedge every later turn this client sends to this session (DOR-1088).
   // Hoisted so the catch below can hand back a note this attempt took.
   let owedWarning: number | null = null;
+  let owedCutoff: ReturnType<typeof takeTurnCutoff> = null;
   try {
     // Launch-time preparation, under this turn's write lock — so no other turn
     // on this session is running — see `prepareLaunch`. Its result replaces the
@@ -926,6 +928,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         data: { percent: owedWarning, canCompact },
       });
     }
+    // The note that DorkOS, not a person, ended the last turn (DOR-3307): the
+    // runtime's own record of that cutoff says "interrupted by user".
+    owedCutoff = takeTurnCutoff(turnKey);
+    if (owedCutoff !== null) {
+      additionalContext.push({ kind: 'turn_cutoff', scope: 'per-turn', data: owedCutoff });
+    }
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -1000,6 +1008,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         for (const entry of staged)
           holdStagedContext(sessionId, entry.data.text, crypto.randomUUID());
         if (owedWarning !== null) restoreContextWarning(turnKey, owedWarning);
+        if (owedCutoff !== null) restoreTurnCutoff(turnKey, owedCutoff);
         uiTurnFacts.endTurn(turnKey);
         releaseOnce();
         turnSpan.end();
@@ -1098,6 +1107,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   } catch (err) {
     // A note this attempt took rides the next turn instead of being lost with it.
     if (owedWarning !== null) restoreContextWarning(turnKey, owedWarning);
+    if (owedCutoff !== null) restoreTurnCutoff(turnKey, owedCutoff);
     // No turn was launched, so nothing downstream will ever settle. Give the
     // lock and the queue slot back here or this session is wedged for this
     // client until the lock's TTL — and the queue, which has no TTL, forever.

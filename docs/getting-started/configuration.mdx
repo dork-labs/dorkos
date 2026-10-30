@@ -188,6 +188,23 @@ How long the Activity feed keeps its history. The record behind it keeps every a
   }}
 />
 
+### Company certificates
+
+Some company networks check all web traffic, and the Mac app can only reach the internet there if it trusts the company's own certificates. Pick the certificate file in **Settings → Server → Network**. The app then shows how many certificates it trusts from that file. A change applies the next time the app starts.
+
+The Mac app ignores the `NODE_EXTRA_CA_CERTS` environment variable on purpose, because any program on your computer could set it. Only a person can choose this file; agents can't change it.
+
+<TypeTable
+  type={{
+    'network.extraCaCertsPath': {
+      description:
+        'The full path of a certificate file (PEM) the Mac app trusts. Used only by the Mac app.',
+      type: 'string | null',
+      default: 'null',
+    },
+  }}
+/>
+
 ### A2A Gateway
 
 The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
@@ -666,6 +683,8 @@ Changing it applies to the next message you send in each chat — nothing you ha
 
 **How many agents can run at once is sized to your computer.** That is `runtimes.claudeCode.maxWarmProcesses`. Left empty, which is how it ships, DorkOS allows one per 2 GB of memory: never fewer than 12, never more than 32. A 48 GB machine gets 24. Set a number to pin it. When every one of them is busy, a new message does not fail: it waits for one to finish, and the chat or room says it is waiting. If nothing finishes for 45 minutes, it stops waiting and says why.
 
+**Chats your agents start on their own have a separate limit.** That is `runtimes.maxAgentChats`, and it ships at 8. It counts the chats an agent spins off, or sends a first message into, while their turn is running, on every runtime. When it is full, the agent is told to try again later and nothing is started. If your computer has room for more, raise it with `dorkos config set runtimes.maxAgentChats 12`; the next chat an agent starts uses the new number. An agent cannot change this one itself.
+
 **What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
 
 The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
@@ -687,6 +706,12 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
         'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". Ships as "autonomy": new chats work without stopping to ask. When null, each runtime starts where it always did, which is asking first. The Careful preset sets "ask".',
       type: '"ask" | "act" | "autonomy" | null',
       default: '"autonomy"',
+    },
+    'runtimes.maxAgentChats': {
+      description:
+        'How many chats your agents start on their own may run at once, on every runtime. Past it, an agent’s new chat is turned down until one finishes. Only you can change it.',
+      type: 'number (1–64)',
+      default: '8',
     },
     'runtimes.claudeCode.defaultAccount': {
       description:

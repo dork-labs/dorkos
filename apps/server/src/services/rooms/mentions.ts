@@ -14,6 +14,7 @@
  *
  * @module server/services/rooms/mentions
  */
+import { ccAuthors } from '@dorkos/shared/mention-addressing';
 import type { MentionSpan } from '@dorkos/shared/room-schemas';
 
 /**
@@ -242,6 +243,40 @@ function closingFence(lines: readonly string[], from: number, opener: string): n
  */
 export function resolveMentions(text: string, roster: readonly MentionCandidate[]): string[] {
   return addressingIn(text, roster, []).mentions;
+}
+
+/** The two stored fields first-@ addressing reads off an entry. */
+interface AddressedEntry {
+  mentions: readonly string[];
+  mentionSpans?: readonly MentionSpan[];
+}
+
+/**
+ * Who an entry ASKS to answer: its mentions minus the ones it only copies in
+ * (DOR-3401, `@dorkos/shared/mention-addressing`).
+ *
+ * Every rule that decides who takes a turn reads this rather than
+ * `entry.mentions`, which still lists everybody named so pills, search and
+ * notifications see the cc'd too. A caller-resolved mention has no span, so it
+ * can never be a cc; an entry written before the rule has no marks, so it reads
+ * exactly as it always did.
+ *
+ * @param entry - The stored entry.
+ * @returns Distinct author ids, in the order they were first mentioned.
+ */
+export function addresseesOf(entry: AddressedEntry): string[] {
+  const cc = new Set(ccAuthors(entry.mentionSpans ?? []));
+  return entry.mentions.filter((id) => !cc.has(id));
+}
+
+/**
+ * Who an entry only copies in: named after the leading run, never asked.
+ *
+ * @param entry - The stored entry.
+ * @returns Distinct author ids, in text order.
+ */
+export function ccOf(entry: AddressedEntry): string[] {
+  return ccAuthors(entry.mentionSpans ?? []);
 }
 
 /** Who a message reached, and who it tried to reach and could not. */
