@@ -571,8 +571,9 @@ describe('in-session tool exposure', () => {
     // 135 -> 136 total, deferred unchanged: `memory_read` (ADR 261017-153539)
     // is always loaded, because the prompt names it.
     // 136 -> 137 total, 124 -> 125 deferred: `running_chats` (DOR-3460).
-    expect(tools).toHaveLength(137);
-    expect(deferred).toHaveLength(125);
+    // 137 -> 138 total, 125 -> 126 deferred: `set_up_room_files` (DOR-3468).
+    expect(tools).toHaveLength(138);
+    expect(deferred).toHaveLength(126);
     for (const name of [
       'local_browser_state',
       'local_browser_observe',

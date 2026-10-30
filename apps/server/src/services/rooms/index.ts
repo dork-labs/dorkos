@@ -856,7 +856,7 @@ let activeRoomFiles: RoomFilesService | null = null;
  * {@link setRoomRepoService} and for the same reason.
  *
  * Its own singleton rather than a method on the repo service: enabling a repo
- * is a write the operator makes once, reading its files is a request path every
+ * is a write a member makes once, reading its files is a request path every
  * member takes, and the two share nothing but the store.
  *
  * @param service - The wired service.
