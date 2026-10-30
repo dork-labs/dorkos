@@ -114,6 +114,7 @@ import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
+import { createRunningChatsRoutes } from '../routes/running-chats.js';
 import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
@@ -348,6 +349,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
+  app.route('/api/sessions/running', createRunningChatsRoutes(deps.sessions ?? {}));
   app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
