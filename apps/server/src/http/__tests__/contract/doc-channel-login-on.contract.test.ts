@@ -23,7 +23,12 @@ import {
   CanvasChannelEventReceiptSchema,
   CanvasChannelReplayResponseSchema,
 } from '@dorkos/shared/canvas-channel-schemas';
-import { bootComposedServer, BOOT_HOOK_TIMEOUT_MS, type ComposedServer } from './harness.js';
+import {
+  bootComposedServer,
+  BOOT_HOOK_TIMEOUT_MS,
+  stepUpAt,
+  type ComposedServer,
+} from './harness.js';
 import {
   COMPANION_DOC_TURN_PREFIX,
   COMPANION_ROUTE,
@@ -121,7 +126,14 @@ describe('contract: a preview page’s companion event wakes its agent with logi
     origin = server.baseUrl;
     cookie = '';
     await ok('POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' });
-    await ok('PATCH', '/api/config', { auth: { enabled: true } });
+    // Turning login on is the owner's own act, after their step-up (DOR-3330).
+    const enabled = await call(
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      await stepUpAt(server.baseUrl, OWNER.password)
+    );
+    expect(enabled.status).toBe(200);
     const signedIn = await fetch(new URL('/api/auth/sign-in/email', server.baseUrl), {
       method: 'POST',
       headers: { origin, 'content-type': 'application/json' },
