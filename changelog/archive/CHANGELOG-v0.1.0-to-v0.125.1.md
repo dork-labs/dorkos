@@ -1,7 +1,18 @@
-# Changelog archive: v0.1.0 – v0.125.0
+# Changelog archive: v0.1.0 – v0.125.1
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.125.1] - 2026-10-22
+
+> DorkOS 0.125.1 gives an agent's profile a calmer layout with five rows up front, and folded sidebar sections now say how much they hold.
+
+### Changed
+
+- An agent's profile now shows five things up front: what it does, what it runs on, its level, who it reports to and its rooms. Everything else sits in Work, Setup and Files, folded until you open them, and the app remembers which ones you keep open.
+- The Level row shows the level the agent really runs at. If you held it lower than everyone else, it says so: "Ask · held there by you".
+- The profile's main button now reads Message, with the other actions in the ⋯ menu beside it.
+- A folded sidebar section now says how many rows it hides, like "· 12 more". Before, a folded section could look like an open one that had lost its rows. (DOR-3200)
 
 ## [0.125.0] - 2026-10-21
 
@@ -7544,6 +7555,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
 [0.124.1]: https://github.com/dork-labs/dorkos/compare/v0.124.0...v0.124.1
 [0.93.0]: https://github.com/dork-labs/dorkos/compare/v0.92.0...v0.93.0
