@@ -245,6 +245,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       // MCP tools used to write rows the scheduler never heard about
       // (DOR-1493). Read at call time, by which point it exists.
       resolveTaskRegistrar: () => refs.taskRegistrar ?? null,
+      // Read at call time for the same reason: the scheduler is built later.
+      nextRunOf: (taskId) => refs.schedulerService?.getNextRun(taskId) ?? null,
       ...(refs.relayCore && { relayCore: refs.relayCore }),
       ...(refs.adapterManager && { adapterManager: refs.adapterManager }),
       ...(refs.adapterManager && { bindingStore: refs.adapterManager.getBindingStore() }),
