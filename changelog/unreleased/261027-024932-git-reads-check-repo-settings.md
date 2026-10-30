@@ -11,6 +11,7 @@ covers:
   - 'fix(server): Full overrides keep the agent.full_action Activity name (DOR-3343)'
   - "test(server): the session route's workspace mock carries fullChatOf (DOR-3343)"
   - 'ci(browser-test): the browser shards check out without a saved credential (DOR-3343)'
+  - 'test(server): a plain folder agent home is in no project, stays eligible and starts its turn (DOR-3343)'
 ---
 
 ### Fixed
