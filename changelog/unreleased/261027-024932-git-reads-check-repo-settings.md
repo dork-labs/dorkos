@@ -14,6 +14,7 @@ covers:
   - 'test(server): a plain folder agent home is in no project, stays eligible and starts its turn (DOR-3343)'
   - "fix(server): a folder's project lookup keeps a refused repository apart from no repository (DOR-3343)"
   - "fix(server): a kept project's account limit holds when git won't read its repo (DOR-3343)"
+  - 'fix(server): repo settings reads use the shared git runner (DOR-3343, DOR-3298)'
 ---
 
 ### Fixed
