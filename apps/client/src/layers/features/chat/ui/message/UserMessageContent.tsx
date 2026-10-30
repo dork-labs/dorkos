@@ -19,6 +19,7 @@ import { ReceivedChatMessages } from '../messaging/ReceivedChatMessage';
 export function UserMessageContent({ message }: { message: ChatMessage }) {
   const sessionId = useOptionalMessageContext()?.sessionId;
   const [compactionExpanded, setCompactionExpanded] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const parsed = useMemo(() => parseFilePrefix(message.content), [message.content]);
   // A widget interaction arrives as a `<ui_action>` block in a plain user turn
   // (live optimistic copy and reloaded transcript alike) — render it as a calm
@@ -31,6 +32,35 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   if (message.chatMessages && message.chatMessages.length > 0) {
     return (
       <ReceivedChatMessages stamps={message.chatMessages} {...(sessionId ? { sessionId } : {})} />
+    );
+  }
+
+  // A prompt nobody here typed is a system note: the author line names the
+  // source, and the long machine text stays folded (DOR-3019). A person on a
+  // connection did write theirs, so it stays a plain message.
+  if (message.promptSource && message.promptSource.kind !== 'channel') {
+    return (
+      <div data-testid="prompt-source-note">
+        <button
+          type="button"
+          aria-expanded={promptExpanded}
+          onClick={() => setPromptExpanded(!promptExpanded)}
+          className="text-msg-compaction-fg flex items-center gap-1 text-xs"
+        >
+          <ChevronRight
+            className={cn(
+              'size-3 transition-transform duration-200',
+              promptExpanded && 'rotate-90'
+            )}
+          />
+          <span>{promptExpanded ? 'Hide message' : 'Show message'}</span>
+        </button>
+        {promptExpanded && (
+          <div className="text-msg-compaction-fg mt-2 text-xs break-words whitespace-pre-wrap">
+            {message.content}
+          </div>
+        )}
+      </div>
     );
   }
 

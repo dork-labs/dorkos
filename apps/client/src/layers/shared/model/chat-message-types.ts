@@ -9,6 +9,7 @@
 import type {
   ChatMessageStamp,
   ChatStopNotice,
+  PromptSource,
   RoomMessageStamp,
 } from '@dorkos/shared/chat-messages';
 import type {
@@ -45,6 +46,12 @@ export interface ChatMessage {
    * never "You" unless the room says the person wrote it.
    */
   roomMessage?: RoomMessageStamp;
+  /**
+   * Where this user message came from, when no person in this chat typed it
+   * (DOR-3019). Filled in by the server; the row draws the source from here,
+   * never "You".
+   */
+  promptSource?: PromptSource;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
   /**

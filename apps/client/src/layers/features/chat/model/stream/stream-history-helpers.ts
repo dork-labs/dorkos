@@ -102,6 +102,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
     commandArgs: m.commandArgs,
     ...(m.chatMessages && m.chatMessages.length > 0 ? { chatMessages: m.chatMessages } : {}),
     ...(m.roomMessage ? { roomMessage: m.roomMessage } : {}),
+    ...(m.promptSource ? { promptSource: m.promptSource } : {}),
   };
 }
 
