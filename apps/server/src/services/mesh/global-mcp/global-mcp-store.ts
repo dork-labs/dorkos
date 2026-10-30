@@ -27,6 +27,15 @@
  * {@link GlobalMcpStore.injectableFor} from memory. A change is visible to the
  * next turn of every running agent, with no restart.
  *
+ * ## What it may run
+ *
+ * {@link refuseGlobalServer} decides, when a person saves a server and again
+ * before each injection. The second check is for the file itself: any program
+ * running as this user can write it, so a server that never came through the
+ * routes is dropped, logged and shown as stopped. That stops accidents and hand
+ * edits with bad paths. It is not a boundary: an agent at Full can still place a
+ * script somewhere the check allows (DOR-505).
+ *
  * @module services/mesh/global-mcp/global-mcp-store
  */
 import { readFile } from 'node:fs/promises';
@@ -41,9 +50,16 @@ import {
   type GlobalMcpServerPatch,
   type GlobalMcpServerView,
 } from '@dorkos/shared/global-mcp-schemas';
+import type { Logger } from '@dorkos/shared/logger';
 import { McpServerTransportSchema, type McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { CredentialStore } from '../../core/credential-provider.js';
 import { RESERVED_MCP_SERVER_NAME } from '../agent-mcp-server-service.js';
+import {
+  flaggedEnvNames,
+  refuseGlobalServer,
+  type GlobalMcpGuardContext,
+  type GlobalMcpRefusal,
+} from './global-mcp-guard.js';
 
 /** The file's mode: the person's own, like every other DorkOS secret file. */
 const FILE_MODE = 0o600;
@@ -72,7 +88,12 @@ const StoredFileSchema = z.object({
 export class GlobalMcpStoreError extends Error {
   constructor(
     readonly code:
-      'name_taken' | 'reserved_name' | 'not_found' | 'oauth_unsupported' | 'unreadable',
+      | 'name_taken'
+      | 'reserved_name'
+      | 'not_found'
+      | 'oauth_unsupported'
+      | 'unreadable'
+      | GlobalMcpRefusal['code'],
     message: string
   ) {
     super(message);
@@ -113,9 +134,22 @@ function toInjectable(connection: McpServerTransport): McpAppServerConnection {
   return { transport: connection.transport, url: connection.url, headers: connection.headers };
 }
 
+/** What {@link GlobalMcpStore} needs beyond its data directory and secrets. */
+export interface GlobalMcpStoreOptions {
+  /** Every registered agent's folder, read at each check. Omitted → none. */
+  agentRoots?: () => readonly string[];
+  /** Where a dropped server is reported. */
+  logger?: Pick<Logger, 'warn'>;
+}
+
 /** Persists the person's global MCP servers and serves them to runtimes. */
 export class GlobalMcpStore {
   private readonly file: string;
+  private readonly dorkHome: string;
+  private readonly agentRoots: () => readonly string[];
+  private readonly logger: Pick<Logger, 'warn'>;
+  /** Servers already reported as dropped, so each says so once. */
+  private readonly reportedDropped = new Set<string>();
   private servers: StoredServer[] = [];
   /** Each server's connection with its secrets resolved. Memory only. */
   private resolved = new Map<string, McpServerTransport>();
@@ -132,12 +166,17 @@ export class GlobalMcpStore {
    *
    * @param dorkHome - The resolved DorkOS data directory.
    * @param secrets - The encrypted store secret values live in.
+   * @param options - Where agents write, and where to report a dropped server.
    */
   constructor(
     dorkHome: string,
-    private readonly secrets: CredentialStore
+    private readonly secrets: CredentialStore,
+    options: GlobalMcpStoreOptions = {}
   ) {
+    this.dorkHome = dorkHome;
     this.file = path.join(dorkHome, 'mcp', 'global-servers.json');
+    this.agentRoots = options.agentRoots ?? (() => []);
+    this.logger = options.logger ?? console;
   }
 
   /** Read the file and resolve every secret. A missing file is an empty list. */
@@ -175,10 +214,19 @@ export class GlobalMcpStore {
    */
   injectableFor(agentId: string): Record<string, McpAppServerConnection> {
     const out: Record<string, McpAppServerConnection> = {};
+    const ctx = this.guardContext();
     for (const server of this.servers) {
       if (!server.enabled || server.excludedAgents.includes(agentId)) continue;
       const connection = this.resolved.get(server.name);
-      if (connection) out[server.name] = toInjectable(connection);
+      if (!connection) continue;
+      // Checked on every injection, not only at save: the file can be written
+      // by hand, and an agent folder can appear under a saved path later.
+      const refusal = refuseGlobalServer(connection, ctx);
+      if (refusal) {
+        this.reportDropped(server.name, refusal);
+        continue;
+      }
+      out[server.name] = toInjectable(connection);
     }
     return out;
   }
@@ -279,6 +327,8 @@ export class GlobalMcpStore {
         'A server that signs in is added per agent for now.'
       );
     }
+    const refusal = refuseGlobalServer(input.connection, this.guardContext());
+    if (refusal) throw new GlobalMcpStoreError(refusal.code, refusal.message);
     const stored: Record<string, string> = {};
     for (const [key, value] of Object.entries(valuesOf(input.connection))) {
       stored[key] = isSecretName(key, input.secretNames)
@@ -325,13 +375,41 @@ export class GlobalMcpStore {
       excludedAgents: server.excludedAgents,
       addedAt: server.addedAt,
       skippedOn: connection.transport === 'sse' ? ['codex', 'opencode'] : [],
+      warnings: this.warningsFor(server),
     };
+  }
+
+  /** Why a server is not started, then the env names worth a second look. */
+  private warningsFor(server: StoredServer): GlobalMcpServerView['warnings'] {
+    const refusal = refuseGlobalServer(server.connection, this.guardContext());
+    const stopped = refusal ? [{ name: server.name, note: `Not started. ${refusal.message}` }] : [];
+    return [...stopped, ...flaggedEnvNames(server.connection)];
+  }
+
+  /** Where agents can write, read fresh so a new agent's folder counts at once. */
+  private guardContext(): GlobalMcpGuardContext {
+    return { dorkHome: this.dorkHome, agentRoots: this.agentRoots() };
+  }
+
+  /** Say once that a saved server was left out, and why. */
+  private reportDropped(name: string, refusal: GlobalMcpRefusal): void {
+    if (this.reportedDropped.has(name)) return;
+    this.reportedDropped.add(name);
+    this.logger.warn('[mcp-servers] left a server for every agent out', {
+      name,
+      reason: refusal.code,
+    });
   }
 
   /** Resolve every stored reference into memory. A missing secret drops the server. */
   private async resolveAll(): Promise<void> {
     const next = new Map<string, McpServerTransport>();
+    const ctx = this.guardContext();
     for (const server of this.servers) {
+      // Said at load, not only at the first turn: a hand-written server shows
+      // up in the log as soon as the server starts.
+      const refusal = refuseGlobalServer(server.connection, ctx);
+      if (refusal) this.reportDropped(server.name, refusal);
       const values: Record<string, string> = {};
       let complete = true;
       for (const [key, value] of Object.entries(valuesOf(server.connection))) {

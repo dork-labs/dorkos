@@ -100,7 +100,12 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   // The MCP servers a person added for every agent (DOR-3213). Loaded before
   // any runtime asks for its servers; an unreadable file leaves the list empty
   // and says so, rather than keeping the server from starting.
-  const globalMcpServers = new GlobalMcpStore(dorkHome, credentialStore);
+  // Nothing they run may live where agents write: the data directory or any
+  // agent's folder, read fresh at each check (Security's T7).
+  const globalMcpServers = new GlobalMcpStore(dorkHome, credentialStore, {
+    agentRoots: () => refs.meshCore?.agentRegistry.list().map((agent) => agent.projectPath) ?? [],
+    logger,
+  });
   await globalMcpServers.load().catch((err: unknown) => {
     logger.warn('[mcp-servers] could not read the MCP servers for every agent', {
       error: err instanceof Error ? err.message : String(err),

@@ -2,10 +2,10 @@
  * The person's MCP servers for every agent (DOR-3213): secrets are stored
  * encrypted and never handed back, and each agent gets what it is not kept from.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlobalMcpServerInput } from '@dorkos/shared/global-mcp-schemas';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { GlobalMcpStore, GlobalMcpStoreError } from '../global-mcp-store.js';
@@ -157,6 +157,98 @@ describe('GlobalMcpStore', () => {
         },
       })
     ).rejects.toBeInstanceOf(GlobalMcpStoreError);
+  });
+
+  it('refuses to save a server that runs from where agents write, or injects a library', async () => {
+    const agentFolder = path.join(home, 'repos', 'app');
+    const store = new GlobalMcpStore(home, secrets, { agentRoots: () => [agentFolder] });
+    await expect(
+      store.add({ ...GITHUB, connection: { ...GITHUB.connection, command: './run.sh' } } as never)
+    ).rejects.toMatchObject({ code: 'unsafe_command' });
+    await expect(
+      store.add({
+        ...GITHUB,
+        connection: { ...GITHUB.connection, command: path.join(agentFolder, 'server') },
+      } as never)
+    ).rejects.toMatchObject({ code: 'unsafe_command' });
+    await expect(
+      store.add({
+        ...GITHUB,
+        connection: { ...GITHUB.connection, env: { LD_PRELOAD: '/tmp/x.so' } },
+      } as never)
+    ).rejects.toMatchObject({ code: 'unsafe_env' });
+    expect(store.list()).toEqual([]);
+  });
+
+  it('flags NODE_OPTIONS on the saved server without refusing it', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    const view = await store.add({
+      ...GITHUB,
+      connection: { ...GITHUB.connection, env: { NODE_OPTIONS: '--max-old-space-size=4096' } },
+    } as never);
+    expect(view.warnings.map((w) => w.name)).toEqual(['NODE_OPTIONS']);
+    expect(Object.keys(store.injectableFor('agent-a'))).toEqual(['github']);
+  });
+
+  it('never starts a server written into the file by hand with a bad path', async () => {
+    // Any program running as this user can write the file. The check runs
+    // again at load and before each injection, so this one is dropped.
+    mkdirSync(path.join(home, 'mcp'), { recursive: true });
+    const handWritten = {
+      version: 1,
+      servers: [
+        {
+          name: 'planted',
+          enabled: true,
+          connection: { transport: 'stdio', command: './x.sh', args: [], env: {} },
+          secretNames: [],
+          excludedAgents: [],
+          addedAt: '2026-10-30T00:00:00.000Z',
+        },
+        {
+          name: 'preload',
+          enabled: true,
+          connection: {
+            transport: 'stdio',
+            command: 'npx',
+            args: [],
+            env: { DYLD_INSERT_LIBRARIES: '/tmp/x.dylib' },
+          },
+          secretNames: [],
+          excludedAgents: [],
+          addedAt: '2026-10-30T00:00:00.000Z',
+        },
+      ],
+    };
+    writeFileSync(path.join(home, 'mcp', 'global-servers.json'), JSON.stringify(handWritten));
+    const warn = vi.fn();
+    const store = new GlobalMcpStore(home, secrets, { logger: { warn } });
+    await store.load();
+
+    expect(store.injectableFor('agent-a')).toEqual({});
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(store.list().map((s) => s.warnings[0]?.note)).toEqual([
+      expect.stringMatching(/^Not started\./),
+      expect.stringMatching(/^Not started\./),
+    ]);
+  });
+
+  it('drops a saved server once an agent folder appears around its path', async () => {
+    const roots: string[] = [];
+    const store = new GlobalMcpStore(home, secrets, { agentRoots: () => roots });
+    // Outside the data directory, which counts as agent-writable on its own.
+    const outside = mkdtempSync(path.join(tmpdir(), 'global-mcp-tools-'));
+    try {
+      await store.add({
+        ...GITHUB,
+        connection: { ...GITHUB.connection, command: path.join(outside, 'server') },
+      } as never);
+      expect(Object.keys(store.injectableFor('agent-a'))).toEqual(['github']);
+      roots.push(outside);
+      expect(store.injectableFor('agent-a')).toEqual({});
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('says Codex and OpenCode skip an SSE-only server', async () => {
