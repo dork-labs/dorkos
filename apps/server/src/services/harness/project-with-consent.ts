@@ -106,12 +106,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  hookApprovalMatch,
   isHookProjectionApproved,
   isHookProjectionRefused,
+  pinLegacyHookApproval,
   storedHookDecisions,
   type HookDecisions,
   type HookProjectionRequest,
 } from './hook-consent.js';
+import { hookScriptPins } from './hook-script-pins.js';
 import { readGlobalSharingFromDisk } from './global-scope.js';
 import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
@@ -395,17 +398,31 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
  */
 export function scanHookRequests(projectPath: string, dorkHome: string): HookProjectionRequest[] {
   const plugins = _internal.scanInstalledPlugins({ dorkHome, projectRoot: projectPath });
-  return _internal
-    .projectedHooks(plugins, projectPath)
-    .map(({ packageName, hooks }) => ({ projectPath, packageName, hooks }));
+  return _internal.projectedHooks(plugins, projectPath).map(({ packageName, hooks }) => {
+    // The files the commands run are pinned onto the yes (DOR-3403), except for
+    // a dev link: its folder is the developer's own, edited all the time.
+    const linked = plugins.some(
+      (p) => p.name === packageName && p.location.scope === 'project' && p.devLink !== undefined
+    );
+    const scripts = linked
+      ? []
+      : hookScriptPins(
+          projectPath,
+          hooks.map((hook) => hook.command),
+          dorkHome
+        );
+    return { projectPath, packageName, hooks, ...(scripts.length > 0 ? { scripts } : {}) };
+  });
 }
 
 /**
  * Build the projection plan for a project with every unapproved package's hooks
  * left out of it, and report what was left out.
  *
- * Read-only: nothing here touches disk beyond the reads the engine already does
- * to plan.
+ * Read-only, with one exception: on the running server's own store (no
+ * `opts.decisions`), a yes recorded before files were pinned gets today's files
+ * pinned onto it, once (DOR-3403). A caller that passes its lists, like
+ * `--check`, writes nothing.
  *
  * @param projectPath - The project root being projected into.
  * @param opts - Dork home, the decisions to obey, and an optional harness filter.
@@ -436,6 +453,12 @@ export function planWithConsent(
       withheld.push({ reason: 'refused', request });
     } else if (isHookProjectionApproved(request, decisions)) {
       allowed.add(request.packageName);
+      // A yes from before files were pinned takes today's files once, on the
+      // running server's own store only (DOR-3403). `--check` passes its own
+      // copy of the lists and must write nothing, so it never reaches this.
+      if (opts.decisions === undefined && hookApprovalMatch(request, decisions) === 'unpinned') {
+        pinLegacyHookApproval(request);
+      }
     } else {
       withheld.push({ reason: 'unasked', request });
     }

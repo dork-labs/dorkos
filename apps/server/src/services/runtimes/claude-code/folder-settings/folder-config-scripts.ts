@@ -64,8 +64,18 @@ function sha256(content: string | Buffer): string {
 /**
  * The absolute paths `commands` name that are worth hashing: inside the home
  * (relative, `$CLAUDE_PROJECT_DIR` or absolute), or inside a plugin folder.
+ * Also what a project's package hook approval pins (`harness/hook-script-pins.ts`,
+ * DOR-3403), with the project as the home.
+ *
+ * @param root - The folder the commands run in, resolved.
+ * @param pluginsRoot - DorkOS's own `plugins/` folder, resolved.
+ * @param commands - The shell commands to read paths out of.
  */
-function namedTargets(root: string, pluginsRoot: string, commands: readonly string[]): string[] {
+export function namedTargets(
+  root: string,
+  pluginsRoot: string,
+  commands: readonly string[]
+): string[] {
   const found = new Set<string>();
   const pluginSegment = `${path.sep}.dork${path.sep}plugins${path.sep}`;
   for (const command of commands) {
