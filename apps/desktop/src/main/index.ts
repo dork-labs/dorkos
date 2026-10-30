@@ -26,6 +26,7 @@ import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
 import { setupAdminActions } from './admin';
 import { setupAppViewCapture } from './capture';
+import { setupCertificateFilePicker } from './certificate-file-picker';
 import { registerShellLogExcerptHandler } from './shell-log-excerpt';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
@@ -337,6 +338,8 @@ if (refusedSwitch !== null) {
   // has a real window to photograph, where the browser has to redraw the page
   // from its own DOM and guess (see `capture/`).
   setupAppViewCapture({ getRendererUrl });
+  // Settings' "Choose…" for company certificates: the native file dialog.
+  setupCertificateFilePicker({ getRendererUrl });
 
   // The shell's own recent log, for a bug report filed from the desktop app.
   // The server child cannot see `main.log`, so nothing but the shell can answer

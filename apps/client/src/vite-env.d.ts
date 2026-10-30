@@ -62,6 +62,9 @@ declare global {
    */
   type DesktopCaptureResult = { ok: true; dataUrl: string } | { ok: false; message: string };
 
+  /** What the desktop file dialog answers: the picked path (`null` when cancelled), or why not. */
+  type DesktopFilePickResult = { ok: true; path: string | null } | { ok: false; message: string };
+
   /** One remembered tab, as the desktop shell keeps it (`AppTab` in the tab store). */
   interface DesktopSavedTab {
     id: string;
@@ -164,6 +167,12 @@ declare global {
      * that is done, and is where the browser fallback lives.
      */
     captureAppView?(): Promise<DesktopCaptureResult>;
+    /**
+     * The native file dialog, for company certificates' "Choose…" in Settings
+     * → Server → Network. The picked path, or `null` when cancelled. Mirrors
+     * the desktop preload's `chooseCertificateFile`.
+     */
+    chooseCertificateFile?(): Promise<DesktopFilePickResult>;
     /**
      * A scrubbed, bounded tail of the desktop shell's OWN log, for a bug report
      * (DOR-2045). Mirrors the desktop preload's `getShellLogExcerpt`.
