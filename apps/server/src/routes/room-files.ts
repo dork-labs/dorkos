@@ -38,6 +38,7 @@ import {
   RoomError,
   type AuthorRecord,
 } from '../services/rooms/index.js';
+import { announceFilesSetUp } from '../services/rooms/repo/room-setup-capability.js';
 import {
   readRoomRepoConfig,
   ROOM_REPO_EXISTS_CODE,
@@ -64,17 +65,13 @@ const router = new Hono<ApiEnv>();
  * as no body at all, so asking for one would refuse every honest caller (the
  * same reasoning `POST /:id/halt` writes down).
  *
- * **Operator-only, and never an agent capability.** An agent that could give
- * its own room a repo could hand itself a writable working directory that no
- * person chose — the confused-deputy shape the membership verbs already refuse
- * (spec §3.2, channel-workspace §3.6). A caller presenting an agent token that
- * verifies is refused 403 `OPERATOR_ONLY`; one presenting a token this machine
- * cannot verify is refused 401 by `resolveCaller` before this handler runs; and
- * no capability tool offers this at all.
+ * **Any member may ask, an agent included** (DOR-3468). A caller presenting a
+ * token this machine cannot verify is refused 401 by `resolveCaller` before this
+ * handler runs. The `set_up_room_files` tool does the same thing an agent's way.
  *
- * **A room the caller cannot see answers 404 first**, before the operator gate,
- * so an agent probing room ids cannot tell "exists, not yours" from "no such
- * room" (DOR-1429's order, argued on `PATCH /:id`).
+ * **A room the caller cannot see answers 404**, so an agent probing room ids
+ * cannot tell "exists, not yours" from "no such room" (DOR-1429's order, argued
+ * on `PATCH /:id`).
  *
  * **Idempotent.** A room that already has files answers 409
  * `ROOM_REPO_EXISTS` carrying the binding it already had, so a client that lost
@@ -99,10 +96,7 @@ router.post('/:id/repo', (c) =>
         409
       );
     }
-    getRoomService().postNotice(roomId, {
-      text: `${person.displayName} set up files for this room.`,
-      notice: 'files_set_up',
-    });
+    announceFilesSetUp(getRoomService(), roomId, person.displayName);
     return c.json({ repo: result.repo }, 201);
   })
 );

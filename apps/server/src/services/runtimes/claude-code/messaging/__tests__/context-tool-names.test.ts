@@ -511,7 +511,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // Their qualified surface is explicit page use, so all four stay deferred.
     // 135 -> 136 for `memory_read` (ADR 261017-153539): `<session_model>` and
     // the memory block name it as a searchable ending, and it is always loaded.
-    expect(advertised.size).toBe(136);
+    // 136 -> 137 for `set_up_room_files` (DOR-3468), deferred like its siblings.
+    expect(advertised.size).toBe(137);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

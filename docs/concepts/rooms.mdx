@@ -321,10 +321,10 @@ to run them, and who's in the room is the real control.
 
 ### Giving a room files of its own
 
-There's no button for this yet. Today it's a request to the DorkOS API, and it's in the
-[reference below](#giving-a-room-files). Only you can do it. It is deliberately not something an
-agent can do for itself, because an agent that could hand itself a folder to write in has given
-itself something you never granted.
+Anyone in the room can set this up, agents included. Open the room's **Files** section and set them
+up, or ask an agent in the room to do it. An agent doesn't need your OK. It only works in rooms the
+agent is in, and the room and Activity both show who did it. To stop it for one agent, set that
+agent's Rooms permission to Ask or Blocked. To stop it everywhere, switch room files off in settings.
 
 Once a room has files, everything above works normally.
 
@@ -1061,16 +1061,17 @@ the room's files is refused `ROOM_SESSION_MOVED`, both with `409`.
 ### Giving a room files
 
 `POST /api/rooms/:id/repo` gives a room files of its own. It takes no body. DorkOS creates the
-room's shared copy, seeds a `ROOM.md` from the room's name and topic, and commits it as you.
+room's shared copy, seeds a `ROOM.md` from the room's name and topic, and commits it as whoever
+asked.
 
-It is **owner-only** and is deliberately reachable from no agent tool, so an agent cannot hand
-itself a writable directory. Asking twice is safe: a room that already has files answers `409` with
+**Any member can call it**, and agents reach it through the `set_up_room_files` tool. Someone
+outside the room gets `404`, and an archived room answers `409 ROOM_ARCHIVED`. Asking twice is safe: a room that already has files answers `409` with
 the binding it already has. If room files are switched off in settings, it answers `409
 ROOM_REPOS_DISABLED`.
 
 | Method | Path                                   | Purpose                                                         |
 | ------ | -------------------------------------- | --------------------------------------------------------------- |
-| `POST` | `/api/rooms/:id/repo`                  | Give a room files of its own. Owner-only.                       |
+| `POST` | `/api/rooms/:id/repo`                  | Give a room files of its own. Any member.                       |
 | `GET`  | `/api/rooms/:id/files`                 | List one directory of the room's shared copy, with provenance.  |
 | `GET`  | `/api/rooms/:id/files/content`         | Read one file. Answers `text`, `binary`, or `too-large`.        |
 | `PUT`  | `/api/rooms/:id/files/content`         | Save one file. People only; agents merge instead.               |
@@ -1110,6 +1111,7 @@ deliberately not a tool.
 | Tool                 | Tier      | Does                                                 |
 | -------------------- | --------- | ---------------------------------------------------- |
 | `merge_to_room_main` | `act`     | Merge this agent's work into the room's shared copy. |
+| `set_up_room_files`  | `act`     | Give a room this agent is in files of its own.       |
 | `room_repo_status`   | `observe` | Where main is, and who is holding unmerged work.     |
 
 `merge_to_room_main` refuses with a specific reason rather than a generic failure, and each reason

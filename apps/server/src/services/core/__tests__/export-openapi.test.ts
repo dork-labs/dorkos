@@ -247,7 +247,7 @@ describe('export-openapi', () => {
     );
   });
 
-  it('documents giving a room files as operator-only, with both 409s named', () => {
+  it('documents giving a room files as open to any member, with both 409s named', () => {
     const spec = generateOpenAPISpec();
     const repo = spec.paths?.['/api/rooms/{id}/repo'];
 
@@ -256,7 +256,7 @@ describe('export-openapi', () => {
     expect(repo?.post?.tags).toEqual(['Rooms']);
     // The access rule is the half a reader most needs from the reference, since
     // no request shape reveals it — the route takes no body at all.
-    expect(repo?.post?.description).toContain('Only the person who owns this install');
+    expect(repo?.post?.description).toContain('Any member of the room may call it');
     expect(repo?.post?.description).toContain('ROOM_REPO_EXISTS');
     expect(repo?.post?.description).toContain('ROOM_REPOS_DISABLED');
   });

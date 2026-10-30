@@ -73,6 +73,7 @@ export interface ComposeCapabilitiesInput {
   connectorHolds: WireDocDeliveryResult['connectorHolds'];
   roomService: WireRoomsResult['roomService'];
   roomMerges: WireRoomsResult['roomMerges'];
+  roomRepos: WireRoomsResult['roomRepos'];
   auditLog: WireCoreStoresResult['auditLog'];
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   agentPauses: WireCoreStoresResult['agentPauses'];
@@ -111,6 +112,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     connectorHolds,
     roomService,
     roomMerges,
+    roomRepos,
     auditLog,
     auditAccounts,
     agentPauses,
@@ -213,7 +215,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // REST routes and the trigger dispatcher hold — one set of membership
       // rules, one cascade guard, one budget, one merge queue, whichever surface
       // reaches them.
-      roomDeps: { rooms: roomService, merges: roomMerges },
+      roomDeps: { rooms: roomService, merges: roomMerges, repos: roomRepos },
       // How a saved note learns which room it was written in (DOR-632). The
       // room service answers for the CALLING session, so the label is derived
       // rather than supplied — a model that could name its own provenance could
