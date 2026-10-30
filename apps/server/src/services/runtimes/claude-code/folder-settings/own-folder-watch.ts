@@ -18,7 +18,7 @@
  * @module services/runtimes/claude-code/folder-settings/own-folder-watch
  */
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
+import { lstat, readdir, readFile, readlink, realpath, stat as statFile } from 'node:fs/promises';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
@@ -40,15 +40,37 @@ export type OwnFolderSnapshot = Map<string, string>;
 /** The last look at each home, by real path. */
 const lastSeen = new Map<string, OwnFolderSnapshot>();
 
-/** Hash one entry: a file by content, a link by target, anything else by kind. */
-async function digestOf(file: string): Promise<string | undefined> {
-  const stat = await lstat(file);
-  if (stat.isSymbolicLink()) return `link:${await readlink(file)}`;
-  if (!stat.isFile()) return undefined;
+/** Hash a file's content, or its size and change time past {@link MAX_HASHED_BYTES}. */
+async function contentDigest(
+  file: string,
+  stat: { size: number; mtimeMs: number }
+): Promise<string> {
   if (stat.size > MAX_HASHED_BYTES) return `big:${stat.size}:${stat.mtimeMs}`;
   return createHash('sha256')
     .update(await readFile(file))
     .digest('hex');
+}
+
+/**
+ * Hash one entry: a file by content; a link by where it points AND the file
+ * behind it, so a write through the link is seen (Security M1); anything else
+ * by kind.
+ */
+async function digestOf(file: string): Promise<string | undefined> {
+  const stat = await lstat(file);
+  if (stat.isSymbolicLink()) {
+    const target = await readlink(file);
+    try {
+      const behind = await statFile(file);
+      if (behind.isDirectory()) return `link:${target}:dir`;
+      if (!behind.isFile()) return `link:${target}`;
+      return `link:${target}:${await contentDigest(file, behind)}`;
+    } catch {
+      return `link:${target}:missing`;
+    }
+  }
+  if (!stat.isFile()) return undefined;
+  return contentDigest(file, stat);
 }
 
 /** Walk one watched part, adding each file under it to `into`. */
@@ -89,6 +111,57 @@ export async function snapshotOwnFolder(home: string): Promise<OwnFolderSnapshot
   const snapshot: OwnFolderSnapshot = new Map();
   for (const part of WATCHED) await walk(home, part, snapshot);
   return snapshot;
+}
+
+/** A link in a home's open setup that points outside the home. */
+export interface OutsideLink {
+  /** The link's own path. */
+  link: string;
+  /** Where it leads: its real path, or the resolved target when nothing is there. */
+  target: string;
+  /** Whether it leads to a folder. */
+  folder: boolean;
+}
+
+/**
+ * Every link in a home's `.claude/`, `.agents/` and `.mcp.json` that leads
+ * outside the home, by real path (Security M1 on #3319). A person's shared
+ * safety rule linked into an agent's `.claude/rules/` is one: opening the
+ * folder must not open the file behind it. Links that stay inside the home
+ * (`.claude/skills/<x>` into `.agents/`) are not listed.
+ *
+ * @param home - The agent home.
+ */
+export async function linksOutsideHome(home: string): Promise<OutsideLink[]> {
+  const realHome = await realpath(home).catch(() => path.resolve(home));
+  const inside = (p: string) => p === realHome || p.startsWith(`${realHome}${path.sep}`);
+  const found: OutsideLink[] = [];
+  let seen = 0;
+  const visit = async (full: string): Promise<void> => {
+    if ((seen += 1) > MAX_FILES) return;
+    let entry;
+    try {
+      entry = await lstat(full);
+    } catch {
+      return;
+    }
+    if (entry.isSymbolicLink()) {
+      const real = await realpath(full).catch(async () =>
+        path.resolve(path.dirname(full), await readlink(full))
+      );
+      if (inside(real)) return;
+      const folder = await statFile(full)
+        .then((behind) => behind.isDirectory())
+        .catch(() => false);
+      found.push({ link: full, target: real, folder });
+      return;
+    }
+    if (!entry.isDirectory()) return;
+    const names = await readdir(full).catch(() => [] as string[]);
+    for (const name of names) await visit(path.join(full, name));
+  };
+  for (const part of WATCHED) await visit(path.join(path.resolve(home), part));
+  return found;
 }
 
 /**

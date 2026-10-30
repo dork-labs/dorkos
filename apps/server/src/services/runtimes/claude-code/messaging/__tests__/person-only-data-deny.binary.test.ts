@@ -27,6 +27,7 @@ import { query, type Options, type PermissionMode } from '@anthropic-ai/claude-a
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 import { applyPersonOnlyDataDeny } from '../directory-grants.js';
 import { applyFolderConfigToLaunch } from '../../folder-settings/launch-folder-config.js';
+import { openFolderDenyRules } from '../../folder-settings/own-folder-open.js';
 
 const BINARY = resolveBundledClaudeBinary();
 
@@ -119,6 +120,12 @@ async function runCalls(
       ownFolderOpen: open,
     });
     if (own) applyFolderConfigToLaunch(options, folder, { held: [], inHome: false }, open);
+    if (open) {
+      // What an open launch adds (`prepareOwnFolder`): the account, host.key and outside links.
+      const extra = await openFolderDenyRules(folder, dorkHome, account);
+      const settings = options.settings as { permissions: { deny: string[] } };
+      settings.permissions.deny.push(...(extra ?? []));
+    }
   }
   const abort = new AbortController();
   let childClosed: Promise<void> | undefined;
@@ -328,6 +335,15 @@ describe.skipIf(BINARY === null)('person-only data files on the real CLI (DOR-30
       },
       60_000
     );
+
+    it(`${tool} leaves a file linked in from outside the home byte for byte while its folder is open`, async () => {
+      const shared = plant(path.join(root, 'vault', 'rules', 'safety.md'));
+      const link = path.join(folder, '.claude', 'rules', 'safety.md');
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      fs.symlinkSync(shared, link);
+      await runCalls(calls(link), 'bypassPermissions', true, 'open');
+      expect(fs.readFileSync(shared, 'utf8')).toBe(ORIGINAL);
+    }, 60_000);
 
     it(`${tool} leaves the agent's own agent.json byte for byte while its folder is open`, async () => {
       const file = plant(path.join(folder, '.dork', 'agent.json'));

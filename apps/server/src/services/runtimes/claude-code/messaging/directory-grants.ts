@@ -413,7 +413,7 @@ export function personOnlyFileRules(dorkHome: string): string[] {
  * through every spelling of the data directory. The `*` matches one folder:
  * each agent home, never the folders below it.
  *
- * - `'launch'`, on every launch below Full (DOR-3068 S1): the four files that grant
+ * - `'launch'`, on every launch (DOR-3068 S1, Full too since DOR-3483): the four files that grant
  *   power (`.claude/settings.json`, `.claude/settings.local.json`,
  *   `.mcp.json`, `.dork/agent.json`), and the home's skills, commands and
  *   subagents, whose frontmatter widens tools. That is `.claude/skills/**`,

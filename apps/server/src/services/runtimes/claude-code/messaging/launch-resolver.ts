@@ -742,6 +742,7 @@ export async function resolveLaunch(args: {
     turnMode: effectivePermissionMode,
     session,
     sessionId,
+    accountRoot,
     agentName: agentDisplayName,
   });
   // Every turn, a teammate's too: the permission floor and the relay pins are a person's.

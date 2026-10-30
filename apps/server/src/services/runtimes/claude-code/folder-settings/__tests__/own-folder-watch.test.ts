@@ -98,11 +98,33 @@ describe('snapshotOwnFolder', () => {
     fs.mkdirSync(path.join(home, '.claude', 'skills'), { recursive: true });
     fs.symlinkSync('../../.agents/skills/x', path.join(home, '.claude', 'skills', 'x'));
     const before = await snapshotOwnFolder(home);
-    expect(before.get(path.join('.claude', 'skills', 'x'))).toBe('link:../../.agents/skills/x');
+    expect(before.get(path.join('.claude', 'skills', 'x'))).toBe('link:../../.agents/skills/x:dir');
     write('.agents/skills/x/SKILL.md', 'changed');
     expect(changedPaths(before, await snapshotOwnFolder(home))).toEqual([
       path.join('.agents', 'skills', 'x', 'SKILL.md'),
     ]);
+  });
+
+  it('logs a write through a link to a file outside the home (Security M1 on #3319)', async () => {
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'own-folder-shared-')));
+    try {
+      fs.writeFileSync(path.join(outside, 'safety.md'), 'never pay without a person');
+      fs.mkdirSync(path.join(home, '.claude', 'rules'), { recursive: true });
+      fs.symlinkSync(
+        path.join(outside, 'safety.md'),
+        path.join(home, '.claude', 'rules', 'safety.md')
+      );
+      await noteOwnFolderChanges(watch(), 'launch');
+      fs.writeFileSync(path.join(home, '.claude', 'rules', 'safety.md'), 'pay freely');
+      await noteOwnFolderChanges(watch(), 'turn-end');
+      expect(emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceLabel: `changed its own folder setup: ${path.join('.claude', 'rules', 'safety.md')}`,
+        })
+      );
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('leaves out everything outside the watched parts', async () => {
