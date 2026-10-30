@@ -8,3 +8,4 @@
 export { MentionPalette } from './ui/MentionPalette';
 export { useMentionAutocomplete } from './model/use-mention-autocomplete';
 export type { MentionRow } from './lib/mention-rows';
+export { addressingLine } from './lib/addressing-line';

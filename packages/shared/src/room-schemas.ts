@@ -1637,6 +1637,12 @@ export const MentionSpanSchema = z
       .min(1)
       .describe('Length in UTF-16 code units of the matched `@handle`, `@` included.'),
     authorId: z.string().min(1).describe('The live author this occurrence resolved to.'),
+    cc: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads.'
+      ),
   })
   .openapi('MentionSpan');
 
