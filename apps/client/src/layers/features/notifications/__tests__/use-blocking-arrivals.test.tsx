@@ -69,6 +69,16 @@ describe('useBlockingArrivals', () => {
     expect(onArrive).toHaveBeenCalledTimes(1);
   });
 
+  it('never knocks for a schedule held quietly at Full autonomy (DOR-3425)', () => {
+    const onArrive = vi.fn();
+    const { rerender } = renderHook(() => useBlockingArrivals({ onArrive }));
+
+    world.signals = [{ ...schedule('quiet'), quiet: true } as (typeof world.signals)[number]];
+    rerender();
+
+    expect(onArrive).not.toHaveBeenCalled();
+  });
+
   it('does not fire while the queue is still loading, and does not seed from it', () => {
     // An empty list mid-load is not "nothing is waiting". Seeding from it would
     // announce every existing item the moment the query answered.

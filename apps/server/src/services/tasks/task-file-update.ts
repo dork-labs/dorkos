@@ -174,8 +174,8 @@ export function fileBackedChanges(
 
 /**
  * Whether an update request changes the work a person approved: the prompt,
- * the timing, or any of the settings in the approval key
- * (`ScheduleSettings`, DOR-2323).
+ * the timing, any of the settings in the approval key
+ * (`ScheduleSettings`, DOR-2323), or the permission mode (DOR-3425).
  *
  * Compared against the task as it stands, so a field re-sent at its current
  * value is not a change. `maxRuntime` arrives as a duration string and is
@@ -196,6 +196,7 @@ export function changesApprovedWork(
     maxRuntime?: string | null;
     sticky?: boolean;
     account?: string | null;
+    permissionMode?: string;
   },
   existing: {
     prompt: string;
@@ -208,6 +209,7 @@ export function changesApprovedWork(
     maxRuntime: number | null;
     sticky: boolean;
     account: string | null;
+    permissionMode: string;
   }
 ): boolean {
   const differs = <T>(sent: T | undefined, current: T) => sent !== undefined && sent !== current;
@@ -223,7 +225,8 @@ export function changesApprovedWork(
       (data.maxRuntime === null ? null : parseDuration(data.maxRuntime)) !==
         (existing.maxRuntime ?? null)) ||
     differs(data.sticky, existing.sticky) ||
-    differs(data.account, existing.account ?? null)
+    differs(data.account, existing.account ?? null) ||
+    differs(data.permissionMode, existing.permissionMode)
   );
 }
 

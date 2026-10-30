@@ -169,6 +169,7 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
       secondary: SCHEDULE_SECONDARY,
       since: task.createdAt,
       deepLink: SCHEDULE_HREF,
+      ...(task.quietHold === true ? { quiet: true } : {}),
     });
   }
 

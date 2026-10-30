@@ -5938,6 +5938,12 @@ export const TaskSchema = z
      * the trust preset; approving it clears this.
      */
     originMarks: ScheduleOriginMarksSchema.nullable().optional(),
+    /**
+     * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
+     * schedule whose agent is at Full autonomy asks for more than was approved. It
+     * stays a row under Needs you, with no knock and no escalation.
+     */
+    quietHold: z.boolean().optional(),
     nextRun: z.string().nullable().optional(),
     /**
      * When the schedule last started a run (ISO 8601), or null when it never
