@@ -3246,6 +3246,14 @@ export interface Transport extends TransportSlices {
    */
   listMyFeedback(): Promise<FeedbackListItem[]>;
 
+  /**
+   * The room excerpt a feedback report written in `roomId` would attach
+   * (DOR-2108), for the dialog's preview. Built by the same server function a
+   * send runs, so it is exactly what would leave the machine. Resolves `''` for
+   * an empty room or one the reporter cannot see; rejects on a network failure.
+   */
+  previewRoomTranscript(roomId: string): Promise<string>;
+
   // --- Connectors (connector-completion spec §Detailed Design 5) ---
 
   /**

@@ -1367,6 +1367,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     retryHostedCommunityMoveUpload: vi.fn(),
     sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
     listMyFeedback: vi.fn().mockResolvedValue([]),
+    previewRoomTranscript: vi.fn().mockResolvedValue(''),
     // Connectors (connector-completion spec §Detailed Design 5). Reads default
     // to honest-empty; writes default to unstubbed vi.fn() so a test that
     // exercises them must state what the server would answer.

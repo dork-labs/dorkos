@@ -47,5 +47,19 @@ export function createFeedbackMethods(baseUrl: string) {
     async listMyFeedback(): Promise<FeedbackListItem[]> {
       return fetchJSON<FeedbackListItem[]>(baseUrl, '/feedback/mine');
     },
+
+    /**
+     * The room excerpt a report written in `roomId` would attach, from the
+     * server's `GET /api/feedback/room-transcript` (DOR-2108). Rejects on
+     * failure, so the preview can say it could not load.
+     */
+    async previewRoomTranscript(roomId: string): Promise<string> {
+      const params = new URLSearchParams({ roomId });
+      const { text } = await fetchJSON<{ text: string }>(
+        baseUrl,
+        `/feedback/room-transcript?${params.toString()}`
+      );
+      return text;
+    },
   };
 }
