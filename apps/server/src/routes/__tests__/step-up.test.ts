@@ -316,6 +316,24 @@ describe('who may confirm', () => {
           .set('Authorization', 'Bearer dork_key')
           .send({ password: PASSWORD }),
     ],
+    [
+      'a program with an API key header',
+      (r, id) =>
+        r
+          .post(`/api/step-up/${id}/password`)
+          .set('Origin', OWN_ORIGIN)
+          .set('X-Api-Key', 'not-a-real-key')
+          .send({ password: PASSWORD }),
+    ],
+    [
+      'a program with a proxy credential',
+      (r, id) =>
+        r
+          .post(`/api/step-up/${id}/password`)
+          .set('Origin', OWN_ORIGIN)
+          .set('Proxy-Authorization', 'Basic Zm9vOmJhcg==')
+          .send({ password: PASSWORD }),
+    ],
   ];
 
   // A foreign origin may already be stopped by CORS before the route; either way nothing runs
@@ -392,6 +410,12 @@ describe('POST /api/step-up/:id/change-password', () => {
       'a much longer password'
     );
     expect(commit).toHaveBeenCalledOnce();
+    expect(vi.mocked(recordAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'step-up.password-changed', outcome: 'ok' })
+    );
+    const audits = JSON.stringify(vi.mocked(recordAudit).mock.calls);
+    expect(audits).not.toContain(SHORT_PASSWORD);
+    expect(audits).not.toContain('a much longer password');
   });
 
   it('changes nothing with a wrong current password', async () => {

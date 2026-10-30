@@ -19,7 +19,7 @@
  *   server's own origins, port included, and no `Sec-Fetch-Site` but
  *   `same-origin`.
  * - **A person, not a program:** no agent identity, no approval token, no
- *   `Authorization` header.
+ *   `Authorization`, `X-Api-Key` or `Proxy-Authorization` header.
  * - **The browser that asked:** the session that held the action.
  * - **A connection the password may cross:** this computer, or an encrypted
  *   connection from another device. Never plain `http` from another device.
@@ -69,6 +69,14 @@ import {
 
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
+
+/**
+ * Headers only a program sends: a bearer, an API key (the gate takes
+ * `x-api-key` as one) or a proxy's credential. The app sends none of them.
+ * The same list as `requirePersonAtThisComputer`'s (DOR-3213); whichever of
+ * the two lands second makes them one export.
+ */
+const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -162,6 +170,18 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     });
   }
 
+  /** Record that the owner's password was replaced, never with either password. */
+  function auditPasswordChanged(entry: HeldStepUp): void {
+    recordAudit({
+      action: 'step-up.password-changed',
+      operation: 'modify',
+      outcome: 'ok',
+      target: { type: 'owner-password', id: 'owner' },
+      summary: `The owner chose a longer password before confirming: ${entry.reason}`,
+      source: { surface: 'app' },
+    });
+  }
+
   /**
    * The caller's refusal, when it is not a person in this server's own page,
    * or `undefined`. A read needs no `Origin` (a same-origin `GET` sends none).
@@ -171,7 +191,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const program =
       presentsAgentIdentity(facts) ||
       facts.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
-      facts.headers.authorization !== undefined;
+      PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
     const origin = facts.headers.origin;
     const site = facts.headers['sec-fetch-site'];
     const ownPage =
@@ -310,6 +330,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (!ownerId) return refuse(c, 'no-password');
     await deps.setOwnerPassword(ownerId, newPassword);
     logger.info('[StepUp] The owner chose a longer password before confirming');
+    auditPasswordChanged(entry);
     return commit(c, entry);
   });
 

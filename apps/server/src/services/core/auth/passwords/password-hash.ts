@@ -37,8 +37,13 @@ const PREFIX = 'scrypt$v1$';
 /** Bytes of fresh salt per password. */
 const SALT_BYTES = 16;
 
-/** The largest cost a stored hash may name, so a planted hash cannot stall the server. */
-const MAX_N = 2 ** 20;
+/**
+ * The most work and memory a stored hash may name, as `N * r`: 2^22, four
+ * times today's cost, about 512 MiB per check. Scrypt's memory is 128 bytes
+ * times `N * r`, so capping the product, not each factor, is what keeps a
+ * planted hash from stalling the server.
+ */
+const MAX_N_TIMES_R = 2 ** 22;
 
 interface ScryptParams {
   N: number;
@@ -79,11 +84,10 @@ function parse(hash: string): (ScryptParams & { salt: Buffer; key: Buffer }) | n
   const sane =
     Number.isSafeInteger(params.N) &&
     params.N > 1 &&
-    params.N <= MAX_N &&
     (params.N & (params.N - 1)) === 0 &&
     Number.isSafeInteger(params.r) &&
     params.r >= 1 &&
-    params.r <= 32 &&
+    params.N * params.r <= MAX_N_TIMES_R &&
     Number.isSafeInteger(params.p) &&
     params.p >= 1 &&
     params.p <= 4 &&

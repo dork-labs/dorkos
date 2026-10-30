@@ -54,6 +54,15 @@ describe('owner password hash', () => {
     expect(needsRehash(planted)).toBe(true);
   });
 
+  // Security, #3234 read: each factor in range can still multiply to ~4 GiB (N=2^20, r=32).
+  it('refuses a stored hash whose N times r passes 2^22, even with each factor in range', async () => {
+    const real = await hashOwnerPassword('x');
+    const huge = real.replace('$131072$8$', `$${2 ** 20}$32$`);
+    await expect(verifyOwnerPassword({ hash: huge, password: 'x' })).rejects.toThrow(
+      'Invalid password hash'
+    );
+  });
+
   it('says to rewrite a hash in its own format at a lower cost', () => {
     const weaker = `scrypt$v1$16384$8$1$${'a'.repeat(32)}$${'b'.repeat(128)}`;
     expect(needsRehash(weaker)).toBe(true);
