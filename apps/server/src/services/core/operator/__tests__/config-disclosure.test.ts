@@ -369,6 +369,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.trustedSources[].trustedAt',
       // Not a secret: the part digests behind each folder settings yes (DOR-3068).
       'harness.approvedFolderConfigParts',
+      // Not a secret: the commit each repo was last compared against (DOR-3298).
+      'harness.repoBaselines',
       'mcp.apiKey',
       // The file whose certificates every connection of the desktop app trusts (DOR-3361).
       'network.extraCaCertsPath',

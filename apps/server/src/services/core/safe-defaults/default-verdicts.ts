@@ -476,6 +476,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'harness.approvedFolderConfig': [],
   'harness.approvedFolderConfigParts': {},
   'harness.refusedFolderConfig': [],
+  // Wiped, every changed repo setting waits for a person again, and each repo is
+  // compared against whatever its default branch says next (DOR-3298).
+  'harness.approvedRepoConfig': [],
+  'harness.refusedRepoConfig': [],
+  'harness.repoBaselines': {},
   // No agent's own folder allow list applies until a person approves those exact
   // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
   'permissions.approvedFolderAllows': [],
@@ -567,6 +572,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: false,
     reason:
       "On its first start with the folder settings pin (DOR-3068), DorkOS pins the agents that already existed, as they stand, so a person's own agents don't all stop at once; only agents seen after that, whose homes run anything, wait for a person. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
+  },
+  'harness.repoBaselinesPinned': {
+    value: false,
+    reason:
+      "On its first start with the repo settings check (DOR-3298), DorkOS pins the repos it already knew, as they stand, so a person's own projects don't all stop at once; only repos seen after that wait for a person. A fresh install knows almost none. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
   },
   'runtimes.claudeCode.defaultAccountOnlyProjects': {
     value: null,

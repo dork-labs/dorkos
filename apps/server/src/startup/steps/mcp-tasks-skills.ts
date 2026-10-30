@@ -8,6 +8,10 @@ import { localBrowserHost } from '../local-browser.js';
  * @module startup/steps/mcp-tasks-skills
  */
 import { createPluginReloadActivityWriter } from '../../services/activity/plugin-reload-activity.js';
+import {
+  createRepoConfigActivityWriter,
+  setRepoConfigActivity,
+} from '../../services/runtimes/claude-code/repo-settings/repo-config-activity.js';
 import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
 import { localDialHost } from '../../lib/local-dial-host.js';
 import { env } from '../../env.js';
@@ -109,6 +113,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   if (refs.claudeRuntime) {
     refs.claudeRuntime.setPluginReloadActivity(createPluginReloadActivityWriter(activityService));
   }
+  // Repo hooks, local settings or MCP servers a launch paused, by name (DOR-3298).
+  setRepoConfigActivity(createRepoConfigActivityWriter(activityService));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and
