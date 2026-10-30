@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): list every running chat per agent, spin-offs included'
+  - 'fix(server): record the running-chats route in the census, docs and skill pack'
 ---
 
 ### Added
