@@ -237,6 +237,9 @@ gates:
   - id: lefthook.pre-push.formatting
     source: lefthook.yml
     purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.
+  - id: lefthook.pre-push.fragments
+    source: lefthook.yml
+    purpose: Fails a push that carries a broken changelog fragment, usually an unedited seed, using fragment-present's own validity command.
 
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard
