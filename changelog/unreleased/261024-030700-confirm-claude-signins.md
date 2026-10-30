@@ -4,6 +4,7 @@ covers:
   - 'fix(runtimes): keep excluded account aliases out of probes'
   - 'fix(runtimes): pause Claude accounts until their login is confirmed'
   - 'fix(runtimes): a new or changed Claude sign-in is a notice, never a pause (DOR-3245)'
+  - 'test(server): an owner session from another device cannot start a Claude sign-in (DOR-3245)'
 ---
 
 ### Security

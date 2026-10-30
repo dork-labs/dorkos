@@ -508,6 +508,35 @@ describe('runtime connect endpoints', () => {
       ).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
+    it("refuses the owner's own session from another device (Security S3)", async () => {
+      // The sign-in opens a browser on this computer, so a cookie from a phone
+      // or a laptop on the LAN may not start one, however valid it is.
+      currentPeer = '192.168.86.200';
+      const fromLan = await request(peerServer)
+        .post('/api/runtimes/claude-code/login')
+        .set('Host', 'localhost')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(fromLan.status).toBe(403);
+      const elsewhere = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .set('Host', 'evil.example.com')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(elsewhere.status).toBe(403);
+      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+    it('control: the owner at this computer starts the sign-in', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      currentPeer = '127.0.0.1';
+      const res = await request(peerServer)
+        .post('/api/runtimes/claude-code/login')
+        .set('Host', 'localhost')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledTimes(1);
+    });
     it('passes on the confirmed identity, or an honest refusal for a ruled-out organization', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({
         ok: false,
