@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RULES, compare, countIn, lowered, raisedAgainst } from '../check-design-tokens';
+import { RULES, compare, countIn, lowered, raisedAgainst } from '../check-design-tokens.ts';
 
 const UI = 'packages/ui/src/thing.tsx';
 const CLIENT = 'apps/client/src/thing.tsx';
