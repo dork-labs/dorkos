@@ -38,6 +38,16 @@ describe('fetchJSON', () => {
     expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('include');
   });
 
+  // DOR-3481: a room send can only say "Not sent." when nothing answered.
+  it('marks a failure with no response at all, and not a body that broke after one', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(fetchJSON(BASE_URL, '/api/test')).rejects.toMatchObject({ noResponse: true });
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('{not json', { status: 200 }));
+    const broken = await fetchJSON(BASE_URL, '/api/test').catch((error: unknown) => error);
+    expect((broken as { noResponse?: unknown }).noResponse).toBeUndefined();
+  });
+
   it('defaults a JSON string body to application/json', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

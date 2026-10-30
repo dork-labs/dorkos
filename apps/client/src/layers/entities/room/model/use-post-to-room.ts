@@ -26,12 +26,19 @@
  *
  * @module entities/room/model/use-post-to-room
  */
-import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { UseMutationResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueryClient,
+  type MutationOptions,
+  type QueryClient,
+  type UseMutationResult,
+} from '@tanstack/react-query';
 import type { PostToRoomResponse, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { Transport } from '@dorkos/shared/transport';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { usePendingPostStore } from './pending-posts';
+import { failPendingPost, retryPendingPost } from './send/send-failure';
 
 /** What to say, and where. */
 export interface PostToRoomInput {
@@ -103,18 +110,35 @@ export function reconcilePendingPost(
  * `Not a member of this room`) through the shared mutation toast, which is fit
  * to show a person as-is.
  *
- * **A refusal no longer pushes the words back into the composer**, and that is a
- * deliberate reversal. Restoring was the best answer available when nothing else
- * held them, but it merges a refused sentence into whatever has been typed since
- * — two sentences with a claim on one box — and it cannot say WHICH message
- * failed once two are in flight. The failed row says both, in the place the
- * message was already sitting.
+ * **A refusal puts the words back into an EMPTY composer** (DOR-3481), and the
+ * failed row keeps them too. A box with something typed since is left alone:
+ * merging a refused sentence into a sentence in progress gives two sentences a
+ * claim on one box, and the failed row already holds the words. Sending them
+ * from the box retires the failed row (`retireFailedTwin`), so the same words
+ * are never offered twice. The toast offers Retry, which does what the row's
+ * "Try again" does. See `send-failure`.
  */
 export function usePostToRoom(): UseMutationResult<PostToRoomResponse, Error, PostToRoomInput> {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  return useMutation(postToRoomOptions(transport, queryClient));
+}
 
-  return useMutation({
+/**
+ * The post mutation, as options a retry can run again without a component.
+ *
+ * The toast's Retry fires from outside React — the composer may be long gone —
+ * so it re-runs these options straight from the mutation cache rather than
+ * through a hook that may no longer be mounted.
+ *
+ * @param transport - Where the post goes.
+ * @param queryClient - The cache the stream merges into.
+ */
+function postToRoomOptions(
+  transport: Transport,
+  queryClient: QueryClient
+): MutationOptions<PostToRoomResponse, Error, PostToRoomInput> {
+  const options: MutationOptions<PostToRoomResponse, Error, PostToRoomInput> = {
     // `attachmentIds` is omitted rather than sent empty: a message with no files
     // asks for exactly what it asked for before this field existed.
     mutationFn: ({ roomId, text, attachmentIds }: PostToRoomInput) =>
@@ -134,11 +158,37 @@ export function usePostToRoom(): UseMutationResult<PostToRoomResponse, Error, Po
     },
     onSuccess: (accepted, { roomId, clientId }) =>
       reconcilePendingPost(queryClient, roomId, clientId, accepted.entryId),
-    onError: (_error, { clientId }) => usePendingPostStore.getState().failed(clientId),
+    onError: (error, { roomId, clientId, text }) =>
+      failPendingPost({ clientId, roomId, threadRootId: null, text }, error),
     // Names the action for the shared mutation toast, which then reads
     // "Couldn't send your message — This room is archived". Suppressing that
     // toast and raising our own at the call site was the earlier shape, and it
     // lost the message entirely in exactly the cases this hook now survives.
-    meta: { errorLabel: 'Couldn’t send your message' },
-  });
+    meta: {
+      errorLabel: 'Couldn’t send your message',
+      // The toast offers Retry rather than only Report (DOR-3481): the server
+      // being down is not a bug to report, and the words are still here.
+      errorAction: (_error: Error, variables: PostToRoomInput) => ({
+        label: 'Retry',
+        onClick: () =>
+          retryPendingPost(queryClient, variables.clientId, (post) => {
+            // Built straight from the cache rather than through an observer:
+            // an observer nobody detaches keeps its mutation alive for good.
+            void queryClient
+              .getMutationCache()
+              .build(queryClient, options)
+              .execute({
+                roomId: post.roomId,
+                text: post.text,
+                clientId: post.clientId,
+                attachmentIds: post.attachmentIds,
+                attachmentNames: post.attachmentNames,
+              })
+              // A second failure is handled by `onError` and its own toast.
+              .catch(() => {});
+          }),
+      }),
+    },
+  };
+  return options;
 }

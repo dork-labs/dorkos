@@ -65,6 +65,28 @@ describe('mutation error toast policy', () => {
     );
   });
 
+  // DOR-3481: a failed room send offers Retry, not only Report.
+  it('lets a mutation replace Report with its own action', () => {
+    const onClick = vi.fn();
+    const errorAction = vi.fn(() => ({ label: 'Retry', onClick }));
+    fireMutationError({ errorLabel: 'Couldn’t send your message', errorAction });
+
+    expect(errorAction).toHaveBeenCalledWith(expect.any(Error), undefined);
+    expect(toast.error).toHaveBeenCalledWith(
+      'Couldn’t send your message',
+      expect.objectContaining({ action: { label: 'Retry', onClick } })
+    );
+  });
+
+  it('keeps Report when the mutation’s action answers nothing', () => {
+    fireMutationError({ errorAction: () => undefined });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'That didn’t work. Try again.',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Report' }) })
+    );
+  });
+
   // DOR-1755: the authored sentence is the headline and the raw error is the
   // description under it. It used to be one line joined by an em dash, so
   // "ENOENT: no such file or directory" led every failure that named itself.

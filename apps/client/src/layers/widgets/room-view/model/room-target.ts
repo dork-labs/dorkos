@@ -13,6 +13,7 @@ import {
   NOT_IN_ROOM_SENTENCE,
   isRoomMember,
   newPendingId,
+  retireFailedTwin,
   roomDisplayTitle,
   usePostToRoom,
   useReplyInThread,
@@ -148,6 +149,10 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
     // No per-call callbacks: a refusal is handled by the mutation itself,
     // which still runs when this composer is gone. See `usePostToRoom`.
     const rootId = draft.parentEntryId ?? threadRootId;
+    // A failed message's words go back into the box, so sending them from
+    // there IS the retry: the failed row they also sit in retires now, rather
+    // than staying to offer the same words a second time (DOR-3481).
+    retireFailedTwin({ roomId: here.id, threadRootId: rootId ?? null }, draft.text);
     if (rootId !== undefined) {
       replyNow.mutate({
         roomId: here.id,

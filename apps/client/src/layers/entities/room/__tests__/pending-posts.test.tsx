@@ -17,6 +17,11 @@ import { useRoomStream } from '../model/use-room-stream';
 
 const ROOM = 'room-1';
 
+/** What the transport throws when no response came back: the server is down. */
+function unreachable(): TypeError {
+  return Object.assign(new TypeError('Failed to fetch'), { noResponse: true });
+}
+
 function entry(seq: number, id: string): RoomEntry {
   return {
     roomId: ROOM,
@@ -207,10 +212,9 @@ describe('a message in flight', () => {
     expect(result.current.pending).toHaveLength(0);
   });
 
-  it('goes to a failed row rather than back into the composer', async () => {
-    // The reversal: restoring merged a refused sentence into whatever had been
-    // typed since, and could not say WHICH message failed once two were in
-    // flight. The row says both, where the message already was.
+  it('keeps a refusal in its failed row, out of the box', async () => {
+    // A refusal may have landed, and sending from the box skips the retry's
+    // "did it land?" check, so the words stay in the row that asks to check.
     const transport = createMockTransport();
     transport.postToRoom = vi.fn().mockRejectedValue(new Error('This room is archived'));
 
@@ -224,8 +228,69 @@ describe('a message in flight', () => {
     );
 
     await waitFor(() => expect(result.current.pending[0]?.status).toBe('failed'));
-    expect(result.current.pending[0]?.text).toBe('is the build ok?');
+    expect(result.current.pending[0]).toMatchObject({
+      text: 'is the build ok?',
+      // A refusal may have landed; only "nothing answered" is known not sent.
+      failure: 'unknown',
+    });
     expect(useRoomDraftStore.getState().drafts[ROOM] ?? '').toBe('');
+  });
+
+  it('keeps a failed row AND puts the words back when the server never answered', async () => {
+    // DOR-3481: with the server down, the words used to leave the box for good
+    // as far as the person could tell. Both now hold them.
+    const transport = createMockTransport();
+    transport.postToRoom = vi.fn().mockRejectedValue(unreachable());
+
+    const { result } = renderHook(
+      () => ({ post: usePostToRoom(), pending: usePendingPosts(ROOM, null) }),
+      { wrapper: wrapperFor(transport, makeQueryClient()) }
+    );
+
+    act(() =>
+      result.current.post.mutate({ roomId: ROOM, text: 'is the build ok?', clientId: 'c1' })
+    );
+
+    await waitFor(() => expect(result.current.pending[0]?.failure).toBe('not-sent'));
+    expect(useRoomDraftStore.getState().drafts[ROOM]).toBe('is the build ok?');
+  });
+
+  it('never writes over a sentence typed since', async () => {
+    // DOR-783: a refusal must not overwrite a sentence in progress. The failed
+    // row still holds the words, so nothing is lost.
+    const transport = createMockTransport();
+    let refuse!: (error: Error) => void;
+    transport.postToRoom = vi
+      .fn()
+      .mockReturnValue(new Promise<never>((_resolve, reject) => (refuse = reject)));
+
+    const { result } = renderHook(
+      () => ({ post: usePostToRoom(), pending: usePendingPosts(ROOM, null) }),
+      { wrapper: wrapperFor(transport, makeQueryClient()) }
+    );
+
+    act(() => result.current.post.mutate({ roomId: ROOM, text: 'first', clientId: 'c1' }));
+    act(() => useRoomDraftStore.getState().set(ROOM, 'second, still typing'));
+    await act(async () => refuse(unreachable()));
+
+    await waitFor(() => expect(result.current.pending[0]?.status).toBe('failed'));
+    expect(useRoomDraftStore.getState().drafts[ROOM]).toBe('second, still typing');
+  });
+
+  it('says not sent when nothing answered at all', async () => {
+    // The transport marks a failure with no response at all: the server is
+    // down, so nothing could have kept the message.
+    const transport = createMockTransport();
+    transport.postToRoom = vi.fn().mockRejectedValue(unreachable());
+
+    const { result } = renderHook(
+      () => ({ post: usePostToRoom(), pending: usePendingPosts(ROOM, null) }),
+      { wrapper: wrapperFor(transport, makeQueryClient()) }
+    );
+
+    act(() => result.current.post.mutate({ roomId: ROOM, text: 'hello?', clientId: 'c1' }));
+
+    await waitFor(() => expect(result.current.pending[0]?.failure).toBe('not-sent'));
   });
 
   it('moves the row already on screen when it is tried again', async () => {

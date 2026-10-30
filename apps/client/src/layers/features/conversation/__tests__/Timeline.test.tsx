@@ -130,6 +130,7 @@ function pendingPost(overrides: Partial<PendingPost> = {}): PendingPost {
     attachmentNames: [],
     attachmentIds: [],
     status: 'sending',
+    failure: null,
     entryId: null,
     at: Date.now(),
     ...overrides,

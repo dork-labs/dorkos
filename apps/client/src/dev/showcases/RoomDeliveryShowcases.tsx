@@ -229,6 +229,7 @@ function pending(status: PendingPost['status'], text: string, at = Date.now()): 
     attachmentNames: [],
     attachmentIds: [],
     status,
+    failure: status === 'failed' ? 'unknown' : null,
     entryId: null,
     at,
   };

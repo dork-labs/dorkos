@@ -93,7 +93,14 @@ export {
   PENDING_SLOW_MS,
   PENDING_ECHO_WINDOW_MS,
 } from './model/pending-posts';
-export type { PendingPost, PendingPostStatus } from './model/pending-posts';
+export type { PendingPost, PendingPostFailure, PendingPostStatus } from './model/pending-posts';
+export {
+  discardPendingPost,
+  failPendingPost,
+  retireFailedTwin,
+  retryPendingPost,
+  sendFailureOf,
+} from './model/send/send-failure';
 export { useReplyInThread } from './model/use-reply-in-thread';
 export { useToggleReaction } from './model/use-toggle-reaction';
 export type { ToggleReactionInput } from './model/use-toggle-reaction';
