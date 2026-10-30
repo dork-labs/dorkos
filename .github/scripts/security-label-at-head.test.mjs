@@ -138,6 +138,22 @@ test('a bot cannot label a PR through', () => {
   assert.equal(verdict.passed, false);
 });
 
+test('a bot cannot bring back a label a person removed', () => {
+  const verdict = labelAtHead({
+    sha: SHA,
+    ref: REF,
+    labels: [{ name: 'security-reviewed' }],
+    timeline: [
+      labelled('2026-10-30T10:30:00Z'),
+      { event: 'unlabeled', label: { name: 'security-reviewed' }, created_at: LATE },
+      labelled('2026-10-30T11:30:00Z', 'Bot'),
+    ],
+    activity: [push(EARLY)],
+  });
+  assert.equal(verdict.passed, false);
+  assert.match(verdict.reason, /newest security-reviewed event is not from a person/);
+});
+
 test('the newest label event and the newest push decide', () => {
   const run = (timeline, activity) =>
     labelAtHead({

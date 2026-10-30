@@ -13,7 +13,7 @@ field-changes: []
 The Security App is shelved, so `SECURITY_APPROVAL_BOT_USER_ID` stays `'0'` and the
 gate is red on every security-path PR. It can never be made required that way.
 While the id is `'0'`, a security-path PR now passes when its newest
-`security-reviewed` event, from a person, is newer than the head's last push. A new
+`security-reviewed` event is from a person and newer than the head's last push. A new
 push voids it, and so does `hold`. Any real bot id runs App mode exactly as before.
 Garbage or a missing id refuses. The job summary names the mode.
 

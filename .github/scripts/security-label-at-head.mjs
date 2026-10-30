@@ -49,13 +49,16 @@ export function labelAtHead({ sha, ref, labels, timeline, activity }) {
   const names = labels.map((label) => label.name);
   if (names.includes(HOLD_LABEL)) return { passed: false, reason: `the ${HOLD_LABEL} label is on` };
   if (!names.includes(REVIEW_LABEL)) return { passed: false, reason: `no ${REVIEW_LABEL} label` };
-  // Actor type: a candidate's own workflow holds a token that can label its PR.
-  const added = timeline
-    .filter((event) => event.event === 'labeled' && event.label?.name === REVIEW_LABEL)
-    .filter((event) => event.actor?.type === 'User')
-    .map((event) => event.created_at);
-  if (!added.length) return { passed: false, reason: `no ${REVIEW_LABEL} event from a person` };
-  const labelled = Math.max(...times(added));
+  const added = timeline.filter(
+    (event) => event.event === 'labeled' && event.label?.name === REVIEW_LABEL
+  );
+  if (!added.length) return { passed: false, reason: `no ${REVIEW_LABEL} event` };
+  const labelled = Math.max(...times(added.map((event) => event.created_at)));
+  // Only the newest event counts: a candidate's own workflow holds a token that can
+  // label its PR, so a bot must not revive a label a person removed.
+  const newest = added.filter((event) => Date.parse(event.created_at) === labelled);
+  if (newest.some((event) => event.actor?.type !== 'User'))
+    return { passed: false, reason: `the newest ${REVIEW_LABEL} event is not from a person` };
   const pushed = lastPush(sha, ref, timeline, activity);
   if (Number.isNaN(labelled) || Number.isNaN(pushed))
     return { passed: false, reason: `cannot read the push time of ${sha}` };
