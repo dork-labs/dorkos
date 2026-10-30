@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(server): agents can set up a room's shared files themselves (DOR-3468)"
+  - 'fix(server): bump the skill pack and regenerate the API page (DOR-3468)'
 ---
 
 ### Changed
