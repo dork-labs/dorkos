@@ -2,7 +2,8 @@ name: security-gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    # labeled/unlabeled: in label-at-head mode, adding the label or `hold` changes the verdict.
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   merge_group:
 
 permissions:
@@ -12,7 +13,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # PLACEHOLDER: Dorian must create/install the App, then pin its numeric bot user ID here.
+  # '0' means no App is set, so the gate runs label-at-head. A real numeric bot user ID
+  # means App mode. Anything else refuses.
   SECURITY_APPROVAL_BOT_USER_ID: '0'
   # Security's list (#dorkos, 2026-10-22 04:56). The workflow and its
   # implementation are themselves covered by .github/. Match both sides of renames.

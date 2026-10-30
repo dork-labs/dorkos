@@ -96,7 +96,18 @@ evidence.** This fallback does not claim to establish that separate binding.
 
 ## Dedicated approval helper (not provisioned)
 
-`SECURITY_APPROVAL_BOT_USER_ID: '0'` is a fail-closed placeholder. After Dorian
+`SECURITY_APPROVAL_BOT_USER_ID: '0'` runs the gate in **label-at-head** mode
+(`.github/scripts/security-label-at-head.mjs`, shared with `dork-labs/marketplace`):
+a sensitive PR passes when its newest `security-reviewed` event, added by a person,
+is newer than the head's last push, and no `hold` label is on. GitHub keeps no
+`synchronize` event to read back, so the push time is the head's newest entry in
+the repository activity feed, or a later force push on the PR's timeline. A head
+missing from the feed (a fork's, or one past its retention) refuses. To re-approve a
+new head, remove the label and add it again: re-adding a label that is already on
+records nothing. Anyone who can label this repository can pass this mode, so it
+records Security's review, it does not prove it. The job summary names the mode.
+
+After Dorian
 creates the App, pin its numeric bot user ID in the main workflow, and the same
 ID plus App ID in `tools/security-approve/Main.swift`, through a reviewed PR.
 The latest sensitive-head status must have that exact `creator.id`; a similar
