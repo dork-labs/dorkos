@@ -16,7 +16,7 @@ import type {
   TaskRunTrigger,
 } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
-import { effectiveTiming, effectiveWork } from './timing/effective-timing.js';
+import { effectiveContentKey, effectiveTiming, effectiveWork } from './timing/effective-timing.js';
 import {
   parseContentKey,
   parseFollowedAgentChanges,
@@ -116,6 +116,10 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     packageOwned: row.packageOwned === 'unknown' ? null : (row.packageOwned ?? null),
     projectOnly: row.projectOnly,
     approvalChanges: approvalChangesOf(row),
+    // Declined only while what would run is what was declined (DOR-2097): a
+    // package update that changes the schedule asks again.
+    declined:
+      row.declinedContentKey !== null && row.declinedContentKey === effectiveContentKey(row),
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,

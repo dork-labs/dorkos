@@ -116,6 +116,17 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   previousApprovalKey: text('previous_approval_key'),
   /**
+   * The schedule content a person declined, as a content key, for a schedule
+   * whose file an installed package owns (DOR-2097).
+   *
+   * That file is the package's, so declining cannot remove it, and the decision
+   * lives here instead. While the content that would run still has this key, the
+   * schedule stays waiting, never runs, and asks nobody. A changed file has a
+   * different key, so it asks again. Cleared by an approval. NULL means nobody
+   * declined it.
+   */
+  declinedContentKey: text('declined_content_key'),
+  /**
    * The turn marks of the turn that created or last edited this schedule (DOR-3036,
    * `specs/turn-marks`): JSON `{ outsider?: true, teammate?: [{ roomId, authorId, name?, room? }] }`,
    * or NULL. A marked schedule parks for a person, whatever the trust preset, and its approval
