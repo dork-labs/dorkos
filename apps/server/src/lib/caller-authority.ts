@@ -367,6 +367,13 @@ export function isPersonTurn(
 export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person';
 
 /**
+ * Headers only a program sends: a bearer, an API key (the gate accepts
+ * `x-api-key` as one), or a proxy's credential. The app sends none of them, so
+ * any one of them, valid or not, means a program rather than the person.
+ */
+const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
+
+/**
  * The strictest person bar: the owner, using the app, at this computer or on
  * an encrypted connection. For the switches that decide how this computer is
  * reached and who may sign in (the front door, the session relay's link,
@@ -390,12 +397,13 @@ export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person
  *   must be a browser session (never a per-user API key) of the install's
  *   owner. With none, the request must be at this computer, the gate must have
  *   been open (this computer does not ask for a password) AND the request must
- *   carry no `Authorization` header: an API key, an MCP token or a turn's
- *   bearer is a program, not the app, even where the open gate never read it.
+ *   carry no `Authorization`, `X-Api-Key` or `Proxy-Authorization` header: an
+ *   API key, an MCP token or a turn's bearer is a program, not the app, even
+ *   where the open gate never read it.
  *
  * With no owner yet, a program on this machine that sends no agent header and
- * no bearer reads as the app; once an owner exists it needs their session
- * (DOR-3330).
+ * no credential header reads as the app (DOR-505); once an owner exists it
+ * needs their session (DOR-3330).
  *
  * @param facts - The request's facts.
  * @returns `undefined` when the caller may act, otherwise why not.
@@ -419,7 +427,9 @@ export function requirePersonAtThisComputer(
     notePersonSessionMissing(facts);
     return 'not-a-person';
   }
-  return facts.headers.authorization === undefined ? undefined : 'not-a-person';
+  return PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined)
+    ? 'not-a-person'
+    : undefined;
 }
 
 /** Refusal code when only the owner, at this computer, may make a change. */
