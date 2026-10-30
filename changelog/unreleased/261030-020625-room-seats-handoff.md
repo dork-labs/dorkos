@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): one seat per agent per room, and posts from other chats go to it (DOR-3397)'
+  - 'chore(api): the OpenAPI doc lists the two hand-off notice codes (DOR-3397)'
 ---
 
 ### Changed

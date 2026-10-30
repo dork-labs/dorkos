@@ -15783,7 +15783,9 @@
           "room_archived",
           "agent_reseated",
           "handle_changed",
-          "files_set_up"
+          "files_set_up",
+          "handoff_shared",
+          "handoff_declined"
         ]
       },
       "RoomMoment": {
