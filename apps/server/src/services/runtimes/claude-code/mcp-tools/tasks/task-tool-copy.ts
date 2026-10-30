@@ -3,7 +3,7 @@
  * descriptions its arguments advertise. Split from `task-tools.ts`, which holds
  * the handlers, so the words and the behavior can each be read on their own.
  *
- * @module services/runtimes/claude-code/mcp-tools/task-tool-copy
+ * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-copy
  */
 /**
  * What `tasks_create` tells an agent once the schedule is parked.

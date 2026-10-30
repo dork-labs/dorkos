@@ -17,8 +17,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
-import { ARMED_SCHEDULE_NOTE } from '../task-tool-copy.js';
+import { getTasksTools } from '../tasks/task-tools.js';
+import { ARMED_SCHEDULE_NOTE } from '../tasks/task-tool-copy.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import {
   clearTestHomes,

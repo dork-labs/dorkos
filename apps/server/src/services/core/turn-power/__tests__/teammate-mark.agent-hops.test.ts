@@ -50,7 +50,7 @@ import { originLabelerFrom, setOriginLabeler } from '../../../tasks/approvals/ma
 import {
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
-} from '../../../runtimes/claude-code/mcp-tools/task-tools.js';
+} from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 
 /** A real, empty data directory: `tasks_create` writes a SKILL.md before the row. */

@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
-import { getTasksTools } from '../../mcp-tools/task-tools.js';
+import { getTasksTools } from '../../mcp-tools/tasks/task-tools.js';
 import { homeWriteDenyRules } from '../launch-folder-config.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */

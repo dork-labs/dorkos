@@ -108,7 +108,7 @@ import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.j
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
-import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
+import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { ActivityService } from '../../activity/activity-service.js';
 import { activityEvents } from '@dorkos/db';

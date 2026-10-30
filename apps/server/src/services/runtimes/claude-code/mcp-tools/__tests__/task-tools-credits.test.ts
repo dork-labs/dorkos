@@ -28,7 +28,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
+import { getTasksTools } from '../tasks/task-tools.js';
 import { CREDITS_SCHEDULE_AGENT_REFUSAL } from '../../../../tasks/task-write-policy.js';
 
 interface SessionTool {
