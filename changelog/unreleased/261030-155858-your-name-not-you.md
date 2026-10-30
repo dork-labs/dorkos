@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): your own messages show your name and a muted (you) (DOR-2111, DOR-2839)'
+  - 'fix(client): (you) and the time match, and the time never wraps (DOR-2111, DOR-2839)'
 ---
 
 ### Changed

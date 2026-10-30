@@ -87,18 +87,16 @@ export function MessageAuthor({
 
   const Comp = asChild ? Slot.Root : 'div';
   const name = <span className={slots.authorName()}>{author.displayName}</span>;
-  // One person in every view: the name everyone else sees, then a muted
-  // "(you)" that never truncates — only a long name does (FB-38/55).
+  // One person in every view: the name everyone else sees, then "(you)" in the
+  // timestamp's size and colour. Neither it nor the time ever truncates or
+  // wraps; only a long name gives way (FB-38/55).
   const youMark = isSelf && author.displayName.trim().toLowerCase() !== UNNAMED_SELF;
 
   return (
     <Comp id={id} data-slot="message-author" className={cn(slots.header(), className)}>
       {renderName ? renderName(name) : name}
       {youMark && (
-        <span
-          data-slot="message-author-self"
-          className="text-muted-foreground shrink-0 text-sm font-normal"
-        >
+        <span data-slot="message-author-self" className="text-msg-timestamp shrink-0 text-xs">
           (you)
         </span>
       )}
@@ -109,7 +107,7 @@ export function MessageAuthor({
         <time
           dateTime={at}
           title={formatAbsoluteTime(at ?? '')}
-          className={cn(slots.timestamp(), 'text-msg-timestamp')}
+          className={cn(slots.timestamp(), 'text-msg-timestamp shrink-0 whitespace-nowrap')}
         >
           {time}
         </time>

@@ -42,7 +42,12 @@ describe('Message.Author — the person reading', () => {
     renderAuthor({ kind: 'human', id: 'human', displayName: 'Dorian', isSelf: true });
     const mark = screen.getByText('(you)');
     expect(screen.getByText('Dorian')).toBeInTheDocument();
-    expect(mark).toHaveClass('text-muted-foreground', 'font-normal', 'shrink-0');
+    expect(mark).toHaveClass('text-msg-timestamp', 'text-xs', 'shrink-0');
+    // The time never breaks either: the name is what gives way.
+    expect(document.querySelector('[data-slot="message-author"] time')).toHaveClass(
+      'shrink-0',
+      'whitespace-nowrap'
+    );
     expect(mark).not.toHaveClass('truncate');
     expect(document.getElementById('author-line')).toHaveTextContent('Dorian(you)');
   });
