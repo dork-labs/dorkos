@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(tasks): a global package can mark a schedule project-only (DOR-3376)'
+  - "test(tasks): a project's approval never carries over to new work in the shared file (DOR-3376)"
 ---
 
 ### Changed

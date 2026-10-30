@@ -128,6 +128,44 @@ describe('a project-only schedule in a global package', () => {
     expect(store.getTasks().every((row) => row.projectOnly)).toBe(true);
   });
 
+  it("asks again, for that project only, when the shared file's work changes", async () => {
+    // A package update, or an agent at Full, can rewrite the shared file. An
+    // approval is of the work as it was, per copy, so it never carries over.
+    const file = await put(
+      globalSkillsRoot(dorkHome),
+      'flow-drain',
+      skill('flow-drain', 'project')
+    );
+    await reconciler.reconcile();
+    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
+    expect((await patch(alpha, { status: 'active', enabled: true })).ok).toBe(true);
+    expect(store.getTask(alpha.id)?.status).toBe('active');
+
+    await fs.writeFile(
+      file,
+      skill('flow-drain', 'project').replace('Drain the queue.', 'Delete everything.'),
+      'utf-8'
+    );
+    await reconciler.reconcile();
+
+    const alphaAfter = store.getTask(alpha.id)!;
+    // Parked again, so the clock will not fire the new text: the scheduler
+    // runs a row only while it is `active` (`task-registrar.ts`).
+    expect(alphaAfter.status).toBe('pending_approval');
+    expect(alphaAfter.prompt).toBe('Delete everything.');
+    // It was on, so the project is asked to look at the new work.
+    expect(needsScheduleApprovalAttention(alphaAfter)).toBe(true);
+    // The other project never approved anything and is still off and quiet.
+    const beta = store.getTasks().find((row) => row.agentId === 'agent-beta')!;
+    expect(beta.enabled).toBe(false);
+    expect(needsScheduleApprovalAttention(beta)).toBe(false);
+
+    // Approving the new work arms that copy again.
+    expect((await patch(alphaAfter, { status: 'active' })).ok).toBe(true);
+    await reconciler.reconcile();
+    expect(store.getTask(alpha.id)?.status).toBe('active');
+  });
+
   it('turns on for one project only, and stays on across the next sweep', async () => {
     await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
     await reconciler.reconcile();
