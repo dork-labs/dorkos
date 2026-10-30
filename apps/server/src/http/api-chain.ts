@@ -74,6 +74,7 @@ import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
+import { personSessionRefusal } from './person-session-refusal.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -222,6 +223,9 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     if (identity) c.set('agentIdentity', identity);
     await next();
   });
+  // A person-only write the person could make with their session answers the
+  // one code the app steps up on (DOR-3330).
+  app.use(personSessionRefusal());
   app.use(enterAuditScope);
   app.use(async (c, next) => {
     const record = auditFallbackFor(c.req.method, rawUrl(c), c.get('auditScope'));

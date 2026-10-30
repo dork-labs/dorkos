@@ -610,7 +610,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // is not an agent's, so `<chat_tools>` and the mesh line on messaging a peer
     // render for an agent session only, and this case walks the plain prompt.
     // The agent-session case below guards the names in that half.
-    expect(prefixed.length).toBe(71);
+    //
+    // 71 -> 73 for the canvas browser line (DOR-3219): `<ui_tools>` now names
+    // `local_browser_observe` and `local_browser_act` as where a real website is
+    // driven, since the canvas tab only shows one.
+    //
+    // 73 -> 74 for the room working agreement (DOR-3400): `<room_tools>` names
+    // `read_room_history` once more, as the tool to re-read the room before posting.
+    expect(prefixed.length).toBe(74);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -694,6 +701,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'session_model',
       'working_rules',
       'dorkos_context',
+      'dorkos_areas',
       'env',
     ]);
 

@@ -116,7 +116,7 @@ const signedInServer = listeningServer(
     { path: '/api/rooms', routes: roomsRouter },
     {
       before: async (c, next) => {
-        c.set('user', { userId: signedInUserId } as never);
+        c.set('user', { userId: signedInUserId, credential: 'cookie' });
         await next();
       },
     }

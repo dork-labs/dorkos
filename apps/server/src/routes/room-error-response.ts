@@ -115,6 +115,8 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // before any room is read, so it is the first thing every room route can
   // answer (DOR-1361).
   AGENT_IDENTITY_UNVERIFIED: 401,
+  // A write that only the owner's session could make theirs (DOR-3330).
+  PERSON_SESSION_REQUIRED: 401,
   BROADCAST_NOT_BRIDGEABLE: 400,
   CHAT_ALREADY_BRIDGED: 409,
   BRIDGE_SECOND_AGENT_REFUSED: 409,

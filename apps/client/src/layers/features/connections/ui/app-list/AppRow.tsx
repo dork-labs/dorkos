@@ -17,9 +17,9 @@ const ACTION_LABELS: Record<AppRowAction, string> = {
 };
 
 /** The small "Chat" tag that marks a chat app; the only thing that sets one apart. */
-function ChatTag() {
+function ChatTag({ className }: { className?: string }) {
   return (
-    <Badge size="xs" variant="secondary" className="shrink-0">
+    <Badge size="xs" variant="secondary" className={cn('shrink-0', className)}>
       Chat
     </Badge>
   );
@@ -56,22 +56,26 @@ function RowBody({
       <ServiceMark iconKey={iconKey} displayName={name} logo={logo} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{name}</span>
-          {chat && <ChatTag />}
+          {/* The name wins the space; on a phone the Chat tag moves to the line under it. */}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
+          {chat && <ChatTag className="max-sm:hidden" />}
           {deprecated && (
             <Badge size="xs" variant="outline" tone="warning" className="shrink-0">
               Deprecated
             </Badge>
           )}
         </span>
-        <span
-          className={cn(
-            'text-muted-foreground block text-xs',
-            wrapDetail ? 'line-clamp-2' : 'truncate',
-            detailClassName
-          )}
-        >
-          {detail}
+        <span className="flex items-start gap-1.5">
+          {chat && <ChatTag className="mt-px sm:hidden" />}
+          <span
+            className={cn(
+              'text-muted-foreground block min-w-0 text-xs',
+              wrapDetail ? 'line-clamp-2' : 'truncate',
+              detailClassName
+            )}
+          >
+            {detail}
+          </span>
         </span>
       </span>
     </>
@@ -130,9 +134,13 @@ export function YourAppRowView({
             detail={row.detail}
             chat={row.kind === 'chat'}
             deprecated={row.deprecated}
-            // What broke is the one line worth reading in full.
-            wrapDetail={row.tone === 'broken'}
-            detailClassName={row.tone === 'broken' ? 'text-status-warning-fg' : undefined}
+            // What broke, or what waits on you, is the one line worth reading in full.
+            wrapDetail={row.tone === 'broken' || row.detailTone === 'warning'}
+            detailClassName={
+              row.tone === 'broken' || row.detailTone === 'warning'
+                ? 'text-status-warning-fg'
+                : undefined
+            }
           />
         </span>
         {!row.action && <RowStatus row={row} />}

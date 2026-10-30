@@ -97,6 +97,10 @@
       "types": "./src/git-hardening.ts",
       "default": "./dist/git-hardening.js"
     },
+    "./safe-git": {
+      "types": "./src/safe-git.ts",
+      "default": "./dist/safe-git.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
@@ -160,6 +164,10 @@
     "./mesh-schemas": {
       "types": "./src/mesh-schemas.ts",
       "default": "./dist/mesh-schemas.js"
+    },
+    "./global-mcp-schemas": {
+      "types": "./src/global-mcp-schemas.ts",
+      "default": "./dist/global-mcp-schemas.js"
     },
     "./manifest": {
       "types": "./src/manifest.ts",
@@ -248,6 +256,10 @@
     "./community-private-wire": {
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
+    },
+    "./community-administer": {
+      "types": "./src/community-administer.ts",
+      "default": "./dist/community-administer.js"
     },
     "./community-connections": {
       "types": "./src/community-connections.ts",
@@ -405,6 +417,10 @@
       "types": "./src/transport-doc-links.ts",
       "default": "./dist/transport-doc-links.js"
     },
+    "./person-session": {
+      "types": "./src/person-session.ts",
+      "default": "./dist/person-session.js"
+    },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
@@ -461,6 +477,10 @@
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"
     },
+    "./canvas-media-url": {
+      "types": "./src/canvas-media-url.ts",
+      "default": "./dist/canvas-media-url.js"
+    },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",
       "default": "./dist/canvas-view.js"
@@ -504,6 +524,10 @@
     "./handle": {
       "types": "./src/handle.ts",
       "default": "./dist/handle.js"
+    },
+    "./mention-addressing": {
+      "types": "./src/mention-addressing.ts",
+      "default": "./dist/mention-addressing.js"
     },
     "./canonical-directory": {
       "types": "./src/canonical-directory.ts",

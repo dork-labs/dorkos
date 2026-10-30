@@ -277,6 +277,9 @@ export class RightPanelPage {
     const close = this.header
       .getByRole('button', { name: 'Close panel', exact: true })
       .and(this.page.locator(':not([inert], [inert] *)'));
+    // Right after a reload the top bar may not have rendered yet: wait for either control
+    // before the short reads below, or a slow runner fails here on every reload.
+    await close.or(this.toggle).first().waitFor({ state: 'visible', timeout: 15_000 });
     if (await close.isVisible()) return;
     try {
       const label = await this.toggle.getAttribute('aria-label', { timeout: 1_000 });

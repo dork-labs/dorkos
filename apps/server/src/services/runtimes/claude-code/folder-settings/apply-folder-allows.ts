@@ -19,7 +19,11 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
-import { rulePath, writeDenyRules } from '../messaging/directory-grants.js';
+import {
+  agentHomesSelfGrantRules,
+  rulePath,
+  writeDenyRules,
+} from '../messaging/directory-grants.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
 import {
   folderAllowEntry,
@@ -131,6 +135,7 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   const dorkHome = path.resolve(files.dorkHome);
   const targets: [string, 'folder' | 'file'][] = [
     [path.join(home, '.claude'), 'folder'],
+    [path.join(home, '.agents'), 'folder'],
     [path.join(home, '.mcp.json'), 'file'],
     [path.join(home, '.dork', 'agent.json'), 'file'],
     [path.resolve(files.accountRoot), 'folder'],
@@ -149,16 +154,13 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
     if (!named) return undefined;
     rules.push(...named);
   }
-  const agentsRoot = rulePath(path.join(dorkHome, 'agents'));
-  if (agentsRoot === undefined) return undefined;
+  if (rulePath(path.join(dorkHome, 'agents')) === undefined) return undefined;
+  // Every agent home in the data folder keeps its own self-grant files, so one
+  // agent's approved rule can't rewrite another's list either. Every launch
+  // below Full carries these too (`applyPersonOnlyDataDeny`); named here as
+  // well, so the set beside a list stays whole whatever else the launch applied.
+  rules.push(...agentHomesSelfGrantRules(dorkHome, 'all'));
   for (const tool of WRITE_TOOL_NAMES) {
-    // Every agent home in the data folder keeps its own self-grant files, so
-    // one agent's approved rule can't rewrite another's list either.
-    rules.push(
-      `${tool}(${agentsRoot}/*/.claude/**)`,
-      `${tool}(${agentsRoot}/*/.mcp.json)`,
-      `${tool}(${agentsRoot}/*/.dork/agent.json)`
-    );
     // The home folder's own spellings, which Claude Code expands itself: the
     // default account and its `.claude.json`, and the default data folder's
     // record, whatever this launch's account and data folder are.
@@ -251,6 +253,20 @@ export function folderAllowsFromSettings(settings: Options['settings']): string[
   if (typeof settings !== 'object' || settings === null) return [];
   const allow = (settings as { permissions?: AllowSettings }).permissions?.allow;
   return Array.isArray(allow) ? [...allow] : [];
+}
+
+/**
+ * The deny rules a launch's settings carry, sorted, for the launch
+ * fingerprint (DOR-3068). The CLI reads them only at launch, so a warm process
+ * must relaunch when they change: a turn that became marked, or an agent
+ * registered since, would otherwise keep the rules it started with.
+ *
+ * @param settings - A launch's `Options.settings`.
+ */
+export function denyRulesFromSettings(settings: Options['settings']): string[] {
+  if (typeof settings !== 'object' || settings === null) return [];
+  const deny = (settings as { permissions?: { deny?: unknown } }).permissions?.deny;
+  return Array.isArray(deny) ? deny.filter((r): r is string => typeof r === 'string').sort() : [];
 }
 
 /**

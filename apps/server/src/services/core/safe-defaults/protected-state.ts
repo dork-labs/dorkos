@@ -213,6 +213,20 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The external /mcp tool endpoint defaults ON. Someone who closed it should not have it re-opened by a wipe.',
   },
   {
+    path: 'harness.folderConfigPinned',
+    direction: 'boolean',
+    protectiveValue: true,
+    reason:
+      'The first start pins the agents DorkOS already had, as they stand (DOR-3068). After a wipe, an agent with no record should wait for a person, never be pinned again unasked.',
+  },
+  {
+    path: 'harness.repoBaselinesPinned',
+    direction: 'boolean',
+    protectiveValue: true,
+    reason:
+      'The first start pins the repos DorkOS already knew, as they stand (DOR-3298). After a wipe, a repo with no pinned commit should wait for a person, never be pinned again unasked.',
+  },
+  {
     path: 'harness.autoSync',
     direction: 'boolean',
     protectiveValue: false,
@@ -229,6 +243,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     path: 'uploads.maxFiles',
     direction: 'lower',
     reason: 'A tightened cap on how many files one upload may carry.',
+  },
+  {
+    path: 'runtimes.maxAgentChats',
+    direction: 'lower',
+    reason:
+      'A tightened cap on how many spin-off chats may run at once (DOR-3413). A person who lowered it to spare the machine must not get the default back from a wipe.',
   },
   {
     path: 'uploads.allowedTypes',

@@ -1,4 +1,3 @@
-import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a notification draws, and where it goes when it is clicked.
  *
@@ -10,6 +9,7 @@ import { appRoutes } from '@/layers/shared/lib';
  *
  * @module entities/notifications/lib/notification-presentation
  */
+import { appRoutes } from '@/layers/shared/lib';
 import {
   Bell,
   CheckCircle2,
@@ -24,9 +24,11 @@ import {
   MonitorSmartphone,
   Puzzle,
   RotateCcw,
+  ShieldAlert,
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
+  UserRoundCheck,
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
@@ -110,6 +112,10 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.destructive_executed': CheckCircle2,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
+  // Files in an agent's folder whose names say they are secrets (DOR-3292).
+  'agent.secret_files': ShieldAlert,
+  // A Claude folder's sign-in is new or changed (DOR-3245).
+  'account.signin_review': UserRoundCheck,
 };
 
 /** How loudly a notification draws. */
@@ -312,6 +318,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
+  if (kind === 'account.signin_review') {
+    // Settings → Runtimes, where the person confirms or keeps the sign-in.
+    return { ...appRoutes.home(), search: { settings: RUNTIMES_SETTINGS_TAB } };
+  }
   if (kind === 'web.new_device') {
     // Where the owner pauses chat from the web if it wasn't them.
     return { ...appRoutes.home(), search: { settings: ACCOUNT_SETTINGS_TAB } };
@@ -339,6 +349,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
       return { ...appRoutes.home(), search: { inbox: subject.id } };
     }
     return sessionId === undefined ? null : toSession({ session: sessionId });
+  }
+  if (kind === 'agent.secret_files') {
+    // The agent's own Permissions page, where its rules and the line about
+    // files in its folder sit, rather than the whole Team (DOR-3292).
+    return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.

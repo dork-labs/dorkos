@@ -24,6 +24,11 @@ import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import {
+  agentHomesSelfGrantRules,
+  PERSON_ONLY_DATA_FOLDERS,
+  personOnlyFileRules,
+} from '../directory-grants.js';
 import { assignTurnBounds } from '../../turn-bounds.js';
 import {
   captureLaunchFingerprint,
@@ -634,11 +639,17 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       'Write(//rooms/r1/repo/**)',
       'NotebookEdit(//rooms/r1/repo/**)',
       // Then the folders only a person may change, on every turn.
-      ...['permissions', 'session-relay'].flatMap((folder) =>
+      ...PERSON_ONLY_DATA_FOLDERS.flatMap((folder) =>
         ['Edit', 'Write', 'NotebookEdit'].map(
           (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
         )
       ),
+      // And the config files, which hold every approval (DOR-3068).
+      ...personOnlyFileRules(resolveDorkHome()),
+      // And every agent home's self-grant files, on every launch (DOR-3068 S1).
+      ...agentHomesSelfGrantRules(resolveDorkHome(), 'launch'),
+      // And every project's installed plugins (DOR-3068).
+      ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
     ];
     const settings = options.settings as {
       fastMode: boolean;

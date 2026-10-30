@@ -40,6 +40,7 @@ export {
   type HomeResolution,
   type HomeVia,
 } from './agent-home.js';
+export { mayRunGitHere, setGitGuardRoots } from './may-run-git.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';
 export { createCapabilityGateAuditObserver } from './capability-gate-audit.js';
 export { createAgentIdentityUnregisterCascade } from './unregister-cascade.js';

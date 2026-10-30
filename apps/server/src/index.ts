@@ -16,6 +16,8 @@ import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
+import { setGitGuardRoots } from './services/core/agent-identity/index.js';
+import { resolveAgentsDirectory } from './lib/agents-home.js';
 import { logger, logError } from './lib/logger.js';
 import {
   captureLiveStandingGrants,
@@ -62,6 +64,7 @@ import { claimDataDirectory } from './startup/steps/data-directory.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
 import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { recordKeptFromAutoMovesOnBoot } from './startup/steps/record-kept-from-auto-moves.js';
+import { startSecretFileScanOnBoot } from './startup/steps/secret-file-scan.js';
 import { wireCoreStores } from './startup/steps/core-stores.js';
 import { wireSessionServices } from './startup/steps/session-services.js';
 import { startTelemetryExtensionsAndRuntimes } from './startup/steps/telemetry-extensions-runtimes.js';
@@ -73,6 +76,10 @@ import { wireConnectorServices } from './startup/steps/connector-services.js';
 import { wireDocDelivery } from './startup/steps/doc-delivery.js';
 import { wireMcpTasksAndSkills } from './startup/steps/mcp-tasks-skills.js';
 import { mountCoreRoutes } from './startup/steps/core-routes.js';
+import { pinRegisteredFolderConfigsOnce } from './services/runtimes/claude-code/folder-settings/pin-folder-configs.js';
+import { pinKnownRepoBaselinesOnce } from './services/runtimes/claude-code/repo-settings/pin-repo-baselines.js';
+import { projectRegistry } from './services/projects/project-registry.js';
+import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { mountLateRoutes } from './startup/steps/late-routes.js';
 import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
@@ -201,6 +208,12 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // DorkOS never runs git in an agent folder (DOR-3343). Config can move the
+  // agents and workspace directories out of the data dir, so read them per call.
+  setGitGuardRoots(() => [
+    resolveWorkspaceRoot({ dorkHome, config: configManager.get('workspace') }),
+    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
+  ]);
   if (workspaceConfig.enabled) {
     const {
       service: workspaceService,
@@ -243,6 +256,9 @@ async function start() {
   }
   const upToRooms = { ...upToRuntimes, ...(await wireRooms(refs, upToRuntimes)) };
   const upToMesh = { ...upToRooms, ...(await startSearchRelayAndMesh(refs, upToRooms)) };
+  // The first extension scan ran before the agent registry existed, so the
+  // mini apps agents keep in their own folders are found now (DOR-3068).
+  refs.extensionManager?.requestRefresh();
   const upToRelayAdapters = {
     ...upToMesh,
     ...(await wireTeamRoomAndRelayAdapters(refs, upToMesh)),
@@ -261,6 +277,17 @@ async function start() {
   };
   const upToTasks = { ...upToDocDelivery, ...(await wireMcpTasksAndSkills(refs, upToDocDelivery)) };
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
+  // Pin the agents DorkOS already had, once ever, before any turn launches:
+  // only agents seen after this first start wait for a person (DOR-3068).
+  await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);
+  // Pin the repos DorkOS already knew, once ever, before any turn launches in
+  // one: only repos seen after this first start wait for a person (DOR-3298).
+  await pinKnownRepoBaselinesOnce(async () => [
+    DEFAULT_CWD,
+    ...(refs.meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? []),
+    ...(await projectRegistry.list()).map((project) => project.root),
+    ...(refs.managedWorkspaces?.list().map((workspace) => workspace.path) ?? []),
+  ]);
   await mountLateRoutes(refs, upToCoreRoutes);
   await composeCapabilities(refs, upToCoreRoutes);
   await upToCoreRoutes.seedPersonSet();
@@ -273,6 +300,8 @@ async function start() {
   });
   // The accounts the upgrade kept out of automatic moves, one history line (Re-seat P0).
   await recordKeptFromAutoMovesOnBoot(refs, { dorkHome, activity: upToCoreRoutes.activityService });
+  // Secret-looking files in agent folders, told to the person (DOR-3292). Background.
+  startSecretFileScanOnBoot(refs);
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
     upToCoreRoutes;
 

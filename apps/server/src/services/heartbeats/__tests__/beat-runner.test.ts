@@ -892,3 +892,168 @@ describe('a gatherer that fails', () => {
     );
   });
 });
+
+describe('a beat whose account is out of usage', () => {
+  /** A turn that ends without `end_beat`, as one cut off by a usage limit does. */
+  async function* cutOff(): AsyncGenerator<StreamEvent> {
+    yield { type: 'text_delta', data: { text: "You've hit your weekly limit" } } as StreamEvent;
+  }
+
+  /** The launcher, recording which chat and account each launch named. */
+  function recording(): {
+    launcher: BeatTurnLauncher;
+    sent: Array<{ sessionId: string; account?: string }>;
+  } {
+    const base = launcher();
+    const sent: Array<{ sessionId: string; account?: string }> = [];
+    return {
+      sent,
+      launcher: {
+        ...base,
+        launch: (request) => {
+          sent.push({
+            sessionId: request.sessionId,
+            ...(request.account ? { account: request.account } : {}),
+          });
+          return base.launch(request);
+        },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    changes = [LOCAL_MESSAGE];
+    store.patchState(juno.id, { beatChatId: 'beat-chat', beatChatDate: '2026-10-12' });
+  });
+
+  it('runs in a fresh chat on the account that can take it', async () => {
+    const { launcher: l, sent } = recording();
+    const asked: Array<{ sessionId: string; afterLimit: boolean }> = [];
+    const r = runner({
+      launcher: l,
+      seats: {
+        seatFor: async (_agent, sessionId, opts) => {
+          asked.push({ sessionId, afterLimit: opts.afterLimit });
+          return { kind: 'move', accountId: 'claude5' };
+        },
+        hitLimit: () => false,
+      },
+    });
+    runtime.withScenarios([endsWith({ summary: 'Answered.' }, () => currentSession)]);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    await done;
+    expect(asked).toEqual([{ sessionId: 'beat-chat', afterLimit: false }]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.sessionId).not.toBe('beat-chat');
+    expect(sent[0]!.account).toBe('claude5');
+    // The fresh chat is today's beat chat from now on.
+    expect(store.getState(juno.id)?.beatChatId).toBe(sent[0]!.sessionId);
+    expect(beats().at(-1)?.outcome).toBe('worked');
+  });
+
+  it('stays in its chat, naming no account, while its account has room', async () => {
+    const { launcher: l, sent } = recording();
+    const r = runner({
+      launcher: l,
+      seats: { seatFor: async () => ({ kind: 'stay' }), hitLimit: () => false },
+    });
+    runtime.withScenarios([endsWith({ summary: 'Answered.' }, () => currentSession)]);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    await done;
+    expect(sent).toEqual([{ sessionId: 'beat-chat' }]);
+  });
+
+  it('waits instead of burning the beat when no account can take it, and loses nothing', async () => {
+    const { launcher: l, sent } = recording();
+    let seat: 'wait' | 'stay' = 'wait';
+    const r = runner({
+      launcher: l,
+      seats: {
+        seatFor: async () =>
+          seat === 'wait' ? { kind: 'wait', until: '2026-10-13T01:00:00.000Z' } : { kind: 'stay' },
+        hitLimit: () => false,
+      },
+    });
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(sent).toHaveLength(0);
+    expect(beats().at(-1)).toMatchObject({ outcome: 'skipped' });
+    expect(beats().at(-1)?.summary).toContain('out of usage until 2026-10-13T01:00:00.000Z');
+    expect(store.getState(juno.id)?.consecutiveFailures ?? 0).toBe(0);
+
+    seat = 'stay';
+    runtime.withScenarios([endsWith({ summary: 'Answered.' }, () => currentSession)]);
+    vi.setSystemTime(MONDAY_10AM + 60_000);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    await done;
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toContain('room-entry:e1');
+  });
+
+  it('runs the beat once more on another account when its turn hits a limit', async () => {
+    const { launcher: l, sent } = recording();
+    const asked: boolean[] = [];
+    const r = runner({
+      launcher: l,
+      seats: {
+        seatFor: async (_agent, _sessionId, opts) => {
+          asked.push(opts.afterLimit);
+          return opts.afterLimit ? { kind: 'move', accountId: 'claude2' } : { kind: 'stay' };
+        },
+        hitLimit: (sessionId) => sessionId === 'beat-chat',
+      },
+    });
+    runtime.withScenarios([cutOff, endsWith({ summary: 'Answered.' }, () => currentSession)]);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    for (let i = 0; i < 4; i += 1) await settle();
+    await done;
+    expect(asked).toEqual([false, true]);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toEqual({ sessionId: 'beat-chat' });
+    expect(sent[1]!.account).toBe('claude2');
+    expect(sent[1]!.sessionId).not.toBe('beat-chat');
+    // One beat, recorded once, as the re-run ended it.
+    expect(beats()).toHaveLength(1);
+    expect(beats()[0]).toMatchObject({ outcome: 'worked', turnSessionId: sent[1]!.sessionId });
+  });
+
+  it('re-runs at most once, so a second limit ends the beat', async () => {
+    const { launcher: l, sent } = recording();
+    const r = runner({
+      launcher: l,
+      seats: {
+        seatFor: async (_agent, _sessionId, opts) =>
+          opts.afterLimit ? { kind: 'move', accountId: 'claude2' } : { kind: 'stay' },
+        hitLimit: () => true,
+      },
+    });
+    runtime.withScenarios([cutOff, cutOff]);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    for (let i = 0; i < 4; i += 1) await settle();
+    await done;
+    expect(sent).toHaveLength(2);
+    expect(beats()).toHaveLength(1);
+    expect(beats()[0]).toMatchObject({ outcome: 'no-end-beat' });
+  });
+
+  it('skips the re-run and waits when no other account can take it', async () => {
+    const { launcher: l, sent } = recording();
+    const r = runner({
+      launcher: l,
+      seats: {
+        seatFor: async (_agent, _sessionId, opts) =>
+          opts.afterLimit ? { kind: 'wait', until: null } : { kind: 'stay' },
+        hitLimit: () => true,
+      },
+    });
+    runtime.withScenarios([cutOff]);
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    for (let i = 0; i < 4; i += 1) await settle();
+    await done;
+    expect(sent).toHaveLength(1);
+    expect(beats()[0]).toMatchObject({ outcome: 'skipped' });
+    expect(beats()[0]?.summary).toBe('Every account it may use is out of usage; it waits.');
+  });
+});

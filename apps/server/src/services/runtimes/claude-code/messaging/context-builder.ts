@@ -356,11 +356,9 @@ Each action's full description is on the ${T}control_ui tool itself — read it 
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
 UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and a canvas push to a document somebody is editing is held rather than applied — a success result means "accepted", not "displayed".
 
-PUTTING SOMETHING ON A ROOM. The six canvas actions take an optional target with a room id, which
-puts the document on that room's shared canvas instead of this window. You have to be a member of
-the room: one you are not in answers "No such room", the same answer a room that does not exist
-gives. Everyone in the room sees it, and one line saying what you put there is posted when your
-turn ends -- it starts nobody's turn. Three per room per turn; the other actions ignore a target.
+PUTTING SOMETHING ON A ROOM. The six canvas actions take an optional target with a room id, which puts the document on that room's shared canvas instead of this window. You have to be a member of the room: one you are not in answers "No such room", the same answer a room that does not exist gives.
+Everyone in the room sees it, and one line saying what you put there is posted when your turn ends -- it starts nobody's turn. Three per room per turn; the other actions ignore a target.
+A picture, PDF, sound, video, 3D model or CSV named by a local path is copied into the room so every member can see it. It must be in your own folder or your own copy of the room's files, the same rule as a file you attach to a room message; anything else is refused with the reason.
 
 THE BROWSER TAB. A page you opened with browser_navigate is one DorkOS is serving, so you can use it
 and not only look at it -- click it, type into it, and read it back:
@@ -370,11 +368,11 @@ and not only look at it -- click it, type into it, and read it back:
   ${T}browser_press(key, documentId?) -- one key or chord at whatever has focus.
   ${T}browser_scroll(by?, to?, role?, name?, documentId?) -- move the page.
   ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
-Read the page first: the names it prints are the names the other five take. This works only on a
-preview DorkOS serves or proxies -- a page loaded straight from the internet is shown, not driven,
-and says so in a sentence rather than making you wait. With more than one browser tab open, leave
-documentId out to act in the one whose window last brought a preview to the front -- almost always
-the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
+Read the page first: the names it prints are the names the other five take. This drives only a
+preview DorkOS serves or proxies; a real website is shown here, not driven, so drive it in the
+Agent browser (${T}local_browser_observe, ${T}local_browser_act) once the person shares one. With
+more than one tab open, leave documentId out to act in the tab whose window last brought a preview
+to the front. Every one of these six answers with the tab it acted on and that tab's id, so to
 stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
 open tabs with their ids as well; in a one-on-one session it does not.
 
@@ -515,8 +513,7 @@ function buildRelayConnectionsBlock(
 
   const { agentId, bindingStore, bindingRouter, adapterManager } = relayContext;
 
-  const allBindings = bindingStore.getAll();
-  const myBindings = allBindings.filter((b) => b.agentId === agentId);
+  const myBindings = bindingStore.getAll().filter((b) => b.agentId === agentId);
   if (myBindings.length === 0) return '';
 
   const adapters = adapterManager.listAdapters();
@@ -763,6 +760,7 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
     case 'seed_context':
     case 'approval_verdict':
     case 'direct_notes':
+    case 'turn_cutoff':
       // Prose with a security seam, written once for every runtime.
       return wrapTag(tag, formatProseContext(entry));
     case 'context_warning':

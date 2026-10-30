@@ -253,7 +253,56 @@ export const ScheduleBlockSchema = z.object({
    * ladder at run time with a warning rather than making the file unreadable.
    */
   account: z.string().min(1).optional().catch(undefined),
+
+  /**
+   * Where this schedule belongs (DOR-3376). Absent means where its file is,
+   * which is how every schedule worked before this key.
+   *
+   * `project`: the schedule only makes sense inside a project. From a global
+   * package (`~/.dork/skills`), DorkOS never lists it as a global schedule and
+   * never asks to approve it there; each registered project gets its own copy,
+   * switched off, that runs in that project's folder. From a project's own
+   * skills, it behaves exactly as if the key were absent.
+   *
+   * **An enum with one value, and an unknown value is an error rather than a
+   * fallback.** More values may come later; a file naming one this build does
+   * not know must not quietly run as a global schedule, so the block parks with
+   * a complaint instead.
+   */
+  scope: z.enum(['project']).optional(),
+
+  /**
+   * With `scope: project` from a global package: the file whose presence says
+   * a project uses the package, as a path relative to the project's root
+   * (DOR-3376). Only a project holding it gets a copy, and with no
+   * `projectFile` no project does: when DorkOS cannot tell, it makes none.
+   *
+   * Relative and inside the project, or the block is unreadable and parks
+   * with a complaint: an absolute path, a `~`, or any `..` segment is refused
+   * here, and one that resolves outside the project (a symlink pointing out)
+   * reads as missing where it is checked.
+   */
+  projectFile: z
+    .string()
+    .min(1)
+    .refine(isProjectRelativePath, {
+      message: 'must be a path inside the project, like .agents/flow/config.json',
+    })
+    .optional(),
 });
+
+/**
+ * Whether a `projectFile` value names a path inside a project by its text
+ * alone: relative, no home shorthand, no `..` segment, and no drive letter.
+ * Where it actually resolves is checked against the disk by the caller.
+ *
+ * @param value - The path as written.
+ */
+export function isProjectRelativePath(value: string): boolean {
+  if (value.startsWith('/') || value.startsWith('\\') || value.startsWith('~')) return false;
+  if (/^[A-Za-z]:/.test(value)) return false;
+  return !value.split(/[\\/]/).includes('..');
+}
 
 /**
  * A validated `schedule:` block — see {@link ScheduleBlockSchema}.
@@ -417,5 +466,7 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.model !== undefined) out.model = schedule.model;
   if (schedule.effort !== undefined) out.effort = schedule.effort;
   if (schedule.account !== undefined) out.account = schedule.account;
+  if (schedule.scope !== undefined) out.scope = schedule.scope;
+  if (schedule.projectFile !== undefined) out.projectFile = schedule.projectFile;
   return out;
 }

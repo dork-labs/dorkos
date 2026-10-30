@@ -40,6 +40,7 @@ import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -218,11 +219,57 @@ export function applyDirectoryGrants(
  *   rewrite it could raise its own level.
  * - `session-relay/` holds the pins that say which hub and which keys this
  *   computer trusts (and, with B4, `approval-keys.json`).
+ * - `extension-snapshots/` holds the approved files an extension runs from,
+ *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
+ *   that could rewrite either could run code nobody approved. Both are also
+ *   checked by content before use; this keeps the file tools out entirely.
+ * - `marketplace/` holds what DorkOS's installer recorded, `project-installs.json`
+ *   among it: which plugin came from where, which is what gives a copy its
+ *   trusted origin (DOR-3068).
+ * - `plugins/` holds the plugins installed for every project. A plugin's
+ *   commands name the tools they may use and its hooks run code, so an agent
+ *   that could rewrite one could hand itself tools (DOR-3068).
  *
  * Bash is not covered, as the module note says: a turn with a shell it was not
  * asked about is outside what file rules can hold.
  */
-export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay'] as const;
+export const PERSON_ONLY_DATA_FOLDERS = [
+  'permissions',
+  'session-relay',
+  'extension-snapshots',
+  'cache/extensions',
+  'marketplace',
+  'plugins',
+] as const;
+
+/**
+ * The files directly in the data directory only a person may change: the
+ * config (`config.json`, its backups and conf's temp files beside it, so
+ * `config.json*`) and the timestamped backups. The config holds every
+ * extension approval and every other `operator-only` setting (DOR-3068); an
+ * agent that could write it with a file tool could approve its own code. And
+ * `marketplaces.json`, the package sources the person trusts.
+ */
+export const PERSON_ONLY_DATA_FILES = [
+  'config.json*',
+  'config-*.json.bak',
+  'marketplaces.json*',
+] as const;
+
+/**
+ * The plugins installed into a project, at any depth: `<project>/.dork/plugins/`
+ * (DOR-3068). Discovery reads every known project's, not only the turn's own,
+ * so one absolute any-depth rule per write tool covers them all without
+ * listing projects. A plugin's own `.dork/extensions/` sits inside it.
+ *
+ * A project's own `.dork/extensions/` is deliberately NOT here: agents build
+ * mini apps by editing exactly those files (`test_extension`). What keeps an
+ * edit there from running unseen is the approval, which asks again when the
+ * folder changes.
+ */
+export const PROJECT_PLUGIN_DENY_RULES: readonly string[] = WRITE_TOOLS.map(
+  (tool) => `${tool}(//**/.dork/plugins/**)`
+);
 
 /**
  * A Windows drive path seen on a POSIX host (tests, mostly), which
@@ -262,16 +309,31 @@ function namesOf(dorkHome: string, name: string): string[] {
 }
 
 /**
- * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS}, merged into
+ * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS} and every
+ * project's installed plugins ({@link PROJECT_PLUGIN_DENY_RULES}), merged into
  * the launch's settings beside any grant rules. Whatever the permission mode:
  * a deny rule holds under `bypassPermissions` too (see the module note).
  *
- * @param sdkOptions - The launch options, mutated in place.
+ * Every agent home's self-grant files ({@link agentHomesSelfGrantRules}) are
+ * denied below Full only. A launch at Full autonomy (`bypassPermissions` on
+ * `sdkOptions`, so set the mode first) has no limits (the owner's rule), so its
+ * file tools may change them, and the chat gets one Activity line for it. The
+ * rules are part of the launch fingerprint, so a chat that drops below Full
+ * relaunches with them.
+ *
+ * @param sdkOptions - The launch options, mutated in place; its mode is read.
  * @param dorkHome - The data directory.
+ * @param chat - The chat being launched and its agent, for the Activity line at Full.
  * @throws DirectoryGrantError when the data directory's path can't be named
  *   exactly in a rule — failing closed, as a `read` grant does.
  */
-export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): void {
+export function applyPersonOnlyDataDeny(
+  sdkOptions: Options,
+  dorkHome: string,
+  chat?: { sessionId: string; agentPath?: string | undefined }
+): void {
+  const full = sdkOptions.permissionMode === 'bypassPermissions';
+  if (full && chat) noteFullLaunch(chat);
   const folders = [...new Set(PERSON_ONLY_DATA_FOLDERS.flatMap((name) => namesOf(dorkHome, name)))];
   if (!folders.every(ruleCanName)) {
     throw new DirectoryGrantError(
@@ -291,10 +353,115 @@ export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): 
     ...base,
     permissions: {
       ...permissions,
-      deny: [...(permissions.deny ?? []), ...folders.flatMap(readOnlyRules)],
+      deny: [
+        ...(permissions.deny ?? []),
+        ...folders.flatMap(readOnlyRules),
+        ...personOnlyFileRules(dorkHome),
+        ...(full ? [] : agentHomesSelfGrantRules(dorkHome, 'launch')),
+        ...PROJECT_PLUGIN_DENY_RULES,
+      ],
     },
   } as Options['settings'];
 }
+
+/** Chats whose launch at Full already wrote its Activity line this server run, newest last. */
+const fullLaunchesNoted = new Set<string>();
+/** How many chats {@link fullLaunchesNoted} remembers, oldest dropped first. */
+const FULL_LAUNCH_MEMORY = 10_000;
+
+/**
+ * Write the one Activity line a chat launched at Full autonomy gets for the agent-home files its
+ * file tools may change: once per chat per server run, not per write, since no hook sees a write
+ * the rules no longer refuse.
+ *
+ * @param chat - The chat being launched and its agent.
+ */
+function noteFullLaunch(chat: { sessionId: string; agentPath?: string | undefined }): void {
+  if (fullLaunchesNoted.has(chat.sessionId)) return;
+  fullLaunchesNoted.add(chat.sessionId);
+  if (fullLaunchesNoted.size > FULL_LAUNCH_MEMORY) {
+    fullLaunchesNoted.delete(fullLaunchesNoted.values().next().value!);
+  }
+  recordFullAction({
+    actionId: 'files.agent-homes',
+    did: "started a chat that may change other agents' settings, skills and agent files",
+    limit: "a chat's file tools can't change them",
+    ...(chat.agentPath ? { agentPath: chat.agentPath } : {}),
+    sessionId: chat.sessionId,
+  });
+}
+
+/**
+ * Write-deny rules for {@link PERSON_ONLY_DATA_FILES}, through every spelling
+ * of the data directory (as given, and its real path). The file name keeps
+ * its `*` as a glob; only the folder part is escaped.
+ *
+ * @param dorkHome - The data directory.
+ */
+export function personOnlyFileRules(dorkHome: string): string[] {
+  const foreign = isForeignWindowsPath(dorkHome);
+  const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
+  const real = foreign ? undefined : realpathOrUndefined(home);
+  const rules = new Set<string>();
+  for (const spelling of new Set([home, ...(real ? [real] : [])])) {
+    const root = rulePath(spelling);
+    if (root === undefined) continue;
+    for (const file of PERSON_ONLY_DATA_FILES) {
+      for (const tool of ALL_WRITE_TOOLS) rules.add(`${tool}(${root}/${file})`);
+    }
+  }
+  return [...rules];
+}
+
+/**
+ * Write-deny rules for every agent home's self-grant files in the data folder,
+ * through every spelling of the data directory. The `*` matches one folder:
+ * each agent home, never the folders below it.
+ *
+ * - `'launch'`, on every launch below Full (DOR-3068 S1): the four files that grant
+ *   power (`.claude/settings.json`, `.claude/settings.local.json`,
+ *   `.mcp.json`, `.dork/agent.json`), and the home's skills, commands and
+ *   subagents, whose frontmatter widens tools. That is `.claude/skills/**`,
+ *   `.claude/commands/**`, `.claude/agents/**` and `.agents/**`, where Harness
+ *   Sync keeps the real skills `.claude/skills/<x>` links to. One agent's file
+ *   tools rewriting another's would approve its own change. `CLAUDE.md` stays
+ *   writable: that is instructions, not code.
+ * - `'all'`, beside an applied folder allow list: the whole `.claude/` folder,
+ *   and `.agents/**` with it.
+ *
+ * @param dorkHome - The data directory.
+ * @param scope - Which files: every launch's set, or all of `.claude/`.
+ */
+export function agentHomesSelfGrantRules(dorkHome: string, scope: 'launch' | 'all'): string[] {
+  const foreign = isForeignWindowsPath(dorkHome);
+  const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
+  const real = foreign ? undefined : realpathOrUndefined(home);
+  const rules = new Set<string>();
+  for (const spelling of new Set([home, ...(real ? [real] : [])])) {
+    const root = rulePath(spelling);
+    if (root === undefined) continue;
+    const agents = `${root}/agents`;
+    const files = [
+      ...(scope === 'all' ? ['.claude/**'] : LAUNCH_SELF_GRANT_CLAUDE_FILES),
+      '.agents/**',
+      '.mcp.json',
+      '.dork/agent.json',
+    ];
+    for (const tool of ALL_WRITE_TOOLS) {
+      for (const file of files) rules.add(`${tool}(${agents}/*/${file})`);
+    }
+  }
+  return [...rules];
+}
+
+/** The parts of a home's `.claude/` every launch denies to every agent's file tools. */
+const LAUNCH_SELF_GRANT_CLAUDE_FILES = [
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.claude/skills/**',
+  '.claude/commands/**',
+  '.claude/agents/**',
+];
 
 /**
  * The grants a launch's settings carry, read back from the rules

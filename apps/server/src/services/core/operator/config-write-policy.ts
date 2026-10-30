@@ -435,6 +435,13 @@ export const CONFIG_WRITE_POLICY = {
   // yet; lengthening it spends disk. Either is the person's call.
   'activity.retentionDays': 'operator-only',
 
+  // Company certificates the desktop app adds to what it trusts (DOR-3361).
+  // A certificate authority vouches for every server the app talks to, so
+  // naming a file here decides whom each connection believes. This setting is
+  // the ONLY way in, precisely because the environment variable it replaced
+  // could be set by anything running as the user, an agent's shell included.
+  'network.extraCaCertsPath': 'operator-only',
+
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
   // operator-only pre-emptively: it is a directory-scope field, and classifying it
@@ -630,6 +637,10 @@ export const CONFIG_WRITE_POLICY = {
   // the same record: a caller that could point an approved id at another copy
   // would move a person's decision onto code they never saw.
   'extensions.approvedSources': 'operator-only',
+  // The pre-DOR-2383 approvals still waiting to be bound to a copy (DOR-3068).
+  // A caller that could add an id here would have the next scan bind an old
+  // approval to whatever folder sits at that name.
+  'extensions.legacyUnsourced': 'operator-only',
   // The permission set each of those approvals covers (DOR-2686). The third
   // half of the record: a caller that could widen an entry would let an
   // extension reach hosts, programs or agents a person never saw on its card.
@@ -703,6 +714,20 @@ export const CONFIG_WRITE_POLICY = {
   // record of somebody turning its package down, and the next sync would ask
   // again instead of obeying the answer already given.
   'harness.refusedHooks': 'operator-only',
+  // Which state of each agent's own hooks, MCP servers file and agent file a
+  // person let run (DOR-3068). An agent that could write the yes would approve
+  // the hooks it just wrote itself; one that could clear a no would be asked again.
+  'harness.approvedFolderConfig': 'operator-only',
+  'harness.approvedFolderConfigParts': 'operator-only',
+  'harness.refusedFolderConfig': 'operator-only',
+  'harness.folderConfigPinned': 'operator-only',
+  // Which repo and worktree hooks, local settings and MCP servers a person let
+  // run (DOR-3298), and the default-branch commit they are compared against. An
+  // agent that could write either would approve its own change.
+  'harness.approvedRepoConfig': 'operator-only',
+  'harness.refusedRepoConfig': 'operator-only',
+  'harness.repoBaselines': 'operator-only',
+  'harness.repoBaselinesPinned': 'operator-only',
   // Which agent tools DorkOS shares your globally installed packages with
   // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
   // home directory, which is the "how far DorkOS reaches on disk" line this
@@ -814,6 +839,10 @@ export const CONFIG_WRITE_POLICY = {
   // How many agents may run at once (DOR-3012): memory on this machine, so the
   // person sets it, like `scheduler.maxConcurrentRuns`.
   'runtimes.claudeCode.maxWarmProcesses': 'operator-only',
+  // How many spin-off chats may run at once (DOR-3413): the bound that keeps
+  // agents from launching agents until the machine falls over. An agent that
+  // could raise it would be raising its own limit, so only a person may.
+  'runtimes.maxAgentChats': 'operator-only',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',

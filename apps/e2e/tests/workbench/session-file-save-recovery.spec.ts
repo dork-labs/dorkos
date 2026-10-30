@@ -208,6 +208,7 @@ test('a durable prepared phase without replacement proof stays manual and never 
     testInfo.project.metadata.fileSaveRecoveryHome
   );
   let allow: undefined | (() => void), stop: undefined | (() => void);
+  let retire: undefined | (() => void);
   try {
     const f = await openRecoveryFile(page, request),
       wire = effects(page, f.path);
@@ -231,6 +232,16 @@ test('a durable prepared phase without replacement proof stays manual and never 
       )
       .run(f.documentId, eventId);
     expect(changed.changes).toBe(1);
+    // The simulated row keeps the ORIGINAL file's device+inode, which the in-doubt save's rename
+    // already freed. Left behind, it fences any later file that Linux hands the recycled inode
+    // (APFS does not reuse them, so this only bit on CI): the next tests' fresh files opened with
+    // "Edit file" disabled and admission "blocked" (merge queue, #3194, 10-29). Retire it after.
+    retire = () =>
+      void db
+        .prepare(
+          "DELETE FROM canvas_doc_file_save_intents WHERE document_id=? AND event_id=? AND status='prepared'"
+        )
+        .run(f.documentId, eventId);
     const before = intent(db, f.documentId, eventId),
       physical = identity(await fs.stat(f.path));
     const panel = await remountRecovery(page);
@@ -269,7 +280,11 @@ test('a durable prepared phase without replacement proof stays manual and never 
       stop?.();
       await cleanup(page, request);
     } finally {
-      db.close();
+      try {
+        retire?.();
+      } finally {
+        db.close();
+      }
     }
   }
 });

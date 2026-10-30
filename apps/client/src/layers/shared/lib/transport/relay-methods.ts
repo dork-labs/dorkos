@@ -190,6 +190,19 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
+    confirmRelayAdapterReferences(
+      id: string,
+      fingerprint: string | null
+    ): Promise<{ ok: boolean }> {
+      const path = `/relay/adapters/${encodeURIComponent(id)}/confirm-references`;
+      if (fingerprint === null) return fetchJSON(baseUrl, path, { method: 'DELETE' });
+      return fetchJSON(baseUrl, path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint }),
+      });
+    },
+
     updateRelayAdapterConfig(
       id: string,
       config: Record<string, unknown>

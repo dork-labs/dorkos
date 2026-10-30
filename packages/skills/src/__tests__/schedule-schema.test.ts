@@ -294,6 +294,42 @@ describe('scheduleToFrontmatter', () => {
     expect(scheduleToFrontmatter(block)).toEqual({ cron: '0 9 * * *' });
   });
 
+  it('round-trips scope: project, and writes nothing when it is absent (DOR-3376)', () => {
+    const block = ScheduleBlockSchema.parse({ cron: '0 9 * * *', scope: 'project' });
+    expect(block.scope).toBe('project');
+    expect(scheduleToFrontmatter(block)).toEqual({ cron: '0 9 * * *', scope: 'project' });
+    expect(ScheduleBlockSchema.parse(scheduleToFrontmatter(block))).toEqual(block);
+    expect(scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *' }))).toEqual({
+      cron: '0 9 * * *',
+    });
+  });
+
+  it('round-trips projectFile (DOR-3376)', () => {
+    const block = ScheduleBlockSchema.parse({
+      scope: 'project',
+      projectFile: '.agents/flow/config.json',
+    });
+    expect(scheduleToFrontmatter(block)).toEqual({
+      scope: 'project',
+      projectFile: '.agents/flow/config.json',
+    });
+  });
+
+  it.each(['/etc/passwd', '../config.json', 'a/../../b', '~/x', 'C:\\x', '\\\\server\\x', ''])(
+    'refuses projectFile %j, loudly (DOR-3376)',
+    (value) => {
+      const field = readScheduleField({ scope: 'project', projectFile: value });
+      expect(field).toMatchObject({ invalid: true });
+      expect((field as { problem: string }).problem).toContain('"projectFile"');
+    }
+  );
+
+  it('refuses a scope value it does not know, loudly (DOR-3376)', () => {
+    const field = readScheduleField({ cron: '0 9 * * *', scope: 'everywhere' });
+    expect(field).toMatchObject({ invalid: true });
+    expect((field as { problem: string }).problem).toContain('"scope"');
+  });
+
   it('writes sticky: true and omits the default false (DOR-1571)', () => {
     expect(
       scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *', sticky: true }))

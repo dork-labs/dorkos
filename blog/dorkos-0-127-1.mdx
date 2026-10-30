@@ -1,0 +1,42 @@
+---
+title: DorkOS 0.127.1
+description: Confirm it's you before things only you can do, one agent voice per room, and fewer waits at Full autonomy.
+date: 2026-10-30
+author: DorkOS Team
+category: release
+tags: [release, security, rooms, permissions]
+---
+
+DorkOS 0.127.1 asks you to confirm it's you before things only you can do. It also gives each agent one voice in each room, and cuts more waits at Full autonomy.
+
+## Highlights
+
+- **Confirm it's you.** Things only you can do, like approving what an agent asked for, now need you to confirm it's you. A browser on the computer DorkOS runs on asks for your password once.
+- **One voice per room.** If another of an agent's chats tries to post in a room, the draft goes to the agent's own chat there first.
+- **Fewer waits at Full.** An agent at Full autonomy is told no on a setting only you may change, instead of waiting on a card.
+
+## All Changes
+
+### Changed
+
+- Each agent now has one voice in each room. If another of its chats tries to post there, the draft goes to the agent's own chat in that room. That chat is told to read the room first, then post the draft, reword it, or say why not. Posts through DorkOS's external MCP server aren't affected.
+- A message passed on this way says where it came from, like "Shared from #team-product at Dorian's request". The room or chat it came from hears whether it was shared.
+- An agent that isn't in a room can't post there, and DorkOS won't add it for you. From a DorkOS chat, it's told to ask the person who runs DorkOS.
+- A package installed for all projects can now mark a scheduled task as project-only. It no longer shows up as a global schedule, or asks for approval there. Each project with the file the package names gets its own copy on its Schedules page, switched off. Turn it on where you want it. If a project drops that file, a copy you once switched on stays, and a change to the package's task can still pause it.
+
+### Fixed
+
+- Before DorkOS reads a git repository for you, it checks the repository's own settings. If it finds anything outside a short list of ordinary settings, it skips the read. The same check runs before DorkOS makes or removes a workspace. A chat set to Full autonomy still gets its workspace made, and Activity notes it. These reads don't use the network, your saved git logins or your own git settings.
+- At Full autonomy, an agent that tries to open up a setting only you may change, like remote access or which hooks may run, is now told no, and Activity gets a line. Before, it put a card in front of you and waited. Many of these can still be turned off without asking, like switching the tunnel off, which also adds a line to Activity. Below Full, the agent still asks you when you're there to answer.
+- A Claude Code agent set to Full autonomy no longer waits on a Needs you ticket because of settings in its folder. They now load, and Activity says so. This doesn't count as your approval: move the agent below Full and DorkOS holds any settings you haven't approved and asks you.
+
+### Security
+
+- Some things only you can do in DorkOS, like approving what an agent asked for, now need you to confirm it's you. In a browser on the computer DorkOS runs on, that means entering your DorkOS password once, and it stays confirmed for about a month after you last use it, unless you sign out. The desktop app confirms you by itself, and on other devices your normal sign-in counts. Most browsing doesn't ask, and nothing changes until you have an owner account.
+- The DorkOS app now ignores `NODE_OPTIONS` (a setting that loads extra code into Node) and won't start with debugging switches like `--inspect`. It also won't start if its main app file changed after it was built.
+
+### Known issues
+
+- At Full autonomy, a package that wants to run its own commands can still put a card in front of you, including a package DorkOS didn't install. A later release changes this.
+- A chat an extension starts, like one from a comment on an "Only you can do these" list, can still show cards at Full autonomy. That ends in the next release.
+- At Full autonomy, an agent that has read outside words and tries to loosen a permission is told no. Without outside words, and below Full, you get a card and you decide. In the next release it's refused at Full in every turn.

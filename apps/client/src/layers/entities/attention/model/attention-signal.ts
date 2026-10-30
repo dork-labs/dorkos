@@ -36,6 +36,11 @@
  * blockage: nothing is stopped while it waits, and its notification tier is
  * `notable`, never `blocking`. {@link deriveAttentionSignals} never emits it —
  * see {@link HeadsUpSignalKind}, the four blockages.
+ *
+ * `connection-confirmation` (DOR-3271) is a connection paused until its owner
+ * confirms the `env:`/`keychain:` settings it sends. Only the owner can answer
+ * it, so it counts toward the badge, but it is about a connection, not a
+ * session, so it has no row in a list drawn one session at a time.
  */
 export type AttentionSignalKind =
   | 'permission-prompt'
@@ -43,7 +48,8 @@ export type AttentionSignalKind =
   | 'error'
   | 'schedule-approval'
   | 'extension-approval'
-  | 'extension-decision';
+  | 'extension-decision'
+  | 'connection-confirmation';
 
 /**
  * The four blockages: every kind but the two an extension raises. The name is
@@ -54,7 +60,7 @@ export type AttentionSignalKind =
  */
 export type HeadsUpSignalKind = Exclude<
   AttentionSignalKind,
-  'extension-approval' | 'extension-decision'
+  'extension-approval' | 'extension-decision' | 'connection-confirmation'
 >;
 
 /**

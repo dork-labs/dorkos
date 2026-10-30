@@ -81,6 +81,9 @@ export interface PermissiveDefault {
  */
 export const NO_RISK_DEFAULTS: readonly string[] = [
   'version',
+  // Absent by default: no old approval waits to be bound, so it binds nothing
+  // and approves nothing (DOR-3068). Only the '0.126.1' migration writes it.
+  'extensions.legacyUnsourced',
   'server.port',
   'server.cwd',
   'server.boundary',
@@ -439,6 +442,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
+  // Spin-off chats running at once: the fixed number it was before it became a
+  // setting (DOR-3413), a real bound at its default.
+  'runtimes.maxAgentChats': 8,
   // The three ceilings a merge into a room's own files is refused against (spec
   // `project-rooms` §3.6). Real bounds at their defaults, on the same footing as
   // the upload caps above: what they hold back is content member agents wrote,
@@ -467,6 +473,17 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // Wiped, every agent is pinned again on its next turn to what its folder
+  // holds then (DOR-3068). That is the one door a wipe opens, and only to
+  // whatever was already on disk when the person wiped it.
+  'harness.approvedFolderConfig': [],
+  'harness.approvedFolderConfigParts': {},
+  'harness.refusedFolderConfig': [],
+  // Wiped, every changed repo setting waits for a person again, and each repo is
+  // compared against whatever its default branch says next (DOR-3298).
+  'harness.approvedRepoConfig': [],
+  'harness.refusedRepoConfig': [],
+  'harness.repoBaselines': {},
   // No agent's own folder allow list applies until a person approves those exact
   // rules (DOR-3039). Clearing a refusal only means the next turn asks again.
   'permissions.approvedFolderAllows': [],
@@ -540,6 +557,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
+  // No company certificates: the desktop app trusts only the system's own
+  // authorities until a person names a file (DOR-3361).
+  'network.extraCaCertsPath': null,
 };
 
 /**
@@ -551,6 +571,16 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
  * text should be softened.
  */
 export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = {
+  'harness.folderConfigPinned': {
+    value: false,
+    reason:
+      "On its first start with the folder settings pin (DOR-3068), DorkOS pins the agents that already existed, as they stand, so a person's own agents don't all stop at once; only agents seen after that, whose homes run anything, wait for a person. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
+  },
+  'harness.repoBaselinesPinned': {
+    value: false,
+    reason:
+      "On its first start with the repo settings check (DOR-3298), DorkOS pins the repos it already knew, as they stand, so a person's own projects don't all stop at once; only repos seen after that wait for a person. A fresh install knows almost none. Once set it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS), so a wipe never re-pins.",
+  },
   'runtimes.claudeCode.defaultAccountOnlyProjects': {
     value: null,
     reason:

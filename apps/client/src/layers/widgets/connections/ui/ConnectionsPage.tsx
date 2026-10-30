@@ -155,7 +155,9 @@ export function ConnectionsPage() {
         setSearch({ flow: undefined });
         return;
       case 'review':
-        setAccessConnectionId(row.id);
+        // A chat app's review is its own panel (a paused connection's confirm lives there).
+        if (row.kind === 'chat') setSearch({ app: row.id });
+        else setAccessConnectionId(row.id);
         return;
       case 'fix':
         setSearch({ app: row.id });

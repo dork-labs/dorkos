@@ -9,10 +9,14 @@
  *
  * @module services/runtimes/claude-code/messaging/message-sender-shared
  */
-import type { McpServerConfig, McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentRegistryPort, McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import type { McpServerConfig, McpServerStatus, Options } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  AgentRegistryPort,
+  McpAppServerConnection,
+  MessageOpts,
+} from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import type { EffortLevel } from '@dorkos/shared/types';
+import type { EffortLevel, StreamEvent } from '@dorkos/shared/types';
 import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
@@ -23,6 +27,7 @@ import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
 import type { AgentSession } from '../agent-types.js';
+import type { LaunchParams } from '../sessions/launch-fingerprint.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { ModelThinkingCapability } from './thinking-config.js';
 import type { ModelOption } from '@dorkos/shared/types';
@@ -97,6 +102,12 @@ export interface McpServerLaunch {
    * per call to resolve who is calling.
    */
   connectorTools?: boolean;
+  /**
+   * Leave out the MCP servers the agent's own file declares: it changed since
+   * a person last allowed it, and a card is asking (DOR-3068). DorkOS's own
+   * tool server is still passed.
+   */
+  withholdAgentServers?: boolean;
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */
@@ -296,4 +307,78 @@ export function toMcpAppConnection(
     return { transport: 'sse', url: config.url, headers: config.headers };
   }
   return null;
+}
+
+// What one launch resolution hands its caller, and the two small steps around
+// it. They live here, not in `launch-resolver.ts`, to keep that file under the
+// line limit; `launch-resolver.ts` re-exports all three, so no import site moved.
+
+/** What one launch resolution produced, for the caller to boot or compare with. */
+export interface ResolvedLaunch {
+  /** Exactly the options to hand `query({ options })`. */
+  sdkOptions: Options;
+  /**
+   * The user message with the additional-context bag prepended, or the bare
+   * trimmed command on a slash-command turn. Never the raw `content` field —
+   * ADR-0273 keeps the person's own words unmutated.
+   */
+  enrichedContent: string;
+  /**
+   * The mesh agent this launch acts as, for `last_seen` stamping — the agent a
+   * room worktree belongs to when the turn stands in one (DOR-2091).
+   */
+  meshAgentId: string | undefined;
+  /**
+   * Events the caller must yield BEFORE the turn's own, in this order. Only the
+   * auto-permission-mode downgrade notice lands here today.
+   */
+  statusEvents: StreamEvent[];
+  /**
+   * A credits swap this launch made (DOR-2636), owed a save once its notice is
+   * delivered: {@link deliverStatusEvents} runs `commit` after yielding the
+   * status events (the notice among them, unless this session was already told
+   * about this model). Absent when no model was swapped.
+   */
+  substitution?: { commit: () => Promise<void> };
+  /**
+   * What this launch is pinned to, in the shape `captureLaunchFingerprint`
+   * takes. Resolved even on the turn path, where nothing reads it: computing it
+   * conditionally would mean the pump's fingerprint came from a code path the
+   * turn path never exercises.
+   */
+  launch: LaunchParams;
+}
+
+/**
+ * The working directory this turn runs in.
+ *
+ * The one resolution, for both the boundary gate and the launcher — hand the
+ * SAME value to each. Resolved twice by two routes, the gate answers about one
+ * directory while the process runs in another, which is a check that only looks
+ * like one (`dispatch-boundary.ts`).
+ *
+ * Empty strings fall through rather than winning, because a stale relay binding
+ * supplies one and it names no directory at all.
+ *
+ * @param opts - The runtime's own defaults (`sessionCwd` then `cwd`)
+ * @param messageOpts - The caller's per-message override, if any
+ */
+export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: MessageOpts): string {
+  return messageOpts?.cwd || opts.sessionCwd || opts.cwd;
+}
+
+/**
+ * Yield a launch's status events, then take the save a credits swap owes
+ * (DOR-2636): the swapped model becomes the session's own and the swap is
+ * marked told only AFTER its `model_substituted` notice has gone out on the
+ * stream, which records it durably. So no path can save a swap without
+ * recording it: one that never delivers the events never saves either.
+ *
+ * @param resolved - What `resolveLaunch` answered.
+ */
+export async function* deliverStatusEvents(
+  resolved: Pick<ResolvedLaunch, 'statusEvents' | 'substitution'>
+): AsyncGenerator<StreamEvent> {
+  for (const event of resolved.statusEvents) yield event;
+  await resolved.substitution?.commit();
 }

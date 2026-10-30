@@ -89,6 +89,17 @@ export const ExtensionsConfigSchema = z
      */
     approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
     /**
+     * The approved ids that named no copy when content pins arrived (DOR-3068),
+     * written once by the `'0.126.1'` config migration. Only these are bound,
+     * on a later scan, to the extension installed directly under
+     * `{dorkHome}/extensions/<id>`; an id is dropped from here once bound. An
+     * unsourced id not listed is never bound, so a folder an agent creates
+     * later under an old approved name never inherits that approval.
+     *
+     * `operator-only` for the same reason as `approvedToRun`.
+     */
+    legacyUnsourced: z.array(z.string()).optional(),
+    /**
      * The permission set each approval covers, keyed by extension id
      * (DOR-2686): what the extension declared when a person said yes.
      *
@@ -266,6 +277,69 @@ export const HarnessConfigSchema = z
      */
     refusedHooks: z.array(z.string()).default(() => []),
     /**
+     * The state of each agent's own folder settings a person let run
+     * (DOR-3068): its hooks and MCP choices in `.claude/settings*.json`, its
+     * `.mcp.json`, and its agent file's MCP servers and account. Each entry is
+     * `<agentId>@folder-config-<digest>`, where the digest covers the agent's
+     * home and those three parts, so a change the agent makes waits for a person
+     * instead of riding an old yes. An agent with no entry is pinned to what its
+     * folder holds the first time it runs. Empty by default.
+     */
+    approvedFolderConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The per-part digests behind each agent's yes in
+     * {@link approvedFolderConfig}, by agent id, so a card can say which part
+     * changed. Read only while a stored yes still digests to them.
+     */
+    approvedFolderConfigParts: z
+      .record(
+        z.string(),
+        z.object({ hooks: z.string(), mcpJson: z.string(), manifest: z.string() })
+      )
+      .default(() => ({})),
+    /**
+     * The states a person turned down, in the same form as
+     * {@link approvedFolderConfig}. Not asked about again until the settings
+     * change again.
+     */
+    refusedFolderConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * Whether DorkOS has pinned the agents that already existed (DOR-3068). It
+     * does that once, at the first start with the folder settings pin; after
+     * that, an agent with no record whose home runs anything waits for a
+     * person. Carried across a config wipe, so a wipe never re-pins.
+     */
+    folderConfigPinned: z.boolean().default(false),
+    /**
+     * The repo and worktree settings a person let run (DOR-3298), outside an
+     * agent's own home: a `.claude/settings.local.json`, an `.mcp.json` that
+     * differs from the default branch, and committed hooks that differ from it.
+     * Each entry is `<kind>@repo-config-<digest>`, where the digest covers only
+     * the content, so the same change is approved once for every worktree.
+     */
+    approvedRepoConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The repo and worktree settings a person turned down, in the same form as
+     * {@link approvedRepoConfig}. Not asked about again until they change.
+     */
+    refusedRepoConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The default-branch commit DorkOS last compared each repo against
+     * (DOR-3298), by the real path of the repo's shared git folder. A default
+     * branch that moved to a commit that does not build on this one is not
+     * trusted until a person approves what it would let run.
+     */
+    repoBaselines: z
+      .record(z.string(), z.object({ branch: z.string(), sha: z.string() }))
+      .default(() => ({})),
+    /**
+     * Whether DorkOS has pinned the repos it already knew (DOR-3298). It does
+     * that once, at the first start with the repo settings check; after that,
+     * a repo with no pinned commit waits for a person. Carried across a
+     * config wipe, so a wipe never re-pins repos as they stand.
+     */
+    repoBaselinesPinned: z.boolean().default(false),
+    /**
      * The two decisions global scope records: which agent tools DorkOS shares
      * your globally installed packages with, and when it last asked.
      *
@@ -304,6 +378,14 @@ export const HarnessConfigSchema = z
     autoAdopt: false,
     approvedHooks: [],
     refusedHooks: [],
+    approvedFolderConfig: [],
+    approvedFolderConfigParts: {},
+    refusedFolderConfig: [],
+    folderConfigPinned: false,
+    approvedRepoConfig: [],
+    refusedRepoConfig: [],
+    repoBaselines: {},
+    repoBaselinesPinned: false,
     global: { harnesses: [], askedAt: null },
   }));
 

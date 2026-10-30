@@ -172,7 +172,10 @@ jobs:
     # fan-in below answers instantly. See the header for why the PR still gets
     # a `browser-test` context at all.
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    # Pinned, every job in this file: `ubuntu-latest` moved to 26.04 on
+    # 2026-10-27, and the same tree that passed on 24.04 timed out on six specs
+    # there. Lift the pin once the suite is green on 26.04 (ledger 261027-053504).
+    runs-on: ubuntu-24.04
     # SIX SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED SIX (2026-09-27,
     # ledger ci/ledger/260919-175503-browser-suite-six-shards.md).
     #
@@ -408,14 +411,41 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # No saved credential: nothing here pushes or fetches after checkout. The
+      # specs make git repositories inside this checkout, and DorkOS's audited
+      # git runner reads every settings file above one, refusing an include,
+      # which is how the checkout saves its credential (DOR-3343, ledger
+      # 261030-062000).
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # THIS FILE'S OWN PNPM STORE, KEYED ON THE RUNNER IMAGE (ledger
+      # 261030-001500). setup-node's `cache: pnpm` keys the store on OS + arch +
+      # lockfile only, so every Linux workflow shares one entry per lockfile and
+      # the first job to finish saves it. node-pty has no linux-x64 prebuild and
+      # compiles at install; pnpm keeps that build in the store. Since this file
+      # was pinned to 24.04 (ledger 261027-053504) and `ubuntu-latest` is 26.04,
+      # a store saved by a 26.04 job (db-check, usually first) hands these 24.04
+      # jobs a pty.node they cannot load, and the server dies at boot with
+      # "Failed to load native module: pty.node" (node-pty reports only its last
+      # probe, prebuilds/, so it reads as missing). Merge-queue runs 40969273284
+      # and 40974091542 restored db-check's 26.04 store; green ones restored one
+      # saved by copy-spec-drift on 24.04. `ImageOS` keeps the images apart.
+      # Back to `cache: pnpm` when the 24.04 pin is lifted.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -717,7 +747,7 @@ jobs:
   first-run:
     name: first-run
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       NODE_ENV: development
@@ -742,11 +772,21 @@ jobs:
           fi
           echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # Image-keyed pnpm store: browser-shard's setup says why (ledger 261030-001500).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
       - name: Resolve the Playwright version the cache is keyed on
         id: pw
@@ -829,7 +869,7 @@ jobs:
   browser-test:
     needs: [browser-shard, first-run]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nothing here waits on anything slow. Ten minutes is a backstop against a
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
@@ -1034,7 +1074,7 @@ jobs:
   # rather than picked — its module doc has the numbers, and the pin suite
   # `scripts/__tests__/check-copy-spec-drift.test.ts` holds them still.
   copy-spec-drift:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # NOT part of the main canary. This job diffs a change against its base, and
     # a scheduled run against `main` HEAD carries neither
     # `pull_request.base.sha` nor `merge_group.base_sha` — the step below fails
@@ -1061,10 +1101,18 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # Image-keyed pnpm store: browser-shard's setup says why (ledger 261030-001500).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 

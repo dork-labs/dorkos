@@ -4743,6 +4743,27 @@ export const ExperimentStateSchema = z
 /** One resolved experiment. See {@link ExperimentStateSchema}. */
 export type ExperimentState = z.infer<typeof ExperimentStateSchema>;
 
+/**
+ * What the desktop app did with company certificates when this server started
+ * (DOR-3361), as its server process recorded it. The count is what was actually
+ * added to the trust store, never a re-read of the file.
+ */
+export const CompanyCertificatesStatusSchema = z
+  .object({
+    outcome: z.enum(['not-set', 'native', 'ignored-env', 'added', 'unreadable', 'empty']).openapi({
+      description:
+        '`added` when the file loaded; `unreadable` or `empty` when it was skipped; `ignored-env` when NODE_EXTRA_CA_CERTS is set but no file was chosen; `not-set` otherwise',
+    }),
+    added: z.number().int().min(0).openapi({ description: 'Certificates added at start-up' }),
+    path: z.string().nullable().openapi({
+      description: 'The file the setting named at start-up, or null when none was set',
+    }),
+  })
+  .openapi('CompanyCertificatesStatus');
+
+/** See {@link CompanyCertificatesStatusSchema}. */
+export type CompanyCertificatesStatus = z.infer<typeof CompanyCertificatesStatusSchema>;
+
 export const ServerConfigSchema = z
   .object({
     version: z.string().openapi({ description: 'Current server version' }),
@@ -5314,6 +5335,19 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    network: z
+      .object({
+        extraCaCertsPath: z.string().nullable().openapi({
+          description:
+            'The `network.extraCaCertsPath` setting: the company certificate bundle the desktop app trusts, or null. Applies after a restart',
+        }),
+        companyCertificates: CompanyCertificatesStatusSchema.nullable().openapi({
+          description:
+            'What the desktop app loaded when this server started (DOR-3361). Null when the desktop app does not run this server, which is the only place the setting applies',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Company certificates the desktop app trusts' }),
     officialSpace: z.object({ url: z.string() }).nullable().optional().openapi({
       description:
         'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
@@ -5755,6 +5789,16 @@ export const TaskSchema = z
     packageOwned: z.enum(['record', 'legacy']).nullable().default(null).openapi({
       description:
         "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
+    }),
+    /**
+     * Whether this is one project's copy of a global schedule marked
+     * `scope: project` (DOR-3376). Its switch and timing belong to this project
+     * alone; what it does is the shared file's, which DorkOS never rewrites for
+     * one project. Absent reads as false.
+     */
+    projectOnly: z.boolean().optional().openapi({
+      description:
+        "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false.",
     }),
     /**
      * What changed since this schedule was last approved, for a schedule

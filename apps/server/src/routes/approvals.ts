@@ -148,6 +148,7 @@ import {
   refuseStandingYesFromWifi,
   WIFI_ACTION_REFUSAL,
 } from '../services/core/auth/sessions/wifi-level.js';
+import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
@@ -647,8 +648,9 @@ export function createApprovalsRoutes(
     }
 
     // From Wi-Fi a Deny carries no reason: the agent reads it, in a turn that
-    // may run at its own level (DOR-3037). A bare Deny still lands.
-    if (parsed.data.reason?.trim() && isFromWifi(honoRequestFacts(c))) {
+    // may run at its own level (DOR-3037). A bare Deny still lands, and so does
+    // the owner's own reason (DOR-3242).
+    if (parsed.data.reason?.trim() && wifiTurnHeld(honoRequestFacts(c))) {
       return c.json({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI }, 403);
     }
     const id = c.req.param('id');

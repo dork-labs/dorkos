@@ -1,3 +1,10 @@
+vi.mock('../../services/runtimes/connect/signin-accounts.js', () => ({
+  signinAccounts: () => [{ accountId: 'two', path: '/Users/x/.claude2', name: 'Claude2' }],
+}));
+vi.mock('../../services/core/auth/index.js', async (original) => ({
+  ...(await original<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'user_owner' }),
+}));
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -433,168 +440,114 @@ describe('runtime connect endpoints', () => {
   });
 
   describe('POST /api/runtimes/:type/login', () => {
-    it('delegates the vendor login and returns its completion result', async () => {
+    it('keeps Codex login unchanged', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-      const res = await request(server).post('/api/runtimes/codex/login');
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: true });
+      expect((await request(server).post('/api/runtimes/codex/login')).status).toBe(200);
       expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', { accountRoot: undefined });
     });
-
-    it('surfaces an honest failure/timeout result', async () => {
-      vi.mocked(delegateRuntimeLogin).mockResolvedValue({
-        ok: false,
-        error: 'Sign-in timed out. Please try again.',
-      });
-      const res = await request(server).post('/api/runtimes/claude-code/login');
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: false, error: 'Sign-in timed out. Please try again.' });
-    });
-
-    it('rejects a runtime that does not support sign-in without spawning', async () => {
-      const res = await request(server).post('/api/runtimes/opencode/login');
-      expect(res.status).toBe(400);
-      expect(res.body).toEqual({ ok: false, error: 'OpenCode does not support sign-in.' });
-      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
-    });
-
-    it('rejects a non-loopback origin with 403', async () => {
-      const res = await request(server)
-        .post('/api/runtimes/codex/login')
-        .set('Host', 'evil.example.com');
-      expect(res.status).toBe(403);
-      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
-    });
-
-    it('handles an empty POST body (Express 5: req.body is undefined)', async () => {
-      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-      // No .send() at all — req.body is undefined, not {}, on the wire.
-      const res = await request(server).post('/api/runtimes/codex/login');
-      expect(res.status).toBe(200);
-      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', { accountRoot: undefined });
-    });
-
-    it('forwards an explicit accountRoot to the service (DOR-1652)', async () => {
+    it('resolves an account ID to its own registered folder', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
       const res = await request(server)
         .post('/api/runtimes/claude-code/login')
-        .send({ accountRoot: '/Users/x/.claude2' });
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
       expect(res.status).toBe(200);
       expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
         accountRoot: '/Users/x/.claude2',
       });
     });
-
-    it('passes accountRoot: undefined to the service when the body carries none', async () => {
-      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-      const res = await request(server).post('/api/runtimes/claude-code/login').send({});
-      expect(res.status).toBe(200);
-      expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', { accountRoot: undefined });
-    });
-
-    describe('signing in for a session (DOR-1651)', () => {
-      it('resolves the account from the session id', async () => {
-        // Purpose: the chat card names a session, not a path. The server owns
-        // the launch ladder, so it is what turns one into the other — and it is
-        // right even for a first turn that failed before writing a transcript,
-        // which is the case the client's own `Session.account` cannot see.
-        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-        vi.mocked(resolveAccountRootForSession).mockResolvedValue('/Users/x/.claude2');
-
+    it.each([{}, { accountId: 'unknown' }, { accountRoot: '/etc/passwd' }, { accountId: 42 }])(
+      'refuses an absent, unknown or path target: %j',
+      async (body) => {
         const res = await request(server)
           .post('/api/runtimes/claude-code/login')
-          .send({ sessionId: 'session-1' });
-
-        expect(res.status).toBe(200);
-        expect(resolveAccountRootForSession).toHaveBeenCalledWith('session-1');
-        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
-          accountRoot: '/Users/x/.claude2',
-        });
-      });
-
-      it('prefers the session over an explicit accountRoot', async () => {
-        // Purpose: the client sends what it knows; the server knows better. A
-        // stale `Session.account` on the wire must not beat a live resolution.
-        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-        vi.mocked(resolveAccountRootForSession).mockResolvedValue('/Users/x/.claude2');
-
-        await request(server)
-          .post('/api/runtimes/claude-code/login')
-          .send({ sessionId: 'session-1', accountRoot: '/Users/x/.claude-stale' });
-
-        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
-          accountRoot: '/Users/x/.claude2',
-        });
-      });
-
-      it('falls through to the explicit accountRoot when the session resolves to nothing', async () => {
-        // Purpose: an unknown session, or a runtime with no account concept,
-        // degrades the pin — it never refuses a sign-in someone is waiting on.
-        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-        vi.mocked(resolveAccountRootForSession).mockResolvedValue(undefined);
-
-        await request(server)
-          .post('/api/runtimes/claude-code/login')
-          .send({ sessionId: 'unknown', accountRoot: '/Users/x/.claude2' });
-
-        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
-          accountRoot: '/Users/x/.claude2',
-        });
-      });
-
-      it('never consults the resolver when no session was named', async () => {
-        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-
-        await request(server)
-          .post('/api/runtimes/claude-code/login')
-          .send({ accountRoot: '/Users/x/.claude2' });
-
-        expect(resolveAccountRootForSession).not.toHaveBeenCalled();
-      });
-
-      it('rejects a non-string sessionId with 400 and never calls the service', async () => {
-        const res = await request(server)
-          .post('/api/runtimes/claude-code/login')
-          .send({ sessionId: 42 });
-
+          .set('Cookie', PERSON_SESSION)
+          .send(body);
         expect(res.status).toBe(400);
         expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+      }
+    );
+    it('does not fall back when a session is unresolved', async () => {
+      vi.mocked(resolveAccountRootForSession).mockResolvedValue(undefined);
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .set('Cookie', PERSON_SESSION)
+        .send({ sessionId: 'unknown', accountId: 'two' });
+      expect(res.status).toBe(400);
+      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+    it('resolves a session from server records', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      vi.mocked(resolveAccountRootForSession).mockResolvedValue('/Users/x/.claude2');
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .set('Cookie', PERSON_SESSION)
+        .send({ sessionId: 'known' });
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+        accountRoot: '/Users/x/.claude2',
       });
     });
-
-    it('rejects a non-string accountRoot with 400 and never calls the service', async () => {
+    it('refuses an agent even with an owner cookie', async () => {
       const res = await request(server)
         .post('/api/runtimes/claude-code/login')
-        .send({ accountRoot: 12345 });
-      expect(res.status).toBe(400);
-      expect(res.body.ok).toBe(false);
+        .set('Cookie', PERSON_SESSION)
+        .set('X-DorkOS-Agent', 'agent')
+        .send({ accountId: 'two' });
+      expect(res.status).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
-
-    it('rejects an empty-string accountRoot with 400 and never calls the service', async () => {
-      const res = await request(server)
+    it('refuses an agent: only the person at this computer starts a sign-in', async () => {
+      expect(
+        (
+          await request(server)
+            .post('/api/runtimes/claude-code/login')
+            .set('X-DorkOS-Agent', 'agent-1')
+            .send({ accountId: 'two' })
+        ).status
+      ).toBe(403);
+      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+    it("refuses the owner's own session from another device (Security S3)", async () => {
+      // The sign-in opens a browser on this computer, so a cookie from a phone
+      // or a laptop on the LAN may not start one, however valid it is.
+      currentPeer = '192.168.86.200';
+      const fromLan = await request(peerServer)
         .post('/api/runtimes/claude-code/login')
-        .send({ accountRoot: '' });
-      expect(res.status).toBe(400);
+        .set('Host', 'localhost')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(fromLan.status).toBe(403);
+      const elsewhere = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .set('Host', 'evil.example.com')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(elsewhere.status).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
-
-    it('forwards an accountRoot for codex too — the route does not gate by type, the service does', async () => {
+    it('control: the owner at this computer starts the sign-in', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      currentPeer = '127.0.0.1';
+      const res = await request(peerServer)
+        .post('/api/runtimes/claude-code/login')
+        .set('Host', 'localhost')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledTimes(1);
+    });
+    it('passes on the confirmed identity, or an honest refusal for a ruled-out organization', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({
         ok: false,
-        error: 'Codex does not support pinning a specific account.',
+        identity: { state: 'blocked' },
+        error: 'This sign-in is in an organization you ruled out.',
       });
       const res = await request(server)
-        .post('/api/runtimes/codex/login')
-        .send({ accountRoot: '/Users/x/.claude' });
-      expect(res.status).toBe(200);
-      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', {
-        accountRoot: '/Users/x/.claude',
-      });
-      expect(res.body).toEqual({
-        ok: false,
-        error: 'Codex does not support pinning a specific account.',
-      });
+        .post('/api/runtimes/claude-code/login')
+        .set('Cookie', PERSON_SESSION)
+        .send({ accountId: 'two' });
+      expect(res.body).toMatchObject({ ok: false, identity: { state: 'blocked' } });
     });
   });
 
@@ -937,9 +890,9 @@ describe('runtime connect endpoints', () => {
         carriesSecret: true,
       },
       {
-        name: 'POST /:type/login',
+        name: 'POST /codex/login',
         method: 'post',
-        path: '/api/runtimes/claude-code/login',
+        path: '/api/runtimes/codex/login',
         body: {},
         action: () => delegateRuntimeLogin,
       },

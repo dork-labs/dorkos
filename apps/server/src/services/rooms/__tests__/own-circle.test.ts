@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
+import { ceilingCarriesOutsider, resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
 import { noteEntryLevel, setEntryMarksStore } from '../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { createEntryMarksStore } from '../limits/entry-marks-store.js';
@@ -179,14 +179,18 @@ describe('own-circle room turns', () => {
         ceiling.permissionCeiling as Parameters<typeof resolveCeilingLevel>[1]
       ).asks !== 'never';
 
-    it('makes the agent it wakes ask before a write, in the circle and outside it', () => {
+    // DOR-3390: in the circle the mark rides on and gates the risky actions; the write itself
+    // runs at Full. Outside it the reader may see the stranger's own line, so it is held
+    // (Security's M-B).
+    it('marks the agent it wakes without capping it in the circle, and holds it outside', () => {
       const entry = harness.service.post(channel.id, { authorId: bo, text: '@hop write it' });
       noteEntryLevel(entry.id, { ...FULL, outsider: true }, channel.id);
-      const inCircle = ceilingForEntry(harness.authors, entry, false, channel.id, OWN);
-      expect(asksBeforeWriting(inCircle)).toBe(true);
-      expect(asksBeforeWriting(ceilingForEntry(harness.authors, entry, false, channel.id))).toBe(
-        true
-      );
+      const inside = ceilingForEntry(harness.authors, entry, false, channel.id, OWN);
+      expect(asksBeforeWriting(inside)).toBe(false);
+      expect(ceilingCarriesOutsider(inside.permissionCeiling as never)).toBe(true);
+      const outside = ceilingForEntry(harness.authors, entry, false, channel.id);
+      expect(asksBeforeWriting(outside)).toBe(true);
+      expect(ceilingCarriesOutsider(outside.permissionCeiling as never)).toBe(true);
     });
 
     it('still makes it ask after a restart, from the marks kept on the row', () => {

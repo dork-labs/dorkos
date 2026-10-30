@@ -39,6 +39,7 @@ import { RoomTurnControl } from '../manage/room-turn-control.js';
 import { RoomUpdates } from '../manage/room-updates.js';
 import { RoomCanvasService } from '../canvas/room-canvas-service.js';
 import { RoomFollowService } from '../follow/room-follow-service.js';
+import { RoomHandoffs } from '../handoff/room-handoff.js';
 import { RoomVisibility } from './room-visibility.js';
 
 /** Every part of one room service, and the state they all share. */
@@ -89,6 +90,8 @@ export interface RoomCollaborators {
   readonly canvas: RoomCanvasService;
   /** Who is following whose browser here, and the two frames that carry it. */
   readonly follow: RoomFollowService;
+  /** One seat per agent per room, and the hand-off between them (DOR-3397). */
+  readonly handoffs: RoomHandoffs;
 }
 
 /**
@@ -102,7 +105,10 @@ export function createRoomCollaborators(
   deps: RoomServiceDeps,
   writeBack: RoomWriteBack
 ): RoomCollaborators {
-  const core = createRoomCore(deps, writeBack);
+  // Audiences run only after construction, against the live visibility gate below.
+  const core = createRoomCore(deps, writeBack, (roomId, authorId) =>
+    visibility.requireMembership(roomId, authorId)
+  );
   const visibility = new RoomVisibility(core);
   const authority = new RoomAuthority(core);
   const projection = new RoomProjection(core);
@@ -173,5 +179,6 @@ export function createRoomCollaborators(
     reactions: new RoomReactions(core, visibility, publisher),
     turnControl: new RoomTurnControl(core, visibility),
     canvas,
+    handoffs: new RoomHandoffs(core, (roomId, body) => systemPosts.postNotice(roomId, body)),
   };
 }

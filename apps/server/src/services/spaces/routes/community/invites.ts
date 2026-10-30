@@ -22,7 +22,6 @@ import {
   lockActiveCommunity,
   lockChannel,
   requireLiveRole,
-  requireMember,
   requireSessionUser,
   transaction,
 } from '../../data.js';
@@ -37,6 +36,7 @@ import { refuseBannedAccount } from '../../moderation/bans.js';
 import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { notifyLive } from '../../live/notices.js';
+import { requireAdministrator } from '../../moderation/administrator.js';
 import { assertAdmissionOpen, invalidInvitation, invitationRefusal } from './admission-refusals.js';
 import { refuseDirectMessage } from './agents/direct-messages.js';
 
@@ -155,13 +155,15 @@ export function registerInviteRoutes(
     limitPreviewIdentity: (token: string) => void;
   }
 ) {
+  // Managing invitations: the person's browser, or their paired app's `administer` credential.
   app.post('/invites', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const body = await readJson(c, CommunityWireInviteCreateRequestSchema);
     const result = await transaction(pool, async (client) => {
       // A direct message takes no invitation: it holds its person and its agent (DOR-2955).
       if (body.channelId) refuseDirectMessage(await lockChannel(client, body.channelId, actor));
       await requireLiveRole(client, actor, ['owner', 'admin']);
+      await recheck(client);
       await assertAdmissionOpen(client, actor.community_id, true);
       const id = randomUUID();
       const expiry = new Date(Date.now() + (body.expiresInDays ?? 7) * 86_400_000);
@@ -189,10 +191,11 @@ export function registerInviteRoutes(
   });
 
   app.get('/invites', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     const invites = await transaction(pool, async (client) => {
       // A hold keeps invitations; reading and revoking them is not growth.
       await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
+      await recheck(client);
       const result = await client.query<InviteRow>(
         'SELECT * FROM invites WHERE community_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',
         [actor.community_id]
@@ -203,9 +206,10 @@ export function registerInviteRoutes(
   });
 
   app.delete('/invites/:id', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requireAdministrator(c, auth, pool);
     await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
+      await recheck(client);
       const updated = await client.query(
         'UPDATE invites SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND community_id=$2 RETURNING id',
         [c.req.param('id'), actor.community_id]

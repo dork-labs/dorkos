@@ -1,4 +1,5 @@
 /** Keep domain-owned API registration out of the large legacy path registry. */
+import { registerAccountSigninOpenApi } from '../../health/account-signin-openapi.js';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerFileWriteOpenApi } from '../../canvas/doc-channel/writes/file-writes-openapi.js';
 import { registerDocRouteControlsOpenApi } from '../../canvas/doc-channel/route-controls/openapi.js';
@@ -43,4 +44,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDirectChatOpenApi(registry);
   registerDocLinksOpenApi(registry);
   registerDevicesOpenApi(registry);
+  registerAccountSigninOpenApi(registry);
 }

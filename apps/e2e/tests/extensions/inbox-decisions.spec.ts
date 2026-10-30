@@ -49,7 +49,16 @@ test.describe('An extension asks in the inbox', () => {
 
     const enabled = await request.post(`/api/extensions/${EXT_ID}/enable`, { data: {} });
     expect(enabled.ok(), await enabled.text()).toBe(true);
-    const approved = await request.post(`/api/extensions/${EXT_ID}/approve`, { data: {} });
+    // A yes names the files the card showed (DOR-3068): its version and digest.
+    const listed = (await (await request.get('/api/extensions')).json()) as Array<{
+      id: string;
+      manifest: { version: string };
+      digest?: string;
+    }>;
+    const shown = listed.find((ext) => ext.id === EXT_ID);
+    const approved = await request.post(`/api/extensions/${EXT_ID}/approve`, {
+      data: { version: shown?.manifest.version, expectedDigest: shown?.digest },
+    });
     expect(approved.ok(), await approved.text()).toBe(true);
     const started = await request.post(`/api/extensions/${EXT_ID}/init-server`, { data: {} });
     expect(started.ok(), await started.text()).toBe(true);

@@ -15,6 +15,7 @@
  *
  * @module http/__tests__/contract/harness
  */
+import { PERSON_PROOF_HEADER, PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -52,6 +53,8 @@ process.once('exit', () => {
 export interface ComposedServer {
   /** Where it listens, e.g. `http://127.0.0.1:53511`. */
   readonly baseUrl: string;
+  /** Its throwaway data directory, for a test that checks what it wrote. */
+  readonly dorkHome: string;
   /** The last of what the server printed, for a failure message. */
   log(): string;
   /** Stop it and delete its data directory. */
@@ -209,7 +212,7 @@ async function bootOnce(extra: Record<string, string>): Promise<ComposedServer> 
     await close();
     throw error;
   }
-  return { baseUrl, log: () => log, close };
+  return { baseUrl, dorkHome, log: () => log, close };
 }
 
 /**
@@ -392,4 +395,32 @@ export async function signInAt(
   }
   const set = res.headers['set-cookie'] ?? [];
   return { cookie: set.map((value) => value.split(';')[0]!).join('; ') };
+}
+
+/**
+ * The owner's one password step-up at this computer (DOR-3330): the headers
+ * the app then sends with every change, its session cookie and the person
+ * proof its page keeps.
+ *
+ * @param baseUrl - The composed server.
+ * @param password - The owner's password.
+ * @returns The `cookie` and person-proof headers, ready to spread into a request.
+ */
+export async function stepUpAt(baseUrl: string, password: string): Promise<Record<string, string>> {
+  const res = await send(
+    baseUrl,
+    'POST',
+    PERSON_SESSION_PATH,
+    { origin: baseUrl, 'content-type': 'application/json' },
+    JSON.stringify({ password })
+  );
+  if (res.status !== 200) {
+    throw new Error(`the step-up answered ${res.status}: ${res.text.slice(0, 300)}`);
+  }
+  const set = res.headers['set-cookie'] ?? [];
+  const { proof } = JSON.parse(res.text) as { proof: string };
+  return {
+    cookie: set.map((value) => value.split(';')[0]!).join('; '),
+    [PERSON_PROOF_HEADER]: proof,
+  };
 }

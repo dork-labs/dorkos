@@ -4,18 +4,13 @@
  *
  * @module features/inbox/ui/InboxDecisionRow
  */
-import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Info, ThumbsDown, ThumbsUp, type LucideIcon } from 'lucide-react';
-import {
-  Button,
-  Textarea,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/layers/shared/ui';
+import { Button, Textarea, TooltipProvider } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { IconAction } from './IconAction';
+import { InboxWordButton } from './InboxWordButton';
 
 /**
  * What an answer callback hands back: nothing (it cannot fail), or whether it
@@ -44,8 +39,18 @@ export interface InboxDecisionWord {
   kind: 'word';
   label: string;
   onClick(): void;
+  /**
+   * What pressing it does, read as the button's description. Kept for screen
+   * readers even when the words themselves sit in the ⓘ panel.
+   */
+  description?: string;
   /** The button opens an inline field instead, and sends what is typed. */
   input?: { placeholder: string; maxLength: number; onSubmit(text: string): InboxAnswerSent };
+  /**
+   * Draw it under the text, full width and 44px tall: the row’s one answer,
+   * easy to hit on a phone. Not with `input`.
+   */
+  block?: boolean;
 }
 
 /** A question: chips, the agent's pick marked, and maybe a deadline and "Reply…". */
@@ -76,6 +81,8 @@ export interface InboxDecisionRowProps {
   why?: string;
   /** The muted mono line: "flow plugin · dork-labs/marketplace", or the extension's name. */
   sourceLine?: string;
+  /** The full list behind a source line cut short, shown on hover. */
+  sourceTitle?: string;
   /**
    * A muted line under the why: timing ("since 09:14 · asked after 1h"), or a
    * short fact about what is asked ("Would give agents 3 tools and 1 skill").
@@ -122,48 +129,6 @@ export interface InboxDecisionRowProps {
 
 /** Drafts typed into a row's fields, kept across a row being drawn again. */
 const drafts = new Map<string, string>();
-
-/** One 26px outlined icon button with its name as a tooltip. */
-function IconAction({
-  label,
-  icon: Icon,
-  onClick,
-  disabled,
-  expanded,
-  controls,
-  buttonRef,
-}: {
-  label: string;
-  icon: LucideIcon;
-  onClick: () => void;
-  disabled?: boolean;
-  expanded?: boolean;
-  controls?: string;
-  buttonRef?: Ref<HTMLButtonElement>;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-xs"
-          responsive={false}
-          ref={buttonRef}
-          aria-label={label}
-          aria-expanded={expanded}
-          aria-controls={controls}
-          disabled={disabled}
-          onClick={onClick}
-          className={cn('size-[26px]', expanded && 'bg-accent text-accent-foreground')}
-        >
-          <Icon aria-hidden className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
 
 /**
  * A short text field inside the row with Send and Cancel: a "Needs changes"
@@ -301,6 +266,7 @@ export function InboxDecisionRow({
   title,
   why,
   sourceLine,
+  sourceTitle,
   meta,
   details,
   notice,
@@ -414,7 +380,24 @@ export function InboxDecisionRow({
           {details && <div className="mt-1">{details}</div>}
           {watchLine && <p className="text-2xs mt-0.5">{watchLine}</p>}
           {sourceLine && (
-            <p className="text-muted-foreground text-2xs mt-0.5 truncate font-mono">{sourceLine}</p>
+            <p
+              className="text-muted-foreground text-2xs mt-0.5 truncate font-mono"
+              title={sourceTitle ?? sourceLine}
+            >
+              {sourceLine}
+            </p>
+          )}
+          {actions?.kind === 'word' && actions.block && (
+            <InboxWordButton
+              block
+              reachesInfo={more !== undefined}
+              label={actions.label}
+              description={actions.description}
+              buttonRef={wordRef}
+              onClick={actions.onClick}
+              disabled={busy}
+              working={pending === 'word'}
+            />
           )}
           {actions?.kind === 'choice' && (
             <div className="mt-1.5" data-slot="inbox-decision-choices">
@@ -528,18 +511,15 @@ export function InboxDecisionRow({
                   />
                 </>
               )}
-              {actions.kind === 'word' && (
-                <Button
-                  ref={wordRef}
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  responsive={false}
+              {actions.kind === 'word' && !actions.block && (
+                <InboxWordButton
+                  label={actions.label}
+                  description={actions.description}
+                  buttonRef={wordRef}
                   onClick={actions.input ? () => setAnswering('word') : actions.onClick}
                   disabled={busy || answering === 'word'}
-                >
-                  {actions.label}
-                </Button>
+                  working={pending === 'word'}
+                />
               )}
             </div>
           </TooltipProvider>

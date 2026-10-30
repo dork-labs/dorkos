@@ -29,6 +29,10 @@ function sources(): URL[] {
 
 /** Every copy position in one file's text that says "hub": strings, templates and JSX text. */
 function hubCopy(fileName: string, text: string): string[] {
+  // Every finding is a node whose raw text matches WORD, so a file whose raw text never does has
+  // none: skip parsing it. Same result, and it keeps this scan off Vitest's 5s default on a loaded
+  // shard (5.8s on 10-29, run 40974091418; ~1s idle, almost all of it parsing hub-free files).
+  if (!WORD.test(text)) return [];
   const file = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
   const found: string[] = [];
   const visit = (node: ts.Node) => {

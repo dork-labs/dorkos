@@ -20,6 +20,8 @@
 import { ROOM_RECEIPT_EMOJI, type RoomPresencePayload } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
+import { roomAudience } from './room-audience.js';
+import type { BroadcastAudience } from '../../core/event-fan-out.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import {
@@ -55,6 +57,7 @@ const SPACE_ROOM_FRAMING: BridgedRoomFraming = { visibility: null };
 
 /** Everything a room collaborator may read, resolved once at construction. */
 export interface RoomCore {
+  readonly roomAudience: (roomId: string, removedAuthorId?: string) => BroadcastAudience;
   readonly store: RoomStore;
   /** Persisted authorization for local rows that mirror a remote community. */
   readonly mirrorAccess?: RoomMirrorAccess;
@@ -191,7 +194,20 @@ export interface RoomWriteBack extends RoomTriggerWriter {
  * @param writeBack - How the dispatcher reaches back into that service.
  * @returns The state every collaborator is handed.
  */
-export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack): RoomCore {
+export function createRoomCore(
+  deps: RoomServiceDeps,
+  writeBack: RoomWriteBack,
+  requireMembership: (roomId: string, authorId: string) => unknown
+): RoomCore {
+  const audience = (roomId: string, removedAuthorId?: string) =>
+    roomAudience(
+      roomId,
+      {
+        authorRegistry: deps.authors,
+        requireMembership,
+      },
+      removedAuthorId
+    );
   const roster = new RoomRoster({
     store: deps.store,
     authors: deps.authors,
@@ -279,9 +295,10 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // payload or a second meaning for its consumer to disambiguate
     // (room-presence spec §6).
     publishWorkingCount: (roomId, working) =>
-      eventFanOut.broadcast('room_presence', { roomId, working }),
+      eventFanOut.broadcast('room_presence', { roomId, working }, audience(roomId)),
   });
   return {
+    roomAudience: audience,
     store: deps.store,
     ...(deps.mirrorAccess ? { mirrorAccess: deps.mirrorAccess } : {}),
     ...(deps.mirrorWrites ? { mirrorWrites: deps.mirrorWrites } : {}),

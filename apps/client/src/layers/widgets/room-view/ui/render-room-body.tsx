@@ -27,6 +27,7 @@ import {
   MENTION_LITERAL_TAG_CONTENT,
   withMentionTags,
 } from '../lib/mention-markup';
+import { ccAuthors } from '@dorkos/shared/mention-addressing';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { MentionRosterProvider } from '../model/mention-roster-context';
 import { buildMentionComponents } from './MentionPillRenderer';
@@ -76,7 +77,13 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
   // this way at the moment the message was first drawn. Built even for a body
   // with no mentions in it — cheap, and it keeps this renderer from having to
   // know in advance whether `markdown` contains any.
-  const mentionComponents = useMemo(() => buildMentionComponents(spannedIds), [spannedIds]);
+  // Who this entry only copied in, as the server marked it (DOR-3401): their
+  // pills draw grey. Frozen with the spans, so it is safe in the map too.
+  const ccIds = useMemo(() => new Set(ccAuthors(entry.mentionSpans ?? [])), [entry.mentionSpans]);
+  const mentionComponents = useMemo(
+    () => buildMentionComponents(spannedIds, ccIds),
+    [spannedIds, ccIds]
+  );
 
   return (
     // The roster, on the one channel that reaches a pill Streamdown has already

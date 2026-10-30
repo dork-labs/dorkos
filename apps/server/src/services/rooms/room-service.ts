@@ -22,6 +22,8 @@
  * @module server/services/rooms/room-service
  */
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
+import type { RoomHandoffs } from './handoff/room-handoff.js';
+import type { RoomTurnControl } from './manage/room-turn-control.js';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -185,6 +187,10 @@ export class RoomService {
   get follow(): RoomFollowService {
     return this.parts.follow;
   }
+  /** Each agent's seat per room, and the hand-off between them. See {@link RoomHandoffs}. */
+  get handoffs(): RoomHandoffs {
+    return this.parts.handoffs;
+  }
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {
     return this.parts.turnControl.listActiveClaims();
@@ -211,19 +217,20 @@ export class RoomService {
     return this.triggers.idle();
   }
   /**
-   * Whether this agent is mid-turn in this room right now.
+   * This agent's live turn in this room, or `undefined` when it is not mid-turn here.
    *
-   * The claim map, asked as a yes-or-no. It is what makes a mechanical presence
+   * The claim map, asked directly. It is what makes a mechanical presence
    * signal honest: a face only goes on a canvas tab because a turn that is
    * really running read that document, never because an agent with no work in
-   * hand called a tool.
+   * hand called a tool. It also names the session the turn runs on, once the
+   * runtime has, which the stale-post check marks (DOR-3398).
    *
    * @param roomId - The room.
    * @param authorId - The agent.
-   * @returns True while a claim is held here.
+   * @returns The live turn, while a claim is held here.
    */
-  isWorkingHere(roomId: string, authorId: string): boolean {
-    return this.triggers.activeTurnHere(roomId, authorId) !== undefined;
+  activeTurn(roomId: string, authorId: string): { sessionId: string | undefined } | undefined {
+    return this.triggers.activeTurnHere(roomId, authorId);
   }
   /** Stop everything running in one room. See {@link RoomTurnControl.haltRoom}. */
   haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {
@@ -262,12 +269,7 @@ export class RoomService {
     return this.parts.turnControl.promoteHold(roomId, authorId, viewerAuthorId);
   }
   /** Ask one agent something the room never posted. See {@link RoomTurnControl.askAside}. */
-  askAside(input: {
-    roomId: string;
-    authorId: string;
-    aboutEntryId: string;
-    prompt: string;
-  }): Promise<void> {
+  askAside(input: Parameters<RoomTurnControl['askAside']>[0]): Promise<void> {
     return this.parts.turnControl.askAside(input);
   }
   /** Open a channel or a DM. See {@link RoomLifecycle.createRoom}. */

@@ -10,14 +10,10 @@
  *
  * @module mesh/git-tracked
  */
-import { execFile } from 'child_process';
 import { access } from 'fs/promises';
 import path from 'path';
-import { promisify } from 'util';
-import { gitConfigArgs, internalGitConfig } from '@dorkos/shared/git-hardening';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { MANIFEST_DIR, MANIFEST_FILE } from './manifest.js';
-
-const execFileAsync = promisify(execFile);
 
 /** How long git gets to answer before the fallback probe decides instead. */
 const GIT_TIMEOUT_MS = 5_000;
@@ -38,9 +34,22 @@ const MAX_GIT_PROBE_DEPTH = 64;
  * directory that is gone — a linked worktree whose parent was deleted — fails
  * with the very similar `fatal: not a git repository: /gone`, and that one is
  * NOT an answer: there is a working tree here whose files are somebody's. Only
- * the walked-and-found-nothing wording may be read as "no repo".
+ * the walked-and-found-nothing wording may be read as "no repo". git words
+ * that walk two ways: up to the root, or up to the edge of a mounted disk (a
+ * temp folder on its own disk stops there unless told to cross).
  */
-const NOT_A_REPO = /not a git repository \(or any of the parent directories\)/i;
+const NOT_A_REPO =
+  /not a git repository \(or any (?:of the parent directories|parent up to mount point [^)]*)\)/i;
+
+/**
+ * Whether git's error says it walked up and found no repository at all.
+ *
+ * @param stderr - What git printed.
+ * @internal Exported for tests.
+ */
+export function saysNoRepository(stderr: string): boolean {
+  return NOT_A_REPO.test(stderr);
+}
 
 /**
  * Whether `<projectPath>/.dork/agent.json` is tracked by git.
@@ -73,17 +82,18 @@ export async function isManifestGitTracked(
   logger: Pick<import('@dorkos/shared/logger').Logger, 'warn'>
 ): Promise<boolean> {
   const manifestPath = path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE);
+  // No `.git` above it (or no folder at all): no repository can track the
+  // file. Decided on disk before git runs, so the answer never depends on how
+  // git words its error, which differs by version and by file system.
+  if (!(await hasGitDirAbove(projectPath))) return false;
   try {
     // The folder is an agent's, which DorkOS did not create; its own git
-    // configuration must not run anything (DOR-2326).
-    await execFileAsync(
-      'git',
-      [...gitConfigArgs(internalGitConfig()), 'ls-files', '--error-unmatch', '--', manifestPath],
-      {
-        cwd: projectPath,
-        timeout: GIT_TIMEOUT_MS,
-      }
-    );
+    // configuration must not run anything (DOR-2326), so the read goes through
+    // the audited runner (DOR-3343). A refused repository counts as "git could
+    // not answer" below, which keeps the manifest when a repository is above.
+    await runSafeGit(['ls-files', '--error-unmatch', '--', manifestPath], projectPath, {
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
     return true;
   } catch (err) {
     const code = (err as { code?: number | string }).code;
@@ -91,7 +101,7 @@ export async function isManifestGitTracked(
     // git ran and said there is no repository here. A definite answer, not a
     // failure — and the one every managed agent under `{dorkHome}/agents`
     // gives, so it must not warn.
-    if (NOT_A_REPO.test(String((err as { stderr?: unknown }).stderr ?? ''))) return false;
+    if (saysNoRepository(String((err as { stderr?: unknown }).stderr ?? ''))) return false;
     // git never even started because the directory is gone (an unreachable
     // agent being swept). There is no file to protect and nothing to say.
     if (!(await exists(projectPath))) return false;

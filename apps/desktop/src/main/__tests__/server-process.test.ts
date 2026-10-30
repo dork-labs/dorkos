@@ -574,6 +574,16 @@ describe('the environment handed to the server child', () => {
     expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
   });
 
+  it('tells a dev child it is a checkout, whatever the shell inherited', async () => {
+    vi.stubEnv('DORKOS_DISTRIBUTION', 'npm');
+    const { startServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+
+    expect(child.env.DORKOS_DISTRIBUTION).toBe('dev');
+    expect(child.env.DORKOS_DESKTOP_VERSION).toBe('0.1.0');
+  });
+
   it('leaves DORK_HOME alone in dev, so the child picks its own dev data dir (M3)', async () => {
     const { startServer } = await import('../server-process');
 
@@ -619,10 +629,35 @@ describe('the environment handed to the server child', () => {
       expect(child.env.DORK_HOME).toBe(join(app.getPath('home'), '.dork'));
       expect(child.env.NODE_ENV).toBe('production');
       expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
+      // The server turns this into the Mac or Windows app for agents.
+      expect(child.env.DORKOS_DISTRIBUTION).toBe('desktop');
+      expect(child.env.DORKOS_DESKTOP_VERSION).toBe('0.1.0');
       // Electron tears a UtilityProcess down with the app; no watchdog needed.
       expect(child.env.DORKOS_PARENT_PID).toBeUndefined();
       expect(child.env.DORKOS_PARENT_STARTED_AT).toBeUndefined();
     } finally {
+      restorePaths();
+    }
+  });
+
+  it('never hands an exported CA variable to the packaged server, so no agent inherits it (DOR-3361)', async () => {
+    const restorePaths = stubPackagedPaths();
+    vi.stubEnv('NODE_EXTRA_CA_CERTS', '/tmp/planted-ca.pem');
+    vi.stubEnv('SSL_CERT_FILE', '/tmp/planted-ca.pem');
+    try {
+      const { app } = await getElectronMock();
+      app.isPackaged = true;
+      const { startServer } = await import('../server-process');
+
+      const started = startServer();
+      const child = await utilityChildAt(0);
+      child.emitReady();
+      await started;
+
+      expect(child.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
+      expect(child.env.SSL_CERT_FILE).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
       restorePaths();
     }
   });

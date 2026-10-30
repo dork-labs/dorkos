@@ -105,6 +105,12 @@ export interface RunApprovalTarget {
    * the card was drawn is refused as stale. Absent when it listed none.
    */
   permissions?: ApproveExtensionRequest['permissions'];
+  /**
+   * The digest of the files the card was drawn for (DOR-3068), echoed so an
+   * edit since the card was drawn is refused as stale. The server requires it
+   * for every copy but a dev link.
+   */
+  expectedDigest?: string;
 }
 
 /**
@@ -145,7 +151,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
   const queryClient = useQueryClient();
 
   return useMutation<ExtensionApprovalResponse, Error, RunApprovalTarget>({
-    mutationFn: async ({ id, version, plugin, permissions }: RunApprovalTarget) => {
+    mutationFn: async ({ id, version, plugin, permissions, expectedDigest }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
       // refused with `stale_approval` instead of approved (DOR-2517). The card
@@ -156,7 +162,12 @@ export function useSetExtensionRunApproval(approve: boolean) {
           ? {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ version, plugin, ...(permissions ? { permissions } : {}) }),
+              body: JSON.stringify({
+                version,
+                plugin,
+                ...(permissions ? { permissions } : {}),
+                ...(expectedDigest ? { expectedDigest } : {}),
+              }),
             }
           : { method: 'POST' }
       );

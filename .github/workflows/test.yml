@@ -366,7 +366,7 @@ jobs:
           echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -640,13 +640,18 @@ jobs:
       # its own package.json fallback then collided with the newly-tagged
       # release version and the guard false-failed (DOR-884). Every shard runs
       # the server suite that contains that guard, so every shard needs tags.
+      # No saved credential: nothing here pushes or fetches after checkout. The
+      # server suite reads this checkout as a project, and DorkOS's audited git
+      # runner refuses a repository whose settings include another file, which
+      # is how the checkout saves its credential (DOR-3343).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -759,6 +764,53 @@ jobs:
             "${args[@]}" \
             --title "Quarantine gate — test shard ${{ matrix.shard }}/6"
 
+      # Decides whether the PR leg's tests run at all, from
+      # scripts/no-code-scope.sh. A release PR bumps "version" in package.json
+      # files, which turbo treats as global, so `--affected` ran the whole suite
+      # on every shard for tests nothing in it could change (PR #3237: 13m18s of
+      # turbo time on shard 3/6 alone). No `if:` of its own, so this required
+      # job never skips it; it writes `run=true|false` and the PR test step reads
+      # that.
+      #
+      # Every event but pull_request answers true without looking: the queue and
+      # the canary always run the full sweep, which this never touches.
+      # pull_request diffs the test-merge commit against its first parent, for
+      # the reason community-packaged's scope step gives, and requires a second
+      # parent so a checkout that lands on a plain commit cannot score only its
+      # last commit. Every failure on the PR path FAILS OPEN to running the
+      # tests: a base git cannot resolve, a HEAD that is not a merge, a tree that
+      # predates the script, or a script that errors.
+      - name: Decide whether this change can affect a test
+        id: noscope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the shards always run here"
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          verdict=true
+          # The script comes from the BASE commit, never this checkout, so a
+          # pull request cannot edit the rule that grades it (Security, #3238).
+          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
+              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
+            else
+              echo "the base commit has no scripts/no-code-scope.sh; running the shards"
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit); running the shards"
+          fi
+          if [ "$verdict" != false ]; then
+            verdict=true
+          else
+            echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
+          fi
+          echo "run=$verdict" >> "$GITHUB_OUTPUT"
+
       # The PR leg's quarter. Same split, same `--concurrency=1`, narrower
       # scope — and deliberately NOT the queue leg's line with one flag
       # changed, because three of its flags must not ride here:
@@ -803,7 +855,7 @@ jobs:
       # base.sha...HEAD is the PR's own diff and nobody else's. `fetch-depth:
       # 0` above is what guarantees the commit is present to diff against.
       - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/6)
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --passWithNoTests

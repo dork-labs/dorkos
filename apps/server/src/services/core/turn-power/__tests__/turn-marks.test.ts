@@ -26,7 +26,7 @@ import {
   type TurnMarkKind,
   type TurnMarks,
 } from '../turn-marks.js';
-import { markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
+import { markedBoundOf, marksOf, recordTurnLevels, unknownLevelMarks } from '../turn-levels.js';
 import { countWhileRunning, resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
@@ -56,7 +56,8 @@ const MARKED: TurnPermissionLevel = { ...LEVEL, outsider: true };
 let counter = 0;
 const fresh = () => `turn-marks-${(counter += 1)}`;
 
-function recorded(): AgentRuntime {
+/** A runtime through the level seam, every chat set to `stored` (Full unless said). */
+function recorded(stored = 'bypassPermissions'): AgentRuntime {
   return recordTurnLevels(
     {
       type: 'claude-code',
@@ -65,12 +66,16 @@ function recorded(): AgentRuntime {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => stored
   );
 }
 
-async function ran(sessionId: string, opts?: Parameters<AgentRuntime['sendMessage']>[2]) {
-  for await (const _event of recorded().sendMessage(sessionId, 'hi', opts)) {
+async function ran(
+  sessionId: string,
+  opts?: Parameters<AgentRuntime['sendMessage']>[2],
+  stored?: string
+) {
+  for await (const _event of recorded(stored).sendMessage(sessionId, 'hi', opts)) {
     // drain
   }
 }
@@ -197,14 +202,19 @@ describe('the readers', () => {
     const action = gatedActionForMcpTool('tasks_delete');
     const plain = fresh();
     const marked = fresh();
+    const markedAtFull = fresh();
     await ran(plain);
-    await ran(marked, { permissionCeiling: 'runtime-default' });
+    // Below Full: a chat set to Full asks nobody anything (DOR-3394); this ran at Full until then.
+    await ran(marked, { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    await ran(markedAtFull, { permissionCeiling: 'runtime-default' });
 
     const forPlain = await resolveCallPermission({ action, identity, sessionId: plain });
     const forMarked = await resolveCallPermission({ action, identity, sessionId: marked });
+    const atFull = await resolveCallPermission({ action, identity, sessionId: markedAtFull });
     // Trusted runs a destructive action of our own agents, recorded; a marked turn still asks.
     expect(forPlain).toMatchObject({ area: 'tasks', state: 'allowed' });
     expect(forMarked).toMatchObject({ area: 'tasks', state: 'ask' });
+    expect(atFull).toMatchObject({ area: 'tasks', state: 'allowed' });
   });
 
   it('hold an edit to who the agent is for a person in a marked turn (DOR-3036)', async () => {
@@ -222,13 +232,18 @@ describe('the readers', () => {
     )!;
     const plain = fresh();
     const marked = fresh();
+    const markedAtFull = fresh();
     await ran(plain);
-    await ran(marked, { permissionCeiling: 'runtime-default' });
+    // Below Full, as above (DOR-3394); this ran at Full until then.
+    await ran(marked, { permissionCeiling: 'runtime-default' }, 'acceptEdits');
+    await ran(markedAtFull, { permissionCeiling: 'runtime-default' });
 
     const forPlain = await resolveCallPermission({ action, identity, sessionId: plain });
     const forMarked = await resolveCallPermission({ action, identity, sessionId: marked });
+    const atFull = await resolveCallPermission({ action, identity, sessionId: markedAtFull });
     expect(forPlain).toMatchObject({ state: 'allowed' });
     expect(forMarked).toMatchObject({ state: 'ask' });
+    expect(atFull).toMatchObject({ state: 'allowed' });
   });
 
   it('keep the destructive hold from a chat known by a second id while its agent reads an outsider', async () => {
@@ -270,8 +285,40 @@ describe('the readers', () => {
         permissionCeiling: 'runtime-default',
       });
       await elsewhere.next();
-      expect(await holdRequesterFor(context, preflight)).toBeUndefined();
+      // The chat is set to Full (its canonical id's record says so), so the marked sibling no
+      // longer sends the call to a card (DOR-3394): it waits out the window like any Full chat's.
+      // Until then this was `toBeUndefined()`. A chat below Full never reaches the window at all.
+      expect(await holdRequesterFor(context, preflight)).toBeDefined();
       await elsewhere.return(undefined);
+    } finally {
+      clearTestHomes();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // DOR-3386 (Security's marked-lanes design, point 2): a sender whose level is unknown answers
+  // for its own chat. A sibling room seat of the same agent running a marked turn no longer marks
+  // a message from the agent's direct chat; the marked chat's own message still carries the mark.
+  it('scope an unknown-level sender to its own chat, not a marked sibling', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'dorkos-turn-marks-scope-'));
+    const home = path.join(root, 'agents', 'lane');
+    await mkdir(home, { recursive: true });
+    registerTestHomes([home]);
+    try {
+      const seat = fresh();
+      const direct = fresh();
+      const running = recorded().sendMessage(seat, 'hi', {
+        cwd: home,
+        permissionCeiling: 'runtime-default',
+      });
+      await running.next();
+      expect(agentMarksRunning(home)).toEqual({ outsider: true });
+      expect(unknownLevelMarks([direct], home)).toEqual({});
+      noteTurnOrigin(seat, { kind: 'relay-binding' } as never);
+      expect(unknownLevelMarks([seat], home)).toEqual({ outsider: true });
+      // A caller that names no chat is still read through its agent.
+      expect(unknownLevelMarks([], home)).toEqual({ outsider: true });
+      await running.return(undefined);
     } finally {
       clearTestHomes();
       await rm(root, { recursive: true, force: true });

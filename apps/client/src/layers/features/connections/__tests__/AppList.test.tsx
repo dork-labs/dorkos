@@ -136,6 +136,28 @@ function renderList(
 }
 
 describe('AppList', () => {
+  // DOR-3288: a paused connection waits on you; it is not broken.
+  it('draws a paused connection’s line amber, with a Review button that hands the row up', async () => {
+    const user = userEvent.setup();
+    const paused: YourAppRow = {
+      ...ROWS[1]!,
+      id: 'webhook-1',
+      name: 'Deploy hooks',
+      detail: 'Paused · confirm the setting it sends',
+      tone: 'attention',
+      action: 'review',
+      detailTone: 'warning',
+      waiting: 0,
+    };
+    const handlers = renderList(data({ yours: [paused], allYours: [paused] }));
+    expect(screen.getByText('Paused · confirm the setting it sends')).toHaveClass(
+      'text-status-warning-fg'
+    );
+    expect(screen.queryByText(/Stopped working/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Review: Deploy hooks' }));
+    expect(handlers.onRowAction).toHaveBeenCalledWith(paused);
+  });
+
   it('on a first visit shows no "Yours" at all: the app list is the empty state', () => {
     renderList(data());
     expect(screen.queryByRole('heading', { name: 'Yours' })).not.toBeInTheDocument();

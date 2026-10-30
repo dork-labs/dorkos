@@ -30,7 +30,7 @@ import type {
 } from '../../launch/launch-session.js';
 import type { SessionFacts } from '../../../extensions/agent-send/agent-send-defaults.js';
 import { ChatMessageStore } from '../chat-message-store.js';
-import { CHAT_LAUNCH_CAP_MESSAGE } from '../chat-queue-standing.js';
+import { chatLaunchCapMessage } from '../chat-queue-standing.js';
 import {
   CHAT_MESSAGE_MAX,
   ChatMessageError,
@@ -376,7 +376,7 @@ describe('send — refusals', () => {
 
     const err = await refusal(service.send(ANA, { to: 'chat-b', message: 'hi' }));
 
-    expect(err.message).toBe(CHAT_LAUNCH_CAP_MESSAGE);
+    expect(err.message).toBe(chatLaunchCapMessage());
     expect(err.message).not.toMatch(/spin-off/);
     expect(err.message).toMatch(/Nothing was kept/);
   });
@@ -622,10 +622,11 @@ describe('send — steer', () => {
 
     expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.status).toBe('queued');
-    // Its level, which keeps the mark, and the cap the mark carries (DOR-3107).
+    // Its level, which keeps the mark, and the mark carried on as a bound that
+    // caps nothing (DOR-3107, DOR-3390).
     expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual([
       { ...TIGHT, outsider: true },
-      'runtime-default',
+      { asks: 'never', reach: 'everything', outsider: true },
     ]);
   });
 

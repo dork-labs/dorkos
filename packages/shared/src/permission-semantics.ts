@@ -588,6 +588,32 @@ export function ceilingCarriesOutsider(ceiling: TurnPermissionCeiling): boolean 
   return bounds.length === 0 || bounds.some(ceilingCarriesOutsider);
 }
 
+/**
+ * The bound that carries an outsider's words on without capping power (DOR-3390, Security
+ * 2026-10-29): the loosest level there is, marked. Beside any other bound it changes nothing but
+ * the mark, so a turn our own agent's marked post or message starts runs at its own level, and
+ * what reads the mark gates the actions that matter (raises, destructive calls, setup writes).
+ * Only a direct stranger's turn is held to the runtime's default.
+ */
+export const CARRIED_OUTSIDER_LEVEL: TurnPermissionLevel = Object.freeze({
+  asks: 'never',
+  reach: 'everything',
+  outsider: true,
+});
+
+/**
+ * Whether a ceiling holds a turn for an outsider DIRECTLY (DOR-3390): it has the runtime-default
+ * bound only a stranger, or a sender DorkOS cannot vouch for, sets, or it is an empty list, which
+ * vouches for no one. A marked level alone carries the mark on and holds nothing.
+ *
+ * @param ceiling - The ceiling a turn was sent with.
+ */
+export function ceilingHoldsForOutsider(ceiling: TurnPermissionCeiling): boolean {
+  if (!Array.isArray(ceiling)) return ceiling === 'runtime-default';
+  const bounds = ceiling as readonly TurnPermissionBound[];
+  return bounds.length === 0 || bounds.some(ceilingHoldsForOutsider);
+}
+
 /** {@link stricterLevel} on asking and reach alone. */
 function stricterPower(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
   const fits = (inner: TurnPermissionLevel, outer: TurnPermissionLevel) =>

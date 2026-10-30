@@ -1,5 +1,22 @@
+import { readAccountLoginMetadata } from '../../claude-code/accounts/account-login-metadata.js';
+// No sign-in identity by default (an API-key folder): a login just works.
+vi.mock('../../claude-code/accounts/account-login-metadata.js', () => ({
+  readAccountLoginMetadata: vi.fn(() => null),
+}));
+vi.mock('../signin-accounts.js', () => ({
+  signinAccounts: () =>
+    resolveClaudeRootSet().map((root) => ({ accountId: root, path: root, name: root })),
+}));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  accountSigninPolicy,
+  initAccountSigninPolicy,
+  mayAutoPick,
+} from '../../../health/account-signin-policy.js';
 
 vi.mock('../../claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: vi.fn(),
@@ -96,7 +113,7 @@ describe('runDelegatedLogin', () => {
     const result = await p;
     expect(result.ok).toBe(false);
     // Condensed to the first line, no raw multi-line dump.
-    expect(result.error).toContain('authentication cancelled');
+    expect(result.error).toBe('Couldn’t sign in. Try again.');
     expect(result.error).not.toContain('more detail');
   });
 
@@ -160,7 +177,7 @@ describe('pipeSecretToChild', () => {
     child.emit('exit', 1);
     const result = await p;
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('invalid api key');
+    expect(result.error).toBe('Couldn’t sign in. Try again.');
   });
 });
 
@@ -533,5 +550,71 @@ describe('resolved login environment boundary', () => {
     expect(calls[0].options?.env).not.toHaveProperty('MCP_API_KEY');
     expect(calls[0].options?.env).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
     expect(JSON.stringify(calls[0].args)).not.toContain('synthetic-model');
+  });
+});
+
+describe('a Claude sign-in finished here is confirmed in the same step (DOR-3245)', () => {
+  const ACCOUNT = '11111111-1111-4111-8111-111111111111';
+  const ORG = '22222222-2222-4222-8222-222222222222';
+  const DENIED = '33333333-3333-4333-8333-333333333333';
+  let home: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-login-confirm-'));
+    initAccountSigninPolicy(home);
+    accountSigninPolicy()!.seed([], new Date('2026-10-30T00:00:00Z'));
+    vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/fake/main');
+    vi.mocked(noteSigninRepaired).mockClear();
+  });
+  afterEach(() => {
+    vi.mocked(readAccountLoginMetadata).mockReturnValue(null);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  async function completeLogin() {
+    const child = new FakeChild();
+    const { spawn } = fakeSpawn(child);
+    const run = delegateRuntimeLogin('claude-code', {
+      spawn,
+      resolveCommand: async () => ({ binary: '/fake/claude', args: ['auth', 'login'] }),
+    });
+    await Promise.resolve();
+    child.emit('exit', 0);
+    return run;
+  }
+
+  it('binds the new sign-in and returns its masked identity: no review follows', async () => {
+    vi.mocked(readAccountLoginMetadata).mockReturnValue({
+      accountUuid: ACCOUNT,
+      organizationUuid: ORG,
+      maskedEmail: 'd…@example.com',
+    });
+    expect(await completeLogin()).toEqual({
+      ok: true,
+      identity: { state: 'confirmed', email: 'd…@example.com' },
+    });
+    // Confirmed, so the launch check has nothing to say about it and pickers may use it.
+    const after = accountSigninPolicy()!.assess('/fake/main', {
+      accountUuid: ACCOUNT,
+      organizationUuid: ORG,
+      maskedEmail: 'd…@example.com',
+    });
+    expect(after.state).toBe('confirmed');
+    expect(mayAutoPick(after.state)).toBe(true);
+    expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/fake/main');
+  });
+
+  it('never binds a sign-in in an organization the person ruled out', async () => {
+    accountSigninPolicy()!.addOrganization(DENIED, 'Ruled out');
+    const denied = { accountUuid: ACCOUNT, organizationUuid: DENIED, maskedEmail: 'd…@x.com' };
+    vi.mocked(readAccountLoginMetadata).mockReturnValue(denied);
+    expect(await completeLogin()).toMatchObject({ ok: false, identity: { state: 'blocked' } });
+    expect(accountSigninPolicy()!.assess('/fake/main', denied).state).toBe('blocked');
+    expect(noteSigninRepaired).not.toHaveBeenCalled();
+  });
+
+  it('a sign-in with no readable identity still works, and binds nothing', async () => {
+    expect(await completeLogin()).toEqual({ ok: true });
+    expect(noteSigninRepaired).toHaveBeenCalledTimes(1);
   });
 });

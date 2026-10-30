@@ -1,11 +1,24 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
 import type { DashboardSectionContribution } from '@/layers/shared/model';
 import { ExtensionSections } from '../ui/ExtensionSections';
+
+const withheld = vi.hoisted(() => ({ list: [] as { id: string; name: string }[] }));
+const requestInbox = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/entities/notifications', () => ({ requestInbox }));
+vi.mock('@/layers/entities/extension', () => ({
+  useWithheldExtensions: () => withheld.list,
+  WithheldExtensionsNotice: ({ onReview }: { onReview: () => void }) =>
+    withheld.list.map((ext) => (
+      <button key={ext.id} onClick={onReview}>
+        {ext.name} changed and is waiting for your OK
+      </button>
+    )),
+}));
 
 const register = (contribution: DashboardSectionContribution) =>
   useExtensionRegistry.getState().register('dashboard.sections', contribution);
@@ -22,6 +35,16 @@ const makeSection = (
 describe('ExtensionSections', () => {
   beforeEach(() => {
     useExtensionRegistry.setState({ slots: createInitialSlots() });
+    withheld.list = [];
+    requestInbox.mockClear();
+  });
+
+  it('says a section held back for changed code is waiting, never blank (DOR-3068)', () => {
+    withheld.list = [{ id: 'flow', name: 'Flow' }];
+    render(<ExtensionSections />);
+    expect(screen.getByText('From your extensions')).toBeInTheDocument();
+    screen.getByText('Flow changed and is waiting for your OK').click();
+    expect(requestInbox).toHaveBeenCalledOnce();
   });
 
   it('renders nothing at all when no extension has contributed', () => {

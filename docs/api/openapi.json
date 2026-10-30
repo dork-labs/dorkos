@@ -4565,6 +4565,12 @@
           "everythingCut": {
             "type": "integer",
             "minimum": 1
+          },
+          "keptCardBecause": {
+            "type": "string",
+            "enum": [
+              "wifi-open"
+            ]
           }
         },
         "required": [
@@ -9900,6 +9906,10 @@
             "default": null,
             "description": "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own)."
           },
+          "projectOnly": {
+            "type": "boolean",
+            "description": "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false."
+          },
           "approvalChanges": {
             "type": "array",
             "items": {
@@ -12959,6 +12969,30 @@
               "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
             },
             "default": []
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "changedFiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "updatedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "required": [
@@ -13170,6 +13204,10 @@
               "run",
               "agents"
             ]
+          },
+          "expectedDigest": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -15749,7 +15787,9 @@
           "room_archived",
           "agent_reseated",
           "handle_changed",
-          "files_set_up"
+          "files_set_up",
+          "handoff_shared",
+          "handoff_declined"
         ]
       },
       "RoomMoment": {
@@ -15979,6 +16019,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The live author this occurrence resolved to."
+          },
+          "cc": {
+            "type": "boolean",
+            "description": "True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads."
           }
         },
         "required": [
@@ -18175,6 +18219,9 @@
               "refused",
               "failed"
             ]
+          },
+          "meta": {
+            "type": "string"
           }
         },
         "required": [
@@ -18215,7 +18262,9 @@
           "heartbeat.credits-offer",
           "connector.destructive_pending",
           "connector.destructive_executed",
-          "web.new_device"
+          "web.new_device",
+          "agent.secret_files",
+          "account.signin_review"
         ]
       },
       "NotificationTier": {
@@ -34906,6 +34955,720 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins": {
+      "get": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read Claude sign-in identity and exclusions",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned.",
+        "responses": {
+          "200": {
+            "description": "Owner policy and masked account identities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deniedOrganizations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ]
+                      }
+                    },
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "path",
+                          "label"
+                        ]
+                      }
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "identity": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "unreadable",
+                                  "unconfirmed",
+                                  "changed",
+                                  "blocked",
+                                  "confirmed",
+                                  "grandfathered",
+                                  "never-use"
+                                ]
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "previousEmail": {
+                                "type": "string"
+                              },
+                              "orgChanged": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "state"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "path",
+                          "name",
+                          "identity"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "deniedOrganizations",
+                    "folders",
+                    "accounts"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/organizations": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Exclude an organization",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "orgId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "orgId",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/organizations/{id}": {
+      "delete": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Remove an organization exclusion",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/folders": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Exclude a registered folder",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/folders/{id}": {
+      "delete": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Remove a folder exclusion",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/signins/{id}/accept": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Confirm a folder’s current identity",
+        "description": "The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned. Folder targets resolve by registry ID on the server. A sign-in in an excluded organization can never be accepted. A folder exclusion stops every account read and launch there.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
+          },
+          "404": {
+            "description": "The request is refused"
+          },
+          "409": {
+            "description": "The request is refused"
+          },
+          "503": {
+            "description": "The request is refused"
+          }
+        }
+      }
+    },
+    "/api/runtimes/{type}/login": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Start a vendor sign-in",
+        "description": "The owner at this computer only: the vendor sign-in opens a browser here. Claude takes a registered accountId or a sessionId bound to a registered account; paths and unknown accounts are refused, and the default is never substituted. A Claude sign-in completed here is confirmed in the same step and returned as a masked identity. Codex accepts no accountId.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex"
+              ]
+            },
+            "required": true,
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "identity": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unreadable",
+                            "unconfirmed",
+                            "changed",
+                            "blocked",
+                            "confirmed",
+                            "grandfathered",
+                            "never-use"
+                          ]
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "previousEmail": {
+                          "type": "string"
+                        },
+                        "orgChanged": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is refused"
+          },
+          "403": {
+            "description": "The request is refused"
           }
         }
       }
@@ -87254,6 +88017,89 @@
           },
           "409": {
             "description": "The room is archived, or somebody else is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/media/{file}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Read a file an agent put on a room’s canvas",
+        "description": "When an agent puts a picture, PDF, sound, video, 3D model or CSV from its own folder on a room's canvas, the server copies it into the room and the document's `src` becomes this address, so every member can see it. Only a file in the agent's own folder or its own copy of the room's files is copied; anything else is refused when the agent asks. Readable by any member, the same gate every canvas read uses; a room you are not in answers as one that does not exist. The name carries the SHA-256 of the bytes, so it never changes what it holds. Served with `X-Content-Type-Options: nosniff`, a script-neutering sandbox on SVG, and a single byte `Range` so sound and video can seek.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}-[0-9a-f]{64}(\\.[a-z0-9]{1,10})?$"
+            },
+            "required": true,
+            "name": "file",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such file on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The requested range is outside the file",
             "content": {
               "application/json": {
                 "schema": {

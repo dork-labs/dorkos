@@ -74,7 +74,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import {
-  ceilingCarriesOutsider,
+  ceilingHoldsForOutsider,
   clampModeToCeiling,
   levelOfMode,
   stricterLevel,
@@ -89,7 +89,7 @@ import {
 } from '../../session/resolution/agent-launch-level.js';
 import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
 import { chatRiseFacts } from './chat-rise-facts.js';
-import { hasMarks, marksForTurn } from './turn-marks.js';
+import { marksForTurn } from './turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Chats on another computer, which this one cannot vouch for. */
@@ -123,10 +123,13 @@ function withBound(
 /**
  * Whether a level holds down any mode this turn could launch at: the stored
  * mode and a mode the send names (a schedule's mode, or a new chat's first-turn
- * seed), or the agent's level a raised turn starts from in place of both. Each is read after the turn's own ceiling, so the bound is added only
- * where it changes the answer. With neither known, the runtime may hold a mode
- * in memory this seam cannot see, so every mode it declares is a candidate:
- * unknown binds, never the other way round.
+ * seed), or the agent's level a raised turn starts from in place of both. Each is read before and
+ * after the turn's own ceiling, so the bound is added only where it changes either answer. Before
+ * matters (DOR-3416): what reads the level a chat is SET to (`ownLevelBounds`, DOR-3394) sets a
+ * stranger's hold and the marks aside, so a hold stricter than the agent's level must not leave the
+ * level out, or a chat stored at Full whose agent a person lowered reads as Full again. With
+ * neither known, the runtime may hold a mode in memory this seam cannot see, so every mode it
+ * declares is a candidate: unknown binds, never the other way round.
  *
  * @param declared - The runtime's declared modes.
  * @param level - The agent's level.
@@ -146,6 +149,7 @@ export function levelBinds(
   ).filter((mode): mode is string => typeof mode === 'string' && mode !== '');
   const candidates = named.length > 0 ? named : declared.values.map((mode) => mode.id);
   return candidates.some((mode) => {
+    if (clampModeToCeiling(declared, mode, level) !== mode) return true;
     const ceiling = opts?.permissionCeiling;
     const now = ceiling === undefined ? mode : clampModeToCeiling(declared, mode, ceiling);
     return clampModeToCeiling(declared, now, level) !== now;
@@ -234,12 +238,18 @@ async function agentOfTurn(
   return resolveLevelAgent(cwd, opts, recorded);
 }
 
-/** Whether the turn carries a mark or is held: an outsider's, a teammate's, or the runtime's default. */
+/**
+ * Whether the turn is held or reads outside words in a room: a stranger's (the runtime's
+ * default), a teammate's chain, or a room line in view. A turn our own agent's marked post or
+ * message started still rises (DOR-3390): its mark gates the risky actions, not its level.
+ */
 function turnIsMarked(opts: MessageOpts | undefined): boolean {
   const ceiling = opts?.permissionCeiling;
-  if (ceiling !== undefined && ceilingCarriesOutsider(ceiling)) return true;
+  if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) return true;
   if (opts?.teammate === true || opts?.roomTurn?.teammate === true) return true;
-  return hasMarks(marksForTurn(opts));
+  // A stranger's line in view keeps the chat where it is, as before: it is read first-hand.
+  if (opts?.roomTurn?.outsiderInView === true) return true;
+  return marksForTurn(opts).teammate !== undefined;
 }
 
 /**

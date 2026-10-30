@@ -16,7 +16,34 @@ import type { WaitingQueueState } from './use-waiting-queue';
 export type WaitingQueueCounts = Pick<
   WaitingQueueState,
   'approvals' | 'schedules' | 'asks' | 'extensionApprovals' | 'extensionDecisions'
->;
+> &
+  Partial<Pick<WaitingQueueState, 'pausedConnections'>>;
+
+/**
+ * The mini apps waiting on a person, by what they wait for: a new one to be
+ * turned on, a changed one (an edit or an update) for an OK. One app is named.
+ *
+ * @param waiting - The mini apps waiting, at least one.
+ */
+function describeWaitingMiniApps(waiting: WaitingQueueCounts['extensionApprovals']): string {
+  const changed = waiting.filter((app) => app.changedFiles || app.updatedFrom).length;
+  if (waiting.length === 1) {
+    const name = waiting[0]!.name;
+    const first =
+      changed === 1
+        ? `${name} changed and is waiting for your OK.`
+        : `${name} is waiting to be turned on.`;
+    return `${first} It won't run until you decide.`;
+  }
+  const count = waiting.length;
+  const first =
+    changed === 0
+      ? `${count} mini apps are waiting to be turned on.`
+      : changed === count
+        ? `${count} mini apps changed and are waiting for your OK.`
+        : `${count} mini apps are waiting for your OK.`;
+  return `${first} They won't run until you decide.`;
+}
 
 /**
  * Say what is waiting, one kind in its own words or every kind present by name.
@@ -39,7 +66,16 @@ export function describeWaitingQueue(queue: WaitingQueueCounts): string {
   const asks = queue.asks.length;
   const extensions = queue.extensionApprovals.length;
   const decisions = queue.extensionDecisions.length;
+  const paused = queue.pausedConnections?.length ?? 0;
 
+  if (paused > 0) {
+    if (approvals + schedules + asks + extensions + decisions === 0) {
+      return paused === 1
+        ? '1 connection is paused until you confirm what it sends.'
+        : `${paused} connections are paused until you confirm what they send.`;
+    }
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} are waiting on you.`;
+  }
   if (approvals + schedules + asks + extensions + decisions === 0) return '';
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
     const subject = decisions === 1 ? '1 decision is' : `${decisions} decisions are`;
@@ -49,8 +85,7 @@ export function describeWaitingQueue(queue: WaitingQueueCounts): string {
     return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions)} are waiting on you.`;
   }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
-    const subject = extensions === 1 ? '1 extension is' : `${extensions} extensions are`;
-    return `${subject} waiting to be turned on. None of it runs until you decide.`;
+    return describeWaitingMiniApps(queue.extensionApprovals);
   }
   if (extensions > 0) {
     return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Nothing runs until you decide.`;

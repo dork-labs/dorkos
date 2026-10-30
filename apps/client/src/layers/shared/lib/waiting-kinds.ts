@@ -52,6 +52,8 @@ function countNoun(count: number, noun: string): string {
  * @param decisions - Decisions extensions are asking a person about (spec
  *   `flow-multiproject` §7.5). Defaults to none. Named "decision": it is not
  *   an agent's question in a chat, nor a request for a capability.
+ * @param connections - Connections paused until their owner confirms what
+ *   they send (DOR-3271). Defaults to none. Named "paused connection".
  * @returns The joined phrase, or `''` when nothing is waiting — a caller with
  *   nothing to count has a different sentence to say, and building one out of
  *   an empty list is how ", and undefined" reaches a screen.
@@ -61,14 +63,16 @@ export function listWaitingKinds(
   requests: number,
   schedules: number,
   extensions = 0,
-  decisions = 0
+  decisions = 0,
+  connections = 0
 ): string {
   const parts = [
     questions > 0 ? countNoun(questions, 'question') : null,
     requests > 0 ? countNoun(requests, 'request') : null,
     schedules > 0 ? countNoun(schedules, 'schedule') : null,
     decisions > 0 ? countNoun(decisions, 'decision') : null,
-    extensions > 0 ? countNoun(extensions, 'extension') : null,
+    extensions > 0 ? countNoun(extensions, 'mini app') : null,
+    connections > 0 ? countNoun(connections, 'paused connection') : null,
   ].filter((part): part is string => part !== null);
 
   if (parts.length === 0) return '';

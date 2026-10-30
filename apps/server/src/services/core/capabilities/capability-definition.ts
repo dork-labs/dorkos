@@ -145,6 +145,13 @@ export interface CapabilityDefinition<
    */
   alwaysAsksForInput?: (input: unknown) => boolean;
   /**
+   * The settings only a person may change that one call RAISES, named for a refusal (DOR-3426):
+   * `config_patch` names each operator-only key it writes that is not its strictest value. At Full
+   * such a call is refused with these names; an empty list with {@link areasForInput} still
+   * reaching past the action's own area means the call only turns those settings down.
+   */
+  personSettingsRaisedForInput?: (input: unknown) => readonly string[];
+  /**
    * What a destructive action's consent is about, when it is more than the
    * action itself. `'third-party-code'` marks an action that puts code someone
    * else wrote where DorkOS will run it (`mcp.add`, `mcp.update`): an area-level
@@ -305,13 +312,19 @@ export interface CapabilityDefinition<
    * gate decides it exactly as before. A function means it is: the registry
    * runs it in place of the gate, and it resolves with the `hold` approval the
    * handler runs on once nobody cancelled, or throws when somebody did.
+   * `{ keptCardBecause }` means it would have been, but for that one reason,
+   * which the card then says (DOR-3242).
    */
   cancelWindow?: (
     deps: CapabilityDeps,
     input: z.infer<In>,
     context: CapabilityInvocationContext,
     preflight: CapabilityPreflightResult
-  ) => Promise<(() => Promise<Extract<GrantedApproval, { via: 'hold' }>>) | undefined>;
+  ) => Promise<
+    | (() => Promise<Extract<GrantedApproval, { via: 'hold' }>>)
+    | { readonly keptCardBecause: 'wifi-open' }
+    | undefined
+  >;
   /**
    * Where this capability came from, set only on a definition the host built
    * for a running extension (`buildExtensionDefinitions`, DOR-2685).

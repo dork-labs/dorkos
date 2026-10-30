@@ -313,7 +313,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/devices');
     // 80 -> 81: the forced-limit seam for re-seating, test runtime only (DOR-3143).
     expect(mounts).toContain('/api/test/account-world');
-    expect(mounts).toHaveLength(81);
+    // 81 -> 82: the MCP servers a person adds for every agent (DOR-3213).
+    expect(mounts).toContain('/api/mcp-servers');
+    // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
+    expect(mounts).toContain('/api/tasks');
+    expect(mounts).toHaveLength(83);
     const byHand = [
       '/',
       '/x/fixture',

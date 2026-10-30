@@ -328,6 +328,44 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('server.boundary')).not.toBe('/');
   });
 
+  describe('company certificates (network.extraCaCertsPath, DOR-3361)', () => {
+    // The file the desktop app adds to what every connection trusts. It
+    // replaced NODE_EXTRA_CA_CERTS precisely because anything running as the
+    // user could set that, so an agent must not be able to set this either.
+    const bundle = '/Users/someone/company-ca.pem';
+
+    it('refuses an agent, and stores nothing', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: '/tmp/attacker-ca.pem' } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.paths).toEqual(['network.extraCaCertsPath']);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('network.extraCaCertsPath')).toBeNull();
+    });
+
+    it('lets a person set it and clear it', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+
+      await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: bundle } })
+        .expect(200);
+      expect(configManager.getDot('network.extraCaCertsPath')).toBe(bundle);
+
+      await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: null } })
+        .expect(200);
+      expect(configManager.getDot('network.extraCaCertsPath')).toBeNull();
+    });
+  });
+
   describe('settings a config wipe refuses to reverse (DOR-1497)', () => {
     // The reproduction, kept as the test. Every leaf below is on
     // `PROTECTIVE_CARRYOVERS`: recovery from a corrupt config carries the
@@ -1022,48 +1060,57 @@ describe('PATCH /api/config', () => {
       expect(refused.body.code).toBe('operator_only_config');
     });
 
-    it('lets a person turn login ON without a cookie, because there cannot be one yet', async () => {
-      // The lockout this must never cause. `OwnerSetupHost.tsx` writes
-      // `auth.enabled: true` while login is still OFF, so the caller has no
-      // cookie and cannot get one until the write lands. A bar that read the
-      // patched state instead of the current state would make login impossible
-      // to turn on, and a reviewer locked themselves out of an instance this way.
+    it('asks for the owner’s session before login turns on, once an owner exists (DOR-3330)', async () => {
+      // `OwnerSetupHost.tsx` signs in and steps up before it writes
+      // `auth.enabled: true`, so this asks nothing of the person there. A
+      // caller with no session is not proof of anyone.
       signedInUser = undefined;
       agentHeader = undefined;
 
-      const ok = await request(server)
+      await request(server)
         .patch('/api/config')
+        .set('x-dorkos-app', '1')
         .send({ auth: { enabled: true } })
-        .expect(200);
-      expect(ok.body.config.auth.enabled).toBe(true);
+        .expect(401);
     });
   });
 
-  it('DOES let a header-stripping caller write these while login is OFF (the open residual)', async () => {
-    // Not an oversight, and pinned so nobody has to take the docs' word for it.
-    // With login off there is no cookie for ANYONE, so the DOR-505 bar cannot
-    // apply without locking a person out of their own settings: the cockpit in
-    // the default posture presents nothing this caller does not also present.
-    //
-    // If this test ever goes red, that is good news, but it means the residual
-    // closed and three places now say something false about DorkOS. Update them
-    // in the same change: the bar-2 comment in `routes/config.ts`, the
-    // "Who may write which setting" section of `contributing/configuration.md`,
-    // and "Settings your agents cannot change" in `docs/guides/action-approvals.mdx`.
+  it('refuses a caller with no session these writes once an owner exists (DOR-3330)', async () => {
+    // This used to pass, as the accepted residual of DOR-505. Once an owner
+    // exists the person proves themselves with their session at this computer
+    // too, so a caller without one is refused, and nothing is written.
     signedInUser = undefined;
     agentHeader = undefined;
 
-    const ok = await request(server)
+    // A program hears the route's refusal; the app is asked to step up.
+    await request(server)
       .patch('/api/config')
       .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
-      .expect(200);
-    expect(ok.body.success).toBe(true);
+      .expect(403);
+    await request(server)
+      .patch('/api/config')
+      .set('x-dorkos-app', '1')
+      .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
+      .expect(401);
 
-    // Both writes landed. Measured at the store, not in the answer — the answer
-    // is the curated snapshot and carries neither value (DOR-1740).
     const { configManager } = await import('../../services/core/config-manager.js');
-    expect(configManager.getDot('tunnel.authtoken')).toBe('planted');
-    expect(configManager.getDot('mcp.apiKey')).toBe('planted');
+    expect(configManager.getDot('tunnel.authtoken')).not.toBe('planted');
+    expect(configManager.getDot('mcp.apiKey')).not.toBe('planted');
+  });
+
+  it('still lets the person write them before anyone owns this install', async () => {
+    owner.account = null;
+    signedInUser = undefined;
+    agentHeader = undefined;
+    try {
+      const ok = await request(server)
+        .patch('/api/config')
+        .send({ tunnel: { authtoken: 'planted' } })
+        .expect(200);
+      expect(ok.body.success).toBe(true);
+    } finally {
+      owner.account = { id: 'user_cockpit', name: 'Owner' };
+    }
   });
 
   it('still lets an agent change ordinary settings', async () => {
@@ -1344,6 +1391,19 @@ describe('GET /api/config', () => {
       owner.email = null;
     }
   });
+  it('reads company certificates back, with nothing loaded outside the desktop app (DOR-3361)', async () => {
+    const empty = await request(server).get('/api/config').expect(200);
+    expect(empty.body.network).toEqual({ extraCaCertsPath: null, companyCertificates: null });
+
+    const { configManager } = await import('../../services/core/config-manager.js');
+    configManager.setDot('network.extraCaCertsPath', '/Users/someone/company-ca.pem');
+    const set = await request(server).get('/api/config').expect(200);
+    expect(set.body.network).toEqual({
+      extraCaCertsPath: '/Users/someone/company-ca.pem',
+      companyCertificates: null,
+    });
+  });
+
   it('includes boundary field in response', async () => {
     const res = await request(server).get('/api/config');
 

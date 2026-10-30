@@ -25,8 +25,26 @@ import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import type { AuthorOrigin } from './room-schemas.js';
 import { UiStateSchema, type UiState } from './schemas.js';
 import { DirectNotesDataSchema, type DirectNotesData } from './direct-notes-context.js';
+import {
+  ContextWarningDataSchema,
+  TurnCutoffDataSchema,
+  type ContextWarningData,
+  type TurnCutoffData,
+} from './owed-notes-context.js';
+
+import {
+  WorktreeRefreshOutcomeSchema,
+  type WorktreeRefreshOutcome,
+} from './worktree-refresh-context.js';
 
 export type { DirectNote, DirectNotesData } from './direct-notes-context.js';
+export type {
+  MainMoved,
+  MainMovedCommit,
+  WorktreeRefreshOutcome,
+} from './worktree-refresh-context.js';
+export { MainMovedSchema, WorktreeRefreshOutcomeSchema } from './worktree-refresh-context.js';
+export type { ContextWarningData, TurnCutoffData } from './owed-notes-context.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
 export type ContextKind =
@@ -42,7 +60,8 @@ export type ContextKind =
   | 'direct_notes'
   | 'accounts_access'
   | 'doc_events'
-  | 'context_warning';
+  | 'context_warning'
+  | 'turn_cutoff';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -275,7 +294,7 @@ export interface RoomContextEntry {
   at: string;
   /** The entry body — UNTRUSTED text when the author is not the agent itself. */
   text: string;
-  /** True when this entry mentioned the agent receiving the context. */
+  /** True when this entry asked the agent receiving the context to answer. */
   mentionsMe: boolean;
   /**
    * True when this message landed while the agent was already mid-turn here, so
@@ -361,67 +380,6 @@ export interface RoomContextAcknowledgment extends RoomContextAuthor {
    */
   entryExcerpt: string;
 }
-
-/**
- * One commit that landed on a room's `main` since an agent's copy branched off
- * it (spec `agent-home-desk` §6.2).
- *
- * **Named from the room log, never from git.** `who` is the display name of the
- * member the room entry announcing the commit is about — the agent whose work
- * was merged, or the person who changed a file. A commit no entry announces (a
- * repair, something committed by hand) is `other`, and `who` is `null`: git's
- * author fields are whatever the committer typed, and repeating them to an agent
- * as a member's name would let anyone with a shell impersonate one.
- *
- * `subject` and `files` are member-chosen text, so they render inside the
- * untrusted fence.
- */
-export interface MainMovedCommit {
-  /** The full sha. */
-  sha: string;
-  /** The member the room entry names, or `null` when no entry announced it. */
-  who: string | null;
-  /** The commit's first line. Member-chosen text. */
-  subject: string;
-  /** An agent's merge, a person's file change, or anything else. */
-  kind: 'merge' | 'person' | 'other';
-  /** Up to eight files the commit changed on `main`. Member-chosen text. */
-  files: string[];
-  /** How many files it changed in all, so the rest can be counted. */
-  fileCount: number;
-}
-
-/** What moved on a room's `main` since an agent's copy branched (spec §6.2). */
-export interface MainMoved {
-  /** Newest first, `main`'s own first-parent history, at most eight. */
-  commits: MainMovedCommit[];
-  /** Commits beyond the ones listed, for "and N more". */
-  overflow: number;
-  /**
-   * Files changed on `main` since the branch point that this agent has ALSO
-   * changed, committed or not — the ones a `git merge main` may conflict on.
-   */
-  overlap: string[];
-}
-
-/**
- * What the turn-start refresh did to an agent's copy of a room's files (spec
- * `agent-home-desk` §6.1): brought it up to date, found it already there, or
- * left it alone and said why.
- *
- * `busy` and `unsafe-config` carry no `moved`: for `busy` another turn of this
- * agent in this room was running, so not a single git command was made; for
- * `unsafe-config` the room's shared git settings name a program git would run,
- * so the server makes no git call in the room at all until a person removes it.
- */
-export type WorktreeRefreshOutcome =
-  | { kind: 'current' }
-  | { kind: 'refreshed'; from: string; to: string; paths: string[] }
-  | {
-      kind: 'held';
-      reason: 'busy' | 'changes' | 'ahead' | 'off-branch' | 'unreadable' | 'unsafe-config';
-      moved: MainMoved | null;
-    };
 
 /**
  * The room's own files, as they stand for the agent taking this turn
@@ -619,6 +577,13 @@ export interface RoomContextData {
   pending: RoomContextEntry[];
   /** True when `pending` was capped and older entries were dropped. */
   pendingTruncated: boolean;
+  /**
+   * The ids of the unread messages that only copied this agent in: they named
+   * it after their leading @mentions, so none started a turn (DOR-3401). Read
+   * over the same window `pending` and `gathered` read, so the renderer also
+   * marks those lines. Omitted when there are none.
+   */
+  ccdIn?: string[];
   /**
    * The OTHER messages this turn is answering: everything the collector gathered
    * behind the triggering one, oldest first (room-participation spec §10.4, RP8).
@@ -930,25 +895,6 @@ export interface ApprovalVerdictData {
 }
 
 /**
- * The session's conversation has filled past the early-warning line (DOR-2732):
- * a one-time note on the turn after the crossing, so an agent near its limit
- * can save what matters and ask for a summary before the runtime compacts it on
- * its own terms.
- *
- * SERVER-derived from the session's own context reading — nothing a caller can
- * supply — and rendered by each runtime, so every runtime gets the same note.
- */
-export interface ContextWarningData {
-  /** Share of the context window in use at the crossing, 0–100. */
-  percent: number;
-  /**
-   * Whether this session's runtime can summarize on request, so the note only
-   * points at the summary tool where calling it could work.
-   */
-  canCompact: boolean;
-}
-
-/**
  * Discriminated union of the canonical server-assembled entries. Each member
  * pairs a {@link ContextKind} with its structured `data` payload and a
  * {@link ContextScope}.
@@ -966,7 +912,8 @@ export type AdditionalContextEntry =
   | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData }
   | { kind: 'direct_notes'; scope: 'per-turn'; data: DirectNotesData }
   | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData }
-  | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData };
+  | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData }
+  | { kind: 'turn_cutoff'; scope: 'per-turn'; data: TurnCutoffData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -1004,6 +951,7 @@ export const CONTEXT_TAG = {
   accounts_access: 'accounts_access',
   doc_events: 'doc_events',
   context_warning: 'context_warning',
+  turn_cutoff: 'turn_cutoff',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1167,38 +1115,6 @@ export const RoomContextAcknowledgmentSchema = RoomContextAuthorSchema.extend({
   entryExcerpt: z.string(),
 });
 
-/** Zod schema for {@link MainMoved}. */
-export const MainMovedSchema = z.object({
-  commits: z.array(
-    z.object({
-      sha: z.string(),
-      who: z.string().nullable(),
-      subject: z.string(),
-      kind: z.enum(['merge', 'person', 'other']),
-      files: z.array(z.string()),
-      fileCount: z.number().int().nonnegative(),
-    })
-  ),
-  overflow: z.number().int().nonnegative(),
-  overlap: z.array(z.string()),
-});
-
-/** Zod schema for {@link WorktreeRefreshOutcome}. */
-export const WorktreeRefreshOutcomeSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('current') }),
-  z.object({
-    kind: z.literal('refreshed'),
-    from: z.string(),
-    to: z.string(),
-    paths: z.array(z.string()),
-  }),
-  z.object({
-    kind: z.literal('held'),
-    reason: z.enum(['busy', 'changes', 'ahead', 'off-branch', 'unreadable', 'unsafe-config']),
-    moved: MainMovedSchema.nullable(),
-  }),
-]);
-
 /** Zod schema for {@link RoomContextFiles}. */
 export const RoomContextFilesSchema = z.object({
   worktreePath: z.string(),
@@ -1231,6 +1147,7 @@ export const RoomContextDataSchema = z.object({
   working: z.array(RoomContextAuthorSchema.extend({ since: z.string() })),
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
+  ccdIn: z.array(z.string()).optional(),
   gathered: z.array(RoomContextEntrySchema).optional(),
   channelTail: z.array(RoomContextEntrySchema).optional(),
   channelTailOmitted: z.number().int().nonnegative().optional(),
@@ -1274,12 +1191,6 @@ export const AccountsAccessDataSchema = z.object({
   accountCount: z.number().int().nonnegative().nullable(),
   changed: z.boolean(),
   serviceCatalog: z.boolean().optional(),
-});
-
-/** Zod schema for {@link ContextWarningData}. */
-export const ContextWarningDataSchema = z.object({
-  percent: z.number().int().min(0).max(100),
-  canCompact: z.boolean(),
 });
 
 /**
@@ -1375,6 +1286,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('context_warning'),
     scope: z.literal('per-turn'),
     data: ContextWarningDataSchema,
+  }),
+  z.object({
+    kind: z.literal('turn_cutoff'),
+    scope: z.literal('per-turn'),
+    data: TurnCutoffDataSchema,
   }),
 ]);
 

@@ -22,6 +22,7 @@ import {
   isSilentReadOnly,
   resolveStopMode,
 } from '@dorkos/shared/permission-semantics';
+import { chatModeWord } from '@dorkos/shared/permissions';
 import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import {
@@ -143,7 +144,20 @@ export interface CallingChat {
    * ask still starts only chats that cannot ask.
    */
   neverAsks?: boolean;
+  /**
+   * Whether the chat is SET to Full autonomy (DOR-3394), whatever a mark or a stranger's hold
+   * launched its turn at. `permissionMode` is then the Full mode itself, and a start from it is
+   * not capped by the mark: it carries the mark on, never a lower level.
+   */
+  chosenFull?: boolean;
 }
+
+/**
+ * What held a ceiling below the calling chat's own level: the chat or its agent
+ * read messages from others (a mark), a person set the agent lower, or the
+ * server could not find the chat's level and fell back to its runtime default.
+ */
+type CeilingHold = 'marked' | 'person-set' | 'unknown-level';
 
 /** The highest level a call may start a chat at. */
 interface Ceiling {
@@ -172,6 +186,12 @@ interface Ceiling {
    * its stored row or a fallback. Only a live Full is passed on unnamed.
    */
   live: boolean;
+  /**
+   * Why the level is below the chat's own, when it is (DOR-3386): a refusal
+   * names the real reason instead of saying the chat "runs at" a level it was
+   * only held to. Absent when the level is the chat's own.
+   */
+  heldBy?: CeilingHold;
 }
 
 /**
@@ -272,6 +292,9 @@ async function ceilingOf(
     inChat: true,
     neverAsks: chat.neverAsks === true || isPersonOnlyMode(id ?? undefined),
     live: false,
+    // Only a chat with no live and no saved level is "could not find": a level
+    // its runtime does not declare is known, and keeps the plain refusal.
+    ...(id ? {} : { heldBy: 'unknown-level' as const }),
   };
   return fallback
     ? { ...base, level: fallback, label: fallback.label, inheritId: fallback.id }
@@ -304,15 +327,41 @@ function cannotAsk(mode: PermissionModeDescriptor): boolean {
 
 /** The refusal for a mode above the ceiling. */
 function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
-  return {
-    ok: false,
-    error: ceiling.inChat
-      ? `This chat runs at ${ceiling.label}, so it cannot start a chat at ${mode.label}. ` +
-        `Ask for ${ceiling.label} or lower.`
-      : `Without a chat of your own, you can start a chat at ${ceiling.label} or lower, ` +
+  if (!ceiling.inChat) {
+    return {
+      ok: false,
+      error:
+        `Without a chat of your own, you can start a chat at ${ceiling.label} or lower, ` +
         `not ${mode.label}.`,
-    code: 'ABOVE_YOUR_LEVEL',
-  };
+      code: 'ABOVE_YOUR_LEVEL',
+    };
+  }
+  // A person reads a held refusal too, so it names levels the way the app does
+  // ("Ask first", "Full autonomy"), falling back to the runtime's label.
+  const held = appName(ceiling.inheritId, ceiling.label);
+  const asked = appName(mode.id, mode.label);
+  const lower = `Ask for ${held} or lower.`;
+  const error =
+    ceiling.heldBy === 'marked'
+      ? `This chat, or another chat of this agent, read messages from others, so it can ` +
+        `start chats at ${held} at most, not ${asked}. ${lower} ` +
+        `A person can start one at ${asked}.`
+      : ceiling.heldBy === 'person-set'
+        ? `This agent's level is ${held} (set by a person, or the default), so it cannot ` +
+          `start a chat at ${asked}. ${lower}`
+        : ceiling.heldBy === 'unknown-level'
+          ? `DorkOS could not find this chat's level, so it counts as ${held} and cannot ` +
+            `start a chat at ${asked}. ${lower} A person can set this chat's level again.`
+          : `This chat runs at ${ceiling.label}, so it cannot start a chat at ` +
+            `${mode.label}. Ask for ${ceiling.label} or lower.`;
+  return { ok: false, error, code: 'ABOVE_YOUR_LEVEL' };
+}
+
+/** A mode as the app names it, or the runtime's label for a mode the app has no word for. */
+function appName(id: string | null, label: string): string {
+  if (id === null) return label;
+  const word = chatModeWord(id);
+  return word === id ? label : word;
 }
 
 /** The refusal for a chat that never asks naming a mode that can ask. */
@@ -405,6 +454,7 @@ function cappedForMarkedStart(ceiling: Ceiling, runtimeType: string): Ceiling {
     label: fallback?.label ?? FLOOR_LABEL,
     inheritId: fallback?.id ?? null,
     exact: false,
+    heldBy: 'marked',
   };
 }
 
@@ -430,6 +480,7 @@ function cappedAtPersonSet(ceiling: Ceiling, stop: PermissionStop, runtimeType: 
     label: found?.label ?? FLOOR_LABEL,
     inheritId: found?.id ?? null,
     exact: false,
+    heldBy: 'person-set',
   };
 }
 

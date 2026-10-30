@@ -1,24 +1,26 @@
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import {
   chmodSync,
-  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
-  readSync,
   readdirSync,
-  realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'fs';
 import os from 'os';
+import { readAsarDirectory } from './asar-directory';
+import { samePathTree } from './same-path-tree';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { LOGIN_SHELL_PATH_MARKER } from '../src/shared/login-shell-path';
 import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
+import { assertTunnelBinaryUnpacked, TUNNEL_BINARY } from './smoke-tunnel-binary';
+import {
+  assertCompanyCertificateLoaded,
+  seedCompanyCertificate,
+} from './smoke-company-certificates';
 
 /**
  * Packaged-runtime smoke test for the macOS desktop app.
@@ -285,38 +287,6 @@ function assertBundleIdMatchesConfig(appPath: string): string {
   return packaged;
 }
 
-/** One entry in an asar directory listing: a file, or a directory of more entries. */
-interface AsarEntry {
-  files?: Record<string, AsarEntry>;
-}
-
-/**
- * Read an `app.asar`'s directory listing without unpacking it.
- *
- * The archive starts with two pickles: an 8-byte one holding the size of the
- * second, and the second holding the directory as a JSON string. Both are
- * length-prefixed, so the four `UInt32LE`s below locate the JSON exactly. This
- * is hand-rolled for the same reason `assertBundleIdMatchesConfig` hand-rolls
- * its regex: `@electron/asar` is only a transitive dependency here, and adding
- * a direct one to read a header in a smoke script is not a trade worth making.
- *
- * @param asarPath - Absolute path to the archive.
- * @returns The archive's root directory entry.
- */
-function readAsarDirectory(asarPath: string): AsarEntry {
-  const fd = openSync(asarPath, 'r');
-  try {
-    const sizes = Buffer.alloc(16);
-    readSync(fd, sizes, 0, sizes.length, 0);
-    const headerStringLength = sizes.readUInt32LE(12);
-    const header = Buffer.alloc(headerStringLength);
-    readSync(fd, header, 0, headerStringLength, sizes.length);
-    return JSON.parse(header.toString('utf-8')) as AsarEntry;
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /**
  * Assert the tray images are actually inside `app.asar`.
  *
@@ -350,67 +320,6 @@ function assertTrayImagesPackaged(appPath: string): void {
         `authored in build/, which is NOT packaged; electron.vite.config.ts emits them into ` +
         `dist/main so electron-builder.yml's files allowlist ships them. Without them the app ` +
         `runs with no tray — and an app with no tray and no window is unreachable.`
-    );
-  }
-}
-
-/**
- * The tunnel binary, as the packaged app has to carry it.
- *
- * macOS/arm64 because this smoke only ever runs against a `.app` bundle (see
- * `main`). The Windows counterpart (`…-win32-x64-msvc/ngrok.win32-x64-msvc.node`)
- * is NOT checked anywhere: `desktop-release.yml`'s "Verify the Windows installer" step only
- * silent-installs the `.exe` and confirms `DorkOS.exe` landed, and never looks
- * in `app.asar.unpacked`.
- */
-const TUNNEL_BINARY = path.join(
-  'node_modules',
-  '@ngrok',
-  'ngrok-darwin-arm64',
-  'ngrok.darwin-arm64.node'
-);
-
-/** Smallest the tunnel binary could plausibly be — it is ~9 MB in practice. */
-const TUNNEL_BINARY_MIN_BYTES = 1_000_000;
-
-/**
- * Assert the ngrok binary Remote Access loads is really on disk, outside the
- * asar.
- *
- * This is the one family of the four whose absence no runtime assertion in this
- * file can see: Claude and Codex show up as unregistered runtimes, esbuild as a
- * failed marketplace compilation, but a missing tunnel binary is invisible
- * until someone turns Remote Access on — which needs an ngrok account and a
- * network, so it cannot be part of a hermetic smoke. What CAN be checked
- * without either is that the file the loader will `dlopen` exists and is a
- * binary rather than a stub.
- *
- * Checked against the packaged app rather than the config, deliberately.
- * `scripts/build-server.ts` already proves `package.json` and
- * `electron-builder.yml` agree — 0.66.0's failure was one level below that:
- * the configuration was answerable and the copier still put nothing in the
- * app, and only the artifact can tell you so (#1458).
- *
- * @param appPath - Absolute path to the `.app` bundle.
- * @throws If the binary is missing or implausibly small.
- */
-function assertTunnelBinaryUnpacked(appPath: string): void {
-  const binary = path.join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', TUNNEL_BINARY);
-  if (!existsSync(binary)) {
-    throw new Error(
-      `Packaged app has no tunnel binary at app.asar.unpacked/${TUNNEL_BINARY}. Remote Access ` +
-        `would fail the moment it is switched on, with "Failed to load native binding" and a ` +
-        `bare 500 — the app boots and looks healthy either way (#1458). Check that ` +
-        `@ngrok/ngrok-darwin-arm64 is in package.json's optionalDependencies AND has an ` +
-        `asarUnpack glob in electron-builder.yml.`
-    );
-  }
-  const { size } = statSync(binary);
-  if (size < TUNNEL_BINARY_MIN_BYTES) {
-    throw new Error(
-      `The packaged tunnel binary is ${size} bytes (expected at least ` +
-        `${TUNNEL_BINARY_MIN_BYTES}). That is not a Mach-O library — a placeholder or a ` +
-        `truncated copy would pass an existence check and still fail to dlopen.`
     );
   }
 }
@@ -988,19 +897,6 @@ function cliCheck(checks: DependencyCheck[] | undefined): DependencyCheck | unde
   return checks?.find((check) => /\bCLI\b/i.test(check.name));
 }
 
-/** Compare two paths as the filesystem sees them (`/var` is a symlink to `/private/var`). */
-function samePathTree(child: string, parent: string): boolean {
-  const real = (value: string): string => {
-    try {
-      return realpathSync(value);
-    } catch {
-      return path.resolve(value);
-    }
-  };
-  const [childReal, parentReal] = [real(child), real(parent)];
-  return childReal === parentReal || childReal.startsWith(parentReal + path.sep);
-}
-
 /**
  * Assert the packaged app can actually see the machine it is running on.
  *
@@ -1158,14 +1054,22 @@ async function main(): Promise<void> {
     `[2/7] Cleared extended attributes (Gatekeeper insurance)` +
       `${resigned ? '; re-signed ad-hoc so an unsigned build can load its own framework' : ''}.`
   );
+  // The app refuses to start with a debugging switch (src/main/launch-switches/).
+  const { assertLaunchSwitchesRefused } = await import('./smoke-launch-switches');
+  console.log(`      Debugging switches: ${await assertLaunchSwitchesRefused(appPath)}`);
 
   // DOR-2686: the packaged helper binary runs the packaged extension child with
   // Node's permission model on. Imported here, not at the top, so the unit
   // tests of this file never load server source.
   const { assertExtensionIsolation } = await import('./smoke-isolation');
   console.log(`      Isolated extensions: ${await assertExtensionIsolation(appPath)}`);
+  // DOR-3053: the fuses electron-builder.yml sets, read back and tried.
+  const { assertFuses } = await import('./smoke-fuses');
+  console.log(`      Fuses: ${await assertFuses(appPath)}`);
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
+  // A company certificate chosen in Settings, so the fused app has one to load.
+  const certificate = seedCompanyCertificate(home);
   const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
   const loginShell = createFakeLoginShell(fixtures);
   const launchedAt = Date.now();
@@ -1194,6 +1098,8 @@ async function main(): Promise<void> {
 
     console.log('[5/7] What the app can see from a launchd-style launch:');
     await assertAppSeesItsMachine(endpoint, home, app.output);
+    const origin = `http://${endpoint.host}:${endpoint.port}`;
+    console.log(`      ✓ ${await assertCompanyCertificateLoaded(origin, certificate)}`);
 
     await assertRendererPainted(home, app, launchedAt);
     console.log('[6/7] The window rendered — the renderer reported a first paint.');

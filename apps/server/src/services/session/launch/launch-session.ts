@@ -26,6 +26,7 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { configManager } from '../../core/config-manager.js';
 import {
   chatAgentOf,
   homeOf,
@@ -34,8 +35,9 @@ import {
   resolveAgentHome,
 } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
+import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
-import { getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
+import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
@@ -87,7 +89,7 @@ export interface DispatchSessionMessageOpts {
    */
   onSettled?: (outcome: 'ok' | 'failed', refusal?: string) => void;
   /**
-   * Count this launch against {@link AGENT_LAUNCH_MAX_LIVE}: a session nobody
+   * Count this launch against {@link agentLaunchMaxLive}: a session nobody
    * typed into (an agent's `session_start`, an automatic carry-over) holds one
    * slot from dispatch until its turn settles, and a launch that finds every
    * slot taken is refused with `LAUNCH_CAP_FULL` before anything is written.
@@ -128,22 +130,49 @@ export interface DispatchSessionMessageOpts {
 /**
  * How many sessions nobody typed into (see
  * {@link DispatchSessionMessageOpts.countsTowardLaunchCap}) may have a live turn
- * at once. The 2026-09-25 drain reached a machine load near 500 (spec
- * `claude-account-fleet` D5 "Load cap", D9 "Automatic handoff").
+ * at once, when `runtimes.maxAgentChats` cannot be read. The 2026-09-25 drain
+ * reached a machine load near 500 (spec `claude-account-fleet` D5 "Load cap",
+ * D9 "Automatic handoff").
  */
 export const AGENT_LAUNCH_MAX_LIVE = 8;
 
+/** The setting a person raises the cap with, as the refusals name it. */
+export const AGENT_LAUNCH_CAP_SETTING = 'runtimes.maxAgentChats';
+
+/**
+ * The cap in force right now: `runtimes.maxAgentChats` (DOR-3413), read at each
+ * launch so a change applies to the next one without a restart.
+ */
+export function agentLaunchMaxLive(): number {
+  try {
+    const configured = configManager.get('runtimes')?.maxAgentChats;
+    if (typeof configured === 'number' && Number.isInteger(configured) && configured > 0) {
+      return configured;
+    }
+  } catch (err) {
+    logger.debug('[launch-session] config unavailable, using the default chat cap', {
+      err: String(err),
+    });
+  }
+  return AGENT_LAUNCH_MAX_LIVE;
+}
+
 /** The sentence a launch refused by the cap answers with. */
-export const AGENT_LAUNCH_CAP_MESSAGE = `Too many spin-off chats are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
+export function agentLaunchCapMessage(): string {
+  return (
+    `Too many spin-off chats are running (${agentLaunchMaxLive()}). Try again when one finishes. ` +
+    `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
+  );
+}
 
 /** One entry per capped launch whose turn has not settled yet. */
 const liveCappedLaunches = new Set<symbol>();
 
 /**
- * Whether every {@link AGENT_LAUNCH_MAX_LIVE} slot is taken right now.
+ * Whether every slot under {@link agentLaunchMaxLive} is taken right now.
  */
 export function isAgentLaunchCapFull(): boolean {
-  return liveCappedLaunches.size >= AGENT_LAUNCH_MAX_LIVE;
+  return liveCappedLaunches.size >= agentLaunchMaxLive();
 }
 
 /**
@@ -156,7 +185,7 @@ export function isAgentLaunchCapFull(): boolean {
  *   room's files, from before room turns moved home (`409`).
  * - `DESK_NOT_OWN` — the turn would stand inside a room's files, or a room's
  *   agent would stand in a folder that is not its own (`409`).
- * - `LAUNCH_CAP_FULL` — a capped launch found {@link AGENT_LAUNCH_MAX_LIVE}
+ * - `LAUNCH_CAP_FULL` — a capped launch found {@link agentLaunchMaxLive}
  *   turns already live.
  * - `ACCOUNT_NOT_ALLOWED` — the account this new session would run on may not
  *   work in its folder's project, whoever picked it (`409
@@ -250,10 +279,18 @@ export async function resolveRuntimeTypeForNewSession(opts: {
       // registers ONLY 'test-mode' while every manifest on disk says
       // 'claude-code' (the AgentRuntime enum has no test-mode member), so
       // without this guard no agent-seeded session can ever start there.
-      if (manifest?.runtime) {
-        if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
+      // A runtime the agent itself changed waits for a person (DOR-3068 M3).
+      const runtime = runtimeUnlessHeld(manifest, manifestDir);
+      if (manifest?.runtime && !runtime) {
+        logger.warn('[POST /messages] manifest runtime is held; using default', {
+          manifestDir,
+          defaultRuntime: runtimeRegistry.getDefaultType(),
+        });
+      }
+      if (runtime) {
+        if (runtimeRegistry.has(runtime)) return runtime;
         logger.info('[POST /messages] manifest runtime not registered; using default', {
-          manifestRuntime: manifest.runtime,
+          manifestRuntime: runtime,
           defaultRuntime: runtimeRegistry.getDefaultType(),
           manifestDir,
         });
@@ -287,7 +324,7 @@ export async function dispatchSessionMessage(
   // Taken before any await, so two launches racing for the last slot cannot
   // both get it.
   if (isAgentLaunchCapFull()) {
-    return { refused: 'LAUNCH_CAP_FULL', message: AGENT_LAUNCH_CAP_MESSAGE };
+    return { refused: 'LAUNCH_CAP_FULL', message: agentLaunchCapMessage() };
   }
   const slot = Symbol('capped-launch');
   liveCappedLaunches.add(slot);
@@ -468,6 +505,8 @@ async function launchSessionMessage(
           ...(opts.workspaceCaller?.requestedBy && {
             requestedBy: opts.workspaceCaller.requestedBy,
           }),
+          // A chat set to Full autonomy has no limits (DOR-3343): see `fullChatOf`.
+          fullChat: fullChatOf(sessionId),
         })
       );
       effectiveCwd = workspace.path;

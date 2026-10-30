@@ -370,7 +370,7 @@ export class RoomTurnControl {
     if (room === null || room.archived) return;
     const entry = this.store.getEntryById(input.roomId, input.aboutEntryId);
     if (entry === null) return;
-    return this.triggers.askAside({
+    await this.triggers.askAside({
       room,
       entry,
       authorId: input.authorId,

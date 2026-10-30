@@ -33,14 +33,14 @@ describe('listWaitingKinds', () => {
     expect(listWaitingKinds(2, 1, 3)).toBe('2 questions, 1 request, and 3 schedules');
   });
 
-  it('names an extension waiting to be turned on as an extension, last (DOR-2517)', () => {
-    expect(listWaitingKinds(0, 0, 0, 1)).toBe('1 extension');
-    expect(listWaitingKinds(1, 0, 0, 2)).toBe('1 question and 2 extensions');
+  it('names a mini app waiting to be turned on as a mini app, last (DOR-2517)', () => {
+    expect(listWaitingKinds(0, 0, 0, 1)).toBe('1 mini app');
+    expect(listWaitingKinds(1, 0, 0, 2)).toBe('1 question and 2 mini apps');
   });
 
   it('names what an extension asks as a decision, before extensions waiting (flow-multiproject §7.5)', () => {
     expect(listWaitingKinds(0, 0, 0, 0, 1)).toBe('1 decision');
-    expect(listWaitingKinds(1, 0, 0, 1, 2)).toBe('1 question, 2 decisions, and 1 extension');
+    expect(listWaitingKinds(1, 0, 0, 1, 2)).toBe('1 question, 2 decisions, and 1 mini app');
   });
 
   it('leaves out a kind with nothing waiting rather than reporting a zero', () => {

@@ -157,6 +157,26 @@ export const PendingExtensionApprovalSchema = z
     agentTools: z.array(ExtensionAgentToolSummarySchema).default([]),
     /** The skills it would give agents once it runs, in manifest order (DOR-2685). Defaults to empty. */
     agentSkills: z.array(ExtensionAgentSkillSummarySchema).default([]),
+    /**
+     * The digest of its files as the row shows them (DOR-3068). Sent back as
+     * `expectedDigest` with "Turn it on", so files that change after the row
+     * was drawn are never approved on a yes given to the old ones. `null`
+     * when DorkOS could not read the folder, or for a server that never sends it.
+     */
+    digest: z.string().nullable().default(null),
+    /**
+     * The files that changed since the person last approved this copy, by
+     * path inside its folder, never their contents (DOR-3068), at most 20.
+     * `null` on a first ask; empty when DorkOS no longer holds the approved
+     * files to compare against.
+     */
+    changedFiles: z.array(z.string()).nullable().default(null),
+    /**
+     * The version this copy was approved at, when an update changed it since
+     * (DOR-3068): the row says "Update from 1.2.0 to 1.3.0". `null` when the
+     * version is unchanged, unknown, or on a first ask.
+     */
+    updatedFrom: z.string().nullable().default(null),
   })
   .openapi('PendingExtensionApproval');
 
@@ -199,6 +219,13 @@ export type DismissExtensionApprovalRequest = z.infer<typeof DismissExtensionApp
 
 /** The code a "Not now" answer to an out-of-date row is refused with. */
 export const STALE_APPROVAL_CODE = 'stale_approval';
+
+/**
+ * The code a yes to a copy DorkOS cannot check is refused with (DOR-3068): its
+ * folder links to files outside itself, or cannot be read whole, so there are
+ * no files a yes could name. Asking again cannot help until the folder changes.
+ */
+export const UNPINNABLE_APPROVAL_CODE = 'extension_unpinnable';
 
 /**
  * Which copy of an extension a person was asked about: its id, the resolved
@@ -251,6 +278,13 @@ export const ApproveExtensionRequestSchema = z
         agents: z.boolean(),
       })
       .optional(),
+    /**
+     * The digest of the files the card showed (the row's `digest`,
+     * DOR-3068). Compared when sent: files that changed since are refused
+     * with `409 stale_approval`, so a yes never lands on code the person
+     * was not shown.
+     */
+    expectedDigest: z.string().min(1).optional(),
   })
   .openapi('ApproveExtensionRequest');
 

@@ -19,7 +19,7 @@ import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
-import { isPersonOnlyMode } from '../turn-permission.js';
+import { chosenFullAutonomy, heldToACeiling, isPersonOnlyMode } from '../turn-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -229,7 +229,7 @@ export function handRegisteredInSessionToolSet(
 
   const raw: SdkMcpTool[] = [
     ...getCoreTools(deps),
-    ...getAccountTools(deps),
+    ...getAccountTools(deps, resolveTaskProvenance),
     // The caller is the session's identity anchor, so the Activity entry names
     // the agent that started the session, even from its room worktree. The
     // calling chat is what the new one says started it (spec
@@ -243,12 +243,18 @@ export function handRegisteredInSessionToolSet(
     ...getSessionTools(deps, () => {
       if (!identityPath) return undefined;
       const callingSession = session?.sdkSessionId || sessionId;
-      const running = runningPermissionMode(session);
+      // A chat SET to Full is read at Full (DOR-3394): a mark or a stranger's hold that
+      // launched this turn lower does not lower what it may start.
+      const chosenFull = session !== undefined && chosenFullAutonomy(session);
+      const running = chosenFull
+        ? (session?.turnLevelMode ?? session?.permissionMode)
+        : runningPermissionMode(session);
       return {
         agentPath: identityPath,
         runtime: 'claude-code',
         ...(callingSession ? { sessionId: callingSession } : {}),
         ...(running ? { permissionMode: running } : {}),
+        ...(chosenFull ? { chosenFull: true } : {}),
         // Set to "Never ask" even where a stricter ceiling holds the turn to Plan.
         ...(isPersonOnlyMode(session?.permissionMode) ? { neverAsks: true } : {}),
       };
@@ -266,7 +272,15 @@ export function handRegisteredInSessionToolSet(
     ...getAgentTools(deps),
     // The same provenance the task tools read: present in a session, so a
     // Trusted install approves an extension our agent creates (ADR 261006-225605).
-    ...getExtensionTools(deps, resolveTaskProvenance),
+    // A turn under a ceiling records no author for it (DOR-3068).
+    ...getExtensionTools(
+      deps,
+      resolveTaskProvenance &&
+        (() => ({
+          ...resolveTaskProvenance(),
+          ...(session && heldToACeiling(session) ? { ceilinged: true } : {}),
+        }))
+    ),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

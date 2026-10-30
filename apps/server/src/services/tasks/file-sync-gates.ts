@@ -75,6 +75,13 @@ export interface FileSyncSource {
    * next sync sees a file STOP being a package's (DOR-2272).
    */
   packageOwned?: 'record' | 'legacy' | null;
+  /**
+   * True when this write is one project's copy of a global `scope: project`
+   * schedule (DOR-3376). The row is found by its file and its agent, starts
+   * switched off, and keeps its switch and timing on the row, because one
+   * shared file cannot hold a different answer for every project.
+   */
+  projectOnly?: boolean;
 }
 
 /** What the gates decided about one incoming file. */
@@ -298,7 +305,9 @@ export class FileSyncGates {
     options?: FileSyncSource
   ): boolean {
     // `packageOwned` is only ever answered by discovery; absent is not `null`.
-    if (options?.packageOwned !== null) return false;
+    // A project's copy keeps its own timing on the row whoever owns the file:
+    // the shared file is never its to write (DOR-3376).
+    if (options?.packageOwned !== null || options.projectOnly) return false;
     return (
       existing !== undefined &&
       (existing.cronOverride !== null || existing.timezoneOverride !== null)
@@ -359,6 +368,11 @@ export class FileSyncGates {
     arm: FileArmVerdict | null,
     options?: FileSyncSource
   ): boolean {
+    // One project's copy of a shared file: its switch can only live on the row,
+    // under the same approval rule as a package's (DOR-3376).
+    if (existing !== undefined && options?.projectOnly) {
+      return existing.enabled === false || arm?.status === 'active';
+    }
     if (existing === undefined || options?.packageOwned === undefined) return false;
     if (options.packageOwned !== null) return arm?.status === 'active';
     if (existing.packageOwned === null) return false;

@@ -14,7 +14,7 @@
  * such room". The service enforces it on every method; these handlers add no
  * rule of their own.
  *
- * **The five writing routes refuse an archived room; the three reads do not.**
+ * **The five writing routes refuse an archived room; the four reads do not.**
  * That asymmetry is the whole point of archiving: the record survives, the
  * activity stops.
  *
@@ -24,6 +24,10 @@
  *
  * @module routes/room-canvas
  */
+import { constants as fsConstants } from 'node:fs';
+import fs, { type FileHandle } from 'node:fs/promises';
+import path from 'node:path';
+import { Readable } from 'node:stream';
 import { Hono, type Context } from 'hono';
 import {
   CanvasEditingRequestSchema,
@@ -44,8 +48,12 @@ import {
   writeCanvasDiffReview,
   type CanvasDiffReviewDeps,
 } from '../services/rooms/canvas/canvas-diff-review.js';
+import { findRoomCanvasMedia } from '../services/rooms/canvas/room-canvas-media.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { resolveDorkHome } from '../lib/dork-home.js';
+import { parseByteRange, servesInlineHere } from '../lib/file-route-guards.js';
+import { logger } from '../lib/logger.js';
 import { errorBody } from '../lib/route-utils.js';
 import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
@@ -143,6 +151,76 @@ router.get('/', (c) =>
   roomRoute(c, 'GET /:id/canvas', (caller) => {
     requireCanvasAccess(c, caller);
     return c.json({ documents: getRoomService().canvas.list(roomOf(c)) });
+  })
+);
+
+/**
+ * GET /media/:file — a picture, PDF or other media file an agent put on this
+ * canvas from its own folder, which the server copied into the room
+ * (`room-canvas-media.ts`).
+ *
+ * **Membership is the gate**, the same one every canvas read uses: a member may
+ * see what a member put on the table. The name is the SHA-256 of the bytes and
+ * is checked against that shape before the disk is touched, so it is never a
+ * path. Served the way `GET /api/files/raw` serves media: `nosniff`, a
+ * script-neutering sandbox on SVG, inline only where this computer serves that
+ * type inline, and a single byte range so sound and video can seek.
+ */
+router.get('/media/:file', (c) =>
+  roomRoute(c, 'GET /:id/canvas/media/:file', async (caller) => {
+    requireCanvasAccess(c, caller);
+    const media = await findRoomCanvasMedia(
+      path.join(resolveDorkHome(), 'rooms'),
+      roomOf(c),
+      c.req.param('file')
+    );
+    if (!media) {
+      return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
+    }
+    // Opened once, never through a symlink, and every later question asked of
+    // that descriptor, so the file served is the file that was checked.
+    let file: FileHandle;
+    try {
+      file = await fs.open(media.filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    } catch {
+      return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
+    }
+    const { size } = await file.stat();
+    const range = parseByteRange(c.req.header('range'), size);
+    if (range.kind === 'unsatisfiable') {
+      await file.close();
+      c.header('Content-Range', `bytes */${size}`);
+      return c.json(errorBody('Requested range not satisfiable', 'RANGE_NOT_SATISFIABLE'), 416);
+    }
+    const headers: Record<string, string> = {
+      'Content-Type': media.contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': servesInlineHere(media.contentType) ? 'inline' : 'attachment',
+      // Named by its content, so a name never changes what it holds.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'Accept-Ranges': 'bytes',
+    };
+    if (media.contentType === 'image/svg+xml') {
+      headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+    }
+    const status = range.kind === 'range' ? 206 : 200;
+    if (range.kind === 'range') {
+      headers['Content-Range'] = `bytes ${range.start}-${range.end}/${size}`;
+      headers['Content-Length'] = String(range.end - range.start + 1);
+    } else {
+      headers['Content-Length'] = String(size);
+    }
+    if (c.req.method === 'HEAD') {
+      await file.close();
+      return c.body(null, status, headers);
+    }
+    const stream = file.createReadStream(
+      range.kind === 'range' ? { start: range.start, end: range.end } : {}
+    );
+    stream.on('error', (err) =>
+      logger.error('[rooms] canvas media stream failed', { err, file: media.filePath })
+    );
+    return c.body(Readable.toWeb(stream) as ReadableStream<Uint8Array>, status, headers);
   })
 );
 

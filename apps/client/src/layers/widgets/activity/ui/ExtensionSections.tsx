@@ -13,6 +13,8 @@
  */
 import { useId, useMemo } from 'react';
 import { useSlotContributions, isExtensionContributionId } from '@/layers/shared/model';
+import { useWithheldExtensions, WithheldExtensionsNotice } from '@/layers/entities/extension';
+import { requestInbox } from '@/layers/entities/notifications';
 
 /** Extension-contributed dashboard sections, or nothing at all when there are none. */
 export function ExtensionSections() {
@@ -27,8 +29,11 @@ export function ExtensionSections() {
     [contributions]
   );
 
+  // A section held back because its code changed (DOR-3068) says so, not blank.
+  const withheld = useWithheldExtensions('dashboard.sections');
+
   // Zero DOM when no extension contributes — no empty heading, no placeholder.
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && withheld.length === 0) return null;
 
   return (
     <section className="space-y-3" aria-labelledby={headingId}>
@@ -38,6 +43,7 @@ export function ExtensionSections() {
       >
         From your extensions
       </h2>
+      <WithheldExtensionsNotice slot="dashboard.sections" onReview={() => requestInbox()} />
       <div className="space-y-4">
         {visible.map((section) => (
           <section.component key={section.id} />

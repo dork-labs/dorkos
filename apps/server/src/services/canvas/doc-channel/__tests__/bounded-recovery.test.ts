@@ -85,6 +85,10 @@ function add(f: BatchFixture, index: number, acceptedAt = NOW) {
     .run();
   return { ...receipt, acceptedAt };
 }
+// 105 real grant/ingest/admission receipts on a file database is deliberately heavy: each needs its
+// own commit (authority refresh refuses to run inside a transaction). It takes ~1.7s on an idle
+// laptop and ran past Vitest's 5-second default on a loaded CI shard twice on 10-29 (merge queue for
+// #3196 and #3194), so it gets its own ceiling, like ingest.test.ts's thousand-input case.
 it('bounds 105 same-session receipts by immutable keyset and wraps to newly inserted earlier keys after restart', async () => {
   const { f, file, options } = fixture();
   const rows = addAcceptedReceiptPage(f, 105);
@@ -136,7 +140,7 @@ it('bounds 105 same-session receipts by immutable keyset and wraps to newly inse
   expect(wrap.selected).toBe(1);
   expect([...wrap.notifications.values()].flat()).toEqual([earlier.id]);
   expect(db.select().from(sessionMessageAcceptanceReceipts).all()).toHaveLength(rows.length + 1);
-});
+}, 30_000);
 it('continues past first and middle transient refusals while preserving prior success notifications and identity', async () => {
   const { f, options } = fixture();
   const receipts = Array.from({ length: 5 }, (_, i) =>

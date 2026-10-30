@@ -46,6 +46,7 @@ import {
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
+import { principalTurnOf } from './marked-turn-holds.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
@@ -860,11 +861,18 @@ export function composeRegistry(
       // instead of raising a card (spec `trusted-by-default-flip` §5.6). It
       // runs only if nobody cancels, on a `hold` approval bound to the
       // preflight's authority; a cancel throws, and nothing runs.
-      const cancelWindow =
+      const windowed =
         preflight && !supplied.approvalToken && capability.cancelWindow
           ? await capability.cancelWindow(deps, parsed, supplied, preflight)
           : undefined;
+      const cancelWindow = typeof windowed === 'function' ? windowed : undefined;
       if (cancelWindow) invocationContext.approval = await cancelWindow();
+      // Kept to the card for one reason only, which the card says (DOR-3242).
+      const keptCardBecause = typeof windowed === 'object' ? windowed.keptCardBecause : undefined;
+      const serviceAction =
+        preflight?.approvalServiceAction && keptCardBecause
+          ? { ...preflight.approvalServiceAction, keptCardBecause }
+          : preflight?.approvalServiceAction;
 
       // Existing trusted callers retain their ordinary bypass. A capability with
       // live preflight always reaches the tier gate, so destructive connector
@@ -880,6 +888,7 @@ export function composeRegistry(
               input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
               ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
+              ...principalTurnOf(supplied.serverPrincipal),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card
@@ -914,9 +923,7 @@ export function composeRegistry(
               }
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
-          ...(preflight?.approvalServiceAction
-            ? { serviceAction: preflight.approvalServiceAction }
-            : {}),
+          ...(serviceAction ? { serviceAction } : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);

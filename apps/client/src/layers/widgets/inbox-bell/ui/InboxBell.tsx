@@ -36,6 +36,7 @@ import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 import { ExtensionApprovalList } from './ExtensionApprovalList';
 import { WaitingGroups } from './WaitingGroups';
+import { PausedConnectionList } from './PausedConnectionList';
 
 /**
  * The entrance for the "All clear ✓" line — the same fade-and-rise idiom every
@@ -66,14 +67,22 @@ const allClearVariants = {
  * @param asks - Prompts agents are parked on.
  * @param extensions - Installed extensions waiting to be turned on.
  * @param decisions - Decisions extensions are asking a person about.
+ * @param paused - Connections paused until their owner confirms what they send.
+ * @internal Exported for testing only.
  */
-function waitingLabel(
+export function waitingLabel(
   approvals: number,
   schedules: number,
   asks: number,
   extensions: number,
-  decisions: number
+  decisions: number,
+  paused = 0
 ): string {
+  if (paused > 0) {
+    const verb =
+      approvals + schedules + asks + extensions + decisions + paused === 1 ? 'is' : 'are';
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions, paused)} ${verb} waiting on you. Open to answer.`;
+  }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
     return decisions === 1
       ? '1 decision needs you. Open to answer it.'
@@ -84,8 +93,8 @@ function waitingLabel(
   }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
     return extensions === 1
-      ? '1 extension is waiting to be turned on. Open to answer it.'
-      : `${extensions} extensions are waiting to be turned on. Open to answer them.`;
+      ? '1 mini app is waiting to be turned on. Open to answer it.'
+      : `${extensions} mini apps are waiting to be turned on. Open to answer them.`;
   }
   if (extensions > 0) {
     return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Open to answer them.`;
@@ -189,6 +198,7 @@ export function InboxBell() {
     schedules,
     extensionApprovals,
     extensionDecisions,
+    pausedConnections,
     items: waitingItems,
     isError,
     retry,
@@ -326,6 +336,7 @@ export function InboxBell() {
     askCount: asks.length,
     extensionCount: extensionApprovals.length,
     decisionCount: extensionDecisions.length,
+    pausedCount: pausedConnections.length,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -406,6 +417,7 @@ export function InboxBell() {
                           asks,
                           extensionApprovals,
                           extensionDecisions,
+                          pausedConnections,
                         })}
                       </p>
                     ))}
@@ -452,6 +464,9 @@ export function InboxBell() {
                     }}
                     onScheduleNavigate={() => setOpen(false)}
                   />
+                  {/* Connections paused until their owner confirms what they
+                      send (DOR-3271): after the approvals, only you can answer. */}
+                  <PausedConnectionList items={pausedConnections} />
                 </div>
               )}
 
@@ -542,6 +557,7 @@ function resolvePill(counts: {
   askCount: number;
   extensionCount: number;
   decisionCount: number;
+  pausedCount: number;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -557,7 +573,8 @@ function resolvePill(counts: {
         counts.scheduleCount,
         counts.askCount,
         counts.extensionCount,
-        counts.decisionCount
+        counts.decisionCount,
+        counts.pausedCount
       ),
     };
   }

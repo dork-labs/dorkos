@@ -14,9 +14,18 @@
  * config names (`core.fsmonitor`, `diff.external`, a `textconv` driver). That config lives in the
  * local `.git/config` (or the user's own), which a clone or fetch never brings and a held turn
  * cannot write unasked (an edit or any other command asks). So the program it could run is one
- * somebody on this computer set up. The flags that name another repo or config (`-C`, `-c`,
+ * somebody on this computer set up. A turn that only carries outside words on (DOR-3390) is not
+ * held, so it could write that config; there every `git` command asks, and so does an edit to a
+ * `.git` folder or `.gitattributes` (`carried-turn-writes.ts`). The flags that name another repo or config (`-C`, `-c`,
  * `--git-dir`, `--exec-path`) are refused by the subcommand check, and `--output` and `--ext-diff`
  * by name.
+ *
+ * **The precondition, stated (DOR-3343):** this is safe only while the repo's config names no
+ * program the agent chose. An earlier turn of the same agent that was NOT held could have written
+ * its own `.git/config` with file tools, and the held turn's `git status` would then run that
+ * program. It runs as the agent, never as the DorkOS server, but it does get around the hold, so
+ * it is a named residual until held turns check the config first. The git DorkOS runs as the
+ * server goes through the audited runner (`@dorkos/shared/safe-git`) instead.
  *
  * Not checked: what a recursive search finds below a folder. The tools here do not follow a
  * symlinked folder while recursing unless told to, and the options that tell them are refused.
@@ -73,8 +82,10 @@ const OPTION_WITH_PATH = /(=[/~])|^-[A-Za-z]+\//;
 /**
  * Where a path really is: the deepest part of it that exists, symlinks resolved, with the rest
  * appended. A path that does not exist yet resolves through the folders it would be in.
+ *
+ * @param target - An absolute path.
  */
-function realLocation(target: string): string {
+export function realLocation(target: string): string {
   let existing = target;
   const rest: string[] = [];
   for (;;) {

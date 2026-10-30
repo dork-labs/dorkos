@@ -15,6 +15,10 @@
  * 2. **It never throws for one bad checkout.** A locked, moved, or corrupt
  *    checkout yields a row with `readable: false` instead of failing the scan.
  *    The checkout you cannot read is the one most worth seeing.
+ * 3. **It never runs git in an agent folder** (DOR-3343). Checkouts under the
+ *    workspace root are agents' folders, so until git there goes through a
+ *    runner that checks the repository's settings first, they read as
+ *    `readable: false`.
  *
  * @module server/services/workspace/worktree-scan
  */
@@ -26,7 +30,8 @@ import type {
   WorktreeScanWarning,
 } from '@dorkos/shared/workspace';
 import { readProjectRootUncached } from '../projects/resolve-project-root.js';
-import { runGit } from './providers/git.js';
+import { runSafeGit } from '@dorkos/shared/safe-git';
+import { mayRunGitHere } from '../core/agent-identity/index.js';
 
 /**
  * Per-git-command ceiling. Short on purpose: the scan answers an HTTP request,
@@ -126,20 +131,21 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
     lastCommitAt: null,
     readable: false,
   };
+  if (!mayRunGitHere(checkoutPath)) return stub;
 
   try {
     // `--no-optional-locks` is the whole reason this is safe to run against
     // another agent's live worktree: without it, `status` refreshes and rewrites
     // the index while that agent may be mid-command.
     const [status, lastCommit, repoPath] = await Promise.all([
-      runGit(['--no-optional-locks', 'status', '--porcelain=v1', '--branch'], checkoutPath, {
+      runSafeGit(['--no-optional-locks', 'status', '--porcelain=v1', '--branch'], checkoutPath, {
         timeoutMs: SCAN_GIT_TIMEOUT_MS,
       }),
       // An unborn branch (a checkout with no commits) makes `log` exit non-zero;
       // that is a missing date, not an unreadable checkout.
-      runGit(['log', '-1', '--format=%cI'], checkoutPath, { timeoutMs: SCAN_GIT_TIMEOUT_MS }).catch(
-        () => ''
-      ),
+      runSafeGit(['log', '-1', '--format=%cI'], checkoutPath, {
+        timeoutMs: SCAN_GIT_TIMEOUT_MS,
+      }).catch(() => ''),
       // The one project-root rule (`services/projects/resolve-project-root.ts`),
       // uncached: this walk visits folders that are not session cwds, and it
       // keeps its own concurrency cap. It never throws; no repository is null.

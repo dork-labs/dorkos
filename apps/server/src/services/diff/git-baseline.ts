@@ -7,18 +7,16 @@
  * (a) no snapshot exists and the file can't be reconstructed from the tool input,
  * or (b) the operator explicitly switches the header's "Compare against: Last
  * commit (HEAD)" toggle. It runs `git show HEAD:<relpath>` via `execFile` (no
- * shell — no injection surface), cwd-confined, with a timeout, and returns `null`
- * for a non-git cwd or an untracked file rather than throwing.
+ * shell — no injection surface) through the audited runner (`@dorkos/shared/safe-git`), cwd-confined, with a timeout, and returns `null`
+ * for a non-git cwd or an untracked file rather than throwing. It never runs git
+ * in an agent folder (DOR-3343): there it has no HEAD baseline.
  *
  * @module services/diff/git-baseline
  */
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import path from 'node:path';
 import { GIT, FILE_LIMITS } from '../../config/constants.js';
-import { internalGitArgs } from '../../lib/git-safety.js';
-
-const execFileAsync = promisify(execFile);
+import { runSafeGitBuffer } from '@dorkos/shared/safe-git';
+import { mayRunGitHere } from '../core/agent-identity/index.js';
 
 /**
  * Read a file's bytes at git `HEAD`, or `null` when the cwd is not a git repo,
@@ -28,19 +26,17 @@ const execFileAsync = promisify(execFile);
  * @param absPath - Absolute path to the file, inside `cwd`.
  */
 export async function gitShowHead(cwd: string, absPath: string): Promise<Buffer | null> {
+  if (!mayRunGitHere(cwd)) return null;
   // `git show HEAD:<path>` wants a repo-relative, forward-slashed path.
   const rel = path.relative(cwd, absPath).split(path.sep).join('/');
   // A path that escapes cwd (leading `..`) is never a tracked file here — refuse
   // rather than hand git a traversal.
   if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
   try {
-    const { stdout } = await execFileAsync('git', [...internalGitArgs(), 'show', `HEAD:${rel}`], {
-      cwd,
-      timeout: GIT.STATUS_TIMEOUT_MS,
+    return await runSafeGitBuffer(['show', '--no-textconv', `HEAD:${rel}`], cwd, {
+      timeoutMs: GIT.STATUS_TIMEOUT_MS,
       maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
-      encoding: 'buffer',
     });
-    return stdout;
   } catch {
     // Non-git cwd, untracked file, no commits yet, or oversize — no HEAD baseline.
     return null;

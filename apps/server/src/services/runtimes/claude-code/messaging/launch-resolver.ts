@@ -58,8 +58,11 @@ import {
 } from '../../../core/agent-identity/index.js';
 import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
-import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
+// The error event a refused credits launch ends its turn with, or `null` when
+// the error is not that refusal; re-exported so both dispatch paths import it here.
+export { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
+import { noteAccountLogin } from '../accounts/account-login-metadata.js';
 import {
   claudeConfigDirEnv,
   resolveClaudeRootSet,
@@ -71,12 +74,13 @@ import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constant
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
-import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
+import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
-import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
+import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,
@@ -97,15 +101,30 @@ import {
 } from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
-import type { MessageSenderOpts } from './message-sender-shared.js';
+import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
+import {
+  applyFolderConfigToLaunch,
+  resolveFolderConfigForLaunch,
+} from '../folder-settings/launch-folder-config.js';
+import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launch-repo-config.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
+
+// Split out to keep this file under the line limit (see message-sender-shared.ts).
+export {
+  deliverStatusEvents,
+  resolveEffectiveCwd,
+  type ResolvedLaunch,
+} from './message-sender-shared.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -122,76 +141,6 @@ import { enrichContent } from '../enrich-content.js';
  * {@link isClassifierContextEnabled} for the spellings that turn it off.
  */
 const CLASSIFIER_CONTEXT_ON = isClassifierContextEnabled(env.DORKOS_CLASSIFIER_CONTEXT);
-
-/** What one launch resolution produced, for the caller to boot or compare with. */
-export interface ResolvedLaunch {
-  /** Exactly the options to hand `query({ options })`. */
-  sdkOptions: Options;
-  /**
-   * The user message with the additional-context bag prepended, or the bare
-   * trimmed command on a slash-command turn. Never the raw `content` field —
-   * ADR-0273 keeps the person's own words unmutated.
-   */
-  enrichedContent: string;
-  /**
-   * The mesh agent this launch acts as, for `last_seen` stamping — the agent a
-   * room worktree belongs to when the turn stands in one (DOR-2091).
-   */
-  meshAgentId: string | undefined;
-  /**
-   * Events the caller must yield BEFORE the turn's own, in this order. Only the
-   * auto-permission-mode downgrade notice lands here today.
-   */
-  statusEvents: StreamEvent[];
-  /**
-   * A credits swap this launch made (DOR-2636), owed a save once its notice is
-   * delivered: {@link deliverStatusEvents} runs `commit` after yielding the
-   * status events (the notice among them, unless this session was already told
-   * about this model). Absent when no model was swapped.
-   */
-  substitution?: { commit: () => Promise<void> };
-  /**
-   * What this launch is pinned to, in the shape `captureLaunchFingerprint`
-   * takes. Resolved even on the turn path, where nothing reads it: computing it
-   * conditionally would mean the pump's fingerprint came from a code path the
-   * turn path never exercises.
-   */
-  launch: LaunchParams;
-}
-
-/**
- * The working directory this turn runs in.
- *
- * The one resolution, for both the boundary gate and the launcher — hand the
- * SAME value to each. Resolved twice by two routes, the gate answers about one
- * directory while the process runs in another, which is a check that only looks
- * like one (`dispatch-boundary.ts`).
- *
- * Empty strings fall through rather than winning, because a stale relay binding
- * supplies one and it names no directory at all.
- *
- * @param opts - The runtime's own defaults (`sessionCwd` then `cwd`)
- * @param messageOpts - The caller's per-message override, if any
- */
-export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: MessageOpts): string {
-  return messageOpts?.cwd || opts.sessionCwd || opts.cwd;
-}
-
-/**
- * Yield a launch's status events, then take the save a credits swap owes
- * (DOR-2636): the swapped model becomes the session's own and the swap is
- * marked told only AFTER its `model_substituted` notice has gone out on the
- * stream, which records it durably. So no path can save a swap without
- * recording it: one that never delivers the events never saves either.
- *
- * @param resolved - What {@link resolveLaunch} answered.
- */
-export async function* deliverStatusEvents(
-  resolved: Pick<ResolvedLaunch, 'statusEvents' | 'substitution'>
-): AsyncGenerator<StreamEvent> {
-  for (const event of resolved.statusEvents) yield event;
-  await resolved.substitution?.commit();
-}
 
 /**
  * Resolve everything a launch in `effectiveCwd` is pinned to, and the SDK
@@ -240,6 +189,21 @@ export async function resolveLaunch(args: {
       // No manifest found -- the launch inherits the server defaults
     }
   }
+  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
+  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
+  // The agent's own hooks, MCP servers and account run only as a person last
+  // allowed them; a changed part is held back and a card asks (DOR-3068).
+  const folderConfig = await resolveFolderConfigForLaunch({
+    agent: meshAgent
+      ? { id: meshAgent.id, name: meshAgent.displayName ?? meshAgent.name ?? meshAgent.id }
+      : undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    // The mode this turn really runs at, its ceiling applied. A teammate's turn
+    // is never Full here, whatever its session says (DOR-3432).
+    full: !teammate && turnPermissionMode(session) === 'bypassPermissions',
+  });
+  const agentFileHeld = folderConfig.held.includes('manifest');
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
@@ -249,8 +213,6 @@ export async function resolveLaunch(args: {
   // Never for words somebody other than the person here wrote (DOR-2955): a
   // stranger's `/name` would run that command, with the shell its definition
   // allows, before any tool gate sees it. Their text goes out defused below.
-  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
-  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
   const untrustedText = teammate || messageOpts?.roomTurn?.untrustedText === true;
   const commandName = untrustedText ? null : detectSlashCommandName(content);
   let isCommandDispatch = false;
@@ -381,13 +343,16 @@ export async function resolveLaunch(args: {
       // The account this agent is pinned to, off the manifest already read
       // above. It reaches the spawn env and stops there — nothing writes it to
       // `session_metadata`, because disk stays the per-session truth.
-      agentAccountId: manifest?.account,
+      // Not while a changed agent file waits for a person (DOR-3068).
+      agentAccountId: agentFileHeld ? undefined : manifest?.account,
       agentId: manifest?.id,
       project: await projectOfFolder(effectiveCwd),
     });
     if (!launch.ok) throw launch.error;
     accountRoot = launch.root;
   }
+  // Refuses only for a person-set rule; a new or changed sign-in runs and is said once.
+  if (!isCreditsClaudeRoot(accountRoot)) noteAccountLogin(accountRoot);
   const accountEnv = claudeConfigDirEnv(accountRoot);
 
   // **Who pays, decided by the folder** (ADR 261001-000811). A session whose
@@ -768,13 +733,32 @@ export async function resolveLaunch(args: {
     effectiveCwd
   );
   // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
-  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome());
+  // Every agent home's self-grant files too, below Full only (read off the mode set above).
+  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), { sessionId, agentPath: turnAgentPath });
+  // And the agent home's self-grant files, plus the switches for held-back parts.
+  applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
   // Every turn, at every level: the model's own Read, Grep and Glob never open
   // a secret (DOR-3299).
   applySecretReadDeny(sdkOptions, {
     dorkHome: resolveDorkHome(),
     accountRoot,
     otherAccountRoots: resolveClaudeRootSet(),
+  });
+  // And every other agent's mini apps, whose server edits run on their author's
+  // trust (DOR-3068); a marked or ceilinged turn is kept out of its own too.
+  applyLaunchExtensionsDeny(sdkOptions, {
+    session,
+    sessionId,
+    agentHome: turnAgentPath ?? undefined,
+    registry: opts.meshCore,
+  });
+  // Outside the home: a worktree's unreviewed local settings, and repo hooks or
+  // MCP servers that differ from the default branch, wait for a person (DOR-3298).
+  const repoConfig = await applyRepoConfigStep(sdkOptions, {
+    agentName: agentDisplayName ?? undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    teammate,
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
@@ -805,8 +789,10 @@ export async function resolveLaunch(args: {
       hiddenToolNames: toolVisibility.hiddenToolNames,
       identity: toolIdentity,
       ...(opts.connectorTools !== undefined ? { connectorTools: opts.connectorTools } : {}),
+      ...(agentFileHeld ? { withholdAgentServers: true } : {}),
     });
   }
+  applyRepoMcpServers(sdkOptions, repoConfig);
 
   // Nothing here sets `allowedTools`, on purpose (DOR-519). The retired tool-group
   // toggles used to feed it a list, on the premise that the SDK option restricts which tools
@@ -856,6 +842,17 @@ export async function resolveLaunch(args: {
               ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
             ],
           }),
+        ],
+      },
+      // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
+      // DorkOS's own safe tools are let through here, with the gate's own
+      // per-call decision. Answers nothing in any other mode.
+      {
+        matcher: `^${IN_SESSION_TOOL_PREFIX}`,
+        hooks: [
+          createNeverAskHook(session, resolveIdentity, logger, () =>
+            hasMarks(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+          ),
         ],
       },
       {
@@ -1013,15 +1010,4 @@ function forCredits(
   return creditsEnv === undefined
     ? env
     : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
-}
-
-/**
- * The error event a refused credits launch ends its turn with, or `null` when
- * `err` is not that refusal. `code` is what the chat keys its Retry and
- * Use-your-own-sign-in actions on; the message is the plain sentence.
- *
- * @param err - Whatever `resolveLaunch` threw.
- */
-export function creditsRefusalEvent(err: unknown): StreamEvent | null {
-  return creditsRefusalEventFor(err);
 }

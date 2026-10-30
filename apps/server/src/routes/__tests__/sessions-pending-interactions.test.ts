@@ -76,6 +76,8 @@ let profileDisplayName: string | null = null;
 let ownerAccount: { id: string; name: string } | null = null;
 /** When set, the account lookup throws instead of answering. */
 let accountLookupError: Error | null = null;
+/** The owner's browser session at this computer. */
+const OWNER_SESSION = { userId: 'user_owner', credential: 'cookie' as const };
 
 // The auth barrel is left REAL except for the two readers the answer routes
 // consult for a name: the router imports the rest of it, and a wholesale mock
@@ -550,7 +552,8 @@ describe('who may answer a prompt', () => {
         ownerAccount = { id: 'user_owner', name: 'Ada Lovelace' };
         profileDisplayName = 'Ada from config';
 
-        const res = await request(buildApp())
+        // Once an owner exists, the person answers from their session (DOR-3330).
+        const res = await request(buildApp({ user: OWNER_SESSION }))
           .post(`/api/sessions/${SESSION_ID}/${route.path}`)
           .send(route.body);
 
@@ -579,7 +582,8 @@ describe('who may answer a prompt', () => {
         // must not cost the person their answer.
         accountLookupError = new Error('database is locked');
 
-        const res = await request(buildApp())
+        // A failed lookup reads as an owner, so the person answers from their session.
+        const res = await request(buildApp({ user: OWNER_SESSION }))
           .post(`/api/sessions/${SESSION_ID}/${route.path}`)
           .send(route.body);
 

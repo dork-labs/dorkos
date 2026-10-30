@@ -27,6 +27,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 const SHELL = '<!doctype html><html><body><div id="root"></div></body></html>';
@@ -257,12 +258,19 @@ describe('contract: unclaimed paths with login on', () => {
   };
 
   /** Send one setup request, failing loudly if it does not succeed. */
-  async function setup(method: string, url: string, body: unknown, origin: boolean) {
+  async function setup(
+    method: string,
+    url: string,
+    body: unknown,
+    origin: boolean,
+    person: Record<string, string> = {}
+  ): Promise<void> {
     const res = await fetch(`${server!.baseUrl}${url}`, {
       method,
       headers: {
         'content-type': 'application/json',
         ...(origin ? { origin: server!.baseUrl } : {}),
+        ...person,
       },
       body: JSON.stringify(body),
     });
@@ -272,7 +280,9 @@ describe('contract: unclaimed paths with login on', () => {
   beforeAll(async () => {
     server = await bootComposedServer(PRODUCTION);
     await setup('POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, true);
-    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
+    await setup('PATCH', '/api/config', { auth: { enabled: true } }, false, person);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

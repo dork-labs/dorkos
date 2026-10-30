@@ -45,6 +45,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -1071,7 +1072,6 @@ describe('contract: the marketplace groups with login on', () => {
     await keepOnlyLocalSources(server);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = {
       cookie: signedIn.headers
@@ -1079,6 +1079,15 @@ describe('contract: the marketplace groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      { ...person, ...origin }
+    );
     const created = await setup(
       server,
       'POST',
@@ -1108,13 +1117,23 @@ describe('contract: the marketplace groups with login on', () => {
     }
   });
 
-  it('lets an API key change the package sources, as a person’s terminal does', async () => {
-    const added = await call(
+  it('refuses an API key the package sources, and says where in the app (DOR-3330)', async () => {
+    // A key is a program, never the person: the CLI is told where to go instead.
+    const refused = await call(
       server,
       'POST',
       '/api/marketplace/sources',
       { name: 'contract', source: pathToFileURL(MARKET).href },
       apiKey
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.json.code).toBe('marketplace_source_needs_app');
+    const added = await call(
+      server,
+      'POST',
+      '/api/marketplace/sources',
+      { name: 'contract', source: pathToFileURL(MARKET).href },
+      cookie
     );
     expect(added.status).toBe(201);
     await check(server, {
@@ -1128,7 +1147,7 @@ describe('contract: the marketplace groups with login on', () => {
       'DELETE',
       '/api/marketplace/sources/contract',
       undefined,
-      apiKey
+      cookie
     );
     expect(removed.status).toBe(204);
   });
