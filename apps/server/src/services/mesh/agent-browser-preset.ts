@@ -132,8 +132,11 @@ export function agentBrowserGap(stateFile: string, now: Date = new Date()): Agen
 /**
  * The line an agent reads when its signed-in browser has nothing to start
  * from, or `''` when it does. Runtime-neutral on purpose: it names no tool,
- * only the situation and the operator's fix. The file path is deliberately
- * left out: it comes from a manifest, and the notice is prompt text.
+ * only the situation and the way forward. That way is the browser a person
+ * shares with the chat, never a terminal: the desktop app puts no `dorkos` on
+ * PATH, and a person sent to Terminal is the complaint in DOR-3157. The file
+ * path is deliberately left out: it comes from a manifest, and the notice is
+ * prompt text.
  *
  * @param gap - What {@link agentBrowserGap} found, or `null`.
  */
@@ -144,8 +147,9 @@ export function agentBrowserNotice(gap: AgentBrowserGap | null): string {
       ? 'Your browser tools will fail until the operator saves browser sign-ins: the saved\nsession file is missing or unreadable.'
       : 'Your browser tools start signed out: the operator has not saved a sign-in for any\nsite yet.';
   return `<agent_browser>
-${situation} If a site you need asks you to sign in, stop and ask the
-operator to run \`${AGENT_BROWSER_LOGIN_COMMAND} <site>\` in a terminal, then start a new
-session. Never type a password yourself, and never ask the operator for one.
+${situation} If you can't use a site because of this, say so in plain words
+and ask the person to share a browser page with this chat (Browser, in the right
+panel's + menu) and sign in there, then work in that page. Never send them to a
+terminal. Never type a password yourself, and never ask for one.
 </agent_browser>`;
 }

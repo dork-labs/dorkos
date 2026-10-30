@@ -362,8 +362,12 @@ export interface OperatingSkill {
  *   the same message again; an agent that does not know wakes in a fresh
  *   session and answers twice. The new skill seeds without a bump; the bump is
  *   for the sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 44: `using-the-agent-browser` stops telling an agent to send a person to a
+ *   terminal (DOR-3157). A missing sign-in or a failed browser tool now gets a
+ *   plain sentence and the shared browser. An agent seeded at 43 would keep
+ *   handing out a command the desktop app doesn't put on PATH.
  */
-export const OPERATING_SKILLS_VERSION = 43;
+export const OPERATING_SKILLS_VERSION = 44;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

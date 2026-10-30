@@ -29,8 +29,9 @@ export const mcpBrowserCapabilities: CapabilityDefinition[] = [
       'an agent a browser starting signed in to them. To give an agent that browser, pass the ' +
       'two fields of the returned server object, unchanged, to mcp.add (a person approves ' +
       'it). Never returns a cookie or any other secret. When saved is false, or a site you ' +
-      'need is missing, only the operator can fix it, by running the returned loginCommand ' +
-      'with the site in a terminal; never ask them for a password.',
+      'need is missing, ask the person to share a browser page with the chat and sign in ' +
+      'there. Never send them to a terminal, and never ask them for a password. loginCommand ' +
+      'is only for a person who asks for the command-line way.',
     tier: 'observe',
     area: null,
     areaNote: 'reading',
