@@ -4,14 +4,15 @@ import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 import { KeepAwakeBeacon } from '@/layers/widgets/keep-awake';
 
 /**
- * Keeps the global actions on their own phone row and restores the desktop row
- * at the medium breakpoint.
+ * Keeps the global actions together on a phone, beside the route's identity
+ * when they fit and on a row of their own when a beacon pushes them past it.
+ * At the medium breakpoint `contents` restores the desktop's single row.
  */
 export function GlobalHeaderActions() {
   return (
     <div
       data-slot="global-header-actions"
-      className="flex h-11 w-full items-center justify-end gap-1 md:contents"
+      className="ml-auto flex h-11 items-center justify-end gap-1 md:contents"
     >
       <ControlCenter />
       <RemoteAccessBeacon />
