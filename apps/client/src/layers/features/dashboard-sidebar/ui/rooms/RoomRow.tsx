@@ -487,6 +487,8 @@ export const RoomRow = memo(function RoomRow({
                   aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
                 />
               ))}
+            {/* A busy channel is bold and nothing else, and bold is not read out. */}
+            {signal.tier === 'activity' && !quiet && <span className="sr-only">new messages</span>}
             {signal.tier === 'directed' && signal.count !== undefined && (
               <CountPill
                 count={signal.count}

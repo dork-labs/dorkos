@@ -100,6 +100,7 @@ vi.mock('@/layers/features/dashboard-sidebar', () => ({
   DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
   // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
   SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+  SidebarLandmark: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   MobileCommunityContextSwitcher: () => null,
   SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
   // The phone cockpit's pieces. This suite runs at desktop width, so the
