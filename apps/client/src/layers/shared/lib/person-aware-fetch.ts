@@ -8,6 +8,10 @@
  * once, then goes again. One wrapper, so the app and every mini app ask the
  * same way, and the proof never leaves this origin.
  *
+ * A sensitive action held for "Confirm it's you" (`428 step_up_required`,
+ * DOR-3234) waits on the sheet for that one action; once the person confirms,
+ * the call answers with what the action itself answered.
+ *
  * @module shared/lib/person-aware-fetch
  */
 import {
@@ -16,7 +20,9 @@ import {
   PERSON_SESSION_PATH,
   PERSON_SESSION_REQUIRED_CODE,
 } from '@dorkos/shared/person-session';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 
+import { requestActionStepUp } from './action-step-up-signal';
 import { readPersonProof } from './person-proof-store';
 import { requestPersonStepUp } from './person-step-up-signal';
 
@@ -34,6 +40,33 @@ function targetOf(input: RequestInfo | URL, origin: string): URL | null {
   } catch {
     return null;
   }
+}
+
+/** How many times one call is held again after its step-up expired. */
+const MAX_STEP_UP_ASKS = 3;
+
+/** The held action a `428` names, reading a copy of its body, or `null`. */
+async function heldActionOf(res: Response): Promise<string | null> {
+  if (res.status !== 428) return null;
+  const body = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as { code?: unknown; heldActionId?: unknown } | null;
+  return body?.code === STEP_UP_REQUIRED_CODE && typeof body.heldActionId === 'string'
+    ? body.heldActionId
+    : null;
+}
+
+/**
+ * The held action's own answer, as if it had run when first asked, so the
+ * caller reads it like any other response.
+ */
+function confirmedResponse(status: number, result: unknown): Response {
+  if (status === 204 || result === undefined) return new Response(null, { status });
+  return new Response(JSON.stringify(result), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /** Whether a `401` asks for the step-up, reading a copy of its body. */
@@ -70,9 +103,19 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     };
 
     const first = build();
-    const res = await base(...first);
+    let res = await base(...first);
     const replayable = !(init?.body instanceof ReadableStream) && !(input instanceof Request);
     if (!replayable || target.pathname === PERSON_SESSION_PATH) return res;
+    // "Confirm it's you" for one action: the server held it, and runs it only
+    // once the person confirms. An expired one is asked for again, a few times.
+    for (let asks = 0; asks < MAX_STEP_UP_ASKS; asks++) {
+      const heldActionId = await heldActionOf(res);
+      if (heldActionId === null) break;
+      const outcome = await requestActionStepUp(heldActionId);
+      if (outcome.kind === 'confirmed') return confirmedResponse(outcome.status, outcome.result);
+      if (outcome.kind === 'not-confirmed') return res;
+      res = await base(...build());
+    }
     if (!(await asksForPersonSession(res))) return res;
     // Before a chat there is nothing to go back to; anything else may be cancelled.
     const dismissible = !(
