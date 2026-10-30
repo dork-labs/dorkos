@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
 import { IsolatedExtensionHost } from '../../server/src/services/extensions/isolation/isolated-host';
+import { helperBinary } from './helper-binary';
 
 /**
  * The packaged-desktop proof for isolated extensions (DOR-2686 task 3.6).
@@ -52,21 +53,6 @@ interface Report {
   value?: unknown;
   code?: string | null;
   message?: string;
-}
-
-/**
- * The helper binary Electron's utility processes run on, inside a `.app`.
- *
- * @param appPath - The packaged `.app` bundle.
- */
-function helperBinary(appPath: string): string {
-  const name = path.basename(appPath, '.app');
-  const frameworks = path.join(appPath, 'Contents', 'Frameworks');
-  const exact = path.join(frameworks, `${name} Helper.app`, 'Contents', 'MacOS', `${name} Helper`);
-  if (existsSync(exact)) return exact;
-  const found = readdirSync(frameworks).find((entry) => /^.+ Helper\.app$/.test(entry));
-  if (!found) throw new Error(`No helper app under ${frameworks}.`);
-  return path.join(frameworks, found, 'Contents', 'MacOS', found.replace(/\.app$/, ''));
 }
 
 /**

@@ -159,11 +159,11 @@ export class RoomPosting {
    * Post because the agent decided to — `post_to_room` (room-participation spec
    * §10.2), and the only caller is the rooms capability domain.
    *
-   * **It is `post` with three things added and nothing removed**, which is the
+   * **It is `post` with four things added and nothing removed**, which is the
    * whole design: the tool must not become a second write path. Membership, the
    * archive check, mention resolution, the cascade stamp, the SSE publish and the
    * dispatch all come from {@link RoomService.post} unchanged, so a bound that
-   * holds for a person's message holds for this. Two of the three are refusals,
+   * holds for a person's message holds for this. Two of the four are refusals,
    * so the additions can only ever make this narrower than `post`, never wider.
    *
    * What it adds:
@@ -188,6 +188,8 @@ export class RoomPosting {
    *   down).
    * - **The turn is marked as having spoken**, so the narration that turn writes
    *   back to its session is not ALSO posted (see {@link ActiveClaim.spokeViaTool}).
+   * - **It answers in the thread the turn was asked in** (FB-63), when the
+   *   agent names no thread or names a reply (see `threadForToolPost`).
    *
    * What it deliberately does not add is a fresh cascade. Provenance follows the
    * turn: a post made mid-turn inherits that turn's stamp through `activeTurnFor`,
@@ -279,7 +281,9 @@ export class RoomPosting {
         this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
       ),
     };
-    const { callerSessionId: _caller, callerAgentVerified: _verified, ...postInput } = input;
+    const { callerSessionId: _caller, callerAgentVerified: _verified, ...rest } = input;
+    const replyTo = this.threadForToolPost(roomId, input.replyTo, turn?.entryId);
+    const postInput = { ...rest, ...(replyTo !== undefined ? { replyTo } : {}) };
     const entry: PostedEntry = this.post(
       roomId,
       {
@@ -308,6 +312,36 @@ export class RoomPosting {
     );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
+  }
+
+  /**
+   * The thread a tool post lands in (FB-63).
+   *
+   * **A turn a thread reply started answers in that thread**, whether or not the
+   * agent names it. The turn's own text path has always passed the thread root;
+   * a tool post passed only what the agent remembered to, so an answer with no
+   * `replyTo` landed at the channel's top level. And the id an agent is most
+   * likely to name is the message it is answering — inside a thread, a reply —
+   * which `threadPointers` refuses as a nested thread. Both are settled here:
+   * a reply named is read as its thread, and nothing named inherits the thread
+   * of the message the turn is answering, in this room only.
+   *
+   * @param roomId - The room being posted into.
+   * @param named - The `replyTo` the agent passed, if any.
+   * @param answering - The entry this agent's live turn here is answering.
+   * @returns The thread root to post under, or undefined for the top level.
+   */
+  private threadForToolPost(
+    roomId: string,
+    named: string | undefined,
+    answering: string | undefined
+  ): string | undefined {
+    const anchor = named ?? answering;
+    if (anchor === undefined) return undefined;
+    const entry = this.store.getEntryById(roomId, anchor);
+    // An unknown id the agent named is left for `threadPointers` to refuse.
+    if (!entry) return named;
+    return entry.threadRootEntryId ?? named;
   }
 
   /**

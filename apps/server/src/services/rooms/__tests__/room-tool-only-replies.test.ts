@@ -412,6 +412,64 @@ describe('a room turn that speaks only through the tool', () => {
     });
   });
 
+  describe('a turn a thread reply started answers in that thread (FB-63)', () => {
+    /**
+     * A runner that posts once through the tool, naming `replyTo` as `pick`
+     * decides from the entry the turn is answering.
+     *
+     * @param pick - The `replyTo` to send, or undefined to leave it out.
+     */
+    function threadPosting(pick: (answering: string) => string | undefined): ScriptedTurnRunner {
+      return outcomeRunner((request) => {
+        const replyTo = pick(request.entry.id);
+        service.postFromTool(request.room.id, {
+          authorId: request.authorId,
+          text: 'answered',
+          ...(replyTo !== undefined ? { replyTo } : {}),
+        });
+        return { text: null };
+      });
+    }
+
+    /** Post a top-level message, then a reply in its thread, and settle both. */
+    async function seedThread(): Promise<{ root: RoomEntry; reply: RoomEntry }> {
+      const root = await seedAndSettle('@ana the deploy plan is up');
+      const reply = service.post(room.id, {
+        authorId: human,
+        text: '@ana does step 3 need a migration?',
+        replyTo: root.id,
+      });
+      await service.triggersIdle();
+      return { root, reply };
+    }
+
+    /** Ana's post that answers `entryId`. */
+    function answerTo(entryId: string): RoomEntry | undefined {
+      return postsBy(ana).find((entry) => entry.body.answersEntryId === entryId);
+    }
+
+    it('lands in the thread when the agent leaves `replyTo` out', async () => {
+      open(threadPosting(() => undefined));
+      const { root, reply } = await seedThread();
+
+      expect(answerTo(reply.id)?.threadRootEntryId).toBe(root.id);
+    });
+
+    it('lands in the thread when the agent names the reply it is answering', async () => {
+      open(threadPosting((answering) => answering));
+      const { root, reply } = await seedThread();
+
+      expect(answerTo(reply.id)?.threadRootEntryId).toBe(root.id);
+    });
+
+    it('still answers a top-level message at the top level', async () => {
+      open(threadPosting(() => undefined));
+      const { root } = await seedThread();
+
+      expect(answerTo(root.id)?.threadRootEntryId).toBeNull();
+    });
+  });
+
   describe('no per-turn post count (DOR-2739)', () => {
     it('lands every post one turn makes — the retired ceiling was three', async () => {
       let refused: unknown;

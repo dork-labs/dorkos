@@ -131,6 +131,8 @@ import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { configManager } from '../core/config-manager.js';
 import { dorkosHarness } from './dorkos-harness.js';
+import { storedPresetIsFull } from './hook-consent.js';
+import { provenDorkosInstallsIfFull, type ProvenInstall } from './dorkos-installed.js';
 import { isAgentHome } from './project-agent-workspace.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
@@ -241,7 +243,13 @@ export async function runAgentCreatedProjection(
   }
 
   try {
-    await withProjectLock(path, () => projectForAgent(agent, opts.dorkHome));
+    // On Full, only packages DorkOS installed run without a person (DOR-3422).
+    const dorkosInstalled = await provenDorkosInstallsIfFull(
+      path,
+      opts.dorkHome,
+      storedPresetIsFull()
+    );
+    await withProjectLock(path, () => projectForAgent(agent, opts.dorkHome, dorkosInstalled));
   } catch (err) {
     logger.warn('[HarnessSync] Projecting a new agent’s project failed (non-fatal)', {
       agent: name,
@@ -260,8 +268,13 @@ export async function runAgentCreatedProjection(
  *
  * @param agent - The agent that arrived.
  * @param dorkHome - Resolved DorkOS data directory.
+ * @param dorkosInstalled - Packages DorkOS installed here, on Full.
  */
-function projectForAgent(agent: ProjectedAgent, dorkHome: string): void {
+function projectForAgent(
+  agent: ProjectedAgent,
+  dorkHome: string,
+  dorkosInstalled: ReadonlyMap<string, ProvenInstall> | undefined
+): void {
   const { name, path } = agent;
   const ours = dorkosHarness();
 
@@ -306,6 +319,7 @@ function projectForAgent(agent: ProjectedAgent, dorkHome: string): void {
     // name.
     sweepOrphans: false,
     ...(ours === undefined ? {} : { dorkosHarness: ours }),
+    ...(dorkosInstalled === undefined ? {} : { dorkosInstalled }),
   });
 
   if (conflicts.length > 0) {
