@@ -317,7 +317,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/mcp-servers');
     // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
     expect(mounts).toContain('/api/tasks');
-    expect(mounts).toHaveLength(83);
+    // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
+    expect(mounts).toContain('/api/sessions/running');
+    expect(mounts).toHaveLength(84);
     const byHand = [
       '/',
       '/x/fixture',
