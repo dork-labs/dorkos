@@ -35,7 +35,7 @@ import {
   type NotificationSubjectType,
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
-import { formatResetTime, limitWindowPhrase } from './notification-copy.js';
+import { APPROVAL_PENDING_COPY, formatResetTime, limitWindowPhrase } from './notification-copy.js';
 import {
   EXTENSION_DECISION_PUSH_WINDOW_MS,
   extensionDecisionEscalation,
@@ -147,6 +147,11 @@ export interface NotificationPayloads extends DeclaredPayloads {
     agentId?: string;
     /** What to call whoever asked. */
     requestedBy: string;
+    /**
+     * A row under Needs you that nothing waits on (DOR-3427): `notable`, so it
+     * never escalates, with words that say so.
+     */
+    passive?: true;
   };
   /** A session stopped on an error. */
   'session.error': {
@@ -747,7 +752,8 @@ const ENTRIES: NotificationRegistryMap = {
 
   'approval.pending': {
     kind: 'approval.pending',
-    tier: 'blocking',
+    // Tier, title and body vary with `passive` (DOR-3427); see the copy module.
+    ...APPROVAL_PENDING_COPY,
     storage: 'standing',
     // `system`, not `task`: an approval is not about one schedule — the same
     // condition covers a marketplace uninstall, a `mesh_unregister`, or any
@@ -755,12 +761,6 @@ const ENTRIES: NotificationRegistryMap = {
     // is decided, and `system` is the subject type that opens there.
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.approvalId, agentId: p.agentId }),
-    title: (p) => `${p.requestedBy} needs your approval`,
-    // The capability's TITLE and nothing else. The approval's own summary
-    // carries the argument values an agent asked to run something with, and
-    // this body reaches a lock screen and a Telegram thread — the card in the
-    // app is where those belong.
-    body: (p) => `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
     actions: () => OPEN_ACTION,
     dedupeKey: (p) => `approval:${p.approvalId}`,
     relay: 'never',

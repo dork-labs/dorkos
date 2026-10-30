@@ -29,6 +29,10 @@ import { createApprovalsRoutes } from '../approvals.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 import { UPGRADE_WRITER } from '../../services/core/permissions/permission-history.js';
+import {
+  describeHookProjectionCapability,
+  HOOK_PROJECTION_CAPABILITY_ID,
+} from '../../services/harness/hook-approval.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install. The routes' own
@@ -123,7 +127,7 @@ describe('approvals routes', () => {
       describeCapability: (id) =>
         id === 'marketplace.uninstall'
           ? { title: 'Uninstall a marketplace package', tier: 'destructive' }
-          : undefined,
+          : describeHookProjectionCapability(id),
     });
     world = createPermissionWorld({
       preset: 'full',
@@ -313,6 +317,37 @@ describe('approvals routes', () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
       expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+    });
+
+    it('refuses an agent allowing a package found in the project, on Full (DOR-3422, K1)', async () => {
+      // The passive Needs-you row Full raises for a package DorkOS did not
+      // install. Allowing it gives that package standing shell commands, so
+      // only a person may: not an agent, not the token holder, at any preset.
+      // This permission world is set to Full.
+      const binding = {
+        capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
+        inputHash: hashApprovalInput({ projectPath: '/repo', packageName: 'evil', hooks: [] }),
+      };
+      const ticket = approvals.request({
+        ...binding,
+        summary: 'Package "evil" found in "/repo", not installed by DorkOS. Allow it?',
+        requestedBy: 'dorkbot',
+      });
+
+      const asAgent = await request(buildApp({ agentIdentity: true }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send();
+      expect(asAgent.status).toBe(403);
+      expect(asAgent.body.code).toBe('AGENT_CANNOT_DECIDE');
+
+      const asRequester = await request(buildApp())
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .set(APPROVAL_TOKEN_HEADER, ticket.token)
+        .send();
+      expect(asRequester.status).toBe(403);
+      expect(asRequester.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+
+      expect(approvals.consume(ticket.token, binding).outcome).toBe('pending');
     });
 
     it('403s a denial from the requester too — a token holder decides nothing', async () => {

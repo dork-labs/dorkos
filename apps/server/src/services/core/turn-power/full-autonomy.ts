@@ -263,6 +263,13 @@ export interface FullAction {
   agentName?: string;
   /** The chat it ran in, when known. */
   sessionId?: string;
+  /**
+   * The whole sentence, when the one about a chat does not fit: something the Full PRESET let
+   * through, outside any chat (a package's hooks, DOR-3422).
+   */
+  summary?: string;
+  /** Extra facts for the row, never secrets and never command text. */
+  facts?: Record<string, unknown>;
 }
 
 /**
@@ -285,10 +292,12 @@ export function recordFullAction(action: FullAction): void {
     resourceId: action.actionId,
     resourceLabel: action.did,
     summary:
+      action.summary ??
       `${who} ${action.did} without being held: its chat is set to Full autonomy. Below Full, ` +
-      `${action.limit}.`,
+        `${action.limit}.`,
     ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
     metadata: {
+      ...action.facts,
       actionId: action.actionId,
       ...(action.agentPath ? { agentPath: action.agentPath } : {}),
       ...(action.sessionId ? { sessionId: action.sessionId } : {}),
