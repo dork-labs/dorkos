@@ -36,7 +36,11 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
-import { isPackageOwnedTaskFile, removeScheduledTaskFile } from '../lifecycle/delete-task.js';
+import {
+  deleteOrDeclineTask,
+  isPackageOwnedTaskFile,
+  removeScheduledTaskFile,
+} from '../lifecycle/delete-task.js';
 import { createDeleteScheduleHandler } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
@@ -159,6 +163,35 @@ describe('declining a schedule that came with an installed package (DOR-2097)', 
 
     expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
     expect(await isPackageOwnedTaskFile(packagedFile, projectPath)).toBe(true);
+  });
+
+  it('a person’s delete keeps the file and the row, and records the decline', async () => {
+    const task = await sweep();
+
+    expect(await deleteOrDeclineTask(task, store, meshCore)).toBe('declined');
+
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
+    expect(store.getTask(task.id)?.declined).toBe(true);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+  });
+
+  it('a person’s delete of their own schedule removes the file and the row', async () => {
+    const ownDir = path.join(projectPath, 'own-schedule');
+    await fs.mkdir(ownDir, { recursive: true });
+    const ownFile = path.join(ownDir, 'SKILL.md');
+    await fs.writeFile(ownFile, 'mine', 'utf-8');
+    const own = store.createTask({
+      name: 'mine',
+      description: 'mine',
+      prompt: 'mine',
+      cron: '0 2 * * *',
+      filePath: ownFile,
+    });
+
+    expect(await deleteOrDeclineTask(own, store, meshCore)).toBe('deleted');
+
+    await expect(fs.access(ownDir)).rejects.toThrow();
+    expect(store.getTask(own.id)).toBeNull();
   });
 
   it('refuses tasks_delete, since declining is a person’s answer', async () => {
