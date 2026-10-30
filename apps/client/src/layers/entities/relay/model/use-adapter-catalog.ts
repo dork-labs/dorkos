@@ -88,6 +88,45 @@ export function useRemoveAdapter() {
   });
 }
 
+/** What {@link useConfirmAdapterReferences} sends. */
+export interface ConfirmAdapterReferencesInput {
+  /** The paused connection. */
+  id: string;
+  /** Its name, for the toast. */
+  name: string;
+  /** The fingerprint it was listed with; `null` takes a confirmation back. */
+  fingerprint: string | null;
+}
+
+/**
+ * Mutation for the owner confirming a paused connection's settings
+ * (DOR-3271). On success it says the connection is sending again, with an
+ * Undo that takes the confirmation back and pauses it again.
+ */
+export function useConfirmAdapterReferences() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ id, fingerprint }: ConfirmAdapterReferencesInput) =>
+      transport.confirmRelayAdapterReferences(id, fingerprint),
+    onSuccess: (_result, input) => {
+      if (input.fingerprint === null) return;
+      toast.success(`${input.name} is sending again.`, {
+        action: {
+          label: 'Undo',
+          onClick: () => mutation.mutate({ ...input, fingerprint: null }),
+        },
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
+      queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
+    },
+    meta: { errorLabel: 'Couldn’t confirm that setting' },
+  });
+  return mutation;
+}
+
 /** Mutation to update an existing adapter's configuration. */
 export function useUpdateAdapterConfig() {
   const transport = useTransport();

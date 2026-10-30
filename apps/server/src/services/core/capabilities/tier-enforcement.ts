@@ -112,6 +112,7 @@ import type {
 import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissions';
 
 import { isTrustedCaller } from './trusted-caller.js';
+import { nobodyToAskMessage, turnHasNobodyToAsk } from '../turn-power/full-autonomy.js';
 import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
@@ -895,26 +896,23 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   const askingForAct = tier === 'act' && permission?.state === 'ask';
   if (tier === 'act' && !askingForAct && !blockedAsk) return { outcome: 'allowed' };
 
-  if (!gate) {
-    const payload = denied(
-      action,
-      'enforcement_unavailable',
-      `"${action.title}" ${needsApprovalClause(tier, action.id)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
-      { approvable: false }
-    );
-    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
-    return { outcome: 'denied', payload };
-  }
-
   /**
-   * Refuse a destructive call the gate cannot honestly process, and audit the
-   * refusal. Used for both an unbindable input and a failing approval store.
+   * Refuse a call the gate cannot honestly process, and audit the refusal. Used
+   * for a gate wired to nobody, an unbindable input, a failing approval store,
+   * and a turn nobody is watching.
    */
   const refuse = (reason: TierDeniedReason, message: string): TierEnforcementDecision => {
     const payload = denied(action, reason, message, { approvable: false });
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   };
+
+  if (!gate) {
+    return refuse(
+      'enforcement_unavailable',
+      `"${action.title}" ${needsApprovalClause(tier, action.id)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`
+    );
+  }
 
   // An input that cannot be canonicalized without losing information cannot be
   // bound, and an approval whose hash ignores part of the action is worse than no
@@ -973,6 +971,11 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
    * and is built inline below, so the compiler now keeps the two apart.
    */
   const ask = (reason: FreshAskReason): TierEnforcementDecision => {
+    // A turn nobody is watching (a scheduled run, an automatic carry-over) fails
+    // at once with a reason instead of raising a card nobody can answer (DOR-3394).
+    if (turnHasNobodyToAsk(requestingSession?.sessionId)) {
+      return refuse('enforcement_unavailable', nobodyToAskMessage(action.title));
+    }
     // A request past Blocked is rate-limited from the approvals store BEFORE
     // anything is minted, so a looping agent gets one card, never a stack of
     // them, and a restart cannot reset the count (spec `agent-permissions` D8).

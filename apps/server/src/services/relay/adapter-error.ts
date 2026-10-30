@@ -21,7 +21,12 @@ export type AdapterErrorCode =
    * is nothing to name and no session involved, so it is refused rather than
    * built around a guess.
    */
-  | 'NO_AGENT_RUNTIMES';
+  | 'NO_AGENT_RUNTIMES'
+  /**
+   * A paused connection's owner confirmed a summary that no longer matches it:
+   * its references or destinations changed after they looked (DOR-3271).
+   */
+  | 'CONFIRMATION_STALE';
 
 /**
  * Error class for adapter CRUD operations.

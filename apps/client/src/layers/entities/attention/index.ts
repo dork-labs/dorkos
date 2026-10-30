@@ -62,3 +62,4 @@ export {
   clearAskReceipts,
   type AskReceipt,
 } from './model/ask-receipt-store';
+export type { PausedConnectionItem } from './model/derive-waiting-items';

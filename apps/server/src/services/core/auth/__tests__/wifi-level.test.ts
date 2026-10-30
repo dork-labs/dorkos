@@ -81,6 +81,8 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['host', 'POST', '/api/marketplace/updates'],
   ['host', 'POST', '/api/marketplace/dev-links'],
   ['host', 'POST', '/api/marketplace/held-back/p1/decision'],
+  ['host', 'POST', '/api/mcp-servers'],
+  ['host', 'DELETE', '/api/mcp-servers/github'],
   ['host', 'POST', '/api/shapes/s1/apply'],
   ['host', 'DELETE', '/api/workspaces/w1'],
   ['host', 'POST', '/api/agents'],
@@ -150,6 +152,7 @@ const ALLOWED: readonly [string, string][] = [
   ['POST', '/api/extensions/cwd-changed'],
   ['PUT', '/api/extensions/x1/data'],
   ['POST', '/api/marketplace/packages/p1/preview'],
+  ['GET', '/api/mcp-servers'],
   ['GET', '/api/extensions'],
   ['GET', '/api/harness/status'],
 ];

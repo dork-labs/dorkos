@@ -172,6 +172,30 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('Version: 1.2.3');
   });
 
+  it('<env> names the install kind beside the version', async () => {
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    // Tests run from source, so the server is a checkout whatever the env says.
+    expect(result).toMatch(/\nApp: DorkOS dev checkout 1\.2\.3 \(\w+\)\n/);
+  });
+
+  it('<env> shows the version of the process building it, never an earlier one', async () => {
+    // Regression: a chat reported 0.126.2 after the server was on 0.126.3. The
+    // block is rebuilt per turn from the running process, and the new version
+    // lands in `stable`, the half the warm-process pin and Codex gate digest,
+    // so a restart onto a new version reaches the agent.
+    const before = await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir');
+    vi.resetModules();
+    vi.doMock('../../../lib/version.js', () => ({ SERVER_VERSION: '1.2.4', IS_DEV_BUILD: false }));
+    const fresh = await import('../../runtimes/claude-code/messaging/context-builder.js');
+    const after = await fresh.buildSystemPromptAppend(testHome('/test/dir'), '/test/dir');
+    vi.doUnmock('../../../lib/version.js');
+
+    expect(before.stable).toContain('Version: 1.2.3');
+    expect(after.stable).toContain('Version: 1.2.4');
+    expect(after.stable).toContain('App: DorkOS dev checkout 1.2.4');
+    expect(after.stable).not.toContain('1.2.3');
+  });
+
   it('does not include git status (moved to per-message context)', async () => {
     const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).not.toContain('<git_status>');

@@ -115,16 +115,7 @@ import {
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
-import {
-  getOrCreateProjector,
-  overlayApprovalReceipts,
-  overlayModelSubstitutions,
-  overlayAgentCompactions,
-  overlayPermissionDenials,
-  overlayWorkLeftRunning,
-  peekProjector,
-  streamGenerationOf,
-} from '../../session/index.js';
+import { getOrCreateProjector, peekProjector, streamGenerationOf } from '../../session/index.js';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 
@@ -140,6 +131,7 @@ import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
 import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
+import { overlayClaudeCodeHistory } from './history/claude-code-history-overlays.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -1598,8 +1590,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * The transcript is SDK JSONL, which records that a tool ran or did not and
    * nothing about a person having been asked first — so the permission
    * decisions DorkOS recorded for this session are overlaid back on
-   * ({@link overlayApprovalReceipts}), and so are the tool calls it refused
-   * before anyone could be asked ({@link overlayPermissionDenials}). This is the
+   * (`overlayApprovalReceipts`), and so are the tool calls it refused
+   * before anyone could be asked (`overlayPermissionDenials`). This is the
    * seam BOTH history consumers
    * pass through — `GET /:id/messages` and `getSessionSnapshot`'s loader — so
    * reopening a conversation shows the same receipts a live one does. The
@@ -1629,20 +1621,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // replaying recorded `image_attachment` events, which carry their URL
     // (`services/session/event-log-history.ts`).
     const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
-    // A further pass, for the refusals nobody was asked about (DOR-795): a
-    // BACKGROUNDED subagent's denied tool call is written into the child's
-    // transcript, not this one, so without this the conversation comes back
-    // showing an agent that stopped making progress for no stated reason.
-    // And the fourth, for turns that ran on another model than the session
-    // names because DorkOS credits do not cover it (DOR-2636): the transcript
-    // names the model that ran and never the one it replaced.
-    // And the fifth, for summaries the agent asked for itself (DOR-2732): the
-    // transcript records that the conversation was summarized, never who asked.
-    // And the sixth, for background commands a Stop could not end (DOR-3285):
-    // the transcript records neither the line nor how each command later ended.
-    const base = overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages));
-    const stopped = overlayWorkLeftRunning(sessionId, base);
-    return overlayAgentCompactions(sessionId, overlayModelSubstitutions(sessionId, stopped));
+    // Everything DorkOS recorded that the transcript cannot say, laid back over it.
+    return overlayClaudeCodeHistory(sessionId, messages);
   }
 
   /**

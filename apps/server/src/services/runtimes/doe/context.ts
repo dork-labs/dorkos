@@ -7,6 +7,7 @@ import { buildAgentContextAppend } from '../shared/agent-context.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
+import { formatTurnCutoff } from '../../session/turn-cutoff/turn-cutoff.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
 import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
@@ -32,6 +33,9 @@ export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
       break;
     case 'context_warning':
       body = formatContextWarning(entry.data, 'claude-code', (name) => name);
+      break;
+    case 'turn_cutoff':
+      body = formatTurnCutoff(entry.data);
       break;
     case 'room_context':
       body = formatRoomContext(entry.data, { toolPrefix: '' });

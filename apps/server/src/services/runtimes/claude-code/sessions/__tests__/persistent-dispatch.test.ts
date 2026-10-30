@@ -1141,16 +1141,19 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     expect(cli.processes.at(-1)!.options.permissionMode).toBe('bypassPermissions');
   });
 
-  it("keeps asking for a stranger's background work while the owner's turn waits on it", async () => {
+  /**
+   * A stranger's helper asks the gate for a shell command while the owner's turn waits on it.
+   * Below Full the card is raised (the answer stays pending); a chat set to Full asks nobody
+   * anything (DOR-3394), so there it is allowed at once. This was pinned at Full, pending, until then.
+   */
+  async function backgroundAsk(mode: 'acceptEdits' | 'bypassPermissions') {
     const sessionId = nextSession();
-    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await runtime.updateSession(sessionId, { permissionMode: mode });
     await turn(sessionId);
     await strangerTurn(sessionId);
-    const process = cli.processes[0]!;
+    const process = cli.processes.at(-1)!;
     process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
-
-    // The owner's turn can wait, so it holds for the stranger's helper.
     const answers: string[] = [];
     for await (const _event of runtime.sendMessage(sessionId, 'the owner again', {
       cwd: CWD,
@@ -1164,19 +1167,26 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     })) {
       // Drained.
     }
-    expect(answers).toEqual(['hold']);
-
-    // The helper asks the gate for a shell command during the hold.
-    const canUseTool = process.options.canUseTool!;
-    const asked = canUseTool('Bash', { command: 'rm -rf build' }, {
+    const asked = process.options.canUseTool!('Bash', { command: 'rm -rf build' }, {
       signal: new AbortController().signal,
       toolUseID: 'background-1',
     } as never);
     const settled = await Promise.race([
-      asked.then(() => 'answered' as const),
+      asked.then((result) => result!.behavior),
       new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 50)),
     ]);
-    expect(settled).toBe('pending');
+    return { answers, settled };
+  }
+
+  it("keeps asking for a stranger's background work below Full while the owner's turn waits on it", async () => {
+    expect(await backgroundAsk('acceptEdits')).toEqual({ answers: ['hold'], settled: 'pending' });
+  });
+
+  it("asks nothing for a stranger's background work in a chat set to Full (DOR-3394)", async () => {
+    expect(await backgroundAsk('bypassPermissions')).toEqual({
+      answers: ['hold'],
+      settled: 'allow',
+    });
   });
 
   it("never lets the owner loosen a stranger's running turn from the picker", async () => {

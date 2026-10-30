@@ -23,6 +23,7 @@ import type { RoomVisibility } from '../service/room-visibility.js';
 
 /** Every way a room comes into existence. */
 export class RoomLifecycle {
+  private readonly roomAudience: RoomCore['roomAudience'];
   private readonly store: RoomStore;
   private readonly roster: RoomRoster;
 
@@ -33,6 +34,7 @@ export class RoomLifecycle {
     private readonly projection: RoomProjection,
     private readonly updates: RoomUpdates
   ) {
+    this.roomAudience = core.roomAudience;
     this.store = core.store;
     this.roster = core.roster;
   }
@@ -217,7 +219,11 @@ export class RoomLifecycle {
       return this.adoptExistingDm(won, creatorAuthorId);
     }
 
-    eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
+    eventFanOut.broadcast(
+      'room_created',
+      { roomId: room.id, kind: room.kind, title: room.title },
+      this.roomAudience(room.id)
+    );
     return { ...this.projection.withRoster(room, creatorAuthorId), created: true };
   }
 
@@ -360,7 +366,11 @@ export class RoomLifecycle {
       if (!won) throw err;
       return { room: won, created: false };
     }
-    eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
+    eventFanOut.broadcast(
+      'room_created',
+      { roomId: room.id, kind: room.kind, title: room.title },
+      this.roomAudience(room.id)
+    );
     return { room, created: true };
   }
 }

@@ -151,7 +151,7 @@ describe('the trigger seams hand the stall guard a first-event window', () => {
     const error = watching.events.find((event) => event.type === 'error');
     expect(error).toMatchObject({
       code: 'turn_stalled',
-      message: 'The agent never started working after 2 minutes, so the turn was ended.',
+      message: "DorkOS ended this turn: the agent didn't start within 2 minutes.",
     });
     expect(watching.events.find((event) => event.type === 'turn_end')).toMatchObject({
       terminalReason: 'error',
