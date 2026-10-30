@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): a server for every agent can't run from where agents write (DOR-3213)"
+  - 'fix(server): Always allow on a server for every agent stays with that agent (DOR-3213)'
 ---
 
 ### Fixed
