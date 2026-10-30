@@ -117,6 +117,15 @@ describe('GlobalMcpStore', () => {
     expect(store.injectableFor('agent-a')).toEqual({});
   });
 
+  it('knows a saved server by name, on or off, and forgets a removed one', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    await store.add({ ...GITHUB, enabled: false });
+    expect(store.has('github')).toBe(true);
+    expect(store.has('linear')).toBe(false);
+    await store.remove('github');
+    expect(store.has('github')).toBe(false);
+  });
+
   it('removes the stored secrets with the server', async () => {
     const store = new GlobalMcpStore(home, secrets);
     await store.add(GITHUB);

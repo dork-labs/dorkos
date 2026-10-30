@@ -2,7 +2,7 @@
  * `/api/mcp-servers` is person-only (DOR-3213): an agent can neither read nor
  * change the servers every agent gets, and no answer carries a secret value.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -162,6 +162,8 @@ describe('/api/mcp-servers', () => {
     });
 
     it('refuses every write from a program at this computer that sends no headers', async () => {
+      const file = path.join(home, 'mcp', 'global-servers.json');
+      const before = readFileSync(file);
       const writes = [
         request(app())
           .post('/api/mcp-servers')
@@ -175,6 +177,23 @@ describe('/api/mcp-servers', () => {
         expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
       }
       expect(store.list().map((s) => [s.name, s.enabled])).toEqual([['github', true]]);
+      expect(readFileSync(file).equals(before)).toBe(true);
+    });
+
+    it("refuses a page on another site, even carrying the owner's session", async () => {
+      state.user = { userId: 'owner', credential: 'cookie' };
+      const file = path.join(home, 'mcp', 'global-servers.json');
+      const before = readFileSync(file);
+      const res = await request(app())
+        .post('/api/mcp-servers')
+        .set('Origin', 'https://evil.example')
+        .set('Sec-Fetch-Site', 'cross-site')
+        .send({ ...SERVER, name: 'planted' });
+      // The chain's CORS check refuses it before the route (its status is the
+      // chain's to choose); what matters is that nothing was written.
+      expect(res.ok).toBe(false);
+      expect(store.list().map((s) => s.name)).toEqual(['github']);
+      expect(readFileSync(file).equals(before)).toBe(true);
     });
 
     it("refuses the owner's API key, which a program can read off disk", async () => {

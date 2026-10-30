@@ -50,6 +50,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import { setGlobalMcpServerLookup } from '../../services/runtimes/claude-code/tool-gate/global-server-always-allow.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 
 /** What {@link wireMcpTasksAndSkills} reads from the startup steps before it. */
@@ -111,6 +112,9 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       error: err instanceof Error ? err.message : String(err),
     });
   });
+  // An "Always allow" on one of their tools stays with the agent that was
+  // asked, never every agent (Security's T9).
+  setGlobalMcpServerLookup((name) => globalMcpServers.has(name));
   // A plugin reload that threw a conversation's prompt cache away leaves a line
   // in the feed — with what it cost and whether it waited first. Free reloads
   // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below

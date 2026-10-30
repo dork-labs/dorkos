@@ -5,6 +5,5 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A server for every agent can't run from where agents write (DOR-3213)
+- An MCP server you add for every agent now only runs a program from a full path outside your agents' folders, and never with settings that load extra code into it. A saved server that breaks these rules isn't started.
+- Choosing "Always allow" on one of these servers' tools now applies to that agent only, not every agent.

@@ -202,6 +202,15 @@ export class GlobalMcpStore {
     await this.resolveAll();
   }
 
+  /**
+   * Whether a person saved a server by this name for every agent, on or off.
+   *
+   * @param name - The server name.
+   */
+  has(name: string): boolean {
+    return this.servers.some((server) => server.name === name);
+  }
+
   /** Every server, as a person sees it: secret values never included. */
   list(): GlobalMcpServerView[] {
     return this.servers.map((server) => this.view(server));
