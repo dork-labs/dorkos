@@ -787,7 +787,8 @@ export async function resolveLaunch(args: {
     effectiveCwd
   );
   // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
-  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome());
+  // Every agent home's self-grant files too, below Full only (read off the mode set above).
+  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), { sessionId, agentPath: turnAgentPath });
   // And the agent home's self-grant files, plus the switches for held-back parts.
   applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
   // Every turn, at every level: the model's own Read, Grep and Glob never open
