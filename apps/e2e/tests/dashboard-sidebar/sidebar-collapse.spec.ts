@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 
 /**
  * The sidebar leaving and coming back with ⌘B.
@@ -27,7 +28,7 @@ function panelX(page: Page): Promise<number> {
   );
 }
 
-test.describe('sidebar collapse', () => {
+test.describe('sidebar collapse', { tag: SOLE_SIDEBAR_TAG }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await expect(sectionToggle(page)).toBeVisible();
