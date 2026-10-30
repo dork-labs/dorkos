@@ -39,6 +39,7 @@ import {
 } from './agent-execution.js';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { sanitizedConfigSnapshot } from './config-patch.js';
+import { unattendedConfigAuthority } from './operator-only-tightening.js';
 import {
   applyGuardedConfigWrite,
   OPERATOR_TOOL_AUTHORITY,
@@ -570,10 +571,11 @@ export function createConfigPatchHandler(identity?: AgentIdentity, approval?: Gr
       // that, the agent may change preferences only, exactly as before.
       // The DorkOS account's own settings ask one more thing of that yes: that
       // it came from the owner of this DorkOS (DOR-2678).
+      // At Full, a patch that only turns a person's settings down runs on its own (DOR-3426).
       authority:
         approval?.via === 'approval'
           ? personApprovedAuthority(approval.decidedByUserId)
-          : OPERATOR_TOOL_AUTHORITY,
+          : unattendedConfigAuthority(args.patch, approval),
       source: 'the config_patch tool',
       writer: agentWriter(identity),
     });
