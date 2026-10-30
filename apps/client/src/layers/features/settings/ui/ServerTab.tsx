@@ -17,6 +17,7 @@ import {
 } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
+import { NetworkSection } from './network/NetworkSection';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
@@ -95,6 +96,7 @@ export function ServerTab() {
 
           <DiagnosticsSection config={config} />
           <LoggingSection config={config} />
+          <NetworkSection config={config} />
         </div>
       ) : null}
     </div>
