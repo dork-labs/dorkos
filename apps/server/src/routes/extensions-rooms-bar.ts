@@ -46,6 +46,7 @@ import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { personSessionRequired } from '../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../lib/person-without-session.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
@@ -80,7 +81,7 @@ export function refuseRoomWrite(facts: RequestFacts): RoomWriteRefusal | undefin
     notePersonSessionMissing(facts);
     return 'not-a-browser-session';
   }
-  return facts.headers.authorization === undefined ? undefined : 'not-a-browser-session';
+  return presentsProgramCredential(facts) ? 'not-a-browser-session' : undefined;
 }
 
 /** What the person is told for each refusal. */

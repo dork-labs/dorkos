@@ -43,6 +43,7 @@ import { configManager } from '../../../core/config-manager.js';
 import { logConfigWrite } from '../../../core/operator/config-write.js';
 import {
   FOLDER_CONFIG_PARTS,
+  inertApartFromRuntime,
   readFolderConfigParts,
   type FolderConfigDigests,
   type FolderConfigPart,
@@ -409,6 +410,39 @@ export function runtimeUnlessHeld(
     return approved.manifest === now.digests.manifest ? runtime : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Pin an agent a PERSON just created to what DorkOS wrote for it, so the
+ * runtime they picked is the one it runs on (DOR-3459). Without this, a new
+ * agent on Codex or OpenCode has no record, its runtime alone makes its home
+ * "not inert", and its first chat silently falls back to the default runtime.
+ *
+ * Only for a home with no record yet, where nothing runs or widens anything
+ * apart from the runtime. Call it only where the caller is known to be a
+ * person: an agent creating an agent leaves the runtime held, so a card asks.
+ *
+ * @param agentId - The new agent's id.
+ * @param home - The new agent's home.
+ * @returns Whether the agent was pinned.
+ */
+export function pinPersonCreatedAgent(agentId: string, home: string): boolean {
+  try {
+    if (hasFolderConfigRecord(agentId, home)) return false;
+    const now = readFolderConfigParts(home);
+    if (!now.inert && !inertApartFromRuntime(now)) return false;
+    recordFolderConfigApproval(
+      { agentId, home, digests: now.digests },
+      'pinning an agent a person created'
+    );
+    return true;
+  } catch (err) {
+    logger.warn('[FolderConfig] Could not pin an agent a person created', {
+      agentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
   }
 }
 

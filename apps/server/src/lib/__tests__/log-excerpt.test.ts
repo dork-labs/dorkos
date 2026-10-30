@@ -92,6 +92,45 @@ describe('getRecentLogExcerpt', () => {
     expect(result).toContain('refused (403)');
   });
 
+  it('drops log lines that carry no message, and blank lines inside one (DOR-2234)', async () => {
+    // A warn line with an empty `msg` rendered as a bare "time warn" row, and a
+    // message with blank lines in it left empty rows in the report. Neither
+    // tells a reader anything; both spend the excerpt's budget.
+    loggerModule.initLogger({ logDir, level: 5 });
+    const now = new Date().toISOString();
+    const lines = [
+      { level: 'warn', time: now, msg: '' },
+      { level: 'error', time: now, msg: '   ' },
+      { level: 'warn', time: now },
+      { level: 'warn', time: now, msg: 'first half\n\n  \nsecond half' },
+    ];
+    await appendFile(
+      path.join(logDir, 'dorkos.log'),
+      lines.map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    loggerModule.logger.warn('a real warning');
+
+    const result = await logExcerptModule.getRecentLogExcerpt();
+
+    expect(result).toBeDefined();
+    const rows = result!.split('\n');
+    expect(rows.every((row) => row.trim().length > 0)).toBe(true);
+    expect(rows.some((row) => /^\S+ (warn|error)$/.test(row.trim()))).toBe(false);
+    expect(result).toContain('first half');
+    expect(result).toContain('second half');
+    expect(result).toContain('a real warning');
+  });
+
+  it('returns undefined when every warn line is empty (DOR-2234)', async () => {
+    loggerModule.initLogger({ logDir, level: 5 });
+    await appendFile(
+      path.join(logDir, 'dorkos.log'),
+      JSON.stringify({ level: 'warn', time: new Date().toISOString(), msg: '' }) + '\n'
+    );
+
+    expect(await logExcerptModule.getRecentLogExcerpt()).toBeUndefined();
+  });
+
   it('drops lines older than maxAgeMs', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     const oldLine =

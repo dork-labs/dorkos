@@ -110,6 +110,12 @@ export interface MessageAuthor {
    * with its messages kept (DOR-2095). The header says so beside the name.
    */
   retired?: boolean;
+  /**
+   * True when this is the person reading, so the author line can add a muted
+   * "(you)" after their name (FB-38/55). Set by the resolver; a room passes it
+   * to `Message.Author` from its own viewer id instead.
+   */
+  isSelf?: boolean;
 }
 
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';

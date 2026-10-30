@@ -258,8 +258,19 @@ describe('createFeedbackIssue — description formatting', () => {
       submissionUrl: 'https://dorkos.ai/feedback/row-uuid-1',
     });
     expect(description).toContain('Kind: feedback');
-    expect(description).toContain('Surface: cockpit');
+    expect(description).toContain('Surface: DorkOS app');
     expect(description).toContain('Submission: https://dorkos.ai/feedback/row-uuid-1');
+  });
+
+  // The stored `surface` stays `cockpit` (a DB enum and a wire value); only the
+  // words in the issue change, because "cockpit" is retired copy.
+  it.each([
+    ['cockpit', 'Surface: DorkOS app'],
+    ['site', 'Surface: dorkos.ai website'],
+  ] as const)('names the %s surface in plain words (DOR-2234)', async (surface, line) => {
+    const description = await descriptionFor({ kind: 'bug', message: 'x', surface });
+    expect(description).toContain(line);
+    expect(description).not.toMatch(/cockpit/i);
   });
 
   it('collapses newlines in caller-supplied fields so forged Key: lines cannot appear', async () => {

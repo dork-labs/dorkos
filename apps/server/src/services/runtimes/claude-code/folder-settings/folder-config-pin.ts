@@ -325,6 +325,26 @@ function manifestInert(value: unknown): boolean {
 }
 
 /**
+ * Whether nothing in the home runs or widens anything, apart from the runtime
+ * its agent file names: exactly what DorkOS writes when a person creates an
+ * agent on Codex or OpenCode (DOR-3459). Any hook, server or account still fails it.
+ *
+ * @param parts - The home as {@link readFolderConfigParts} read it.
+ */
+export function inertApartFromRuntime(parts: FolderConfigParts): boolean {
+  const manifest = parts.values.manifest as { runtime?: unknown } | null;
+  if (parts.unverifiable.length > 0 || manifest === null || typeof manifest !== 'object') {
+    return false;
+  }
+  return (
+    typeof manifest.runtime === 'string' &&
+    hooksInert(parts.values.hooks) &&
+    mcpJsonInert(parts.values.mcpJson) &&
+    manifestInert({ ...manifest, runtime: null })
+  );
+}
+
+/**
  * Read an agent home's folder settings and digest each part.
  *
  * @param home - The registered agent home.
