@@ -37,6 +37,7 @@ import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/projec
 
 import { projectRegistry } from '../../projects/project-registry.js';
 import { lookupProjectRoot } from '../../projects/resolve-project-root.js';
+import { configManager } from '../config-manager.js';
 
 /** The runtimes that have account rules. */
 export type EligibilityRuntime = 'claude-code';
@@ -274,19 +275,52 @@ export function onlyProjectsOf(
  * An empty, missing or unresolvable folder is "no project"; it never throws.
  *
  * @param cwd - Any folder, or nothing.
+ * @param config - Where the account rules live, for a refused repository.
  */
-export async function projectOfFolder(cwd: string | null | undefined): Promise<ProjectRef | null> {
+export async function projectOfFolder(
+  cwd: string | null | undefined,
+  config: EligibilityConfigReader = configManager
+): Promise<ProjectRef | null> {
   if (!cwd || !path.isAbsolute(cwd)) return null;
   try {
     // A repository git will not be run in (a dotfiles `$HOME` whose settings
     // name a program, DOR-3343) is no project here, and only here and at chat
     // start: the chat runs in its folder and no git runs. Git reads in it stay
     // refused by the runner. The lookup is cached, so the registry asks no git.
-    if ((await lookupProjectRoot(cwd)).kind === 'refused') return null;
+    // A project a person kept to some accounts stays that project, though: one
+    // settings line in its repo must not lift the limit (Security, DOR-3343).
+    if ((await lookupProjectRoot(cwd)).kind === 'refused') {
+      const root = ruleRootHolding(config, cwd);
+      return root === null ? null : projectRefFor(root);
+    }
     return await projectRegistry.resolve(cwd);
   } catch {
     return null;
   }
+}
+
+/**
+ * The deepest project root an account rule names that holds `cwd`, by path
+ * alone (no git), or null. Both sides canonical, matched whole or as
+ * `root` + separator, so `/a/proj` never holds `/a/project-b`.
+ *
+ * @param config - Where the account rules live.
+ * @param cwd - An absolute folder.
+ */
+function ruleRootHolding(config: EligibilityConfigReader, cwd: string): string | null {
+  let block: unknown;
+  try {
+    block = (config.get('runtimes') as { claudeCode?: unknown } | undefined)?.claudeCode;
+  } catch {
+    return null;
+  }
+  const dir = canonicalDirectory(cwd);
+  let deepest: string | null = null;
+  for (const root of accountRuleRoots(block)) {
+    const holds = dir === root || dir.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+    if (holds && (deepest === null || root.length > deepest.length)) deepest = root;
+  }
+  return deepest;
 }
 
 /**
