@@ -141,6 +141,7 @@ export function resolveMessageAuthor(
       kind: 'human',
       id: HUMAN_AUTHOR_ID,
       displayName: ctx.humanName?.trim() || DEFAULT_HUMAN_NAME,
+      isSelf: true,
     };
   }
 
