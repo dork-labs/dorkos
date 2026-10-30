@@ -220,16 +220,21 @@ function noticeEntry(code: RoomNoticeCode, text: string): RoomEntry {
  * just-sent row below therefore does become the slow one after fifteen seconds
  * on this page — which is the behaviour, not a bench artefact.
  */
-function pending(status: PendingPost['status'], text: string, at = Date.now()): PendingPost {
+function pending(
+  status: PendingPost['status'],
+  text: string,
+  at = Date.now(),
+  failure: PendingPost['failure'] = status === 'failed' ? 'unknown' : null
+): PendingPost {
   return {
-    clientId: `bench-${status}-${at}`,
+    clientId: `bench-${status}-${failure ?? 'none'}-${at}`,
     roomId: THREAD_ROOM_ID,
     threadRootId: null,
     text,
     attachmentNames: [],
     attachmentIds: [],
     status,
-    failure: status === 'failed' ? 'unknown' : null,
+    failure,
     entryId: null,
     at,
   };
@@ -333,6 +338,14 @@ function PendingSection() {
       <ShowcaseDemo>
         <PendingRow
           post={pending('failed', 'is the build still stuck?')}
+          viewerAuthorId="author-you"
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Not sent — the server never answered (DOR-3481)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PendingRow
+          post={pending('failed', 'is the build still stuck?', Date.now(), 'not-sent')}
           viewerAuthorId="author-you"
         />
       </ShowcaseDemo>
