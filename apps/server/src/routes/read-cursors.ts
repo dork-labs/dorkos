@@ -177,7 +177,8 @@ router.get('/:kind/:id', (c) => {
 function personOrRefuse(c: Context<ApiEnv>): AuthorRecord | Response {
   let caller: AuthorRecord;
   try {
-    caller = resolveCaller(honoRequestFacts(c));
+    // A read position is the reader's own bookkeeping, never a word in the room.
+    caller = resolveCaller(honoRequestFacts(c), 'read');
   } catch (err) {
     // No caller resolved, so nobody is the owner here.
     const reply = roomErrorReply(err, 'read-cursors', () => false);

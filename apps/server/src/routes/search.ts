@@ -86,7 +86,7 @@ export function createSearchRoutes(deps: SearchRouterDeps): Hono<ApiEnv> {
     let caller: AuthorRecord | undefined;
     try {
       const rooms = getRoomService();
-      caller = resolveCaller(facts);
+      caller = resolveCaller(facts, 'read');
       // `isOwnerRecord` answers "is this the person who owns the install", and it
       // is the half that decides today: an agent resolves to an agent author and
       // fails it, and a caller whose token did not verify never gets this far

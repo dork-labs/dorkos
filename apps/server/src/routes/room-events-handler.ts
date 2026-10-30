@@ -50,7 +50,7 @@ export async function roomEventsHandler(c: Context<ApiEnv>): Promise<Response> {
   let viewerAuthorId: string;
   try {
     service = getRoomService();
-    viewerAuthorId = resolveCaller(facts).id;
+    viewerAuthorId = resolveCaller(facts, 'read').id;
     // Fail BEFORE headers flush, so it is a plain 404 the client can read
     // rather than a socket that opens and immediately dies. `getRoom` is
     // membership-scoped, so this refuses an unknown room and a room the caller

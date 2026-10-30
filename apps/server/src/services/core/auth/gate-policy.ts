@@ -38,7 +38,7 @@ import {
 } from '../../../lib/request-classifier.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { configManager } from '../config-manager.js';
-import { hasAnyUser } from './index.js';
+import { hasAnyUser, readOwnerAccount } from './index.js';
 import type { RequestUser } from './session-gate.js';
 
 /**
@@ -160,6 +160,46 @@ export function gateAccessFor(
  */
 export function credentialGated(facts: ClassifierFacts): boolean {
   return gateAccessFor(facts) !== 'open';
+}
+
+/** The methods that only read. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** Whether an owner account exists; a lookup that fails reads as yes, so a bar fails closed. */
+function ownerAccountExists(): boolean {
+  try {
+    return readOwnerAccount() !== null;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Whether a bar reserved for a person must see that person's browser session
+ * (DOR-3330). True wherever the gate asked for a credential, and also for a
+ * change at this computer once an owner exists, even while it asks for no
+ * password.
+ *
+ * An open request proves "this computer", never "this person". Once an
+ * owner exists they can
+ * prove themselves, with one password step-up that leaves a session for this
+ * computer, so the person-only bars ask for it before anything changes. Reads
+ * keep their old answer, so looking never asks for a password, and so does an
+ * install with nobody to sign in as (a fresh install, an owner-less container).
+ *
+ * @param facts - The request's TCP peer, raw headers, ingress and, when known,
+ *   its method (none reads as a change).
+ * @param posture - Override for tests; defaults to {@link readGatePosture}.
+ * @param ownerExists - Whether the install has an owner; the owner account by default.
+ */
+export function personSessionRequired(
+  facts: ClassifierFacts & { readonly method?: string },
+  posture: GatePosture = readGatePosture(),
+  ownerExists: () => boolean = ownerAccountExists
+): boolean {
+  if (gateAccessFor(facts, posture) !== 'open') return true;
+  if (facts.method !== undefined && READ_METHODS.has(facts.method.toUpperCase())) return false;
+  return ownerExists();
 }
 
 /**

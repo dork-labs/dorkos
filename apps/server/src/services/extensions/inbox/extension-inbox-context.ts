@@ -14,6 +14,12 @@ import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/exten
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
 import { expressRequestFacts } from '../http/express-bridge.js';
+import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import {
+  isPersonWithoutSession,
+  PERSON_SESSION_REQUIRED_MESSAGE,
+  personSessionWasMissing,
+} from '../../../lib/person-without-session.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { getExtensionInbox, type ExtensionInboxService } from './extension-inbox.js';
 import { projectSettingsStore } from './extension-project-settings.js';
@@ -107,23 +113,39 @@ export function requirePersonCopy(extensionName: string): PersonBarCopy {
  * @param extensionName - The extension's manifest name.
  */
 export function personVerdict(request: RequestFacts, extensionName: string): PersonCheck {
-  const refusal = assessPerson(request, requirePersonCopy(extensionName));
+  const refusal = extensionPersonRefusal(request, extensionName);
   return refusal ? { ok: false, status: refusal.status, body: refusal.body } : { ok: true };
 }
 
 /**
+ * The person bars for an extension's own route, or `null` when a person is
+ * asking. Every method asks (DOR-3330): DorkOS cannot know that an
+ * extension's `GET` changes nothing, so its method is not read. The person at
+ * this computer missing only their session is answered with the step-up code,
+ * so the app asks their password once.
+ */
+function extensionPersonRefusal(request: RequestFacts, extensionName: string) {
+  const facts: RequestFacts = { ...request, method: undefined };
+  const refusal = assessPerson(facts, requirePersonCopy(extensionName));
+  const fromTheApp = facts.headers[PERSON_APP_HEADER] !== undefined;
+  if (refusal && fromTheApp && personSessionWasMissing(facts) && isPersonWithoutSession(facts)) {
+    const message = PERSON_SESSION_REQUIRED_MESSAGE;
+    return { status: 401, body: { error: message, code: PERSON_SESSION_REQUIRED_CODE, message } };
+  }
+  return refusal;
+}
+
+/**
  * `ctx.requirePerson`: the bar that guards approving an extension, in front of
- * one of the extension's own routes, worded with its name (§7.6). It has the
- * same residuals: with Require login off, a local caller that does not name
- * itself an agent passes, and in any posture the extension's own page code
- * passes.
+ * one of the extension's own routes, worded with its name (§7.6). Once an
+ * owner exists it needs their session at this computer too (DOR-3330); the
+ * extension's own page code, in the person's window, still passes.
  *
  * @param extensionName - The extension's manifest name.
  */
 export function createRequirePerson(extensionName: string): RequestHandler {
-  const copy = requirePersonCopy(extensionName);
   return (req, res, next) => {
-    const refusal = assessPerson(expressRequestFacts(req, res), copy);
+    const refusal = extensionPersonRefusal(expressRequestFacts(req, res), extensionName);
     if (refusal) {
       res.status(refusal.status).json(refusal.body);
       return;

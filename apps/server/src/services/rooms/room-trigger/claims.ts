@@ -181,6 +181,8 @@ export function releaseClaim(
   // the ordinary terminal, a late answer settling, a failure and a halt all
   // reach it, so a held message runs however the blocking turn ended.
   self.resumeElsewhere(claim.agentPath);
+  // A hand-off waiting on this seat, or on this agent's working tree, may run now (DOR-3397).
+  for (const wake of [...self.releaseWaiters]) wake();
 }
 
 /**

@@ -124,7 +124,9 @@ describe('an agent patching a guarded setting', () => {
 
   beforeEach(() => {
     written.length = 0;
-    preset = 'full';
+    // Below Full: at the Full preset a person's setting is refused, never carded (DOR-3426, the
+    // last row here). These rows ran at Full until then.
+    preset = 'trusted';
     defaultAreas = {};
     own = undefined;
     approvals = new ApprovalService(createTestDb());
@@ -193,6 +195,8 @@ describe('an agent patching a guarded setting', () => {
   });
 
   it('asks about an everyday setting in DorkOS settings, where Always allow is offered', async () => {
+    // Full asks here, and an everyday setting is no person's setting, so DOR-3426 leaves it.
+    preset = 'full';
     // DorkOS settings is Ask on every preset, so it asks, in its own area.
     const decision = await refusal({ patch: { ui: { theme: 'dark' } } });
     expect(decision?.outcome).toBe('approval_required');
@@ -246,6 +250,26 @@ describe('an agent patching a guarded setting', () => {
     expect(approvals.listPending()[0]).toMatchObject({ alwaysOffered: false });
   });
 
+  it('at the Full preset, refuses it plainly, with no card and nothing written (DOR-3426)', async () => {
+    preset = 'full';
+    const decision = await refusal(TUNNEL_PATCH);
+    expect(decision).toMatchObject({
+      outcome: 'denied',
+      payload: { reason: 'permission_blocked', approvable: false },
+    });
+    expect(approvals.listPending()).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  it('at the Full preset, turning the tunnel off runs and is written, with no card (DOR-3426)', async () => {
+    preset = 'full';
+    const decision = await refusal({ patch: { tunnel: { enabled: false } } });
+    expect(decision).toBeUndefined();
+    expect(approvals.listPending()).toEqual([]);
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ tunnel: { enabled: false } });
+  });
+
   it('asks on an undecided install, which reads as Trusted: Reach & secrets is never Allowed', async () => {
     preset = null;
     const decision = await refusal(TUNNEL_PATCH);
@@ -288,6 +312,22 @@ describe('the handler without a person’s yes', () => {
     })({ patch: { tunnel: { enabled: true } } });
     expect(result.isError).toBeUndefined();
     expect(written).toHaveLength(1);
+  });
+
+  it('never lets an Allowed permission write a person’s setting, even one turned down, unless the gate allowed it as one (DOR-3426)', async () => {
+    const result = await createConfigPatchHandler(AGENT, { via: 'permission', source: 'preset' })({
+      patch: { tunnel: { enabled: false } },
+    });
+    expect(result.isError).toBe(true);
+    expect(written).toEqual([]);
+  });
+
+  it('never lets the gate’s tightening allowance write a looser value (DOR-3426)', async () => {
+    const result = await createConfigPatchHandler(AGENT, { via: 'permission', source: 'floor' })({
+      patch: { tunnel: { enabled: true } },
+    });
+    expect(result.isError).toBe(true);
+    expect(written).toEqual([]);
   });
 
   it('never lets an Allowed permission stand in for that yes', async () => {

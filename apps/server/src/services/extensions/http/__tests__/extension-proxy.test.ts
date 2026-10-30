@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 import http from 'node:http';
 import type { RequestListener } from 'node:http';
 import type { Request, Response } from 'express';
@@ -678,6 +679,12 @@ describe('the extension data proxy', () => {
     // resuming the leak.
     it('strips the real AGENT_IDENTITY_HEADER, not a copy that can drift', () => {
       expect(STRIPPED_HEADERS.has(AGENT_IDENTITY_HEADER)).toBe(true);
+    });
+
+    // A copy too, for the same reason: with a cookie from anywhere, the
+    // person proof would let the upstream act as the person (DOR-3330).
+    it('strips the real person proof header', () => {
+      expect(STRIPPED_HEADERS.has(PERSON_PROOF_HEADER)).toBe(true);
     });
 
     it('leaves only the injected credential when the upstream header is Authorization', async () => {

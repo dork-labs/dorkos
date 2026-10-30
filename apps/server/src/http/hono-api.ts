@@ -105,6 +105,9 @@ import { setHandleRenameActivity } from '../services/rooms/handles/rename-author
 import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createPersonSessionRoutes } from '../routes/person-session.js';
+import { askForPersonBeforeTaskWrite } from './person-session-refusal.js';
+import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
@@ -439,7 +442,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
-  if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  if (deps.tasks) {
+    // The person at this computer is asked to step up before a task change (DOR-3330).
+    app.use('/api/tasks', askForPersonBeforeTaskWrite());
+    app.use('/api/tasks/*', askForPersonBeforeTaskWrite());
+    app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  }
   if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
@@ -508,6 +516,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/link', createHubLinkRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
+  // The owner's one password step-up at this computer (DOR-3330).
+  app.route(PERSON_SESSION_PATH, createPersonSessionRoutes());
   // The loopback page an approvals passkey comes back to (B4c), at this computer only.
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).

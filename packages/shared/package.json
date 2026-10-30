@@ -97,6 +97,10 @@
       "types": "./src/git-hardening.ts",
       "default": "./dist/git-hardening.js"
     },
+    "./safe-git": {
+      "types": "./src/safe-git.ts",
+      "default": "./dist/safe-git.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
@@ -412,6 +416,10 @@
     "./transport-doc-links": {
       "types": "./src/transport-doc-links.ts",
       "default": "./dist/transport-doc-links.js"
+    },
+    "./person-session": {
+      "types": "./src/person-session.ts",
+      "default": "./dist/person-session.js"
     },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",

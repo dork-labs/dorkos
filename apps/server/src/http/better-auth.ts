@@ -24,7 +24,13 @@ import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../middleware/a
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
 import { classifyRequest, type RequestClass } from '../lib/request-classifier.js';
-import { isContainerPortClass } from '../services/core/auth/gate-policy.js';
+import {
+  decideGateAccess,
+  isContainerPortClass,
+  readGatePosture,
+} from '../services/core/auth/gate-policy.js';
+import { personProofMatches } from '../services/core/auth/person-proof.js';
+import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 import { currentServerRole } from '../lib/server-role.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 import { AUTH_COOKIES_SECURE, fromNodeHeaders } from '../services/core/auth/index.js';
@@ -72,10 +78,12 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
       return c.json({ code: API_KEY_NEEDS_THIS_COMPUTER, message: API_KEY_REFUSAL }, 403);
     }
     // A session made on another route is nobody here, at these endpoints too.
+    // At an open gate a session also needs the app's person proof (DOR-3330).
     const headers = await headersForRoute(
       options.auth,
       facts.headers,
-      sessionRouteOf(requestClass.route)
+      sessionRouteOf(requestClass.route),
+      decideGateAccess(requestClass, readGatePosture()) === 'open'
     );
     // Built from the same facts as `probe`, so it names the same address.
     const forHandler = headers === facts.headers ? probe : requestForBetterAuth(c, headers)!;
@@ -154,11 +162,15 @@ export function mayWriteApiKeys(requestClass: RequestClass): boolean {
  * @param auth - The Better Auth instance.
  * @param headers - The request's raw headers.
  * @param route - The route the request came in on (`null` for the relay).
+ * @param needsProof - Whether the gate was open, where a session counts only
+ *   beside the app's person proof, as at the session gate (DOR-3330): the
+ *   cookie also reaches every other port on this computer.
  */
 async function headersForRoute(
   auth: Auth,
   headers: IncomingHttpHeaders,
-  route: SessionRoute | null
+  route: SessionRoute | null,
+  needsProof: boolean
 ): Promise<IncomingHttpHeaders> {
   const cookie = headers.cookie;
   if (!cookie || !mayCarrySessionCookie(cookie)) return headers;
@@ -172,7 +184,8 @@ async function headersForRoute(
     if (
       found &&
       sessionWorksOn(found.session, route) &&
-      !publicComputerSessionExpired(found.session)
+      !publicComputerSessionExpired(found.session) &&
+      (!needsProof || (await personProofMatches(found.session.id, headers[PERSON_PROOF_HEADER])))
     ) {
       return headers;
     }

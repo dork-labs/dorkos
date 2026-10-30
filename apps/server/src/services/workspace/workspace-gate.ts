@@ -216,9 +216,14 @@ export function workspaceBringsAnything(inspection: WorkspaceInspection): boolea
  * machine asked, so git may run their repository's own hooks when it makes the
  * checkout. Any other gate leaves it unset, and git runs no hook or fsmonitor
  * (DOR-2335).
+ *
+ * `fullChat` names the chat set to Full autonomy that asked, when one did:
+ * its workspace is made even when the source's settings fail the audit, with
+ * one Activity line (DOR-3343, the owner's rule that Full has no limits).
  */
 export type WorkspaceGate = ((inspection: WorkspaceInspection) => Promise<void>) & {
   readonly person?: true;
+  readonly fullChat?: { readonly sessionId: string; readonly agentPath?: string };
 };
 
 /** A person has to see what the workspace brings first (409). */

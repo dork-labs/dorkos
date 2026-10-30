@@ -208,6 +208,7 @@ import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { projectDetail } from './service/room-detail-projection.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -226,7 +227,6 @@ import {
   MEMBER_ROOMS_PAGE_MAX,
   normalizeMemberHandle,
   normalizeRoomNameNeedle,
-  type RoomDetail,
   type RoomService,
 } from './room-service.js';
 import type { RoomMergeService } from './repo/room-merge-service.js';
@@ -277,60 +277,6 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
     throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
   }
   return merges;
-}
-
-/**
- * One room in full, as `get_room` and `find_room` return it: the listing facts,
- * the topic, and the roster with every label sanitized.
- *
- * The member rows deliberately carry `authorId` — it is what history entries
- * name their writer by, so an agent can join "who said this" to "who is this"
- * without a guess. What they deliberately do NOT carry is the operator's
- * per-member configuration (response modes, read cursors): context spent on
- * fields a model cannot act on.
- *
- * **The topic is sanitized for safety and not for length**, the same idiom
- * `welcome-back/greeter.ts` uses: the sanitizer is asked only for the thing it
- * is for. A topic is already bounded where it is WRITTEN — `UpdateRoomRequest`
- * caps it at 500 characters — and this projection is built when an agent asks
- * after one room rather than on every turn, so neither the 200-character cut
- * `room-context-block.ts` makes for its per-turn preamble nor the identity
- * default of 80 belongs here. Eighty would silently halve an ordinary sentence,
- * and a second cap copied to this side of the seam is a number that drifts from
- * the schema and truncates in a place nobody would think to look.
- *
- * @param rooms - The rooms service, for naming each member as an agent reads them.
- * @param detail - The service's projection.
- * @returns The compact, label-sanitized shape a tool returns.
- */
-function projectDetail(rooms: RoomService, detail: RoomDetail): Record<string, unknown> {
-  return {
-    roomId: detail.roomId,
-    kind: detail.kind,
-    // `?? null` on every label, for the reason spelled out on the topic below:
-    // a name written entirely in angle brackets sanitizes to nothing, and
-    // `undefined` is a key JSON drops — so a room would arrive with no `name`
-    // field at all and an agent would have nothing to call it by. `null` says
-    // "there is a name here and none of it survived", which is the true one.
-    name: sanitizeIdentity(detail.name) ?? null,
-    // A topic written entirely in angle brackets sanitizes to nothing, and
-    // reporting that as an absent key would say "nobody set a topic" when the
-    // truth is "somebody set a topic I cannot show you". Two different facts,
-    // and `null` is one of them.
-    topic:
-      detail.topic === null
-        ? null
-        : (sanitizeIdentity(detail.topic, Number.MAX_SAFE_INTEGER) ?? null),
-    joined: detail.joinedAt,
-    lastActivity: detail.lastActivityAt,
-    members: detail.members.map((member) => ({
-      authorId: member.authorId,
-      // The owner by name, never the registry's 'You' (DOR-2458).
-      name: sanitizeIdentity(rooms.nameForAgents(member.authorId) ?? member.name) ?? null,
-      ...(member.handle ? { handle: sanitizeIdentity(member.handle) } : {}),
-      kind: member.kind,
-    })),
-  };
 }
 
 /**
@@ -401,7 +347,9 @@ export const roomsDomain: CapabilityDomain = {
         'You can show a file with it — a screenshot or a recording you made — by naming its ' +
         'path in attachments; it has to be a file in your own folder or your own copy of a ' +
         "room's files. " +
-        'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
+        'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
+        'Only your own chat in a room posts there: from any other chat, the post goes to that chat, ' +
+        'which re-reads the room, then posts it or says why not.',
       tier: 'act',
       area: null,
       areaNote: 'conversation verbs never get a switch',
@@ -435,6 +383,13 @@ export const roomsDomain: CapabilityDomain = {
             'Post even though messages arrived since you last read the room. Set it only after ' +
               'a post came back unposted with those messages and yours still fits.'
           ),
+        verbatim: z
+          .boolean()
+          .optional()
+          .describe(
+            'From a chat that is not your own chat in that room: ask that chat to post your words ' +
+              'exactly as written, or not at all.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -451,6 +406,9 @@ export const roomsDomain: CapabilityDomain = {
         // gets as a stack trace is a refusal it cannot act on.
         const author = answering(() => callerAuthor(rooms, context));
         const authorId = author.id;
+        // One seat per agent per room (DOR-3397): another chat's post goes to the seat instead.
+        const seat = answering(() => rooms.handoffs.gate(author, input, context.sessionId));
+        if ('result' in seat) return seat.result;
         // The stale-post check (DOR-3398), before any file is staged: an agent
         // that missed what was said since it last read gets it back instead.
         const held =
@@ -508,8 +466,8 @@ export const roomsDomain: CapabilityDomain = {
           entry = answering(() =>
             rooms.postFromTool(input.roomId, {
               authorId,
-              text: input.text,
-              ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+              text: seat.text,
+              ...(seat.replyTo !== undefined ? { replyTo: seat.replyTo } : {}),
               ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
               // The session the in-session server verified, never an argument,
               // and whether a verified agent token stood behind the call.
@@ -543,6 +501,7 @@ export const roomsDomain: CapabilityDomain = {
           }));
         }
         noteSeen(input.roomId, authorId, entry.seq);
+        if (seat.handoff) rooms.handoffs.notePosted(seat.handoff, entry.id);
         return {
           posted: true,
           entryId: entry.id,

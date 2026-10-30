@@ -56,7 +56,7 @@ import type { ProjectInfo, ProjectRef } from '@dorkos/shared/project-schemas';
 
 import { validateBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
-import { runGit } from '../workspace/providers/git.js';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import type {
   KnownProject,
   KnownProjectReporter,
@@ -117,7 +117,7 @@ export interface ProjectRegistryDeps {
 async function readOriginRepoFromGit(root: string): Promise<string | null> {
   try {
     return parseOriginRepo(
-      await runGit(['remote', 'get-url', 'origin'], root, { timeoutMs: ORIGIN_GIT_TIMEOUT_MS })
+      await runSafeGit(['remote', 'get-url', 'origin'], root, { timeoutMs: ORIGIN_GIT_TIMEOUT_MS })
     );
   } catch {
     return null;

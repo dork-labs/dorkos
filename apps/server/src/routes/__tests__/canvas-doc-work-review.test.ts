@@ -59,6 +59,10 @@ const server = fixture.server;
 let dir: string;
 let db: Db;
 let cookies: string[];
+/** The owner's session, sent for every request that names no caller. */
+let personCookie = '';
+/** The person proof the owner's app keeps beside it. */
+let personProof = '';
 let rooms: RoomSubsystem;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
 let review: DocWorkReview;
@@ -139,6 +143,17 @@ beforeAll(async () => {
   // A test-only header stands in for the Wi-Fi listener's own ingress mark.
   fixture.mount((req, res) => {
     if (req.headers['x-test-ingress'] === 'wifi') markIngress(req, 'wifi');
+    // With no password asked here, a request naming no caller is the owner in
+    // their own browser, which holds their session once an owner exists
+    // (DOR-3330). With the password on, it stays nobody.
+    const named = ['cookie', 'authorization', 'x-dorkos-agent', 'x-dorkos-approval'].some(
+      (name) => req.headers[name] !== undefined
+    );
+    const asks = configManager.get('auth')?.enabled === true;
+    if (!named && !asks && personCookie) {
+      req.headers.cookie = personCookie;
+      req.headers['x-dorkos-person'] = personProof;
+    }
     return listener(req, res);
   });
   expect(
@@ -155,6 +170,16 @@ beforeAll(async () => {
     .send(ACCOUNT);
   expect(login.status).toBe(200);
   cookies = login.headers['set-cookie'] as unknown as string[];
+  // The owner's one step-up at this computer: its cookie and the app's proof.
+  const stepUp = await request(server)
+    .post('/api/person-session')
+    .set('Origin', origin)
+    .send({ password: ACCOUNT.password });
+  expect(stepUp.status).toBe(200);
+  personCookie = (stepUp.headers['set-cookie'] as unknown as string[])
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  personProof = stepUp.body.proof as string;
 });
 beforeEach(() => {
   configManager.set('auth', { enabled: false });
