@@ -161,16 +161,13 @@ test.describe('Home surface — 375px @smoke', () => {
     // Every tab is reachable once scrolled to — a tab you cannot reach is not a
     // tab — and each one is the full height of the bar it lives in.
     //
-    // **35, spelled out.** The tabs ride inside the one header bar now (phase
-    // H1). That header is 36px and its last pixel is the bottom hairline, so a
-    // tab filling the row measures 35 — the number Chromium reports, not the
-    // number the CSS reads like. It is a literal rather than a measurement off
-    // the bar, because a height compared against the bar's own height passes at
-    // any height at all, including the 24px targets this assertion exists to
-    // catch (each tab as tall as its text inside a 36px row, DOR-1401). 35px is
-    // below the 44px touch guidance: a deliberate trade — one 36px row beats two
-    // rows totalling 80px on an 844px screen — recorded at the phone checkpoint.
-    const TAB_HEIGHT = 35;
+    // **44, spelled out.** The tabs ride inside the one header bar (phase H1),
+    // and on a phone that row is 44px, the touch-target floor. It is a literal
+    // rather than a measurement off the bar, because a height compared against
+    // the bar's own height passes at any height at all, including the 24px
+    // targets this assertion exists to catch (each tab as tall as its text,
+    // DOR-1401).
+    const TAB_HEIGHT = 44;
     for (const { label } of HOME_TABS) {
       const tab = homeSurface.tab(label);
       await tab.scrollIntoViewIfNeeded();

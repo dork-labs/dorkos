@@ -817,8 +817,10 @@ export function AppShell() {
                             // before the actions wrap: at 390px the bar has 374px
                             // inside its padding, the four actions take 188 and the
                             // space switcher about 34, so 8rem stays on one row with
-                            // the inbox bell showing.
-                            className="flex h-11 min-w-0 grow basis-32 items-center gap-1 md:h-auto md:flex-1 md:self-stretch lg:gap-2"
+                            // the inbox bell showing. A bar with a tab strip needs
+                            // the row to itself beside the switcher, or its tabs and
+                            // chips paint over the actions, so there they wrap.
+                            className="flex h-11 min-w-0 grow basis-32 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />
