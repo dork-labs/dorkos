@@ -215,6 +215,13 @@ export const ApprovalServiceActionSchema = z
      * were. The card says so plainly rather than implying the list is whole.
      */
     everythingCut: z.number().int().min(1).optional(),
+    /**
+     * Why this asks when it would otherwise have waited out the 60-second
+     * cancel window, so the extra card does not read as a bug. `wifi-open`:
+     * Wi-Fi access is on over plain `http`, where a copied sign-in could be
+     * anyone (DOR-3242). Absent when the card is the ordinary one.
+     */
+    keptCardBecause: z.enum(['wifi-open']).optional(),
   })
   .strict()
   .openapi('ApprovalServiceAction');

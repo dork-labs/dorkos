@@ -435,6 +435,13 @@ export const CONFIG_WRITE_POLICY = {
   // yet; lengthening it spends disk. Either is the person's call.
   'activity.retentionDays': 'operator-only',
 
+  // Company certificates the desktop app adds to what it trusts (DOR-3361).
+  // A certificate authority vouches for every server the app talks to, so
+  // naming a file here decides whom each connection believes. This setting is
+  // the ONLY way in, precisely because the environment variable it replaced
+  // could be set by anything running as the user, an agent's shell included.
+  'network.extraCaCertsPath': 'operator-only',
+
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
   // operator-only pre-emptively: it is a directory-scope field, and classifying it

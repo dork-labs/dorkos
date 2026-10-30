@@ -1,7 +1,8 @@
 /**
  * A person's room post or thread reply from Wi-Fi is written held to the
  * runtime's default, so every turn it starts runs at Default at most
- * (DOR-3037). Where the hold goes from there is pinned in
+ * (DOR-3037), unless it is the owner's own (DOR-3242). Where the hold goes from
+ * there is pinned in
  * `services/rooms/__tests__/wifi-room-posts.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +30,11 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
 }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+// The install's owner is the account `x-test-signed-in: owner` signs in as.
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'owner' }),
 }));
 
 import request from '@dorkos/test-utils/supertest';
@@ -59,6 +65,16 @@ beforeEach(() => {
       {
         before: async (c, next) => {
           if (c.req.header('x-test-via') === 'wifi') markIngress(c.env.incoming, 'wifi');
+          // Whose sign-in the gate verified on the Wi-Fi route, when one did.
+          const signedIn = c.req.header('x-test-signed-in');
+          if (signedIn) {
+            c.set('user', {
+              userId: signedIn,
+              credential: 'cookie',
+              sessionId: 's',
+              route: 'wifi',
+            });
+          }
           await next();
         },
       }
@@ -93,6 +109,35 @@ describe('a person’s room post', () => {
       .set('x-test-via', 'wifi')
       .send({ rootEntryId, text: 'replying from the phone' });
     expect(res.status).toBe(202);
+    expect(vi.mocked(getRoomService().post).mock.calls[0]![3]).toBe('runtime-default');
+  });
+
+  // DOR-3242: the owner's own words from Wi-Fi are theirs; a teammate's are not.
+  it('is not held when the owner posts or replies from Wi-Fi', async () => {
+    for (const [path, body] of [
+      ['entries', { text: 'from my phone' }],
+      ['threads', { rootEntryId, text: 'replying from my phone' }],
+    ] as const) {
+      const res = await request(target.server)
+        .post(`/api/rooms/${roomId}/${path}`)
+        .set('x-test-via', 'wifi')
+        .set('x-test-signed-in', 'owner')
+        .set('sec-fetch-site', 'same-origin')
+        .send(body);
+      expect(res.status).toBe(202);
+    }
+    const calls = vi.mocked(getRoomService().post).mock.calls;
+    expect(calls.map((call) => call[3])).toEqual([undefined, undefined]);
+  });
+
+  // The teammate is not a member here, so the service refuses the post itself;
+  // what this pins is the bound the route asked it to write with.
+  it('is still held when a teammate posts from Wi-Fi', async () => {
+    await request(target.server)
+      .post(`/api/rooms/${roomId}/entries`)
+      .set('x-test-via', 'wifi')
+      .set('x-test-signed-in', 'teammate')
+      .send({ text: 'from a teammate' });
     expect(vi.mocked(getRoomService().post).mock.calls[0]![3]).toBe('runtime-default');
   });
 });

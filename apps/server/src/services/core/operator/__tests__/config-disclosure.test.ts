@@ -370,6 +370,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       // Not a secret: the part digests behind each folder settings yes (DOR-3068).
       'harness.approvedFolderConfigParts',
       'mcp.apiKey',
+      // The file whose certificates every connection of the desktop app trusts (DOR-3361).
+      'network.extraCaCertsPath',
       // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
       'permissions.approvedFolderAllowRules',
       'providers',

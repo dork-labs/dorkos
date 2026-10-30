@@ -861,11 +861,18 @@ export function composeRegistry(
       // instead of raising a card (spec `trusted-by-default-flip` §5.6). It
       // runs only if nobody cancels, on a `hold` approval bound to the
       // preflight's authority; a cancel throws, and nothing runs.
-      const cancelWindow =
+      const windowed =
         preflight && !supplied.approvalToken && capability.cancelWindow
           ? await capability.cancelWindow(deps, parsed, supplied, preflight)
           : undefined;
+      const cancelWindow = typeof windowed === 'function' ? windowed : undefined;
       if (cancelWindow) invocationContext.approval = await cancelWindow();
+      // Kept to the card for one reason only, which the card says (DOR-3242).
+      const keptCardBecause = typeof windowed === 'object' ? windowed.keptCardBecause : undefined;
+      const serviceAction =
+        preflight?.approvalServiceAction && keptCardBecause
+          ? { ...preflight.approvalServiceAction, keptCardBecause }
+          : preflight?.approvalServiceAction;
 
       // Existing trusted callers retain their ordinary bypass. A capability with
       // live preflight always reaches the tier gate, so destructive connector
@@ -916,9 +923,7 @@ export function composeRegistry(
               }
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
-          ...(preflight?.approvalServiceAction
-            ? { serviceAction: preflight.approvalServiceAction }
-            : {}),
+          ...(serviceAction ? { serviceAction } : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);

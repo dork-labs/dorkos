@@ -4,10 +4,11 @@ import path from 'node:path';
 /**
  * Reading the user's `config.json` before the server exists.
  *
- * Three decisions the shell has to make happen *before* it forks the server
- * child, and all three are the user's to make: which port to listen on
- * (`server.port`), which directory the cockpit opens in (`server.cwd`), and how
- * far outside it the server may look (`server.boundary`). The config manager
+ * Four decisions the shell has to make happen *before* it forks the server
+ * child, and all four are the user's to make: which port to listen on
+ * (`server.port`), which directory the app opens in (`server.cwd`), how far
+ * outside it the server may look (`server.boundary`), and which company
+ * certificates to trust (`network.extraCaCertsPath`). The config manager
  * that normally answers those questions lives in the child, so the shell reads
  * the file straight off disk instead — once, in one place, so `server-port.ts`
  * and `server-cwd.ts` cannot disagree about what the file said.
@@ -36,6 +37,14 @@ export interface UserConfigFile {
     cwd?: unknown;
     /** `server.boundary` — the furthest the server may reach on disk. */
     boundary?: unknown;
+  };
+  /** The `network` section, when the file has one. */
+  network?: {
+    /**
+     * `network.extraCaCertsPath` — the company certificate bundle a person
+     * chose in Settings. Read here, never from the environment (DOR-3361).
+     */
+    extraCaCertsPath?: unknown;
   };
 }
 
