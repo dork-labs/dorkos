@@ -175,6 +175,8 @@ export interface MarkedFullAction {
   agentName?: string;
   /** The chat it ran in, when known. */
   sessionId?: string;
+  /** Set when the action was refused, as a keeper is at every level (DOR-3417), not run. */
+  refused?: true;
 }
 
 /**
@@ -195,12 +197,15 @@ export function recordMarkedFullAction(action: MarkedFullAction): void {
     resourceType: 'capability',
     resourceId: action.actionId,
     resourceLabel: action.title,
-    summary:
-      `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
-      'turn read words from outside',
+    summary: action.refused
+      ? `${who} was refused "${action.title}": this turn read words from outside, and an agent ` +
+        'never changes its own level or grants that way'
+      : `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
+        'turn read words from outside',
     ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
     metadata: {
       actionId: action.actionId,
+      ...(action.refused ? { refused: true } : {}),
       ...(action.agentPath ? { agentPath: action.agentPath } : {}),
       ...(action.sessionId ? { sessionId: action.sessionId } : {}),
     },
