@@ -108,6 +108,8 @@ import { createSessionRelayRoutes } from '../routes/session-relay.js';
 import { createPersonSessionRoutes } from '../routes/person-session.js';
 import { askForPersonBeforeTaskWrite } from './person-session-refusal.js';
 import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
+import { STEP_UP_PATH } from '@dorkos/shared/step-up';
+import { createStepUpRoutes } from '../routes/step-up.js';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
@@ -518,6 +520,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/session-relay', createSessionRelayRoutes());
   // The owner's one password step-up at this computer (DOR-3330).
   app.route(PERSON_SESSION_PATH, createPersonSessionRoutes());
+  // "Confirm it's you" before one sensitive action runs (DOR-3234).
+  app.route(STEP_UP_PATH, createStepUpRoutes());
   // The loopback page an approvals passkey comes back to (B4c), at this computer only.
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).
