@@ -160,44 +160,6 @@ export function setMarkedFullActivity(next: Pick<ActivityService, 'emit'> | unde
   activity = next;
 }
 
-/** Something that ran without a card because DorkOS is set to Full. */
-export interface FullAction {
-  /** What ran, as a stable id (a capability id, or `harness.project_hooks`). */
-  actionId: string;
-  /** Its title, as a person reads it. */
-  title: string;
-  /** What it is about, for the Activity row's resource columns. */
-  resourceType: string;
-  /** Which one, for example a package name. */
-  resourceId: string;
-  /** The one plain sentence a person reads. */
-  summary: string;
-  /** Extra facts for the row, never secrets. */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Write the one Activity line for something that would have shown a card below Full and ran
- * without one because DorkOS is set to Full (DOR-3422). No card was shown, so this row is how a
- * person finds it afterwards. Never throws.
- *
- * @param action - What ran, and why there was no card.
- */
-export function recordFullAction(action: FullAction): void {
-  if (!activity) return;
-  void activity.emit({
-    actorType: 'system',
-    actorLabel: 'DorkOS',
-    category: 'permissions',
-    eventType: 'agent.full_action',
-    resourceType: action.resourceType,
-    resourceId: action.resourceId,
-    resourceLabel: action.title,
-    summary: action.summary,
-    metadata: { actionId: action.actionId, ...action.metadata },
-  });
-}
-
 /** One action a marked turn in a Full chat ran without asking. */
 export interface MarkedFullAction {
   /** The capability id or hand-registered tool name. */
@@ -256,6 +218,13 @@ export interface FullAction {
   agentName?: string;
   /** The chat it ran in, when known. */
   sessionId?: string;
+  /**
+   * The whole sentence, when the one about a chat does not fit: something the Full PRESET let
+   * through, outside any chat (a package's hooks, DOR-3422).
+   */
+  summary?: string;
+  /** Extra facts for the row, never secrets and never command text. */
+  facts?: Record<string, unknown>;
 }
 
 /**
@@ -278,10 +247,12 @@ export function recordFullAction(action: FullAction): void {
     resourceId: action.actionId,
     resourceLabel: action.did,
     summary:
+      action.summary ??
       `${who} ${action.did} without being held: its chat is set to Full autonomy. Below Full, ` +
-      `${action.limit}.`,
+        `${action.limit}.`,
     ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
     metadata: {
+      ...action.facts,
       actionId: action.actionId,
       ...(action.agentPath ? { agentPath: action.agentPath } : {}),
       ...(action.sessionId ? { sessionId: action.sessionId } : {}),

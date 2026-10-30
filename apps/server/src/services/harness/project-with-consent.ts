@@ -121,17 +121,15 @@ import {
   type ProvenInstall,
 } from './dorkos-installed.js';
 
+import { readGlobalSharingFromDisk } from './global-scope.js';
+import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+
 /**
- * The card's id and title (`HOOK_PROJECTION_CAPABILITY_*` in `hook-approval.ts`),
+ * The hook card's id (`HOOK_PROJECTION_CAPABILITY_ID` in `hook-approval.ts`),
  * for the Activity line Full writes instead. Restated rather than imported so the
  * read-only `--check` path does not load the approvals module; a test pins them equal.
  */
-const HOOK_PROJECTION_ACTION = {
-  id: 'harness.project_hooks',
-  title: 'Let an installed package run commands automatically',
-} as const;
-import { readGlobalSharingFromDisk } from './global-scope.js';
-import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+const HOOK_PROJECTION_ACTION = { id: 'harness.project_hooks' } as const;
 
 /**
  * Seam for the Harness Sync engine calls, injectable so route/service tests can
@@ -573,18 +571,19 @@ function reportAllowedAtFull(requests: readonly HookProjectionRequest[]): void {
     if (reportedAtFull.has(entry)) continue;
     reportedAtFull.add(entry);
     const count = request.hooks.length;
+    const commands = `${count} command${count === 1 ? '' : 's'}`;
     recordFullAction({
       actionId: HOOK_PROJECTION_ACTION.id,
-      title: HOOK_PROJECTION_ACTION.title,
-      resourceType: 'package',
-      resourceId: request.packageName,
+      agentName: 'DorkOS',
+      did: `let the package "${request.packageName}" run ${commands} automatically`,
+      limit: 'a person is asked first',
+      // The preset, not a chat, let this through, so the chat sentence does not fit.
       summary:
-        `The installed package "${request.packageName}" can now run ${count} ` +
-        `command${count === 1 ? '' : 's'} automatically in ${request.projectPath}, without ` +
-        'asking: DorkOS is set to Full',
+        `The installed package "${request.packageName}" can now run ${commands} automatically ` +
+        `in ${request.projectPath}, without asking: DorkOS is set to Full`,
       // The count, not the commands: a command line can carry a token, and
       // this row is readable by every agent.
-      metadata: { packageName: request.packageName, projectPath: request.projectPath, count },
+      facts: { packageName: request.packageName, projectPath: request.projectPath, count },
     });
   }
 }
@@ -601,16 +600,16 @@ function reportWithheldAtFull(withheld: readonly WithheldHooks[]): void {
     if (reportedAtFull.has(entry)) continue;
     reportedAtFull.add(entry);
     const count = request.hooks.length;
+    const commands = `${count} command${count === 1 ? '' : 's'}`;
     recordFullAction({
       actionId: HOOK_PROJECTION_ACTION.id,
-      title: HOOK_PROJECTION_ACTION.title,
-      resourceType: 'package',
-      resourceId: request.packageName,
+      agentName: 'DorkOS',
+      did: `held back ${commands} from the package "${request.packageName}"`,
+      limit: 'a person is asked first',
       summary:
-        `Held back ${count} command${count === 1 ? '' : 's'} from "${request.packageName}" in ` +
-        `${request.projectPath}: it is in the project but DorkOS did not install it. ` +
-        'Allow it under Needs you',
-      metadata: {
+        `Held back ${commands} from "${request.packageName}" in ${request.projectPath}: it is ` +
+        'in the project but DorkOS did not install it. Allow it under Needs you',
+      facts: {
         packageName: request.packageName,
         projectPath: request.projectPath,
         count,

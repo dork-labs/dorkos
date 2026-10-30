@@ -3,6 +3,7 @@ covers:
   - "fix(server): on Full, a package's hooks run without a card and leave one Activity line (DOR-3422)"
   - 'fix(server): on Full, only packages DorkOS installed run their hooks unasked (DOR-3422)'
   - 'test(server): Sync now on Full reads the preset through the shipped reader (DOR-3422)'
+  - "fix(server): one recordFullAction, main's shape, for the Full hook rows (DOR-3422)"
 ---
 
 ### Fixed

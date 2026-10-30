@@ -48,11 +48,7 @@ import {
   scanHookRequests,
 } from '../project-with-consent.js';
 import { askAboutWithheldHooks, hookPackagesToAskAbout } from '../ask-withheld-hooks.js';
-import {
-  HOOK_PROJECTION_CAPABILITY_ID,
-  HOOK_PROJECTION_CAPABILITY_TITLE,
-  type HookApprovalGateway,
-} from '../hook-approval.js';
+import { HOOK_PROJECTION_CAPABILITY_ID, type HookApprovalGateway } from '../hook-approval.js';
 import {
   readHookDecisionsFromDisk,
   recordHookRefusal,
@@ -174,11 +170,13 @@ describe('on Full, a package DorkOS installed runs its hooks without a card (DOR
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       eventType: 'agent.full_action',
-      category: 'permissions',
-      resourceType: 'package',
-      resourceId: 'acme',
-      resourceLabel: HOOK_PROJECTION_CAPABILITY_TITLE,
-      metadata: expect.objectContaining({ actionId: HOOK_PROJECTION_CAPABILITY_ID, count: 1 }),
+      actorLabel: 'DorkOS',
+      resourceId: HOOK_PROJECTION_CAPABILITY_ID,
+      metadata: expect.objectContaining({
+        actionId: HOOK_PROJECTION_CAPABILITY_ID,
+        packageName: 'acme',
+        count: 1,
+      }),
     });
     expect(String(rows[0]?.summary)).toContain('DorkOS is set to Full');
     // The row carries no command text: a command line can carry a token.
