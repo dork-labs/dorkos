@@ -435,3 +435,29 @@ describe('ChannelComposer — Escape', () => {
     expect(announcedRow(field)).toHaveTextContent('Ana Reyes');
   });
 });
+
+describe('the cc line under the composer (DOR-3401)', () => {
+  it('shows nothing until the draft copies somebody in, then names both', () => {
+    const { field } = renderComposer();
+
+    type(field, '@ana ship it');
+    expect(screen.queryByText(/^Asks /)).toBeNull();
+
+    type(field, '@ana ship it, cc @priya');
+    expect(screen.getByText('Asks @ana · cc @priya')).toBeInTheDocument();
+  });
+
+  it('never shows in a DM', () => {
+    const config = createQueryClientConfig();
+    const queryClient = new QueryClient(config);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={createMockTransport()}>
+          <ChannelComposerBench room={roomWith({ kind: 'dm' })} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    type(screen.getByRole('combobox') as HTMLTextAreaElement, '@ana ship it, cc @priya');
+    expect(screen.queryByText(/^Asks /)).toBeNull();
+  });
+});

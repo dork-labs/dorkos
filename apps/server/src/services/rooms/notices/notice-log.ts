@@ -38,6 +38,7 @@ import {
   type RefusalVisibility,
 } from '../../observability/refusals.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import { addresseesOf } from '../mentions.js';
 import {
   buildAgentDeclinedNotice,
   buildAgentGoneNotice,
@@ -1008,7 +1009,8 @@ export function directlyAsked(
 ): boolean {
   if (entry.cascadeDepth !== 0) return false;
   if (authors.getById(entry.authorId)?.kind !== 'human') return false;
-  return room.kind === 'dm' || entry.mentions.includes(agentAuthorId) || namedDirectly;
+  // A cc asked nothing, so a cc'd agent's quiet is not a silence (DOR-3401).
+  return room.kind === 'dm' || addresseesOf(entry).includes(agentAuthorId) || namedDirectly;
 }
 
 /**

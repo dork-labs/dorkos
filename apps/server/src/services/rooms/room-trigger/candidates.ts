@@ -32,6 +32,7 @@ import {
   engagementFor,
   type EngagementWindow,
 } from '../engagement.js';
+import { addresseesOf, ccOf } from '../mentions.js';
 import { buildCascadeNotice } from '../notices/notice-copy.js';
 import type { RoomDispatchSummary } from '../service/room-trigger-deps.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
@@ -238,14 +239,19 @@ export function selectCandidates(
   // agent is that agent's to answer, and a post an AGENT wrote is a
   // conversation already underway — the seat catches neither. See
   // `standDownFallbackSeat` for the two escapes.
+  // **Only the leading @mentions ask anybody to answer** (DOR-3401). Every
+  // rule below sees the post as addressed to them alone, and a member it only
+  // copied in is struck from the result whatever its mode: a cc takes no turn.
+  const asked = { authorId: entry.authorId, mentions: addresseesOf(entry) };
+  const copied = new Set(ccOf(entry));
   const matrix = selectTriggerTargets({
     roomKind: room.kind,
     authorKind,
-    entry,
+    entry: asked,
     members: addressing,
-  });
+  }).filter((selection) => !copied.has(selection.authorId));
   const answered = standDownFallbackSeat({
-    entry,
+    entry: asked,
     authorKind,
     seatAuthorId,
     members: addressing,
@@ -260,16 +266,16 @@ export function selectCandidates(
   // @mentions only there, and strangers' messages must not change that.
   const lead =
     answered.length === 0 && followsConversation && self.deps.bridgedFraming(room.id) === null
-      ? pickLead({ entry, leadAuthorId, members: addressing })
+      ? pickLead({ entry: asked, leadAuthorId, members: addressing })
       : null;
-  const selected = lead ? [lead] : answered;
+  const selected = lead && !copied.has(lead.authorId) ? [lead] : answered;
   if (selected.length === 0) {
     // A person's post in a channel that reaches nobody is the failure
     // DOR-2823 is about, so every one is logged with why. Never a member's
     // name or a message body, only ids and the reason.
     if (followsConversation) {
       const reason = whyNobody({
-        entry,
+        entry: asked,
         members: addressing,
         namedUnreachable,
         partners: conversation?.partners ?? [],
