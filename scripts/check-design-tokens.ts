@@ -60,7 +60,7 @@ function stripCssComments(text: string): string {
 
 /** Whether a `cubic-bezier(x1, y1, x2, y2)` leaves 0..1 on the y axis, so overshoots. */
 function overshoots(args: string): boolean {
-  const [, y1, , y2] = args.split(',').map(Number);
+  const [, y1 = 0, , y2 = 0] = args.split(',').map(Number);
   return y1 < 0 || y1 > 1 || y2 < 0 || y2 > 1;
 }
 
@@ -84,7 +84,7 @@ export const ROWS: Row[] = [
         .split('\n')
         .filter((line) => !line.includes('reaction-pop'))
         .flatMap((line) => [...line.matchAll(/cubic-bezier\(([^)]+)\)/g)])
-        .filter((match) => overshoots(match[1])).length,
+        .filter((match) => overshoots(match[1] ?? '')).length,
     hint: 'use var(--ease-out), var(--ease-in) or var(--ease-standard)',
   },
 ];
@@ -189,9 +189,10 @@ export function raisedAgainst(current: Counts, base: Counts): Finding[] {
   const findings: Finding[] = [];
   for (const [row, files] of Object.entries(current)) {
     // A row the base has never heard of is being introduced, not raised.
-    if (!(row in base)) continue;
+    const held = base[row];
+    if (!held) continue;
     for (const [file, count] of Object.entries(files)) {
-      const before = base[row][file] ?? 0;
+      const before = held[file] ?? 0;
       if (count > before) findings.push({ kind: 'raised', row, file, count, baseline: before });
     }
   }
@@ -279,7 +280,7 @@ function main(argv: string[]): number {
 
   if (argv.includes('--init')) {
     const ratchets = ROWS.filter((row) => row.mode === 'ratchet');
-    writeBaseline(root, Object.fromEntries(ratchets.map((row) => [row.id, counts[row.id]])));
+    writeBaseline(root, Object.fromEntries(ratchets.map((row) => [row.id, counts[row.id] ?? {}])));
     console.log(`design-tokens: wrote ${BASELINE_PATH}`);
     return 0;
   }

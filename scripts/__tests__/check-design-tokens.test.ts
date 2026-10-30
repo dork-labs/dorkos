@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compare, lowered, raisedAgainst, ROWS } from '../check-design-tokens';
+import { compare, lowered, raisedAgainst, ROWS } from '../check-design-tokens.ts';
 
 const row = (id: string) => ROWS.find((r) => r.id === id)!;
 
