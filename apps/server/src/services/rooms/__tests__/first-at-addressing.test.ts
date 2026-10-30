@@ -66,6 +66,18 @@ describe('first-@ addressing in a channel', () => {
     expect(turnsOf(runner).sort()).toEqual(['/agents/ana', '/agents/bo']);
   });
 
+  it('wakes the first @mention even mid-sentence, and a run right after it', async () => {
+    const { service, human, runner, room } = open('channel');
+
+    service.post(room.id, { authorId: human, text: 'hey @ana check this' });
+    await service.triggersIdle();
+    expect(turnsOf(runner)).toEqual(['/agents/ana']);
+
+    service.post(room.id, { authorId: human, text: 'hey @ana @bo check this' });
+    await service.triggersIdle();
+    expect(turnsOf(runner).slice(1).sort()).toEqual(['/agents/ana', '/agents/bo']);
+  });
+
   it('gives a later @mention no turn, and tells that agent next time it reads', async () => {
     // Bo answers everything here, and still takes no turn for a cc. Nobody
     // replies, so Ana's answer cannot be what wakes Bo.

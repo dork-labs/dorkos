@@ -33,6 +33,10 @@ describe('first-@ addressing', () => {
     expect(ccIn('hey @ana can you check, cc @bo')).toEqual(['bo']);
   });
 
+  it('asks a run of @mentions that starts mid-sentence', () => {
+    expect(ccIn('hey @ana @bo check this')).toEqual([]);
+  });
+
   it('never copies in someone it asked, however often it names them', () => {
     expect(ccIn('@ana ship it, then @ana tell @bo')).toEqual(['bo']);
   });

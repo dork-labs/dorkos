@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): only the leading @mentions wake an agent; later ones are cc (DOR-3401)'
+  - 'test(rooms): pin the first @ mid-sentence and the run after it (DOR-3401)'
 ---
 
 ### Changed

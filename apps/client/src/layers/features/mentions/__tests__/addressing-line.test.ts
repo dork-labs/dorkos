@@ -25,6 +25,10 @@ describe('addressingLine', () => {
     );
   });
 
+  it('lists every name in the run as asked', () => {
+    expect(addressingLine('hey @ana @bo check, cc @kai', ROSTER)).toBe('Asks @ana, @bo · cc @kai');
+  });
+
   it('moves a name to "asks" when it moves to the front', () => {
     expect(addressingLine('@bo ship it, cc @ana', ROSTER)).toBe('Asks @bo · cc @ana');
   });
