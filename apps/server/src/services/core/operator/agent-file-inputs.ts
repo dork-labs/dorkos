@@ -122,6 +122,21 @@ function namesPersonSetField(input: unknown): boolean {
 }
 
 /**
+ * Whether a write names NOPE.md or its switch. For a turn with no hold, `update_agent` itself refuses
+ * them, and says where the write does live; a held turn is refused here, Full included.
+ */
+function namesBoundaries(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null) return false;
+  const { nopeContent, conventions } = input as { nopeContent?: unknown; conventions?: unknown };
+  if (nopeContent !== undefined) return true;
+  return (
+    typeof conventions === 'object' &&
+    conventions !== null &&
+    (conventions as { nope?: unknown }).nope !== undefined
+  );
+}
+
+/**
  * The instruction fields a write names, in {@link AGENT_INSTRUCTION_FIELDS}.
  *
  * @param body - The write's body, any shape.
@@ -162,7 +177,7 @@ export function refuseOutsiderAgentFiles(
   const marks = marksOf(context.sessionId, context.identity?.agentPath);
   if (!(personSet && fromAgent)) {
     if (!marksHold(marks)) return undefined;
-    if (choseFullAutonomy(context.sessionId)) return undefined;
+    if (choseFullAutonomy(context.sessionId) && !namesBoundaries(input)) return undefined;
   }
   throw new CapabilityToolError({
     error: AGENT_FILES_OUTSIDER_REFUSAL,

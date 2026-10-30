@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(server): a held turn can't change NOPE.md or its switch, at Full too (DOR-3440)"
   - "fix(server): a turn runs at its agent's set level, wherever its message came from (DOR-3440)"
   - "fix(server): a teammate's message lowers nothing; the mark only counts spend (DOR-3440)"
   - "fix(server): a lowered agent's edit waits, on every load; a record ceiling never raises a mode (DOR-3440)"
