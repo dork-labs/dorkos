@@ -318,6 +318,7 @@ export function RoomThreadPanel({
           // one id on two elements resolves to whichever the document holds
           // first (`threadPanelRowId`).
           rowId={threadPanelRowId(entry.id)}
+          roomKind={room.kind}
           author={row.author}
           authorRef={authors.get(entry.authorId)}
           authors={authors}
@@ -376,6 +377,7 @@ export function RoomThreadPanel({
       replyCount,
       arrivals,
       room.id,
+      room.kind,
       room.viewerAuthorId,
       authors,
       authorNames,
@@ -478,6 +480,7 @@ export function RoomThreadPanel({
                 roomId={room.id}
                 entry={root}
                 rowId={threadPanelRowId(root.id)}
+                roomKind={room.kind}
                 author={toMessageAuthor(displayAuthorIdOf(root, authors), authors, agents.faces)}
                 authorRef={authors.get(root.authorId)}
                 authors={authors}

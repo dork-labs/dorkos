@@ -362,6 +362,7 @@ export function RoomSurface({
       <RoomFlow
         ref={timelineRef}
         roomId={room.id}
+        roomKind={room.kind}
         roomName={roomDisplayTitle(room)}
         viewerAuthorId={room.viewerAuthorId}
         entries={entries}

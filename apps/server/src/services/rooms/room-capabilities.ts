@@ -217,6 +217,7 @@ import {
   answeringAsync,
   applyPerMember,
   isOwnerCaller,
+  reachOf,
   requireRoomDeps,
   resolveHandles,
 } from './service/room-capability-answers.js';
@@ -345,8 +346,7 @@ export const roomsDomain: CapabilityDomain = {
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
         'You can show a file with it — a screenshot or a recording you made — by naming its ' +
-        'path in attachments; it has to be a file in your own folder or your own copy of a ' +
-        "room's files. " +
+        "path in attachments; it has to be a file in your own folder or your own copy of a room's files. " +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
         'Only your own chat in a room posts there: from any other chat, the post goes to that chat, ' +
         'which re-reads the room, then posts it or says why not.',
@@ -360,7 +360,7 @@ export const roomsDomain: CapabilityDomain = {
             'The room to post in, by its id — not its #name. Inside a room turn your room ' +
               'context names it. You must be a member of it.'
           ),
-        text: z.string().min(1).max(8000).describe('What to say. Mention someone with @handle.'),
+        text: z.string().min(1).max(8000).describe('What to say. @x wakes x; cc @x only copies.'),
         replyTo: z
           .string()
           .optional()
@@ -508,6 +508,7 @@ export const roomsDomain: CapabilityDomain = {
           seq: entry.seq,
           ...(attachmentIds.length > 0 ? { attached: attachmentIds.length } : {}),
           ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
+          ...reachOf(rooms, entry),
         };
       },
     }),
@@ -581,9 +582,8 @@ export const roomsDomain: CapabilityDomain = {
         'sort out anything that clashes in your own tree rather than in everybody’s. ' +
         'It is refused, with the reason, if you have uncommitted changes, if your branch is ' +
         'behind the room, if a file is too big, or if something in it is a shortcut pointing ' +
-        'outside the room’s files. ' +
-        'Merges happen one at a time, so if somebody else is merging right now, yours waits its ' +
-        'turn. ' +
+        'outside the room’s files. Merges happen one at a time, so if somebody else is merging ' +
+        'right now, yours waits its turn. ' +
         'When it lands, the room gets one line saying what you merged — you do not need to ' +
         'announce it as well.',
       tier: 'act',

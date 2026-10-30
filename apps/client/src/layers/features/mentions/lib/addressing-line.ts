@@ -1,16 +1,22 @@
 /**
- * The quiet line under a channel's composer that says who a draft asks and
- * who it only copies in (DOR-3401): "Asks @ana · cc @bo, @kai".
+ * The quiet lines that say who a channel message wakes and who it only copies
+ * in: under the composer while a draft has a cc ("Wakes @ana · cc @bo"), and
+ * under the author's own post once it is sent ("Woke @ana. Cc: @bo.").
  *
  * The rule itself is `@dorkos/shared/mention-addressing`, the same one the
- * server applies when the message is written. This only finds the `@handle`s
- * in the draft so the rule has spans to read. It is a preview: the server
+ * server applies when the message is written. The draft line only finds the
+ * `@handle`s so the rule has spans to read. It is a preview: the server
  * resolves the sent message on its own and never reads this.
  *
  * @module features/mentions/lib/addressing-line
  */
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
-import { markCc, type AddressableSpan } from '@dorkos/shared/mention-addressing';
+import {
+  ccAuthors,
+  markCc,
+  reachLine,
+  type AddressableSpan,
+} from '@dorkos/shared/mention-addressing';
 
 /** The server's handle grammar (`services/rooms/mentions.ts`). */
 const HANDLE = /@([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
@@ -50,20 +56,46 @@ function draftSpans(
  *
  * @param text - The draft as typed.
  * @param members - The room's roster.
- * @returns "Asks @a · cc @b, @c", or `null` when there is nothing to say.
+ * @returns "Wakes @a · cc @b, @c", or `null` when there is nothing to say.
  */
 export function addressingLine(
   text: string,
   members: readonly { author: AuthorRef }[]
 ): string | null {
   const marked = markCc(text, draftSpans(text, members));
-  const asks: string[] = [];
+  const wakes: string[] = [];
   const cc: string[] = [];
   for (const span of marked) {
-    const list = span.cc ? cc : asks;
+    const list = span.cc ? cc : wakes;
     if (!list.includes(span.handle)) list.push(span.handle);
   }
-  if (cc.length === 0 || asks.length === 0) return null;
+  if (cc.length === 0) return null;
   const names = (handles: string[]) => handles.map((handle) => `@${handle}`).join(', ');
-  return `Asks ${names(asks)} · cc ${names(cc)}`;
+  return `${wakes.length > 0 ? `Wakes ${names(wakes)}` : 'Wakes nobody'} · cc ${names(cc)}`;
+}
+
+/**
+ * Who a posted channel message reached, for the line under its author's own
+ * post (DOR-3454): "Woke @ana. Cc: @bo." Read from the marks the server stored,
+ * never from the text.
+ *
+ * @param entry - The posted entry's resolved mentions and their spans.
+ * @param authors - The room's roster, keyed by author id.
+ * @returns The line, or `null` for a post that names nobody but its author.
+ */
+export function postedReachLine(
+  entry: {
+    authorId: string;
+    mentions: readonly string[];
+    mentionSpans?: readonly (AddressableSpan & { cc?: boolean })[];
+  },
+  authors: ReadonlyMap<string, Pick<AuthorRef, 'kind' | 'handle' | 'displayName'>>
+): string | null {
+  const named = entry.mentions.filter((id) => id !== entry.authorId);
+  if (named.length === 0) return null;
+  const cc = new Set(ccAuthors(entry.mentionSpans ?? []));
+  const label = (id: string) => `@${authors.get(id)?.handle ?? authors.get(id)?.displayName ?? id}`;
+  // Only an agent wakes: a person named is told, and takes no turn.
+  const woke = named.filter((id) => !cc.has(id) && authors.get(id)?.kind === 'agent');
+  return reachLine(woke.map(label), named.filter((id) => cc.has(id)).map(label));
 }

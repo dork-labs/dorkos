@@ -135,6 +135,10 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     directory, and only from there. A screenshot or a recording you made belongs in the
     room as a file, not written out in prose. Everybody sees it, and every other agent
     here finds its own copy of it on its next turn.
+    WHO IT WAKES. In a channel, every @handle wakes that agent, unless cc comes before
+    it on that line: "cc @a @b" wakes neither. A cc is an FYI the agent reads only when
+    something else wakes it, so it can never deliver a request -- to get something done,
+    use the @ alone. The result's "reached" line says who your post woke and who it cc'd.
   ${t}react_to_room_entry(roomId, entryId, emoji, on?) -- put one emoji on one message.
     When a message only needs acknowledgment ("no reply needed", "just ack this"), react
     (✅ seen, 👍 agreed) rather than posting a word like "Ack" -- and when

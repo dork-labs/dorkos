@@ -40,7 +40,7 @@ interface MentionPillRendererProps {
    * never be used to make a mention claim something the roster does not back.
    */
   children?: ReactNode;
-  /** True when the entry only copied this author in, after its leading @s. */
+  /** True when the entry only copied this author in, after `cc` on a line. */
   cc?: boolean;
 }
 

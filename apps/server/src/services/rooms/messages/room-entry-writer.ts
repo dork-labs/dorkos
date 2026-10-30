@@ -412,9 +412,9 @@ export class RoomEntryWriter {
         // without ever re-parsing the body (`.claude/rules/room-conduct.md`). A
         // caller-resolved mention has no occurrence to point at, so it has no
         // span — which is the honest encoding of "addressed, but not written".
-        // In a channel, a mention after the leading run is marked `cc`: it
-        // copies its author in and wakes nobody (DOR-3401). A DM keeps its own
-        // rule, where a person's message is for everyone in it.
+        // In a channel, a mention that follows `cc` on its line is marked `cc`:
+        // it copies its author in and wakes nobody (DOR-3453). A DM keeps its
+        // own rule, where a person's message is for everyone in it.
         mentionSpans:
           room.kind === 'channel' ? markCc(input.text, addressed.spans) : addressed.spans,
         sessionId: input.sessionId ?? null,
