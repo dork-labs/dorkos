@@ -733,7 +733,7 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // that must NOT reach it, and the arrow is the one that must.
     const row = dashboardSidebar.agentRow(agentName);
     await expect(row).toBeVisible();
-    const kebab = row.locator('..').getByRole('button', { name: 'Agent actions' });
+    const kebab = row.locator('..').getByRole('button', { name: `${agentName} actions` });
 
     await expect(kebab).toHaveCSS('opacity', '0');
     await expect(kebab).toHaveAttribute('tabindex', '-1');

@@ -200,6 +200,7 @@ vi.mock('@/layers/features/dashboard-sidebar', () => {
     // leaves the panel's identity and its navigation standing (spec R2, BC-43,
     // BC-47).
     SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+    SidebarLandmark: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     MobileCommunityContextSwitcher: () => (
       <button data-testid="mobile-community-switcher">Context</button>
     ),

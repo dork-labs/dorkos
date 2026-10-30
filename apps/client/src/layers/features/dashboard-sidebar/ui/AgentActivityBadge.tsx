@@ -42,7 +42,9 @@ export function AgentActivityBadge({ status, label }: AgentActivityBadgeProps) {
   return (
     <span
       className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))}
-      role="status"
+      // `img`, never `status`: a live region per row would read every agent's
+      // state aloud as it changes, and the row's own name already carries it.
+      role="img"
       aria-label={label}
     />
   );

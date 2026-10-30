@@ -21,13 +21,15 @@
  */
 import { SidebarContent } from '@/layers/shared/ui';
 import { SidebarBottomSlot } from './bottom-slot/SidebarBottomSlot';
-import { useBootState } from '../model/boot/use-boot-state';
 import { useLegacyPinMigration } from '../model/use-legacy-pin-migration';
 import { useSidebarModel } from '../model/use-sidebar-model';
 import { useSidebarState } from '../model/use-sidebar-state';
 import { SidebarChrome } from './SidebarChrome';
 import { SidebarDnd } from './dnd/SidebarDnd';
+import { SidebarLandmark, useInsideSidebarLandmark } from './SidebarLandmark';
 import { SidebarSections } from './SidebarSections';
+
+const BODY_CLASS = 'flex min-h-0 flex-1 flex-col';
 
 /**
  * The dashboard sidebar — the places conversations live, drawn from one model.
@@ -40,21 +42,10 @@ export function DashboardSidebar() {
   useLegacyPinMigration();
   const state = useSidebarState();
   const model = useSidebarModel(state);
-  const boot = useBootState();
+  const insideLandmark = useInsideSidebarLandmark();
 
-  return (
-    // The panel root is the sidebar's one landmark (R2). Sections are inside
-    // it, each labelled by its own heading.
-    //
-    // `aria-busy` is the WHOLE announcement of a cold boot (spec D6): the
-    // skeleton itself is `aria-hidden` and there is no live region reading out
-    // bones, because "the sidebar is still loading" is a property of the
-    // landmark and not an event worth interrupting anybody for.
-    <nav
-      aria-label="Sidebar"
-      aria-busy={boot.phase === 'cold' ? true : undefined}
-      className="flex min-h-0 flex-1 flex-col"
-    >
+  const body = (
+    <>
       {/* **The sidebar's whole horizontal inset, paid here and at the row.**
           Eight pixels of panel padding plus eight on every row is the 16px total
           left inset the density calls for (design-decisions §11). Nothing
@@ -75,6 +66,13 @@ export function DashboardSidebar() {
           stacked in the footer instead. One slot, pinned here between the
           scroller and the footer, one card at a time (spec D4). */}
       <SidebarBottomSlot />
-    </nav>
+    </>
+  );
+
+  // Sections sit inside the panel's one landmark, each labelled by its own heading.
+  return insideLandmark ? (
+    <div className={BODY_CLASS}>{body}</div>
+  ) : (
+    <SidebarLandmark className={BODY_CLASS}>{body}</SidebarLandmark>
   );
 }

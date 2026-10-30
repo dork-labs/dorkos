@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { PanelLeftIcon } from 'lucide-react';
+import { motion, useReducedMotion, type HTMLMotionProps } from 'motion/react';
 import { Slot } from 'radix-ui';
 
 import { useIsMobile } from '@/layers/shared/model';
@@ -18,6 +19,10 @@ import {
   SheetTitle,
 } from '@/layers/shared/ui/sheet';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
+import {
+  sidebarFoldTransition,
+  useSidebarCollapseFocus,
+} from '@/layers/shared/ui/sidebar-collapse';
 import { SIDEBAR_ROW_INSET } from '@/layers/shared/ui/sidebar-row';
 import {
   Tooltip,
@@ -39,6 +44,10 @@ export type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  /** The panel's id, for the trigger's `aria-controls`. */
+  panelId: string;
+  /** The trigger, which takes focus when shutting the panel would lose it. */
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -69,6 +78,8 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
+  const panelId = React.useId();
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -117,8 +128,10 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      panelId,
+      triggerRef,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, panelId]
   );
 
   return (
@@ -159,7 +172,10 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, open, openMobile, setOpenMobile, panelId, triggerRef } = useSidebar();
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
+  useSidebarCollapseFocus(open, panelRef, triggerRef);
 
   if (collapsible === 'none') {
     return (
@@ -201,6 +217,11 @@ function Sidebar({
     );
   }
 
+  // Only an off-canvas panel slides. An icon rail keeps its own width classes.
+  const folds = collapsible === 'offcanvas';
+  const hiddenX = side === 'left' ? '-100%' : '100%';
+  const transition = sidebarFoldTransition(reducedMotion);
+
   return (
     <div
       className="group peer text-sidebar-foreground hidden md:block"
@@ -211,31 +232,44 @@ function Sidebar({
       data-slot="sidebar"
     >
       {/* This is what handles the sidebar gap on desktop */}
-      <div
+      {/* The one layout property that animates: the page beside the panel has to
+          be pushed. The spring drives a number rather than `width` itself, because
+          `--sidebar-width` is a `calc()` motion would have to measure first. */}
+      <motion.div
         data-slot="sidebar-gap"
+        initial={false}
+        animate={{ '--sidebar-fold': open ? 1 : 0 }}
+        transition={transition}
+        style={
+          folds
+            ? ({ width: 'calc(var(--sidebar-width) * var(--sidebar-fold))' } as React.CSSProperties)
+            : undefined
+        }
         className={cn(
-          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out group-data-[state=collapsed]:ease-in',
-          'group-data-[collapsible=offcanvas]:w-0',
+          'relative w-(--sidebar-width) bg-transparent',
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
             ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]'
             : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon)'
         )}
       />
-      <div
+      <motion.div
+        ref={panelRef}
+        id={panelId}
         data-slot="sidebar-container"
+        initial={false}
+        animate={{ x: folds && !open ? hiddenX : 0 }}
+        transition={transition}
         className={cn(
-          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out group-data-[state=collapsed]:ease-in md:flex',
-          side === 'left'
-            ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
-            : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
+          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex',
+          side === 'left' ? 'left-0' : 'right-0',
           // Adjust the padding for floating and inset variants.
           variant === 'floating' || variant === 'inset'
             ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
             : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
           className
         )}
-        {...props}
+        {...(props as HTMLMotionProps<'div'>)}
       >
         <div
           data-sidebar="sidebar"
@@ -244,22 +278,29 @@ function Sidebar({
         >
           {children}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
 
 /** Ghost button that toggles the sidebar open or closed. */
-function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar();
+function SidebarTrigger({
+  className,
+  onClick,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'ref'>) {
+  const { toggleSidebar, open, panelId, triggerRef } = useSidebar();
 
   return (
     <Button
+      ref={triggerRef}
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon-md"
       className={cn('size-7', className)}
+      aria-expanded={open}
+      aria-controls={panelId}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
