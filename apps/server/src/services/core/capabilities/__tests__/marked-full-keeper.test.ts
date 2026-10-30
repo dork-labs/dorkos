@@ -1,6 +1,7 @@
 /**
  * Keeper 1 at Full (DOR-3417): an agent changing a level or a standing grant is refused at every
- * level. Below Full that refusal is a card for a person; a chat set to Full asks nobody, so a
+ * level: `change_permission` loosening a permission, and `config_patch` reaching a setting only a
+ * person may change. Below Full that refusal is a card for a person; a chat set to Full asks nobody, so a
  * marked turn there is refused with a plain reason and one Activity line, never a card.
  *
  * @vitest-environment node
@@ -58,18 +59,20 @@ async function ran(sessionId: string, stored: string, opts?: MessageOpts) {
   }
 }
 
-/** `change_permission`, as the gate receives it. */
-function changePermission(): GatedAction & PermissionGatedAction {
-  const found = composeCapabilityRegistryForDocs().capabilities.find(
-    (capability) => capability.id === 'permissions.change'
-  );
-  if (!found) throw new Error('permissions.change is not registered');
+/** A capability, as the gate receives it. */
+function capability(id: string): GatedAction & PermissionGatedAction {
+  const found = composeCapabilityRegistryForDocs().capabilities.find((c) => c.id === id);
+  if (!found) throw new Error(`${id} is not registered`);
   return found as unknown as GatedAction & PermissionGatedAction;
 }
 
-/** What the gate decides for one `change_permission` by LifeOS in this session. */
-async function decide(sessionId: string, input: Record<string, unknown>) {
-  const action = changePermission();
+/** What the gate decides for one call of `id` by LifeOS in this session. */
+async function decide(
+  sessionId: string,
+  input: Record<string, unknown>,
+  id = 'permissions.change'
+) {
+  const action = capability(id);
   const permission = await resolveCallPermission({ action, identity: AGENT, sessionId, input });
   return enforceCapabilityTier({
     action,
@@ -144,6 +147,43 @@ describe('change_permission in a marked turn (DOR-3417)', () => {
     const session = fresh();
     await ran(session, 'bypassPermissions');
     expect((await decide(session, LOOSEN)).outcome).toBe('approval_required');
+    expect(emit).not.toHaveBeenCalled();
+  });
+});
+
+describe('config_patch in a marked turn (DOR-3417)', () => {
+  const PERSON_ONLY = { patch: { server: { boundary: '/' } } };
+  const PREFERENCE = { patch: { ui: { theme: 'dark' } } };
+
+  it('at Full, a patch reaching a person’s setting is refused plainly, no card, one line', async () => {
+    const session = fresh();
+    await ran(session, 'bypassPermissions', MARKED);
+    const decision = await decide(session, PERSON_ONLY, 'operator.config_patch');
+    expect(decision.outcome).toBe('denied');
+    if (decision.outcome !== 'denied') return;
+    expect(decision.payload.message).toBe(MARKED_FULL_PERMISSION_REFUSAL);
+    expect(decision.payload.approvable).toBe(false);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect((emit.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
+      resourceId: 'operator.config_patch',
+      metadata: { refused: true },
+    });
+  });
+
+  it('at Full, a plain preference is not refused', async () => {
+    const session = fresh();
+    await ran(session, 'bypassPermissions', MARKED);
+    const decision = await decide(session, PREFERENCE, 'operator.config_patch');
+    expect(decision.outcome).not.toBe('denied');
+    expect(emit.mock.calls.some((c) => JSON.stringify(c).includes('"refused":true'))).toBe(false);
+  });
+
+  it('below Full, a patch reaching a person’s setting still raises its card', async () => {
+    const session = fresh();
+    await ran(session, 'acceptEdits', MARKED);
+    expect((await decide(session, PERSON_ONLY, 'operator.config_patch')).outcome).toBe(
+      'approval_required'
+    );
     expect(emit).not.toHaveBeenCalled();
   });
 });

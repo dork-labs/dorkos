@@ -116,13 +116,14 @@ export function approvableBlock(permission: CallPermission | null): boolean {
 }
 
 /**
- * What a marked turn in a chat set to Full is told when it tries to loosen a permission (DOR-3417):
+ * What a marked turn in a chat set to Full is told when it tries to loosen a permission, or to
+ * change a setting only a person may change (DOR-3417):
  * an agent changing its own level or standing grants is refused at every level, and Full asks
  * nobody, so it is refused without a card.
  */
 export const MARKED_FULL_PERMISSION_REFUSAL =
-  "This turn read words from outside your team, so it can't loosen a permission. " +
-  'Nobody was asked. A person can change it in Settings.';
+  "This turn read words from outside your team, so it can't loosen a permission or change a " +
+  'setting only a person may change. Nobody was asked. A person can change it in Settings.';
 
 /** Where the gate reads the two halves of a permission from. */
 export interface PermissionGateSources {
@@ -420,11 +421,14 @@ export async function resolveCallPermission(request: {
   };
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
+  // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
+  const areas = areasForCall(action, request.input);
   // Keeper 1 at Full (DOR-3417): an input that always asks a person is a change to a level or a
-  // standing grant (`change_permission` loosening any agent's settings, its own included). Below
-  // Full it raises its card as before; a marked turn in a Full chat asks nobody, so it is refused
-  // with a plain reason and one Activity line.
-  if (marked && full && action.alwaysAsksForInput?.(request.input) === true) {
+  // standing grant: `change_permission` loosening any agent's settings, its own included, or a
+  // `config_patch` reaching a setting only a person may change (an area past the action's own).
+  // Below Full it raises its card as before; a marked turn in a Full chat asks nobody, so it is
+  // refused with a plain reason and one Activity line.
+  if (marked && full && (action.alwaysAsksForInput?.(request.input) === true || areas.length > 1)) {
     const chat = request.sessionId ?? principalTurn?.sessionId;
     const title = (action as { title?: unknown }).title;
     recordMarkedFullAction({
@@ -443,8 +447,6 @@ export async function resolveCallPermission(request: {
       keeperRefusal: MARKED_FULL_PERMISSION_REFUSAL,
     };
   }
-  // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
-  const areas = areasForCall(action, request.input);
   if (areas.length === 0) {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
     // under the area it acts in, every time.
