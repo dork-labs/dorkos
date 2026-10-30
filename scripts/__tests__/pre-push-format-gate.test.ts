@@ -18,9 +18,11 @@
  * thing standing between a push and CI, and the ordering machinery that used to
  * keep it in front of the test sweep — `piped: true` and the two `priority`
  * keys — went with the second command, because an ordering among one command is
- * a claim about a file that no longer holds. The assertions below pin that it is
- * still exactly one command; `local-gate-shape.test.ts` beside this one pins
- * that no test command has come back without a ledger entry.
+ * a claim about a file that no longer holds. On 2026-10-30 a second sub-second
+ * check joined it (`fragments`, scripts/pre-push-fragment-check.sh); the two are
+ * independent, so still no ordering. The assertions below pin exactly those two
+ * commands; `local-gate-shape.test.ts` beside this one pins that no test
+ * command has come back without a ledger entry.
  *
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
  * neighbours give: `scripts/vitest.config.ts` globs every `*.test.ts` under a
@@ -95,22 +97,25 @@ function commandPriorities(block: string): Map<string, number | undefined> {
 const prePush = prePushBlock(lefthookText);
 const priorities = commandPriorities(prePush);
 
-describe('the pre-push formatting check is wired, and is the whole hook', () => {
-  it('finds the pre-push hook and its one command at all', () => {
+describe('the pre-push formatting check is wired beside the fragment check', () => {
+  it('finds the pre-push hook and its two commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
-    // quietly.
+    // quietly. `fragments` joined on 2026-10-30
+    // (ci/ledger/261030-230941-pre-push-fragment-check.md).
     expect(prePush).not.toBe('');
-    expect([...priorities.keys()].sort()).toEqual(['formatting']);
+    expect([...priorities.keys()].sort()).toEqual(['formatting', 'fragments']);
   });
 
-  it('declares no ordering, because there is nothing left to order', () => {
+  it('declares no ordering, because the two checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. With one command they assert an ordering
-    // among nothing. Whoever adds a second command has to decide ordering
-    // deliberately and put them back — this is the line that makes them.
+    // preempt a six-minute sweep. These two are both sub-second and answer
+    // different questions, so each should report on the same push rather than
+    // one hiding the other. Adding a slow command means deciding ordering
+    // deliberately and putting them back — this is the line that makes you.
     expect(/^ {2}piped:/m.test(prePush)).toBe(false);
     expect(priorities.get('formatting')).toBeUndefined();
+    expect(priorities.get('fragments')).toBeUndefined();
   });
 
   it('runs the formatting check', () => {
