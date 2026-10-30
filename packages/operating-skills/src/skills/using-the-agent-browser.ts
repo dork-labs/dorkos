@@ -18,8 +18,8 @@ export const usingTheAgentBrowser: OperatingSkill = {
     'Use when you browse a website that needs a sign-in, when a page you opened asks you to ' +
     'sign in, or when the user mentions the signed-in browser or the agent browser. Covers ' +
     'what your browser starts signed in to, why you never type or ask for a password, what to ' +
-    'ask the person to run when a sign-in is missing or expired, and how to check which sites ' +
-    'are saved.',
+    'do when a browser tool fails or a sign-in is missing, and how to check which sites are ' +
+    'saved.',
   body: `# Using the agent browser
 
 ${TOOL_NAME_NOTE}
@@ -39,6 +39,10 @@ Two sets of tools can both end in \`browser_navigate\`, \`browser_click\` and so
 - **DorkOS's own browser tools** (\`browser_navigate\`, \`browser_read_page\`,
   \`browser_read_console\` and the rest, on the DorkOS server) drive the browser
   a person can watch in the app. It is NOT signed in to anything.
+- **The shared browser** (\`local_browser_state\`, \`local_browser_observe\`,
+  \`local_browser_act\`, \`local_browser_screenshot\`) drives a real browser page
+  a person shared with this chat. They sign in there themselves. Only a person
+  can open it: Browser, in the right panel's + menu.
 
 ## What you get
 
@@ -68,16 +72,26 @@ Two sets of tools can both end in \`browser_navigate\`, \`browser_click\` and so
 The site is not saved, or its sign-in ran out. Stop and say so, in one message:
 
 1. Name the site you need.
-2. Ask the person to run \`dorkos browser login <site>\` in a terminal, sign in,
-   and press Enter.
-3. Tell them to start a new session with you afterwards (or re-run the task),
-   since your current browser started before the new sign-in.
+2. Ask the person to share a browser page with this chat (Browser, in the right
+   panel's + menu) and sign in there.
+3. Carry on in that page with your shared-browser tools.
 
-You cannot do this step for them: the command needs a person at the keyboard
-and refuses to run without one.
+Never send the person to a terminal. Only they can sign in, and the app is where
+they do it. \`dorkos browser login <site>\` also exists, and may not be installed
+on their computer, so name it only if they ask for a command-line way.
 
 Do not save a sign-in from inside your own browser. It is thrown away when the
 browser closes, and it would be a login made without the operator watching.
+
+## When a browser tool fails
+
+Say so in plain words, in one message: what you tried and what you need. Then
+offer the shared browser, as above. A site that blocks you, a browser that will
+not start and a tool you don't have all get the same answer. Don't hand the person
+commands to run, and don't try to install or start a browser yourself.
+
+If nobody is there to share a page (a schedule or a heartbeat), say the work is
+stuck and why, and stop.
 
 ## Checking what is saved
 

@@ -369,8 +369,12 @@ export interface OperatingSkill {
  *   reports into the starter's chat in that room as a turn only it sees
  *   (DOR-3488). An agent seeded at 44 would not expect the report there, and
  *   might repost it to the whole room.
+ * - 46: `using-the-agent-browser` stops telling an agent to send a person to a
+ *   terminal (DOR-3157). A missing sign-in or a failed browser tool now gets a
+ *   plain sentence and the shared browser. An agent seeded at 45 would keep
+ *   handing out a command the desktop app doesn't put on PATH.
  */
-export const OPERATING_SKILLS_VERSION = 45;
+export const OPERATING_SKILLS_VERSION = 46;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
