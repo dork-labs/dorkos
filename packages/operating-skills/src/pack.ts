@@ -373,8 +373,11 @@ export interface OperatingSkill {
  *   terminal (DOR-3157). A missing sign-in or a failed browser tool now gets a
  *   plain sentence and the shared browser. An agent seeded at 45 would keep
  *   handing out a command the desktop app doesn't put on PATH.
+ * - 47: a member agent can set up its room's files (DOR-3468).
+ *   `working-in-room-repos` names `set_up_room_files` where a merge finds a room
+ *   with no files. An agent seeded at 46 would stop there and answer in the room.
  */
-export const OPERATING_SKILLS_VERSION = 46;
+export const OPERATING_SKILLS_VERSION = 47;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
