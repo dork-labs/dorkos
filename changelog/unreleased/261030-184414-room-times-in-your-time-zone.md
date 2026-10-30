@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): room times are on the person's clock, and tasks_list says when a task runs next (DOR-3253, DOR-3125)"
+  - 'fix(server): a profile that cannot be read never stops a room turn (DOR-3253)'
 ---
 
 ### Fixed
