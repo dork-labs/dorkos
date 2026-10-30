@@ -29,6 +29,7 @@ import type {
   DispatchSessionMessageResult,
 } from '../../launch/launch-session.js';
 import type { SessionFacts } from '../../../extensions/agent-send/agent-send-defaults.js';
+import { CAP_HOLD_NOTE } from '../chat-cap-hold.js';
 import { ChatMessageStore } from '../chat-message-store.js';
 import { chatLaunchCapMessage } from '../chat-queue-standing.js';
 import {
@@ -353,32 +354,110 @@ describe('send — refusals', () => {
     expect(sentByAna()).toEqual([]);
   });
 
-  it('answers a full launch cap as UNAVAILABLE and removes the row', async () => {
-    chat('chat-b');
-    dispatchImpl = async () =>
-      ({
-        refused: 'LAUNCH_CAP_FULL',
-        message: 'Too many running.',
-      }) as DispatchSessionMessageResult;
-    expect((await refusal(service.send(ANA, { to: 'chat-b', message: 'hi' }))).code).toBe(
-      'UNAVAILABLE'
-    );
-    expect(sentByAna()).toEqual([]);
-  });
+  const capFull = async () =>
+    ({
+      refused: 'LAUNCH_CAP_FULL',
+      message: 'Too many spin-off chats are running (8). Try again when one finishes.',
+    }) as DispatchSessionMessageResult;
 
-  it('says a capped send was not kept and must be sent again, never calling it a spin-off (DOR-2994)', async () => {
-    chat('chat-b');
-    dispatchImpl = async () =>
-      ({
-        refused: 'LAUNCH_CAP_FULL',
-        message: 'Too many spin-off chats are running (8). Try again when one finishes.',
-      }) as DispatchSessionMessageResult;
+  it('refuses a brand-new chat at a full cap, keeps nothing, and never calls it a spin-off', async () => {
+    dispatchImpl = capFull;
 
-    const err = await refusal(service.send(ANA, { to: 'chat-b', message: 'hi' }));
+    const err = await refusal(service.send(ANA, { to: 'agent-bo', message: 'hi' }));
 
+    expect(err.code).toBe('UNAVAILABLE');
     expect(err.message).toBe(chatLaunchCapMessage());
     expect(err.message).not.toMatch(/spin-off/);
     expect(err.message).toMatch(/Nothing was kept/);
+    expect(sentByAna()).toEqual([]);
+  });
+
+  describe('an existing chat at a full cap (DOR-3375)', () => {
+    it('keeps the message, says queued, and starts the turn when a slot frees', async () => {
+      chat('chat-b');
+      dispatchImpl = capFull;
+
+      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hold, host overloaded' });
+
+      expect(receipt).toMatchObject({ status: 'queued', chatId: 'chat-b', note: CAP_HOLD_NOTE });
+      expect(store.get(receipt.messageId)).toMatchObject({
+        status: 'queued',
+        queueMessageId: null,
+      });
+
+      // Still full: nothing changes.
+      await service.retryHeld();
+      expect(store.get(receipt.messageId)).toMatchObject({
+        status: 'queued',
+        queueMessageId: null,
+      });
+
+      dispatchImpl = defaultDispatch;
+      lifecycle!({ phase: 'settled', messageId: 'other', sessionId: 'chat-z', outcome: 'ok' });
+      await service.retryHeld();
+
+      expect(store.get(receipt.messageId)).toMatchObject({
+        status: 'working',
+        queueMessageId: expect.any(String),
+      });
+      const last = dispatched.at(-1)!;
+      expect(last.sessionId).toBe('chat-b');
+      expect(last.request.content).toContain('hold, host overloaded');
+      expect(last.request.content).toContain(store.get(receipt.messageId)!.nonce!);
+      expect(last.messageId).toBe(store.get(receipt.messageId)!.queueMessageId);
+    });
+
+    it('queues a held message behind a chat that went busy meanwhile', async () => {
+      chat('chat-b');
+      dispatchImpl = capFull;
+      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+      dispatchImpl = defaultDispatch;
+      busy.add('chat-b');
+      await service.retryHeld();
+
+      const row = store.get(receipt.messageId)!;
+      expect(row.status).toBe('queued');
+      expect(queue.list('chat-b').map((r) => r.id)).toEqual([row.queueMessageId]);
+    });
+
+    it('fails a held message, with why, when the chat no longer takes messages', async () => {
+      chat('chat-b');
+      dispatchImpl = capFull;
+      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+      sessions.delete('chat-b');
+      await service.retryHeld();
+
+      expect(store.get(receipt.messageId)).toMatchObject({
+        status: 'failed',
+        failureReason: expect.any(String),
+      });
+    });
+
+    it('drops what is held when another chat stops that chat', async () => {
+      chat('chat-b');
+      dispatchImpl = capFull;
+      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+      await service.stopChat(ANA, { chat: 'chat-b' });
+      dispatchImpl = defaultDispatch;
+      const sends = dispatched.length;
+      await service.retryHeld();
+
+      expect(store.get(receipt.messageId)?.status).toBe('failed');
+      expect(dispatched.length).toBe(sends);
+    });
+
+    it('does not count toward the cap when the busy check itself failed', async () => {
+      chat('chat-b');
+      service.stop();
+      service = build({ isBusy: async () => Promise.reject(new Error('no answer')) });
+
+      await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+      expect(dispatched[0]!.countsTowardLaunchCap).toBe(false);
+    });
   });
 });
 
