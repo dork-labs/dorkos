@@ -30,6 +30,19 @@ describe('the room tools block', () => {
     expect(block).toContain(`then call ${PREFIX}post_to_room with that answer as the text`);
   });
 
+  it('carries the four-rule working agreement for rooms with several agents (DOR-3400)', () => {
+    // Oct 29's #dorkos burst: stale posts, echoes, unowned waits and OKs on files that
+    // had since changed. Each rule here is one of those failures, stated where every
+    // room turn reads it, with the re-read tool named under this runtime's prefix.
+    expect(block).toContain('WORKING WITH OTHERS IN A ROOM');
+    expect(block).toContain('react to their message rather than saying it again');
+    expect(block).toContain(
+      `Before you post, read what arrived since your turn began (${PREFIX}read_room_history)`
+    );
+    expect(block).toContain('A hand-off names one owner and a time');
+    expect(block).toContain('An OK names exactly what it covers');
+  });
+
   it('rules a reaction out as a way of delivering an answer it has', () => {
     // The old text paired the obligation with the escape hatch in the same
     // breath ("Post, or react if that genuinely says it all"), which let a
