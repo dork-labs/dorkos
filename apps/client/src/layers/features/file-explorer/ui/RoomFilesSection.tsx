@@ -71,7 +71,6 @@ const SETUP_REFUSALS = new Map<string, string>([
   ['ROOM_REPO_GIT_UNAVAILABLE', 'Git isn’t available on this computer.'],
   ['MERGE_IN_FLIGHT', 'This room’s files are busy. Try again.'],
   ['ROOM_ARCHIVED', 'Bring this room back before setting up files.'],
-  ['OPERATOR_ONLY', 'Only the owner can set up room files.'],
 ]);
 
 function setupRefusal(error: unknown): string {
