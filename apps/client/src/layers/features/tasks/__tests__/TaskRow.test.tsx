@@ -465,6 +465,30 @@ describe('ScheduleRow', () => {
     expect(screen.getByText(/can’t be undone/)).toBeTruthy();
   });
 
+  it('offers to switch off, not delete, a schedule that came with a package (DOR-2097)', async () => {
+    renderScheduleRow({ ...activeSchedule, packageOwned: 'record' });
+
+    const trigger = screen.getByLabelText(`Actions for ${activeSchedule.name}`);
+    await act(async () => {
+      fireEvent.pointerDown(trigger);
+      fireEvent.mouseDown(trigger);
+      fireEvent.click(trigger);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('menuitem', { name: /Delete/i })).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Switch off this schedule?')).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: 'Switch off' })).toBeTruthy();
+    expect(screen.getByText(/came with a package/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Delete task' })).toBeNull();
+  });
+
   it('expands run history when expanded prop is true', () => {
     renderScheduleRow(activeSchedule, { expanded: true });
 

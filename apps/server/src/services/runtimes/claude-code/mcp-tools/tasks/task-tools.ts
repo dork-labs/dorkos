@@ -8,7 +8,7 @@
  * covers both servers by construction and cannot be added to one and forgotten on
  * the other.
  *
- * @module services/runtimes/claude-code/mcp-tools/task-tools
+ * @module services/runtimes/claude-code/mcp-tools/tasks/task-tools
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
@@ -21,8 +21,9 @@ import {
 import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import type { McpToolDeps } from './types.js';
-import { jsonContent, structuredJsonContent } from './types.js';
+import type { McpToolDeps } from '../types.js';
+import { jsonContent, requireTasks, structuredJsonContent } from '../types.js';
+import { createDeleteScheduleHandler } from './task-delete-tool.js';
 import {
   PARKED_SCHEDULE_NOTE,
   ARMED_SCHEDULE_NOTE,
@@ -45,7 +46,7 @@ import {
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
-} from '../../../tasks/schedule-permission-clamp.js';
+} from '../../../../tasks/schedule-permission-clamp.js';
 import {
   CREDITS_SCHEDULE_AGENT_REFUSAL,
   describeOperatorOnlyTaskRefusal,
@@ -53,32 +54,25 @@ import {
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
   refuseUnknownTaskUpdateFields,
-} from '../../../tasks/task-write-policy.js';
-import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
-import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
-import {
-  PROJECT_COPY_DELETE_REFUSAL,
-  removeScheduledTaskFile,
-} from '../../../tasks/lifecycle/delete-task.js';
-import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
-import { changesApprovedWork } from '../../../tasks/task-file-update.js';
-import { refuseStickyAccountChange } from '../../../tasks/session/sticky-session.js';
-import { AGENT_TIMING_CHANGE_REASON } from '../../../tasks/timing/effective-timing.js';
-import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
-import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
-import {
-  resolveParkedScheduleRemoved,
-  resolveScheduleParkPayload,
-} from '../../../notifications/emitters/schedule-park.js';
-import { raiseStanding } from '../../../notifications/standing-events.js';
-import { conflictingTimingRequest } from '../../../tasks/timing/effective-timing.js';
+} from '../../../../tasks/task-write-policy.js';
+import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js';
+import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
+import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
+import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
+import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
+import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
+import { describeScheduleProblem } from '../../../../tasks/cron-validation.js';
+import { broadcastTasksChanged } from '../../../../tasks/task-sse-events.js';
+import { resolveScheduleParkPayload } from '../../../../notifications/emitters/schedule-park.js';
+import { raiseStanding } from '../../../../notifications/standing-events.js';
+import { conflictingTimingRequest } from '../../../../tasks/timing/effective-timing.js';
 import {
   scheduleAccountRefusal,
   scheduleRunFolder,
-} from '../../../tasks/lifecycle/schedule-account-eligibility.js';
-import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
-import { marksOf } from '../../../core/turn-power/turn-levels.js';
-import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
+} from '../../../../tasks/lifecycle/schedule-account-eligibility.js';
+import { scheduleCreditsModelRefusal } from '../../../../tasks/lifecycle/schedule-credits-model.js';
+import { marksOf } from '../../../../core/turn-power/turn-levels.js';
+import { hasMarks, type TurnMarks } from '../../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -134,14 +128,6 @@ const DURATION_ARG = z
   .max(TASK_DURATION_MAX)
   .regex(TASK_DURATION_PATTERN)
   .optional();
-
-/** Guard that returns an error response when Tasks is disabled. */
-function requireTasks(deps: McpToolDeps) {
-  if (!deps.taskStore) {
-    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
-  }
-  return null;
-}
 
 /**
  * Refuse a task write that reaches for a field only a person may set, or return
@@ -686,41 +672,6 @@ export function createUpdateScheduleHandler(
       });
     }
     return jsonContent({ schedule: updated });
-  };
-}
-
-/**
- * Delete a schedule — its SKILL.md first, then its row.
- *
- * **The file half is not optional, and leaving it out was a lie-on-success**
- * (DOR-1568). This handler deleted the row alone and answered `{success: true}`;
- * the reconciler re-reads every skills root every five minutes and upserts what it
- * finds, so the task came back — new id, `status: 'active'` — minutes after the
- * agent had been told it was gone. `DELETE /api/tasks/:id` always removed the
- * file, and now both doors do it through the same seam.
- */
-export function createDeleteScheduleHandler(deps: McpToolDeps) {
-  return async (args: { id: string }) => {
-    const err = requireTasks(deps);
-    if (err) return err;
-    // Read BEFORE deleting: a schedule that was waiting on the operator has a
-    // standing condition (and possibly an armed escalation) to end, and once the
-    // row is gone there is nothing left to tell that from an ordinary task — and
-    // the row is also the only place the file's path is recorded.
-    const existing = deps.taskStore!.getTask(args.id);
-    // One project's copy shares its file with every other project's (DOR-3376).
-    if (existing?.projectOnly) return jsonContent({ error: PROJECT_COPY_DELETE_REFUSAL }, true);
-    await removeScheduledTaskFile(existing?.filePath ?? null);
-    const deleted = deps.taskStore!.deleteTask(args.id);
-    if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
-    // With no row left to read, `syncTask` unregisters — which is the whole
-    // point here: a deleted schedule whose job kept firing is worse than a
-    // stale one, because the run it tries to record belongs to a schedule that
-    // no longer exists (DOR-1493).
-    deps.resolveTaskRegistrar?.()?.syncTask(args.id);
-    resolveParkedScheduleRemoved(existing);
-    broadcastTasksChanged();
-    return jsonContent({ success: true, id: args.id });
   };
 }
 

@@ -123,10 +123,46 @@ export class TaskApprovals {
         followedAgentChanges: null,
         // A person approved it, so it is theirs now: the marks it waited on are cleared (DOR-3036).
         originMarks: null,
+        // Approving is a person changing their mind about a decline (DOR-2097).
+        declinedContentKey: null,
       })
       .where(eq(pulseSchedules.id, id))
       .run();
     this.notifyApproved(row.agentId);
+  }
+
+  /**
+   * Record that a person declined this schedule's CURRENT content (DOR-2097).
+   *
+   * Only for a schedule whose file an installed package owns. DorkOS may not
+   * remove that file, and the package's next update would restore it and ask
+   * again, so the decision is stored instead, keyed on the content that would
+   * run. The schedule waits (an approval it held is withdrawn, kept for the card
+   * like any park) and asks nobody while its content keeps that key. A changed
+   * file has a new key and asks again.
+   *
+   * `enabled` is left as it was on purpose: it is what makes a file's schedule
+   * ask at all (`needsScheduleApprovalAttention`), so clearing it would silence
+   * the re-ask too.
+   *
+   * Writes the decision and nothing else: no file is touched here.
+   *
+   * @param id - The schedule a person declined.
+   */
+  recordDecline(id: string): void {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    if (!row) return;
+    this.db
+      .update(pulseSchedules)
+      .set({
+        status: 'pending_approval',
+        approvedContentKey: null,
+        previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
+        declinedContentKey: effectiveContentKey(row),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(pulseSchedules.id, id))
+      .run();
   }
 
   /**

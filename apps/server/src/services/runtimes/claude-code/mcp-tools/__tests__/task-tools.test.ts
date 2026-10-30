@@ -27,7 +27,7 @@ import {
 } from '../../../../core/agent-identity/index.js';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
+import { getTasksTools } from '../tasks/task-tools.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
 import {

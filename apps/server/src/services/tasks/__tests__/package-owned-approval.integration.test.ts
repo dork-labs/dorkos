@@ -36,6 +36,12 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import {
+  deleteOrDeclineTask,
+  isPackageOwnedTaskFile,
+  removeScheduledTaskFile,
+} from '../lifecycle/delete-task.js';
+import { createDeleteScheduleHandler } from '../../runtimes/claude-code/mcp-tools/tasks/task-delete-tool.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
 /** The id the project's agent is registered under. */
@@ -143,6 +149,107 @@ async function patch(existing: Task, data: UpdateTaskRequest): Promise<PatchResu
       store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn }) ?? undefined,
   };
 }
+
+describe('declining a schedule that came with an installed package (DOR-2097)', () => {
+  /** The package ships this one switched on, so it raises a card. */
+  const ASKING_SKILL = PACKAGED_SKILL.replace('enabled: false', 'enabled: true');
+
+  beforeEach(async () => {
+    await fs.writeFile(packagedFile, ASKING_SKILL, 'utf-8');
+  });
+
+  it('never removes the package file, whatever the caller', async () => {
+    await removeScheduledTaskFile(packagedFile, projectPath);
+
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
+    expect(await isPackageOwnedTaskFile(packagedFile, projectPath)).toBe(true);
+  });
+
+  it('a person’s delete keeps the file and the row, and records the decline', async () => {
+    const task = await sweep();
+
+    expect(await deleteOrDeclineTask(task, store, meshCore)).toBe('declined');
+
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
+    expect(store.getTask(task.id)?.declined).toBe(true);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+  });
+
+  it('a person’s delete of their own schedule removes the file and the row', async () => {
+    const ownDir = path.join(projectPath, 'own-schedule');
+    await fs.mkdir(ownDir, { recursive: true });
+    const ownFile = path.join(ownDir, 'SKILL.md');
+    await fs.writeFile(ownFile, 'mine', 'utf-8');
+    const own = store.createTask({
+      name: 'mine',
+      description: 'mine',
+      prompt: 'mine',
+      cron: '0 2 * * *',
+      filePath: ownFile,
+    });
+
+    expect(await deleteOrDeclineTask(own, store, meshCore)).toBe('deleted');
+
+    await expect(fs.access(ownDir)).rejects.toThrow();
+    expect(store.getTask(own.id)).toBeNull();
+  });
+
+  it('refuses tasks_delete, since declining is a person’s answer', async () => {
+    const task = await sweep();
+
+    const reply = await createDeleteScheduleHandler({
+      taskStore: store,
+      meshCore,
+    } as never)({ id: task.id });
+
+    expect(reply.isError).toBe(true);
+    expect(store.getTask(task.id)?.declined).toBe(false);
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
+  });
+
+  it('stays quiet across the next sweep, and leaves the file alone', async () => {
+    const task = await sweep();
+    expect(needsScheduleApprovalAttention(task)).toBe(true);
+
+    store.approvals.recordDecline(task.id);
+    const swept = await sweep();
+
+    expect(swept.declined).toBe(true);
+    expect(swept.status).toBe('pending_approval');
+    expect(needsScheduleApprovalAttention(swept)).toBe(false);
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(ASKING_SKILL);
+  });
+
+  it('asks again when the package changes the schedule', async () => {
+    store.approvals.recordDecline((await sweep()).id);
+
+    await fs.writeFile(packagedFile, ASKING_SKILL.replace('Drain the queue.', 'Drain it all.'));
+    const swept = await sweep();
+
+    expect(swept.declined).toBe(false);
+    expect(needsScheduleApprovalAttention(swept)).toBe(true);
+  });
+
+  it('withdraws an approval, so a declined schedule cannot run', async () => {
+    const approved = await patch(await sweep(), { status: 'active', enabled: true });
+    store.approvals.recordApproval(approved.task!.id);
+
+    store.approvals.recordDecline(approved.task!.id);
+    const swept = await sweep();
+
+    expect(swept.status).toBe('pending_approval');
+    expect(swept.declined).toBe(true);
+  });
+
+  it('forgets the decline when a person approves after all', async () => {
+    const task = await sweep();
+    store.approvals.recordDecline(task.id);
+
+    store.approvals.recordApproval(task.id);
+
+    expect(store.getTask(task.id)?.declined).toBe(false);
+  });
+});
 
 describe('a schedule that came with an installed package', () => {
   it('is discovered parked and switched off, as its file says', async () => {

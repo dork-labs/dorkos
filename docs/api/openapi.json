@@ -9906,6 +9906,10 @@
             "default": null,
             "description": "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own)."
           },
+          "declined": {
+            "type": "boolean",
+            "description": "Whether a person declined this schedule as it reads now. A declined schedule never runs and asks again only when its file changes."
+          },
           "projectOnly": {
             "type": "boolean",
             "description": "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false."

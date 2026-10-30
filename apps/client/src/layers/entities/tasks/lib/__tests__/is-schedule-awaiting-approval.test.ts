@@ -32,6 +32,17 @@ describe('isScheduleAwaitingApproval', () => {
     ).toBe(true);
   });
 
+  it('is false for a package schedule a person declined (DOR-2097)', () => {
+    expect(
+      isScheduleAwaitingApproval({
+        status: 'pending_approval',
+        enabled: true,
+        origin: 'file',
+        declined: true,
+      })
+    ).toBe(false);
+  });
+
   it('is false for an active schedule', () => {
     expect(isScheduleAwaitingApproval({ status: 'active', enabled: true, origin: null })).toBe(
       false
