@@ -169,11 +169,12 @@ describe('config default verdicts cover the whole schema', () => {
     // mesh, shares apps with every agent), so neither is bookkeeping a wipe
     // may drop; both carry a reason and a carryover rule.
     //
-    // Raised 20 -> 21 for one more once-per-install stamp of the same shape,
-    // `harness.folderConfigPinned` (DOR-3068). `false` re-arms pinning every
-    // agent home as it stands, which Security asked for once at the upgrade and
-    // never again, so it carries a reason and a carryover rule like the two above.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(21);
+    // Raised 20 -> 22 for two more once-per-install stamps of the same shape,
+    // `harness.folderConfigPinned` (DOR-3068) and `harness.repoBaselinesPinned`
+    // (DOR-3298). `false` re-arms pinning every agent home or known repo as it
+    // stands, which Security asked for once at the upgrade and
+    // never again, so each carries a reason and a carryover rule like the two above.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(22);
   });
 });
 

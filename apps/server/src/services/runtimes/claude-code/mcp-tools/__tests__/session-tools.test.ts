@@ -126,7 +126,7 @@ import {
   NO_ADVISOR_REASON,
 } from '../../../../core/usage/account-ranking.js';
 import {
-  AGENT_LAUNCH_CAP_MESSAGE,
+  agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
 } from '../../../../session/launch/launch-session.js';
 import {
@@ -682,7 +682,7 @@ describe('session_start', () => {
     vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
     const refused = await handler({ ...BASE, model: 'claude-opus' });
     expect(payloadOf(refused)).toMatchObject({
-      error: AGENT_LAUNCH_CAP_MESSAGE,
+      error: agentLaunchCapMessage(),
       code: 'LAUNCH_CAP_FULL',
     });
     expect(dispatchMessage).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE);

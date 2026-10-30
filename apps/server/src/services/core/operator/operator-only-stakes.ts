@@ -228,6 +228,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'harness.approvedFolderConfigParts',
       'harness.refusedFolderConfig',
       'harness.folderConfigPinned',
+      'harness.approvedRepoConfig',
+      'harness.refusedRepoConfig',
+      'harness.repoBaselines',
+      'harness.repoBaselinesPinned',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
       'runtimes.codex.transport',
@@ -339,6 +343,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // How many agents may run at once: a person who lowered it to save memory
       // must not have an agent raise it back (DOR-3012).
       'runtimes.claudeCode.maxWarmProcesses',
+      // How many spin-off chats may run at once (DOR-3413).
+      'runtimes.maxAgentChats',
       'scheduler.maxConcurrentRuns',
       // Whether the computer stays awake for the work, and whether it is woken
       // for it: battery, and whether the machine is on while nobody is there.

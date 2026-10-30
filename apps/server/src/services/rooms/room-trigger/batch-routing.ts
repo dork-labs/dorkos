@@ -18,6 +18,7 @@ import {
 import { logRefusal } from '../../observability/refusals.js';
 import { type TriggerTarget } from '../room-claims.js';
 import { evaluateCascade, type CascadeDecision } from '../cascade-guard.js';
+import { addresseesOf } from '../mentions.js';
 import { type CollectedTrigger, type RoomCollection } from '../room-collect.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 
@@ -260,10 +261,13 @@ export function routedEntry(
     entryId: entry.id,
     authorId: entry.authorId,
     authorKind: authorKind ?? 'system',
-    mentions: entry.mentions,
+    // Who the message ASKS, not everyone it names: a cc delegates nothing and
+    // obliges nobody (DOR-3401).
+    mentions: addresseesOf(entry),
     answersEntryId,
     answersThisAgent: answered !== null && answered.authorId === agentAuthorId,
-    answeredEntryMentionsThisAgent: answered !== null && answered.mentions.includes(agentAuthorId),
+    answeredEntryMentionsThisAgent:
+      answered !== null && addresseesOf(answered).includes(agentAuthorId),
   };
 }
 

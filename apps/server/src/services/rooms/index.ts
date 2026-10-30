@@ -277,14 +277,15 @@ function readEngagedWindow(): EngagedWindow {
  * this pair means failing to the values that gather MORE into one turn. An
  * unreadable config must never be able to buy a turn per message.
  */
-function readCollectWindow(): CollectWindow {
+function readCollectWindow(quietMs: number): CollectWindow {
   try {
     const rooms = configManager.get('rooms');
-    return { debounceMs: rooms.collectDebounceMs, maxEntries: rooms.collectMaxEntries };
+    return { debounceMs: rooms.collectDebounceMs, maxEntries: rooms.collectMaxEntries, quietMs };
   } catch {
     return {
       debounceMs: USER_CONFIG_DEFAULTS.rooms.collectDebounceMs,
       maxEntries: USER_CONFIG_DEFAULTS.rooms.collectMaxEntries,
+      quietMs,
     };
   }
 }
@@ -432,6 +433,12 @@ export function createRoomSubsystem(opts: {
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
+  /**
+   * The channel quiet window (DOR-3398): `ROOM_BURST_QUIET_MS` from the
+   * server's own startup. Absent, `0`: a test or harness keeps the fixed window
+   * and does not wait 20s for every channel answer.
+   */
+  burstQuietMs?: number;
   runtimePrincipalCurrent?: (proof: ServerPrincipalProof) => boolean;
   mirrorAccess?: RoomMirrorAccess;
   mirrorWrites?: RoomMirrorWritePolicy;
@@ -618,7 +625,7 @@ export function createRoomSubsystem(opts: {
     engagedWindow: readEngagedWindow,
     // Read per burst, for the same reason: lengthening the gathering window in
     // Settings has to bind the very next message.
-    collect: readCollectWindow,
+    collect: () => readCollectWindow(opts.burstQuietMs ?? 0),
     // Read per sweep, for the same reason: switching the gate off in Settings
     // has to bind the very next burst.
     responseGate: readResponseGate,

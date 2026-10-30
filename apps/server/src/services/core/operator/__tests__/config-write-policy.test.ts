@@ -112,6 +112,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.approvedFolderConfig',
       'harness.approvedFolderConfigParts',
       'harness.approvedHooks',
+      // A person's yes or no to repo and worktree settings (DOR-3298).
+      'harness.approvedRepoConfig',
       'harness.autoAdopt',
       'harness.autoSync',
       'harness.folderConfigPinned',
@@ -119,6 +121,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.global.harnesses',
       'harness.refusedFolderConfig',
       'harness.refusedHooks',
+      'harness.refusedRepoConfig',
+      'harness.repoBaselines',
+      'harness.repoBaselinesPinned',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
       // Whether cheap checks spend DorkOS credits: the owner's money (spec `heartbeats` §6.3).
@@ -242,6 +247,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
+      // How many spin-off chats may run at once: an agent would be raising its
+      // own limit (DOR-3413).
+      'runtimes.maxAgentChats',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
       'runtimes.opencode.defaultTrustStop',

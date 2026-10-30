@@ -229,6 +229,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         },
       },
       default: 'claude-code',
+      maxAgentChats: 12,
       // A global stop with one runtime overriding it, so the projection is
       // exercised on both halves of the override rather than on one.
       defaultTrustStop: 'act',
@@ -369,6 +370,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.trustedSources[].trustedAt',
       // Not a secret: the part digests behind each folder settings yes (DOR-3068).
       'harness.approvedFolderConfigParts',
+      // Not a secret: the commit each repo was last compared against (DOR-3298).
+      'harness.repoBaselines',
       'mcp.apiKey',
       // The file whose certificates every connection of the desktop app trusts (DOR-3361).
       'network.extraCaCertsPath',

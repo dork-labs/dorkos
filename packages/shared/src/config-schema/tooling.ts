@@ -311,6 +311,35 @@ export const HarnessConfigSchema = z
      */
     folderConfigPinned: z.boolean().default(false),
     /**
+     * The repo and worktree settings a person let run (DOR-3298), outside an
+     * agent's own home: a `.claude/settings.local.json`, an `.mcp.json` that
+     * differs from the default branch, and committed hooks that differ from it.
+     * Each entry is `<kind>@repo-config-<digest>`, where the digest covers only
+     * the content, so the same change is approved once for every worktree.
+     */
+    approvedRepoConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The repo and worktree settings a person turned down, in the same form as
+     * {@link approvedRepoConfig}. Not asked about again until they change.
+     */
+    refusedRepoConfig: z.array(z.string().min(1)).default(() => []),
+    /**
+     * The default-branch commit DorkOS last compared each repo against
+     * (DOR-3298), by the real path of the repo's shared git folder. A default
+     * branch that moved to a commit that does not build on this one is not
+     * trusted until a person approves what it would let run.
+     */
+    repoBaselines: z
+      .record(z.string(), z.object({ branch: z.string(), sha: z.string() }))
+      .default(() => ({})),
+    /**
+     * Whether DorkOS has pinned the repos it already knew (DOR-3298). It does
+     * that once, at the first start with the repo settings check; after that,
+     * a repo with no pinned commit waits for a person. Carried across a
+     * config wipe, so a wipe never re-pins repos as they stand.
+     */
+    repoBaselinesPinned: z.boolean().default(false),
+    /**
      * The two decisions global scope records: which agent tools DorkOS shares
      * your globally installed packages with, and when it last asked.
      *
@@ -353,6 +382,10 @@ export const HarnessConfigSchema = z
     approvedFolderConfigParts: {},
     refusedFolderConfig: [],
     folderConfigPinned: false,
+    approvedRepoConfig: [],
+    refusedRepoConfig: [],
+    repoBaselines: {},
+    repoBaselinesPinned: false,
     global: { harnesses: [], askedAt: null },
   }));
 

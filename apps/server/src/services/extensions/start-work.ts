@@ -42,7 +42,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { ProjectRegistry } from '../projects/project-registry.js';
 import {
-  AGENT_LAUNCH_CAP_MESSAGE,
+  agentLaunchCapMessage,
   dispatchSessionMessage,
   isSessionLaunchRefusal,
 } from '../session/launch/launch-session.js';
@@ -269,7 +269,7 @@ export class StartWorkService {
     if (isSessionLaunchRefusal(result)) {
       reservation.cancel();
       if (result.refused === 'LAUNCH_CAP_FULL') {
-        throw new StartWorkError('start_limit', AGENT_LAUNCH_CAP_MESSAGE);
+        throw new StartWorkError('start_limit', agentLaunchCapMessage());
       }
       // The launch asked the account rule again; one that changed since the
       // check above is refused the same way.

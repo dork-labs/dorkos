@@ -521,6 +521,10 @@
       "types": "./src/handle.ts",
       "default": "./dist/handle.js"
     },
+    "./mention-addressing": {
+      "types": "./src/mention-addressing.ts",
+      "default": "./dist/mention-addressing.js"
+    },
     "./canonical-directory": {
       "types": "./src/canonical-directory.ts",
       "default": "./dist/canonical-directory.js"

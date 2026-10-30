@@ -435,6 +435,13 @@ export const CONFIG_DISCLOSURE = {
   'harness.refusedFolderConfig': 'expose',
   'harness.folderConfigPinned': 'expose',
   'harness.approvedFolderConfigParts': 'withhold',
+  // Which repo and worktree settings a person let run or turned down
+  // (DOR-3298): kinds and content digests, no secrets. The commit each repo was
+  // last compared against is nothing an agent needs.
+  'harness.approvedRepoConfig': 'expose',
+  'harness.refusedRepoConfig': 'expose',
+  'harness.repoBaselines': 'withhold',
+  'harness.repoBaselinesPinned': 'expose',
   // Which agent tools DorkOS shares your globally installed packages with, and
   // when it last asked. Neither is a credential nor names one, and an agent that
   // can say "your all-projects packages are not shared with Codex" is more
@@ -453,6 +460,9 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.environment.inherit.opencode': 'withhold',
   'runtimes.environment.inherit.doe': 'withhold',
   'runtimes.default': 'expose',
+  // How many spin-off chats may run at once (DOR-3413): a plain number, and an
+  // agent refused by it should be able to see why.
+  'runtimes.maxAgentChats': 'expose',
   // How much a new session may do without asking, globally and per runtime (spec
   // `trust-dial`, decision 6). Exposed although it is operator-only to WRITE, and
   // the asymmetry is the point of having two tables: reading it lets an agent

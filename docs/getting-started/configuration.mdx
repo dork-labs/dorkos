@@ -683,6 +683,8 @@ Changing it applies to the next message you send in each chat — nothing you ha
 
 **How many agents can run at once is sized to your computer.** That is `runtimes.claudeCode.maxWarmProcesses`. Left empty, which is how it ships, DorkOS allows one per 2 GB of memory: never fewer than 12, never more than 32. A 48 GB machine gets 24. Set a number to pin it. When every one of them is busy, a new message does not fail: it waits for one to finish, and the chat or room says it is waiting. If nothing finishes for 45 minutes, it stops waiting and says why.
 
+**Chats your agents start on their own have a separate limit.** That is `runtimes.maxAgentChats`, and it ships at 8. It counts the chats an agent spins off, or sends a first message into, while their turn is running, on every runtime. When it is full, the agent is told to try again later and nothing is started. If your computer has room for more, raise it with `dorkos config set runtimes.maxAgentChats 12`; the next chat an agent starts uses the new number. An agent cannot change this one itself.
+
 **What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
 
 The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
@@ -704,6 +706,12 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
         'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". Ships as "autonomy": new chats work without stopping to ask. When null, each runtime starts where it always did, which is asking first. The Careful preset sets "ask".',
       type: '"ask" | "act" | "autonomy" | null',
       default: '"autonomy"',
+    },
+    'runtimes.maxAgentChats': {
+      description:
+        'How many chats your agents start on their own may run at once, on every runtime. Past it, an agent’s new chat is turned down until one finishes. Only you can change it.',
+      type: 'number (1–64)',
+      default: '8',
     },
     'runtimes.claudeCode.defaultAccount': {
       description:
@@ -957,6 +965,15 @@ It reads your other tools' folders too, so a project that never used Claude Code
 
 If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`, say — DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
 
+Hooks in a project or worktree get the same care in Claude Code chats, even when the folder isn't an agent's own. Codex and OpenCode don't have this check yet. Four things wait for your yes there:
+
+- **Your local settings file.** `.claude/settings.local.json` isn't checked in, so nobody reviews it. If it adds hooks, helper commands, MCP servers, environment variables or allowed commands, DorkOS leaves the whole file out until you approve what's in it. The project's checked-in settings and its `CLAUDE.md` still load.
+- **Changed hooks.** If the project's checked-in hooks, the scripts they run, or the hooks a subagent or skill sets differ from the default branch, none of the project's own settings load in that worktree until you approve the change. That covers its hooks, its settings that run commands, and its skills. Your own settings and hooks, and your agent's permission settings, still apply. Undoing the edit turns them back on.
+- **New allowed commands.** If the checked-in settings allow a command the default branch doesn't, DorkOS asks before that command runs, as it would without the rule.
+- **A changed `.mcp.json`.** If it differs from the default branch, only the default branch's MCP servers start until you approve the change.
+
+Each one shows a card with the change, and a line in Activity naming the files. You approve a change once, and every worktree with the same change runs it. A project DorkOS sees for the first time waits for your yes once, and so does a default branch that changes its hooks. Projects DorkOS already knew when you upgraded are trusted as they were. A folder outside git counts as having no default branch, so its hooks and MCP servers wait for your yes too. Without git installed at all, the project's own settings stay off, since there is nothing to compare them with.
+
 <TypeTable
   type={{
     'harness.autoSync': {
@@ -1004,6 +1021,30 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
     'harness.folderConfigPinned': {
       description:
         'Whether DorkOS has pinned the agents it already had. It does this once, so a new agent whose folder runs anything waits for your yes. Only a person can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'harness.approvedRepoConfig': {
+      description:
+        'The project and worktree settings you allowed to run: a local settings file, changed hooks, or a changed `.mcp.json`. Each entry is the content you approved, so the same change runs in every worktree. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.refusedRepoConfig': {
+      description:
+        'Project and worktree settings you turned down. DorkOS doesn\u2019t ask about them again until they change. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.repoBaselines': {
+      description:
+        'The default-branch commit DorkOS last compared each project against. If the default branch jumps somewhere that doesn\u2019t build on it, hooks pause until you approve. Only a person can change this.',
+      type: 'object',
+      default: '{}',
+    },
+    'harness.repoBaselinesPinned': {
+      description:
+        'Whether DorkOS has pinned the projects it already knew. It does this once, so a project it sees for the first time after that waits for your yes. Only a person can change this.',
       type: 'boolean',
       default: 'false',
     },

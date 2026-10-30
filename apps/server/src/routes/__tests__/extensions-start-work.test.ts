@@ -36,7 +36,7 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 vi.mock('../../services/session/launch/launch-session.js', () => ({
-  AGENT_LAUNCH_CAP_MESSAGE: 'Too many spin-off chats are running (8).',
+  agentLaunchCapMessage: () => 'Too many spin-off chats are running (8).',
   isSessionLaunchRefusal: (result: object) => 'refused' in result,
   dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
     launches.push(opts);
