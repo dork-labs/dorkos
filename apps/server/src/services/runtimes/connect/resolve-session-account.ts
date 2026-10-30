@@ -41,10 +41,7 @@ function isAccountAware(runtime: unknown): runtime is AccountAwareRuntime {
  * honest answer — an unknown session, a runtime with no account concept, or a
  * lookup that failed.
  *
- * `undefined` always means "sign into the account DorkOS runs new sessions on",
- * never an error: every failure here degrades to the behaviour the endpoint had
- * before a session could be named, rather than blocking a sign-in someone is
- * waiting on.
+ * An unresolved target is refused by the login route; it never picks another account.
  *
  * @param sessionId - The session whose account is wanted.
  */
@@ -59,7 +56,7 @@ export async function resolveAccountRootForSession(sessionId: string): Promise<s
   } catch (err) {
     // An unregistered runtime, a session with no binding row, an unreadable
     // manifest: none of these are worth refusing a sign-in over.
-    logger.warn('[Connect] could not resolve the session account; using the active one', {
+    logger.warn('[Connect] could not resolve the session account', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),
     });

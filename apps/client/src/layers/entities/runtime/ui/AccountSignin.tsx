@@ -31,6 +31,7 @@ export function AccountSignin({
       <Button
         variant="outline"
         size="sm"
+        className="pointer-coarse:min-h-11"
         onClick={login.login}
         disabled={login.isPending}
         aria-label={`Sign in to ${name}`}
