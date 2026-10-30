@@ -336,6 +336,8 @@ export class RoomHandoffs {
    * a stranger's among them included. Every bound holds at once, so the narrowest wins.
    */
   private withRoomMarks(handoff: RoomHandoff, room: Room, latest: RoomEntry): AsideCarry {
+    // The same window the stale-post check hands the seat back when it re-reads, by the same
+    // constant, so the posts that mark this turn and the posts it is shown cannot drift apart.
     const recent = this.core.store
       .listEntries(room.id, { limit: STALE_POST_SHOWN_MAX })
       .filter((entry) => entry.kind === 'post' && entry.authorId !== handoff.authorId);
