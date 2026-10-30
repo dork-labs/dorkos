@@ -107,6 +107,9 @@ let hookDecisions: HookDecisions = NO_DECISIONS;
  */
 let loginEnabled = false;
 
+/** The stored permission preset the shipped decisions reader sees. */
+let storedPreset: string = 'trusted';
+
 /** Stands in for `sessionGate`'s resolved user, when a case signs one in. */
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 
@@ -126,6 +129,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
       if (key === 'harness') {
         return { approvedHooks: hookDecisions.approved, refusedHooks: hookDecisions.refused };
       }
+      // Only the shipped-reader mount reaches this: the stored preset, which
+      // the real `storedHookDecisions()` reads for Full (DOR-3422).
+      if (key === 'permissions') return { preset: storedPreset };
       throw new Error(`the harness router read config.${key} instead of its injected dependency`);
     },
     set: (key: string) => {
@@ -205,6 +211,15 @@ const READ_FAILURE = new Error('config store unreadable at /Users/someone/privat
 let failingApp: RequestListener;
 const failingServer = listeningServer((req, res) => failingApp(req, res));
 
+/**
+ * A mount with NO injected decisions reader, so the route reads the shipped
+ * `storedHookDecisions()` off the config store, the way the running server
+ * does. QA's DOR-3422 repro was exactly this path: Full set, and the reader
+ * never said so.
+ */
+let shippedReaderApp: RequestListener;
+const shippedReaderServer = listeningServer((req, res) => shippedReaderApp(req, res));
+
 beforeAll(async () => {
   boundaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'harness-route-boundary-')));
   dorkHome = realpathSync(mkdtempSync(join(tmpdir(), 'harness-route-home-')));
@@ -238,6 +253,14 @@ beforeAll(async () => {
       dorkosHarness: () => 'claude-code',
     }),
   });
+  shippedReaderApp = honoGroupListener({
+    path: '/api/harness',
+    routes: createHarnessRoutes({
+      dorkHome,
+      approvals: gateway,
+      dorkosHarness: () => 'claude-code',
+    }),
+  });
   failingApp = honoGroupListener({
     path: '/api/harness',
     routes: createHarnessRoutes({
@@ -268,6 +291,7 @@ afterEach(() => {
   pinEmptyClaudeRoot();
   hookDecisions = NO_DECISIONS;
   loginEnabled = false;
+  storedPreset = 'trusted';
   signedInUser = undefined;
   gateway.requested = [];
   approvalInternal.forgetDecisions();
@@ -1060,6 +1084,36 @@ describe('POST /api/harness/sync', () => {
       expect(res.body.askedAbout).toEqual(['acme']);
       expect(gateway.requested).toEqual(['acme']);
       expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
+    }
+  );
+
+  it.each([
+    ['full', true],
+    ['trusted', false],
+  ] as const)(
+    'through the shipped decisions reader, preset %s: Full is read off the store, nothing set by hand (QA, DOR-3422)',
+    async (preset, runs) => {
+      const repo = stageSyncProject(`sync-shipped-${preset}`, { plugin: true });
+      const plugin = join(repo, '.dork', 'plugins', 'acme');
+      const folder = await installFolderDigest(plugin);
+      if (folder.kind !== 'digest') throw new Error('the staged plugin did not digest');
+      await recordProjectInstall(dorkHome, {
+        projectPath: repo,
+        installRoot: plugin,
+        name: 'acme',
+        source: 'dork-labs/marketplace',
+        installDigest: folder.digest,
+      });
+      storedPreset = preset;
+
+      const res = await request(shippedReaderServer)
+        .post('/api/harness/sync')
+        .send({ projectPath: repo })
+        .then((r) => r);
+
+      expect(res.status).toBe(200);
+      expect(res.body.askedAbout).toEqual(runs ? [] : ['acme']);
+      expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(runs);
     }
   );
 
