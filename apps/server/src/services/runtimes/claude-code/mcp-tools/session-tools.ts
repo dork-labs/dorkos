@@ -91,6 +91,7 @@ import {
   type SessionStartPermission,
 } from './session-start-permission.js';
 import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
+import { recordMarkedFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { isOtherAgentsFolder } from './other-agents-folder.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import type { McpToolDeps } from './types.js';
@@ -636,6 +637,17 @@ export function createSessionStartHandler(
         permissionMode: permission.mode,
       },
     });
+    // A marked turn in a chat set to Full starts its chat like an unmarked one (DOR-3394), so no
+    // card was shown: the Activity line is how a person finds it (DOR-3412).
+    if (markedCeiling.permissionCeiling !== undefined && caller.chat?.chosenFull === true) {
+      recordMarkedFullAction({
+        actionId: 'session_start',
+        title: 'Start a chat',
+        agentPath: caller.agentPath,
+        agentName: caller.label,
+        ...(caller.chat.sessionId ? { sessionId: caller.chat.sessionId } : {}),
+      });
+    }
 
     const body: SessionStartResult = {
       sessionId: canonicalId,
