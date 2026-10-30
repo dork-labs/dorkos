@@ -5,6 +5,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import {
@@ -67,6 +68,25 @@ describe('refuseGlobalServer: paths (T7)', () => {
   it('refuses a command inside the DorkOS data directory', () => {
     const command = path.join(base, 'dork', 'agents', 'helper', 'run.sh');
     expect(refuseGlobalServer(stdio(command), ctx)).toMatchObject({ code: 'unsafe_command' });
+  });
+
+  it.each([['file'], ['git+file'], ['--entry=file']])(
+    "refuses a %s: URL into an agent's folder, checked as the path it names",
+    (prefix) => {
+      const target = pathToFileURL(path.join(base, 'repos', 'app', 'x.mjs')).href;
+      const arg = prefix === '--entry=file' ? `--entry=${target}` : `${prefix}${target.slice(4)}`;
+      expect(refuseGlobalServer(stdio('node', [arg]), ctx)).toMatchObject({
+        code: 'unsafe_command',
+      });
+    }
+  );
+
+  it('allows a file: URL outside agent folders, and refuses a malformed one', () => {
+    const outside = pathToFileURL(path.join(base, 'tools', 'x.mjs')).href;
+    expect(refuseGlobalServer(stdio('node', [outside]), ctx)).toBeUndefined();
+    expect(refuseGlobalServer(stdio('node', ['file:x.mjs']), ctx)).toMatchObject({
+      code: 'unsafe_command',
+    });
   });
 
   it("refuses a command inside an agent's folder", () => {

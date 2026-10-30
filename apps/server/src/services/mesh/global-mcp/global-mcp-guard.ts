@@ -24,6 +24,7 @@
  */
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { GlobalMcpServerWarning } from '@dorkos/shared/global-mcp-schemas';
 
@@ -118,12 +119,31 @@ function fileInArgument(arg: string): string | undefined {
   const value = arg.startsWith('-') ? arg.slice(arg.indexOf('=') + 1) : arg;
   if (arg.startsWith('-') && !arg.includes('=')) return undefined;
   if (value.length === 0 || value.startsWith('@')) return undefined;
-  // A URL (`https://host/x.js`) is fetched, not read from a folder.
+  // A `file:` URL (also `git+file:`) names a file here, so it is checked as one.
+  const fileUrl = /^(?:git\+)?(file:.*)$/i.exec(value);
+  if (fileUrl) return filePathOf(fileUrl[1]!);
+  // Any other URL (`https://host/x.js`) is fetched, not read from a folder.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return undefined;
   if (path.isAbsolute(value)) return value;
   if (value.startsWith('./') || value.startsWith('../') || value.startsWith('~')) return value;
   if (value.startsWith('.\\') || value.startsWith('..\\')) return value;
   return SCRIPT_EXTENSION.test(value) ? value : undefined;
+}
+
+/**
+ * The path a `file:` URL names. One that is not a well-formed absolute file URL
+ * (`file:x.js`, `file://host/x`) is returned as written, which reads as relative
+ * and is refused rather than guessed at.
+ */
+function filePathOf(url: string): string {
+  const relative = url.slice('file:'.length) || url;
+  // The URL parser turns `file:x.js` into `/x.js`; only the strict form converts.
+  if (!/^file:\/\/(localhost)?\//i.test(url)) return relative.replace(/^\/+/, './');
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return relative.replace(/^\/+/, './');
+  }
 }
 
 /** Why one path may not run for every agent, if it may not. */
