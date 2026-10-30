@@ -189,6 +189,26 @@ describe('GlobalMcpStore', () => {
     expect(store.list()).toEqual([]);
   });
 
+  it('leaves a working server running, secrets and all, when an edit is refused', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    await store.add(GITHUB);
+    const fileBefore = readFileSync(path.join(home, 'mcp', 'global-servers.json'));
+    await expect(
+      store.replace('github', {
+        ...GITHUB,
+        connection: { ...GITHUB.connection, command: './run.sh' },
+      } as never)
+    ).rejects.toMatchObject({ code: 'unsafe_command' });
+    expect(store.injectableFor('agent-a').github).toMatchObject({
+      command: 'npx',
+      env: { GITHUB_TOKEN: 'ghp_real_secret' },
+    });
+    expect([...secrets.held.values()]).toEqual(['ghp_real_secret']);
+    expect(readFileSync(path.join(home, 'mcp', 'global-servers.json')).equals(fileBefore)).toBe(
+      true
+    );
+  });
+
   it('flags NODE_OPTIONS on the saved server without refusing it', async () => {
     const store = new GlobalMcpStore(home, secrets);
     const view = await store.add({

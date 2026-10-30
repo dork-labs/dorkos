@@ -269,6 +269,9 @@ export class GlobalMcpStore {
       if (input.name !== name) {
         throw new GlobalMcpStoreError('name_taken', 'Remove the server to give it a new name.');
       }
+      // Every refusal before anything is deleted, so a refused edit leaves the
+      // working server running with its secrets.
+      this.refuseInput(input);
       await this.deleteSecrets(existing);
       this.servers = this.servers.filter((s) => s.name !== name);
       return this.put(input, existing.addedAt);
@@ -325,8 +328,8 @@ export class GlobalMcpStore {
     return run;
   }
 
-  /** Store one server, moving its secret values into the credential store. */
-  private async put(input: GlobalMcpServerInput, addedAt: string): Promise<GlobalMcpServerView> {
+  /** Throw why a server may not be saved, if it may not. Changes nothing. */
+  private refuseInput(input: GlobalMcpServerInput): void {
     if (input.name === RESERVED_MCP_SERVER_NAME) {
       throw new GlobalMcpStoreError('reserved_name', `${input.name} is DorkOS's own server.`);
     }
@@ -338,6 +341,11 @@ export class GlobalMcpStore {
     }
     const refusal = refuseGlobalServer(input.connection, this.guardContext());
     if (refusal) throw new GlobalMcpStoreError(refusal.code, refusal.message);
+  }
+
+  /** Store one server, moving its secret values into the credential store. */
+  private async put(input: GlobalMcpServerInput, addedAt: string): Promise<GlobalMcpServerView> {
+    this.refuseInput(input);
     const stored: Record<string, string> = {};
     for (const [key, value] of Object.entries(valuesOf(input.connection))) {
       stored[key] = isSecretName(key, input.secretNames)

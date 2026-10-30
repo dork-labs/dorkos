@@ -371,7 +371,21 @@ export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person
  * `x-api-key` as one), or a proxy's credential. The app sends none of them, so
  * any one of them, valid or not, means a program rather than the person.
  */
-const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
+export const PROGRAM_CREDENTIAL_HEADERS = [
+  'authorization',
+  'x-api-key',
+  'proxy-authorization',
+] as const;
+
+/**
+ * Whether a request carries any {@link PROGRAM_CREDENTIAL_HEADERS}: a program,
+ * never the app, valid or not. The one definition every person bar reads.
+ *
+ * @param facts - The request's headers.
+ */
+export function presentsProgramCredential(facts: Pick<RequestFacts, 'headers'>): boolean {
+  return PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+}
 
 /**
  * The strictest person bar: the owner, using the app, at this computer or on
@@ -427,9 +441,7 @@ export function requirePersonAtThisComputer(
     notePersonSessionMissing(facts);
     return 'not-a-person';
   }
-  return PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined)
-    ? 'not-a-person'
-    : undefined;
+  return presentsProgramCredential(facts) ? 'not-a-person' : undefined;
 }
 
 /** Refusal code when only the owner, at this computer, may make a change. */

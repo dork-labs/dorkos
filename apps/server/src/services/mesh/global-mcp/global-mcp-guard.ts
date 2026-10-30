@@ -118,6 +118,8 @@ function fileInArgument(arg: string): string | undefined {
   const value = arg.startsWith('-') ? arg.slice(arg.indexOf('=') + 1) : arg;
   if (arg.startsWith('-') && !arg.includes('=')) return undefined;
   if (value.length === 0 || value.startsWith('@')) return undefined;
+  // A URL (`https://host/x.js`) is fetched, not read from a folder.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return undefined;
   if (path.isAbsolute(value)) return value;
   if (value.startsWith('./') || value.startsWith('../') || value.startsWith('~')) return value;
   if (value.startsWith('.\\') || value.startsWith('..\\')) return value;

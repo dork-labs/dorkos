@@ -225,6 +225,18 @@ describe('/api/mcp-servers', () => {
     expect(store.list()).toEqual([]);
   });
 
+  it('keeps a working server when an edit is refused', async () => {
+    await request(app()).post('/api/mcp-servers').send(SERVER);
+    const refused = await request(app())
+      .put('/api/mcp-servers/github')
+      .send({ ...SERVER, connection: { ...SERVER.connection, command: './server.sh' } });
+    expect(refused.status).toBe(422);
+    expect(store.injectableFor('agent-a').github).toMatchObject({
+      command: 'npx',
+      env: { GITHUB_TOKEN: 'ghp_real_secret' },
+    });
+  });
+
   it('answers a clash and an incomplete server plainly', async () => {
     await request(app()).post('/api/mcp-servers').send(SERVER);
     expect((await request(app()).post('/api/mcp-servers').send(SERVER)).status).toBe(409);

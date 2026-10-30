@@ -41,6 +41,13 @@ describe('refuseGlobalServer: paths (T7)', () => {
     ).toBeUndefined();
   });
 
+  it.each([['https://host.example/server.js'], ['--entry=https://host.example/main.py']])(
+    'allows the URL %s, which is fetched, not read from a folder',
+    (arg) => {
+      expect(refuseGlobalServer(stdio('npx', ['-y', arg]), ctx)).toBeUndefined();
+    }
+  );
+
   it.each([['./server.js'], ['bin/server'], ['../server'], ['~/bin/server']])(
     'refuses the relative command %s',
     (command) => {
