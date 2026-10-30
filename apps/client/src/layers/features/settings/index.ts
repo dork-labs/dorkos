@@ -13,6 +13,8 @@ export { PreferencesTab } from './ui/tabs/PreferencesTab';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 // Shown on its own in the Dev Playground's Keep Awake showcase.
 export { SleepSettings } from './ui/tools/SleepSettings';
+// Shown on its own in the Dev Playground: it draws only inside the desktop app.
+export { NetworkSection } from './ui/network/NetworkSection';
 
 // The Runtimes tab, in the pieces the dev playground renders. Every one of them
 // is props-only or owns its own read, which is what the redesign bought: the
@@ -32,3 +34,5 @@ export { ExecutionExceptionsStrip } from './ui/runtimes/ExecutionExceptionsStrip
 // Settings does — a widget importing a feature hook is the allowed direction.
 export { useTrustStopWrites } from './model/use-trust-stop-writes';
 export type { TrustStopWrites } from './model/use-trust-stop-writes';
+
+export { SigninPolicySection } from './ui/runtimes/SigninPolicySection';

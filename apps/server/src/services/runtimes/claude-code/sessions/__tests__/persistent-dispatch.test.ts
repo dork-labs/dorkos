@@ -1102,13 +1102,29 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
 
   it('moves the warm process down to the ceiling for the turn', async () => {
     const sessionId = nextSession();
-    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
     await turn(sessionId);
 
     await strangerTurn(sessionId);
 
     expect(cli.launches).toBe(1);
     expect(cli.processes[0]!.liveSets).toContain('setPermissionMode:default');
+  });
+
+  it('relaunches a Full process for the turn, since below Full it launches with other deny rules (DOR-3068)', async () => {
+    // At Full other agents' files stay writable; below Full they are denied, and deny rules are
+    // fixed at launch. A live move down would keep Full's rules through the stranger's turn.
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+
+    await strangerTurn(sessionId);
+
+    expect(first.ended).toBe(true);
+    expect(first.liveSets).not.toContain('setPermissionMode:default');
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[1]!.options.permissionMode).toBe('default');
   });
 
   it('never runs the turn on a process that did not take the ceiling', async () => {
@@ -1130,7 +1146,7 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
     await turn(sessionId);
     await strangerTurn(sessionId);
-    const process = cli.processes[0]!;
+    const process = cli.processes.at(-1)!;
     process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
 
@@ -1233,7 +1249,7 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     const sessionId = nextSession();
     await turn(sessionId);
     const process = cli.processes[0]!;
-    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
     process.permissionModeNeverSettles = true;
     await turn(sessionId, 'the owner, unanswered');
     process.permissionModeNeverSettles = false;
@@ -1246,14 +1262,27 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
 
   it('moves back up live when the stranger left nothing running', async () => {
     const sessionId = nextSession();
-    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
     await turn(sessionId);
     await strangerTurn(sessionId);
 
     await turn(sessionId, 'the owner again');
 
     expect(cli.launches).toBe(1);
-    expect(cli.processes[0]!.liveSets.at(-1)).toBe('setPermissionMode:bypassPermissions');
+    expect(cli.processes[0]!.liveSets.at(-1)).toBe('setPermissionMode:acceptEdits');
+  });
+
+  it("relaunches back up to Full after a stranger's turn, with Full's deny rules (DOR-3068)", async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    await strangerTurn(sessionId);
+
+    await turn(sessionId, 'the owner again');
+
+    expect(cli.launches).toBe(3);
+    expect(cli.processes[1]!.ended).toBe(true);
+    expect(cli.processes[2]!.options.permissionMode).toBe('bypassPermissions');
   });
 });
 

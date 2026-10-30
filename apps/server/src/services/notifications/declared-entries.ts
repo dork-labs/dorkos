@@ -9,6 +9,8 @@
  *   (DOR-2946).
  * - `community-notifications.ts`: a space's teammates reached their monthly
  *   limit, or it was changed (DOR-2956).
+ * - `account-signin-notifications.ts`: a Claude folder's sign-in is new or
+ *   changed (DOR-3245).
  *
  * @module services/notifications/declared-entries
  */
@@ -23,6 +25,10 @@ import {
 } from './community-notifications.js';
 import { WEB_DEVICE_ENTRIES, type WebDevicePayloads } from './web-device-notifications.js';
 import { SECRET_FILE_ENTRIES, type SecretFilePayloads } from './secret-file-notifications.js';
+import {
+  ACCOUNT_SIGNIN_ENTRIES,
+  type AccountSigninPayloads,
+} from './account-signin-notifications.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -30,7 +36,8 @@ export interface DeclaredPayloads
     ConnectorHoldPayloads,
     WebDevicePayloads,
     CommunityNotificationPayloads,
-    SecretFilePayloads {}
+    SecretFilePayloads,
+    AccountSigninPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -38,6 +45,7 @@ export const DECLARED_ENTRIES = {
   ...WEB_DEVICE_ENTRIES,
   ...COMMUNITY_NOTIFICATION_ENTRIES,
   ...SECRET_FILE_ENTRIES,
+  ...ACCOUNT_SIGNIN_ENTRIES,
 };
 
 /**
@@ -50,4 +58,5 @@ export const DECLARED_WIRED_KINDS = [
   'connector.destructive_executed',
   'web.new_device',
   'agent.secret_files',
+  'account.signin_review',
 ] as const;

@@ -368,6 +368,28 @@ export function ApprovalCardShowcase() {
                 ],
               },
             }),
+            // Kept to the card instead of the 60-second window only because
+            // Wi-Fi access is on (DOR-3242), and saying so.
+            sample({
+              approvalId: '01JZ0000000000000000000063',
+              capabilityId: 'connectors.execute_destructive',
+              capabilityTitle: 'Take a high-risk action in a connected app',
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary: '"DorkBot" wants to run "Send email" in Gmail on "Work (work@acme.com)"',
+              serviceAction: {
+                serviceId: 'gmail',
+                serviceName: 'Gmail',
+                accountLabel: 'Work (work@acme.com)',
+                actionName: 'Send email',
+                details: [
+                  { label: 'To', value: 'board@acme.com' },
+                  { label: 'Subject', value: 'Q3 numbers' },
+                ],
+                keptCardBecause: 'wifi-open',
+              },
+            }),
             // Six lines is the most a card lists; long values are already
             // shortened by the server and wrap rather than widen the card.
             sample({

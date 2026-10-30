@@ -63,6 +63,18 @@ describe('the bell with a paused connection waiting', () => {
 });
 
 describe('PausedConnectionList', () => {
+  // DOR-3288 (QA at 390px): Confirm sat to the right at 24px and squeezed the text.
+  it('draws Confirm under the text, full width and 44px tall', () => {
+    renderList([{ ...DEPLOY, confirmation: { ...DEPLOY.confirmation, notSent: 3 } }]);
+    expect(screen.getByText('3 messages not sent. Confirm what it sends.')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Confirm this setting' });
+    expect(confirm).toHaveClass('h-11', 'w-full');
+    // Under the text, in the text column: after the lines it answers.
+    const source = screen.getByText('Webhook · env:DEPLOY_TOKEN → xn--hks-ted.example.dev');
+    expect(source.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Confirm this setting' })).toHaveLength(1);
+  });
+
   it('shows nothing when no connection is paused', () => {
     renderList([]);
     expect(screen.queryByText(/is paused/)).not.toBeInTheDocument();

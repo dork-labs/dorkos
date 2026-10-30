@@ -49,7 +49,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
+import { chatHeardOutsider, noteChatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { noteTurnHold } from './continuation-hold.js';
 import { aliasChosenTurn, isFullLevel, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
 import {
@@ -308,6 +308,27 @@ export function noteEntryLevel(
     // The level is kept in memory; a failed write leaves the row unknown, which readers treat
     // as marked in a space room and as the runtime default everywhere else.
   }
+}
+
+/**
+ * Mark a conversation's running turn with words it read mid-turn (DOR-3398): a held
+ * `post_to_room` hands the turn posts that arrived after it started, and a stranger's or a
+ * teammate's among them must mark it as the turn-start context would. Raises the recorded level
+ * (and its hand-off copy), which every enforcement point reads through {@link marksOf} on each
+ * call, and notes an outsider on the chat so what it hands on stays marked. Only ever adds.
+ *
+ * A gate fixed when the turn launched (Claude Code's carried-shell hook reads the launch ceiling)
+ * sees the mark from the chat's next turn, not this one.
+ *
+ * @param sessionId - The conversation the turn runs on.
+ * @param marks - The marks the words carry.
+ */
+export function markRunningTurn(sessionId: string, marks: TurnMarks): void {
+  if (marks.outsider === true) noteChatHeardOutsider(sessionId);
+  const level = turnLevels.get(sessionId);
+  if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
+  const handOff = handOffLevels.get(sessionId);
+  if (handOff !== undefined) remember(handOffLevels, sessionId, withMarks(handOff, marks));
 }
 
 /**

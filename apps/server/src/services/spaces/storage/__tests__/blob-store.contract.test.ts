@@ -21,6 +21,16 @@ async function readAll(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/**
+ * Byte-for-byte equality without Vitest's element-wise deep compare, which spends ~0.5s on each
+ * 256 KiB buffer and pushed "aborts a read and a delete" past 5s on a loaded CI shard (10-29,
+ * run 40974091418). The length check keeps a readable failure message.
+ */
+function expectSameBytes(actual: Buffer, expected: Buffer) {
+  expect(actual.length).toBe(expected.length);
+  expect(actual.equals(expected), 'bytes differ').toBe(true);
+}
+
 function contract(
   name: string,
   create: () => Promise<{ store: BlobStore; reopen: () => BlobStore; clean: () => Promise<void> }>
@@ -143,13 +153,13 @@ function contract(
       first.body.once('data', () => readAbort.abort());
       first.body.resume();
       await closed;
-      expect(await readAll((await fixture.store.get(stored.key)).body)).toEqual(bytes);
+      expectSameBytes(await readAll((await fixture.store.get(stored.key)).body), bytes);
       const deleteAbort = new AbortController();
       deleteAbort.abort();
       await expect(
         fixture.store.delete(stored.key, { signal: deleteAbort.signal })
       ).rejects.toMatchObject({ code: 'BLOB_ABORTED' });
-      expect(await readAll((await fixture.store.get(stored.key)).body)).toEqual(bytes);
+      expectSameBytes(await readAll((await fixture.store.get(stored.key)).body), bytes);
       await fixture.store.delete(stored.key);
     });
 
@@ -197,7 +207,7 @@ function contract(
         ]) {
           const read = await fixture.reopen().get(stored.key, { range: { start, end } });
           expect(read.byteSize).toBe(end - start + 1);
-          expect(await readAll(read.body)).toEqual(bytes.subarray(start, end + 1));
+          expectSameBytes(await readAll(read.body), bytes.subarray(start, end + 1));
         }
         for (const range of [
           { start: 0, end: bytes.length },

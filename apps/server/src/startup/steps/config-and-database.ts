@@ -32,6 +32,7 @@ import { createDb, databaseHoldsUserData, snapshotBeforeMigrations, type Db } fr
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
 import { isPersonalComputer } from '../../services/core/server-role/role-checks.js';
+import { seedAccountSigninPolicy } from '../../services/runtimes/claude-code/accounts/seed-signin-policy.js';
 
 /** What {@link openConfigAndDatabase} reads from the startup steps before it. */
 export interface OpenConfigAndDatabaseInput {
@@ -62,6 +63,9 @@ export async function openConfigAndDatabase(
     console.error(`\n${error.message}\n`);
     process.exit(1);
   }
+  // The Claude sign-ins this computer already uses are kept, once, before any
+  // turn can launch, so an upgrade pauses nothing (DOR-3245).
+  seedAccountSigninPolicy();
   // A hand-edited account rule of the wrong shape reads as "no rule" rather than
   // refusing the file (spec `flow-multiproject` §8.1); say so once.
   warnMalformedAccountRules(configManager, (message, meta) => logger.warn(message, meta));

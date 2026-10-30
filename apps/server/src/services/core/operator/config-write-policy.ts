@@ -435,6 +435,13 @@ export const CONFIG_WRITE_POLICY = {
   // yet; lengthening it spends disk. Either is the person's call.
   'activity.retentionDays': 'operator-only',
 
+  // Company certificates the desktop app adds to what it trusts (DOR-3361).
+  // A certificate authority vouches for every server the app talks to, so
+  // naming a file here decides whom each connection believes. This setting is
+  // the ONLY way in, precisely because the environment variable it replaced
+  // could be set by anything running as the user, an agent's shell included.
+  'network.extraCaCertsPath': 'operator-only',
+
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
   // operator-only pre-emptively: it is a directory-scope field, and classifying it
@@ -714,6 +721,13 @@ export const CONFIG_WRITE_POLICY = {
   'harness.approvedFolderConfigParts': 'operator-only',
   'harness.refusedFolderConfig': 'operator-only',
   'harness.folderConfigPinned': 'operator-only',
+  // Which repo and worktree hooks, local settings and MCP servers a person let
+  // run (DOR-3298), and the default-branch commit they are compared against. An
+  // agent that could write either would approve its own change.
+  'harness.approvedRepoConfig': 'operator-only',
+  'harness.refusedRepoConfig': 'operator-only',
+  'harness.repoBaselines': 'operator-only',
+  'harness.repoBaselinesPinned': 'operator-only',
   // Which agent tools DorkOS shares your globally installed packages with
   // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
   // home directory, which is the "how far DorkOS reaches on disk" line this
