@@ -813,7 +813,13 @@ export function AppShell() {
                             // phone or tablet header has no width to spend on
                             // air, and the bell showing a number was enough to
                             // push the bar past its own box (DOR-2524).
-                            className="flex h-11 min-w-0 flex-1 items-center gap-1 md:h-auto md:self-stretch lg:gap-2"
+                            //
+                            // `basis-32` is the width a phone's identity keeps
+                            // before the actions wrap: at 390px the bar has 374px
+                            // inside its padding, the four actions take 188 and the
+                            // space switcher about 34, so 8rem stays on one row with
+                            // the inbox bell showing.
+                            className="flex h-11 min-w-0 grow basis-32 items-center gap-1 md:h-auto md:flex-1 md:self-stretch lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />
@@ -821,10 +827,10 @@ export function AppShell() {
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      {/* Phone actions get their own row. That leaves the route
-                            identity a full row and gives every persistent action
-                            a 44px target without compressing tabs into initials.
-                            At `md`, `contents` restores the desktop's one row. */}
+                      {/* Phone actions share the identity's row while they fit,
+                            each a 44px target, and wrap to their own row only when
+                            a beacon needs the room. At `md`, `contents` restores
+                            the desktop's one row. */}
                       <GlobalHeaderActions />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
