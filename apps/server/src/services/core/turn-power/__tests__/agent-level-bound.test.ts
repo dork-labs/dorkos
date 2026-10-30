@@ -33,9 +33,12 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import {
+  chosenFullAutonomy,
   resolveModeDecision,
   turnPermissionMode,
 } from '../../../runtimes/claude-code/turn-permission.js';
+import { choseFullAutonomy, resetChosenTurns } from '../full-autonomy.js';
+import { getAccountTools } from '../../../runtimes/claude-code/mcp-tools/account-tools.js';
 import {
   registerTestHomes,
   clearTestHomes,
@@ -267,6 +270,45 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
         )
       );
       expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a warm Full seat lowered to Ask is not Full on its next marked turn (DOR-3416)', async () => {
+      const runtime = boot();
+      await registry.saveSessionSettings('seat-lwp', { permissionMode: 'bypassPermissions' });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('seat-lwp', 'warm up', seatOpts(ANA)));
+      expect(choseFullAutonomy('seat-lwp')).toBe(true);
+
+      agentStops.set(ANA, 'ask');
+      // Outside words: a stranger's hold, which on its own already holds the turn at Ask.
+      await run(
+        runtime.sendMessage(
+          'seat-lwp',
+          'write it',
+          seatOpts(ANA, { permissionCeiling: 'runtime-default' })
+        )
+      );
+      const turn = launches.at(-1)!;
+      expect(turn.mode).toBe('default');
+      // The agent's level rides the ceiling beside the hold, so what reads the level the chat is
+      // set to (the hold set aside) still sees Ask, not the stored Full.
+      expect(JSON.stringify(turn.ceiling)).toContain('runtime-default');
+      expect(
+        chosenFullAutonomy({
+          permissionMode: 'bypassPermissions',
+          ...(turn.ceiling !== undefined ? { turnPermissionCeiling: turn.ceiling } : {}),
+        })
+      ).toBe(false);
+      expect(choseFullAutonomy('seat-lwp')).toBe(false);
+      // So what a marked turn may do only at Full is refused again: the account usage read.
+      const usage = getAccountTools({} as never, () => ({
+        sessionId: 'seat-lwp',
+        agentPath: ANA,
+      })).find((t) => (t as { name: string }).name === 'accounts_usage') as unknown as {
+        handler: (args: object, extra: unknown) => Promise<{ content: { text: string }[] }>;
+      };
+      expect((await usage.handler({}, {})).content[0]!.text).toContain('MARKED_TURN');
+      resetChosenTurns();
     });
 
     it('holds a resumed seat after a restart, reading only what is stored', async () => {

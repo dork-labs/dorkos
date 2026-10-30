@@ -19,6 +19,7 @@ import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import { refuseAgentSelfFilesFromWifi, WIFI_AGENT_FILES_REFUSAL } from '../agent-execution-gate.js';
 import { refuseOutsiderAgentFiles } from '../../services/core/operator/agent-file-inputs.js';
 import { recordTurnLevels } from '../../services/core/turn-power/turn-levels.js';
+import { resetChosenTurns } from '../../services/core/turn-power/full-autonomy.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { CapabilityToolError } from '../../services/core/capabilities/mcp-envelope.js';
 
@@ -78,8 +79,11 @@ describe('PATCH /api/agents/current from Wi-Fi', () => {
   });
 });
 
-/** Record a turn on `sessionId`, held or not. */
-async function ran(sessionId: string, opts?: MessageOpts) {
+/**
+ * Record a turn on `sessionId`, held or not, in a chat set to `mode`: Ask first unless named, since
+ * a chat set to Full is not refused for its mark (DOR-3412).
+ */
+async function ran(sessionId: string, opts?: MessageOpts, mode = 'acceptEdits') {
   const seam = recordTurnLevels(
     {
       type: 'claude-code',
@@ -88,7 +92,7 @@ async function ran(sessionId: string, opts?: MessageOpts) {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => mode
   );
   for await (const _event of seam.sendMessage(sessionId, 'hi', opts)) {
     // drain
@@ -114,6 +118,45 @@ describe('update_agent from a turn that read outsider words', () => {
       expect(() => refuseOutsiderAgentFiles(input, { sessionId: 'held-turn-2', identity })).toThrow(
         CapabilityToolError
       );
+    }
+  });
+
+  it('at Full, lets a marked turn change its own words, never a person’s limits (DOR-3412)', async () => {
+    await ran('full-held-turn', { permissionCeiling: 'runtime-default' }, 'bypassPermissions');
+    try {
+      for (const input of [
+        { soulContent: 'Kind.' },
+        { heartbeatContent: 'wake: timed' },
+        { persona: 'Ana' },
+        { traits: { tone: 1 } },
+      ]) {
+        expect(
+          refuseOutsiderAgentFiles(input, { sessionId: 'full-held-turn', identity })
+        ).toBeUndefined();
+      }
+      for (const input of [
+        { nopeContent: 'Never deploy.' },
+        { memoryContent: '- a note' },
+        { conventions: { nope: false } },
+        { soulContent: 'Kind.', conventions: { soul: false } },
+      ]) {
+        expect(() =>
+          refuseOutsiderAgentFiles(input, { sessionId: 'full-held-turn', identity })
+        ).toThrow(CapabilityToolError);
+      }
+    } finally {
+      resetChosenTurns();
+    }
+  });
+
+  it('below Full, still refuses its own words from a marked turn', async () => {
+    await ran('ask-held-turn', { permissionCeiling: 'runtime-default' }, 'default');
+    try {
+      expect(() =>
+        refuseOutsiderAgentFiles({ soulContent: 'Kind.' }, { sessionId: 'ask-held-turn', identity })
+      ).toThrow(CapabilityToolError);
+    } finally {
+      resetChosenTurns();
     }
   });
 

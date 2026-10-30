@@ -1,7 +1,8 @@
 /**
  * A promise made in a marked turn keeps the turn's marks (DOR-3036, `specs/turn-marks`): the beat
  * its due date wakes reads the promise, so it carries the marks on rather than reading a
- * stranger's or a teammate's words as the agent's own.
+ * stranger's or a teammate's words as the agent's own. In a chat set to Full
+ * autonomy an outsider's mark refuses nothing (DOR-3412); a teammate's still does.
  *
  * @vitest-environment node
  */
@@ -17,6 +18,11 @@ import { commitmentsDomain } from '../commitment-capabilities.js';
 import { composeRegistry } from '../../core/capabilities/index.js';
 import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../core/turn-power/live-outsider-turns.js';
+import {
+  noteChosenTurn,
+  resetChosenTurns,
+  setMarkedFullActivity,
+} from '../../core/turn-power/full-autonomy.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -50,7 +56,14 @@ beforeEach(() => {
   service = new CommitmentService({ store: new CommitmentStore(createTestDb()) });
 });
 
-afterEach(() => resetLiveOutsiderTurns());
+afterEach(() => {
+  resetLiveOutsiderTurns();
+  resetChosenTurns();
+  setMarkedFullActivity(undefined);
+});
+
+const FULL = { asks: 'never', reach: 'everything' } as const;
+const ASK_FIRST = { asks: 'always', reach: 'everything' } as const;
 
 function add(sessionId: string, what: string) {
   const registry = composeRegistry([commitmentsDomain], {
@@ -101,5 +114,37 @@ describe('a promise made in a marked turn', () => {
       state: 'dropped',
     });
     expect(service.openMarks('agent-bo')).toEqual({});
+  });
+
+  it('is made in a chat set to Full, carrying the marks, with one Activity line (DOR-3412)', async () => {
+    const emit = vi.fn(async () => undefined);
+    setMarkedFullActivity({ emit } as never);
+    await ran('full-stranger-turn', 'runtime-default');
+    noteChosenTurn('full-stranger-turn', FULL as never, false);
+    expect(await add('full-stranger-turn', 'Send the report')).toMatchObject({ ok: true });
+    expect(service.openMarks('agent-bo')).toEqual({ outsider: true });
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect((emit.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
+      eventType: 'agent.marked_full_action',
+      resourceId: 'commitments.add',
+      actorId: '/agents/bo',
+    });
+  });
+
+  it('is still refused below Full, and a teammate’s mark is refused even at Full', async () => {
+    const emit = vi.fn(async () => undefined);
+    setMarkedFullActivity({ emit } as never);
+    await ran('ask-stranger-turn', 'runtime-default');
+    noteChosenTurn('ask-stranger-turn', ASK_FIRST as never, false);
+    expect(await add('ask-stranger-turn', 'Send the report')).toMatchObject({
+      code: 'OUTSIDER_TURN',
+    });
+    await ran('full-teammate-hop', ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [PRIYA] }]);
+    noteChosenTurn('full-teammate-hop', FULL as never, false);
+    expect(await add('full-teammate-hop', 'Send Priya the numbers')).toMatchObject({
+      code: 'OUTSIDER_TURN',
+    });
+    expect(service.openMarks('agent-bo')).toEqual({});
+    expect(emit).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ import { HEARTBEAT_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-f
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { marksOf } from '../turn-power/turn-levels.js';
 import { hasMarks } from '../turn-power/turn-marks.js';
+import { choseFullAutonomy } from '../turn-power/full-autonomy.js';
 
 /** `update_agent`'s convention-file fields, spread into its input schema. */
 export const AGENT_FILE_INPUTS = {
@@ -73,6 +74,18 @@ export const AGENT_INSTRUCTION_FIELDS = [
 ] as const;
 
 /**
+ * The instruction fields a marked turn is refused at every level, Full included (DOR-3412): limits
+ * a person set. NOPE.md is the agent's safety boundaries, MEMORY.md holds what the operator told it
+ * in a one-to-one chat under a stamp only DorkOS writes, and the convention switches decide whether
+ * either is read at all.
+ */
+const PERSON_SET_INSTRUCTION_FIELDS: ReadonlySet<string> = new Set([
+  'nopeContent',
+  'memoryContent',
+  'conventions',
+]);
+
+/**
  * The instruction fields a write names, in {@link AGENT_INSTRUCTION_FIELDS}.
  *
  * @param body - The write's body, any shape.
@@ -92,6 +105,12 @@ export function namedInstructionFields(body: unknown): string[] {
  * the model. Throws the tool's refusal; answers `undefined` when the call may
  * go on, so a capability can chain its handler after it with `??`.
  *
+ * Not in a chat set to Full autonomy (DOR-3412), for the agent's own words (SOUL.md,
+ * HEARTBEAT.md, the persona and the dials): they are not a level or a grant, so they are none of
+ * the refusals Full keeps. The Activity line is the permission gate's, which writes one for every
+ * `update_agent` a marked Full turn runs (`HELD_IN_A_MARKED_TURN`). A person's limits
+ * ({@link PERSON_SET_INSTRUCTION_FIELDS}) and a teammate's mark are refused at every level.
+ *
  * @param input - The tool's parsed input.
  * @param context - The verified calling session and agent.
  */
@@ -101,7 +120,14 @@ export function refuseOutsiderAgentFiles(
 ): undefined {
   const fields = namedInstructionFields(input);
   if (fields.length === 0) return undefined;
-  if (!hasMarks(marksOf(context.sessionId, context.identity?.agentPath))) {
+  const marks = marksOf(context.sessionId, context.identity?.agentPath);
+  if (!hasMarks(marks)) return undefined;
+  // A teammate's mark is the space owner's limit, refused at every level, and so is a person's own.
+  if (
+    marks.teammate === undefined &&
+    !fields.some((field) => PERSON_SET_INSTRUCTION_FIELDS.has(field)) &&
+    choseFullAutonomy(context.sessionId)
+  ) {
     return undefined;
   }
   throw new CapabilityToolError({
