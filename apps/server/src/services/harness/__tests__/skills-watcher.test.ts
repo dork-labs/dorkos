@@ -62,6 +62,9 @@ vi.mock('../../../lib/logger.js', () => ({ logger: mocks.logger }));
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
     get: (section: string) => {
+      // The preset decides whether hooks nobody decided about run on Full
+      // (DOR-3422); these tests run below Full.
+      if (section === 'permissions') return { preset: 'trusted' };
       if (section !== 'harness') throw new Error(`unexpected config read: ${section}`);
       // `conf` can throw on read — a corrupt or unreadable `config.json` (the
       // shape DOR-584 hit). The trigger has to survive it.

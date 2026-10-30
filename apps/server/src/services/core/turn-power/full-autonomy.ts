@@ -160,6 +160,44 @@ export function setMarkedFullActivity(next: Pick<ActivityService, 'emit'> | unde
   activity = next;
 }
 
+/** Something that ran without a card because DorkOS is set to Full. */
+export interface FullAction {
+  /** What ran, as a stable id (a capability id, or `harness.project_hooks`). */
+  actionId: string;
+  /** Its title, as a person reads it. */
+  title: string;
+  /** What it is about, for the Activity row's resource columns. */
+  resourceType: string;
+  /** Which one, for example a package name. */
+  resourceId: string;
+  /** The one plain sentence a person reads. */
+  summary: string;
+  /** Extra facts for the row, never secrets. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Write the one Activity line for something that would have shown a card below Full and ran
+ * without one because DorkOS is set to Full (DOR-3422). No card was shown, so this row is how a
+ * person finds it afterwards. Never throws.
+ *
+ * @param action - What ran, and why there was no card.
+ */
+export function recordFullAction(action: FullAction): void {
+  if (!activity) return;
+  void activity.emit({
+    actorType: 'system',
+    actorLabel: 'DorkOS',
+    category: 'permissions',
+    eventType: 'agent.full_action',
+    resourceType: action.resourceType,
+    resourceId: action.resourceId,
+    resourceLabel: action.title,
+    summary: action.summary,
+    metadata: { actionId: action.actionId, ...action.metadata },
+  });
+}
+
 /** One action a marked turn in a Full chat ran without asking. */
 export interface MarkedFullAction {
   /** The capability id or hand-registered tool name. */

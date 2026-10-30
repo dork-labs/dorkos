@@ -106,12 +106,25 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  hookApprovalEntry,
   isHookProjectionApproved,
   isHookProjectionRefused,
   storedHookDecisions,
+  storedPresetIsFull,
   type HookDecisions,
   type HookProjectionRequest,
 } from './hook-consent.js';
+import { recordFullAction } from '../core/turn-power/full-autonomy.js';
+
+/**
+ * The card's id and title (`HOOK_PROJECTION_CAPABILITY_*` in `hook-approval.ts`),
+ * for the Activity line Full writes instead. Restated rather than imported so the
+ * read-only `--check` path does not load the approvals module; a test pins them equal.
+ */
+const HOOK_PROJECTION_ACTION = {
+  id: 'harness.project_hooks',
+  title: 'Let an installed package run commands automatically',
+} as const;
 import { readGlobalSharingFromDisk } from './global-scope.js';
 import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
@@ -301,6 +314,8 @@ export interface ProjectWithConsentOptions {
    * The stored decisions to obey. Defaults to the running server's config store;
    * `dorkos harness sync --check` passes a copy read straight off `config.json`,
    * because opening the store would write one (see `hook-consent.ts`).
+   * Lists passed here say whether the preset is Full themselves (`full`); left
+   * out, they mean not Full, so hooks nobody decided about stay withheld.
    */
   decisions?: HookDecisions;
   /** Narrow every projection, drop and warning to one harness before applying. */
@@ -339,6 +354,11 @@ export interface ConsentedPlan {
   plan: ProjectionPlan;
   /** Every hook-declaring package left out of it, with the reason. */
   withheld: WithheldHooks[];
+  /**
+   * Packages nobody has decided about whose hooks are in the plan anyway,
+   * because DorkOS is set to Full (DOR-3422). Absent when there are none.
+   */
+  allowedAtFull?: HookProjectionRequest[];
 }
 
 /** What {@link projectWithConsent} answers: the plan, plus what applying it did. */
@@ -418,6 +438,10 @@ export function planWithConsent(
   const decisions = opts.decisions ?? storedHookDecisions();
   const allowed = new Set<string>();
   const withheld: WithheldHooks[] = [];
+  const allowedAtFull: HookProjectionRequest[] = [];
+  // Read once, and only when some package has no decision: that is the one
+  // answer the preset changes.
+  let presetFull: boolean | undefined;
   for (const request of scanHookRequests(projectPath, opts.dorkHome)) {
     // REFUSAL IS TESTED FIRST, and the order is the whole of it. Recording
     // either decision clears the other, so no code path puts one entry in both
@@ -436,6 +460,14 @@ export function planWithConsent(
       withheld.push({ reason: 'refused', request });
     } else if (isHookProjectionApproved(request, decisions)) {
       allowed.add(request.packageName);
+    } else if (
+      (presetFull ??= opts.decisions ? opts.decisions.full === true : storedPresetIsFull())
+    ) {
+      // On Full nothing new asks (DOR-3422): hooks nobody has decided about
+      // run, and the trigger that applies them writes one Activity line. No
+      // yes is recorded, so moving below Full puts the card back.
+      allowed.add(request.packageName);
+      allowedAtFull.push(request);
     } else {
       withheld.push({ reason: 'unasked', request });
     }
@@ -457,7 +489,47 @@ export function planWithConsent(
     ...(sharedWithTools ? { sharedWithTools: true } : {}),
   });
   const plan = opts.harness === undefined ? full : filterPlanToHarness(full, opts.harness);
-  return { plan, withheld };
+  return { plan, withheld, ...(allowedAtFull.length > 0 ? { allowedAtFull } : {}) };
+}
+
+/**
+ * Packages already given their one Activity line in this process, by their
+ * stored-entry form, so a projection that runs again (the watcher, every turn's
+ * end) does not write the same line again. A change to the hooks is a new entry
+ * and a new line.
+ */
+const reportedAtFull = new Set<string>();
+
+/** Write the Activity line for each package whose hooks just ran because of Full, once each. */
+function reportAllowedAtFull(requests: readonly HookProjectionRequest[]): void {
+  for (const request of requests) {
+    const entry = hookApprovalEntry(request);
+    if (reportedAtFull.has(entry)) continue;
+    reportedAtFull.add(entry);
+    const count = request.hooks.length;
+    recordFullAction({
+      actionId: HOOK_PROJECTION_ACTION.id,
+      title: HOOK_PROJECTION_ACTION.title,
+      resourceType: 'package',
+      resourceId: request.packageName,
+      summary:
+        `The installed package "${request.packageName}" can now run ${count} ` +
+        `command${count === 1 ? '' : 's'} automatically in ${request.projectPath}, without ` +
+        'asking: DorkOS is set to Full',
+      // The count, not the commands: a command line can carry a token, and
+      // this row is readable by every agent.
+      metadata: { packageName: request.packageName, projectPath: request.projectPath, count },
+    });
+  }
+}
+
+/**
+ * Forget which packages were already reported. Test-only seam.
+ *
+ * @internal Exported for testing only.
+ */
+export function resetAllowedAtFullReports(): void {
+  reportedAtFull.clear();
 }
 
 /**
@@ -509,14 +581,28 @@ export function projectWithConsent(
         'the sweep would read every other harness’s live projection as an orphan.'
     );
   }
-  const { plan, withheld } = planWithConsent(projectPath, opts);
-  // Every hook this writes is one a person approved, so an agent home's pin
-  // moves with it, when the hooks matched the pin just before (DOR-3068).
+  const consented = planWithConsent(projectPath, opts);
+  const { plan, withheld } = consented;
+  // Every hook this writes is one a person approved, or one Full lets run, so
+  // an agent home's pin moves with it, when the hooks matched the pin just
+  // before (DOR-3068).
   const { applied, conflicts, swept, removals, leftAlone, warnings } = withPersonRepinAtHome(
     projectPath,
     'hooks',
     'projecting hooks a person allowed',
     () => _internal.applyPlan(projectPath, plan, { sweepOrphans: opts.sweepOrphans })
   );
-  return { plan, withheld, applied, conflicts, swept, removals, leftAlone, warnings };
+  // After the write, so the line never says hooks run that failed to land.
+  if (consented.allowedAtFull) reportAllowedAtFull(consented.allowedAtFull);
+  return {
+    plan,
+    withheld,
+    ...(consented.allowedAtFull ? { allowedAtFull: consented.allowedAtFull } : {}),
+    applied,
+    conflicts,
+    swept,
+    removals,
+    leftAlone,
+    warnings,
+  };
 }

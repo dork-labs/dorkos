@@ -107,6 +107,12 @@ export interface HookDecisions {
    * Carrying the reason lets each surface say the true thing and stop.
    */
   unreadable?: string;
+  /**
+   * Whether the stored permission preset is Full. On Full nothing new asks, so
+   * hooks nobody has decided about run (DOR-3422); a no still holds. Absent
+   * means "ask the running server's config"; the read-only disk path sets it.
+   */
+  full?: boolean;
 }
 
 /** Nothing decided — the shape a fresh install resolves to. */
@@ -211,6 +217,15 @@ export function storedHookDecisions(): HookDecisions {
 }
 
 /**
+ * Whether the running server's stored permission preset is Full.
+ *
+ * @returns True on Full.
+ */
+export function storedPresetIsFull(): boolean {
+  return configManager.get('permissions')?.preset === 'full';
+}
+
+/**
  * Both stored lists, read straight off `config.json` without opening the store.
  *
  * For the one caller that must not write: see "Why there are two ways to READ
@@ -259,7 +274,12 @@ export function readHookDecisionsFromDisk(dorkHome: string): HookDecisions {
       unreadable: `the "harness" settings are not in a shape DorkOS understands (${parsed.error.issues[0]?.message ?? 'invalid'})`,
     };
   }
-  return { approved: parsed.data.approvedHooks, refused: parsed.data.refusedHooks };
+  const preset = (raw as { permissions?: { preset?: unknown } } | null)?.permissions?.preset;
+  return {
+    approved: parsed.data.approvedHooks,
+    refused: parsed.data.refusedHooks,
+    full: preset === 'full',
+  };
 }
 
 /** One short clause naming what went wrong, for a message a person reads. */
