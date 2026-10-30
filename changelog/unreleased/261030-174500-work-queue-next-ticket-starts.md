@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): an agent starts its next queued item when a slot frees (DOR-3462)'
+  - "fix(server): classify the work queue's routes for agents and Wi-Fi (DOR-3462)"
 ---
 
 ### Added
