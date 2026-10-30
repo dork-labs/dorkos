@@ -10,6 +10,7 @@
  * @module features/dashboard-sidebar
  */
 export { DashboardSidebar } from './ui/DashboardSidebar';
+export { SidebarLandmark } from './ui/SidebarLandmark';
 // The header block: the team name and its menu, the one New button, and the ⌘K
 // pill. Persistent chrome — `AppShell` mounts it OUTSIDE the `sidebar.body`
 // swap region, so a marketplace takeover replaces the body and leaves the way

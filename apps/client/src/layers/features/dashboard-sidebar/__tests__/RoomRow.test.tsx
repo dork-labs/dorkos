@@ -728,7 +728,8 @@ describe('RoomRow unread', () => {
     const { container } = renderRow(channel({ unreadCount: 12, mentionCount: 0 }));
     expect(row()).toHaveAttribute('data-row-state', 'emphasized');
     expect(container.querySelector('[data-slot="count-pill"]')).toBeNull();
-    expect(row()).toHaveAccessibleName('#general');
+    // Bold is not read out, so the words say it. Still no number.
+    expect(row()).toHaveAccessibleName(/^#general\s*new messages$/);
   });
 
   it('counts only the mentions in a channel', () => {

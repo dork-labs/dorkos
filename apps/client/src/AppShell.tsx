@@ -57,11 +57,13 @@ import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { MomentHost } from '@/layers/widgets/moments';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
+import { SidebarBodySwap } from './SidebarBodySwap';
 import {
   DashboardSidebar,
   MobileCommunityContextSwitcher,
   SidebarFooterStrip,
   SidebarHeaderBlock,
+  SidebarLandmark,
 } from '@/layers/features/dashboard-sidebar';
 import {
   useOnboarding,
@@ -653,8 +655,10 @@ export function AppShell() {
                         nothing to put away (P4). */}
                   {!isMobile && (
                     <Sidebar variant="inset">
-                      <TitlebarDragStrip isFullscreen={isFullscreen} />
-                      {/* ── The header block: persistent chrome ──
+                      {/* The panel's one landmark holds all of it: header, body and footer. */}
+                      <SidebarLandmark className="flex min-h-0 flex-1 flex-col">
+                        <TitlebarDragStrip isFullscreen={isFullscreen} />
+                        {/* ── The header block: persistent chrome ──
                           The mount point for the workspace switcher, the New
                           button and the ⌘K pill (spec BC-43→46, task P2.4). It
                           belongs OUTSIDE the body-swap wrapper below, so a
@@ -667,55 +671,27 @@ export function AppShell() {
                           implementation and this block is only what it says it
                           is: whose cockpit this is, one New button, one ⌘K
                           pill (BC-43 → BC-46). */}
-                      <SidebarHeaderBlock />
-                      {/* ── Dynamic sidebar body with directional slide ──
-                          This wrapper is the clip boundary for the body swap. The
-                          slide transform lives on the motion.div below, so the
-                          motion.div's own `overflow-hidden` can only clip its
-                          children — never its own translated box. The clip must
-                          therefore sit on this ancestor: every body swap (dashboard,
-                          session, and contributed takeovers, current and future)
-                          slides within the sidebar shell seam, so mid-flight content
-                          can't spill past the sidebar's edge. The footer and rail are
-                          siblings of this wrapper, so they stay outside the clip. */}
-                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                        <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
-                          <motion.div
-                            key={sidebarSlot.key}
-                            data-testid="sidebar-body-swap"
-                            custom={sidebarSlot.direction}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            variants={{
-                              enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
-                              center: { x: 0, opacity: 1 },
-                              exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
-                            }}
-                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                          >
-                            {/* Contributed takeover bodies arrive pre-wrapped in
-                                SidebarBodyErrorBoundary + Suspense at the slot
-                                seam (useSidebarSlot); the built-in dashboard/
-                                session bodies are eager and never suspend. */}
-                            {sidebarSlot.body}
-                          </motion.div>
-                        </AnimatePresence>
-                      </div>
+                        <SidebarHeaderBlock />
+                        <SidebarBodySwap
+                          slotKey={sidebarSlot.key}
+                          direction={sidebarSlot.direction}
+                        >
+                          {sidebarSlot.body}
+                        </SidebarBodySwap>
 
-                      {/* ── Static footer — never animates ── */}
-                      {/* No hairline above the footer either — the footer is one
+                        {/* ── Static footer — never animates ── */}
+                        {/* No hairline above the footer either — the footer is one
                         slim tinted strip, and the scroll-edge shadow on the body
                         above is what says content continues under it (spec R1). */}
-                      {/* The getting-started card, the profile prompt and the
+                        {/* The getting-started card, the profile prompt and the
                           update pill were all here, stacked. They are candidates
                           in the sidebar's bottom slot now — one card at a time,
                           pinned just above this footer — so the footer is only
                           the thing it is named for (spec D4). */}
-                      <SidebarFooter className="px-2 py-3">
-                        <SidebarFooterStrip />
-                      </SidebarFooter>
+                        <SidebarFooter className="px-2 py-3">
+                          <SidebarFooterStrip />
+                        </SidebarFooter>
+                      </SidebarLandmark>
                       <SidebarRail />
                     </Sidebar>
                   )}

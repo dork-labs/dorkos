@@ -83,6 +83,7 @@ vi.mock('@/layers/features/dashboard-sidebar', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/dashboard-sidebar')>()),
   DashboardSidebar: () => <nav aria-label="Sidebar" data-testid="dashboard-sidebar" />,
   SidebarHeaderBlock: () => null,
+  SidebarLandmark: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   MobileCommunityContextSwitcher: () => null,
   SidebarFooterStrip: () => null,
 }));
