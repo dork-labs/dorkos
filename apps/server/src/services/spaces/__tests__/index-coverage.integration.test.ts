@@ -76,10 +76,7 @@ const UNINDEXED_FOREIGN_KEYS: Record<string, string> = {
 /**
  * Plain keys kept beside a tenant key on the same reference, by constraint name, with the reason.
  */
-const PLAIN_KEYS_KEPT: Record<string, string> = {
-  admission_receipts_admission_id_fkey:
-    'ON DELETE CASCADE removes a receipt with its admission; the tenant key is NO ACTION',
-};
+const PLAIN_KEYS_KEPT: Record<string, string> = {};
 
 beforeAll(async () => {
   await admin.query(`CREATE DATABASE ${dbName}`);
@@ -229,6 +226,22 @@ describe('community indexes', () => {
     );
     // Equal, not a subset: a kept key that is no longer duplicated is a stale allowance.
     expect(duplicated.rows.map((row) => row.name)).toEqual(Object.keys(PLAIN_KEYS_KEPT).sort());
+  });
+
+  it('never rely on a cascade beating a stricter key to the same parent', async () => {
+    // Postgres fires a parent's key triggers sorted by name, and each name ends in an oid as text,
+    // so "…_a_100029" fires before "…_a_99996". A NO ACTION key that fires before its twin's
+    // cascade sees the child row still there and fails the delete, only on a database whose oid
+    // counter happened to cross a power of ten between the two keys (0048).
+    const mixed = await db.query<{ cascade: string; strict: string }>(
+      `SELECT c.conname AS cascade, s.conname AS strict
+       FROM pg_constraint c JOIN pg_constraint s
+         ON s.conrelid=c.conrelid AND s.confrelid=c.confrelid AND s.contype='f'
+        AND s.confdeltype<>'c'
+       WHERE c.contype='f' AND c.confdeltype='c' AND c.connamespace='public'::regnamespace
+       ORDER BY 1, 2`
+    );
+    expect(mixed.rows).toEqual([]);
   });
 });
 
