@@ -178,6 +178,11 @@ gates:
     source: .github/workflows/publish-community.yml
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
+  # --- queue-repeat-guard.yml ---
+  - id: wf.queue-repeat-guard.door
+    source: .github/workflows/queue-repeat-guard.yml
+    purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
