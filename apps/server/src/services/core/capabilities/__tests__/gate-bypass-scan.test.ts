@@ -754,6 +754,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the boot migration (DOR-1486), on ONE branch: a legacy file it could not read, which it leaves on disk and reports as a parked row so the person is told about it. Gated by the strongest gate there is — the call passes `source: discovery`, which cannot arm anything (`resolveFileArmStatus`), and the definition it hands over carries no cron and `enabled: false`, so even an approval produces a schedule with no timer. Every file the migration CAN read goes nowhere near this call: it is rewritten on disk and its row is moved by `rekeyMigratedFile`, which writes a path and a grant and never a permission mode. Deleted with the module at its sunset',
       'services/tasks/sync/task-file-sync.ts':
         'the definition itself, moved out of task-store.ts (DOR-2329)',
+      'services/tasks/sync/project-only-schedules.ts':
+        "one project's copy of a global `scope: project` schedule (DOR-3376). Called only from task-file-watcher.ts and task-reconciler.ts above, with their own `source: discovery` options, so every copy passes the same FileSyncGates arm verdict and permission clamp: a new copy is inserted switched off and parked at pending_approval, and a copy whose shared file changed parks again. It adds `projectOnly: true`, which only narrows what the row may do (its switch and timing stay on the row; the shared file is never written for it)",
     },
   },
   {

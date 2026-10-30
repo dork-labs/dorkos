@@ -3,6 +3,7 @@ covers:
   - 'feat(tasks): a global package can mark a schedule project-only (DOR-3376)'
   - "test(tasks): a project's approval never carries over to new work in the shared file (DOR-3376)"
   - 'feat(tasks): only projects that use the package get a copy (DOR-3376)'
+  - 'test(server): list project-only-schedules.ts as a gated caller of upsertFromFile (DOR-3376)'
 ---
 
 ### Changed
