@@ -8,6 +8,7 @@ covers:
   - 'fix(server): on Full, a yes covers only the files it named, one passive row per package (DOR-3422, DOR-3433)'
   - 'fix(server): a yes on a quiet row still lands after a restart (DOR-3427)'
   - 'fix(server): a saved quiet row that is not the right shape never stops startup (DOR-3427)'
+  - 'fix(server): quiet rows are picked up at startup with relay off too (DOR-3427)'
 ---
 
 ### Fixed

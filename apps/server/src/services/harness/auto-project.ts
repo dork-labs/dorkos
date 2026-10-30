@@ -62,7 +62,11 @@ import { join } from 'node:path';
 import { configManager } from '../core/config-manager.js';
 import { dorkosHarness } from './dorkos-harness.js';
 import { logger } from '../../lib/logger.js';
-import { askAboutWithheldHooks, raisePassiveHookRows } from './ask-withheld-hooks.js';
+import {
+  askAboutWithheldHooks,
+  raisePassiveHookRows,
+  resumePassiveHookRows,
+} from './ask-withheld-hooks.js';
 import { type HookApprovalGateway } from './hook-approval.js';
 import { storedPresetIsFull } from './hook-consent.js';
 import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
@@ -409,4 +413,36 @@ export async function projectAgainAfterYes(
 ): Promise<readonly WithheldHooks[]> {
   const again = await withProjectLock(ctx.projectPath, () => projectAndLog(ctx, dorkHome));
   return again.withheld;
+}
+
+/**
+ * Pick up, at startup, the quiet rows a restart left open (DOR-3427), so a yes
+ * given after it records and projects. Called from the approvals startup step,
+ * which runs on every server whatever else is switched on. Never throws: a
+ * start that cannot pick the rows up still starts.
+ *
+ * @param approvals - The approval primitive the rows were raised through.
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @returns The package names picked up.
+ */
+export function resumeQuietRowsAtStartup(
+  approvals: HookApprovalGateway,
+  dorkHome: string
+): string[] {
+  try {
+    return resumePassiveHookRows({
+      dorkHome,
+      approvals,
+      reproject: (request) =>
+        projectAgainAfterYes(
+          { projectPath: request.projectPath, packageName: request.packageName, action: 'install' },
+          dorkHome
+        ),
+    });
+  } catch (err) {
+    logger.warn('[HarnessSync] Could not pick up the saved quiet rows', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
 }
