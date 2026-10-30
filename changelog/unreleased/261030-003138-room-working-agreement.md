@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): agents in a shared room follow a four-rule working agreement (DOR-3400)'
+  - 'test(server): the prompt names read_room_history once more for the working agreement (DOR-3400)'
 ---
 
 ### Changed
