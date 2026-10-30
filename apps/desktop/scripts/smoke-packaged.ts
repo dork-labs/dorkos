@@ -6,17 +6,21 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   rmSync,
   writeFileSync,
 } from 'fs';
 import os from 'os';
 import { readAsarDirectory } from './asar-directory';
+import { samePathTree } from './same-path-tree';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { LOGIN_SHELL_PATH_MARKER } from '../src/shared/login-shell-path';
 import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
 import { assertTunnelBinaryUnpacked, TUNNEL_BINARY } from './smoke-tunnel-binary';
+import {
+  assertCompanyCertificateLoaded,
+  seedCompanyCertificate,
+} from './smoke-company-certificates';
 
 /**
  * Packaged-runtime smoke test for the macOS desktop app.
@@ -893,19 +897,6 @@ function cliCheck(checks: DependencyCheck[] | undefined): DependencyCheck | unde
   return checks?.find((check) => /\bCLI\b/i.test(check.name));
 }
 
-/** Compare two paths as the filesystem sees them (`/var` is a symlink to `/private/var`). */
-function samePathTree(child: string, parent: string): boolean {
-  const real = (value: string): string => {
-    try {
-      return realpathSync(value);
-    } catch {
-      return path.resolve(value);
-    }
-  };
-  const [childReal, parentReal] = [real(child), real(parent)];
-  return childReal === parentReal || childReal.startsWith(parentReal + path.sep);
-}
-
 /**
  * Assert the packaged app can actually see the machine it is running on.
  *
@@ -1077,6 +1068,8 @@ async function main(): Promise<void> {
   console.log(`      Fuses: ${await assertFuses(appPath)}`);
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
+  // A company certificate chosen in Settings, so the fused app has one to load.
+  const certificate = seedCompanyCertificate(home);
   const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
   const loginShell = createFakeLoginShell(fixtures);
   const launchedAt = Date.now();
@@ -1105,6 +1098,8 @@ async function main(): Promise<void> {
 
     console.log('[5/7] What the app can see from a launchd-style launch:');
     await assertAppSeesItsMachine(endpoint, home, app.output);
+    const origin = `http://${endpoint.host}:${endpoint.port}`;
+    console.log(`      ✓ ${await assertCompanyCertificateLoaded(origin, certificate)}`);
 
     await assertRendererPainted(home, app, launchedAt);
     console.log('[6/7] The window rendered — the renderer reported a first paint.');
