@@ -386,4 +386,32 @@ describe('AppTabStrip', () => {
       within(screen.getByRole('tablist', { name: 'Open tabs' })).getAllByRole('tab')
     ).toHaveLength(3);
   });
+
+  // FB-59: the scrollbar is hidden, so a plain mouse wheel has to reach the
+  // overflowing tabs. A mostly sideways gesture is left to the browser, and so
+  // is a strip with nothing to scroll.
+  function stripScroller(scrollWidth: number) {
+    const scroller = screen
+      .getByRole('tablist', { name: 'Open tabs' })
+      .closest('[data-slot="app-tab-strip"]') as HTMLElement;
+    Object.defineProperty(scroller, 'scrollWidth', { value: scrollWidth });
+    Object.defineProperty(scroller, 'clientWidth', { value: 300 });
+    return scroller;
+  }
+
+  it('scrolls an overflowing strip sideways on a vertical wheel, and only that', () => {
+    renderStrip([DASHBOARD, API_SESSION, AGENTS]);
+    const scroller = stripScroller(1000);
+    expect(fireEvent.wheel(scroller, { deltaY: 40, deltaX: 0 })).toBe(false);
+    expect(scroller.scrollLeft).toBe(40);
+    expect(fireEvent.wheel(scroller, { deltaY: 5, deltaX: 30 })).toBe(true);
+    expect(scroller.scrollLeft).toBe(40);
+  });
+
+  it('lets the wheel through when the tabs fit', () => {
+    renderStrip([DASHBOARD, API_SESSION]);
+    const scroller = stripScroller(300);
+    expect(fireEvent.wheel(scroller, { deltaY: 40, deltaX: 0 })).toBe(true);
+    expect(scroller.scrollLeft).toBe(0);
+  });
 });
