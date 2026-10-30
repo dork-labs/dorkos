@@ -1,3 +1,4 @@
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import {
   CREDENTIALS_UNREADABLE_CODE,
   CREDENTIALS_UNREADABLE_MESSAGE,
@@ -330,6 +331,13 @@ async function checkAuthState(
   binary: string | null,
   deps: ClaudeDependencyDeps
 ): Promise<DependencyCheck> {
+  const root = resolveActiveClaudeRoot(deps.config);
+  if (isNeverUseClaudeFolder(root))
+    return {
+      name: AUTH_CHECK_NAME,
+      description: 'This Claude folder is excluded in Runtimes.',
+      status: 'missing',
+    };
   const persisted = await checkPersistedCredential(deps);
   if (persisted) return persisted;
   // Resolved here rather than passed down from the caller: it is only the host

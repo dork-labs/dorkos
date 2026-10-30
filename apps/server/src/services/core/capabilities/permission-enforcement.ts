@@ -92,7 +92,38 @@ import { logger } from '../../../lib/logger.js';
 export interface CallPermission extends ResolvedPermission {
   /** Set when the agent's manifest could not be read: Blocked, and not approvable. */
   unreadable?: true;
+  /**
+   * Set when the call is one of the refusals every level keeps, and the chat is set to Full, so no
+   * card may be shown (DOR-3417): Blocked, not approvable, and refused with this plain reason.
+   */
+  keeperRefusal?: string;
 }
+
+/**
+ * Whether a person can be asked to approve past this Blocked permission: not when the manifest
+ * could not be read, the identity is switched off, or it is a refusal every level keeps in a chat
+ * set to Full (DOR-3417), which asks nobody.
+ *
+ * @param permission - The permission the call resolved to, or `null` for none.
+ */
+export function approvableBlock(permission: CallPermission | null): boolean {
+  return (
+    permission?.state === 'blocked' &&
+    !permission.unreadable &&
+    permission.source !== 'inactive' &&
+    permission.keeperRefusal === undefined
+  );
+}
+
+/**
+ * What a marked turn in a chat set to Full is told when it tries to loosen a permission, or to
+ * change a setting only a person may change (DOR-3417):
+ * an agent changing its own level or standing grants is refused at every level, and Full asks
+ * nobody, so it is refused without a card.
+ */
+export const MARKED_FULL_PERMISSION_REFUSAL =
+  "This turn read words from outside your team, so it can't loosen a permission or change a " +
+  'setting only a person may change. Nobody was asked. A person can change it in Settings.';
 
 /** Where the gate reads the two halves of a permission from. */
 export interface PermissionGateSources {
@@ -392,6 +423,30 @@ export async function resolveCallPermission(request: {
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
   const areas = areasForCall(action, request.input);
+  // Keeper 1 at Full (DOR-3417): an input that always asks a person is a change to a level or a
+  // standing grant: `change_permission` loosening any agent's settings, its own included, or a
+  // `config_patch` reaching a setting only a person may change (an area past the action's own).
+  // Below Full it raises its card as before; a marked turn in a Full chat asks nobody, so it is
+  // refused with a plain reason and one Activity line.
+  if (marked && full && (action.alwaysAsksForInput?.(request.input) === true || areas.length > 1)) {
+    const chat = request.sessionId ?? principalTurn?.sessionId;
+    const title = (action as { title?: unknown }).title;
+    recordMarkedFullAction({
+      actionId: action.id,
+      title: typeof title === 'string' ? title : action.id,
+      refused: true,
+      ...(identity ? { agentPath: identity.agentPath } : {}),
+      ...(identity?.displayName ? { agentName: identity.displayName } : {}),
+      ...(chat ? { sessionId: chat } : {}),
+    });
+    return {
+      area: action.area ?? 'permissions',
+      state: 'blocked',
+      source: 'always-asks',
+      layer: 'floor',
+      keeperRefusal: MARKED_FULL_PERMISSION_REFUSAL,
+    };
+  }
   if (areas.length === 0) {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
     // under the area it acts in, every time.
@@ -505,6 +560,7 @@ export function permissionAreaLabel(area: PermissionAreaId): string {
  * @param permission - The resolved Blocked permission.
  */
 export function blockedPermissionMessage(permission: CallPermission): string {
+  if (permission.keeperRefusal !== undefined) return permission.keeperRefusal;
   if (permission.unreadable) {
     return (
       "DorkOS could not read this agent's permissions, so it refused the call. " +

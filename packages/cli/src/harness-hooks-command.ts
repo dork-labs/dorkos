@@ -106,20 +106,23 @@ async function listDecisions(dorkHome: string): Promise<number> {
   }
 
   const {
-    hookApprovalEntry,
+    hookCommandsKey,
     hookEntryPackageName,
     isGlobalActivationEntry,
     isWorkspaceHooksEntry,
+    sameHookCommands,
   } = await import('../server/services/harness/hook-consent.js');
   const { scanHookRequests } = await import('../server/services/harness/project-with-consent.js');
 
-  // The entries this project's packages would produce RIGHT NOW. Scanning the
+  // The commands this project's packages would install RIGHT NOW. Scanning the
   // installed packages needs no manifest and builds no plan, so it answers the
-  // same way in a directory that is not a project — as an empty set, which reads
-  // as "none of these are about here".
-  const here = new Set(
-    scanHookRequests(process.cwd(), dorkHome).map((request) => hookApprovalEntry(request))
+  // same way in a directory that is not a project — as an empty list, which
+  // reads as "none of these are about here". Matched on the commands, whatever
+  // files an entry pinned (DOR-3403).
+  const hereKeys = scanHookRequests(process.cwd(), dorkHome).map((request) =>
+    hookCommandsKey(request)
   );
+  const here = { has: (entry: string) => hereKeys.some((key) => sameHookCommands(entry, key)) };
 
   console.log(`Hook decisions stored in ${configPathFor(dorkHome)}:`);
   for (const [heading, entries] of [

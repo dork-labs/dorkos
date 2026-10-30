@@ -17,11 +17,31 @@
  * move an allowed command from `Stop` (once, at the end) to `PreToolUse` (before
  * every single tool call) without asking.
  *
- * It does NOT bind the CONTENT of a script the command invokes. A hook of the
- * form `node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"` keeps its digest across an
- * update that rewrites `loop.mjs`. That is the same trade
- * `extension-load-policy.ts` states for an approved extension id, and it is the
- * honest limit of a gate on what lands in a settings file.
+ * ## The files the hooks run are pinned too (DOR-3403)
+ *
+ * A hook of the form `node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"` used to keep
+ * its digest across an update that rewrote `loop.mjs`, so new code ran on an
+ * old yes. A request now carries the sha256 of every file its commands name
+ * (`hook-script-pins.ts`), and an entry is `<packageName>@<commands>.<files>`:
+ * the commands digest as before, then a digest of the pinned files. An entry
+ * for hooks that name no file has no second part, so it is byte-for-byte what
+ * it always was.
+ *
+ * - **Same commands, same files:** the yes applies.
+ * - **Same commands, a file changed:** below Full the yes no longer applies and
+ *   the person is asked again. On Full it still applies, because on Full
+ *   nothing new asks.
+ * - **An entry from before pins** (`<name>@<commands>` alone, for hooks that do
+ *   name a file): it applies, and the running server pins today's files onto it
+ *   the first time it sees it ({@link pinLegacyHookApproval}), the same
+ *   one-time pin the agent folder settings took on upgrade.
+ * - **A no** is about the commands, so it holds whatever the files hold: a
+ *   package a person turned down is not asked about again because it edited a
+ *   script.
+ *
+ * Only the files named in the command are pinned. What those files import, and
+ * a package whose install folder is a dev link, are the residual
+ * `hook-script-pins.ts` states.
  *
  * ## Two lists, one digest, never both
  *
@@ -70,6 +90,7 @@ import type { ProjectedHook } from '@dorkos/harness';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
 import { logConfigWrite } from '../core/operator/config-write.js';
+import type { HookScriptPin } from './hook-script-pins.js';
 
 /** One package's request to install shell commands into a project's harnesses. */
 export interface HookProjectionRequest {
@@ -83,6 +104,12 @@ export interface HookProjectionRequest {
    * reorders its `hooks.json` is not asked about again.
    */
   hooks: ProjectedHook[];
+  /**
+   * The files the commands run, each with the sha256 of its bytes, sorted by
+   * path (`hook-script-pins.ts`). Absent or empty when the commands name no
+   * file, or the package is a dev link.
+   */
+  scripts?: readonly HookScriptPin[];
 }
 
 /** The two stored lists, read together so a caller cannot consult one and forget the other. */
@@ -108,8 +135,10 @@ export interface HookDecisions {
    */
   unreadable?: string;
   /**
-   * Whether the stored permission preset is Full. On Full nothing new asks, so
-   * hooks nobody has decided about run (DOR-3422); a no still holds. Absent
+   * Whether the stored permission preset is Full. On Full nothing new asks: a
+   * yes keeps applying after a file it covers changes (DOR-3403), and hooks of
+   * a package DorkOS installed that nobody has decided about run (DOR-3422).
+   * A no still holds. Absent
    * means "ask the running server's config"; the read-only disk path sets it.
    */
   full?: boolean;
@@ -142,6 +171,22 @@ function canonicalProjectPath(request: HookProjectionRequest): string {
  *   `harness.refusedHooks`.
  */
 export function hookApprovalEntry(request: HookProjectionRequest): string {
+  const commands = hookCommandsKey(request);
+  const scripts = request.scripts ?? [];
+  if (scripts.length === 0) return commands;
+  const pinned = createHash('sha256').update(JSON.stringify(scripts), 'utf8').digest('hex');
+  return `${commands}.${pinned}`;
+}
+
+/**
+ * The commands half of an entry, `<packageName>@<digest>`: the project, and
+ * every hook's event, matcher and command. Every entry for the same commands
+ * starts with it, whatever files they ran when it was recorded.
+ *
+ * @param request - The package, project, and hooks to identify.
+ * @returns The entry with no files pinned; compare with {@link sameHookCommands}.
+ */
+export function hookCommandsKey(request: HookProjectionRequest): string {
   const digest = createHash('sha256')
     .update(
       JSON.stringify([
@@ -152,6 +197,54 @@ export function hookApprovalEntry(request: HookProjectionRequest): string {
     )
     .digest('hex');
   return `${request.packageName}@${digest}`;
+}
+
+/**
+ * Whether a stored entry is about the same commands as `key`, whatever files it
+ * pinned.
+ *
+ * @param stored - A stored entry.
+ * @param key - An entry with no files pinned (`<packageName>@<digest>`).
+ * @returns True when both name the same package, project and commands.
+ */
+export function sameHookCommands(stored: string, key: string): boolean {
+  return stored === key || stored.startsWith(`${key}.`);
+}
+
+/** Local shorthand for {@link sameHookCommands}. */
+const sameCommands = sameHookCommands;
+
+/**
+ * How a request stands against the stored yeses.
+ *
+ * - `exact`: a yes for these commands and these files.
+ * - `unpinned`: a yes for these commands recorded before files were pinned.
+ * - `changed`: a yes for these commands, when a file they run held other bytes.
+ * - `none`: no yes for these commands.
+ */
+export type HookApprovalMatch = 'exact' | 'unpinned' | 'changed' | 'none';
+
+/**
+ * How a request stands against the stored yeses ({@link HookApprovalMatch}).
+ *
+ * @param request - The projection about to happen.
+ * @param decisions - The stored lists.
+ * @returns The kind of match.
+ */
+export function hookApprovalMatch(
+  request: HookProjectionRequest,
+  decisions: HookDecisions
+): HookApprovalMatch {
+  const entry = hookApprovalEntry(request);
+  if (decisions.approved.includes(entry)) return 'exact';
+  const key = hookCommandsKey(request);
+  // A request that pins no files (a dev link, whose folder is the developer's
+  // own) is covered by any yes for the same commands.
+  if ((request.scripts ?? []).length === 0) {
+    return decisions.approved.some((stored) => sameCommands(stored, key)) ? 'exact' : 'none';
+  }
+  if (decisions.approved.includes(key)) return 'unpinned';
+  return decisions.approved.some((stored) => sameCommands(stored, key)) ? 'changed' : 'none';
 }
 
 /**
@@ -297,7 +390,10 @@ function describeReadFailure(err: unknown): string {
 
 /**
  * Whether a person has already allowed exactly this package to install exactly
- * these hooks into exactly this project.
+ * these hooks into exactly this project, running exactly these files.
+ *
+ * A yes whose files have changed since applies only on Full; see "The files the
+ * hooks run are pinned too" above.
  *
  * @param request - The projection about to happen.
  * @param decisions - The stored lists; defaults to the running server's.
@@ -307,11 +403,18 @@ export function isHookProjectionApproved(
   request: HookProjectionRequest,
   decisions: HookDecisions = storedHookDecisions()
 ): boolean {
-  return decisions.approved.includes(hookApprovalEntry(request));
+  const match = hookApprovalMatch(request, decisions);
+  if (match === 'exact' || match === 'unpinned') return true;
+  // Read only when a file changed: that is the one answer the preset decides.
+  return match === 'changed' && (decisions.full ?? storedPresetIsFull());
 }
 
 /**
- * Whether a person has already turned exactly these hooks down for this project.
+ * Whether a person has already turned these hooks down for this project.
+ *
+ * Matched on the commands alone: a no holds whatever the files they run hold
+ * now, so editing a script never puts a turned-down package back in front of
+ * a person.
  *
  * @param request - The projection about to happen.
  * @param decisions - The stored lists; defaults to the running server's.
@@ -321,7 +424,20 @@ export function isHookProjectionRefused(
   request: HookProjectionRequest,
   decisions: HookDecisions = storedHookDecisions()
 ): boolean {
-  return decisions.refused.includes(hookApprovalEntry(request));
+  const key = hookCommandsKey(request);
+  return decisions.refused.some((stored) => sameCommands(stored, key));
+}
+
+/**
+ * Pin today's files onto a yes recorded before files were pinned, so the next
+ * edit to them asks again (below Full). The running server's store only; the
+ * read-only `--check` path never calls this.
+ *
+ * @param request - A projection {@link hookApprovalMatch} answered `unpinned` for.
+ */
+export function pinLegacyHookApproval(request: HookProjectionRequest): void {
+  if ((request.scripts ?? []).length === 0) return;
+  recordHookDecision(request, 'approved', 'pinning the files a package hook runs');
 }
 
 /**
@@ -353,7 +469,29 @@ function writeDecisions(reason: string, approved: string[], refused: string[]): 
  * @param request - The projection that was allowed.
  */
 export function recordHookApproval(request: HookProjectionRequest): void {
-  recordApprovedEntry(hookApprovalEntry(request), 'approving a package hook');
+  recordHookDecision(request, 'approved', 'approving a package hook');
+}
+
+/**
+ * Record one decision about a package's hooks, replacing every earlier entry
+ * for the same commands on either list: one decision per set of commands, and
+ * the newest one names the files it covers.
+ */
+function recordHookDecision(
+  request: HookProjectionRequest,
+  decision: 'approved' | 'refused',
+  reason: string
+): void {
+  const entry = hookApprovalEntry(request);
+  const key = hookCommandsKey(request);
+  const { approved, refused } = storedHookDecisions();
+  const others = (list: readonly string[]): string[] =>
+    list.filter((stored) => !sameCommands(stored, key));
+  writeDecisions(
+    reason,
+    decision === 'approved' ? [...others(approved), entry] : others(approved),
+    decision === 'refused' ? [...others(refused), entry] : others(refused)
+  );
 }
 
 /**
@@ -424,7 +562,7 @@ export function recordRefusedEntry(entry: string, reason: string): void {
  * @param request - The projection that was turned down.
  */
 export function recordHookRefusal(request: HookProjectionRequest): void {
-  recordRefusedEntry(hookApprovalEntry(request), 'turning down a package hook');
+  recordHookDecision(request, 'refused', 'turning down a package hook');
 }
 
 /** One stored decision, removed by {@link revokeHookDecisions}. */

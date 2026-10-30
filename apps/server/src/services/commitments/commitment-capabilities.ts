@@ -34,13 +34,17 @@
  *
  * `commitment_add` refuses on a turn that read such words, a Wi-Fi sign-in's
  * included (DOR-3037): the promise's due beat would run at the agent's own
- * level on words the turn was held back from acting on.
+ * level on words the turn was held back from acting on. Not in a chat set to
+ * Full autonomy (DOR-3412): nothing held that turn back, so the promise is made,
+ * with the turn's marks on it and one Activity line. A teammate's mark is still
+ * refused there: it is the space owner's limit.
  *
  * @module services/commitments/commitment-capabilities
  */
 import { z } from 'zod';
 import { marksOf } from '../core/turn-power/turn-levels.js';
 import { hasMarks } from '../core/turn-power/turn-marks.js';
+import { markedTurnRunsAtFull } from '../core/turn-power/full-autonomy.js';
 import {
   COMMITMENT_LIST_MAX,
   COMMITMENT_NOTE_MAX,
@@ -254,7 +258,20 @@ export const commitmentsDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
-        if (hasMarks(marksOf(context.sessionId, context.identity?.agentPath))) {
+        const marks = marksOf(context.sessionId, context.identity?.agentPath);
+        if (
+          hasMarks(marks) &&
+          !markedTurnRunsAtFull(
+            {
+              actionId: 'commitments.add',
+              title: 'Make a promise',
+              ...(context.identity ? { agentPath: context.identity.agentPath } : {}),
+              ...(context.identity?.displayName ? { agentName: context.identity.displayName } : {}),
+              ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+            },
+            marks
+          )
+        ) {
           return OUTSIDER_PROMISE;
         }
         const commitmentDeps = requireCommitmentDeps(deps);
@@ -267,7 +284,7 @@ export const commitmentsDomain: CapabilityDomain = {
           ...(context.sessionId ? { sourceSessionId: context.sessionId } : {}),
           ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
           // The marks of the calling turn, from its own record (DOR-3036).
-          originMarks: marksOf(context.sessionId, context.identity?.agentPath),
+          originMarks: marks,
         });
         return { ok: true as const, commitment };
       },

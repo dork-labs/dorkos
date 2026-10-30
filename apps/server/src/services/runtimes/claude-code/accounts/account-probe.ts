@@ -19,6 +19,7 @@
  *
  * @module services/runtimes/claude-code/accounts/account-probe
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -199,6 +200,7 @@ async function runProbe(
     reason,
   });
   const root = account.path;
+  if (root && isNeverUseClaudeFolder(root)) return failed('excluded-account');
   const isAccountRoot = deps.isAccountRoot ?? isClaudeAccountRoot;
   if (!root || !isAccountRoot(root)) return failed('not-an-account');
 

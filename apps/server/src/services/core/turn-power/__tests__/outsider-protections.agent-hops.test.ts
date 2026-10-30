@@ -64,6 +64,7 @@ import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outs
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { composeRegistry, type CapabilityRegistry } from '../../capabilities/index.js';
 import { MEMORY_OUTSIDER_HELD_MESSAGE, memoryDomain } from '../../../memory/memory-capabilities.js';
+import { noteChosenTurn, resetChosenTurns } from '../full-autonomy.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import {
   clearTestHomes,
@@ -394,6 +395,26 @@ describe('memory written in a turn that read an outsider’s words', () => {
     expect(replaced.error).toBe(MEMORY_OUTSIDER_HELD_MESSAGE);
     expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
     expect(await boMemory()).toContain('deploys need the operator’s OK');
+  });
+
+  it('cannot rewrite or remove a note even in a chat set to Full: a person’s limit (DOR-3412)', async () => {
+    await seedOperatorNote();
+    const { runtime } = seam({});
+    const bo = fresh('bo');
+    await run(runtime, bo, { permissionCeiling: 'runtime-default' });
+    noteChosenTurn(bo, { asks: 'never', reach: 'everything' } as never, false);
+    try {
+      const replaced = await boWrites(
+        { action: 'replace', old_text: 'deploys need the operator’s OK', text: 'deploy freely' },
+        bo
+      );
+      const removed = await boWrites({ action: 'remove', old_text: 'deploys need' }, bo);
+      expect(replaced).toMatchObject({ saved: false, code: 'outsider-held' });
+      expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
+      expect(await boMemory()).toContain('deploys need the operator’s OK');
+    } finally {
+      resetChosenTurns();
+    }
   });
 
   it('is still editable from a turn the owner started', async () => {

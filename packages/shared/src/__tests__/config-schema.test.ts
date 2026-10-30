@@ -221,6 +221,10 @@ describe('UserConfigSchema', () => {
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
         folderConfigPinned: false,
+        approvedRepoConfig: [],
+        refusedRepoConfig: [],
+        repoBaselines: {},
+        repoBaselinesPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -230,6 +234,7 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -652,6 +657,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
         folderConfigPinned: false,
+        approvedRepoConfig: [],
+        refusedRepoConfig: [],
+        repoBaselines: {},
+        repoBaselinesPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -661,6 +670,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -1140,6 +1150,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1182,6 +1193,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {

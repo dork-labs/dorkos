@@ -80,6 +80,7 @@ import {
   recordHookRefusal,
   type HookProjectionRequest,
 } from './hook-consent.js';
+import { describeHookScriptPins } from './hook-script-pins.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -248,15 +249,20 @@ export function summariseHookProjection(
     .join('; ');
   const count = request.hooks.length;
   const commands = `${count} command${count === 1 ? '' : 's'}`;
+  // The files the yes covers, with a short hash, ahead of the commands so the
+  // 500-character cap never cuts them off: a reviewer can check the hash
+  // against the copy they read, and an edit after the yes asks again (DOR-3403).
+  const files = describeHookScriptPins(request.scripts ?? []);
+  const running = files ? `, running ${quoteSummaryValue(files)}` : '';
   if (options.notInstalledByDorkos) {
     // On Full (DOR-3422): said first, because it is the reason this one asks
     // when nothing else on Full does.
     return (
       `Package ${name} found in ${where}, not installed by DorkOS. Allow it to run ` +
-      `${commands} automatically? ${hooks}`
+      `${commands} automatically${running}? ${hooks}`
     );
   }
-  return `Let the installed package ${name} run ${commands} automatically in ${where}: ${hooks}`;
+  return `Let the installed package ${name} run ${commands} automatically in ${where}${running}: ${hooks}`;
 }
 
 /** How a hook card is worded. */
@@ -352,6 +358,7 @@ export async function askForHookProjection(
       projectPath,
       packageName,
       hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
+      scripts: request.scripts ?? [],
     }),
   };
 

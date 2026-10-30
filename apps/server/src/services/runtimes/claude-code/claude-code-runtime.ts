@@ -1935,7 +1935,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           cwd,
           plugins,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
-          settingSources: ['local', 'project', 'user'],
+          // The person's own settings only. A repo's `settings.local.json`,
+          // committed hooks, helpers and `.mcp.json` servers wait for a
+          // person when nobody reviewed them (DOR-3298), and this probe
+          // starts the CLI with no such check. It needs only the global
+          // plugins' commands; the repo's own commands come from the file scan.
+          settingSources: ['user'],
           ...(this.spawnBinaryPath ? { pathToClaudeCodeExecutable: this.spawnBinaryPath } : {}),
           env: runtimeEnvironment('claude-code', 'warmup', {
             // The probe gets the same explicit account pin a turn does, for two

@@ -6,8 +6,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
  * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
- * HomeStatesShowcases, ConnectionsShowcases, CommunityHostingShowcases,
- * McpServerCardShowcases.
+ * HomeStatesShowcases, ConnectionsShowcases, PausedConnectionShowcases,
+ * CommunityHostingShowcases, McpServerCardShowcases.
  *
  * See `features-agent-sections.ts` for why this used to share a page — and a
  * file — with `FEATURE_AGENT_SECTIONS`, and no longer does.
@@ -244,6 +244,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'waiting',
       'chat tag',
     ],
+  },
+  // PausedConnectionShowcases
+  {
+    id: 'paused-connection',
+    title: 'Paused connection',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['paused', 'confirm', 'setting', 'needs you', 'review', 'webhook'],
   },
   {
     id: 'applist',
