@@ -34,3 +34,5 @@ export { ExecutionExceptionsStrip } from './ui/runtimes/ExecutionExceptionsStrip
 // Settings does — a widget importing a feature hook is the allowed direction.
 export { useTrustStopWrites } from './model/use-trust-stop-writes';
 export type { TrustStopWrites } from './model/use-trust-stop-writes';
+
+export { SigninPolicySection } from './ui/runtimes/SigninPolicySection';

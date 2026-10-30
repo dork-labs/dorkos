@@ -1,11 +1,12 @@
-import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
-import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
  * discovery, activity, templates, uploads, and agent config.
  *
  * @module shared/lib/transport/system-methods
  */
+import { createAccountSigninMethods } from './account-signin-methods';
+import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
+import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type {
   BrowseDirectoryResponse,
   CommandRegistry,
@@ -41,8 +42,6 @@ import type {
   OpenCodeDirectSetup,
   RuntimeKeyStatus,
   StoreCredentialResult,
-  DelegateLoginOptions,
-  DelegatedLoginResult,
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
   OpenRouterOAuthStatus,
@@ -117,6 +116,7 @@ async function postSseAction<TProgress, TResult>(
  */
 export function createSystemMethods(baseUrl: string) {
   return {
+    ...createAccountSigninMethods(baseUrl),
     // ── Filesystem ────────────────────────────────────────────────────────
 
     browseDirectory(dirPath?: string, showHidden?: boolean): Promise<BrowseDirectoryResponse> {
@@ -537,25 +537,6 @@ export function createSystemMethods(baseUrl: string) {
         baseUrl,
         `/runtimes/${encodeURIComponent(type)}/credential/check`,
         { method: 'POST', body: JSON.stringify(secret === null ? {} : { secret }) }
-      );
-    },
-
-    delegateRuntimeLogin(
-      type: string,
-      options?: DelegateLoginOptions
-    ): Promise<DelegatedLoginResult> {
-      // Only the keys the caller actually set reach the wire — the route
-      // rejects a pin outright for runtimes with no account concept, so an
-      // unpinned login must send no key at all rather than an explicit
-      // `undefined` (DOR-1651). No key set at all sends no body.
-      const pin: Record<string, string> = {};
-      if (options?.sessionId !== undefined) pin.sessionId = options.sessionId;
-      if (options?.accountRoot !== undefined) pin.accountRoot = options.accountRoot;
-      const body = Object.keys(pin).length === 0 ? undefined : JSON.stringify(pin);
-      return fetchJSON<DelegatedLoginResult>(
-        baseUrl,
-        `/runtimes/${encodeURIComponent(type)}/login`,
-        { method: 'POST', ...(body === undefined ? {} : { body }) }
       );
     },
 

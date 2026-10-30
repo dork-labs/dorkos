@@ -11,7 +11,7 @@ import type { ChatMessageRow } from '@dorkos/db';
 import type { ChatMessageStatus } from '@dorkos/shared/chat-messages';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
-import { AGENT_LAUNCH_MAX_LIVE } from '../launch/launch-session.js';
+import { AGENT_LAUNCH_CAP_SETTING, agentLaunchMaxLive } from '../launch/launch-session.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import type { TurnRefusal } from '../launch/turn-not-started.js';
 
@@ -21,9 +21,13 @@ import type { TurnRefusal } from '../launch/turn-not-started.js';
  * is no spin-off, and agents that read it as one rewrote and resent their
  * words somewhere else.
  */
-export const CHAT_LAUNCH_CAP_MESSAGE =
-  `Not sent: ${AGENT_LAUNCH_MAX_LIVE} agent chats are already running on this computer. ` +
-  'Nothing was kept. Send the same message again in a few minutes.';
+export function chatLaunchCapMessage(): string {
+  return (
+    `Not sent: ${agentLaunchMaxLive()} agent chats are already running on this computer. ` +
+    'Nothing was kept. Send the same message again in a few minutes. ' +
+    `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
+  );
+}
 
 /** How many of a chat's recent sends to one chat `chat_read` reports. */
 export const YOUR_MESSAGES_MAX = 5;

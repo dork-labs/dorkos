@@ -3,7 +3,7 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { accountWindow, cn, shortenHomePath } from '@/layers/shared/lib';
 import { Button, buttonVariants, UsageBar } from '@/layers/shared/ui';
-import { AccountSignin } from '@/layers/entities/runtime';
+import { AccountSigninIdentity } from '@/layers/entities/runtime';
 import { AccountColorControl } from './AccountColorControl';
 import { AccountRowRules, type AccountRule } from './AccountRowRules';
 
@@ -63,7 +63,12 @@ export function ClaudeAccountRow({
         <p className="text-muted-foreground truncate font-mono text-xs" title={account.path}>
           {shortenHomePath(account.path)}
         </p>
-        <AccountSignin accountRoot={account.path} name={name} state={signInState} />
+        <AccountSigninIdentity
+          accountId={rule?.accountId}
+          accountRoot={account.path}
+          name={name}
+          signInState={signInState}
+        />
         {rule && <AccountRowRules name={name} rule={rule} disabled={disabled} />}
         {!account.isAccountRoot && (
           <p

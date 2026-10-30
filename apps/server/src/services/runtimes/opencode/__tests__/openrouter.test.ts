@@ -42,6 +42,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
+      maxAgentChats: 8,
       claudeCode: {
         defaultAccount: null,
         accounts: [],

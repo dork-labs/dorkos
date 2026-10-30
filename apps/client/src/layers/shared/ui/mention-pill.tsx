@@ -48,6 +48,8 @@ const mentionPillVariants = cva(
       tone: {
         neutral: 'bg-secondary text-secondary-foreground',
         agent: 'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]',
+        /** A cc (DOR-3401): the same shape, theme tokens only, no accent. */
+        cc: 'bg-muted text-muted-foreground',
       },
       interactive: {
         true: 'focus-visible:ring-ring cursor-pointer transition-[background-color] duration-(--identity-answer) ease-(--identity-ease-standard) focus-visible:ring-2 focus-visible:outline-none',
@@ -77,6 +79,11 @@ const mentionPillVariants = cva(
         tone: 'neutral',
         interactive: true,
         class: 'hover:bg-[color-mix(in_oklch,hsl(var(--secondary)),hsl(var(--foreground))_10%)]',
+      },
+      {
+        tone: 'cc',
+        interactive: true,
+        class: 'hover:bg-[color-mix(in_oklch,hsl(var(--muted)),hsl(var(--foreground))_10%)]',
       },
     ],
     defaultVariants: {
@@ -124,6 +131,21 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
    * unresolved branch above exists to avoid.
    */
   interactive?: boolean;
+  /**
+   * True when the message only copied this member in: named after the names
+   * it starts with, so nobody is asked to answer (DOR-3401). Draws the grey chip,
+   * and says "cc" in words, so colour is never the only signal.
+   */
+  cc?: boolean;
+}
+
+/**
+ * The hover and focus title on a cc chip.
+ *
+ * @param name - The handle, or the display name when there is none.
+ */
+function ccTitle(name: string): string {
+  return `@${name} gets a copy. They aren't asked to answer.`;
 }
 
 /**
@@ -149,9 +171,30 @@ function MentionPill({
   origin,
   resolved,
   interactive,
+  cc,
   className,
   ...props
 }: MentionPillProps) {
+  if (resolved && cc) {
+    const name = handle ?? label;
+    return (
+      <span
+        data-slot="mention-pill"
+        data-kind={kind}
+        data-cc="true"
+        className={cn(mentionPillVariants({ tone: 'cc', interactive }), className)}
+        {...props}
+        title={ccTitle(name)}
+        aria-label={`cc @${name}`}
+      >
+        {kind === 'agent' && (
+          <Bot aria-hidden className="mr-0.5 inline-block size-[0.85em] align-[-0.15em]" />
+        )}
+        {kind === 'agent' ? label : `@${label}`}
+      </span>
+    );
+  }
+
   if (!resolved) {
     return (
       <span

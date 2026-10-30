@@ -9,7 +9,7 @@
  *
  * @module widgets/room-view/ui/ChannelComposer
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
@@ -23,6 +23,7 @@ import {
 } from '@/layers/features/jump-back-in';
 import {
   MentionPalette,
+  addressingLine,
   useMentionAutocomplete,
   type MentionRow,
 } from '@/layers/features/mentions';
@@ -180,6 +181,12 @@ export function ChannelComposer({
     viewerAuthorId: room.viewerAuthorId,
     text,
   });
+  // Who the draft asks and who it only copies in, once it copies anybody in
+  // (DOR-3401). A DM has no cc, so it never shows there.
+  const ccLine = useMemo(
+    () => (room.kind === 'channel' ? addressingLine(text, room.members) : null),
+    [room.kind, room.members, text]
+  );
 
   /**
    * The recents panel, which can only ever open where it was offered.
@@ -384,6 +391,13 @@ export function ChannelComposer({
         mentions.noteTextChange(next);
       }}
       onSubmit={handleSubmit}
+      footer={
+        ccLine ? (
+          <p data-slot="cc-line" className="text-muted-foreground px-3 pb-2 text-xs">
+            {ccLine}
+          </p>
+        ) : undefined
+      }
       head={
         /* Mounted whether or not the picker is open, and empty until it has
            something to say. The picker itself cannot carry this: it arrives with

@@ -22,6 +22,7 @@
  *
  * @module server/services/rooms/engagement
  */
+import { addresseesOf } from './mentions.js';
 import type { RoomStore } from './room-store.js';
 
 /** The two ceilings the window decays against, whichever runs out first. */
@@ -159,7 +160,8 @@ export function engagementFor(
   // Newest first, so the index IS the number of messages by others that have
   // landed since — no arithmetic on seq, which would count this member's own
   // posts and every notice in between.
-  const since = recent.findIndex((entry) => entry.mentions.includes(opts.authorId));
+  // A cc is not an anchor: being copied in never opens a window (DOR-3401).
+  const since = recent.findIndex((entry) => addresseesOf(entry).includes(opts.authorId));
   if (since === -1 || since >= posts) return null;
 
   const anchored = Date.parse(recent[since]!.createdAt);
@@ -243,8 +245,11 @@ export function conversationFor(
     limit: posts,
   });
 
+  // Only who a post ASKS counts here; a cc never makes someone a partner
+  // (DOR-3401).
   const post = recent[0];
-  if (post && post.mentions.length > 0 && !post.mentions.some((id) => opts.isAgentMember(id))) {
+  const postAsks = post ? addresseesOf(post) : [];
+  if (postAsks.length > 0 && !postAsks.some((id) => opts.isAgentMember(id))) {
     return null;
   }
 
@@ -254,7 +259,7 @@ export function conversationFor(
     if (opts.isAgentMember(entry.authorId)) {
       if (opts.joinsConversations(entry.authorId)) partners = [entry.authorId];
     } else if (opts.isPerson(entry.authorId)) {
-      partners = [...new Set(entry.mentions.filter((id) => opts.isAgentMember(id)))];
+      partners = [...new Set(addresseesOf(entry).filter((id) => opts.isAgentMember(id)))];
     }
     if (partners.length === 0) continue;
 

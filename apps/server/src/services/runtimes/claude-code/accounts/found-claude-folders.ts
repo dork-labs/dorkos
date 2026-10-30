@@ -27,6 +27,7 @@
  *
  * @module services/runtimes/claude-code/accounts/found-claude-folders
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FoundClaudeFolder } from '@dorkos/shared/account-usage';
@@ -209,6 +210,7 @@ function candidateFolders(env: FolderEnv): { dir: string; canonical: string }[] 
   const seen = new Set<string>();
   const out: { dir: string; canonical: string }[] = [];
   for (const dir of env.candidates) {
+    if (isNeverUseClaudeFolder(dir)) continue;
     if (!isFolder(dir) || !isFolder(path.join(dir, 'projects'))) continue;
     // A symlink and its target are one folder; the first by name is kept.
     const canonical = env.canonical(dir);

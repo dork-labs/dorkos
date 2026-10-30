@@ -8,6 +8,7 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
 import { runHarnessHooks, parseHarnessHooksArgs } from '../harness-hooks-command.js';
 import { hookApprovalEntry } from '../../server/services/harness/hook-consent.js';
+import { scanHookRequests } from '../../server/services/harness/project-with-consent.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import {
   createTempDir,
@@ -1132,6 +1133,18 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     return (JSON.parse(fs.readFileSync(configPath, 'utf8')) as { harness?: never }).harness;
   }
 
+  /**
+   * The entry a yes to `acme-tools`'s hooks records now: the commands, plus the
+   * files they run as they are on disk (DOR-3403).
+   */
+  function pinnedAcmeEntry(): string {
+    const request = scanHookRequests(repoRoot(), homeDir).find(
+      (r) => r.packageName === 'acme-tools'
+    );
+    if (!request) throw new Error('acme-tools declares no hooks');
+    return hookApprovalEntry(request);
+  }
+
   /** Add a `hooks/hooks.json` to an already-written installed plugin. */
   function writePluginHooks(name: string, hooks: unknown): void {
     const hooksDir = path.join(tmpDir, '.dork', 'plugins', name, 'hooks');
@@ -1232,16 +1245,8 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(printed()).not.toContain('Withheld:');
 
     // Not a per-run override: the exact `<package>@<digest>` entry, in the one
-    // store the app reads too.
-    const entry = hookApprovalEntry({
-      projectPath: repoRoot(),
-      packageName: 'acme-tools',
-      hooks: [
-        { event: 'PreToolUse', matcher: 'Bash', command: 'node ./guard.mjs' },
-        { event: 'Stop', command: 'bash scripts/notify.sh' },
-      ],
-    });
-    expect(storedHarness()?.approvedHooks).toEqual([entry]);
+    // store the app reads too, with the files the hooks run pinned (DOR-3403).
+    expect(storedHarness()?.approvedHooks).toEqual([pinnedAcmeEntry()]);
 
     // A second run needs no flag: the record is what carries the answer.
     logSpy.mockClear();
@@ -1274,7 +1279,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
 
     logSpy.mockClear();
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
-    expect(storedHarness()?.approvedHooks).toEqual([entry]);
+    expect(storedHarness()?.approvedHooks).toEqual([pinnedAcmeEntry()]);
     expect(storedHarness()?.refusedHooks).toEqual([]);
   });
 

@@ -46,6 +46,8 @@ import {
 } from './account-eligibility.js';
 import { getAccountUsageStore } from './current-usage-store.js';
 import type { RuntimeAccount } from './runtime-accounts.js';
+import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
+import { isCreditsClaudeRoot } from '../../runtimes/claude-code/credits-root.js';
 
 /** One ranked account, with what a surface needs to show it. */
 export interface RankedAccount {
@@ -108,6 +110,26 @@ export const ADVISOR_FAILED_REASON = 'The account policy could not be checked.';
 
 /** Refusal when the advisor's ranking leaves the named account out. */
 export const ACCOUNT_HIDDEN_REASON = 'The account policy does not offer this account.';
+
+/** Why a Claude account DorkOS may not pick on its own is not offered first. */
+export const SIGNIN_NEEDS_REVIEW_REASON = 'Sign-in needs review';
+
+/**
+ * Whether DorkOS may pick this account on its own (DOR-3245): the one sign-in
+ * check every automatic picker reads (the launch ladder, failover, auto-handoff,
+ * room reseat, usage ranking). A Claude folder qualifies only when its sign-in
+ * is confirmed or was known before the upgrade. It never refuses a turn: an
+ * account a person or agent names still runs.
+ *
+ * @param account - The account's runtime and folder.
+ */
+export function signinAllowsAutoPick(
+  account: Pick<RuntimeAccount, 'runtime' | 'path' | 'canonicalPath'>
+): boolean {
+  if (account.runtime !== 'claude-code') return true;
+  const root = account.canonicalPath ?? account.path;
+  return root === null || isCreditsClaudeRoot(root) || mayAutoPickClaudeRoot(root);
+}
 
 function isLedgerRuntime(runtime: string): runtime is LedgerRuntime {
   return (LEDGER_RUNTIMES as readonly string[]).includes(runtime);
@@ -206,7 +228,8 @@ function defaultRanking(
   const rows = candidatesOf(ctx.runtime, project, config)
     .filter(({ account }) => account.id !== ctx.excludeAccountId)
     .map(({ account, usage }, order) => {
-      const eligible = usage.state !== 'limited';
+      const signinOk = signinAllowsAutoPick(account);
+      const eligible = usage.state !== 'limited' && signinOk;
       return {
         order,
         row: {
@@ -216,7 +239,7 @@ function defaultRanking(
           color: account.color,
           usage,
           eligible,
-          reason: defaultReason(usage, eligible),
+          reason: signinOk ? defaultReason(usage, eligible) : SIGNIN_NEEDS_REVIEW_REASON,
           ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
         } satisfies RankedAccount,
       };
@@ -282,24 +305,33 @@ async function advisedRanking(
       byKey.has(`${runtime}\u0000${id}`),
   });
   if (!validated) return 'failed';
+  const accounts: RankedAccount[] = validated.accounts.flatMap((row) => {
+    const candidate = byKey.get(`${row.runtime}\u0000${row.id}`);
+    if (!candidate) return [];
+    const { account, usage } = candidate;
+    // The advisor ranks; it cannot offer a sign-in DorkOS may not pick alone.
+    const signinOk = signinAllowsAutoPick(account);
+    return {
+      runtime: row.runtime,
+      id: row.id,
+      label: account.label,
+      color: account.color,
+      usage,
+      eligible: row.eligible && signinOk,
+      reason: signinOk ? row.reason : SIGNIN_NEEDS_REVIEW_REASON,
+      ...(row.badge ? { badge: row.badge } : {}),
+      ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
+    };
+  });
+  // A recommendation the sign-in check took out of the running is not one.
+  const pulled = accounts.some(
+    (a) => a.id === validated.recommendedId && a.reason === SIGNIN_NEEDS_REVIEW_REASON
+  );
   return {
-    accounts: validated.accounts.flatMap((row) => {
-      const candidate = byKey.get(`${row.runtime}\u0000${row.id}`);
-      if (!candidate) return [];
-      const { account, usage } = candidate;
-      return {
-        runtime: row.runtime,
-        id: row.id,
-        label: account.label,
-        color: account.color,
-        usage,
-        eligible: row.eligible,
-        reason: row.reason,
-        ...(row.badge ? { badge: row.badge } : {}),
-        ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
-      };
-    }),
-    recommendedId: validated.recommendedId,
+    accounts,
+    recommendedId: pulled
+      ? (accounts.find((a) => a.eligible)?.id ?? null)
+      : validated.recommendedId,
     advised: true,
   };
 }

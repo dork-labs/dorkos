@@ -1,4 +1,3 @@
-import type { DoeInferenceConfig } from './config-schema.js';
 /**
  * Runtime connect types — the client-facing shapes for the terminal-free connect
  * surface (ADR-0318, effortless-runtime-switching T1). Each type mirrors a
@@ -8,6 +7,7 @@ import type { DoeInferenceConfig } from './config-schema.js';
  *
  * @module shared/runtime-connect
  */
+import type { DoeInferenceConfig } from './config-schema.js';
 import type { ModelTier } from './schemas.js';
 
 /**
@@ -38,6 +38,8 @@ export interface StoreCredentialResult {
  * pin for every other runtime, so callers send it only for `claude-code`.
  */
 export interface DelegateLoginOptions {
+  /** Server-owned registry id. Paths are never sent to the login endpoint. */
+  accountId?: string;
   /**
    * Sign back into the account THIS session is bound to. Preferred over
    * {@link accountRoot} wherever a session exists, because only the server can
@@ -66,6 +68,8 @@ export interface DelegateLoginOptions {
 export interface DelegatedLoginResult {
   /** True when the vendor CLI reported a completed, authenticated login. */
   ok: boolean;
+  /** For a Claude sign-in: the masked identity this login confirmed. */
+  identity?: AccountSigninIdentityView;
   /** Honest failure message when the login failed, was denied, or timed out. */
   error?: string;
 }
@@ -455,4 +459,50 @@ export interface DoeInferenceStatus {
   hasKey: boolean;
   /** The format DorkOS picks a credits model in, or `null` when it has nothing to pick. */
   autoProtocol: DoeInferenceConfig['protocol'] | null;
+}
+
+/**
+ * Where a Claude folder's sign-in stands. Only masked emails are exposed;
+ * credentials and account or organization ids never reach this view.
+ *
+ * `confirmed` and `grandfathered` (known before the upgrade) may be picked
+ * automatically. `unconfirmed` and `changed` still run when named, and wait
+ * for the person to confirm before DorkOS picks them on its own. `blocked`
+ * (an organization the person ruled out) and `never-use` (a folder they
+ * excluded) are the only states that refuse a turn.
+ */
+export interface AccountSigninIdentityView {
+  state:
+    | 'unreadable'
+    | 'unconfirmed'
+    | 'changed'
+    | 'blocked'
+    | 'confirmed'
+    | 'grandfathered'
+    | 'never-use';
+  email?: string;
+  previousEmail?: string;
+  /** For `changed`: whether the organization changed too. */
+  orgChanged?: boolean;
+}
+export interface ClaudeSigninPolicyView {
+  deniedOrganizations: Array<{ id: string; label: string }>;
+  folders: Array<{ accountId: string; path: string; label: string }>;
+  accounts: Array<{
+    accountId: string;
+    path: string;
+    name: string;
+    identity: AccountSigninIdentityView;
+  }>;
+}
+/** Every change is the person's own, in the app; agents are refused. */
+export type ClaudeSigninPolicyChange =
+  | { action: 'add-org'; orgId: string; label: string }
+  | { action: 'remove-org'; orgId: string }
+  | { action: 'exclude-folder' | 'allow-folder' | 'accept'; accountId: string };
+
+/** Owner-only account sign-in policy surface. */
+export interface ClaudeSigninPolicyTransport {
+  getClaudeSigninPolicy(): Promise<ClaudeSigninPolicyView>;
+  changeClaudeSigninPolicy(input: ClaudeSigninPolicyChange): Promise<{ ok: boolean }>;
 }

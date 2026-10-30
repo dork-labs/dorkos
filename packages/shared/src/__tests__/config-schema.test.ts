@@ -234,6 +234,7 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -669,6 +670,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -1148,6 +1150,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1190,6 +1193,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
