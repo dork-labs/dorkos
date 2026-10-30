@@ -160,6 +160,29 @@ files:
   - 'dist/**'
   - 'core-extensions/**'
 
+# Electron fuses (DOR-3053 PR 1): switches baked into the Electron Framework
+# binary, which the app and every Helper share, flipped right before signing.
+# Each one shuts a way for another process on this Mac to run its own code
+# under DorkOS's signature. scripts/smoke-fuses.ts reads them back from the
+# packaged app, and its unit test holds this block and PACKAGED_FUSES together.
+#
+# runAsNode stays ON, as a named residual: isolated extensions run on this
+# binary with ELECTRON_RUN_AS_NODE=1 under Node's permission model, and
+# Electron's utilityProcess ignores `--permission` (measured on 42.11.16), so
+# moving them would drop their sandbox. Playwright's browser download forks a
+# run-as-node child too. Turning it off is DOR-3358, before the Keychain lands.
+#
+# resetAdHocDarwinSignature: flipping a fuse breaks the ad-hoc signature an
+# unsigned arm64 build carries, and an arm64 Mac refuses to run that. A signed
+# build is re-signed with the real identity afterwards either way.
+electronFuses:
+  runAsNode: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  resetAdHocDarwinSignature: true
+
 asar: true
 asarUnpack:
   # The pinned browser installer must execute from a real filesystem path.

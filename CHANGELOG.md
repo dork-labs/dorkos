@@ -13,6 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.127.1] - 2026-10-30
+
+> DorkOS 0.127.1 asks you to confirm it's you before things only you can do, gives each agent one voice in each room, and cuts more waits at Full autonomy.
+
+### Changed
+
+- Each agent now has one voice in each room. If another of its chats tries to post there, the draft goes to the agent's own chat in that room. That chat is told to read the room first, then post the draft, reword it, or say why not. Posts through DorkOS's external MCP server aren't affected.
+- A message passed on this way says where it came from, like "Shared from #team-product at Dorian's request". The room or chat it came from hears whether it was shared.
+- An agent that isn't in a room can't post there, and DorkOS won't add it for you. From a DorkOS chat, it's told to ask the person who runs DorkOS.
+- A package installed for all projects can now mark a scheduled task as project-only. It no longer shows up as a global schedule, or asks for approval there. Each project with the file the package names gets its own copy on its Schedules page, switched off. Turn it on where you want it. If a project drops that file, a copy you once switched on stays, and a change to the package's task can still pause it.
+
+### Fixed
+
+- Before DorkOS reads a git repository for you, it checks the repository's own settings. If it finds anything outside a short list of ordinary settings, it skips the read. The same check runs before DorkOS makes or removes a workspace. A chat set to Full autonomy still gets its workspace made, and Activity notes it. These reads don't use the network, your saved git logins or your own git settings.
+- At Full autonomy, an agent that tries to open up a setting only you may change, like remote access or which hooks may run, is now told no, and Activity gets a line. Before, it put a card in front of you and waited. Many of these can still be turned off without asking, like switching the tunnel off, which also adds a line to Activity. Below Full, the agent still asks you when you're there to answer.
+- A Claude Code agent set to Full autonomy no longer waits on a Needs you ticket because of settings in its folder. They now load, and Activity says so. This doesn't count as your approval: move the agent below Full and DorkOS holds any settings you haven't approved and asks you.
+
+### Security
+
+- Some things only you can do in DorkOS, like approving what an agent asked for, now need you to confirm it's you. In a browser on the computer DorkOS runs on, that means entering your DorkOS password once, and it stays confirmed for about a month after you last use it, unless you sign out. The desktop app confirms you by itself, and on other devices your normal sign-in counts. Most browsing doesn't ask, and nothing changes until you have an owner account.
+- The DorkOS app now ignores `NODE_OPTIONS` (a setting that loads extra code into Node) and won't start with debugging switches like `--inspect`. It also won't start if its main app file changed after it was built.
+
+### Known issues
+
+- At Full autonomy, a package that wants to run its own commands can still put a card in front of you, including a package DorkOS didn't install. A later release changes this.
+- A chat an extension starts, like one from a comment on an "Only you can do these" list, can still show cards at Full autonomy. That ends in the next release.
+- At Full autonomy, an agent that has read outside words and tries to loosen a permission is told no. Without outside words, and below Full, you get a card and you decide. In the next release it's refused at Full in every turn.
+
 ## [0.127.0] - 2026-10-30
 
 > DorkOS 0.127.0 makes agents better teammates in a shared room, and keeps more of what agents change waiting for your OK.
@@ -193,20 +221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixes a crash on an unhandled network error.
 - If DorkOS stops, the desktop app now starts it again on its own. If it can't, it says so and offers one button to try again.
 
-## [0.125.1] - 2026-10-22
+Older releases (v0.1.0 – v0.125.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.125.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.125.1.md).
 
-> DorkOS 0.125.1 gives an agent's profile a calmer layout with five rows up front, and folded sidebar sections now say how much they hold.
-
-### Changed
-
-- An agent's profile now shows five things up front: what it does, what it runs on, its level, who it reports to and its rooms. Everything else sits in Work, Setup and Files, folded until you open them, and the app remembers which ones you keep open.
-- The Level row shows the level the agent really runs at. If you held it lower than everyone else, it says so: "Ask · held there by you".
-- The profile's main button now reads Message, with the other actions in the ⋯ menu beside it.
-- A folded sidebar section now says how many rows it hides, like "· 12 more". Before, a folded section could look like an open one that had lost its rows. (DOR-3200)
-
-Older releases (v0.1.0 – v0.125.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.125.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.125.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.127.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.127.1...HEAD
+[0.127.1]: https://github.com/dork-labs/dorkos/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/dork-labs/dorkos/compare/v0.126.4...v0.127.0
 [0.126.4]: https://github.com/dork-labs/dorkos/compare/v0.126.3...v0.126.4
 [0.126.3]: https://github.com/dork-labs/dorkos/compare/v0.126.2...v0.126.3
@@ -216,4 +234,3 @@ Older releases (v0.1.0 – v0.125.0) are archived in [changelog/archive/CHANGELO
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
-[0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1

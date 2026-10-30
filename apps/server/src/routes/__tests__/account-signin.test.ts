@@ -1,8 +1,10 @@
 /**
  * The person's Claude sign-in routes (DOR-3245): only the person, in the app,
  * may confirm a sign-in, keep a changed one, or change the Never use lists.
- * An agent, an API key and a teammate get 403. There is no password step:
- * the person with login off at this computer can confirm.
+ * An agent, an API key and a teammate get 403. At this computer with login
+ * off, the person confirms with their session once an owner exists: the app
+ * is asked for the one password step-up first (DOR-3330). With no owner yet
+ * there is nobody to sign in as, and the person confirms with no session.
  */
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,11 +14,16 @@ import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { AccountSigninPolicy } from '../../services/health/account-signin-policy.js';
+import { personSessionRefusal } from '../../http/person-session-refusal.js';
+import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import { createAccountSigninRoutes } from '../account-signin.js';
+
+/** Whether the install has an owner; the step-up is asked for only once one does. */
+const install = vi.hoisted(() => ({ hasOwner: true }));
 
 vi.mock('../../services/core/auth/index.js', async (original) => ({
   ...(await original<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'owner' }),
+  readOwnerAccount: () => (install.hasOwner ? { id: 'owner' } : null),
 }));
 vi.mock('../../services/core/auth/install-owner.js', () => ({
   isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
@@ -40,15 +47,17 @@ beforeEach(() => {
   policy.seed([], new Date('2026-10-30T00:00:00Z'));
   vi.clearAllMocks();
   metadata.mockReturnValue(identity);
+  install.hasOwner = true;
 });
 afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
 
-type Actor = 'owner' | 'teammate' | 'agent' | 'key' | 'here';
+type Actor = 'owner' | 'teammate' | 'agent' | 'key' | 'here' | 'here-signed-in';
 
 /**
  * One request as `actor`: the owner's browser session, a teammate's, an
- * agent (its header on the owner's session), an API key, or the person at
- * this computer with login off (no credential at all).
+ * agent (its header on the owner's session), an API key, the person at this
+ * computer with login off and no credential at all (`here`, from an app window),
+ * or that person after their one step-up (`here-signed-in`, the session it left).
  */
 async function call(actor: Actor, endpoint: string, body: object = {}, method = 'POST') {
   const app = new Hono<ApiEnv>();
@@ -61,6 +70,8 @@ async function call(actor: Actor, endpoint: string, body: object = {}, method = 
     c.set('body', body);
     await next();
   });
+  // The chain step that turns a person bar's refusal into the app's step-up ask.
+  app.use('*', personSessionRefusal());
   app.route(
     '/signins',
     createAccountSigninRoutes({
@@ -69,11 +80,12 @@ async function call(actor: Actor, endpoint: string, body: object = {}, method = 
       metadata,
     })
   );
+  const here = actor === 'here' || actor === 'here-signed-in';
   const headers: Record<string, string> =
     actor === 'agent'
       ? { 'x-dorkos-agent': 'agent' }
-      : actor === 'here'
-        ? { host: 'localhost' }
+      : here
+        ? { host: 'localhost', 'x-client-id': 'window-1' }
         : {};
   return app.request(
     '/signins' + endpoint,
@@ -81,10 +93,9 @@ async function call(actor: Actor, endpoint: string, body: object = {}, method = 
     {
       incoming: {
         headers,
-        socket:
-          actor === 'here'
-            ? { remoteAddress: '127.0.0.1' }
-            : { remoteAddress: '192.0.2.1', encrypted: true },
+        socket: here
+          ? { remoteAddress: '127.0.0.1' }
+          : { remoteAddress: '192.0.2.1', encrypted: true },
       } as unknown as IncomingMessage,
       outgoing: {} as ServerResponse,
     }
@@ -126,7 +137,21 @@ describe('the sign-in routes take the person bar', () => {
     expect(policy.assess('/fake/five', changed).state).toBe('confirmed');
   });
 
-  it('the person at this computer with login off can confirm', async () => {
+  it('the person at this computer with login off confirms after their one step-up', async () => {
+    const res = await call('here-signed-in', '/five/accept');
+    expect(res.status).toBe(200);
+    expect(policy.assess('/fake/five', identity).state).toBe('confirmed');
+  });
+
+  it('asks the app at this computer for the step-up first, and changes nothing', async () => {
+    const res = await call('here', '/five/accept');
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe(PERSON_SESSION_REQUIRED_CODE);
+    expect(policy.assess('/fake/five', identity).state).toBe('unconfirmed');
+  });
+
+  it('with no owner yet, the person at this computer confirms with no session', async () => {
+    install.hasOwner = false;
     const res = await call('here', '/five/accept');
     expect(res.status).toBe(200);
     expect(policy.assess('/fake/five', identity).state).toBe('confirmed');

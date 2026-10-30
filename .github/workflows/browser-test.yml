@@ -411,7 +411,14 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # No saved credential: nothing here pushes or fetches after checkout. The
+      # specs make git repositories inside this checkout, and DorkOS's audited
+      # git runner reads every settings file above one, refusing an include,
+      # which is how the checkout saves its credential (DOR-3343, ledger
+      # 261030-062000).
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
@@ -765,6 +772,8 @@ jobs:
           fi
           echo "canary $EVENT run against $REF."
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7.1.0
         with:

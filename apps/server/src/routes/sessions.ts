@@ -39,7 +39,7 @@ import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
-import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { recordAccepted } from './session-message-accepted.js';
 import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
@@ -47,11 +47,11 @@ import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { isPersonTurn } from '../lib/caller-authority.js';
+import { askForPersonBeforeChat, personOnlyModeChange } from '../http/person-session-refusal.js';
+import { workspaceCallerOf } from './session-workspace-caller.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
-import { trustedCaller } from '../services/core/capabilities/index.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
 import {
@@ -142,21 +142,6 @@ export interface SessionRouteDeps extends SessionOriginResolvers {
 }
 
 const vaultRoot = DEFAULT_CWD;
-
-/**
- * Who is posting a message, for a new workspace its `workspaceKey` names
- * (DOR-2335): a person at this machine, or anyone else, with the name an
- * approval card shows.
- *
- * @param facts - The request's facts, with the agent identity.
- */
-function workspaceCallerOf(facts: RequestFacts): { trusted: boolean; requestedBy?: string } {
-  const identity = facts.agentIdentity;
-  return {
-    trusted: trustedCaller(readCallerAuthority(facts)) !== undefined,
-    ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
-  };
-}
 
 /** What naming DorkOS credits for a new session says to a caller that is not the owner. */
 const RUN_ON_CREDITS = {
@@ -574,7 +559,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // PATCH /api/sessions/:id - Update session settings
-  router.patch('/:id', async (c) => {
+  router.patch('/:id', personOnlyModeChange(), async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -832,7 +817,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // orchestration and the lock/error invariants, and
   // `services/session/launch/launch-session.ts` for the binding this route shares
   // with every other surface that starts a session from a message.
-  router.post('/:id/messages', async (c) => {
+  router.post('/:id/messages', askForPersonBeforeChat(), async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -871,9 +856,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // open. Rooms, tasks and bindings never pass through here, and each names
     // itself at its own call (DOR-2105). A caller presenting an agent identity
     // is not that person: its chat is agent work, so it can read what it
-    // started (spec `audit-trail` §3.4), and it seeds no operator stop.
+    // started (spec `audit-trail` §3.4), and it seeds no operator stop. Nor is
+    // a caller with no agent header but no session of the person's, once an
+    // owner exists who could prove themselves (DOR-3330): its message runs as
+    // agent work, never as the person.
     const result = await dispatchSessionMessage({
-      origin: httpTurnOrigin(presentsAgentIdentity(honoRequestFacts(c))),
+      origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
       sessionId,
       request: parsed.data,
       clientId,

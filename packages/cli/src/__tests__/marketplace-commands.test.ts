@@ -244,6 +244,25 @@ describe('runMarketplaceAdd', () => {
     expect(allErr).toContain('Only the person running DorkOS can add a package source');
     expect(allErr).toContain('Ask them to run');
   });
+
+  it('says exactly where in the app to add it when it needs you signed in (DOR-3330)', async () => {
+    const message =
+      'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.';
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(403, { error: message, code: 'marketplace_source_needs_app' })
+        )
+    );
+
+    const code = await runMarketplaceAdd({ url: 'https://example.com/marketplace' });
+
+    expect(code).toBe(1);
+    // One line, as written: no "Error:" prefix, no status.
+    expect(errSpy.mock.calls.map((c) => String(c[0]))).toEqual([message]);
+  });
 });
 
 describe('parseMarketplaceRemoveArgs', () => {

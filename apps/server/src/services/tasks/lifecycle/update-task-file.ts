@@ -228,6 +228,25 @@ async function rewriteTaskFile(
     };
   }
 
+  // One project's copy of a global `scope: project` schedule shares its file
+  // with every other project's copy, so an edit for this project can never land
+  // in it (DOR-3376). Its switch and timing live on its own row, exactly as a
+  // package's do; anything else is the shared file's to change.
+  if (existing.projectOnly) {
+    if (landsOnRowAlone(fileBackedChanges(data, existing))) {
+      return { ok: true, changesFile: false, timingLandsOn: 'row', clampApplied: false };
+    }
+    return {
+      ok: false,
+      status: 409,
+      error:
+        `This schedule is shared by every project, so DorkOS didn't change it here. ` +
+        `You can switch it on or off, or change when it runs, for this project. ` +
+        `To change what it does, edit ${existing.filePath}.`,
+      code: 'schedule_project_copy',
+    };
+  }
+
   // A file an installed package owns is never ours to rewrite: the edit would
   // land inside the package's own checkout, be shared by every agent that
   // installed it, and be undone by its next update. Which files those are is

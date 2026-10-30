@@ -233,6 +233,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/desktop/sign-in',
+    'POST /api/person-session',
     'POST /api/onboarding/first-run',
     'POST /api/onboarding/welcome',
     'POST /api/local-browser/open',
@@ -263,6 +264,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
 const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/admin/*': 'Group middleware; its writes are refused one by one.',
   'ALL /api/auth/*': 'Better Auth; its key, password and sign-out writes are refused by path.',
+  'ALL /api/person-session/*': 'The owner’s step-up; its one write is listed.',
+  'ALL /api/tasks': 'Asks the app for the step-up before a task change; the writes are listed.',
+  'ALL /api/tasks/*': 'Asks the app for the step-up before a task change; the writes are listed.',
   'ALL /api/canvas/docs/*': 'Group middleware for shared documents.',
   'ALL /api/cloud/communities/*': 'Group middleware for hosted communities.',
   'ALL /api/communities/*': 'Group middleware for community rooms.',

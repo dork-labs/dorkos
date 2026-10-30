@@ -265,6 +265,17 @@ describe('committed hooks', () => {
     expect(paused.mcpServers).toEqual({});
   });
 
+  it("fails closed when the repo's own git settings name a program (DOR-3343 audit)", async () => {
+    const decision = await resolveRepoConfigForLaunch(turn(repo.main));
+    expect(decision.pauseHooks).toBe(false);
+    // The shared runner refuses a filter before git starts; the check pauses.
+    git(repo.main, ['config', 'filter.evil.clean', 'cat']);
+    store.harness = {};
+    const paused = await resolveRepoConfigForLaunch(turn(repo.main));
+    expect(paused.pauseHooks).toBe(true);
+    expect(paused.mcpServers).toEqual({});
+  });
+
   it('runs approved content without a card', async () => {
     const wt = repo.addWorktree('wt');
     writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'ok();\n');

@@ -5,7 +5,7 @@ import { createWindow, isOwnOrigin, isWebLink, makeRendererUrlAccessor } from '.
 import { claimWindowsToRestore, setupTabSession } from './tab-session';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort, signInWindowSession } from './server-process';
-import { WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
+import { currentPersonProof, WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
 import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
@@ -71,6 +71,15 @@ let localBrowserBridge: Awaited<ReturnType<typeof startLocalBrowserBridge>> | un
  * pages as foreign links.
  */
 const getRendererUrl = makeRendererUrlAccessor(getServerPort);
+
+/** The origin of a frame's URL, or `null` when it has none. */
+function frameOrigin(url: string | undefined): string | null {
+  try {
+    return new URL(url ?? '').origin;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Create the main window and track its lifecycle. The app keeps running after
@@ -336,6 +345,16 @@ if (refusedSwitch !== null) {
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();
+  });
+
+  // The window's person proof (DOR-3330), only to a page of the app itself:
+  // with the cookie, it is the person, so no other page may read it.
+  ipcMain.on('get-person-proof', (event) => {
+    const port = getServerPort();
+    event.returnValue =
+      port !== null && frameOrigin(event.senderFrame?.url) === `http://localhost:${port}`
+        ? currentPersonProof()
+        : null;
   });
 
   // Open a URL outside the app. The renderer needs this for one address in

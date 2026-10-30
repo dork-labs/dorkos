@@ -986,3 +986,28 @@ export function buildHandleChangedNotice(
         : `${who} renamed ${agentName} from @${from} to @${to}.`;
   return { text, notice: 'handle_changed', subjectAuthorId };
 }
+
+/**
+ * The line a room hand-off sends back to the room its draft came from (DOR-3397): the agent's
+ * seat in the target room shared it, or did not and said why. Written where the person who
+ * asked is reading, since the seat answers in another room.
+ *
+ * @param agentName - Display name of the agent whose seat ran the hand-off.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param target - The room it was for, as a post names it (`#dorkos`).
+ * @param reason - Why it was not posted, or `null` when it was.
+ */
+export function buildHandoffNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  target: string,
+  reason: string | null
+): RoomEntryBody {
+  return reason === null
+    ? { text: `${agentName} shared it in ${target}.`, notice: 'handoff_shared', subjectAuthorId }
+    : {
+        text: `${agentName} did not post it in ${target}: ${excerpt(reason)}`,
+        notice: 'handoff_declined',
+        subjectAuthorId,
+      };
+}

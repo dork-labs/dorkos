@@ -32,6 +32,7 @@ import {
   checkContractCase,
   contractSuite,
   type ComposedServer,
+  stepUpAt,
 } from './harness.js';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
@@ -410,7 +411,14 @@ describe('contract: the global event stream with login on', () => {
   beforeAll(async () => {
     server = await bootComposedServer();
     cookie = await ownerCookie(server);
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+    );
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

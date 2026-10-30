@@ -16,6 +16,7 @@ import {
   reportClientError,
   installClientErrorHandlers,
   installBreadcrumbHandlers,
+  installPersonAwareFetch,
   isDesktopShell,
   registerCommunityAuthorityCleanup,
   registerLinkNavigator,
@@ -38,7 +39,7 @@ import {
   type DialogSearch,
 } from '@/layers/shared/model';
 import { linkChipSlot, openTabAt } from '@/layers/features/app-tabs';
-import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
+import { AuthGuard, OwnerSetupHost, PersonStepUpHost } from '@/layers/features/auth';
 import { ServerRestartingBar } from './app/ServerRestartingBar';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
@@ -57,6 +58,9 @@ import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
 import './index.css';
 
 registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
+// Before any call goes out: this window's own API calls carry the owner's
+// person proof, and ask for the password once when a change needs it (DOR-3330).
+installPersonAwareFetch();
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;
@@ -272,6 +276,8 @@ function Root() {
             <AutoOpenDiffBridge />
             {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
             <OwnerSetupHost />
+            {/* The owner's one password step-up at this computer (DOR-3330). */}
+            <PersonStepUpHost />
             {/* The desktop app's "Restarting DorkOS…" bar (DOR-3229). Outside
                 the router, so it shows over any screen, the "can't reach the
                 server" one included. */}

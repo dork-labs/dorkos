@@ -11,6 +11,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
 import {
+  assertRepoConfigSafe,
+  GitRepoConfigUnsafeError,
+  minimalGitEnv,
+  runSafeGit,
+} from '@dorkos/shared/safe-git';
+import type { WorkspaceCreateRequest } from '@dorkos/shared/workspace';
+import { mayRunGitHere } from '../../core/agent-identity/index.js';
+import { recordFullAction } from '../../core/turn-power/full-autonomy.js';
+import {
   gitConfigArgs,
   internalGitConfig,
   SESSION_GIT_CONFIG,
@@ -82,6 +91,19 @@ export interface RunGitOptions {
    * error text sets `LC_ALL=C` here so the text is not translated.
    */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Folders whose repository settings must pass the audit before git runs
+   * (`assertRepoConfigSafe`, DOR-3343). When given, git also starts with the
+   * runner's minimal environment instead of the server's. Every command that
+   * makes or removes a workspace from a source repository passes it: the
+   * source shares its settings with every agent worktree made from it.
+   */
+  audit?: readonly string[];
+  /**
+   * Where a failed audit goes instead of refusing the command: given only for a chat set to Full
+   * autonomy, which has no limits ({@link fullChatAuditReporter}). Absent, a failed audit throws.
+   */
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void;
 }
 
 /**
@@ -101,20 +123,109 @@ export const PERSON_REPO_GIT_CONFIG: readonly GitConfigEntry[] = SESSION_GIT_CON
 export async function runGit(
   args: string[],
   cwd: string,
-  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig(), env }: RunGitOptions = {}
+  {
+    timeoutMs = GIT_TIMEOUT_MS,
+    config = internalGitConfig(),
+    env,
+    audit,
+    onUnsafe,
+  }: RunGitOptions = {}
 ): Promise<string> {
-  const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
+  const unsafe: GitRepoConfigUnsafeError[] = [];
+  if (audit) {
+    const report = onUnsafe
+      ? (err: GitRepoConfigUnsafeError) => {
+          unsafe.push(err);
+          onUnsafe(err);
+        }
+      : undefined;
+    for (const dir of audit) await auditRepoConfig(dir, report);
+  }
+  // Let through at Full, git still reads no repo attributes and runs none of the named filters.
+  const filters = unsafe.length > 0 ? noRepoFilterArgs(unsafe) : [];
+  const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...filters, ...args], {
     cwd,
     timeout: timeoutMs,
-    env: {
-      // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/credential vars; only the transport allowlist and prompt are added.
-      ...process.env,
-      ...env,
-      GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
-      GIT_TERMINAL_PROMPT: '0',
-    },
+    env: audit
+      ? {
+          ...minimalGitEnv(),
+          ...(unsafe.length > 0 ? { GIT_ATTR_SOURCE: EMPTY_TREE } : {}),
+        }
+      : {
+          // eslint-disable-next-line no-restricted-syntax -- a clone from an address needs PATH/HOME/credential vars; only the transport allowlist and prompt are added.
+          ...process.env,
+          ...env,
+          GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
+          GIT_TERMINAL_PROMPT: '0',
+        },
   });
   return stdout;
+}
+
+/** git's empty tree: as `GIT_ATTR_SOURCE`, no in-tree `.gitattributes` is read. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/** A filter driver's program keys, which run a program on checkout or add. */
+const FILTER_PROGRAM_KEY = /^filter\..+\.(clean|smudge|process)$/i;
+
+/**
+ * The `-c` settings that keep a command a failed audit let through (a chat set to Full) from
+ * running a repo's filter drivers: no attributes file, and every filter program the audit named
+ * set empty, which git reads as no filter. With `GIT_ATTR_SOURCE` on the empty tree, no
+ * `.gitattributes` in the tree names one either.
+ *
+ * @param unsafe - The audit failures that were let through.
+ */
+function noRepoFilterArgs(unsafe: readonly GitRepoConfigUnsafeError[]): string[] {
+  const keys = new Set(unsafe.flatMap((err) => err.keys.filter((k) => FILTER_PROGRAM_KEY.test(k))));
+  return ['-c', 'core.attributesFile=/dev/null', ...[...keys].flatMap((key) => ['-c', `${key}=`])];
+}
+
+/**
+ * Audit one folder's repository settings (`assertRepoConfigSafe`, DOR-3343). A failed audit
+ * throws, unless `onUnsafe` is given: then it is reported there and the caller goes on.
+ *
+ * @param dir - The folder to audit.
+ * @param onUnsafe - Where a failed audit goes instead of throwing, for a chat set to Full.
+ */
+export async function auditRepoConfig(
+  dir: string,
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void
+): Promise<void> {
+  try {
+    await assertRepoConfigSafe(dir);
+  } catch (err) {
+    if (!onUnsafe || !(err instanceof GitRepoConfigUnsafeError)) throw err;
+    onUnsafe(err);
+  }
+}
+
+/**
+ * For a workspace a chat set to Full autonomy asked for, the reporter that lets a failed audit
+ * through and writes one Activity line for it, however many folders fail; `undefined` for
+ * anyone else, whose failed audit refuses the command.
+ *
+ * @param req - The provisioning request.
+ * @param did - What was done, after the agent's name ("made the workspace p/w1").
+ */
+export function fullChatAuditReporter(
+  req: Pick<WorkspaceCreateRequest, 'fullChat'>,
+  did: string
+): ((err: GitRepoConfigUnsafeError) => void) | undefined {
+  const chat = req.fullChat;
+  if (!chat) return undefined;
+  let recorded = false;
+  return () => {
+    if (recorded) return;
+    recorded = true;
+    recordFullAction({
+      actionId: 'workspace.create',
+      did,
+      limit: "a repository whose settings fail DorkOS's check is refused",
+      ...(chat.agentPath ? { agentPath: chat.agentPath } : {}),
+      sessionId: chat.sessionId,
+    });
+  };
 }
 
 /**
@@ -123,11 +234,18 @@ export async function runGit(
  * working checkout is not a git directory and answers no.
  *
  * @param dir - The folder to ask about.
+ * @param onUnsafe - For a chat set to Full: where a failed audit goes instead of answering no.
  * @returns `true` only for a bare repository.
  */
-export async function isBareRepository(dir: string): Promise<boolean> {
+export async function isBareRepository(
+  dir: string,
+  onUnsafe?: (err: GitRepoConfigUnsafeError) => void
+): Promise<boolean> {
   try {
-    const out = await runGit([`--git-dir=${dir}`, 'rev-parse', '--is-bare-repository'], dir);
+    const out = await runGit([`--git-dir=${dir}`, 'rev-parse', '--is-bare-repository'], dir, {
+      audit: [dir],
+      ...(onUnsafe ? { onUnsafe } : {}),
+    });
     return out.trim() === 'true';
   } catch {
     return false;
@@ -142,7 +260,13 @@ export async function isBareRepository(dir: string): Promise<boolean> {
  * @param cwd - The checkout directory.
  */
 export async function computeDirtyState(cwd: string): Promise<DirtyState> {
-  const porcelain = await runGit(['status', '--porcelain=v1'], cwd);
+  // An agent's checkout: DorkOS runs no git there yet (DOR-3343), so it can't
+  // tell, and counts it as dirty. Removing it then needs `force`.
+  if (!mayRunGitHere(cwd)) return { dirty: true, uncommitted: [], untracked: [], unpushed: 0 };
+  // Anywhere else, the audited runner.
+  const porcelain = await runSafeGit(['status', '--porcelain=v1'], cwd, {
+    timeoutMs: GIT_TIMEOUT_MS,
+  });
   const lines = porcelain.split('\n').filter((l) => l.length > 0);
   const untracked = lines.filter((l) => l.startsWith('??')).map((l) => l.slice(3));
   const uncommitted = lines.filter((l) => !l.startsWith('??')).map((l) => l.slice(3));
@@ -151,7 +275,9 @@ export async function computeDirtyState(cwd: string): Promise<DirtyState> {
   // committed-but-unpushed work; 0 for a fresh checkout sitting on a pushed base.
   let unpushed = 0;
   try {
-    const out = await runGit(['rev-list', '--count', 'HEAD', '--not', '--remotes'], cwd);
+    const out = await runSafeGit(['rev-list', '--count', 'HEAD', '--not', '--remotes'], cwd, {
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
     unpushed = Number.parseInt(out.trim(), 10) || 0;
   } catch {
     // No remotes, or not a git checkout — the 0 default stands.

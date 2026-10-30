@@ -167,6 +167,7 @@ vi.mock('../../../rooms/index.js', () => ({
 }));
 vi.mock('../../../core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: 'owner-a' }),
+  getAuth: () => undefined,
 }));
 vi.mock('../../../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,

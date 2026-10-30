@@ -43,6 +43,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 import { errorBody, parseSessionId, validationFailureBody } from '../lib/route-utils.js';
@@ -76,7 +77,7 @@ function requireCanvasAccess(c: Context<ApiEnv>): CanvasAccess | Response {
   if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
   let caller;
   try {
-    caller = resolveCaller(honoRequestFacts(c));
+    caller = resolveCaller(honoRequestFacts(c), callerAccessOf(c.req.method));
   } catch (err) {
     return roomRefusal(c, err, 'session-canvas', () => false);
   }

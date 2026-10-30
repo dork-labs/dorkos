@@ -5,9 +5,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const gate = vi.hoisted(() => ({ gated: false }));
+const gate = vi.hoisted(() => ({ gated: false, owner: false }));
 vi.mock('../../services/core/auth/gate-policy.js', () => ({
-  credentialGated: () => gate.gated,
+  personSessionRequired: () => gate.gated || gate.owner,
 }));
 vi.mock('../../lib/trusted-origins.js', () => ({
   resolveTrustedOrigins: () => ['http://localhost:4242'],
@@ -36,11 +36,18 @@ function facts(
 
 beforeEach(() => {
   gate.gated = false;
+  gate.owner = false;
 });
 
 describe('refuseRoomWrite', () => {
-  it('lets the person in their own window through', () => {
+  it('lets the person in their own window through, before anyone owns this install', () => {
     expect(refuseRoomWrite(facts())).toBeUndefined();
+  });
+
+  it('asks for the owner’s session once an owner exists, even at this computer (DOR-3330)', () => {
+    gate.owner = true;
+    expect(refuseRoomWrite(facts())).toBe('not-a-browser-session');
+    expect(refuseRoomWrite(facts({ user: { userId: 'u', credential: 'cookie' } }))).toBeUndefined();
   });
 
   it('refuses anything the session relay carried', () => {

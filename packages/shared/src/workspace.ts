@@ -178,6 +178,12 @@ export interface WorkspaceCreateRequest {
    * (DOR-2335). Server-internal: never read from a request body.
    */
   personGit?: boolean;
+  /**
+   * The chat set to Full autonomy that asked for it, when one did. Full has no limits: a source
+   * whose settings fail the audit is made anyway, with one Activity line, where any other caller
+   * is refused (DOR-3343). Server-internal: never read from a request body.
+   */
+  fullChat?: { sessionId: string; agentPath?: string };
 }
 
 /** What a provider returns after provisioning a checkout. */

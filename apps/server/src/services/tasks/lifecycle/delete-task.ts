@@ -10,6 +10,16 @@ import { logger } from '../../../lib/logger.js';
 import { shapeScheduleReceipts } from '../../shapes/schedule-write-receipt.js';
 
 /**
+ * Why one project's copy of a global `scope: project` schedule cannot be
+ * deleted (DOR-3376): its file is shared by every project's copy, so removing
+ * it would take the schedule from all of them, and removing the row alone
+ * would only bring it back, switched off, at the next sync.
+ */
+export const PROJECT_COPY_DELETE_REFUSAL =
+  "This schedule comes from a package every project shares, so it can't be deleted for one " +
+  'project. Switch it off here instead.';
+
+/**
  * Remove a task's SKILL.md directory, if it has one.
  *
  * **Deleting the row alone does not delete a task**, and that is the whole reason

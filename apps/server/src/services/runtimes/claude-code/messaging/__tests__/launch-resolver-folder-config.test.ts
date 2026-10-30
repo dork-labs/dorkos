@@ -19,6 +19,7 @@ import {
   type FolderAllowApprovalGateway,
 } from '../../folder-settings/folder-allow-approval.js';
 import { _internal as configCards } from '../../folder-settings/folder-config-approval.js';
+import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
 vi.mock('../context-builder.js', () => ({
@@ -70,6 +71,11 @@ let root: string;
 let home: string;
 let cards: { capabilityId: string }[];
 let factory: ReturnType<typeof vi.fn>;
+/** The level the turn runs at. Ask unless a case says Full. */
+let mode: AgentSession['permissionMode'];
+/** The agent the home belongs to. */
+let agent: { id: string; name: string; displayName: string };
+const activityEmit = vi.fn();
 
 function write(rel: string, body: unknown): void {
   const file = path.join(home, rel);
@@ -81,7 +87,7 @@ function makeSession(): AgentSession {
   return {
     sdkSessionId: 'sdk-1',
     lastActivity: Date.now(),
-    permissionMode: 'bypassPermissions',
+    permissionMode: mode,
     hasStarted: false,
     pendingInteractions: new Map(),
     eventQueue: [],
@@ -97,7 +103,7 @@ const launch = (extra: { teammate?: boolean } = {}) =>
       cwd: home,
       onSdkSessionRebind: async () => {},
       meshCore: {
-        getByPath: (dir: string) => (dir === home ? AGENT : undefined),
+        getByPath: (dir: string) => (dir === home ? agent : undefined),
         updateLastSeen: () => {},
       } as unknown as MessageSenderOpts['meshCore'],
       mcpServerFactory: factory as unknown as MessageSenderOpts['mcpServerFactory'],
@@ -114,6 +120,10 @@ const accountAsked = () =>
 const factoryLaunch = () => factory.mock.calls.at(-1)?.[2] as { withholdAgentServers?: boolean };
 
 beforeEach(async () => {
+  mode = 'default';
+  agent = AGENT;
+  activityEmit.mockClear();
+  setMarkedFullActivity({ emit: activityEmit } as never);
   root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'launch-folder-config-')));
   home = path.join(root, 'agent');
   write('.claude/settings.json', { hooks: {} });
@@ -145,6 +155,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  setMarkedFullActivity(undefined);
   setFolderAllowApprovalGateway(null);
   setAgentHomeRegistry(undefined);
   rmSync(root, { recursive: true, force: true });
@@ -221,5 +232,86 @@ describe('an agent home at launch', () => {
     expect(
       cards.filter((card) => card.capabilityId === 'runtime.apply_folder_config')
     ).toHaveLength(1);
+  });
+});
+
+describe('a new agent whose home already has settings (DOR-3432)', () => {
+  const tickets = () => cards.filter((card) => card.capabilityId === 'runtime.apply_folder_config');
+  const fullLines = () =>
+    activityEmit.mock.calls.filter(([event]) => event.resourceId === 'folder-config.load');
+
+  beforeEach(() => {
+    // Registered after the upgrade, so nothing ever pinned it.
+    agent = { id: '01NEWAGENT', name: 'fresh', displayName: 'Fresh' };
+    home = path.join(root, 'fresh');
+    write('.claude/settings.json', { hooks: HOOK });
+    write('.dork/agent.json', { id: agent.id, mcpServers: [], account: 'work' });
+  });
+
+  it('at Full, loads them, asks nobody, and logs one Activity line', async () => {
+    mode = 'bypassPermissions';
+    const resolved = await launch();
+    expect(settingsOf(resolved)?.disableAllHooks).toBeUndefined();
+    expect(resolved.sdkOptions.strictMcpConfig).toBeUndefined();
+    expect(resolved.sdkOptions.settingSources).toContain('project');
+    expect(accountAsked()).toBe('work');
+    expect(tickets()).toEqual([]);
+    expect(fullLines()).toHaveLength(1);
+    expect(fullLines()[0]?.[0]).toMatchObject({
+      resourceId: 'folder-config.load',
+      actorLabel: 'Fresh',
+    });
+    // The next launch of the same content adds no second line.
+    await launch();
+    expect(fullLines()).toHaveLength(1);
+  });
+
+  it('at Ask, holds them and raises one ticket, with no Full line', async () => {
+    const resolved = await launch();
+    expect(settingsOf(resolved)?.disableAllHooks).toBe(true);
+    expect(resolved.sdkOptions.strictMcpConfig).toBe(true);
+    expect(tickets()).toHaveLength(1);
+    expect(fullLines()).toEqual([]);
+  });
+
+  it('does not count a load at Full as a yes: going to Ask brings the ticket', async () => {
+    mode = 'bypassPermissions';
+    await launch();
+    expect(tickets()).toEqual([]);
+
+    mode = 'default';
+    const resolved = await launch();
+    expect(settingsOf(resolved)?.disableAllHooks).toBe(true);
+    expect(tickets()).toHaveLength(1);
+  });
+
+  it('still keeps the file tools off the self-grant files at Full', async () => {
+    mode = 'bypassPermissions';
+    const deny = settingsOf(await launch())?.permissions?.deny ?? [];
+    expect(deny).toContain(`Write(/${home}/.claude/**)`);
+  });
+
+  it('never treats a teammate’s turn as Full', async () => {
+    mode = 'bypassPermissions';
+    const resolved = await launch({ teammate: true });
+    expect(settingsOf(resolved)?.disableAllHooks).toBe(true);
+    expect(fullLines()).toEqual([]);
+  });
+});
+
+describe('an agent at Full whose own files changed (DOR-3432)', () => {
+  it('loads the change without a ticket, and holds it again below Full', async () => {
+    mode = 'bypassPermissions';
+    await launch();
+    write('.claude/settings.json', { hooks: HOOK });
+    const resolved = await launch();
+    expect(settingsOf(resolved)?.disableAllHooks).toBeUndefined();
+    expect(cards).toEqual([]);
+
+    mode = 'default';
+    expect(settingsOf(await launch())?.disableAllHooks).toBe(true);
+    expect(cards).toContainEqual(
+      expect.objectContaining({ capabilityId: 'runtime.apply_folder_config' })
+    );
   });
 });

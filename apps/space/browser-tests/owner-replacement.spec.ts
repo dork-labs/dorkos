@@ -224,11 +224,20 @@ function record(page: Page, c: Owned): Locator {
   return page.getByRole('article', { name: `${c.name} space` });
 }
 
-/** The host page's record for one community, with its Owner part open. */
+/**
+ * The host page's record for one community, with its Owner part open.
+ *
+ * The part starts open while a request is open, so it is read only once the record is on the
+ * page: right after a reload the records are still loading, `isVisible` says no at once, and a
+ * click on the summary then closes the part the page had opened (three queue ejections, 10-29
+ * and 10-30). The click was the only wait, so the next one hung to the test timeout.
+ */
 async function ownerSection(page: Page, c: Owned): Promise<Locator> {
+  const summary = record(page, c).getByText('Owner', { exact: true });
   const section = record(page, c).getByRole('region', { name: `Owner of ${c.name}` });
-  if (!(await section.isVisible()))
-    await record(page, c).getByText('Owner', { exact: true }).click();
+  await expect(summary).toBeVisible();
+  if (!(await section.isVisible())) await summary.click();
+  await expect(section).toBeVisible();
   await expect(section.getByText('Loading requests…')).toHaveCount(0);
   return section;
 }

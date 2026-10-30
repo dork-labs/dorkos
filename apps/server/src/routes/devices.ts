@@ -23,6 +23,8 @@
  *
  * @module routes/devices
  */
+import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
+import { personProofMatches } from '../services/core/auth/person-proof.js';
 import { Hono, type Context } from 'hono';
 import type {
   SignedInDeviceList,
@@ -82,6 +84,11 @@ async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null |
   let user = facts.user;
   if (!user && mayCarrySessionCookie(facts.headers.cookie ?? '')) {
     user = (await verifyRequestAuth(facts, { sessionFreshness: 'server-store' })) ?? undefined;
+    // Only beside the app's person proof, as at the gate (DOR-3330).
+    const proved =
+      user?.sessionId !== undefined &&
+      (await personProofMatches(user.sessionId, facts.headers[PERSON_PROOF_HEADER]));
+    if (!proved) user = undefined;
   }
   if (user && user.credential !== 'cookie') return peopleOnly();
   const withUser: RequestFacts = { ...facts, user };

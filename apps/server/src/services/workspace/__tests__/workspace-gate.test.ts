@@ -13,6 +13,7 @@
  *
  * @vitest-environment node
  */
+import { GitRepoConfigUnsafeError } from '@dorkos/shared/safe-git';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
@@ -668,7 +669,11 @@ describe('git’s own hooks when a checkout is made (DOR-2335 review)', () => {
 
     await sub.service.ensure(worktreeReq('w1'), cardWorkspaceGate({ provider, name: 'p/w1' }));
     git(['config', 'core.hooksPath', '.husky'], source);
-    await sub.service.ensure(worktreeReq('w2'), cardWorkspaceGate({ provider, name: 'p/w2' }));
+    // A source whose settings name a hooks folder is refused outright by the
+    // audit (DOR-3343), before git runs at all.
+    await expect(
+      sub.service.ensure(worktreeReq('w2'), cardWorkspaceGate({ provider, name: 'p/w2' }))
+    ).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
 
     expect(await exists(marker('AGENT_HOOK'))).toBe(false);
     expect(await exists(marker('AGENT_HUSKY'))).toBe(false);
