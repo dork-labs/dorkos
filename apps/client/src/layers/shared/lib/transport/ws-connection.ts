@@ -41,6 +41,18 @@ import { SSE_RESILIENCE } from '../constants';
 const WS_OPEN = 1;
 
 /**
+ * Every connection waiting out a backoff, so one that gets through can wake the
+ * rest (DOR-3482).
+ *
+ * The streams a window holds — the global list and the open chat's — reach the
+ * same server. When one of them reconnects, the server is back, and the others
+ * should try now rather than sit out a backoff that may be at its 30s cap.
+ * Matched by host, so a stream to a different server is never woken by this
+ * one coming back.
+ */
+const waitingToRetry = new Set<WSConnection>();
+
+/**
  * Statuses where reconnecting cannot help, so the stream stops and says why.
  *
  * The server states these as an application close code, because a browser
@@ -90,7 +102,12 @@ export interface StreamConnectionOptions {
   backoffBaseMs?: number;
   /** Backoff cap in ms. Default: 30000. */
   backoffCapMs?: number;
-  /** Consecutive failures before entering `disconnected`. Default: 5. */
+  /**
+   * Consecutive failures before the state says `disconnected`. Default: 5.
+   *
+   * The state changes; the retrying does not stop. Past this the socket keeps
+   * trying at the backoff cap, the way a room's stream does (DOR-3482).
+   */
   disconnectedThreshold?: number;
   /** Time connected before the failure count resets. Default: 10000. */
   stabilityWindowMs?: number;
@@ -151,6 +168,18 @@ function dispatchFrame(
  * backoff, a silence watchdog, page-visibility release, and a state machine
  * (connecting → connected → reconnecting → disconnected).
  *
+ * **`disconnected` is a label, not the end.** After
+ * {@link StreamConnectionOptions.disconnectedThreshold} failures in a row the
+ * state says so, and the socket keeps trying underneath at the backoff cap. It
+ * used to stop there for good: five failures take a few seconds against a
+ * server that is down, so a chat whose server restarted said "Live updates
+ * lost" until somebody sent a message, while a room beside it recovered on its
+ * own (DOR-3482). Four things try at once rather than waiting out the cap: the
+ * browser going back online, the tab coming forward, another stream to the same
+ * server getting through, and a caller who knows the server is back
+ * ({@link WSConnection.retryNow}). Only a
+ * refusal the server stated, a caller's `disconnect()` and `destroy()` stop it.
+ *
  * Framework-agnostic — no React dependency. Consumed by `StreamManager`.
  */
 export class WSConnection {
@@ -166,7 +195,22 @@ export class WSConnection {
   private stabilityTimer: ReturnType<typeof setTimeout> | null = null;
   private visibilityGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private visibilityHandler: (() => void) | null = null;
+  private onlineHandler: (() => void) | null = null;
   private destroyed = false;
+  /**
+   * Whether retrying has been stopped on purpose: a caller's `disconnect()`, or
+   * a refusal the server stated. Cleared by the next `connect()`.
+   */
+  private stopped = false;
+  /** Released by a hidden tab: stays shut, whatever wakes it, until the tab is shown. */
+  private parked = false;
+  /**
+   * This socket reopened after being down, and owes its siblings a wake-up once
+   * it proves it is really back: a first frame, or a stable window. Waking them
+   * on `open` alone let two streams the server accepts and then closes wake each
+   * other in a tight loop.
+   */
+  private owesWake = false;
 
   constructor(url: string, options: StreamConnectionOptions) {
     this.url = url;
@@ -200,8 +244,42 @@ export class WSConnection {
   /** Open the socket. Safe to call repeatedly — any existing socket closes first. */
   connect(): void {
     if (this.destroyed) return;
-    this.closeSocket();
+    this.stopped = false;
+    this.parked = false;
+    this.listenForOnline();
+    // A backoff still pending would close this healthy socket when it fires.
+    this.clearTimers();
     this.setState('connecting');
+    this.open();
+  }
+
+  /**
+   * Try right now instead of waiting out the backoff, when not already open.
+   *
+   * For a caller that knows the server is back: the other stream to the same
+   * server has just reconnected, so this one is likely to succeed too. A no-op
+   * on an open socket, and on a stream that was stopped on purpose.
+   */
+  retryNow(): void {
+    if (this.destroyed || this.stopped || this.parked) return;
+    if (this.socket) return;
+    if (this.backoffTimer) {
+      clearTimeout(this.backoffTimer);
+      this.backoffTimer = null;
+    }
+    this.open();
+  }
+
+  /**
+   * Open one socket and wire its handlers.
+   *
+   * Leaves the state alone, so a retry after the stream has said
+   * `disconnected` keeps saying so until a socket actually opens, rather than
+   * flickering through `connecting` on every attempt.
+   */
+  private open(): void {
+    if (this.destroyed) return;
+    this.closeSocket();
 
     let socket: WebSocket;
     try {
@@ -216,6 +294,7 @@ export class WSConnection {
 
     socket.onopen = (): void => {
       if (socket !== this.socket) return;
+      this.owesWake = waitingToRetry.delete(this);
       this.setState('connected');
       this.startStabilityTimer();
       this.resetWatchdog();
@@ -225,6 +304,7 @@ export class WSConnection {
       if (socket !== this.socket) return;
       this.lastEventAt = Date.now();
       this.resetWatchdog();
+      this.payWake();
       if (typeof event.data !== 'string') return;
       const frame = decodeStreamFrame(event.data);
       if (!frame) {
@@ -264,6 +344,8 @@ export class WSConnection {
         );
         this.options.onError(new StreamRefusedError(status, event.reason));
         this.clearTimers();
+        this.stopped = true;
+        waitingToRetry.delete(this);
         this.setState('disconnected');
         return;
       }
@@ -274,6 +356,8 @@ export class WSConnection {
 
   /** Gracefully close the socket. Can reconnect later via {@link connect}. */
   disconnect(): void {
+    this.stopped = true;
+    waitingToRetry.delete(this);
     this.closeSocket();
     this.clearAllTimers();
     if (this.state !== 'disconnected') {
@@ -284,11 +368,16 @@ export class WSConnection {
   /** Permanent teardown — removes the visibility listener and clears all timers. */
   destroy(): void {
     this.destroyed = true;
+    waitingToRetry.delete(this);
     this.closeSocket();
     this.clearAllTimers();
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = null;
+    }
+    if (this.onlineHandler) {
+      window.removeEventListener('online', this.onlineHandler);
+      this.onlineHandler = null;
     }
   }
 
@@ -314,6 +403,9 @@ export class WSConnection {
           this.visibilityGraceTimer = null;
           this.closeSocket();
           this.clearTimers();
+          // Down, so its reopen wakes the streams waiting beside it.
+          this.parked = true;
+          waitingToRetry.add(this);
           // A parked socket is down: events sent now are missed. Saying so is
           // what lets the reopen count as a recovery (`event-stream-context`
           // re-syncs every cache on one), since `closeSocket` drops `onclose`
@@ -327,6 +419,8 @@ export class WSConnection {
         clearTimeout(this.visibilityGraceTimer);
         this.visibilityGraceTimer = null;
       }
+      // Not after a deliberate stop: a refused or disconnected stream stays so.
+      if (this.stopped) return;
       if (!this.socket || this.socket.readyState !== WS_OPEN) this.connect();
     };
 
@@ -336,6 +430,34 @@ export class WSConnection {
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  /** The host this stream reaches, which is what "the same server" means. */
+  private host(): string {
+    return new URL(this.url, window.location.href).host;
+  }
+
+  /** This stream is really back: every other one waiting on the same server tries now. */
+  private payWake(): void {
+    if (!this.owesWake) return;
+    this.owesWake = false;
+    const host = this.host();
+    for (const sibling of [...waitingToRetry]) {
+      if (sibling.host() === host) sibling.retryNow();
+    }
+  }
+
+  /**
+   * Try at once when the browser comes back online.
+   *
+   * `online` means the machine had no network and now does, so whatever the
+   * backoff was waiting for has probably changed. Added on the first connect
+   * and removed by `destroy()`.
+   */
+  private listenForOnline(): void {
+    if (this.onlineHandler || typeof window === 'undefined') return;
+    this.onlineHandler = (): void => this.retryNow();
+    window.addEventListener('online', this.onlineHandler);
+  }
 
   private setState(newState: ConnectionState): void {
     if (this.state === newState) return;
@@ -347,19 +469,21 @@ export class WSConnection {
     if (this.destroyed) return;
     this.closeSocket();
     this.clearTimers();
+    this.owesWake = false;
     this.failedAttempts++;
 
     if (error) this.options.onError(error);
 
-    if (this.failedAttempts >= this.options.disconnectedThreshold) {
-      this.setState('disconnected');
-      return;
-    }
-
-    this.setState('reconnecting');
+    // Past the threshold the state says `disconnected`, and the retrying goes
+    // on underneath at the backoff cap (DOR-3482). It used to stop here, which
+    // left a chat dead after a server restart until somebody sent a message.
+    this.setState(
+      this.failedAttempts >= this.options.disconnectedThreshold ? 'disconnected' : 'reconnecting'
+    );
+    waitingToRetry.add(this);
     this.backoffTimer = setTimeout(() => {
       this.backoffTimer = null;
-      this.connect();
+      this.open();
     }, this.calculateBackoff());
   }
 
@@ -385,6 +509,7 @@ export class WSConnection {
     if (this.stabilityTimer) clearTimeout(this.stabilityTimer);
     this.stabilityTimer = setTimeout(() => {
       this.stabilityTimer = null;
+      this.payWake();
       this.failedAttempts = 0;
       this.options.onStateChange(this.state, 0);
     }, this.options.stabilityWindowMs);
