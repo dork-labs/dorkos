@@ -17,7 +17,9 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 ## On a sweep (every 2h)
 
 - [ ] Build lanes (the list is in `.temp/coord/checkin.md`): check each one's status. If one is idle with work left, nudge it with its next step, and remind it to keep its turn alive.
+- [ ] A lane freed up? It pulls the highest-ranked unstarted Must in `.temp/coord/FIX-QUEUE.md`, unless the PM named something else (PM rule, 10-25).
 - [ ] My open PRs, and red required checks on `main`: re-arm once, rerun once, or fix.
+- [ ] Any PR on `hold` for over 24h (`gh pr list --label hold`)? Name its gate, or lift it. A freeze's holds die silently (#3082 sat a week, 10-25).
 - [ ] A lane posted a question meant for Cloud or Dorian? Make sure it reached them.
 
 ## Daily (morning)
@@ -25,6 +27,7 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 - [ ] Look for ALERT lines in `~/Library/Logs/dorkos-worktree-janitor.log`, and check free disk. Under 20 GB: clean up merged worktrees.
 - [ ] Look at what's unreleased since the last tag. If it's worth shipping, tell @dorkos-pm.
 - [ ] Linear: are tickets marked Done really done? Partial PRs close them automatically, so reopen any that aren't.
+- [ ] Any FIX-QUEUE F1–F3 item still in Todo after 24h? Flag it in the report with the reason (PM rule, 10-25).
 
 ## Never unasked
 
