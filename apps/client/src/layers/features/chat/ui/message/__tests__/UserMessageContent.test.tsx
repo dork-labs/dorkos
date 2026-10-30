@@ -37,9 +37,14 @@ describe('UserMessageContent', () => {
         message={makeMessage({ content: 'Check the queue', promptSource: { kind: 'heartbeat' } })}
       />
     );
-    expect(screen.queryByText('Check the queue')).not.toBeInTheDocument();
+    // Hidden from the eye, still there for a screen reader.
+    expect(screen.getByText('Check the queue')).toHaveClass('sr-only');
     fireEvent.click(screen.getByRole('button', { name: 'Show message' }));
-    expect(screen.getByText('Check the queue')).toBeInTheDocument();
+    expect(screen.getByText('Check the queue')).not.toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Hide message' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
   });
 
   it("shows a person's words from a connection as a plain message (DOR-3019)", () => {

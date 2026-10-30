@@ -45,7 +45,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
           type="button"
           aria-expanded={promptExpanded}
           onClick={() => setPromptExpanded(!promptExpanded)}
-          className="text-msg-compaction-fg flex items-center gap-1 text-xs"
+          className="text-muted-foreground flex items-center gap-1 text-xs"
         >
           <ChevronRight
             className={cn(
@@ -55,11 +55,16 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
           />
           <span>{promptExpanded ? 'Hide message' : 'Show message'}</span>
         </button>
-        {promptExpanded && (
-          <div className="text-msg-compaction-fg mt-2 text-xs break-words whitespace-pre-wrap">
-            {message.content}
-          </div>
-        )}
+        {/* Folded for the eye only: a screen reader still reads the words. */}
+        <div
+          className={cn(
+            promptExpanded
+              ? 'text-muted-foreground mt-2 text-xs break-words whitespace-pre-wrap'
+              : 'sr-only'
+          )}
+        >
+          {message.content}
+        </div>
       </div>
     );
   }
