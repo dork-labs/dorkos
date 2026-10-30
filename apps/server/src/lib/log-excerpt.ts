@@ -107,12 +107,18 @@ async function findPriorRotatedFile(
   return rotated[0] ? path.join(logDir, rotated[0]) : undefined;
 }
 
-/** Parse, filter (severity + recency), and reduce raw NDJSON lines to {@link LogLine}s. */
+/**
+ * Parse, filter (severity + recency + a message to show), and reduce raw NDJSON
+ * lines to {@link LogLine}s. A line with no message renders as a bare
+ * `time warn` row that tells a reader nothing (DOR-2234), so it is dropped here
+ * rather than spending the excerpt's budget.
+ */
 function collectMatching(rawLines: string[], cutoffMs: number): LogLine[] {
   return rawLines
     .map(parseLine)
     .filter((line): line is LogLine => line !== undefined)
     .filter((line) => WARN_OR_ABOVE.has(line.level ?? ''))
+    .filter((line) => Boolean(line.msg?.trim()))
     .filter((line) => (line.time ? new Date(line.time).getTime() >= cutoffMs : true));
 }
 
@@ -160,7 +166,16 @@ export async function getRecentLogExcerpt(
   // credential, and `redactPaths` would otherwise chew the path into something
   // the query rules no longer recognise. Shared with the desktop shell's
   // excerpt so both halves of a report follow one rule (DOR-2045).
-  const scrubbed = redactTokens(redactPaths(redactUrlQueries(tail.map(formatLine).join('\n'))));
+  //
+  // A message can carry blank lines of its own; those are dropped too, so the
+  // excerpt has no empty rows (DOR-2234).
+  const text = tail
+    .map(formatLine)
+    .join('\n')
+    .split('\n')
+    .filter((row) => row.trim().length > 0)
+    .join('\n');
+  const scrubbed = redactTokens(redactPaths(redactUrlQueries(text)));
 
   // Cut from the FRONT, not the back (DOR-1976). `slice(-maxLines)` above has
   // already decided the newest lines are the ones worth keeping, and a report

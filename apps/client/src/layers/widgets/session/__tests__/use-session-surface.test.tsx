@@ -54,12 +54,21 @@ describe('useSessionSurface', () => {
     const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
     expect(result.current).toEqual({
       directMessage: null,
+      humanName: null,
+      transcriptNames: { directMessage: null, humanName: null },
       placeholder: 'Message Scout…',
       quietTurnNumbers: false,
     });
 
     const bare = renderHook(() => useSessionSurface('s', null));
     expect(bare.result.current.placeholder).toBe('Send a message…');
+  });
+
+  it('names the person in a chat that is not a DM, too (FB-38/55)', () => {
+    state.displayName = '  Dorian ';
+    const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
+    expect(result.current.directMessage).toBeNull();
+    expect(result.current.humanName).toBe('Dorian');
   });
 
   it('is a session too on the session view behind a DM', () => {
@@ -85,6 +94,11 @@ describe('useSessionSurface', () => {
         },
         humanName: 'Dorian',
         settled: true,
+      },
+      humanName: 'Dorian',
+      transcriptNames: {
+        directMessage: result.current.directMessage,
+        humanName: 'Dorian',
       },
       placeholder: 'Message Scout',
       quietTurnNumbers: true,

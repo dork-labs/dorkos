@@ -53,6 +53,7 @@ export const COMMUNITY_MIGRATIONS = [
   [45, '0045_no_provider_tokens.sql'],
   [46, '0046_agent_dms.sql'],
   [47, '0047_administer_grants.sql'],
+  [48, '0048_receipt_keys_all_cascade.sql'],
 ] as const;
 
 /**

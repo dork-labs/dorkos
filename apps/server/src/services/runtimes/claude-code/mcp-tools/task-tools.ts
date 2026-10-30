@@ -185,6 +185,12 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
     if (args.enabled_only) {
       schedules = schedules.filter((s) => s.enabled);
     }
+    // The row never stores `nextRun`; the scheduler is what knows it, as it is
+    // for `GET /api/tasks` (DOR-3125). An ISO instant in UTC, which an agent
+    // reads beside the task's own `timezone`.
+    const next = deps.nextRunOf;
+    if (next)
+      schedules = schedules.map((s) => ({ ...s, nextRun: next(s.id)?.toISOString() ?? null }));
     return structuredJsonContent({ schedules, count: schedules.length });
   };
 }
