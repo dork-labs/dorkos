@@ -113,7 +113,11 @@ export interface AskAboutWithheldHooksResult {
 export function hookPackagesToAskAbout(
   withheld: readonly WithheldHooks[]
 ): HookProjectionRequest[] {
-  return withheld.map(({ request }) => request).filter(mayAskAboutHooks);
+  // A package no yes could make run is never put to a person (`unpinnable`).
+  return withheld
+    .filter(({ unpinnable }) => unpinnable !== true)
+    .map(({ request }) => request)
+    .filter(mayAskAboutHooks);
 }
 
 /**

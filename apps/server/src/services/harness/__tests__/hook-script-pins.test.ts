@@ -399,7 +399,10 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
         real(opts).map((plugin) => ({ ...plugin, devLink: { path: outside } }))
       );
     try {
-      expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
+      // No pins (a dev link pins nothing), yet still a row a yes can answer.
+      const before = (await plan()).withheld;
+      expect(before).toMatchObject([{ notInstalledByDorkos: true }]);
+      expect(before[0]?.unpinnable).toBeUndefined();
       recordHookApproval(request());
       editScript('console.log("v2");\n');
       expect((await plan()).withheld).toEqual([]);

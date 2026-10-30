@@ -172,6 +172,12 @@ export interface WithheldHooks {
    * passive row under Needs you; no turn waits on it.
    */
   notInstalledByDorkos?: true;
+  /**
+   * On Full, with {@link notInstalledByDorkos}: its hooks name no file DorkOS
+   * can pin, so no yes could say which code it allows. Held back with no row,
+   * since a yes could not make it run; the Activity line says how to run it.
+   */
+  unpinnable?: true;
 }
 
 /**
@@ -463,7 +469,7 @@ export function scanHookRequests(projectPath: string, dorkHome: string): HookPro
 function scanHookRequestsWithRoots(
   projectPath: string,
   dorkHome: string
-): { request: HookProjectionRequest; installRoots: string[] }[] {
+): { request: HookProjectionRequest; installRoots: string[]; linked: boolean }[] {
   const plugins = _internal.scanInstalledPlugins({ dorkHome, projectRoot: projectPath });
   return _internal.projectedHooks(plugins, projectPath).map(({ packageName, hooks }) => {
     // The files the commands run are pinned onto the yes (DOR-3403), except for
@@ -487,6 +493,7 @@ function scanHookRequestsWithRoots(
           ? [join(projectPath, p.location.relDir)]
           : []
       ),
+      linked,
     };
   });
 }
@@ -520,7 +527,10 @@ export function planWithConsent(
   const allowedAtFull: HookProjectionRequest[] = [];
   // Read once, and only when some package is not refused.
   let presetFull: boolean | undefined;
-  for (const { request, installRoots } of scanHookRequestsWithRoots(projectPath, opts.dorkHome)) {
+  for (const { request, installRoots, linked } of scanHookRequestsWithRoots(
+    projectPath,
+    opts.dorkHome
+  )) {
     // REFUSAL IS TESTED FIRST, and the order is the whole of it. Recording
     // either decision clears the other, so no code path puts one entry in both
     // lists — but both leaves are `operator-only` exactly so a person can edit
@@ -553,7 +563,11 @@ export function planWithConsent(
       // `exact` covers a dev link and hooks that name no file on any yes for
       // the same commands; `changed` (a yes for other files) never applies.
       const match = hookApprovalMatch(request, decisions);
-      const yes = match === 'exact' || match === 'unpinned';
+      // On Full, a yes needs files to name: a package DorkOS did not install
+      // whose hooks name no file it can pin would match whatever they run.
+      // A dev link stays exempt; its folder is the developer's own.
+      const unpinnable = full && !proven && !linked && (request.scripts ?? []).length === 0;
+      const yes = (match === 'exact' || match === 'unpinned') && !unpinnable;
       if (proven || yes) {
         allowed.add(request.packageName);
         // Full, not a person, let these files run: the trigger writes one
@@ -567,7 +581,12 @@ export function planWithConsent(
         // A folder somebody committed under `.dork/plugins/`, an edited install,
         // or a yes for files that have changed since: withheld, and asked about
         // in one passive row under Needs you. No card, no push.
-        withheld.push({ reason: 'unasked', request, notInstalledByDorkos: true });
+        withheld.push({
+          reason: 'unasked',
+          request,
+          notInstalledByDorkos: true,
+          ...(unpinnable ? { unpinnable: true as const } : {}),
+        });
       } else {
         withheld.push({ reason: 'unasked', request });
       }
@@ -631,7 +650,7 @@ function reportAllowedAtFull(requests: readonly HookProjectionRequest[]): void {
  * person learns it is waiting under Needs you.
  */
 function reportWithheldAtFull(withheld: readonly WithheldHooks[]): void {
-  for (const { request, notInstalledByDorkos } of withheld) {
+  for (const { request, notInstalledByDorkos, unpinnable } of withheld) {
     if (!notInstalledByDorkos) continue;
     const entry = `withheld:${hookApprovalEntry(request)}`;
     if (reportedAtFull.has(entry)) continue;
@@ -643,14 +662,18 @@ function reportWithheldAtFull(withheld: readonly WithheldHooks[]): void {
       agentName: 'DorkOS',
       did: `held back ${commands} from the package "${request.packageName}"`,
       limit: 'a person is asked first',
-      summary:
-        `Held back ${commands} from "${request.packageName}" in ${request.projectPath}: it is ` +
-        'in the project but DorkOS did not install it. Allow it under Needs you',
+      summary: unpinnable
+        ? `Held back ${commands} from "${request.packageName}" in ${request.projectPath}: DorkOS ` +
+          'did not install it, and they name no file DorkOS can check. To run them, install ' +
+          'the package through DorkOS, or link its folder as a dev link'
+        : `Held back ${commands} from "${request.packageName}" in ${request.projectPath}: it is ` +
+          'in the project but DorkOS did not install it. Allow it under Needs you',
       facts: {
         packageName: request.packageName,
         projectPath: request.projectPath,
         count,
         withheld: true,
+        ...(unpinnable ? { unpinnable: true } : {}),
       },
     });
   }

