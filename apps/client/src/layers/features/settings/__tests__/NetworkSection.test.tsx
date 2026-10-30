@@ -93,7 +93,7 @@ describe('NetworkSection', () => {
     });
     const status = screen.getByTestId('company-certificates-status');
     expect(status).toHaveTextContent(
-      'No certificates found in this file. Choose a different file.'
+      'No certificates found in this file. Choose a different one.'
     );
     expect(status.querySelector('svg')).not.toBeNull();
   });

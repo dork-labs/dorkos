@@ -67,7 +67,7 @@ export function companyCertificatesRow(
     case 'empty':
       return {
         kind: 'problem',
-        text: 'No certificates found in this file. Choose a different file.',
+        text: 'No certificates found in this file. Choose a different one.',
       };
     case 'ignored-env':
       return { kind: 'ignored-env' };

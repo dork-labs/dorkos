@@ -2,6 +2,7 @@
 covers:
   - 'feat(settings): choose company certificates with a file picker, and restart from the row (DOR-3361)'
   - 'fix(settings): the certificates row names the file a restart will load, and refuses other windows'' file dialogs in a test (DOR-3361)'
+  - 'fix(settings): the empty-file line uses the designer''s copy (DOR-3361)'
 ---
 
 ### Changed
