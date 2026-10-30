@@ -9,6 +9,15 @@ import type { CaptureAppViewResult } from '../main/capture';
 import type { CertificateFilePickResult } from '../main/certificate-file-picker';
 import type { HeartbeatReport } from '../main/renderer-health';
 import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
+import type { StepUpWindowOutcome } from '../shared/step-up-page';
+
+/**
+ * IPC channel for "Confirm it's you" (mirrors `STEP_UP_CONFIRM_CHANNEL` in
+ * `shared/step-up-page.ts`). Duplicated, not imported: the step-up window's
+ * preload uses the same module, and a value both preloads import would be
+ * split into a shared chunk a sandboxed preload cannot load.
+ */
+const STEP_UP_CONFIRM_CHANNEL = 'step-up:confirm';
 
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -282,6 +291,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * decline into the same resolved promise a success gets (DOR-547).
    */
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('open-external', url),
+  /**
+   * "Confirm it's you" for one held action (DOR-3234): the shell opens its own
+   * window for the password and answers with how it ended. The password never
+   * passes through this page.
+   *
+   * @param heldActionId - The id the guarded route answered with.
+   */
+  confirmStepUp: (heldActionId: string): Promise<StepUpWindowOutcome> =>
+    ipcRenderer.invoke(STEP_UP_CONFIRM_CHANNEL, heldActionId),
   /**
    * Subscribe to main-process navigation requests (menu items, the dock
    * menu, and — Chunk D — `dorkos://` deep links), all funneled through the
