@@ -322,6 +322,12 @@ export interface RoomServiceDeps {
    * than silently going deaf to a real DM.
    */
   isRoomMuted(roomId: string): boolean;
+  /**
+   * Whether agents introduce themselves when they join an ordinary channel
+   * (DOR-2106). Absent means never, which is what every test that did not ask
+   * for it runs with, so a suite counting turns is not handed extra ones.
+   */
+  introduceAgents?: () => boolean;
 }
 
 /**

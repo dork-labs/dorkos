@@ -881,6 +881,10 @@ export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
  * a looser bar: it carries the same source, it rides the same guarded post path
  * as any other agent post, and it additionally has to name the agent that
  * minted it.
+ *
+ * `joined_room` marks an agent joining an ordinary channel (DOR-2106). It is the
+ * only kind posted outside #team, and it is also the durable "this agent has
+ * introduced itself here" marker: one per agent per room, ever.
  */
 export const RoomMomentKindSchema = z
   .enum([
@@ -893,6 +897,7 @@ export const RoomMomentKindSchema = z
     'volume_mark',
     'anniversary',
     'agent_minted',
+    'joined_room',
   ])
   .openapi('RoomMomentKind');
 

@@ -41,6 +41,7 @@ import { RoomCanvasService } from '../canvas/room-canvas-service.js';
 import { RoomFollowService } from '../follow/room-follow-service.js';
 import { RoomHandoffs } from '../handoff/room-handoff.js';
 import { RoomVisibility } from './room-visibility.js';
+import { RoomIntroductions } from '../introductions/introducer.js';
 
 /** Every part of one room service, and the state they all share. */
 export interface RoomCollaborators {
@@ -92,6 +93,8 @@ export interface RoomCollaborators {
   readonly follow: RoomFollowService;
   /** One seat per agent per room, and the hand-off between them (DOR-3397). */
   readonly handoffs: RoomHandoffs;
+  /** Agents introducing themselves to channels they join (DOR-2106). */
+  readonly introductions: RoomIntroductions;
 }
 
 /**
@@ -120,7 +123,26 @@ export function createRoomCollaborators(
   // After `systemPosts`: an agent archiving a channel posts the room's notice
   // before the archive lands (spec `agent-permissions` D12).
   const updates = new RoomUpdates(core, visibility, authority, projection, systemPosts);
-  const lifecycle = new RoomLifecycle(core, visibility, authority, projection, updates);
+  const turnControl = new RoomTurnControl(core, visibility);
+  // Before the two doors into a room, which both hand their joiners to it.
+  const introductions = new RoomIntroductions({
+    enabled: () => deps.introduceAgents?.() ?? false,
+    room: (roomId) => core.store.getRoom(roomId),
+    isBridged: (roomId) => deps.bridges.findBridgeByRoom(roomId) !== null,
+    isMirrored: (roomId) => core.store.isRemoteTimelineRoom(roomId),
+    author: (authorId) => core.authors.getById(authorId) ?? undefined,
+    hasMoment: (roomId, key) => core.store.hasMoment(roomId, key),
+    postMoment: (roomId, input) => systemPosts.postMoment(roomId, input),
+    ask: (input) => turnControl.askAside(input),
+  });
+  const lifecycle = new RoomLifecycle(
+    core,
+    visibility,
+    authority,
+    projection,
+    updates,
+    introductions
+  );
   const bridgeCreation = new RoomBridgeCreation(core, projection);
   const bridgeLifecycle = new RoomBridgeLifecycle(
     core,
@@ -130,7 +152,7 @@ export function createRoomCollaborators(
     updates,
     systemPosts
   );
-  const membership = new RoomMembership(core, visibility, authority, systemPosts);
+  const membership = new RoomMembership(core, visibility, authority, systemPosts, introductions);
   // The canvas is handed `systemPosts.postCanvasEvent` rather than reaching for
   // the store, so the single write path into a room's log stays the front door's
   // — the same shape the merge service is given. Built BEFORE `reads` because a
@@ -177,8 +199,9 @@ export function createRoomCollaborators(
     reads: new RoomReads(core, visibility, projection, canvas),
     search: new RoomSearch(core, visibility, projection),
     reactions: new RoomReactions(core, visibility, publisher),
-    turnControl: new RoomTurnControl(core, visibility),
+    turnControl,
     canvas,
     handoffs: new RoomHandoffs(core, (roomId, body) => systemPosts.postNotice(roomId, body)),
+    introductions,
   };
 }

@@ -148,6 +148,11 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // A channel turn waits for its burst to go quiet (DOR-3398). Not under the
     // scripted test runtime, whose browser specs would wait 20s per answer.
     burstQuietMs: env.DORKOS_TEST_RUNTIME ? 0 : ROOM_BURST_QUIET_MS,
+    // Agents introduce themselves to an ordinary channel they join, once each
+    // (DOR-2106). No setting: it costs at most one budgeted turn per agent per
+    // room, ever. Off under the scripted test runtime, whose browser specs count
+    // what a room says.
+    introduceAgents: !env.DORKOS_TEST_RUNTIME,
     runtimePrincipalCurrent: (proof) =>
       docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,

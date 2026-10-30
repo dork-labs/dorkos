@@ -773,6 +773,8 @@ export function createRoomHarness(opts: {
    */
   roomRepoPath?: (roomId: string) => string | null;
   ownerUserId?: string;
+  /** Whether agents introduce themselves on joining a channel (DOR-2106). Off by default. */
+  introduceAgents?: boolean;
   /** The operator's profile name, as `config.profile.displayName` supplies it. */
   operatorName?: () => string | null;
   budgetNow?: () => number;
@@ -965,6 +967,7 @@ export function createRoomHarness(opts: {
     isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
     readCursors,
     isRoomMuted,
+    ...(opts.introduceAgents ? { introduceAgents: () => true } : {}),
   });
   // **The runner's voice, bound now that there is something to speak through.**
   // A scripted turn says what it says by calling the real posting capability,
