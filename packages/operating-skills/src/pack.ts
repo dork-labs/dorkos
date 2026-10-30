@@ -362,8 +362,11 @@ export interface OperatingSkill {
  *   the same message again; an agent that does not know wakes in a fresh
  *   session and answers twice. The new skill seeds without a bump; the bump is
  *   for the sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 44: a member agent can set up its room's files (DOR-3468).
+ *   `working-in-room-repos` names `set_up_room_files` where a merge finds a room
+ *   with no files. An agent seeded at 43 would stop there and answer in the room.
  */
-export const OPERATING_SKILLS_VERSION = 43;
+export const OPERATING_SKILLS_VERSION = 44;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
