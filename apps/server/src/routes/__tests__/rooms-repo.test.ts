@@ -154,11 +154,17 @@ describe('POST /api/rooms/:id/repo', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** A channel with Ana on the roster. */
+  /**
+   * A channel with Ana on the roster and no files yet: made while room files
+   * are off, as every room from before DOR-2112 was, so the button is what
+   * gives it some.
+   */
   async function channel(): Promise<string> {
+    enabled = false;
     const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
+    enabled = true;
     expect(created.status).toBe(201);
     return created.body.id as string;
   }
@@ -307,6 +313,81 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(store.getRow(roomId)).toBeNull();
   });
 
+  describe('a room the person opens starts with files (DOR-2112)', () => {
+    it('gives a new channel its repo and ROOM.md before the create answers', async () => {
+      const created = await request(testServer)
+        .post('/api/rooms')
+        .send({ kind: 'channel', title: 'Launch notes', agentPaths: [ANA_PATH] });
+
+      expect(created.status).toBe(201);
+      const roomId = created.body.id as string;
+      expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
+      expect(await gitInRepo(['log', '--format=%an'], store, roomId)).toBe('Dorian');
+      // The button now has nothing to do.
+      expect((await request(testServer).post(`/api/rooms/${roomId}/repo`)).status).toBe(409);
+      // No "set up files" line in a room nobody has spoken in yet.
+      const history = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+      expect(history.body.entries).toEqual([]);
+    });
+
+    it('still opens the room, with no files, while room files are switched off', async () => {
+      enabled = false;
+      const created = await request(testServer)
+        .post('/api/rooms')
+        .send({ kind: 'channel', title: 'Launch notes', agentPaths: [ANA_PATH] });
+
+      expect(created.status).toBe(201);
+      const roomId = created.body.id as string;
+      expect(existsSync(store.homeDir(roomId))).toBe(false);
+      expect(store.getRow(roomId)).toBeNull();
+    });
+
+    it('still opens the room when git is missing', async () => {
+      vi.stubEnv('PATH', '');
+      let created;
+      try {
+        created = await request(testServer)
+          .post('/api/rooms')
+          .send({ kind: 'channel', title: 'Launch notes', agentPaths: [ANA_PATH] });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(created.status).toBe(201);
+      expect(store.getRow(created.body.id as string)).toBeNull();
+    });
+
+    it('gives no files to a room an agent opens', async () => {
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const created = await request(testServer)
+        .post('/api/rooms')
+        .set('X-DorkOS-Agent', token)
+        .send({ kind: 'channel', title: 'Ana’s room', agentPaths: [] });
+
+      expect(created.status).toBe(201);
+      const roomId = created.body.id as string;
+      expect(existsSync(store.homeDir(roomId))).toBe(false);
+      expect(store.getRow(roomId)).toBeNull();
+    });
+
+    it('never gives files to a room that already existed', async () => {
+      // A DM is idempotent on its members: opening it again answers 200 with the
+      // same room, and that room is left exactly as it was.
+      const open = () =>
+        request(testServer)
+          .post('/api/rooms')
+          .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+      const first = await open();
+      expect(first.status).toBe(201);
+      const again = await open();
+      expect(again.status).toBe(200);
+      expect(again.body.id).toBe(first.body.id);
+      expect(existsSync(store.homeDir(first.body.id as string))).toBe(false);
+    });
+  });
+
   it('leaves every other room path behaving exactly as it does today', async () => {
     // The additive claim, stated as a test: a room with no repo posts, reads and
     // lists the same whether the feature is on or off.
@@ -345,6 +426,8 @@ describe('the room repo routes', () => {
   let rooms: ReturnType<typeof createRoomSubsystem>;
   /** The SAME manager the merge service holds, so a test works where a turn would. */
   let roomWorktrees: RoomWorktreeManager;
+  /** Whether rooms may have files; only ever switched off to make a plain room. */
+  let filesOn: boolean;
 
   beforeEach(async () => {
     fakeRuntime = new FakeAgentRuntime();
@@ -353,6 +436,7 @@ describe('the room repo routes', () => {
     db = createTestDb();
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-rooms-merge-route-'));
     registerAgent(db, 'ana', ANA_PATH);
+    filesOn = true;
     rooms = createRoomSubsystem({ db });
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
@@ -362,7 +446,7 @@ describe('the room repo routes', () => {
       store,
       mutex,
       queueWaitMs: () => 5000,
-      enabled: () => true,
+      enabled: () => filesOn,
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
       operatorGitName: () => 'Dorian',
@@ -400,14 +484,17 @@ describe('the room repo routes', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** A channel with Ana on the roster, with files of its own. */
+  /**
+   * A channel with Ana on the roster, with files of its own: the person opened
+   * it, so it starts with them (DOR-2112).
+   */
   async function projectRoom(): Promise<string> {
     const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
     const roomId = created.body.id as string;
-    expect((await request(testServer).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
+    expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
     return roomId;
   }
 
@@ -425,9 +512,11 @@ describe('the room repo routes', () => {
   });
 
   it('tells a room without files that it has none, on both routes', async () => {
+    filesOn = false;
     const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Plain', agentPaths: [ANA_PATH] });
+    filesOn = true;
     const roomId = created.body.id as string;
 
     const status = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
