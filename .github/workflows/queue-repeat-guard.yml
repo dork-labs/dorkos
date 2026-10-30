@@ -1,0 +1,164 @@
+name: queue-repeat-guard
+
+# The merge queue's door for the repeat-ejection rule: when a pull request is
+# queued on a head that has already failed the same required check twice in the
+# queue, take it straight back out and tell the author once.
+#
+# merge-tail.yml already refuses to re-arm such a pull request, but it only
+# governs its own arming. Agents arm with `gh pr merge --auto`, which on a green
+# pull request enqueues at once, so the rule bound nobody else: over
+# 2026-10-16..10-30, 7 of 85 failed-checks ejections were a third or later try
+# of an unchanged head, and each of those builds also took down every build
+# stacked behind it. `merge_group` is the one event every queue entry raises,
+# whoever queued it. The decision is scripts/queue-repeat-guard.sh (fixtures:
+# scripts/test-queue-repeat-guard.sh), which reads the same jq rule merge-tail's
+# gate does. Ledger: ci/ledger/261030-221104-queue-repeat-guard.md.
+#
+# Not a required check, and it must stay GREEN whatever happens: a red run on
+# the merge-group commit would be listed among that build's failed checks, and
+# merge-tail's gate counts every failed check, required or not. So every
+# failure here is a `::warning::`, never an exit code. It acts only on proof:
+# unreadable answers or unknown history keep the entry in the queue.
+#
+# Taking an entry out costs little: the builds behind it restart without it
+# seconds after they began, instead of running ~30 minutes to a certain red.
+#
+# One way past it, the `requeue-ok` label, for failures that were `main`'s:
+# it counts when it was added after the last failed try (the script says why).
+#
+# WHOSE KEY: the `dorkos-merge-tail` GitHub App, as in merge-tail.yml. Its
+# pull-requests and contents write cover dequeueing, commenting and removing a
+# spent `requeue-ok` label; it has no Administration permission.
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  door:
+    runs-on: ubuntu-latest
+    # Four GitHub reads and at most three writes; a minute is generous.
+    timeout-minutes: 5
+    # Every step is `continue-on-error`: a failed step still shows as failed in
+    # the log, but the job, and so the check run on the merge-group commit,
+    # stays green (see the header for why it must).
+    steps:
+      # The queue's base, not this entry's own tree: the scripts below run with
+      # a write token, so they must not be the ones the pull request being
+      # judged could have edited. Same reason as security-gate.yml.
+      - uses: actions/checkout@v7
+        continue-on-error: true
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          persist-credentials: false
+
+      - name: Mint the merge-tail app token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          # Scoped down to what this job uses, all of them grants the app
+          # already holds (merge-tail.yml's token comment lists them): checks
+          # to read the failed runs, pull requests to comment and unlabel,
+          # contents for the dequeue. Not actions, which the app may lack:
+          # naming a permission it does not hold fails the mint.
+          permission-checks: read
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Take a repeat-failing head back out of the queue
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          # Not -e (GitHub's default shell sets it): every failure is handled.
+          set +e -uo pipefail
+          warn() { echo "::warning::queue-repeat-guard: $*"; exit 0; }
+          [[ -n "$GH_TOKEN" ]] || warn "no app token; the rule is not enforced on this entry"
+          [[ -f scripts/queue-repeat-guard.sh ]] \
+            || warn "the queue base has no scripts/queue-repeat-guard.sh; the rule is not enforced on this entry"
+
+          pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
+            || warn "not a queue ref: $HEAD_REF"
+          work=$(mktemp -d)
+
+          gh pr view "$pr" --repo "$REPO" \
+            --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
+            > "$work/meta.json" 2>/dev/null || warn "PR #$pr: could not read the pull request"
+          # The repeat rule reads no checks; the builder only needs a list.
+          echo '[]' > "$work/checks.json"
+          # merge-tail's query (see read_graphql there), plus the node id to
+          # dequeue and the label history. Wider windows than merge-tail's: each
+          # dequeue here is itself a removal, so an agent that keeps re-queueing
+          # would push the two failures out of a last-10 window and be let in;
+          # and a merge-group commit already carries ~17 check suites.
+          gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
+            query($owner:String!,$name:String!,$number:Int!){
+              repository(owner:$owner,name:$name){
+                pullRequest(number:$number){
+                  id
+                  labelEvents: timelineItems(last:50, itemTypes:[LABELED_EVENT]){ nodes{
+                    ... on LabeledEvent{ createdAt label{ name } } } }
+                  mergeQueueEntry{ position state }
+                  reviewThreads(last:100){ nodes{ isResolved } }
+                  commits(last:1){ nodes{ commit{ oid
+                    checkSuites(first:50){ nodes{ createdAt } } } } }
+                  timelineItems(last:50, itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){ nodes{
+                    ... on RemovedFromMergeQueueEvent{ createdAt reason
+                      beforeCommit{ checkSuites(first:50){ nodes{
+                        checkRuns(first:50, filterBy:{conclusions:[FAILURE,TIMED_OUT,STARTUP_FAILURE]}){
+                          nodes{ name } } } } } } } } } } }' \
+            > "$work/gql.json" 2>/dev/null || :
+          if ! bash scripts/should-arm-automerge-input.sh \
+                 "$work/meta.json" "$work/checks.json" "$work/gql.json" > "$work/payload.json" 2>/dev/null; then
+            warn "PR #$pr: $(head -n 1 "$work/payload.json")"
+          fi
+          # When `requeue-ok` was last put on; the guard honours it only if
+          # that is later than the last failed try.
+          jq -s '.[0] + {requeueOkAt: ([.[1].data.repository.pullRequest.labelEvents.nodes[]?
+                   | select((.label.name // "" | ascii_downcase) == "requeue-ok") | .createdAt] | max)}' \
+            "$work/payload.json" "$work/gql.json" > "$work/guard.json" \
+            || warn "PR #$pr: could not read the label history"
+
+          bash scripts/queue-repeat-guard.sh verdict "$work/guard.json" > "$work/verdict.txt" 2>/dev/null || :
+          verdict=$(head -n 1 "$work/verdict.txt")
+          echo "PR #$pr -> ${verdict:-KEEP no-verdict}"
+          head_sha=$(jq -r '.headRefOid // ""' "$work/meta.json")
+
+          [[ "$verdict" == "DEQUEUE" ]] || exit 0
+
+          tail -n +2 "$work/verdict.txt" > "$work/repeats.txt"
+          node_id=$(jq -r '.data.repository.pullRequest.id // ""' "$work/gql.json")
+          if gh api graphql -f id="$node_id" \
+               -f query='mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ clientMutationId } }' \
+               >/dev/null 2>"$work/dequeue-err.txt"; then
+            echo "PR #$pr -> taken out of the queue: $(paste -sd, "$work/repeats.txt") failed twice on ${head_sha:0:10}"
+          else
+            warn "PR #$pr: could not dequeue: $(tr '\n' ' ' < "$work/dequeue-err.txt" | cut -c1-200)"
+          fi
+          # A label that is still on here was spent by an earlier failure; take
+          # it off so the next one is a deliberate, fresh decision.
+          spent=$(jq -r 'first(.labels[]?.name | select(ascii_downcase == "requeue-ok")) // ""' "$work/meta.json" 2>/dev/null) || spent=
+          if [[ -n "$spent" ]]; then
+            gh pr edit "$pr" --repo "$REPO" --remove-label "$spent" >/dev/null 2>&1 \
+              || echo "::warning::queue-repeat-guard: PR #$pr: could not remove the spent requeue-ok label"
+          fi
+
+          # Once per head, shared with merge-tail's marker.
+          marker="<!-- merge-tail:repeat-queue-failure head=$head_sha -->"
+          gh api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" --jq '.[].body' \
+            > "$work/comments.txt" 2>/dev/null || warn "PR #$pr: could not read comments; not telling the author"
+          grep -qF -- "$marker" "$work/comments.txt" && exit 0
+          bash scripts/queue-repeat-guard.sh comment "$pr" "$head_sha" "$work/repeats.txt" > "$work/comment.md"
+          gh pr comment "$pr" --repo "$REPO" --body-file "$work/comment.md" >/dev/null 2>&1 \
+            || warn "PR #$pr: could not post the note"
