@@ -282,6 +282,14 @@ export const RequiredChecksSchema = z
             path: z.string().regex(/^\.github\/workflows\/[\w.-]+\.ya?ml$/),
             ref: z.string().regex(/^refs\/heads\/[\w./-]+$/),
             bypass_actors: z.array(z.never()).length(0),
+            /**
+             * The organization rule's enforcement, as GitHub names it. Only an
+             * `active` source blocks a merge, so only an `active` source counts
+             * toward queue-green and pr-feedback. The live census still requires
+             * `active`, so a source that is not active stays a visible finding
+             * until it is promoted.
+             */
+            enforcement: z.enum(['active', 'evaluate', 'disabled']).default('active'),
           })
           .strict()
       )

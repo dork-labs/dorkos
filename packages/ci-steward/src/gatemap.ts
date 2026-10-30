@@ -61,22 +61,29 @@ export function gateMapper(workflows: readonly WorkflowModel[]): GateMapper {
 }
 
 /**
- * The workflow files that host a required context, which is what "the
- * required workflows" means for pr-feedback, queue-green and queue builds.
+ * The workflow files that host a required context, or are an active required
+ * workflow source, which is what "the required workflows" means for
+ * pr-feedback, queue-green and queue builds.
+ *
+ * A source whose organization rule is not `active` blocks no merge, so a red
+ * run of it is not a red build: counting it made queue-green read 20% in a
+ * week when 60% of builds passed every check GitHub enforced.
  *
  * @param workflows - The parsed workflows.
  * @param contexts - The required contexts.
+ * @param sources - The required workflow sources from `ci/required-checks.json`.
  */
 export function requiredWorkflowPaths(
   workflows: readonly WorkflowModel[],
   contexts: readonly string[],
-  sources: readonly { path: string }[] = []
+  sources: readonly { path: string; enforcement: string }[] = []
 ): string[] {
   const want = new Set(contexts);
+  const active = sources.filter((s) => s.enforcement === 'active');
   return workflows
     .filter(
       (wf) =>
-        sources.some((s) => s.path === wf.path) ||
+        active.some((s) => s.path === wf.path) ||
         wf.jobs.some((j) => j.checkName !== null && want.has(j.checkName))
     )
     .map((wf) => wf.path)

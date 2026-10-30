@@ -40,6 +40,11 @@ named contexts. The schema and offline census validate their source repository,
 main ref, workflow existence, triggers and jobs. Generated docs, collector timing
 and canary coverage include these sources.
 
+Each source carries `enforcement`, mirroring the rule (`disabled`, `evaluate` or
+`active`). Only an `active` source blocks a merge, so queue-green and pr-feedback
+count a source only once it is `active`; before that, its red runs are not red
+builds. Promotion sets `active` in the same change that activates the rule.
+
 Run `pnpm ci:census --live` before promotion. It reads organization rulesets,
 checks repository identity, source repository ID/path/ref (no SHA override),
 active enforcement, exact repository/main scope and a visible empty bypass list.

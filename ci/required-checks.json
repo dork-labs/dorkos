@@ -20,7 +20,8 @@
       "repository_id": 1155842647,
       "path": ".github/workflows/security-gate.yml",
       "ref": "refs/heads/main",
-      "bypass_actors": []
+      "bypass_actors": [],
+      "enforcement": "disabled"
     }
   ]
 }
