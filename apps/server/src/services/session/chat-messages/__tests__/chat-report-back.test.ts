@@ -84,6 +84,18 @@ describe('ChatReportBack.onTurnEnd', () => {
     }
   });
 
+  it('says why when a refused turn failed without a word (DOR-3167)', async () => {
+    const reason = 'gpt-6.1-sol isn’t available with a ChatGPT account.';
+    const { send, end } = harness({
+      statusOf: () => status({ lifecycle: 'error', lastError: { message: reason } }),
+      history: async () => history(['user', 'do the thing']),
+    });
+
+    await end();
+
+    expect(send.mock.calls[0]![1].message).toBe(`This turn failed.\n\n${reason}`);
+  });
+
   it('sends nothing when the turn ended only to wait on background work', async () => {
     const { send, end } = harness({ holdsBackgroundWork: async () => true });
     await expect(end()).resolves.toBeNull();

@@ -377,6 +377,8 @@ export const CANONICAL_ID_TIMEOUT_MS = 5_000;
 
 /** The collaborators {@link triggerTurn} needs, narrowed to a runtime-neutral port. */
 export interface TriggerTurnDeps {
+  /** Which runtime this is (`AgentRuntime.type`), named in the log when it errors. */
+  readonly type?: string;
   /**
    * Acquire the session write-lock; returns false when held by another client.
    * The `token` is the per-turn lock identity (I1) so {@link releaseLock} can be
@@ -1019,7 +1021,8 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // A runtime that refuses a turn before the agent sees it settles without a
     // throw, so the refusal is read off the stream (DOR-2994).
     const watched = watchNotStarted(source);
-    const tapped = tapEachEvent(watched.stream, () => {
+    const tapped = tapEachEvent(watched.stream, (event) => {
+      if (event) warnOnRuntimeError(event, sessionId, deps.type);
       signalFirstEvent();
       tryRekey();
       // Proof of life for the write-lock: a turn that is visibly producing
@@ -1157,26 +1160,55 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
  * canonical-id signal resolves once and the rekey retry disarms itself.
  *
  * @param source - The stream to forward.
- * @param onEvent - Fired just before each event; also once if the stream ends
- *   or throws without yielding.
+ * @param onEvent - Fired just before each event, with that event; also once,
+ *   with none, if the stream ends or throws without yielding.
  * @internal Exported so {@link import('./trigger-command-intent').triggerCommandIntent}
  * proves its own liveness to the lock off the same seam.
  */
 export async function* tapEachEvent(
   source: AsyncIterable<StreamEvent>,
-  onEvent: () => void
+  onEvent: (event?: StreamEvent) => void
 ): AsyncIterable<StreamEvent> {
   let fired = false;
   try {
     for await (const event of source) {
       fired = true;
-      onEvent();
+      onEvent(event);
       yield event;
     }
   } finally {
     // Empty stream or a throw before the first yield still releases the waiter.
     if (!fired) onEvent();
   }
+}
+
+/**
+ * Write a runtime's refusal or error to the server log (DOR-3167). A refused turn
+ * throws nothing, so without this its only record is the chat itself.
+ *
+ * @param event - One event of the turn.
+ * @param sessionId - The session the turn runs in.
+ * @param runtime - Which runtime is running it.
+ * @internal Exported so {@link import('./runtime-turns/runtime-turn')} logs the same way.
+ */
+export function warnOnRuntimeError(
+  event: StreamEvent,
+  sessionId: string,
+  runtime: string | undefined
+): void {
+  if (event.type !== 'error') return;
+  const { message, code, category } = event.data as {
+    message: string;
+    code?: string;
+    category?: string;
+  };
+  logger.warn('[turn] the runtime reported an error', {
+    sessionId,
+    runtime: runtime ?? null,
+    code: code ?? null,
+    category: category ?? null,
+    message,
+  });
 }
 
 /**

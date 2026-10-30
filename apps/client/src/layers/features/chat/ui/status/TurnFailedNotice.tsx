@@ -1,7 +1,6 @@
 import { motion } from 'motion/react';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { useSessionRuntime, useSessionStreamStatus } from '@/layers/entities/session';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { ErrorMessageBlock } from '../message/ErrorMessageBlock';
 
 /** Fallback copy when the failed turn carried no typed error details. */
@@ -37,7 +36,7 @@ interface TurnFailedNoticeProps {
  * (`turn_end{terminalReason:'error'}` alone), it falls back to the generic
  * execution_error copy.
  *
- * The heading names the session's runtime ("Codex stopped unexpectedly")
+ * The heading names the session's runtime ("Codex didn’t answer this turn")
  * when the session row has resolved it, so a failed turn on a non-default
  * runtime never reads as a generic agent error (spec §UX capability
  * honesty). With no row (a first turn that failed before the session was
@@ -59,14 +58,10 @@ export function TurnFailedNotice({
     lastError?.category === 'auth_error' ||
     lastError?.category === 'model_unavailable' ||
     lastError?.category === 'runtime_update_required';
-  // Failures with a known recovery own their heading and next step inside
-  // ErrorMessageBlock. Do not replace those with the generic runtime failure.
-  const heading =
-    !usesCategoryRecovery && runtime
-      ? `${getRuntimeDescriptor(runtime).label} stopped unexpectedly`
-      : undefined;
-  const message = lastError?.message ?? GENERIC_FAILURE_COPY;
-  const subtext = usesCategoryRecovery ? undefined : message;
+  // Empty when the runtime said nothing, so DorkOS's fallback below is never
+  // dressed as a quotation of the runtime's words.
+  const message = lastError?.message ?? '';
+  const subtext = usesCategoryRecovery ? undefined : message || GENERIC_FAILURE_COPY;
   const runtimeLabel = runtime ? runtimeDisplayName(runtime) : undefined;
   const details = lastError
     ? [lastError.code, lastError.details].filter(Boolean).join('\n')
@@ -82,7 +77,6 @@ export function TurnFailedNotice({
     >
       <ErrorMessageBlock
         category={lastError?.category ?? 'execution_error'}
-        heading={heading}
         message={message}
         subtext={subtext}
         details={details || undefined}

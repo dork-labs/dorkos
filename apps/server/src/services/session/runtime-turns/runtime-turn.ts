@@ -72,7 +72,12 @@ import { runtimeLockHolder } from '../session-lock.js';
 import { feedProjector } from '../session-event-normalizer.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { withStallGuard } from '../stall-guard.js';
-import { DetachedTurnLifecycle, guardTurnErrors, tapEachEvent } from '../trigger-turn.js';
+import {
+  DetachedTurnLifecycle,
+  guardTurnErrors,
+  tapEachEvent,
+  warnOnRuntimeError,
+} from '../trigger-turn.js';
 import { noteDispatchedTurn, noteRuntimeTurnSettled } from './late-turns.js';
 
 /**
@@ -226,7 +231,8 @@ async function projectRuntimeTurn(
       await drain(events);
       return;
     }
-    const tapped = tapEachEvent(events, () => {
+    const tapped = tapEachEvent(events, (event) => {
+      if (event) warnOnRuntimeError(event, sessionId, runtime.type);
       // Proof of life for the write-lock: a turn visibly producing events must
       // never be declared abandoned and stolen mid-flight (DOR-782).
       turnLifecycle.touch();

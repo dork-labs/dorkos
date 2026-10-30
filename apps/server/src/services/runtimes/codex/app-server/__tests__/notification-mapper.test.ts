@@ -314,6 +314,22 @@ describe('terminals — exactly one done', () => {
     );
   });
 
+  it('a refused model shows why and what to do, never an empty reply (DOR-3167)', () => {
+    const refusal =
+      '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6.1-sol\' model is not supported when using Codex with a ChatGPT account."}}';
+
+    const events = all(mapper(), [completed('failed', { message: refusal })]);
+
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      data: {
+        category: 'model_unavailable',
+        message: expect.stringContaining('Choose another model'),
+        details: refusal,
+      },
+    });
+    expect(events.at(-1)).toEqual({ type: 'done', data: { sessionId: 's1' } });
+  });
+
   it('turns a retrying error into a status, not a failure', () => {
     expect(
       all(mapper(), [n('error', { error: { message: 'reconnecting' }, willRetry: true })])
