@@ -65,7 +65,8 @@ function sha256(content: string | Buffer): string {
  * The absolute paths `commands` name that are worth hashing: inside the home
  * (relative, `$CLAUDE_PROJECT_DIR` or absolute), or inside a plugin folder.
  * Also what the repo settings check (DOR-3298) reads, with a repo's working
- * folder as the root.
+ * folder as the root, and what a project's package hook approval pins
+ * (`harness/hook-script-pins.ts`, DOR-3403), with the project as the root.
  *
  * @param root - The folder commands run in (resolved).
  * @param pluginsRoot - DorkOS's `plugins/` folder (resolved).

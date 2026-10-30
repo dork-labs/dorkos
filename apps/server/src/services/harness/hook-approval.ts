@@ -79,6 +79,7 @@ import {
   recordHookRefusal,
   type HookProjectionRequest,
 } from './hook-consent.js';
+import { describeHookScriptPins } from './hook-script-pins.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -237,9 +238,13 @@ export function summariseHookProjection(request: HookProjectionRequest): string 
     .map((hook) => `${renderCommandForCard(hook.command)} ${describeHookTrigger(hook)}`)
     .join('; ');
   const count = request.hooks.length;
+  // The files the yes covers, with a short hash, ahead of the commands so the
+  // 500-character cap never cuts them off: a reviewer can check the hash
+  // against the copy they read, and an edit after the yes asks again (DOR-3403).
+  const files = describeHookScriptPins(request.scripts ?? []);
   return (
     `Let the installed package ${name} run ${count} command${count === 1 ? '' : 's'} ` +
-    `automatically in ${where}: ${hooks}`
+    `automatically in ${where}${files ? `, running ${quoteSummaryValue(files)}` : ''}: ${hooks}`
   );
 }
 
@@ -323,6 +328,7 @@ export async function askForHookProjection(
       projectPath,
       packageName,
       hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
+      scripts: request.scripts ?? [],
     }),
   };
 
