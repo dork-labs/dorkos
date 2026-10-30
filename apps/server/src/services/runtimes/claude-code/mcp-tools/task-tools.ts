@@ -57,6 +57,8 @@ import {
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
 import {
+  isPackageOwnedTaskFile,
+  PACKAGE_SCHEDULE_DELETE_REFUSAL,
   PROJECT_COPY_DELETE_REFUSAL,
   removeScheduledTaskFile,
 } from '../../../tasks/lifecycle/delete-task.js';
@@ -710,7 +712,12 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
     const existing = deps.taskStore!.getTask(args.id);
     // One project's copy shares its file with every other project's (DOR-3376).
     if (existing?.projectOnly) return jsonContent({ error: PROJECT_COPY_DELETE_REFUSAL }, true);
-    await removeScheduledTaskFile(existing?.filePath ?? null);
+    const agentDir = existing?.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
+    // A package's own file stays, and declining it is a person's answer (DOR-2097).
+    if (await isPackageOwnedTaskFile(existing?.filePath ?? null, agentDir)) {
+      return jsonContent({ error: PACKAGE_SCHEDULE_DELETE_REFUSAL }, true);
+    }
+    await removeScheduledTaskFile(existing?.filePath ?? null, agentDir);
     const deleted = deps.taskStore!.deleteTask(args.id);
     if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
     // With no row left to read, `syncTask` unregisters — which is the whole

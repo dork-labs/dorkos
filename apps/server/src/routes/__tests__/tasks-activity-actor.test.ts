@@ -55,6 +55,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/tasks/lifecycle/delete-task.js', () => ({
   PROJECT_COPY_DELETE_REFUSAL: 'shared by every project',
+  isPackageOwnedTaskFile: vi.fn(async () => false),
   removeScheduledTaskFile: vi.fn(async () => undefined),
 }));
 
@@ -74,6 +75,10 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createScheduledTask } from '../../services/tasks/lifecycle/create-task.js';
+import {
+  isPackageOwnedTaskFile,
+  removeScheduledTaskFile,
+} from '../../services/tasks/lifecycle/delete-task.js';
 
 vi.mock('../../services/tasks/lifecycle/create-task.js', () => ({
   createScheduledTask: vi.fn(),
@@ -209,6 +214,26 @@ describe('who the Activity feed says changed a scheduled task', () => {
 
   afterEach(() => {
     store.close();
+  });
+
+  it('declining a package schedule keeps its file and its row (DOR-2097)', async () => {
+    vi.mocked(isPackageOwnedTaskFile).mockResolvedValueOnce(true);
+
+    const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
+
+    expect(res.status).toBe(200);
+    expect(removeScheduledTaskFile).not.toHaveBeenCalled();
+    expect(store.getTask(schedule.id)?.declined).toBe(true);
+    expect(store.getTask(schedule.id)?.status).toBe('pending_approval');
+    expect(emitted[0]?.summary).toBe('Declined scheduled task nightly');
+  });
+
+  it('deleting any other schedule still removes its file and its row', async () => {
+    const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
+
+    expect(res.status).toBe(200);
+    expect(removeScheduledTaskFile).toHaveBeenCalledWith(schedule.filePath, null);
+    expect(store.getTask(schedule.id)).toBeNull();
   });
 
   describe.each(ROUTES)('$name', ({ drive, expectStatus }) => {

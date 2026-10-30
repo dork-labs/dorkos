@@ -37,6 +37,7 @@ import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
 import {
+  isPackageOwnedTaskFile,
   PROJECT_COPY_DELETE_REFUSAL,
   removeScheduledTaskFile,
 } from '../services/tasks/lifecycle/delete-task.js';
@@ -827,13 +828,21 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       return c.json({ error: PROJECT_COPY_DELETE_REFUSAL, code: 'schedule_project_copy' }, 409);
     }
 
-    // The file goes first, through the seam `tasks_delete` shares: a row deleted
-    // while its SKILL.md remains is brought straight back by the next reconcile.
-    await removeScheduledTaskFile(schedule.filePath);
+    const agentDir = schedule.agentId ? meshCore?.getProjectPath(schedule.agentId) : null;
+    // A package's own file stays, and removing it would break the package
+    // (DOR-2097). So this answer is kept on the row, and the file is not touched.
+    const declined = await isPackageOwnedTaskFile(schedule.filePath, agentDir);
+    if (declined) {
+      store.approvals.recordDecline(id);
+    } else {
+      // The file goes first, through the seam `tasks_delete` shares: a row deleted
+      // while its SKILL.md remains is brought straight back by the next reconcile.
+      await removeScheduledTaskFile(schedule.filePath, agentDir);
+      store.deleteTask(id);
+    }
 
-    // Row first, then the seam: with no row to read, `syncTask` unregisters —
-    // the same answer the direct call gave, arrived at the one way.
-    store.deleteTask(id);
+    // Row first, then the seam: with no row to read, or a row no longer active,
+    // `syncTask` unregisters — the same answer the direct call gave.
     registrar.syncTask(id);
 
     activityService?.emit({
@@ -841,11 +850,11 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       // so this is not always the person.
       ...readActivityActor(caller),
       category: 'tasks',
-      eventType: 'tasks.task_deleted',
+      eventType: declined ? 'tasks.task_declined' : 'tasks.task_deleted',
       resourceType: 'schedule',
       resourceId: id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Deleted scheduled task ${schedule.displayName ?? schedule.name}`,
+      summary: `${declined ? 'Declined' : 'Deleted'} scheduled task ${schedule.displayName ?? schedule.name}`,
     });
 
     // Rejecting a proposed schedule is deleting it — the cockpit's Reject button
