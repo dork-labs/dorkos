@@ -249,6 +249,14 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'disclosure',
     ],
   },
+  // The Team view: who is running, who is waiting, and how much room is left.
+  {
+    id: 'team-view',
+    title: 'Team view',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: ['team', 'board', 'running', 'waiting', 'capacity', 'load', 'disk', 'chats'],
+  },
   // Remote access — the Control Center row, Settings and the top-bar beacon, on one model.
   {
     id: 'remote-access',
