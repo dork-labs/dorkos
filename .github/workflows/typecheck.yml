@@ -338,6 +338,17 @@ jobs:
           base="$(git rev-parse HEAD^1)"
           pnpm run check:max-lines -- --base "$base"
 
+      # The design-token gate (UI overhaul Phase 1). Bans a pattern outright, or
+      # ratchets it against scripts/design-tokens/baseline.json so a count per
+      # file can only fall. `--base` refuses a baseline raised by hand, using
+      # the same first parent as the file-size ratchet above.
+      - name: Design-token gate (UI overhaul Phase 1)
+        if: ${{ !cancelled() }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          pnpm run check:design-tokens -- --base "$base"
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a

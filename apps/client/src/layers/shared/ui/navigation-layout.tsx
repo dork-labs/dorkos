@@ -3,6 +3,7 @@ import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useIsMobile } from '../model';
 import { cn } from '@/layers/shared/lib/utils';
+import { SPRING } from '@/layers/shared/lib/motion';
 import { useResponsiveDialogOptional } from './responsive-dialog';
 
 // ---------------------------------------------------------------------------
@@ -467,10 +468,9 @@ function NavigationLayoutItem({
           data-value={itemValue}
           onClick={() => onValueChange(itemValue)}
           whileTap={{ scale: 0.98 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          transition={SPRING.fold}
           className={cn(
-            'flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors',
-            'hover:bg-muted/50 active:bg-muted min-h-[44px]',
+            'hover:bg-muted/50 active:bg-muted flex min-h-[44px] w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors',
             className
           )}
         >
@@ -504,7 +504,7 @@ function NavigationLayoutItem({
         <motion.div
           layoutId="nav-layout-active-pill"
           className="bg-muted absolute inset-0 rounded-md"
-          transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+          transition={SPRING.glide}
         />
       )}
       <span className="relative z-10 flex items-center gap-2">

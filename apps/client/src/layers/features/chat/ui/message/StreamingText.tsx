@@ -10,7 +10,7 @@ import 'streamdown/styles.css';
 interface StreamingTextProps {
   content: string;
   isStreaming?: boolean;
-  /** Text animation effect applied during streaming. Defaults to blur-in at word level. */
+  /** Text animation effect applied during streaming. Defaults to a fade at word level. */
   textEffect?: TextEffectConfig;
   /**
    * The session this text belongs to. Threaded into `dorkos-ui` widget fences so

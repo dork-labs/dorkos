@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
+import { SPRING } from '@/layers/shared/lib/motion';
 import { STATUS_TONE_SURFACE, STATUS_TONE_TEXT } from './status-dot';
 import {
   ResponsivePopover,
@@ -17,7 +18,7 @@ import {
  * place to want them — a third should lift them into one.
  */
 const CHIP_TRANSITION = { duration: 0.12, ease: 'easeOut' } as const;
-const CHIP_SETTLE = { type: 'spring', stiffness: 320, damping: 28 } as const;
+const CHIP_SETTLE = SPRING.glide;
 
 /** What a {@link ProvenanceChip} is saying about one setting. */
 export interface ProvenanceChipProps {

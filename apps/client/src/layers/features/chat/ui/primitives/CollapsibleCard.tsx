@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
-import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
 
 interface CollapsibleCardProps {
   /** Whether the accordion body is expanded. */
@@ -86,7 +86,7 @@ export function CollapsibleCard({
         {!hideChevron && !disabled && (
           <motion.div
             animate={{ rotate: expanded ? 180 : 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            transition={SPRING.fold}
             className="ml-auto"
           >
             <ChevronDown className="text-muted-foreground size-(--size-icon-xs)" />
