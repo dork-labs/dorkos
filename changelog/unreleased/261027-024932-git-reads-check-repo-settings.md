@@ -10,6 +10,7 @@ covers:
   - "fix(server): a Full chat's workspace runs none of the repo's filter programs (DOR-3343)"
   - 'fix(server): Full overrides keep the agent.full_action Activity name (DOR-3343)'
   - "test(server): the session route's workspace mock carries fullChatOf (DOR-3343)"
+  - 'ci(browser-test): the browser shards check out without a saved credential (DOR-3343)'
 ---
 
 ### Fixed
