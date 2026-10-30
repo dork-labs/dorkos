@@ -12,7 +12,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -37,6 +37,7 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
+import { logger } from '../../../lib/logger.js';
 import { ApprovalService } from '../../core/approvals/index.js';
 import { raisePassiveHookRows, resumePassiveHookRows } from '../ask-withheld-hooks.js';
 import {
@@ -280,9 +281,28 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     );
 
     expect(readPassiveHookRows(dorkHome)).toEqual([good]);
+    // Logged and dropped from the file, so the next start does not meet them.
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[HarnessSync] Dropped saved quiet rows that could not be used',
+      expect.objectContaining({ kept: 1 })
+    );
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([good]);
     expect(() =>
       resumePassiveHookRows({ dorkHome, approvals: freshService(), reproject: vi.fn() })
     ).not.toThrow();
     await settle();
+  });
+
+  it('a saved file that is not JSON is logged and dropped', () => {
+    const file = passiveHookRowsPath(dorkHome);
+    mkdirSync(join(dorkHome, 'harness'), { recursive: true });
+    writeFileSync(file, '{ not json');
+
+    expect(readPassiveHookRows(dorkHome)).toEqual([]);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[HarnessSync] Dropped saved quiet rows that could not be used',
+      expect.objectContaining({ why: 'the file is not JSON' })
+    );
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([]);
   });
 });

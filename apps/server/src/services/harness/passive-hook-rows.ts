@@ -81,8 +81,11 @@ function isStoredRequest(value: unknown): value is HookProjectionRequest {
 }
 
 /**
- * The stored rows. A missing or unreadable file is no rows: the worst it costs
- * is a yes that waits for the next sync, which is what happened before this file.
+ * The stored rows. A missing file is no rows. Anything in it that is not a row
+ * of the right shape, or a file that is not JSON at all, is logged and dropped
+ * from the file, so it is reported once rather than skipped on every start. The
+ * worst a bad file costs is a yes that waits for the next sync, which is what
+ * happened before this file.
  *
  * @param dorkHome - The DorkOS data directory.
  * @returns The stored requests, one per package per project.
@@ -94,14 +97,42 @@ export function readPassiveHookRows(dorkHome: string): HookProjectionRequest[] {
   } catch {
     return [];
   }
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isStoredRequest) : [];
+    parsed = JSON.parse(raw);
   } catch (err) {
-    logger.warn('[HarnessSync] The saved quiet rows could not be read; ignoring them', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    dropBadRows(dorkHome, [], 'the file is not JSON', err);
     return [];
+  }
+  if (!Array.isArray(parsed)) {
+    dropBadRows(dorkHome, [], 'the file is not a list');
+    return [];
+  }
+  const rows = parsed.filter(isStoredRequest);
+  const bad = parsed.length - rows.length;
+  if (bad > 0) dropBadRows(dorkHome, rows, `${bad} saved row(s) were not the right shape`);
+  return rows;
+}
+
+/** Log what was wrong with the saved rows, and keep only the good ones. */
+function dropBadRows(
+  dorkHome: string,
+  good: readonly HookProjectionRequest[],
+  why: string,
+  err?: unknown
+): void {
+  logger.warn('[HarnessSync] Dropped saved quiet rows that could not be used', {
+    why,
+    kept: good.length,
+    ...(err === undefined ? {} : { error: err instanceof Error ? err.message : String(err) }),
+  });
+  try {
+    writeRows(dorkHome, good);
+  } catch (writeErr) {
+    // Still ignored on every read; only the log line repeats.
+    logger.warn('[HarnessSync] Could not rewrite the saved quiet rows', {
+      error: writeErr instanceof Error ? writeErr.message : String(writeErr),
+    });
   }
 }
 

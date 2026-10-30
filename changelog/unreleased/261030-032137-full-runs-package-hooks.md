@@ -10,6 +10,7 @@ covers:
   - 'fix(server): a saved quiet row that is not the right shape never stops startup (DOR-3427)'
   - 'fix(server): quiet rows are picked up at startup with relay off too (DOR-3427)'
   - 'fix(server): on Full, hooks that name no file need DorkOS to have installed the package (DOR-3422)'
+  - 'fix(server): saved quiet rows that cannot be used are logged and dropped (DOR-3427)'
 ---
 
 ### Fixed
