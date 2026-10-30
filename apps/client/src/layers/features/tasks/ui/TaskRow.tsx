@@ -547,7 +547,9 @@ export function TaskRow({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete “{task.name}”?</DialogTitle>
+              <DialogTitle>
+                {task.packageOwned ? 'Switch off this schedule?' : `Delete “${task.name}”?`}
+              </DialogTitle>
               <DialogDescription>
                 {task.packageOwned
                   ? 'It came with a package, so it stays, switched off, until the package changes it.'
@@ -562,7 +564,7 @@ export function TaskRow({
                 Cancel
               </button>
               <Button variant="destructive" size="sm" onClick={confirmDelete}>
-                Delete task
+                {task.packageOwned ? 'Switch off' : 'Delete task'}
               </Button>
             </DialogFooter>
           </DialogContent>
