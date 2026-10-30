@@ -7,9 +7,10 @@
  * where the opener stayed NULL and configure failed with `OPENER_REQUIRED`).
  *
  * Two rows. A plain turn: the page's opener is this agent and configure passes.
- * A turn a stranger started, held to the runtime default exactly as the launch
- * holds one: the page still binds its opener, and configure is put in front of
- * a person (DorkOS's own `canUseTool` raises the card) rather than run.
+ * A turn a stranger started in a chat set below Full, held to the runtime default
+ * exactly as the launch holds one: the page still binds its opener, and configure
+ * is put in front of a person (DorkOS's own `canUseTool` raises the card) rather
+ * than run.
  *
  * Nothing here can spend or reach the internet: a fake HTTP server on 127.0.0.1
  * plays the model, and the key is made up. Real Main services sit behind the
@@ -27,7 +28,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { query, type CanUseTool, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { noopLogger } from '@dorkos/shared/logger';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { peekCanvasService, setCanvasService } from '../../../../canvas/index.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
@@ -195,8 +196,10 @@ async function runTurn(row: Row) {
     cwd: f.dir,
     sdkSessionId: SESSION_ID,
     connectorTurn,
-    permissionMode: 'bypassPermissions' as const,
-    // What the launch sets on a turn a stranger started: Full is clamped down.
+    // A chat set to Full asks nobody, whoever started the turn (DOR-3394), so the
+    // row that must ask is a chat set below it.
+    permissionMode: (row === 'stranger' ? 'default' : 'bypassPermissions') as PermissionModeId,
+    // What the launch sets on a turn a stranger started.
     ...(row === 'stranger' ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
     pendingInteractions: new Map<string, PendingInteraction>(),
     eventQueue: [] as StreamEvent[],
@@ -318,7 +321,7 @@ describe.skipIf(BINARY === null)('real Claude Code: control_ui then configure_do
     expect(channel?.declaration).toMatchObject({ routes: [{ id: 'own-route' }] });
   }, 90_000);
 
-  it('a stranger’s turn still binds the opener, and configure asks a person', async () => {
+  it('a stranger’s turn below Full still binds the opener, and configure asks a person', async () => {
     const { session, pageDoc, channel, configureResult } = await runTurn('stranger');
     expect(pageDoc).toBeDefined();
     expect(channel?.openerAgentId).toBe('agent-1');
