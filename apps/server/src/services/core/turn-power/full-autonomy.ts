@@ -177,6 +177,16 @@ export interface MarkedFullAction {
   sessionId?: string;
   /** Set when the action was refused, as a keeper is at every level (DOR-3417), not run. */
   refused?: true;
+  /**
+   * Set when the action ran because it only turned a person's settings down, at Full (DOR-3426),
+   * a marked turn or not.
+   */
+  tightened?: true;
+  /**
+   * For a refusal or a tightening: whether the turn read outside words. A person's setting is refused at Full in
+   * an unmarked turn too (DOR-3426), and its line must not say the turn read anything.
+   */
+  marked?: boolean;
 }
 
 /**
@@ -197,15 +207,22 @@ export function recordMarkedFullAction(action: MarkedFullAction): void {
     resourceType: 'capability',
     resourceId: action.actionId,
     resourceLabel: action.title,
-    summary: action.refused
-      ? `${who} was refused "${action.title}": this turn read words from outside, and an agent ` +
-        'never changes its own level or grants that way'
-      : `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
-        'turn read words from outside',
+    summary: action.tightened
+      ? `${who} ran "${action.title}" without asking: it only turned a setting a person owns ` +
+        'down, at Full autonomy'
+      : action.refused
+        ? action.marked === false
+          ? `${who} was refused "${action.title}": only a person can change that setting, and ` +
+            'Full autonomy asks nobody'
+          : `${who} was refused "${action.title}": this turn read words from outside, and an ` +
+            'agent never changes its own level or grants that way'
+        : `${who} ran "${action.title}" without asking: its chat is set to Full autonomy, and this ` +
+          'turn read words from outside',
     ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
     metadata: {
       actionId: action.actionId,
-      ...(action.refused ? { refused: true } : {}),
+      ...(action.refused ? { refused: true, marked: action.marked !== false } : {}),
+      ...(action.tightened ? { tightened: true, marked: action.marked !== false } : {}),
       ...(action.agentPath ? { agentPath: action.agentPath } : {}),
       ...(action.sessionId ? { sessionId: action.sessionId } : {}),
     },

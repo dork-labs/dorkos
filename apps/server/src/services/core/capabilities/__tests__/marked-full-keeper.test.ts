@@ -161,7 +161,8 @@ describe('config_patch in a marked turn (DOR-3417)', () => {
     const decision = await decide(session, PERSON_ONLY, 'operator.config_patch');
     expect(decision.outcome).toBe('denied');
     if (decision.outcome !== 'denied') return;
-    expect(decision.payload.message).toBe(MARKED_FULL_PERMISSION_REFUSAL);
+    // Named since DOR-3426: the setting and the area it belongs to.
+    expect(decision.payload.message).toContain('`server.boundary` (Reach & secrets)');
     expect(decision.payload.approvable).toBe(false);
     expect(emit).toHaveBeenCalledTimes(1);
     expect((emit.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({

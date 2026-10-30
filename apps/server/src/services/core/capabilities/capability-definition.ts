@@ -145,6 +145,13 @@ export interface CapabilityDefinition<
    */
   alwaysAsksForInput?: (input: unknown) => boolean;
   /**
+   * The settings only a person may change that one call RAISES, named for a refusal (DOR-3426):
+   * `config_patch` names each operator-only key it writes that is not its strictest value. At Full
+   * such a call is refused with these names; an empty list with {@link areasForInput} still
+   * reaching past the action's own area means the call only turns those settings down.
+   */
+  personSettingsRaisedForInput?: (input: unknown) => readonly string[];
+  /**
    * What a destructive action's consent is about, when it is more than the
    * action itself. `'third-party-code'` marks an action that puts code someone
    * else wrote where DorkOS will run it (`mcp.add`, `mcp.update`): an area-level
