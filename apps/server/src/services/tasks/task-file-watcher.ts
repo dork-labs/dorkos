@@ -605,7 +605,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
     };
     // A global `scope: project` file is one copy per project, never a global
     // row, and its shared file is never written for any one of them (DOR-3376).
-    const projects = projectOnlyTargets(
+    const projects = await projectOnlyTargets(
       discovered.def,
       root,
       [...this.watched.values()].map((watched) => watched.root)

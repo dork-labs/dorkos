@@ -378,12 +378,29 @@ export class TaskFileSync {
    * @returns One task per project that has a copy, in no particular order.
    */
   projectCopiesOf(filePath: string): Task[] {
+    return this.projectCopyRows(filePath).map(mapTaskRow);
+  }
+
+  /**
+   * Whether a person ever switched this project's copy on: it is on now, or a
+   * person approved it at some point, whatever has happened since (DOR-3376).
+   * Read from the row, because a switch turned back off keeps its approval.
+   *
+   * @param id - The copy's task id.
+   */
+  projectCopyWasEverOn(id: string): boolean {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    if (!row) return false;
+    return row.enabled || row.approvedContentKey !== null || row.previousApprovalKey !== null;
+  }
+
+  /** The stored rows behind {@link TaskFileSync.projectCopiesOf}. */
+  private projectCopyRows(filePath: string) {
     return this.db
       .select()
       .from(pulseSchedules)
       .where(and(eq(pulseSchedules.filePath, filePath), eq(pulseSchedules.projectOnly, true)))
-      .all()
-      .map(mapTaskRow);
+      .all();
   }
 }
 

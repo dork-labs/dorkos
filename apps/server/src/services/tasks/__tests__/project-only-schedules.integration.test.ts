@@ -23,8 +23,15 @@ import { agentTaskRoots, globalSkillsRoot, globalTaskRoots } from '../skills-roo
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
-/** A scheduled skill, optionally marked project-only. */
-function skill(name: string, scope?: string): string {
+/** The file a project holds when it uses the package: what `/flow:init` writes. */
+const MARKER = '.agents/flow/config.json';
+
+/**
+ * A scheduled skill, optionally marked project-only. A project-only one names
+ * {@link MARKER} as its `projectFile` unless the case says otherwise; `null`
+ * leaves the key out.
+ */
+function skill(name: string, scope?: string, projectFile: string | null = MARKER): string {
   return [
     '---',
     `name: ${name}`,
@@ -32,9 +39,16 @@ function skill(name: string, scope?: string): string {
     'schedule:',
     "  cron: '0 * * * *'",
     ...(scope ? [`  scope: ${scope}`] : []),
+    ...(scope && projectFile !== null ? [`  projectFile: '${projectFile}'`] : []),
     '---',
     'Drain the queue.',
   ].join('\n');
+}
+
+/** Make a project use the package, by giving it the marker file. */
+async function useIn(projectPath: string): Promise<void> {
+  await fs.mkdir(path.dirname(path.join(projectPath, MARKER)), { recursive: true });
+  await fs.writeFile(path.join(projectPath, MARKER), '{}', 'utf-8');
 }
 
 let store: TaskStore;
@@ -68,6 +82,8 @@ beforeEach(async () => {
       await fs.mkdir(r.dir, { recursive: true });
       reconciler.addRoot(r);
     }
+    // Both use the package unless a case removes the marker.
+    await useIn(project.path);
   }
 });
 
@@ -238,6 +254,102 @@ describe('a project-only schedule in a global package', () => {
     expect(rows[0]?.status).toBe('pending_approval');
     expect(rows[0]?.enabled).toBe(false);
     expect(rows[0]?.reason).toContain('scope');
+  });
+});
+
+describe('which projects get a copy: only the ones using the package', () => {
+  /** Every copy's project, sorted. */
+  const copyProjects = () =>
+    store
+      .getTasks()
+      .map((row) => row.agentId)
+      .sort();
+
+  it('makes no copy at all when the block names no projectFile', async () => {
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project', null));
+    await reconciler.reconcile();
+    expect(store.getTasks()).toEqual([]);
+  });
+
+  it('makes a copy only in the project that holds the file', async () => {
+    await fs.rm(path.join(projects[1]!.path, MARKER));
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
+    await reconciler.reconcile();
+    expect(copyProjects()).toEqual(['agent-alpha']);
+  });
+
+  it('makes the copy on the next sync once a project adds the file', async () => {
+    await fs.rm(path.join(projects[1]!.path, MARKER));
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
+    await reconciler.reconcile();
+    expect(copyProjects()).toEqual(['agent-alpha']);
+
+    await useIn(projects[1]!.path);
+    await reconciler.reconcile();
+    expect(copyProjects()).toEqual(['agent-alpha', 'agent-beta']);
+  });
+
+  it('keeps a copy that was ever switched on when the file goes, and drops one that never was', async () => {
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
+    await reconciler.reconcile();
+    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
+    // Switched on, then back off: still a person's choice, so it stays.
+    expect((await patch(alpha, { status: 'active', enabled: true })).ok).toBe(true);
+    expect((await patch(store.getTask(alpha.id)!, { enabled: false })).ok).toBe(true);
+
+    for (const project of projects) await fs.rm(path.join(project.path, MARKER));
+    await reconciler.reconcile();
+
+    expect(copyProjects()).toEqual(['agent-alpha']);
+    expect(store.getTask(alpha.id)?.enabled).toBe(false);
+  });
+
+  it('still parks a kept copy when the shared file changes', async () => {
+    const file = await put(
+      globalSkillsRoot(dorkHome),
+      'flow-drain',
+      skill('flow-drain', 'project')
+    );
+    await reconciler.reconcile();
+    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
+    expect((await patch(alpha, { status: 'active', enabled: true })).ok).toBe(true);
+    await fs.rm(path.join(projects[0]!.path, MARKER));
+
+    await fs.writeFile(
+      file,
+      skill('flow-drain', 'project').replace('Drain the queue.', 'Delete everything.'),
+      'utf-8'
+    );
+    await reconciler.reconcile();
+    expect(store.getTask(alpha.id)?.status).toBe('pending_approval');
+  });
+
+  it.each([
+    ['an absolute path', '/etc/passwd'],
+    ['a path climbing out', '../outside/config.json'],
+    ['a home path', '~/.dork/config.json'],
+  ])('parks %s as a complaint and makes no copy', async (_label, value) => {
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project', value));
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.agentId).toBeNull();
+    expect(rows[0]?.status).toBe('pending_approval');
+    expect(rows[0]?.enabled).toBe(false);
+    expect(rows[0]?.reason).toContain('projectFile');
+  });
+
+  it('treats a marker that links out of the project as missing', async () => {
+    const outside = path.join(root, 'outside.json');
+    await fs.writeFile(outside, '{}', 'utf-8');
+    for (const project of projects) {
+      await fs.rm(path.join(project.path, MARKER));
+      await fs.symlink(outside, path.join(project.path, MARKER));
+    }
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
+    await reconciler.reconcile();
+    expect(store.getTasks()).toEqual([]);
   });
 });
 

@@ -615,7 +615,7 @@ export class TaskReconciler {
           };
           // The watcher's rule for a global `scope: project` file, over every
           // root this reconciler knows (DOR-3376): one copy per project.
-          const projects = projectOnlyTargets(discovered.def, root, this.roots);
+          const projects = await projectOnlyTargets(discovered.def, root, this.roots);
           if (projects) {
             const seen = new Map(
               this.store.fileSync

@@ -101,7 +101,12 @@ The block takes a handful of settings. Only `cron` is worth learning first:
     scope: {
       type: 'string',
       description:
-        'Set "project" for a task that only makes sense inside a project. In ~/.dork/skills/, each project then gets its own copy, switched off. In a project\'s own skills it changes nothing.',
+        'Set "project" for a task that only makes sense inside a project. In ~/.dork/skills/, each project that uses it then gets its own copy, switched off. In a project\'s own skills it changes nothing.',
+    },
+    projectFile: {
+      type: 'string',
+      description:
+        'With scope "project": a file, as a path inside the project, that shows a project uses this task. Only projects holding it get a copy. Leave it out and no project does.',
     },
   }}
 />
@@ -151,7 +156,11 @@ DorkOS reads two places for skills that carry a `schedule:` block:
 - `~/.dork/skills/` for tasks that belong to no particular project.
 - `<your project>/.agents/skills/` for tasks that belong to one agent. The run happens in that project's folder.
 
-Some tasks only make sense inside a project, like one that works through a repo's backlog. A package can mark those with `scope: project`. Installed for all projects, such a task never shows up as a global schedule. Instead, each project's Schedules page lists its own copy, switched off. Turning it on for one project leaves the others alone, and it runs in that project's folder. Its timing can be changed per project too. What it does comes from the shared file, so DorkOS won't change that for one project.
+Some tasks only make sense inside a project, like one that works through a repo's backlog. A package can mark those with `scope: project`, plus a `projectFile` that shows a project uses the package. Flow, for example, names `.agents/flow/config.json`, which `/flow:init` writes. Installed for all projects, such a task never shows up as a global schedule. Instead, each project that holds that file gets its own copy on its Schedules page, switched off. With no `projectFile`, no project gets one.
+
+Turning a copy on for one project leaves the others alone, and it runs in that project's folder. Its timing can be changed per project too. What it does comes from the shared file, so DorkOS won't change that for one project. A project that adds the file later gets its copy within a few minutes. If a project removes the file, a copy that was never switched on goes away. One that was ever switched on stays, so your choice is never undone for you.
+
+`projectFile` must be a path inside the project. An absolute path, a `~` or a `..` makes the task wait with a note saying what's wrong. A link that points outside the project counts as missing.
 
 A skill without a `schedule:` block is simply a skill, and DorkOS leaves it alone. New files are picked up within seconds of you saving them, so you never restart anything — including the first one you put in a folder you have only just made.
 
