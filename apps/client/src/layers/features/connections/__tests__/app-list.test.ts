@@ -281,8 +281,32 @@ describe('chatAppRow', () => {
       tone: 'attention',
       action: 'review',
       detailTone: 'warning',
-      detail: 'Paused · confirm the setting it sends',
+      detail: 'Paused · @lifeos_bot',
     });
+  });
+
+  // Two paused webhooks share the app's name, so each detail names its label, after the state
+  // so a long label can never cut "Paused".
+  it('tells two paused webhooks apart by their labels', () => {
+    const confirmation = {
+      references: [],
+      host: 'hooks.example.dev',
+      fingerprint: 'fp',
+      notSent: 1,
+    };
+    const webhook = chatEntry('webhook', [], { displayName: 'Webhook' });
+    const status = { ...instance().status, type: 'webhook' as const, displayName: 'Webhook' };
+    const rows = ['Production customers', 'Staging alerts'].map((label, index) =>
+      chatAppRow(webhook, instance({ id: `webhook-${index}`, label, status, confirmation }), {
+        bindings: [],
+        agentNames: {},
+        waitingByChatApp: {},
+      })
+    );
+    expect(rows.map((row) => [row.name, row.detail])).toEqual([
+      ['Webhook', 'Paused · Production customers'],
+      ['Webhook', 'Paused · Staging alerts'],
+    ]);
   });
 });
 

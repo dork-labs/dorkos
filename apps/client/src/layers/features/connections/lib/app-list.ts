@@ -264,7 +264,8 @@ export function chatAppRow(
       tone: 'attention',
       action: 'review',
       detailTone: 'warning',
-      detail: 'Paused · confirm the setting it sends',
+      // The state leads so a long label can never cut it; Review carries the action.
+      detail: botName ? `Paused · ${botName}` : 'Paused · confirm the setting it sends',
     };
   }
   if (instance.status.state === 'error' || instance.status.state === 'disconnected') {
