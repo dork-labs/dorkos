@@ -48,6 +48,7 @@ import {
   type HookProjectionRequest,
 } from './hook-consent.js';
 import {
+  dropPassiveHookRow,
   forgetPassiveHookRow,
   readPassiveHookRows,
   rememberPassiveHookRow,
@@ -224,21 +225,36 @@ export function resumePassiveHookRows(opts: {
 }): string[] {
   const picked: string[] = [];
   for (const request of readPassiveHookRows(opts.dorkHome)) {
-    if (!mayAskAboutHooks(request)) {
-      if (isHookProjectionRefused(request)) forgetPassiveHookRow(opts.dorkHome, request);
-      continue;
-    }
-    followPassiveRow(
-      request,
-      {
+    // One row at a time, each on its own: this runs while the server starts, so
+    // a row nothing can make sense of is logged and dropped, never thrown.
+    try {
+      if (!mayAskAboutHooks(request)) {
+        if (isHookProjectionRefused(request)) forgetPassiveHookRow(opts.dorkHome, request);
+        continue;
+      }
+      followPassiveRow(
+        request,
+        {
+          projectPath: request.projectPath,
+          approvals: opts.approvals,
+          dorkHome: opts.dorkHome,
+          reproject: () => opts.reproject(request),
+        },
+        true
+      );
+      picked.push(request.packageName);
+    } catch (err) {
+      logger.warn('[HarnessSync] A saved quiet row could not be picked up; dropping it', {
         projectPath: request.projectPath,
-        approvals: opts.approvals,
-        dorkHome: opts.dorkHome,
-        reproject: () => opts.reproject(request),
-      },
-      true
-    );
-    picked.push(request.packageName);
+        packageName: request.packageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      try {
+        dropPassiveHookRow(opts.dorkHome, request);
+      } catch {
+        // Already logged; the row is ignored on the next start either way.
+      }
+    }
   }
   return picked;
 }

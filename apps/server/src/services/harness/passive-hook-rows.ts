@@ -42,7 +42,32 @@ function rowKey(request: HookProjectionRequest): string {
   return `${request.projectPath}\0${request.packageName}`;
 }
 
-/** Whether a parsed value has the shape of a stored request. */
+/** Whether a parsed value is one hook: a string event and command, and a string matcher if any. */
+function isStoredHook(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const hook = value as Record<string, unknown>;
+  return (
+    typeof hook.event === 'string' &&
+    typeof hook.command === 'string' &&
+    (hook.matcher === undefined || typeof hook.matcher === 'string')
+  );
+}
+
+/** Whether a parsed value is one file pin: a path and a hash, both strings. */
+function isStoredPin(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === 'string' &&
+    typeof value[1] === 'string'
+  );
+}
+
+/**
+ * Whether a parsed value has the shape of a stored request, down to each hook
+ * and pin. The file is read at startup, so anything a digest would choke on is
+ * dropped here rather than reaching it.
+ */
 function isStoredRequest(value: unknown): value is HookProjectionRequest {
   if (typeof value !== 'object' || value === null) return false;
   const row = value as Record<string, unknown>;
@@ -50,7 +75,8 @@ function isStoredRequest(value: unknown): value is HookProjectionRequest {
     typeof row.projectPath === 'string' &&
     typeof row.packageName === 'string' &&
     Array.isArray(row.hooks) &&
-    (row.scripts === undefined || Array.isArray(row.scripts))
+    row.hooks.every(isStoredHook) &&
+    (row.scripts === undefined || (Array.isArray(row.scripts) && row.scripts.every(isStoredPin)))
   );
 }
 
@@ -114,5 +140,19 @@ export function forgetPassiveHookRow(dorkHome: string, request: HookProjectionRe
   const kept = rows.filter(
     (row) => rowKey(row) !== rowKey(request) || hookApprovalEntry(row) !== entry
   );
+  if (kept.length !== rows.length) writeRows(dorkHome, kept);
+}
+
+/**
+ * Drop the saved row for this package in this project, whatever it holds. For a
+ * row that could not be picked up: it is matched by package and project alone,
+ * so nothing about it has to be digestible.
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param request - The row to drop.
+ */
+export function dropPassiveHookRow(dorkHome: string, request: HookProjectionRequest): void {
+  const rows = readPassiveHookRows(dorkHome);
+  const kept = rows.filter((row) => rowKey(row) !== rowKey(request));
   if (kept.length !== rows.length) writeRows(dorkHome, kept);
 }

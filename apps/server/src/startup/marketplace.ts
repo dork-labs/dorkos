@@ -364,15 +364,24 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
 
     // A quiet Needs-you row left open by the last run is waited on again, so a
     // yes given after the restart records and projects (DOR-3427).
-    resumePassiveHookRows({
-      dorkHome,
-      approvals: approvalService,
-      reproject: (request) =>
-        projectAgainAfterYes(
-          { projectPath: request.projectPath, packageName: request.packageName, action: 'install' },
-          dorkHome
-        ),
-    });
+    // Never fatal: a start that cannot pick the rows up still starts.
+    try {
+      resumePassiveHookRows({
+        dorkHome,
+        approvals: approvalService,
+        reproject: (request) =>
+          projectAgainAfterYes(
+            {
+              projectPath: request.projectPath,
+              packageName: request.packageName,
+              action: 'install',
+            },
+            dorkHome
+          ),
+      });
+    } catch (err) {
+      logger.warn('[Marketplace] Could not pick up the saved quiet rows', { err });
+    }
 
     // Running extensions' skills (DOR-2685): when the set of extension skills
     // agents should see changes, project each affected project again (the same

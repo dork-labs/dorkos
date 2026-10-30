@@ -12,7 +12,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -50,7 +50,11 @@ import {
   recordHookRefusal,
   storedHookDecisions,
 } from '../hook-consent.js';
-import { readPassiveHookRows, rememberPassiveHookRow } from '../passive-hook-rows.js';
+import {
+  passiveHookRowsPath,
+  readPassiveHookRows,
+  rememberPassiveHookRow,
+} from '../passive-hook-rows.js';
 import {
   setEscalationService,
   type EscalationService,
@@ -250,5 +254,35 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     await settle();
     expect(reproject).toHaveBeenCalledTimes(1);
     expect(config.harness.approvedHooks).toHaveLength(1);
+  });
+
+  it('a saved row that is not the right shape is dropped, and startup goes on', async () => {
+    const file = passiveHookRowsPath(dorkHome);
+    mkdirSync(join(dorkHome, 'harness'), { recursive: true });
+    const good = { ...V1.request, packageName: 'good' };
+    writeFileSync(
+      file,
+      JSON.stringify([
+        // Each of these used to reach the entry digest, which threw at startup.
+        { ...V1.request, packageName: 'null-hook', hooks: [null] },
+        { ...V1.request, packageName: 'no-command', hooks: [{ event: 'Stop' }] },
+        { ...V1.request, packageName: 'number-event', hooks: [{ event: 1, command: 'x' }] },
+        {
+          ...V1.request,
+          packageName: 'bad-matcher',
+          hooks: [{ ...V1.request.hooks[0], matcher: 3 }],
+        },
+        { ...V1.request, packageName: 'bad-pin', scripts: [['hooks/run.sh']] },
+        'not a row',
+        null,
+        good,
+      ])
+    );
+
+    expect(readPassiveHookRows(dorkHome)).toEqual([good]);
+    expect(() =>
+      resumePassiveHookRows({ dorkHome, approvals: freshService(), reproject: vi.fn() })
+    ).not.toThrow();
+    await settle();
   });
 });
