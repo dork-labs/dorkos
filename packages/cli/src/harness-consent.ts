@@ -43,12 +43,13 @@ export function configPathFor(dorkHome: string): string {
  * Both stored lists, read without opening (or creating) the config store.
  *
  * @param dorkHome - The resolved DorkOS data directory.
- * @returns The approved and refused entries.
+ * @returns The approved and refused entries, and whether the preset is Full.
  */
 export async function readStoredDecisions(dorkHome: string): Promise<{
   approved: readonly string[];
   refused: readonly string[];
   unreadable?: string;
+  full?: boolean;
 }> {
   const { readHookDecisionsFromDisk } = await import('../server/services/harness/hook-consent.js');
   return readHookDecisionsFromDisk(dorkHome);

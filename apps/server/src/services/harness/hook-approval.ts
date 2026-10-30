@@ -228,19 +228,38 @@ function describeHookTrigger(hook: ProjectedHook): string {
  * quotes and connectives cannot forge the rest of the sentence.
  *
  * @param request - The package, project, and hooks being asked about.
+ * @param options - How the card is worded.
  * @returns One plain sentence.
  */
-export function summariseHookProjection(request: HookProjectionRequest): string {
+export function summariseHookProjection(
+  request: HookProjectionRequest,
+  options: HookCardOptions = {}
+): string {
   const name = quoteSummaryValue(request.packageName);
   const where = quoteSummaryValue(request.projectPath);
   const hooks = request.hooks
     .map((hook) => `${renderCommandForCard(hook.command)} ${describeHookTrigger(hook)}`)
     .join('; ');
   const count = request.hooks.length;
-  return (
-    `Let the installed package ${name} run ${count} command${count === 1 ? '' : 's'} ` +
-    `automatically in ${where}: ${hooks}`
-  );
+  const commands = `${count} command${count === 1 ? '' : 's'}`;
+  if (options.notInstalledByDorkos) {
+    // On Full (DOR-3422): said first, because it is the reason this one asks
+    // when nothing else on Full does.
+    return (
+      `Package ${name} found in ${where}, not installed by DorkOS. Allow it to run ` +
+      `${commands} automatically? ${hooks}`
+    );
+  }
+  return `Let the installed package ${name} run ${commands} automatically in ${where}: ${hooks}`;
+}
+
+/** How a hook card is worded. */
+export interface HookCardOptions {
+  /**
+   * The package is in the project but DorkOS did not install it (or its files
+   * changed since); on Full this is the only package hook that asks.
+   */
+  notInstalledByDorkos?: boolean;
 }
 
 /**
@@ -307,11 +326,13 @@ export const _internal = {
  *
  * @param gateway - The approval primitive.
  * @param request - The package, project, and hooks to ask about.
+ * @param options - How the card is worded.
  * @returns True only when a person granted it.
  */
 export async function askForHookProjection(
   gateway: HookApprovalGateway,
-  request: HookProjectionRequest
+  request: HookProjectionRequest,
+  options: HookCardOptions = {}
 ): Promise<boolean> {
   const { projectPath, packageName, hooks } = canonical(request);
   const binding: ApprovalBinding = {
@@ -330,7 +351,7 @@ export async function askForHookProjection(
   askingNow.add(entry);
   const ticket = gateway.request({
     ...binding,
-    summary: summariseHookProjection(request),
+    summary: summariseHookProjection(request, options),
   });
   logger.info('[HarnessSync] Waiting on a person to allow a package to install hooks', {
     packageName: request.packageName,

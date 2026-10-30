@@ -104,7 +104,7 @@ import {
 } from '@dorkos/harness';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   hookApprovalEntry,
   isHookProjectionApproved,
@@ -115,6 +115,11 @@ import {
   type HookProjectionRequest,
 } from './hook-consent.js';
 import { recordFullAction } from '../core/turn-power/full-autonomy.js';
+import {
+  isProvenDorkosInstall,
+  provenDorkosInstallsIfFull,
+  type ProvenInstall,
+} from './dorkos-installed.js';
 
 /**
  * The card's id and title (`HOOK_PROJECTION_CAPABILITY_*` in `hook-approval.ts`),
@@ -161,6 +166,12 @@ export interface WithheldHooks {
   request: HookProjectionRequest;
   /** Why the settings file could not be read, when {@link reason} says so. */
   unreadable?: string;
+  /**
+   * On Full: the package is in the project but DorkOS did not install it (or
+   * its files changed since), so Full does not let its hooks run (DOR-3422).
+   * The card that asks is a passive row under Needs you; no turn waits on it.
+   */
+  notInstalledByDorkos?: true;
 }
 
 /**
@@ -346,6 +357,14 @@ export interface ProjectWithConsentOptions {
    * that only shows up on somebody else's machine.
    */
   dorkosHarness?: HarnessId;
+  /**
+   * The packages DorkOS itself installed into this project, files unchanged
+   * (`provenDorkosInstalls` in `dorkos-installed.ts`). On Full, only these run
+   * without a person; any other package found here is withheld and asked
+   * about. Async to prove, so a trigger proves first and passes it in; left
+   * out, nothing is proven.
+   */
+  dorkosInstalled?: ReadonlyMap<string, ProvenInstall>;
 }
 
 /** What {@link planWithConsent} answers. */
@@ -396,6 +415,24 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
 }
 
 /**
+ * The same options, plus — on Full — the packages DorkOS installed into this
+ * project with their files unchanged (DOR-3422), which is async to prove.
+ * Below Full they are returned as they were.
+ *
+ * @param projectPath - The project root being projected into.
+ * @param opts - The options a plan or projection will take.
+ * @returns The options, with `dorkosInstalled` set on Full.
+ */
+export async function withProvenInstalls<T extends ProjectWithConsentOptions>(
+  projectPath: string,
+  opts: T
+): Promise<T> {
+  const full = opts.decisions ? opts.decisions.full === true : storedPresetIsFull();
+  const dorkosInstalled = await provenDorkosInstallsIfFull(projectPath, opts.dorkHome, full);
+  return dorkosInstalled === undefined ? opts : { ...opts, dorkosInstalled };
+}
+
+/**
  * Every hook-declaring package in the project, as a request that can be
  * digested, asked about, or recorded.
  *
@@ -414,10 +451,28 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
  * @returns One request per hook-declaring package, in scan order.
  */
 export function scanHookRequests(projectPath: string, dorkHome: string): HookProjectionRequest[] {
+  return scanHookRequestsWithRoots(projectPath, dorkHome).map(({ request }) => request);
+}
+
+/**
+ * {@link scanHookRequests}, with each package's install folder beside its
+ * request, so Full can ask whether DorkOS installed that exact folder.
+ */
+function scanHookRequestsWithRoots(
+  projectPath: string,
+  dorkHome: string
+): { request: HookProjectionRequest; installRoots: string[] }[] {
   const plugins = _internal.scanInstalledPlugins({ dorkHome, projectRoot: projectPath });
-  return _internal
-    .projectedHooks(plugins, projectPath)
-    .map(({ packageName, hooks }) => ({ projectPath, packageName, hooks }));
+  return _internal.projectedHooks(plugins, projectPath).map(({ packageName, hooks }) => ({
+    request: { projectPath, packageName, hooks },
+    // Every project copy by this name: hooks are allowed by name, so each one
+    // has to be proven for Full to let the name through.
+    installRoots: plugins.flatMap((p) =>
+      p.name === packageName && p.location.scope === 'project'
+        ? [join(projectPath, p.location.relDir)]
+        : []
+    ),
+  }));
 }
 
 /**
@@ -442,7 +497,7 @@ export function planWithConsent(
   // Read once, and only when some package has no decision: that is the one
   // answer the preset changes.
   let presetFull: boolean | undefined;
-  for (const request of scanHookRequests(projectPath, opts.dorkHome)) {
+  for (const { request, installRoots } of scanHookRequestsWithRoots(projectPath, opts.dorkHome)) {
     // REFUSAL IS TESTED FIRST, and the order is the whole of it. Recording
     // either decision clears the other, so no code path puts one entry in both
     // lists — but both leaves are `operator-only` exactly so a person can edit
@@ -463,11 +518,22 @@ export function planWithConsent(
     } else if (
       (presetFull ??= opts.decisions ? opts.decisions.full === true : storedPresetIsFull())
     ) {
-      // On Full nothing new asks (DOR-3422): hooks nobody has decided about
-      // run, and the trigger that applies them writes one Activity line. No
-      // yes is recorded, so moving below Full puts the card back.
-      allowed.add(request.packageName);
-      allowedAtFull.push(request);
+      // On Full nothing new asks (DOR-3422), for packages DorkOS installed:
+      // their hooks run, and the trigger that applies them writes one Activity
+      // line. No yes is recorded, so moving below Full puts the card back. A
+      // folder somebody committed under `.dork/plugins/` is not one of those,
+      // so it stays withheld and is asked about in a passive row.
+      const proven =
+        installRoots.length > 0 &&
+        installRoots.every((root) =>
+          isProvenDorkosInstall(opts.dorkosInstalled, root, request.packageName)
+        );
+      if (proven) {
+        allowed.add(request.packageName);
+        allowedAtFull.push(request);
+      } else {
+        withheld.push({ reason: 'unasked', request, notInstalledByDorkos: true });
+      }
     } else {
       withheld.push({ reason: 'unasked', request });
     }
@@ -519,6 +585,37 @@ function reportAllowedAtFull(requests: readonly HookProjectionRequest[]): void {
       // The count, not the commands: a command line can carry a token, and
       // this row is readable by every agent.
       metadata: { packageName: request.packageName, projectPath: request.projectPath, count },
+    });
+  }
+}
+
+/**
+ * Write the Activity line for each package Full held back because DorkOS did
+ * not install it, once each: no card stopped anything, so the row is how a
+ * person learns it is waiting under Needs you.
+ */
+function reportWithheldAtFull(withheld: readonly WithheldHooks[]): void {
+  for (const { request, notInstalledByDorkos } of withheld) {
+    if (!notInstalledByDorkos) continue;
+    const entry = `withheld:${hookApprovalEntry(request)}`;
+    if (reportedAtFull.has(entry)) continue;
+    reportedAtFull.add(entry);
+    const count = request.hooks.length;
+    recordFullAction({
+      actionId: HOOK_PROJECTION_ACTION.id,
+      title: HOOK_PROJECTION_ACTION.title,
+      resourceType: 'package',
+      resourceId: request.packageName,
+      summary:
+        `Held back ${count} command${count === 1 ? '' : 's'} from "${request.packageName}" in ` +
+        `${request.projectPath}: it is in the project but DorkOS did not install it. ` +
+        'Allow it under Needs you',
+      metadata: {
+        packageName: request.packageName,
+        projectPath: request.projectPath,
+        count,
+        withheld: true,
+      },
     });
   }
 }
@@ -585,15 +682,18 @@ export function projectWithConsent(
   const { plan, withheld } = consented;
   // Every hook this writes is one a person approved, or one Full lets run, so
   // an agent home's pin moves with it, when the hooks matched the pin just
-  // before (DOR-3068).
+  // before (DOR-3068). The reason says which, so the pin's history stays true.
   const { applied, conflicts, swept, removals, leftAlone, warnings } = withPersonRepinAtHome(
     projectPath,
     'hooks',
-    'projecting hooks a person allowed',
+    consented.allowedAtFull
+      ? 'projecting hooks allowed because DorkOS is set to Full'
+      : 'projecting hooks a person allowed',
     () => _internal.applyPlan(projectPath, plan, { sweepOrphans: opts.sweepOrphans })
   );
   // After the write, so the line never says hooks run that failed to land.
   if (consented.allowedAtFull) reportAllowedAtFull(consented.allowedAtFull);
+  reportWithheldAtFull(withheld);
   return {
     plan,
     withheld,

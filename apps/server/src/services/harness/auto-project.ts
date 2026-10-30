@@ -64,6 +64,8 @@ import { dorkosHarness } from './dorkos-harness.js';
 import { logger } from '../../lib/logger.js';
 import { askAboutWithheldHooks } from './ask-withheld-hooks.js';
 import { type HookApprovalGateway } from './hook-approval.js';
+import { storedPresetIsFull } from './hook-consent.js';
+import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,
@@ -128,11 +130,18 @@ export const _internal = {
  * @param dorkHome - Resolved DorkOS data directory.
  * @returns Everything the seam reported, for the caller's ask/record loop.
  */
-function projectAndLog(
+async function projectAndLog(
   ctx: PluginChangeContext & { projectPath: string },
   dorkHome: string
-): ProjectWithConsentResult {
+): Promise<ProjectWithConsentResult> {
   const { projectPath, packageName, action } = ctx;
+  // On Full, only packages DorkOS installed run without a person (DOR-3422).
+  // Proven fresh on every pass: the second one can come hours after the first.
+  const dorkosInstalled = await provenDorkosInstallsIfFull(
+    projectPath,
+    dorkHome,
+    storedPresetIsFull()
+  );
   // `sweepOrphans` prunes projections for plugins no longer in the plan — the
   // uninstall path. Install adds; uninstall prunes. Why it is safe beside the
   // consent filter is stated in `project-with-consent.ts`.
@@ -141,6 +150,7 @@ function projectAndLog(
     dorkHome,
     sweepOrphans: true,
     ...(ours === undefined ? {} : { dorkosHarness: ours }),
+    ...(dorkosInstalled === undefined ? {} : { dorkosInstalled }),
   });
   const { plan, applied, conflicts, swept, removals, leftAlone, withheld } = result;
 
@@ -270,7 +280,7 @@ async function projectAndAsk(
   // Hooks are the one part of a package that runs code, so they project only
   // for packages a person has allowed (DOR-522). Everything else projects
   // whatever the answer is.
-  const { withheld } = projectAndLog(ctx, opts.dorkHome);
+  const { withheld } = await projectAndLog(ctx, opts.dorkHome);
 
   if (withheld.length === 0) return;
   if (!opts.approvals) {
@@ -289,7 +299,9 @@ async function projectAndAsk(
   await askAboutWithheldHooks(withheld, {
     projectPath,
     approvals: opts.approvals,
-    reproject: () => projectAndLog(ctx, opts.dorkHome),
+    reproject: async () => {
+      await projectAndLog(ctx, opts.dorkHome);
+    },
   });
 }
 

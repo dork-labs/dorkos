@@ -78,6 +78,8 @@ import {
   withProjectLock,
 } from '../../services/harness/project-with-consent.js';
 import { createHarnessRoutes } from '../harness.js';
+import { recordProjectInstall } from '../../services/marketplace/lib/project-install-index.js';
+import { installFolderDigest } from '../../services/marketplace/lib/install-digest.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** Nobody has decided anything — the shape every case here runs under. */
@@ -1015,6 +1017,49 @@ describe('POST /api/harness/sync', () => {
       expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
       expect(res.body.status.counts.pendingApproval).toBe(1);
       expect(res.body.status.pendingApproval[0].packageName).toBe('acme');
+    }
+  );
+
+  it('on Full, a package DorkOS installed syncs its hooks with no card (DOR-3422)', async () => {
+    // The live route's decisions carry the preset; QA found the shipped reader
+    // left it out, so Full still carded through Sync now.
+    const repo = stageSyncProject('sync-full-installed', { plugin: true });
+    const plugin = join(repo, '.dork', 'plugins', 'acme');
+    const folder = await installFolderDigest(plugin);
+    if (folder.kind !== 'digest') throw new Error('the staged plugin did not digest');
+    await recordProjectInstall(dorkHome, {
+      projectPath: repo,
+      installRoot: plugin,
+      name: 'acme',
+      source: 'dork-labs/marketplace',
+      installDigest: folder.digest,
+    });
+    hookDecisions = { approved: [], refused: [], full: true };
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.askedAbout).toEqual([]);
+    expect(gateway.requested).toEqual([]);
+    expect(readFileSync(join(repo, '.codex', 'hooks.json'), 'utf8')).toContain('echo acme');
+    expect(res.body.status.counts.pendingApproval).toBe(0);
+  });
+
+  it(
+    'on Full, a committed package DorkOS did not install is held back with a passive row (DOR-3422)',
+    { timeout: 4_000 },
+    async () => {
+      // No install record: a repository committed this folder. The route still
+      // answers at once; the row waits under Needs you and nothing waits on it.
+      const repo = stageSyncProject('sync-full-committed', { plugin: true });
+      hookDecisions = { approved: [], refused: [], full: true };
+
+      const res = await syncProject(repo);
+
+      expect(res.status).toBe(200);
+      expect(res.body.askedAbout).toEqual(['acme']);
+      expect(gateway.requested).toEqual(['acme']);
+      expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
     }
   );
 

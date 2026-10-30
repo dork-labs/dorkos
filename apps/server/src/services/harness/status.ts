@@ -79,6 +79,7 @@ import type {
 } from '@dorkos/shared/harness-schemas';
 import { z } from 'zod';
 import type { HookDecisions } from './hook-consent.js';
+import type { ProvenInstall } from './dorkos-installed.js';
 import { readGlobalSharingFromDisk } from './global-scope.js';
 import {
   planWithConsent,
@@ -209,6 +210,12 @@ export interface BuildHarnessStatusOptions {
    * this model wrote would be the second voice §1.2 exists to prevent.
    */
   afterWrite?: { conflicts: readonly ProjectionAction[] };
+  /**
+   * The packages DorkOS installed here, files unchanged, so the status says
+   * what the Full preset actually lets run (DOR-3422). See the option of the
+   * same name on `planWithConsent`.
+   */
+  dorkosInstalled?: ReadonlyMap<string, ProvenInstall>;
   /**
    * The harness DorkOS's own default runtime reads
    * (`services/harness/dorkos-harness.ts`).
@@ -700,7 +707,7 @@ function manifestFailureDetail(err: unknown): string {
  * @returns the full status response, ready to be sent as-is.
  */
 export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessStatusResponse {
-  const { projectPath, dorkHome, decisions, afterWrite, dorkosHarness } = options;
+  const { projectPath, dorkHome, afterWrite } = options;
 
   let manifest: HarnessManifest;
   try {
@@ -717,11 +724,9 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
   // file rather than two derivations of one fact (DOR-1906).
   const notices = manifestNotices(manifest);
 
-  const { plan, withheld } = planWithConsent(projectPath, {
-    dorkHome,
-    ...(decisions === undefined ? {} : { decisions }),
-    ...(dorkosHarness === undefined ? {} : { dorkosHarness }),
-  });
+  // The same options, passed whole: data home, decisions, DorkOS's harness and
+  // the packages DorkOS installed are exactly what the plan reads.
+  const { plan, withheld } = planWithConsent(projectPath, options);
   const drift = checkPlan(projectPath, plan);
   const inventory = inventorySourceTree(projectPath);
 

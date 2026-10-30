@@ -60,7 +60,7 @@ export interface AskAboutWithheldHooksOptions {
    * wrote everything else: with nothing granted, a second pass would write the
    * same bytes for nothing.
    */
-  reproject: () => void;
+  reproject: () => void | Promise<void>;
 }
 
 /** What {@link askAboutWithheldHooks} answers. */
@@ -121,11 +121,17 @@ export async function askAboutWithheldHooks(
   const askedAbout = askable.map(({ packageName }) => packageName);
   if (askable.length === 0) return { askedAbout, granted: [] };
 
+  // On Full, a package DorkOS did not install says so on its card (DOR-3422).
+  const notInstalled = new Set(
+    withheld.filter((w) => w.notInstalledByDorkos).map(({ request }) => request)
+  );
   const gateway = opts.approvals;
   const decisions = await Promise.all(
     askable.map(async (request) => ({
       request,
-      granted: await askForHookProjection(gateway, request),
+      granted: await askForHookProjection(gateway, request, {
+        notInstalledByDorkos: notInstalled.has(request),
+      }),
     }))
   );
   const allowed = decisions.filter((decision) => decision.granted).map((d) => d.request);
@@ -139,7 +145,7 @@ export async function askAboutWithheldHooks(
   if (allowed.length === 0) return { askedAbout, granted: [] };
 
   for (const request of allowed) recordHookApproval(request);
-  opts.reproject();
+  await opts.reproject();
 
   return { askedAbout, granted: allowed.map(({ packageName }) => packageName) };
 }

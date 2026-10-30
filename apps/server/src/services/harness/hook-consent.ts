@@ -213,7 +213,15 @@ export function hookEntryPackageName(entry: string): string {
  */
 export function storedHookDecisions(): HookDecisions {
   const harness = configManager.get('harness');
-  return { approved: harness.approvedHooks, refused: harness.refusedHooks };
+  return {
+    approved: harness.approvedHooks,
+    refused: harness.refusedHooks,
+    // Read when asked, not here: only an undecided package needs the preset,
+    // and most reads of these lists never get that far.
+    get full() {
+      return storedPresetIsFull();
+    },
+  };
 }
 
 /**
