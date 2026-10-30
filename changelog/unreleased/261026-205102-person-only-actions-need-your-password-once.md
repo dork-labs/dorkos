@@ -8,6 +8,7 @@ covers:
   - "fix(server): parallel wrong owner passwords can't skip the wait (DOR-3330)"
   - 'fix(server): drop the person-only bar on the mesh access route (DOR-3330)'
   - 'test(server): Wi-Fi room posts come from a signed-in person (DOR-3330)'
+  - 'test(server): the Claude sign-in routes ask the app for the step-up at this computer (DOR-3330)'
 ---
 
 ### Security

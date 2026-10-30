@@ -56,6 +56,14 @@ const PERSON_WRITES: readonly PersonWrite[] = [
     path: `/api/connectors/agent-requests/${ID}/decision`,
     body: { decision: 'approve' },
   },
+  // Confirming a Claude sign-in, and the lists DorkOS must never use (DOR-3245).
+  { method: 'POST', path: `/api/runtimes/claude-code/signins/${ID}/accept`, body: {} },
+  {
+    method: 'POST',
+    path: '/api/runtimes/claude-code/signins/organizations',
+    body: { orgId: '22222222-2222-4222-8222-222222222222', label: 'Excluded' },
+  },
+  { method: 'POST', path: '/api/runtimes/claude-code/signins/folders', body: { accountId: ID } },
 ];
 
 describe('contract: the person-only routes at this computer, with an owner', () => {
