@@ -58,7 +58,10 @@ async function call(
   return (await capability.invoke(deps, parsed, context)) as CallResult;
 }
 
-/** Record a turn on `sessionId` held to the runtime default, as a Wi-Fi turn is. */
+/**
+ * Record a turn on `sessionId` held to the runtime default, as a Wi-Fi turn is, in a chat set to
+ * Ask first: a chat set to Full is not refused for its mark (DOR-3412, `commitment-turn-marks`).
+ */
 async function ranHeld(sessionId: string): Promise<void> {
   const seam = recordTurnLevels(
     {
@@ -68,7 +71,7 @@ async function ranHeld(sessionId: string): Promise<void> {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => 'acceptEdits'
   );
   for await (const _event of seam.sendMessage(sessionId, 'hi', {
     permissionCeiling: 'runtime-default',
